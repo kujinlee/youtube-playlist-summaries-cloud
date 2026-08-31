@@ -85,6 +85,7 @@ import re
 import signal
 import socket
 import subprocess
+import threading
 import sys
 import urllib.parse
 from typing import Callable
@@ -106,6 +107,11 @@ REGEN_TIMEOUT = 300
 # caller names a key, never a path or an argument, so nothing it sends reaches the
 # command line. Adding a page here is a visible act; resolving one from the request
 # would not be. Backlog #77.
+# ⚠ ThreadingHTTPServer, so two tabs pressing Refresh really do run concurrently — Codex
+# Medium. One lock PER PAGE: two rebuilds of the same target would race on its output
+# file, while rebuilding two DIFFERENT pages at once is harmless and stays parallel.
+REGEN_LOCKS: dict[str, "threading.Lock"] = {}
+REGEN_LOCKS_GUARD = threading.Lock()
 REGENERABLE = {
     "dashboard": "gen-dashboard.py",
     "backlog-table": "gen-backlog-page.py",
@@ -441,7 +447,7 @@ def index_html(root: pathlib.Path) -> str:
         rows.append(f'<li><a href="/{urllib.parse.quote(p.name)}">{p.name}</a>'
                     f'<span> · {when}</span></li>')
     body = "\n".join(rows) or "<li><em>No explainers yet.</em></li>"
-    return (
+    doc = (
         "<!doctype html><meta charset=utf-8><title>Explainers</title>"
         # ⟳ backlog #76. The palette moves into variables so BOTH `data-theme` blocks can
         # exist — the toggle is inert without them, which `page_chrome.assert_wired` refuses.
@@ -467,6 +473,10 @@ def index_html(root: pathlib.Path) -> str:
         "bookmark that.</p><ul>" + body + "</ul>"
         "<script>" + page_chrome.chrome_script() + "</script>"
     )
+    # Codex Medium: this is a page PRODUCER carrying a control, and nothing checked it.
+    # A future edit dropping either palette or the script would ship a dead button.
+    page_chrome.assert_wired(doc, "explainer-serve index")
+    return doc
 
 
 def _raises(fn, exc: type[BaseException]) -> bool:
@@ -757,9 +767,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             body = (f"unknown page {want!r}. Rebuildable pages are: "
                     f"{', '.join(sorted(REGENERABLE))}.")
             return self._send(400, body.encode("utf-8"), "text/plain; charset=utf-8")
+        with REGEN_LOCKS_GUARD:
+            lock = REGEN_LOCKS.setdefault(want, threading.Lock())
         try:
-            r = subprocess.run([sys.executable, str(SCRIPTS / script)],
-                               capture_output=True, text=True, timeout=REGEN_TIMEOUT)
+            with lock:
+                r = subprocess.run([sys.executable, str(SCRIPTS / script)],
+                                   capture_output=True, text=True, timeout=REGEN_TIMEOUT)
         except subprocess.TimeoutExpired:
             # A timeout is NOT a failure to report as "rebuilt". The reader is told the
             # page may now be half-written, because silence here reads as success.
@@ -770,8 +783,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             tail = (r.stderr or r.stdout or "").strip()[-400:]
             return self._send(500, f"{script} exited {r.returncode}. NOT REBUILT.\n{tail}"
                               .encode("utf-8"), "text/plain; charset=utf-8")
-        return self._send(200, json.dumps({"ok": True, "page": want}).encode(),
-                          "application/json")
+        # ⚠ Codex Medium: exit 0 does NOT mean a clean rebuild. gen-backlog-page.py returns
+        # 0 after writing a page WITHOUT the Ask tray when brief-compose could not lift one,
+        # and reporting a bare success for that is exactly the "degraded gate that reports
+        # success" shape this project keeps finding. The warning travels to the button.
+        warn = [l.strip() for l in (r.stdout or "").splitlines() if l.strip().startswith("⚠")]
+        body = {"ok": True, "page": want}
+        if warn:
+            body["warning"] = " ".join(warn)[:400]
+        return self._send(200, json.dumps(body).encode(), "application/json")
 
     def do_POST(self) -> None:  # noqa: N802
         route = self.path.split("?", 1)[0]

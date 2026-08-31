@@ -48,8 +48,8 @@
   "file": "scripts/page_chrome.py",
   "edits": [
    [
-    "    if has_control(page) and \"chrome-theme\" not in _scripts(page):",
-    "    if False and has_control(page) and \"chrome-theme\" not in _scripts(page):"
+    "    if has_control(page) and CHROME_SCRIPT_MARK not in _scripts(page):",
+    "    if False and has_control(page) and CHROME_SCRIPT_MARK not in _scripts(page):"
    ]
   ],
   "expect": "assert_wired refuses a control with palettes but NO script"
@@ -63,7 +63,7 @@
     "    return page"
    ]
   ],
-  "expect": "assert_wired refuses a control with palettes but NO script"
+  "expect": "the marker OUTSIDE a script tag does not satisfy the binding"
  },
  {
   "name": "the refresh slug is not escaped into the attribute",

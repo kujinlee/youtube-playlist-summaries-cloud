@@ -994,7 +994,11 @@ def scheme_palettes(css: str) -> dict[str, dict[str, str]]:
                              f"switchable page whose palette holds no colours renders "
                              f"unstyled, and an empty parse is indistinguishable from an "
                              f"absent one")
-        out[f"toggled-{theme}"] = {**base, **vals}
+        # MERGED, not replaced. Codex Medium: a second block for the same theme is a
+        # cascade in the browser — the first block's values survive unless overridden —
+        # so overwriting the map here would hide a reachable bad colour behind a later
+        # partial block. Source order is `findall` order.
+        out[f"toggled-{theme}"] = {**out.get(f"toggled-{theme}", base), **vals}
     return out
 
 
@@ -2401,6 +2405,9 @@ def main(argv: list[str]) -> int:
                  exempt_error, _store_label(store), store_error,
                  page_chrome.provenance(_dt.datetime.now().strftime('%Y-%m-%d %H:%M'), ROOT))
     if a.fragment_only:
+        # Codex Medium: the gate was only on the composed path, so a fragment could ship
+        # a dead control. Every write of this page goes through it now.
+        page_chrome.assert_wired(frag, "gen-dashboard.py --fragment-only")
         a.fragment_only.write_text(frag, encoding="utf-8")
         print(f"wrote fragment {a.fragment_only}")
         return 0

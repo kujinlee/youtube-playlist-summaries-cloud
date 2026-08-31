@@ -210,7 +210,14 @@ def chrome_for(content: str, generated_at: str) -> tuple[str, str, str]:
        stamp still works, and it is the half that matters when a page might be stale.
     """
     if page_chrome.has_control(content):
-        return "", "", ""
+        # ⚠ Codex High: this used to trust the button id alone, so a fragment carrying the
+        # button but NO script composed to a page with one INERT control and no stamp —
+        # the exact fail-silent this module exists for, reached through the composer.
+        # Trust it only if it is genuinely wired, and supply a stamp if it lacks one.
+        page_chrome.assert_wired(content, "brief-compose (fragment's own chrome)")
+        if 'class="chrome-when"' in content:
+            return "", "", ""
+        return "", '<div class="chrome">' + page_chrome.stamp(generated_at) + "</div>", ""
     if page_chrome.missing_palettes(content + page_chrome.theme_control()):
         return (page_chrome.chrome_css(),
                 '<div class="chrome">' + page_chrome.stamp(generated_at) + "</div>", "")
@@ -266,7 +273,10 @@ def main(argv: list[str]) -> int:
         ROOT / f"{_dt.date.today():%Y-%m-%d}-brief-{a.slug}.html"
     )
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(doc, encoding="utf-8")
+    # ⚠ Codex Low: this wrote BEFORE the check, so a page the next lines call unusable
+    # was already on disk. Check first; a bad page is not written at all.
+    if has_tray(doc):
+        out.write_text(doc, encoding="utf-8")
 
     if not has_tray(doc):                       # the check that makes the failure impossible to miss
         raise SystemExit(f"brief-compose: composed page LOST the tray — wrote nothing usable to {out}")
@@ -425,8 +435,26 @@ def self_test() -> int:
     _ctl = page_chrome.theme_control()
     _pals = (f':root[data-theme="light"]{{--bg:#fff}}'
              f':root[data-theme="dark"]{{--bg:#000}}')
-    _c1 = chrome_for(f"<style>{_pals}</style>{_ctl}", "t")
-    case("a fragment that ALREADY has the control gets nothing added", _c1 == ("", "", ""))
+    # ⚠ The fixture must be a GENUINELY wired fragment — script and all. The first
+    # version of this case fed a bare button, which the tightened assert_wired now
+    # refuses, and it was itself an example of the inert control being guarded against.
+    _wired = (f"<style>{_pals}</style>{_ctl}"
+              f'<span class="chrome-when">generated <time>t</time></span>'
+              f"<script>{page_chrome.chrome_script()}</script>")
+    _c1 = chrome_for(_wired, "t")
+    case("a fragment that ALREADY has working chrome gets nothing added", _c1 == ("", "", ""))
+    # ⟲ Codex High: the button ALONE used to satisfy this branch, composing an inert
+    # control and no stamp. It is now refused rather than trusted.
+    try:
+        chrome_for(f"<style>{_pals}</style>{_ctl}", "t")
+        case("an INERT control in a fragment is refused, not trusted", False)
+    except SystemExit:
+        case("an INERT control in a fragment is refused, not trusted", True)
+    # ...and a wired fragment MISSING only the stamp gains one rather than losing it.
+    _c1b = chrome_for(f"<style>{_pals}</style>{_ctl}"
+                      f"<script>{page_chrome.chrome_script()}</script>", "t")
+    case("a wired fragment with no stamp gains the stamp, not a second control",
+         "chrome-when" in _c1b[1] and not page_chrome.has_control(_c1b[1]))
     _c2 = chrome_for(f"<style>{_pals}</style><p>no control</p>", "t")
     case("a fragment with both palettes gets the full bar", page_chrome.has_control(_c2[1]))
     case("...without a refresh button, since a composed brief has no generator to call",

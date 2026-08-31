@@ -46,6 +46,12 @@ import sys
 THEME_ATTR = "data-theme"
 THEME_KEY = "yps-theme"
 THEMES = ("light", "dark")
+# A marker the real script carries and nothing else does. Codex, High: the binding check
+# was `"chrome-theme" in _scripts(page)`, which `<script>console.log("chrome-theme")
+# </script>` satisfies — a page with the button, both palettes and NO handler passed.
+# Asserting the MECHANISM (a marker the emitter alone writes) beats asserting a word that
+# anything may contain.
+CHROME_SCRIPT_MARK = "yps-chrome-v1"
 
 # A page carrying the control MUST define both. `:root[data-theme="x"]` — the selector
 # the browser actually matches, written the way the generators already write it.
@@ -144,6 +150,7 @@ def chrome_script() -> str:
     this module exists to remove one layer up.
     """
     return (
+        f"/*{CHROME_SCRIPT_MARK}*/"
         "(function(){"
         f"var K={THEME_KEY!r},A={THEME_ATTR!r},R=document.documentElement;"
         "function cur(){return R.getAttribute(A)||"
@@ -168,7 +175,7 @@ def chrome_script() -> str:
         "body:JSON.stringify({page:r.getAttribute('data-page')})})"
         ".then(function(x){if(!x.ok)return x.text().then(function(t){throw new Error(t);});"
         "return x.json();})"
-        ".then(function(){location.reload();})"
+        ".then(function(j){if(j&&j.warning){if(say)say.textContent='rebuilt WITH A WARNING: '+j.warning;return;}location.reload();})"
         ".catch(function(e){r.disabled=false;"
         "if(say)say.textContent='could not rebuild: '+e.message;});});}"
         "})();"
@@ -226,10 +233,11 @@ def assert_wired(page: str, where: str) -> None:
             f"defined, so pressing it would change an attribute nothing styles. Define "
             f"both palettes or drop the control — a button that does nothing is worse "
             f"than no button.")
-    if has_control(page) and "chrome-theme" not in _scripts(page):
+    if has_control(page) and CHROME_SCRIPT_MARK not in _scripts(page):
         raise SystemExit(
-            f"{where}: the theme control is on the page but no script binds it. "
-            f"Include page_chrome.chrome_script().")
+            f"{where}: the theme control is on the page but no script CARRYING "
+            f"{CHROME_SCRIPT_MARK!r} binds it. A script that merely mentions the "
+            f"button id is not a handler. Include page_chrome.chrome_script().")
 
 
 def _scripts(page: str) -> str:
@@ -289,13 +297,27 @@ def self_test() -> int:
     case("...and names the missing selector",
          'data-theme="light"' in (raises(f"<style>{DARK}</style>{theme_control()}") or ""), True)
     case("assert_wired refuses a control with palettes but NO script",
-         "no script binds it" in (raises(f"<style>{LIGHT}{DARK}</style>{theme_control()}") or ""),
+         "no script CARRYING" in (raises(f"<style>{LIGHT}{DARK}</style>{theme_control()}") or ""),
          True)
     case("assert_wired is silent on a page with no control at all",
          raises("<p>hello</p>"), None)
     # A script mentioning the id in PROSE must not satisfy the binding check by accident.
+    # ⟲ Codex High. A script that only MENTIONS the id is not a binding.
+    case("a script that merely names the button does NOT satisfy the binding check",
+         "no script CARRYING" in
+         (raises(f'<style>{LIGHT}{DARK}</style>{theme_control()}'
+                 '<script>console.log("chrome-theme")</script>') or ""), True)
+    case("...while the real script does", raises(full), None)
+    case("the marker appears in the emitted script", CHROME_SCRIPT_MARK in chrome_script(), True)
+    # ⟲ Found by the mutation harness, not by reading: with the marker check in place,
+    # nothing distinguished "inside a <script>" from "anywhere on the page", so
+    # `_scripts` returning the whole page survived. A marker in a COMMENT is the case.
+    case("the marker OUTSIDE a script tag does not satisfy the binding",
+         "no script CARRYING" in
+         (raises(f'<style>{LIGHT}{DARK}</style>{theme_control()}'
+                 f"<!-- {CHROME_SCRIPT_MARK} -->") or ""), True)
     case("...and a script tag is what satisfies it, not a comment in the body",
-         "no script binds it" in
+         "no script CARRYING" in
          (raises(f"<style>{LIGHT}{DARK}</style>{theme_control()}<!-- chrome-theme -->") or ""),
          True)
 
