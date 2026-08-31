@@ -12,6 +12,7 @@ import tempfile
 import html as _html
 import re
 import sys
+import time as _time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import page_chrome  # noqa: E402
@@ -567,6 +568,84 @@ def open_prs() -> tuple[list[dict] | None, str | None]:
     return data, None
 
 
+# ─── live PR state for a decision option (ask-choices spec §6) ───
+# ⚠ The LITERAL token, never a bare `#N`. This repo writes `#N` for backlog rows
+# constantly — "backlog #74", "#76/#77" — and a bare rule would resolve pull
+# request 74 and render a confident, wrong link.
+PR_TOKEN = re.compile(r"\bPR #(\d+)\b")
+PR_MAX_CALLS = 10
+PR_MAX_SECONDS = 60.0
+PR_NOTE = {
+    "open": "",
+    "merged": ' <span class="stale">stale — already merged</span>',
+    "closed": ' <span class="stale">stale — already closed</span>',
+    "missing": ' <span class="stale">no such pull request</span>',
+    "unknown": ' <span class="unknown">could not check</span>',
+    "exhausted": ' <span class="unknown">could not check — PR lookup budget exhausted</span>',
+}
+
+
+def pr_state(n: int, cache: dict, budget: dict) -> str:
+    """Live state of pull request `n`, bounded (spec §6).
+
+    ⚠ `_gh_json` times out PER CALL, so ten PRs is ten timeouts. The budget bounds
+    the RENDER, and exhaustion is its OWN answer — a partial render that looked
+    "checked" would be the absence/denial confusion this page exists to prevent.
+    """
+    if n in cache:
+        return cache[n]
+    if budget["calls"] >= PR_MAX_CALLS or budget["seconds"] >= PR_MAX_SECONDS:
+        return "exhausted"
+    t0 = _time.monotonic()
+    data, err = _gh_json(["pr", "view", str(n), "--json", "number,state"])
+    budget["calls"] += 1
+    budget["seconds"] += _time.monotonic() - t0
+    if err is not None:
+        # ⚠ Matched on gh's REAL message. The plan first matched "not found" and
+        # "no pull requests"; measured, gh says
+        #   GraphQL: Could not resolve to a PullRequest with the number of N.
+        # so neither matched, the branch was unreachable, and a transport failure
+        # and a missing PR were about to be reported identically.
+        low = err.lower()
+        state = ("missing"
+                 if "could not resolve to a pullrequest" in low
+                 or "no pull requests found" in low
+                 else "unknown")
+    elif not isinstance(data, dict) or not isinstance(data.get("state"), str):
+        # `_gh_json` only PARSES json; shape is validated here, as `open_prs` does.
+        state = "unknown"
+    else:
+        state = {"OPEN": "open", "MERGED": "merged",
+                 "CLOSED": "closed"}.get(data["state"].upper(), "unknown")
+    cache[n] = state
+    return state
+
+
+def repo_slug() -> str | None:
+    """`owner/name` for building PR links, or None.
+
+    None means the option renders as PLAIN TEXT with its state note — never a
+    guessed URL. A wrong link is worse than no link on a page whose job is to send
+    the reader somewhere real.
+    """
+    data, err = _gh_json(["repo", "view", "--json", "nameWithOwner"])
+    if err is not None or not isinstance(data, dict):
+        return None
+    slug = data.get("nameWithOwner")
+    return slug if isinstance(slug, str) and "/" in slug else None
+
+
+def _repo_once(box: list):
+    """⚠ Lazy, and both review halves asked for it. `_repo = repo_slug()` at the top
+    of `build` made EVERY render a network call — including renders with no PR
+    options at all, and including CI, which runs `--self-test` and then builds. It
+    also sat outside the lookup budget, so "bounded render" was false.
+    """
+    if not box:
+        box.append(repo_slug())
+    return box[0]
+
+
 def no_entry_prs(limit: int = 40) -> tuple[list[dict] | None, str | None]:
     """Merged PRs whose body declared `NO-ENTRY:`, newest first.
 
@@ -751,6 +830,9 @@ def build(entries, days, prs, pr_error, git_error, window,
     _cleared = cleared_ids(entries)
     need = unresolved(entries)
     REC_SPAN = ' <span class="rec">recommended</span>'
+    _pr_cache: dict[int, str] = {}
+    _pr_budget = {"calls": 0, "seconds": 0.0}
+    _repo_box: list = []          # [] = slug not looked up yet; filled on first PR #N
     rows: list[str] = []
     broken: list[str] = []
     try:
@@ -778,7 +860,19 @@ def build(entries, days, prs, pr_error, git_error, window,
             opt_items = []
             for o in d["options"]:
                 rec = REC_SPAN if o["recommended"] else ""
-                opt_items.append(f'<li>{_inline(o["text"])}{rec}</li>')
+                m = PR_TOKEN.search(o["text"])
+                if not m:
+                    opt_items.append(f'<li>{_inline(o["text"])}{rec}</li>')
+                    continue
+                n = int(m.group(1))
+                note = PR_NOTE[pr_state(n, _pr_cache, _pr_budget)]
+                slug = _repo_once(_repo_box)
+                if slug:
+                    body = (f'<a href="https://github.com/{_html.escape(slug)}'
+                            f'/pull/{n}">{_inline(o["text"])}</a>')
+                else:
+                    body = _inline(o["text"])
+                opt_items.append(f'<li>{body}{rec}{note}</li>')
             rows.append(
                 f'<li><span class="q">{_inline(d["question"])}</span> '
                 f'<span class="when">{_html.escape(e["date"])} · '
@@ -1030,6 +1124,7 @@ padding:14px 18px;margin-bottom:10px}}
 .needs .opts{{margin:.35rem 0 .6rem 1.1rem;padding:0}}
 .needs .opts li{{margin:.15rem 0}}
 .needs .rec{{font-size:.78em;opacity:.75;border:1px solid currentColor;border-radius:3px;padding:0 .3em}}
+.needs .stale{{font-size:.78em;opacity:.8;font-style:italic}}
 .flag.resolved{{color:inherit;font-weight:400;opacity:.55;border:1px solid currentColor;border-radius:3px;padding:0 .3em;font-size:.82em}}
 .err{{color:var(--err);font-weight:600;margin:0 0 8px}}
 details{{margin-top:10px}} summary{{cursor:pointer;color:var(--fg3);font-size:14px}}
@@ -1551,6 +1646,15 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     case("glossary defines heads-up", any(g[0] == "heads-up" for g in GLOSSARY), True)
     case("glossary defines resolved", any(g[0] == "resolved" for g in GLOSSARY), True)
 
+    # PR-state cases need `_with_run`, which is defined further down with the other
+    # subprocess stubs. They live there, beside the `open_prs` cases.
+    case("PR token matches the literal form",
+         [m.group(1) for m in PR_TOKEN.finditer("merge PR #181 now")], ["181"])
+    case("a bare number is NOT a PR", PR_TOKEN.findall("close backlog #74"), [])
+    case("a lone hash is NOT a PR", PR_TOKEN.findall("issue #12"), [])
+    case("exhaustion says WHY, distinctly from a gh failure",
+         PR_NOTE["exhausted"] != PR_NOTE["unknown"], True)
+
     # "In place" on the order the store is ACTUALLY written: newest at the END.
     appended = parse_entries("## 2026-08-27\nOlder good.\n"
                              "## 2026-02-30\nBroken middle.\n"
@@ -1818,6 +1922,42 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
 
     # (c) `gh` succeeds and returns something that is not JSON. Round 4's U13: the
     # JSONDecodeError branch returning `[], None` renders as a confident zero.
+    # ── live PR state for a decision option (ask-choices spec §6) ──
+    _pc, _pb = {}, {"calls": 0, "seconds": 0.0}
+    case("an open PR reads open",
+         _with_run(lambda *a, **k: _R(0, '{"number":1,"state":"OPEN"}', ""),
+                   lambda: pr_state(1, _pc, _pb)), "open")
+    case("a merged PR reads merged",
+         _with_run(lambda *a, **k: _R(0, '{"number":2,"state":"MERGED"}', ""),
+                   lambda: pr_state(2, _pc, _pb)), "merged")
+    # gh's REAL missing-PR message. A bare rc=1 with EMPTY stderr yields
+    # "gh exited 1: ", which matches nothing and reads "unknown" — the plan's first
+    # version of this case could never have gone green, and the real branch was
+    # unreachable too. Found by both review halves, by execution.
+    case("a missing PR reads missing",
+         _with_run(lambda *a, **k: _R(
+             1, "", "GraphQL: Could not resolve to a PullRequest with the number of 3."),
+             lambda: pr_state(3, _pc, _pb)), "missing")
+    case("a transport failure reads unknown, NOT missing",
+         _with_run(lambda *a, **k: _R(1, "", "dial tcp: lookup api.github.com: no such host"),
+                   lambda: pr_state(31, {}, {"calls": 0, "seconds": 0.0})), "unknown")
+    case("a bad shape reads unknown",
+         _with_run(lambda *a, **k: _R(0, '{"number":4}', ""),
+                   lambda: pr_state(4, _pc, _pb)), "unknown")
+    _calls_before = _pb["calls"]
+    case("a cached PR costs no call",
+         (pr_state(1, _pc, _pb), _pb["calls"]), ("open", _calls_before))
+    case("an exhausted call budget reads exhausted",
+         pr_state(99, {}, {"calls": PR_MAX_CALLS, "seconds": 0.0}), "exhausted")
+    case("an exhausted clock reads exhausted",
+         pr_state(98, {}, {"calls": 0, "seconds": PR_MAX_SECONDS}), "exhausted")
+    case("a missing repo slug means no link, not a guessed one",
+         _with_run(lambda *a, **k: _R(1, "", "not a git repository"),
+                   lambda: repo_slug()), None)
+    case("a good repo slug is returned",
+         _with_run(lambda *a, **k: _R(0, '{"nameWithOwner":"o/r"}', ""),
+                   lambda: repo_slug()), "o/r")
+
     v, err = _with_run(lambda *a, **k: _R(0, "not json at all", ""), open_prs)
     case("open_prs: unparseable gh output is a could-not-tell, not zero",
          (v, bool(err)), (None, True))
