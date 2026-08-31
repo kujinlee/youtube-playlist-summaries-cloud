@@ -185,5 +185,51 @@
    ]
   ],
   "expect": "...but a bare marker with NO reason does not exempt"
+ },
+ {
+  "name": "any nonzero exit is credited as a catch",
+  "file": "scripts/check-plan-code.py",
+  "edits": [
+   [
+    "        caught = rc == 1",
+    "        caught = rc != 0"
+   ]
+  ],
+  "expect": "a suite exiting 3 is a SURVIVOR, not a catch"
+ },
+ {
+  "name": "the exemption marker is taken from any token, not only a comment",
+  "file": "scripts/check-plan-code.py",
+  "edits": [
+   [
+    "        if t.type == tokenize.COMMENT:\n            if ESCAPE_EXEMPT.search(t.string):\n                exempt.add(ln)\n            continue",
+    "        if ESCAPE_EXEMPT.search(t.string):\n            exempt.add(ln)\n        if t.type == tokenize.COMMENT:\n            continue"
+   ]
+  ],
+  "expect": [
+   "...nor can it exempt a FIXTURE on the same line"
+  ]
+ },
+ {
+  "name": "an exemption also covers executable routes",
+  "file": "scripts/check-plan-code.py",
+  "edits": [
+   [
+    "            if ln in exempt and not rx.search(blanked.get(ln, \"\")):",
+    "            if ln in exempt:"
+   ]
+  ],
+  "expect": "a marker CANNOT exempt an executable route, only string data"
+ },
+ {
+  "name": "unparseable source is passed instead of scanned raw",
+  "file": "scripts/check-plan-code.py",
+  "edits": [
+   [
+    "    except (tokenize.TokenError, IndentationError, SyntaxError):\n        return [why for rx, why in HOME_ESCAPES if rx.search(src)]",
+    "    except (tokenize.TokenError, IndentationError, SyntaxError):\n        return []"
+   ]
+  ],
+  "expect": "source that will not tokenise is scanned raw, exempting nothing"
  }
 ]

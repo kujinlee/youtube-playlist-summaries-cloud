@@ -866,3 +866,56 @@ comments record two guards whose deletion left its suite green (`count_drift` in
 `_drift_rc`'s call, "deleting it left 92/92 green"). A scratch probe adding it as a 4th target ran
 4 files / 75 mutations / 0 survivors with clean controls — and immediately exposed the stateful
 canary above. Nothing filed to `docs/backlog.md`; that is the user's step.
+
+## 2026-08-30 [needs-you]
+The tool that checks all our other checks is now checked itself, and turning that on immediately
+found three places where a safety check had quietly stopped working.
+
+Some background. When we write a safety check, we prove it actually works by deliberately breaking
+the code it guards and confirming the check complains. Four files in this project get that
+treatment. The tool that runs the whole procedure was not one of them — every verdict passes through
+it, and nothing tested it back. That was the finding from re-measuring the review item you asked
+about; it is now fixed.
+
+Switching it on found three checks whose deletion left everything green, meaning they had been
+doing nothing detectable for a while. All three had been added deliberately after past reviews. One
+of them was written yesterday, in the change you merged an hour ago, and shipped with no test — that
+is the third time in this session a fix landed unguarded, which is a pattern worth naming rather
+than a one-off.
+
+Then the review round found two more problems in the new work, both real. The stricter one: a safety
+marker I added, meant to let test data mention a dangerous pattern without tripping the alarm, could
+be abused to switch the alarm off for real code — and worse, could switch it off by accident if the
+marker text merely appeared inside a piece of text. It now reads the code properly rather than
+matching lines, and it flatly refuses to excuse code that actually runs. The reviewer also caught me
+asserting something confidently and wrongly: I had dismissed one test as pointless on reasoning that
+does not hold, and it turned out to cover a real case.
+
+One cost worth knowing: this check now takes three minutes instead of thirteen seconds, because it
+runs a large test suite twenty-one times over. That is a real slowdown on every change, and if it
+becomes annoying the fix is to run them in parallel rather than to check less.
+
+Waiting on you: whether to merge, and nothing else.
+<!--tech-->
+Branch `feat/mutation-coverage-for-the-runner`. Backlog **#74** filed; Phase 6 **candidate 4 CLOSED
+as answered-no-flattening**, dispositions recorded in `docs/reviews/architecture-review-2026-08-30.md`.
+
+`scripts/mutations/check-plan-code.json` — 21 entries. `EXPECTED_MUTATIONS` = gen-dashboard 47 +
+page_markup 14 + check-dashboard-entry 12 + check-plan-code 21 = **94**. `--self-test` 152 → 158.
+Not circular: the orchestrator is the repo copy, the target is the temp copy, and the nested spawn
+inherits `child_env`'s redirected `HOME` from PR #181.
+
+Discovery: of 17 candidates, 13 reddened a case and **4 survived at 152/152** — 2 were equivalent
+mutants of mine, 3 were real gaps (after-sequence control; duplicate-anchor refusal; `check()`'s
+`.home` mkdir, i.e. PR #181's own fix).
+
+Review round: Codex High — `ESCAPE_EXEMPT` had two bypasses (marker inside a string literal dropped
+the whole line; marker on live code exempted live code). `home_escapes` is now tokenised: the marker
+counts only as a `COMMENT` token, and exempts only when the route vanishes with `STRING` tokens
+blanked. Unparseable source is scanned raw with no exemptions. Codex Medium — my "semantically
+equivalent" dismissal of `caught = rc == 1` → `rc != 0` was WRONG (`rc == 2: continue` excludes 2
+only; rc 3 would be credited as caught); it now has cases and is in the manifest.
+
+⚠ The harness refused my predicted `expect` on one entry — the mutation reddened four other cases —
+so the entry was narrowed and its `expect` taken from the run. Third occurrence of predicting rather
+than measuring an `expect`. ⚠ `--mutate .` 13s → **3m13s**.
