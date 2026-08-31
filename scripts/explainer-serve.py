@@ -84,6 +84,7 @@ import pathlib
 import re
 import signal
 import socket
+import subprocess
 import sys
 import urllib.parse
 from typing import Callable
@@ -97,6 +98,18 @@ ROOT = pathlib.Path.home() / "explainers"
 PIDFILE = ROOT / ".serve.pid"
 QUESTIONS = ROOT / "questions.md"
 MAX_BODY = 64 * 1024
+
+SCRIPTS = pathlib.Path(__file__).resolve().parent
+REGEN_TIMEOUT = 300
+# ⚠ The ONLY pages `POST /regenerate` may rebuild. A dict of LITERALS, deliberately: the
+# caller names a key, never a path or an argument, so nothing it sends reaches the
+# command line. Adding a page here is a visible act; resolving one from the request
+# would not be. Backlog #77.
+REGENERABLE = {
+    "dashboard": "gen-dashboard.py",
+    "backlog-table": "gen-backlog-page.py",
+    "goals": "gen-goals-page.py",
+}
 SERVABLE = {".html", ".md", ".css", ".js", ".svg", ".png"}
 
 # OPTIONAL second read-only root, for pages that want to link at the SOURCE they were derived from.
@@ -708,8 +721,44 @@ class Handler(http.server.BaseHTTPRequestHandler):
             body += RELOAD_JS.encode()   # appended, so a page that lacks </body> still gets it
         return self._send(200, body, ctype)
 
+    def _regenerate(self, payload: dict) -> None:
+        """Rebuild one derived page. Backlog #77.
+
+        ⚠ THE ALLOW-LIST IS THE WHOLE SECURITY ARGUMENT, and it is a dict of literals:
+        the caller names a KEY, never a path, an argument or a command. Nothing the
+        caller sends reaches the command line — a request for an unknown page is a 400
+        naming the legal set, not an attempt to resolve it. `shell=False` (a list argv)
+        and a timeout are the belt to that brace.
+
+        This is a POST from a page served on 127.0.0.1, so it is reachable only from this
+        machine. It still executes a generator, which is why the surface is three fixed
+        names rather than "run the script the page asks for".
+        """
+        want = payload.get("page")
+        script = REGENERABLE.get(want) if isinstance(want, str) else None
+        if script is None:
+            body = (f"unknown page {want!r}. Rebuildable pages are: "
+                    f"{', '.join(sorted(REGENERABLE))}.")
+            return self._send(400, body.encode("utf-8"), "text/plain; charset=utf-8")
+        try:
+            r = subprocess.run([sys.executable, str(SCRIPTS / script)],
+                               capture_output=True, text=True, timeout=REGEN_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            # A timeout is NOT a failure to report as "rebuilt". The reader is told the
+            # page may now be half-written, because silence here reads as success.
+            return self._send(504, (f"{script} did not finish in {REGEN_TIMEOUT}s — the page "
+                                    f"may be unchanged. NOT REBUILT.").encode(),
+                              "text/plain; charset=utf-8")
+        if r.returncode != 0:
+            tail = (r.stderr or r.stdout or "").strip()[-400:]
+            return self._send(500, f"{script} exited {r.returncode}. NOT REBUILT.\n{tail}"
+                              .encode("utf-8"), "text/plain; charset=utf-8")
+        return self._send(200, json.dumps({"ok": True, "page": want}).encode(),
+                          "application/json")
+
     def do_POST(self) -> None:  # noqa: N802
-        if self.path.split("?", 1)[0] != "/questions":
+        route = self.path.split("?", 1)[0]
+        if route not in ("/questions", "/regenerate"):
             return self._send(404, b"not found", "text/plain; charset=utf-8")
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -723,6 +772,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 raise ValueError("not an object")
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
             return self._send(400, b"expected a JSON object", "text/plain; charset=utf-8")
+        if route == "/regenerate":
+            return self._regenerate(payload)
         # Reject rather than record "(empty)" — see question_text(). The 400 body names the key,
         # because the measured failure was a caller sending the RIGHT question under the WRONG name.
         if question_text(payload) is None:
