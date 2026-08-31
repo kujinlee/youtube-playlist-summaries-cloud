@@ -120,7 +120,7 @@ A grammar, not an example — round 3 found v4's version was still only an examp
 | Technical detail | after a line that is **exactly** `<!--tech-->`; optional |
 | `##` inside detail | only column-0 `## ` splits blocks; indent or fence it to include one literally |
 | Marker in prose | only a line that is exactly `<!--tech-->` is a marker; inline occurrences are text |
-| Ordering | file order, rendered newest-date-first; ties keep file order |
+| Ordering | rendered **newest-first throughout** — newest date first, and within a date the last entry written renders first. ⟳ **CHANGED 2026-08-31, backlog #75.** This row previously said *"ties keep file order"*, which put a day's OLDEST entry on top. Measured that day: seven entries dated 2026-08-30 formed one tie group, so the newest work sat seven cards below the fold and a **current** page was reported as stale. The rule was harmless at one or two entries a day and defeats the anchor (`status-visibility`) at seven. ⚠ **Id assignment is unchanged** and must stay so — `N` is still file order within the date (row above), because ids are positional and a standing `[resolved: <id>]` points at one; letting render order reach id assignment would silently rebind every resolution |
 | Absent or empty file | **not an error** — the page renders "no entries yet" and says where the file would live |
 | Malformed block | rendered **in place**, raw, under a visible "could not parse this entry" label, and the page still renders everything else |
 

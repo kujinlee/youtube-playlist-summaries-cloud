@@ -567,7 +567,13 @@ def _ordered(entries: list[dict]) -> list[dict]:
     two rules instead of trying to encode both in one sort key.
     """
     valid = [(i, e) for i, e in enumerate(entries) if not e["error"]]
-    order = sorted(valid, key=lambda p: (p[1]["date"] or "", -p[0]), reverse=True)
+    # ⟳ 2026-08-31, backlog #75: `p[0]`, not `-p[0]` — within a date the LAST entry
+    # written renders FIRST. The old key put the day's oldest entry on top, which was
+    # harmless at one or two entries a day and actively misleading at seven: a day with
+    # seven entries is one tie group, so the newest work sat seven cards below the fold
+    # and the reader's conclusion was that the generator had stopped running. A page whose
+    # stated job is "see the current state" must not be able to look stale while correct.
+    order = sorted(valid, key=lambda p: (p[1]["date"] or "", p[0]), reverse=True)
     rank = {i: r for r, (i, _) in enumerate(order)}
     out = [e for _, e in order]
     placed: dict[int, int] = {}
@@ -1288,8 +1294,26 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
 
     tie = parse_entries("## 2026-08-28\nFIRST in file.\n## 2026-08-28\nSECOND in file.\n")
     ht = _B(tie, bucket_days([], tie, 2, "2026-08-28"))
-    case("same-date ties keep file order",
-         ht.index("FIRST in file.") < ht.index("SECOND in file."), True)
+    case("same-date entries render NEWEST first, not file order",
+         ht.index("SECOND in file.") < ht.index("FIRST in file."), True)
+    # ⚠ THE COUPLING THIS CHANGE COULD HAVE BROKEN. Entry ids are POSITIONAL — `N` counts
+    # file order within a date — and a standing `[resolved: <id>]` points at one. If the
+    # render order ever leaked into id assignment, reordering the page would silently
+    # rebind every resolution to a different entry. Ids are claimed at parse time
+    # (`:367`), so they must be unmoved by the sort above; this is the case that says so.
+    case("...and the FIRST entry in the file still owns id /1",
+         ht.index("2026-08-28/1") > ht.index("SECOND in file."), True)
+    case("...so ids follow the FILE, not the page", ("2026-08-28/1" in ht, "2026-08-28/2" in ht),
+         (True, True))
+    # Seven entries in one day is the shape that produced the report; two does not
+    # distinguish "newest first" from "reversed" convincingly on its own.
+    seven = parse_entries("".join(f"## 2026-08-30\nentry number {n}.\n" for n in range(1, 8)))
+    h7 = _B(seven, bucket_days([], seven, 2, "2026-08-30"))
+    case("with seven same-date entries the NEWEST is the first card",
+         h7.index("entry number 7.") < h7.index("entry number 1."), True)
+    case("...and they read strictly newest-to-oldest",
+         [h7.index(f"entry number {n}.") for n in range(7, 0, -1)]
+         == sorted(h7.index(f"entry number {n}.") for n in range(1, 8)), True)
     case("the entry id is rendered", "2026-08-28/1" in ht, True)
     all_ids = re.findall(r'\sid="([^"]+)"', ht)
     case("no duplicate DOM ids", len(all_ids), len(set(all_ids)))

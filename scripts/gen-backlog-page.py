@@ -246,6 +246,12 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
         (73, "A superseded piece of that same inventory is still in the file, and the only thing "
              "that still runs it is its own test — so part of its reported coverage is of "
              "machinery nothing uses. Waiting on the decision above."),
+        (76, "None of these pages lets you choose light or dark; they follow whatever your "
+             "computer is set to. Two of them contain the styling for a switch that was never "
+             "built, and a checking script claims in writing that the switch exists."),
+        (77, "None of these pages tells you when it was made, and nothing rebuilds them when the "
+             "underlying work moves on — so a page can quietly fall behind with no way for you "
+             "to tell. A refresh button and a timestamp, built once for all of them."),
      ]),
 ]
 
