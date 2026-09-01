@@ -220,5 +220,66 @@
     "expect": [
       "a 4-space nest does not DROP the options after it"
     ]
+  },
+  {
+    "name": "entry-attempt regex stops excluding sub-headings",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "ENTRY_ISH = re.compile(r\"^\\+##(?!#)\")",
+        "ENTRY_ISH = re.compile(r\"^\\+##\")"
+      ]
+    ],
+    "expect": "a level-3 heading is not an entry attempt"
+  },
+  {
+    "name": "content check forgets to strip the diff marker",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        err = header_error(line[1:])",
+        "        err = header_error(line)"
+      ]
+    ],
+    "expect": [
+      "a well-formed added header is not",
+      "...nor is a well-formed bare one"
+    ]
+  },
+  {
+    "name": "the content check sinks below the exemption short-circuit",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "    if entry_problems:",
+        "    if entry_problems and False:"
+      ]
+    ],
+    "expect": [
+      "entry-only branch with a MALFORMED entry is refused",
+      "a NO-ENTRY declaration does NOT excuse a malformed entry"
+    ]
+  },
+  {
+    "name": "collect stops reading the entry patch it already fetched",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "    problems = added_entry_problems(patch.stdout)",
+        "    problems = []"
+      ]
+    ],
+    "expect": "collect: a malformed ADDED header reaches the caller as a problem"
+  },
+  {
+    "name": "main drops the entry problems on the floor",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "    code, reason = verdict(changed, added, body, entry_problems)",
+        "    code, reason = verdict(changed, added, body)"
+      ]
+    ],
+    "expect": "main: an entry-only branch with a malformed entry exits 1"
   }
 ]
