@@ -1,0 +1,41 @@
+<!-- codex-review: NOT written by scripts/codex-review.py -->
+
+# Codex adversarial review — codex-gate-artifact-safety (round 1)
+
+⚠ **HOW THIS FILE GOT HERE IS ITSELF THE FINDING.** It was written by the Codex agent directly,
+during an end-to-end verification run on 2026-09-01 whose `--out` pointed at a temp file. Nobody
+passed this path to anything: the agent inferred it from the BRANCH NAME and wrote it under
+`-s danger-full-access`. That is the round-3 failure of backlog #68 reproducing live, on the branch
+fixing it, past the first version of the fix — which watched only `--out`'s directory and so was
+looking at the temp dir while the write landed in `docs/reviews/`.
+
+Nothing was overwritten (the path was new) and nothing else in the repo was touched — verified by
+`find -newermt` and `git log` on the path. The review below is kept because it is a real adversarial
+review of this branch and its Blocking #1 is correct. Its findings are addressed in the same commit:
+`ARTIFACT_ROOTS` now watches `docs/reviews/` regardless of where `--out` points, a failed gate
+QUARANTINES agent-created files instead of merely reporting them, and both stale `plugins.md` claims
+are corrected. The self-test grew 28 → 35.
+
+---
+
+**Blocking**
+
+1. **The intrusion detector watches only `--out`'s directory, so the documented safe call shape is blind to the real artifact directory.**  
+   [scripts/codex-review.py:366](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/scripts/codex-review.py:366) derives the protected directory solely from `args.out`, and both checks compare only snapshots of that directory: success at [scripts/codex-review.py:398](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/scripts/codex-review.py:398), failure at [scripts/codex-review.py:418](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/scripts/codex-review.py:418). But backlog #68 records the successful manual mitigation as "`--out` points OUTSIDE the repository so a direct write cannot reach a real artifact and the file is promoted only when the wrapper reports success" [docs/backlog.md:96](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/docs/backlog.md:96). Under that safer call shape, an agent that infers `docs/reviews/plan-project-dashboard-r3-codex.md` again will modify `docs/reviews/`, while this code snapshots only the external temp directory and reports no intrusion. The branch therefore protects the old direct-`--out docs/reviews/...` usage better than the safer temp-and-promote usage that the incident itself established. Fix by making the protected artifact roots explicit (at minimum `docs/reviews/` when running from this repo), or by implementing the temp-output/promote flow inside the wrapper so it can watch the final artifact directory independently of the capture path.
+
+2. **A failed gate still leaves newly-created artifacts in place, which preserves the exact failure mode when the wrapper status is missed.**  
+   On the failure path, `unexpected_writes(...)` is used only to print diagnostics [scripts/codex-review.py:418](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/scripts/codex-review.py:418) through [scripts/codex-review.py:425](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/scripts/codex-review.py:425); it does not remove created files, quarantine them, or restore overwritten files. Backlog #68's required shape says a "failed gate must not be able to leave an artifact" [docs/backlog.md:96](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/docs/backlog.md:96), and the measured chain includes the caller masking the wrapper's exit code. This implementation improves observability when a human reads stderr, but if the caller repeats the known `; echo` mistake, the stale or agent-written review file is still present in `docs/reviews/` and can still be mistaken for a filed gate artifact. For created files, the wrapper has enough information to delete or move them before exit. For overwrites, the current hash-only snapshot is insufficient; it would need saved bytes or a preflight refusal/promotion design that prevents committed artifacts from being the direct target.
+
+**High**
+
+1. **The docs still advertise the old direct-in-repo `--out` pattern and stale self-test count.**  
+   [docs/plugins.md:153](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/docs/plugins.md:153) still tells callers to run `--out docs/reviews/task-N-<name>-codex.md`, even though backlog #68 says the hand mitigation used an outside-repo output plus promotion on success [docs/backlog.md:96](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/docs/backlog.md:96). The same section says "`--self-test` (15 cases)" at [docs/plugins.md:174](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/docs/plugins.md:174), while the changed script now reports `28/28`. Because #68 explicitly includes "`docs/plugins.md` states the per-half output contract where the dispatch decision is made" as part of the shape, leaving this page unchanged means the operational path that caused the incident remains the documented preferred path.
+
+**Verification**
+
+- `python3 scripts/codex-review.py --self-test` -> `28/28 passed`
+- `python3 -m py_compile scripts/codex-review.py scripts/codex-frontier-model.py` -> passed
+
+**Verdict**
+
+Not converged. The classifier and prompt-warning additions are covered, but the artifact-safety mechanism is still narrower than the incident and the documented mitigation require.

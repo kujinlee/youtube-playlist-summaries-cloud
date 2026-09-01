@@ -49,6 +49,7 @@ Exit codes:  0 = a real review was written   |   1 = no candidate produced one (
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import re
 import subprocess
@@ -96,6 +97,151 @@ def _names_own_output(body: str, out_path: str) -> bool:
     """
     base = os.path.basename(out_path)
     return bool(base) and base in body
+
+
+# ── backlog #68: a failed gate must not be able to leave an artifact ────────────────────────────
+# MEASURED 2026-08-28/29, round 3 of the project-dashboard plan review. The wrapper passes codex
+# only `-o <tempfile>`; the real `--out` is never given to the agent. The brief said "write to the
+# review path you were given" — which named nothing — so the agent INFERRED
+# `docs/reviews/plan-project-dashboard-r3-codex.md` from the prior-round filenames listed in the
+# brief, and under `-s danger-full-access` wrote there. Over a COMMITTED artifact. Four models were
+# tried, each overwriting the last, and the file's verdict flipped from NO to YES between one read
+# and the next. THE WRAPPER WROTE NOTHING AT ANY POINT — every version on disk came from the
+# agents' own writes, which is precisely why "we only write on success" was not protection.
+#
+# The wrapper cannot stop an agent writing where it likes. It CAN refuse to be the thing that
+# silently loses a filed review, and it can SEE the writes and say so.
+
+def prompt_demands_a_file(text: str) -> "str | None":
+    """The phrase telling the agent to WRITE a file, or None. PURE.
+
+    This is the one input that guarantees a rejected capture: the wrapper decides success solely by
+    whether the final message IS the review, so a brief that tells the agent to write a file makes
+    the final message a *report of having written one* — which `_names_own_output` then correctly
+    rejects. Round 3 used one shared brief for both halves; correct for the Claude subagent, which
+    writes files, fatal for Codex. Round 2's brief, same wrapper and same model ladder, never
+    mentions writing anything and captured cleanly. ONE SENTENCE was the entire difference.
+
+    Deliberately narrow. It matches an instruction aimed at the agent about *the review*, not any
+    mention of writing — a review prompt discussing a script that writes files must not trip it.
+    """
+    patterns = (
+        r"write\s+(?:the|your|it|this)\s+(?:review|findings|report|output)\s+to\b",
+        r"write\s+to\s+the\s+(?:review|output)\s+path\b",
+        r"save\s+(?:the|your)\s+(?:review|findings|report)\s+(?:to|as|in)\b",
+        r"(?:create|produce)\s+(?:a|the)\s+file\s+at\b",
+        r"output\s+file\s*[:=]",
+    )
+    for pat in patterns:
+        m = re.search(pat, text, re.I)
+        if m:
+            return m.group(0)
+    return None
+
+
+def _digest(path: str) -> str:
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# The directories an agent has actually been observed to guess its way into. `docs/reviews/` is
+# NOT optional and is NOT derived from `--out`:
+#
+# ⚠ MEASURED ON THIS BRANCH, 2026-09-01, while verifying this very fix. A test run with
+# `--out <tempdir>/exists.md` ended with a real adversarial review at
+# `docs/reviews/codex-gate-artifact-safety-review.md` — a path never passed to anything. The agent
+# inferred it from the BRANCH NAME and wrote it under `-s danger-full-access`. The first version of
+# this code snapshotted only `--out`'s directory, so it watched the temp dir and reported nothing
+# while the write landed in the repo. The round-3 failure reproduced live, on the branch fixing it,
+# past the fix. Watching `--out` alone protects the unsafe call shape and misses the safe one, which
+# is backwards: the documented mitigation puts `--out` OUTSIDE the repo precisely so a direct write
+# cannot reach an artifact — and that is exactly when `--out`'s directory is the wrong thing to watch.
+ARTIFACT_ROOTS = ("docs/reviews",)
+
+
+def watched_dirs(out_path: str) -> "list[str]":
+    """Every directory whose contents must not change behind the wrapper's back. PURE-ish."""
+    dirs = [os.path.dirname(os.path.abspath(out_path)) or "."]
+    for rel in ARTIFACT_ROOTS:
+        d = os.path.join(REPO_ROOT, rel)
+        if os.path.isdir(d) and d not in dirs:
+            dirs.append(d)
+    return dirs
+
+
+def snapshot_all(dirs: "list[str]") -> "dict[str, dict[str, str]]":
+    return {d: dir_snapshot(d) for d in dirs}
+
+
+def intrusions(before: "dict[str, dict[str, str]]", after: "dict[str, dict[str, str]]",
+               ours: "set[str]") -> "list[tuple[str, str, str]]":
+    """(directory, filename, what) for every change the wrapper did not make. PURE."""
+    out = []
+    for d, b in before.items():
+        for line in unexpected_writes(b, after.get(d, {}), ours):
+            name, _, what = line.partition(": ")
+            out.append((d, name, what))
+    return out
+
+
+def quarantine(created: "list[tuple[str, str]]", dest: str) -> "list[str]":
+    """Move agent-CREATED files out of the artifact tree. Returns what moved.
+
+    ⚠ ONLY created files, and that limit is stated rather than papered over. An OVERWRITTEN file
+    cannot be restored from a hash — the snapshot keeps digests, not bytes — so the honest remedy
+    there is `git checkout --`, which the caller is told verbatim. Keeping a full byte copy of
+    `docs/reviews/` (600+ files) on every run to cover a case git already covers would be the more
+    expensive half of a worse trade.
+    """
+    moved = []
+    os.makedirs(dest, exist_ok=True)
+    for d, name in created:
+        src = os.path.join(d, name)
+        try:
+            os.replace(src, os.path.join(dest, name))
+            moved.append(src)
+        except OSError:
+            continue
+    return moved
+
+
+def dir_snapshot(directory: str) -> "dict[str, str]":
+    """{filename: sha256} for the files directly in `directory`. Missing dir -> {}. PURE-ish."""
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return {}
+    out = {}
+    for n in sorted(names):
+        p = os.path.join(directory, n)
+        if os.path.isfile(p):
+            try:
+                out[n] = _digest(p)
+            except OSError:
+                continue
+    return out
+
+
+def unexpected_writes(before: "dict[str, str]", after: "dict[str, str]",
+                      written_by_us: "set[str]") -> "list[str]":
+    """Files the AGENT changed or created behind the wrapper's back. PURE.
+
+    `written_by_us` is what this process deliberately wrote, so promoting a review is not reported
+    as an intrusion. Everything else in the review directory changing during a review run means the
+    agent reached past `-o <tempfile>` — the round-3 failure, which nothing detected at the time.
+    """
+    problems = []
+    for name, sha in sorted(after.items()):
+        if name in written_by_us:
+            continue
+        if name not in before:
+            problems.append(f"{name}: CREATED by the agent during the run")
+        elif before[name] != sha:
+            problems.append(f"{name}: OVERWRITTEN by the agent during the run")
+    for name in sorted(set(before) - set(after)):
+        problems.append(f"{name}: DELETED during the run")
+    return problems
 
 
 def classify(exit_code: int, stdout: str, message: "str | None",
@@ -242,6 +388,8 @@ def main() -> int:
     ap.add_argument("--timeout", type=int, default=900, help="per-attempt timeout in seconds")
     ap.add_argument("--min-chars", type=int, default=MIN_REVIEW_CHARS,
                     help="minimum final-message length that counts as a real review")
+    ap.add_argument("--allow-overwrite", action="store_true",
+                    help="permit --out to replace an existing file (refused by default: backlog #68)")
     ap.add_argument("--self-test", action="store_true", help="run classifier checks and exit")
     args = ap.parse_args()
 
@@ -256,6 +404,39 @@ def main() -> int:
             prompt = f.read()
     if not prompt:
         ap.error("provide a prompt argument or --prompt-file")
+
+    # ── backlog #68 (b): the one input that guarantees a rejected capture ──
+    # Warn rather than refuse: a brief is free to *discuss* writing files, and a wrapper that
+    # refused would eventually be worked around. But this is loud, and it is repeated in the
+    # failure block below, because in round 3 the run "succeeded" in the caller's eyes while the
+    # gate had not run at all.
+    demand = prompt_demands_a_file(prompt)
+    if demand:
+        print(f"[codex-review] ⚠ THE PROMPT TELLS THE AGENT TO WRITE A FILE ({demand!r}).\n"
+              f"[codex-review]   This wrapper decides success ONLY by whether the final message IS\n"
+              f"[codex-review]   the review, so such a brief makes the final message a report of\n"
+              f"[codex-review]   having written one — which is then correctly rejected. Round 3 lost\n"
+              f"[codex-review]   a whole review half to exactly this one sentence.\n"
+              f"[codex-review]   Say instead: 'your final message IS the review; write no file.'",
+              file=sys.stderr)
+
+    # ── backlog #68 (a): see the agent's own writes ──
+    # The wrapper writes `--out` only on success, which was never the protection it looked like:
+    # under `-s danger-full-access` the AGENT writes wherever it infers, and in round 3 it inferred
+    # a committed review path from the filenames listed in the brief. Snapshot the destination
+    # directory so an intrusion is detected and named instead of being discovered days later.
+    out_dir = os.path.dirname(os.path.abspath(args.out)) or "."
+    out_name = os.path.basename(args.out)
+    watched = watched_dirs(args.out)
+    before = snapshot_all(watched)
+    if out_name in before.get(out_dir, {}) and not args.allow_overwrite:
+        print(f"[codex-review] REFUSING — {args.out} already exists.\n"
+              f"[codex-review]   A filed review is an artifact; replacing it silently is what this\n"
+              f"[codex-review]   check exists to stop (measured: four models overwrote one file in\n"
+              f"[codex-review]   turn, and its verdict flipped from NO to YES between two reads).\n"
+              f"[codex-review]   Choose a new path, or pass --allow-overwrite deliberately.",
+              file=sys.stderr)
+        return 2
 
     models = [args.model] if args.model else resolve_candidates()
     print(f"[codex-review] candidates: {', '.join(models)}", file=sys.stderr)
@@ -277,6 +458,16 @@ def main() -> int:
             with open(args.out, "w", encoding="utf-8") as f:
                 f.write(f"<!-- codex-review: model={slug} -->\n\n")
                 f.write(body + "\n")
+            hits = intrusions(before, snapshot_all(watched), {out_name})
+            if hits:
+                print("[codex-review] ⚠ THE AGENT WROTE BEHIND THE WRAPPER:", file=sys.stderr)
+                for d, name, what in hits:
+                    print(f"[codex-review]     {os.path.join(d, name)} — {what}", file=sys.stderr)
+                print("[codex-review]   The review above was captured from the final message and is "
+                      "valid, but those\n[codex-review]   files are not it. Inspect with `git diff` "
+                      "/ `git status`, restore any overwrite\n[codex-review]   with `git checkout "
+                      "--`, and fix the brief so it does not tell the agent to write.",
+                      file=sys.stderr)
             print(f"[codex-review] OK via {slug} -> {args.out} ({reason})", file=sys.stderr)
             return 0
 
@@ -284,6 +475,34 @@ def main() -> int:
 
     print("\n[codex-review] FAILED — no candidate produced a usable review.", file=sys.stderr)
     print("\n".join(attempts), file=sys.stderr)
+    # A FAILED GATE MUST NOT LEAVE AN ARTIFACT. The wrapper writes nothing on this path — but the
+    # agent may have, which is the round-3 failure exactly. Say so, loudly, on the path where the
+    # caller is about to conclude "the gate did not run".
+    hits = intrusions(before, snapshot_all(watched), set())
+    if hits:
+        print("[codex-review] ⚠ AND THE AGENT WROTE DESPITE THE FAILURE:", file=sys.stderr)
+        for d, name, what in hits:
+            print(f"[codex-review]     {os.path.join(d, name)} — {what}", file=sys.stderr)
+        # A FAILED GATE MUST NOT LEAVE AN ARTIFACT. Reporting alone was not enough: if the caller
+        # misses the exit code — the measured fourth occurrence of that trap — an agent-written file
+        # sits in docs/reviews/ looking exactly like a filed gate artifact. So created files are
+        # MOVED OUT. Overwrites cannot be undone from a digest; git is the remedy and is named.
+        created = [(d, n) for d, n, what in hits if what.startswith("CREATED")]
+        if created:
+            dest = tempfile.mkdtemp(prefix="codex-review-quarantine-")
+            moved = quarantine(created, dest)
+            if moved:
+                print(f"[codex-review]   QUARANTINED {len(moved)} agent-created file(s) -> {dest}",
+                      file=sys.stderr)
+                print("[codex-review]   A failed gate leaves no artifact behind. Nothing was "
+                      "deleted; inspect them there.", file=sys.stderr)
+        if any(w.startswith("OVERWRITTEN") or w.startswith("DELETED") for _, _, w in hits):
+            print("[codex-review]   ⚠ An existing file was overwritten or deleted and CANNOT be "
+                  "restored from a digest.\n[codex-review]   Run `git checkout -- <path>` for each "
+                  "one listed above.", file=sys.stderr)
+    if demand:
+        print(f"[codex-review] ⚠ LIKELY CAUSE: the prompt says {demand!r}. See the warning above.",
+              file=sys.stderr)
     print("[codex-review] The Codex gate did NOT run. Fall back to a Claude adversarial review "
           "and note the gap in the review doc.", file=sys.stderr)
     return 1
@@ -361,7 +580,85 @@ def self_test() -> int:
         if not ok:
             print(f"         expected {want}")
             failures += 1
-    print(f"\n{len(cases) - failures}/{len(cases)} passed")
+    # ── backlog #68: the artifact-safety half ──────────────────────────────────────────────────
+    extra = 0
+
+    def chk(name: str, got, want) -> None:
+        nonlocal failures
+        nonlocal extra
+        extra += 1
+        ok = got == want
+        print(f"  [{'PASS' if ok else 'FAIL'}] {name}: got={got!r}")
+        if not ok:
+            print(f"         expected {want!r}")
+            failures += 1
+
+    # (b) The exact sentence from the round-3 brief must be caught.
+    chk("round 3's actual sentence is caught",
+        bool(prompt_demands_a_file("Output\n\nWrite the review to the review path you were given.")),
+        True)
+    chk("`Output file:` header is caught",
+        bool(prompt_demands_a_file("Output file: docs/reviews/x.md")), True)
+    chk("`save your findings as` is caught",
+        bool(prompt_demands_a_file("Then save your findings as a markdown file.")), True)
+    # ⚠ FALSE POSITIVES ARE THE REAL RISK. A review prompt legitimately DISCUSSES code that writes
+    # files; a matcher that trips on that would train people to ignore the warning.
+    chk("a prompt reviewing file-writing code does NOT trip it",
+        prompt_demands_a_file(
+            "Review gen-dashboard.py. It will write the page to ~/explainers and must not "
+            "overwrite a file it did not create. Does _write_sandbox hold?"), None)
+    chk("round 2's brief (which captured cleanly) does NOT trip it",
+        prompt_demands_a_file(
+            "You are reviewing a plan. Report Blocking/High/Medium/Low findings with file:line."),
+        None)
+
+    # (a) The intrusion detector.
+    base = {"a.md": "sha-a", "b.md": "sha-b"}
+    chk("nothing changed -> no report", unexpected_writes(base, dict(base), set()), [])
+    chk("the file WE wrote is not an intrusion",
+        unexpected_writes(base, {**base, "out.md": "new"}, {"out.md"}), [])
+    chk("an agent-created file is reported",
+        unexpected_writes(base, {**base, "guessed.md": "x"}, set()),
+        ["guessed.md: CREATED by the agent during the run"])
+    # THE ROUND-3 FAILURE ITSELF: a committed review silently replaced.
+    chk("an overwritten committed review is reported",
+        unexpected_writes(base, {**base, "a.md": "different"}, set()),
+        ["a.md: OVERWRITTEN by the agent during the run"])
+    chk("a deleted file is reported",
+        unexpected_writes(base, {"a.md": "sha-a"}, set()),
+        ["b.md: DELETED during the run"])
+    chk("a missing directory snapshots empty, never raises",
+        dir_snapshot("/nonexistent/path/for/self/test"), {})
+
+    # THE DEFECT THIS BRANCH REPRODUCED IN ITSELF. Watching only --out's directory means that when
+    # --out is OUTSIDE the repo — the documented safe call shape — docs/reviews/ goes unwatched, and
+    # that is exactly where the agent guessed its way to. Measured live on this branch.
+    chk("docs/reviews is watched even when --out is outside the repo",
+        os.path.join(REPO_ROOT, "docs/reviews") in watched_dirs("/tmp/elsewhere/out.md"), True)
+    chk("--out's own directory is watched too",
+        "/tmp/elsewhere" in watched_dirs("/tmp/elsewhere/out.md"), True)
+    chk("no directory is watched twice",
+        len(watched_dirs(os.path.join(REPO_ROOT, "docs/reviews/x.md")))
+        == len(set(watched_dirs(os.path.join(REPO_ROOT, "docs/reviews/x.md")))), True)
+    chk("an intrusion is reported with the directory it happened in",
+        intrusions({"/d": {}}, {"/d": {"g.md": "x"}}, set()),
+        [("/d", "g.md", "CREATED by the agent during the run")])
+
+    # A failed gate must LEAVE NOTHING, not merely complain. Reporting alone was the first version,
+    # and it fails whenever the caller misses the exit code — the measured fourth occurrence.
+    with tempfile.TemporaryDirectory() as td:
+        src_dir = os.path.join(td, "reviews"); os.makedirs(src_dir)
+        stray = os.path.join(src_dir, "guessed.md")
+        with open(stray, "w") as f:
+            f.write("an agent wrote this")
+        moved = quarantine([(src_dir, "guessed.md")], os.path.join(td, "q"))
+        chk("a created file is moved out of the artifact tree", moved, [stray])
+        chk("…and is gone from where the agent put it", os.path.exists(stray), False)
+        chk("…and still exists in quarantine, never deleted",
+            os.path.exists(os.path.join(td, "q", "guessed.md")), True)
+
+    total = len(cases) + extra
+    print(f"\n{total - failures}/{total} passed")
     return 1 if failures else 0
 
 

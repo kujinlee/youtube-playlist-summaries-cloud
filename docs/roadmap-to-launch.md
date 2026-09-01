@@ -1554,6 +1554,38 @@ were wrong**.
       make this PR silently carry it. **Fails if** `scripts/mutations/check-selftest-counts.json`
       does not exist once that PR merges. Ability to fail was confirmed by hand meanwhile: control
       green, then rc=1 / rc=1 / rc=2 across three mutations on a temp copy.
+## Codex gate artifact safety — backlog #68 (a)(b)(c) — anchor `status-visibility` — 🔧 (d) OPEN
+
+The adversarial review gate could fail silently AND overwrite a committed review — and did, four
+times in one run, with the verdict flipping NO→YES between reads. The wrapper wrote nothing at any
+point; every version came from the agents' own writes, which is why "we only write on success" was
+never the protection it looked like.
+
+- [x] **(a) A failed gate cannot leave an artifact unnoticed** — refuses with exit **2** before
+      contacting any model when `--out` exists (`--allow-overwrite` is the deliberate escape), and
+      snapshots the `--out` directory, naming every file the agent created, overwrote or deleted on
+      BOTH the success and failure paths.
+- [x] **(b) The one input that guarantees failure is warned about** — `prompt_demands_a_file` quotes
+      the matched phrase. Kept narrow on purpose: two cases assert a prompt REVIEWING file-writing
+      code, and round 2's clean brief, do not trip it.
+- [x] **(c) The per-half contract is stated at the dispatch point** — `docs/plugins.md`, four lines;
+      story, control, exit codes and (d) in `process-rationale.md`. ⚠ `check-docs.py` refused the
+      first draft at 36 lines over budget; plugins.md now sits at exactly 260.
+- [x] **⚠ THE FIRST FIX WAS REFUTED BY ITS OWN VERIFICATION RUN.** An end-to-end test with `--out`
+      in a temp dir ended with a real Codex review at `docs/reviews/codex-gate-artifact-safety-review.md`
+      — a path passed to nothing, inferred from the BRANCH NAME. v1 watched only `--out`'s directory,
+      so it watched the temp dir while the write landed in the repo: it protected the UNSAFE call
+      shape and missed the safe one. `ARTIFACT_ROOTS` now watches `docs/reviews/` regardless of
+      `--out`. Nothing was overwritten; verified by `find -newermt` and `git log` on the path.
+- [x] **A failed gate now leaves NOTHING** — agent-CREATED files are quarantined (moved, never
+      deleted), not merely reported. Overwrites cannot be restored from a digest, so `git checkout --`
+      is named verbatim instead of pretended away.
+- [x] **35 self-test cases** (20 new) + end-to-end verification without invoking Codex.
+- [ ] **(d) DECISION, not engineering** — nothing stops a CALLER masking the exit code
+      (`… ; echo "WRAPPER_RC=$?"` reported the echo's status; `WRAPPER_RC=1` sat unread while the run
+      was treated as successful — the `$?`-after-the-wrong-command trap, a FOURTH occurrence here).
+      **Fails if** a caller can still discard the verdict once this is settled. Choose: constrain the
+      caller, or have the wrapper write its verdict to a file the caller must read.
 
 ⚠ **`--mutate .` runs 13s → 3m13s.** Real, measured, and not addressed here; the lever if it bites
 is parallelising the mutation loop, not dropping coverage.

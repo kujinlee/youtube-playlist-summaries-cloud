@@ -150,9 +150,14 @@ re-run) is fine; beyond that, fall back. The Claude adversarial review satisfies
 
 ```bash
 # PREFERRED — always for a real review prompt. See the backtick footgun below.
-python3 scripts/codex-review.py --prompt-file <path> --out docs/reviews/task-N-<name>-codex.md
-#   exit 0 = a real review was written    exit 1 = the gate did NOT run → fall back to Claude
+python3 scripts/codex-review.py --prompt-file <path> --out "$(mktemp -d)/r.md"  # then promote
+#   exit 0 = review written   exit 1 = gate did NOT run → fall back   exit 2 = REFUSED, see below
 ```
+
+> ### ⛔ OUTPUT CONTRACT IS PER HALF — Claude writes a file; **Codex must not**. Its brief says
+> *"your final message IS the review; write no file"*: the capture IS that message, so "write"
+> yields a *report* — rejected, gate silently not run. Enforcement, the overwritten committed
+> review, and open #68(d): [`process-rationale.md`](process-rationale.md) → *The review gate that wrote over its own evidence*.
 
 **Pass the prompt in a FILE, not as a shell argument (added 2026-08-04).** A review prompt is full of
 identifiers, and any **backtick** inside a double-quoted bash string is **command substitution** — the
@@ -171,7 +176,7 @@ writing an empty one, so the mangled run failed **loud**. A caller checking only
 
 It walks every candidate model in priority order, and decides success **solely** by whether
 `codex exec -o/--output-last-message` wrote a substantive final-message file — never the exit code,
-never stdout text. Run `--self-test` (15 cases) after touching it. Prefer it over raw `codex exec`
+never stdout text. Run `--self-test` (35 cases) after touching it. Prefer it over raw `codex exec`
 for anything that must actually produce a review; `scripts/codex-frontier-model.py` alone cannot
 guarantee a runnable model and says so in its docstring.
 

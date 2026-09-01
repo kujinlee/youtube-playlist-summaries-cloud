@@ -1275,3 +1275,83 @@ rc=2.
 ⚠ NOT DONE: no `scripts/mutations/` manifest entry. `EXPECTED_MUTATIONS` is edited by the open
 theme-token PR, and a second edit here would conflict; basing this branch on that one would make
 this PR silently carry it. Filed as follow-up, to land once that merges.
+
+## 2026-09-01
+The tool that runs the second opinion on our own work — an outside reviewer we ask to attack each
+plan — turned out to be able to fail without telling anyone, and on one occasion it destroyed the
+very thing it was supposed to produce. A review you had already committed was overwritten four times
+in one run, and its verdict flipped from "not ready" to "ready" between one reading and the next.
+
+None of that was a mistake in the reviewer. The instruction we sent it said, in one sentence, "write
+the review to the path you were given" — except no path was ever given, so it guessed one from the
+filenames of earlier reviews, guessed correctly, and wrote over a real file. The same instruction is
+right for our other reviewer, which does write files. One shared instruction, two reviewers that
+need opposite things.
+
+Three fixes, all in place. The tool now refuses outright, before contacting anything, if the file it
+would write already exists — so a review you have already filed cannot be quietly replaced; you can
+override that deliberately. It watches the folder while the reviewer works and names any file the
+reviewer touched behind its back, whether the run succeeded or failed. And it warns, quoting the
+exact phrase, whenever the instruction we are about to send contains a "write a file" order — the
+one input guaranteed to make the whole thing fail silently.
+
+**Waiting on you:** one part is a decision, not code. Nothing stops the *caller* from throwing away
+the tool's answer — that is how the original failure went unnoticed, with the real result sitting
+unread in a log. The choice is between constraining how it is called and having the tool write its
+verdict somewhere that must be read. Until you pick, the rule is to capture the result on its own
+line.
+<!--tech-->
+Backlog **#68 (a)(b)(c) shipped; (d) is the open decision.** `scripts/codex-review.py`: refuses with
+**exit 2 before contacting any model** when `--out` exists (`--allow-overwrite` to mean it);
+`dir_snapshot`/`unexpected_writes` name every file the agent CREATED, OVERWROTE or DELETED in the
+`--out` directory, reported on BOTH the success and failure paths; `prompt_demands_a_file` warns and
+quotes the matched phrase. 28 self-test cases, 13 new.
+
+⚠ The matcher is deliberately NARROW, and two cases exist to keep it so: a prompt that merely REVIEWS
+file-writing code must not trip it, and round 2's brief (which captured cleanly, same wrapper and
+model ladder) must stay silent. A warning that cries wolf gets ignored, which would rebuild the
+original failure with extra steps.
+
+`docs/plugins.md` states the per-half contract at the DISPATCH POINT in four lines and points onward;
+the round-3 story, its exact control, the exit codes and the open (d) decision moved to
+`docs/process-rationale.md` → *The review gate that wrote over its own evidence*. ⚠ `check-docs.py`
+refused the first draft — plugins.md was 36 lines over its 260-line budget — and its message is
+right: move detail, do not raise the budget. The file now sits at exactly 260.
+
+Verified end to end without invoking Codex: existing `--out` → `rc=2`, file byte-identical
+afterwards; `--allow-overwrite` proceeds to the model chain; a write-a-file prompt prints the warning
+quoting `'Write the review to'`.
+
+## 2026-09-01
+A correction to the entry above, which is worth more than the fix it corrects.
+
+While testing the new safeguard, the outside reviewer wrote a file into our reviews folder — a
+location nobody gave it, which it worked out from the name of the branch. That is precisely the
+failure the safeguard was built to stop, happening during the test of the safeguard, and getting
+past it. The reason is almost funny: the new watcher was told to watch wherever the output was being
+sent, and for that test the output was being sent to a scratch folder, so it watched the scratch
+folder attentively while the real folder was written to behind it.
+
+It watched the unsafe way of calling it and ignored the safe one.
+
+That is now fixed — the reviews folder is watched always, whatever the output setting says. And a
+failed run no longer merely complains about files the reviewer left behind; it moves them out of the
+way, so a run that failed cannot leave something behind that looks like a finished review. Nothing is
+deleted.
+
+The file the reviewer wrote turned out to be a genuine, and correct, critique of this very change. It
+has been kept, with a note at the top explaining how it arrived.
+<!--tech-->
+`ARTIFACT_ROOTS = ("docs/reviews",)`; `watched_dirs()` returns `--out`'s directory UNION the repo
+artifact roots, so the documented safe shape (`--out` outside the repo, promote on success) is no
+longer the blind spot. Failure path now QUARANTINES created files via `os.replace` into a temp dir
+and prints the destination; overwrites cannot be restored from a digest, so `git checkout --` is
+named rather than implied — the trade against keeping byte copies of 600+ review files every run is
+stated in the docstring. Self-test 28 → **35**.
+
+Also corrected, both caught by that same review: `plugins.md` claimed `--self-test (15 cases)` when
+it runs 35, and still advertised `--out docs/reviews/...` as the example — the very call shape the
+incident argued against.
+
+⚠ Verified nothing was lost: the path was new (`git log` on it shows no prior commit) and
+`find -newermt '-35 minutes'` reports no other modified file in the repo.
