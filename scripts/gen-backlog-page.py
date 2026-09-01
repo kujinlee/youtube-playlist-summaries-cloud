@@ -248,6 +248,11 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
         (73, "A superseded piece of that same inventory is still in the file, and the only thing "
              "that still runs it is its own test — so part of its reported coverage is of "
              "machinery nothing uses. Waiting on the decision above."),
+        (78, "The check that makes sure work gets written up cannot see a branch that ONLY writes "
+             "one up — the most common way an entry is added. One question is being answered by "
+             "one test: excusing a branch from owing an entry silently excuses the entry it added "
+             "from being well-formed. It also runs only when a pull request opens, by which time "
+             "you have already read the page."),
      ]),
 ]
 

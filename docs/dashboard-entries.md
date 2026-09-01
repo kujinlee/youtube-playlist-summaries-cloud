@@ -1085,3 +1085,21 @@ returns to "Nothing needs you."
 
 This is the first exercise of the resolution mechanism on an entry written in the new grammar — the
 same `[resolved: <id>]` marker for both categories, which is why no expiry was needed.
+
+## 2026-08-31 [heads-up]
+The backlog page refused to build until the newest item was described in plain words, which is the
+guard working rather than failing.
+
+Filing backlog #78 yesterday added a row the reader's backlog page had no plain-English line for, and
+that page will not render an item it cannot describe — it stops rather than quietly leaving it out.
+So the fix is one sentence explaining what #78 is, and the page builds again: 78 rows, 56 open.
+
+Worth knowing because it will happen to the next person who files something: the refusal is not a
+bug report, it is the page declining to show you an incomplete list.
+<!--tech-->
+`gen-backlog-page.py` `GROUPS` gains an entry for 78 under the guard-inventory group, beside #72/#73.
+`coverage_errors` fails both ways — an open item missing from `GROUPS`, and `GROUPS` naming an item
+that is no longer open — so it cannot drift in either direction.
+
+This is the first `[heads-up]` written under the grammar merged in PR #186: it asks nothing, so it
+carries no `**Decide:**` block, and it renders in "Worth knowing" rather than "What needs you".
