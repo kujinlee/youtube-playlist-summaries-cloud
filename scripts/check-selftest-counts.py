@@ -56,7 +56,7 @@ FAILS IF
 
 Usage:
     python3 scripts/check-selftest-counts.py
-    python3 scripts/check-selftest-counts.py --self-test  # 17 cases
+    python3 scripts/check-selftest-counts.py --self-test  # 18 cases
 """
 from __future__ import annotations
 
@@ -107,6 +107,18 @@ RATIO = re.compile(r"\b(\d+)\s*(?:/|\s+of\s+)\s*(\d+)\b")
 BORROWED = ("count_drift", "child_env")
 
 
+def borrow_errors(mod) -> list[str]:
+    """The borrowed names `mod` does NOT provide, in BORROWED order.
+
+    ⚠ A FUNCTION RATHER THAN AN INLINE COMPREHENSION, and a mutation run is why. The rule used to
+    live inside `_load_plan_code`, and the case asserting it re-derived the same comprehension over
+    `pc` — a SECOND implementation of one rule, so deleting the real one left the case green. It
+    was testing its own copy. Now the case calls this, and the refusal below calls this, so there
+    is one rule and the case reaches it.
+    """
+    return [n for n in BORROWED if not hasattr(mod, n)]
+
+
 def _load_plan_code():
     """Import `check-plan-code.py` by path — a hyphen makes it un-importable by name.
 
@@ -125,7 +137,7 @@ def _load_plan_code():
         raise ImportError("cannot load scripts/check-plan-code.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    missing = [n for n in BORROWED if not hasattr(mod, n)]
+    missing = borrow_errors(mod)
     if missing:
         raise ImportError(
             f"scripts/check-plan-code.py no longer defines {', '.join(missing)} — this script "
@@ -291,8 +303,12 @@ def self_test() -> int:
     check("a `12/12 self-test cases passed` summary reads 12",
           printed_total("\n12/12 self-test cases passed"), 12)
     check("a `self-test: 9/9 passed` summary reads 9", printed_total("self-test: 9/9 passed"), 9)
+    # ⚠ THE BARE RATIO MUST COME AFTER THE SUMMARY. Written the other way round this case was
+    # VACUOUS — measured 2026-09-01 by deleting the `passed` filter, which still returned 8,
+    # because last-match-wins discards an extra match that appears EARLIER. The `passed`
+    # requirement can only be observed by a stray ratio that would otherwise win.
     check("a ratio on a line without the word is ignored",
-          printed_total("scanned 3/4 files\n8/8 passed"), 8)
+          printed_total("8/8 passed\nscanned 3/4 files"), 8)
     check("no parseable line -> None, never 0",
           printed_total("everything is fine"), None)
     # THE DEFECT THIS SCRIPT FOUND IN ITSELF. A case label that quotes an example summary matches
@@ -307,8 +323,12 @@ def self_test() -> int:
           printed_total("32 of 32 self-test cases passed"), 32)
     # Found by mutating this script: a renamed upstream helper used to crash with rc=1, which is
     # the code for "a count disagrees" — the opposite of what happened.
-    check("every borrowed name is present upstream",
-          [n for n in BORROWED if not hasattr(pc, n)], [])
+    check("every borrowed name is present upstream", borrow_errors(pc), [])
+    # …and the rule itself reports a missing name rather than swallowing it. Without this the
+    # refusal in `_load_plan_code` has no case at all: the line above passes on a HEALTHY module
+    # whether the rule works or returns [] unconditionally.
+    check("a missing borrowed name is named, not swallowed",
+          borrow_errors(object()), list(BORROWED))
 
     # ── the population ratchet, both directions ──
     pinned = frozenset({"a.py", "b.py"})
@@ -316,8 +336,11 @@ def self_test() -> int:
           population_errors({"a.py", "b.py"}, pinned), [])
     check("a pinned script that stopped declaring fails",
           len(population_errors({"a.py"}, pinned)), 1)
+    # `any(...)` rather than `[0]`. Indexing RAISES when the list is empty, and an uncaught
+    # exception kills the suite — every later case then prints nothing, so a mutation that
+    # emptied this list would be scored on a truncated `[FAIL]` list rather than a red case.
     check("…and it names the script",
-          "b.py" in population_errors({"a.py"}, pinned)[0], True)
+          any("b.py" in e for e in population_errors({"a.py"}, pinned)), True)
     check("a new declaration outside POPULATION fails",
           len(population_errors({"a.py", "b.py", "c.py"}, pinned)), 1)
     # A drifted count must be reported THROUGH the borrowed function, not a local copy.

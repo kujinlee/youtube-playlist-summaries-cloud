@@ -1534,8 +1534,8 @@ replacing that line deletes the check invisibly. So the numbers were trusted, an
 were wrong**.
 
 - [x] **`scripts/check-selftest-counts.py`** — runs each declaring suite as a SUBPROCESS and
-      compares printed vs declared. 17 self-test cases, two CI callers, discovered by
-      `check-ratchet-contract.py` (25 guards).
+      compares printed vs declared. **18** self-test cases (17 at merge; the mutation step below
+      added the 18th), two CI callers, discovered by `check-ratchet-contract.py` (25 guards).
 - [x] **One convention, not a second one** — reuses `check-plan-code.count_drift` (the declaration
       form and its regex already existed) and `child_env` (six scripts resolve `Path.home()` at
       module level; a new spawner inherits no protection unless it asks).
@@ -1549,11 +1549,22 @@ were wrong**.
 - [x] **Two defects found in the work itself** — a first-match parser that read one of its own case
       labels (now last-match, with the two-summary limit pinned by a case), and a borrowed-name
       rename that crashed with rc=1 instead of CANNOT RUN (now asserted at load; the re-run exits 2).
-- [ ] **Mutation manifest entry** — deliberately deferred. `EXPECTED_MUTATIONS` is edited by the
-      open theme-token PR and a second edit would conflict; basing this branch on that one would
-      make this PR silently carry it. **Fails if** `scripts/mutations/check-selftest-counts.json`
-      does not exist once that PR merges. Ability to fail was confirmed by hand meanwhile: control
-      green, then rc=1 / rc=1 / rc=2 across three mutations on a temp copy.
+- [x] **Mutation manifest entry** — deferred at merge (`EXPECTED_MUTATIONS` was being edited by the
+      open theme-token PR, and basing this branch on that one would make this PR silently carry it).
+      **DONE 2026-09-01**, once PR #191 landed: `scripts/mutations/check-selftest-counts.json`,
+      **8 entries**, `EXPECTED_MUTATIONS` 131 → 139 over 7 files, **0 survivors**. The hand-run
+      three (control green, then rc=1 / rc=1 / rc=2 on a temp copy) are now among them, mutating
+      the DELIVERED script.
+      ⭐ **And it found two defects in the suite it was measuring — which is the whole argument for
+      doing this rather than trusting the hand run.** (1) The case *"a ratio on a line without the
+      word is ignored"* was **VACUOUS**: the stray `3/4` sat BEFORE the real summary, so
+      last-match-wins discarded it and deleting the `passed` filter still returned 8. Measured, not
+      reasoned — the filter was removed in a scratch copy and the case stayed green. The input is
+      now ordered so the stray ratio would win. (2) *"every borrowed name is present upstream"*
+      re-derived the `hasattr` comprehension instead of calling it, so deleting the real rule in
+      `_load_plan_code` left the case green — **a second implementation of one rule, tested against
+      itself**. Extracted as `borrow_errors()`; the case and the refusal now share it, and a new
+      case covers the refusal's own branch. 17 → 18 cases.
 ## Codex gate artifact safety — backlog #68 (a)(b)(c) — anchor `status-visibility` — 🔧 (d) OPEN
 
 The adversarial review gate could fail silently AND overwrite a committed review — and did, four

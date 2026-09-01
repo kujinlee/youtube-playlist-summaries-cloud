@@ -1,0 +1,96 @@
+[
+  {
+    "name": "printed_total takes the FIRST summary instead of the last",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "        if m:\n            total = int(m.group(2))\n    return total",
+        "        if m:\n            return int(m.group(2))\n    return total"
+      ]
+    ],
+    "expect": [
+      "an earlier quoted summary does not win over the real one",
+      "a trailing SECOND summary is what gets read (known limit)"
+    ]
+  },
+  {
+    "name": "the `passed` requirement is dropped, so any ratio counts",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "        if \"passed\" not in line:\n            continue",
+        "        if False:\n            continue"
+      ]
+    ],
+    "expect": ["a ratio on a line without the word is ignored"]
+  },
+  {
+    "name": "the `N of M` arm is dropped from RATIO",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "RATIO = re.compile(r\"\\b(\\d+)\\s*(?:/|\\s+of\\s+)\\s*(\\d+)\\b\")",
+        "RATIO = re.compile(r\"\\b(\\d+)\\s*(?:/)\\s*(\\d+)\\b\")"
+      ]
+    ],
+    "expect": ["`32 of 32 … passed` reads 32"]
+  },
+  {
+    "name": "coverage may shrink — a pinned script that stopped declaring passes",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "    for name in sorted(pinned - found):",
+        "    for name in sorted(set()):"
+      ]
+    ],
+    "expect": [
+      "a pinned script that stopped declaring fails",
+      "…and it names the script"
+    ]
+  },
+  {
+    "name": "a new declaration may arrive unmeasured",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "    for name in sorted(found - pinned):",
+        "    for name in sorted(set()):"
+      ]
+    ],
+    "expect": ["a new declaration outside POPULATION fails"]
+  },
+  {
+    "name": "borrow_errors swallows a missing upstream name",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "    return [n for n in BORROWED if not hasattr(mod, n)]",
+        "    return []"
+      ]
+    ],
+    "expect": ["a missing borrowed name is named, not swallowed"]
+  },
+  {
+    "name": "a bare mention of `cases` counts as a declaration",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "    return \"CANNOT RUN\" not in (count_drift(doc, -1) or \"\")",
+        "    return \"cases\" in doc"
+      ]
+    ],
+    "expect": ["a bare `7 cases` mention is NOT a declaration"]
+  },
+  {
+    "name": "unparseable source is treated as a declaration",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "    except SyntaxError:\n        return False",
+        "    except SyntaxError:\n        return True"
+      ]
+    ],
+    "expect": ["unparseable source is not a declaration"]
+  }
+]
