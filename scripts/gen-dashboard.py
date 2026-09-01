@@ -260,15 +260,18 @@ def _prose(text: str, drop_headline: bool = False, settled: bool = False) -> str
         except Exception:
             asks = {}
 
-    # ⚠ `settled` is an ENTRY-level fact (the badge), and an entry may carry MORE
-    # THAN ONE ask. Review round 1: with two asks and one resolution, BOTH rendered
-    # as "Was decided" — the page asserting that a live, unanswered ask was settled.
-    # `[resolved: <id>]` names the ENTRY, never the ask, so with two asks the page
-    # genuinely cannot tell which. It therefore says the weaker true thing rather
-    # than the stronger false one, and keeps asking.
-    _settled_ok = settled and len(asks) == 1
+    # ⚠ RESOLUTION IS ENTRY-LEVEL, BY DESIGN, AND EVERY READER OF IT AGREES.
+    # `unresolved()` filters on `e["id"] not in cleared` (`:541`) — it clears the
+    # ENTRY, so a resolved entry's asks ALL leave the tray together. There is no
+    # such thing here as one settled and one live ask in the same entry.
+    #
+    # ⟳ A `settled and len(asks) == 1` guard stood here for one commit, added
+    # against a review finding that described PER-ASK resolution. That does not
+    # exist in this model, and the guard produced the defect the reader then
+    # reported: badge "resolved", tray empty, body still saying "Decide:" in
+    # warning colour. Conservatism against a hypothetical is still a wrong answer.
     return "".join(
-        _ask_block(asks.get(p), _settled_ok) or
+        _ask_block(asks.get(p), settled) or
         f'<p class="{"lede" if i == 0 else "body"}">{_inline(p)}</p>'
         for i, p in enumerate(paras))
 
@@ -320,11 +323,23 @@ def _ask_block(d: dict | None, settled: bool) -> str:
 
     items = "".join(
         f'<li>{_inline(o["text"])}'
-        f'{" <span class=\"rec\">recommended</span>" if o["recommended"] else ""}</li>'
+        # ⚠ THE BRACKETS ARE KEPT. The gate STRIPS `[recommended]` off the option
+        # text, so rendering the bare word read as prose — "merge PR #186
+        # recommended" — reported by the reader. The tray gets away with the bare
+        # word because `.needs .rec` draws a chip border around it; the card has no
+        # such rule, so here it must read as the author typed it.
+        f'{" <span class=\"rec\">[recommended]</span>" if o["recommended"] else ""}</li>'
         for o in d["options"])
-    label = "Was decided:" if settled else "Decide:"
+    # A LIVE ask is marked: <strong> in the warning colour, because it wants
+    # something from the reader. A SETTLED one is not — it is history, and the
+    # badge already says so. Reader's words: "no need to highlight it with orange
+    # bold ... just plain font".
+    if settled:
+        head = '<span class="was">Decided:</span>'
+    else:
+        head = "<strong>Decide:</strong>"
     cls = "ask settled" if settled else "ask"
-    return (f'<div class="{cls}"><p class="ask-q"><strong>{label}</strong> '
+    return (f'<div class="{cls}"><p class="ask-q">{head} '
             f'{_inline(d["question"])}</p><ul class="opts">{items}</ul></div>')
 
 
@@ -1210,7 +1225,7 @@ padding:14px 18px;margin-bottom:10px}}
 .entry .opts{{margin:.2em 0 0 1.1rem;padding:0;color:var(--p-detail)}}
 .entry .opts li{{margin:.2em 0}}
 .entry .ask.settled{{opacity:.72}}
-.entry .ask.settled .ask-q strong{{color:var(--fg3);font-weight:600}}
+.entry .ask-q .was{{color:var(--fg3);font-weight:400}}
 /* ── The prose fold. Typeset, not dumped. ──────────────────────────────────
    Every entry's human half used to render as ONE <p> at the full 820px shell
    width, so the author's paragraphs vanished and each line ran ~110 characters
@@ -1921,14 +1936,22 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     _q = _live[_live.index('class="ask-q"'):_live.index("</p>", _live.index('class="ask-q"'))]
     case("no option text is left flattened into the question line",
          ("close it unmerged" in _q, "- merge PR" in _live), (False, False))
-    case("[recommended] becomes a span, not literal text",
-         ('<span class="rec">recommended</span>' in _live, "[recommended]" in _live),
-         (True, False))
+    # ⟳ Reader's call, 2026-08-31: the marker keeps its BRACKETS. Without them the
+    # bare word reads as part of the sentence — "merge PR #186 recommended".
+    case("the recommended marker keeps its brackets, in its own span",
+         ('<span class="rec">[recommended]</span>' in _live,
+          _live.count('class="rec"'), "recommended</li>" in _live),
+         (True, 1, False))
     # A resolved ask must not read as if it still wants an answer.
     _done = _prose(_askmd, drop_headline=True, settled=True)
-    case("a settled ask says it was decided, and recedes",
-         ("Was decided:" in _done, "ask settled" in _done, "Decide:" in _done.replace("Was decided:", "")),
-         (True, True, False))
+    # ⟳ Reader's call, 2026-08-31: a settled ask needs no warning colour. It reads
+    # plain "Decided:" in a <span class="was">, NOT <strong> in the mark colour —
+    # the badge already says resolved, so bold orange was the page shouting about
+    # something already handled.
+    case("a settled ask reads plain 'Decided:', not a marked 'Decide:'",
+         ("Decided:" in _done, '<span class="was">' in _done,
+          "ask settled" in _done, "<strong>Decide:</strong>" in _done),
+         (True, True, True, False))
     case("an UNsettled ask still asks", ("Decide:" in _live, "Was decided:" in _live), (True, False))
     # ⚠ It must NOT claim which option won — `[resolved: <id>]` names the entry
     # that resolved the ask, never the choice, so the page cannot know.
@@ -1948,11 +1971,16 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
          ('<ul class="opts">' in _twop,
           all(x in re.sub(r"<[^>]+>", "", _twop) for x in ("One", "Two", "a", "b"))),
          (False, True))
-    # ...and with TWO asks in one entry it must NOT claim either was decided.
+    # ⟳ REVERSED, 2026-08-31, and the reversal is the correct reading of the model.
+    # A `settled and len(asks) == 1` guard stood here for one commit, added against
+    # a review finding that described PER-ASK resolution. `unresolved()` clears by
+    # ENTRY id (`:541`), so a resolved entry's asks all leave the tray together —
+    # per-ask resolution does not exist. The guard produced the defect the reader
+    # reported: badge resolved, tray empty, body still asking.
     _two = _prose("Lede.\n\n**Decide:** First\n- a\n- b\n\n**Decide:** Second\n- c\n- d\n",
                   drop_headline=True, settled=True)
-    case("an entry with TWO asks does not claim either was decided",
-         ("Was decided:" in _two, _two.count("Decide:")), (False, 2))
+    case("an entry with TWO asks marks BOTH decided — resolution is entry-level",
+         (_two.count('<span class="was">'), "<strong>Decide:</strong>" in _two), (2, False))
     # Ordinary prose is untouched, and a paragraph the gate refuses degrades to
     # plain text rather than to a wrong list.
     # ⚠ NOT the first paragraph — `drop_headline=True` removes it BY DESIGN, so

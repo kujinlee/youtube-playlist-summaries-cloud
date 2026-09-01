@@ -735,21 +735,21 @@
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
-        "    label = \"Was decided:\" if settled else \"Decide:\"",
-        "    label = \"Decide:\""
+        "    if settled:\n        head = '<span class=\"was\">Decided:</span>'",
+        "    if False:\n        head = '<span class=\"was\">Decided:</span>'"
       ]
     ],
-    "expect": "a settled ask says it was decided, and recedes"
+    "expect": "a settled ask reads plain 'Decided:', not a marked 'Decide:'"
   },
   {
-    "name": "an entry with two asks claims BOTH were decided",
+    "name": "a settled ask keeps the live warning mark, so resolved shouts",
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
-        "    _settled_ok = settled and len(asks) == 1",
-        "    _settled_ok = settled"
+        "        head = '<span class=\"was\">Decided:</span>'",
+        "        head = \"<strong>Decide:</strong>\""
       ]
     ],
-    "expect": "an entry with TWO asks does not claim either was decided"
+    "expect": "an entry with TWO asks marks BOTH decided — resolution is entry-level"
   }
 ]
