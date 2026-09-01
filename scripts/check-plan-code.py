@@ -446,7 +446,7 @@ EXPECTED_MUTATIONS = {
     # and its budget, gh shape validation, and — on the gate — the decision grammar
     # including the NESTING rule, whose absence silently dropped every option after a
     # 4-space nest.
-    "scripts/gen-dashboard.py": 63,
+    "scripts/gen-dashboard.py": 64,
     "scripts/page_markup.py": 14,
     "scripts/check-dashboard-entry.py": 18,
     "scripts/check-plan-code.py": 21,
@@ -1953,8 +1953,12 @@ def _self_test() -> int:
     # external count observer was the last member of this stack with cases and no mutations —
     # the same "layer nothing checked back" that brought this file into the manifest at 73 → 94.
     # Coverage may grow here; it may not shrink.
+    # 139 -> 140 (backlog #79: gen-dashboard 63 -> 64). ONE entry, for the guard that asserts the
+    # chrome button's label is READABLE — the property — rather than that the palette declares a
+    # token, which is the mechanism. `check-theme-token-coverage.py` holds the token set; a
+    # palette could satisfy it and still pick an unreadable pair.
     # Coverage may grow here; it may not shrink.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 139)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 140)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so

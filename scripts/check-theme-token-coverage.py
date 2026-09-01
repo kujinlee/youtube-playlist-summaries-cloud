@@ -72,16 +72,21 @@ PAGE_SRC = ROOT / "scripts" / "gen-dashboard.py"
 # MEASURED 2026-09-01 by diffing the two token sets, then confirmed live in Chrome: each of these
 # reads byte-identical in both themes on the served page. Backlog #79 removes them; every removal
 # must delete a line here, and this check fails if one is fixed and left behind.
-KNOWN_GAP: frozenset[str] = frozenset({
-    "--card",           # the one that SHOWS: .chrome-btn background, dark pill on a light page
-    "--ink-soft",       # readable on that pill BY ACCIDENT — kept its dark-theme (light) value
-    "--ink-faint",
-    "--good",           # sparkline "committed" bars
-    "--defect",         # sparkline "no entry" bars
-    "--structure",
-    "--structure-bg",
-    "--structure-br",
-})
+# ✅ EMPTY SINCE 2026-09-01 — backlog #79 is CLOSED and all eight were fixed together, so the
+# allowlist ratcheted to nothing rather than shrinking one entry at a time. That is the state this
+# file was written to reach: from here, ANY shim token the light palette fails to cover is an
+# immediate failure with no slack to spend.
+#
+# ⚠ Do not repopulate this to make a red run green. An entry here is a debt that must name why it
+# is owed; the third ratchet direction below (KNOWN_GAP naming a token the shim no longer defines)
+# exists because a pinned list that stops describing anything is worse than no list.
+#
+# ⚠ AND THE ORIGINAL TRIGGER WAS RECORDED WRONG, which is worth keeping: the report said the bug
+# needed the OS in dark mode. Measured 2026-09-01 with macOS in LIGHT mode — Chrome still reported
+# `prefers-color-scheme: dark` because its own Appearance setting overrides the OS for web content,
+# and the defect reproduced at 1.03:1. `prefers-color-scheme` is what the BROWSER says, so this
+# check must never be re-scoped to "only matters in dark mode".
+KNOWN_GAP: frozenset[str] = frozenset()
 KNOWN_GAP_REASON = "backlog #79 — light palette does not cover the OS-dark shim"
 
 
