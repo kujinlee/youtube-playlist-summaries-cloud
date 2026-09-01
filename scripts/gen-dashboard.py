@@ -1063,10 +1063,35 @@ margin-left:-3px;border-radius:50%;background:var(--need)}}
 .entry{{background:var(--panel);border:1px solid var(--rule);border-radius:4px;
 padding:14px 18px;margin-bottom:10px}}
 .entry.broken{{border-color:var(--err);background:var(--err-bg)}}
-.entry h3{{font-family:var(--mono);font-size:12px;color:var(--fg3);margin:0 0 6px}}
-.entry .eid{{color:var(--fg3);opacity:.75}}
-.entry .title{{margin:0;font-weight:600;line-height:1.4;max-width:60ch;
-  color:var(--p-head)}}
+/* ── The collapsed row. ────────────────────────────────────────────────────
+   Each card is one disclosure whose summary is a single level-3 heading, and
+   that heading is a flex line: id, badge, title, triangle.
+   ⚠ DO NOT write literal markup tokens in this comment. The stylesheet ships
+   INSIDE the page, so a tag written here is counted by every page-wide guard —
+   measured: naming the elements cost a false 2-vs-1 on the per-entry heading
+   count and on `every details has an id`. The guards were right. */
+.entry summary{{display:flex;list-style:none;cursor:pointer;padding:3px 0}}
+.entry summary::-webkit-details-marker{{display:none}}
+.entry .row{{display:flex;gap:.6rem;align-items:baseline;width:100%;min-width:0;
+  margin:0;font-size:15px;font-weight:600;line-height:1.45}}
+.entry .eid{{flex:none;font-family:var(--mono);font-size:12px;color:var(--fg3);
+  opacity:.75}}
+/* ⚠ `flex:1` AND `min-width:0`. A flex item defaults to min-width:auto and
+   refuses to shrink below its content, so `text-overflow:ellipsis` NEVER
+   engages without it — measured in spec review round 1. */
+.entry .title{{flex:1;min-width:0;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;font-weight:600;color:var(--p-head)}}
+/* Opening a card un-clips ITS OWN title. The selector is `.entry details[open]`,
+   NOT `details[open] .entry` — `.entry` is the ARTICLE, an ANCESTOR of the fold,
+   so the descendant form matches nothing at all. */
+.entry details[open] .title{{white-space:normal;overflow:visible;max-width:60ch}}
+.entry .tri{{flex:none;align-self:center;color:var(--fg3);font-size:10px}}
+.entry .tri::before{{content:"\\25B8"}}
+.entry details[open] .tri::before{{content:"\\25BE"}}
+/* A row with no fold (spec §2f) is a bare <h3> — give it the summary's padding
+   so the list does not jitter between foldable and non-foldable rows. */
+.entry > .row{{padding:3px 0}}
+.entry details details{{margin-top:10px}}
 /* ── The prose fold. Typeset, not dumped. ──────────────────────────────────
    Every entry's human half used to render as ONE <p> at the full 820px shell
    width, so the author's paragraphs vanished and each line ran ~110 characters
@@ -1663,6 +1688,12 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
          [h7.index(f"entry number {n}.") for n in range(7, 0, -1)]
          == sorted(h7.index(f"entry number {n}.") for n in range(1, 8)), True)
     case("the entry id is rendered", "2026-08-28/1" in ht, True)
+    # ⚠ Asserts the STYLESHEET TEXT, which is weaker than asserting the rendered
+    # effect. A browser is the only instrument for that and Phase 4 owns it; this
+    # exists so the clip cannot be silently deleted, not to prove it works.
+    case("the collapsed title clips rather than wrapping",
+         ("white-space:nowrap" in ht, "text-overflow:ellipsis" in ht,
+          "min-width:0" in ht), (True, True, True))
 
     # ── THE COLLAPSED CARD (spec §2) ─────────────────────────────────────────
     # §4's binding rules: locate ONE synthetic entry's fragment and assert INSIDE
