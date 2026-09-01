@@ -1473,6 +1473,30 @@ passes through it.
       dismissal of `caught = rc == 1` was wrong — rc 3 would be credited as caught).
 - [x] **Merge** — PR #182, squash `a5a012c`.
 
+## Codex gate artifact safety — backlog #68 (a)(b)(c) — anchor `status-visibility` — 🔧 (d) OPEN
+
+The adversarial review gate could fail silently AND overwrite a committed review — and did, four
+times in one run, with the verdict flipping NO→YES between reads. The wrapper wrote nothing at any
+point; every version came from the agents' own writes, which is why "we only write on success" was
+never the protection it looked like.
+
+- [x] **(a) A failed gate cannot leave an artifact unnoticed** — refuses with exit **2** before
+      contacting any model when `--out` exists (`--allow-overwrite` is the deliberate escape), and
+      snapshots the `--out` directory, naming every file the agent created, overwrote or deleted on
+      BOTH the success and failure paths.
+- [x] **(b) The one input that guarantees failure is warned about** — `prompt_demands_a_file` quotes
+      the matched phrase. Kept narrow on purpose: two cases assert a prompt REVIEWING file-writing
+      code, and round 2's clean brief, do not trip it.
+- [x] **(c) The per-half contract is stated at the dispatch point** — `docs/plugins.md`, four lines;
+      story, control, exit codes and (d) in `process-rationale.md`. ⚠ `check-docs.py` refused the
+      first draft at 36 lines over budget; plugins.md now sits at exactly 260.
+- [x] **28 self-test cases** (13 new) + end-to-end verification without invoking Codex.
+- [ ] **(d) DECISION, not engineering** — nothing stops a CALLER masking the exit code
+      (`… ; echo "WRAPPER_RC=$?"` reported the echo's status; `WRAPPER_RC=1` sat unread while the run
+      was treated as successful — the `$?`-after-the-wrong-command trap, a FOURTH occurrence here).
+      **Fails if** a caller can still discard the verdict once this is settled. Choose: constrain the
+      caller, or have the wrapper write its verdict to a file the caller must read.
+
 ⚠ **`--mutate .` runs 13s → 3m13s.** Real, measured, and not addressed here; the lever if it bites
 is parallelising the mutation loop, not dropping coverage.
 

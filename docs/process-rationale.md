@@ -362,3 +362,54 @@ does not consume the next one's note.
    `scripts/check-handoff-path.py` behind a `PreToolUse` hook: it fires at invocation, before anything
    is written. Both are kept, because they fail differently — the script guards the *instruction*, and
    cannot observe where the file actually lands.
+
+## The review gate that wrote over its own evidence
+
+Round 3 of the project-dashboard plan review, 2026-08-28/29. Three defects in one chain; the
+contract they justify lives in [`plugins.md`](plugins.md) at the dispatch point, and is not
+restated here.
+
+**One brief, two halves that want opposite things.** The brief's Output section said *"Write to the
+review path you were given."* Correct for the Claude subagent, which has file tools. Fatal for
+Codex, whose capture is the final message: the agent wrote, its final message became *"I wrote the
+review to …"*, and the wrapper correctly rejected a report of a review as not being one.
+
+**The control is exact.** Round 2's brief — same wrapper, same model ladder — never mentions writing
+anything and captured cleanly. One sentence was the entire difference. That is why the fix is a
+per-half contract rather than a tweak to the matcher.
+
+**The agent guessed the path, and guessed it right.** The wrapper passes codex only `-o <tempfile>`;
+the real `--out` is never given to the agent. So *"the review path you were given"* referred to
+nothing, and the agent inferred `docs/reviews/plan-project-dashboard-r3-codex.md` from the four
+prior-round filenames listed in the brief — a naming convention entirely predictable. Running under
+`-s danger-full-access` it wrote there, over a **committed** artifact. Four models were tried, each
+overwriting the last, and the file's verdict flipped from `READY TO EXECUTE: NO` to `YES` between
+one read and the next.
+
+**The wrapper wrote nothing at any point.** Every version on disk came from the agents' own writes.
+This is why *"we only write on success"* was never the protection it appeared to be, and why the
+mechanism added in 2026-09-01 SNAPSHOTS the directory rather than trusting its own restraint: the
+thing to detect is a write the wrapper did not make.
+
+**The verdict was trivial to lose.** The call was wrapped as
+`python3 scripts/codex-review.py … ; echo "WRAPPER_RC=$?"`, so the completion notification reported
+the **echo's** status. `WRAPPER_RC=1` sat unread while the run was treated as successful — the
+`$?`-after-the-wrong-command trap, measured a **fourth** time in this repo.
+
+**What it cost.** Round 3's Codex half never ran. Its findings were acted on anyway — they were
+independently confirmed by the Claude half and by `scripts/check-plan-code.py`, so the fixes stand —
+and a committed review was silently replaced. It was mitigated by hand at the time, and a hand
+mitigation is not a mechanism, which is why backlog #68 existed at all.
+
+**Exit codes, and what the wrapper now enforces.** `scripts/codex-review.py` returns **0** (a real
+review was captured and written), **1** (no candidate produced one — the gate did NOT run, fall back
+to a Claude adversarial review and record the gap), or **2** (REFUSED before contacting any model,
+because `--out` already exists — pass `--allow-overwrite` to mean it). It also snapshots the `--out`
+directory and names any file the agent created, overwrote or deleted behind its back on BOTH the
+success and failure paths, and warns — quoting the phrase — when the prompt itself tells the agent
+to write a file. None of that substitutes for the brief being right; it makes the failure loud
+instead of silent.
+
+**Still open, and it is a decision rather than engineering (backlog #68 d):** nothing stops a
+*caller* masking the exit code. Decide whether to constrain the caller, or have the wrapper write
+its verdict to a file the caller must read. Until then: capture the exit code on its own line.

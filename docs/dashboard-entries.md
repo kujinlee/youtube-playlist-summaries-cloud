@@ -1148,3 +1148,49 @@ Also: `settled` is an entry-level fact, so with two asks it claimed both were de
 Suite 276 → 290. Mutations 123 → 127, 0 survivors. One mutation SURVIVED on first run and was replaced: `d = live[0]` never reached the code it named, because an early return already protected inert text. A mutation that cannot reproduce the defect it describes is a claim, not a guard.
 
 ⚠ NOT DONE, deliberately: the card's options omit the tray's PR links and live PR-state notes, so for a LIVE ask the same option can read differently in the two places. Filed as a follow-up — it wants a shared option renderer, which is a seam change, not a patch.
+
+## 2026-09-01
+The tool that runs the second opinion on our own work — an outside reviewer we ask to attack each
+plan — turned out to be able to fail without telling anyone, and on one occasion it destroyed the
+very thing it was supposed to produce. A review you had already committed was overwritten four times
+in one run, and its verdict flipped from "not ready" to "ready" between one reading and the next.
+
+None of that was a mistake in the reviewer. The instruction we sent it said, in one sentence, "write
+the review to the path you were given" — except no path was ever given, so it guessed one from the
+filenames of earlier reviews, guessed correctly, and wrote over a real file. The same instruction is
+right for our other reviewer, which does write files. One shared instruction, two reviewers that
+need opposite things.
+
+Three fixes, all in place. The tool now refuses outright, before contacting anything, if the file it
+would write already exists — so a review you have already filed cannot be quietly replaced; you can
+override that deliberately. It watches the folder while the reviewer works and names any file the
+reviewer touched behind its back, whether the run succeeded or failed. And it warns, quoting the
+exact phrase, whenever the instruction we are about to send contains a "write a file" order — the
+one input guaranteed to make the whole thing fail silently.
+
+**Waiting on you:** one part is a decision, not code. Nothing stops the *caller* from throwing away
+the tool's answer — that is how the original failure went unnoticed, with the real result sitting
+unread in a log. The choice is between constraining how it is called and having the tool write its
+verdict somewhere that must be read. Until you pick, the rule is to capture the result on its own
+line.
+<!--tech-->
+Backlog **#68 (a)(b)(c) shipped; (d) is the open decision.** `scripts/codex-review.py`: refuses with
+**exit 2 before contacting any model** when `--out` exists (`--allow-overwrite` to mean it);
+`dir_snapshot`/`unexpected_writes` name every file the agent CREATED, OVERWROTE or DELETED in the
+`--out` directory, reported on BOTH the success and failure paths; `prompt_demands_a_file` warns and
+quotes the matched phrase. 28 self-test cases, 13 new.
+
+⚠ The matcher is deliberately NARROW, and two cases exist to keep it so: a prompt that merely REVIEWS
+file-writing code must not trip it, and round 2's brief (which captured cleanly, same wrapper and
+model ladder) must stay silent. A warning that cries wolf gets ignored, which would rebuild the
+original failure with extra steps.
+
+`docs/plugins.md` states the per-half contract at the DISPATCH POINT in four lines and points onward;
+the round-3 story, its exact control, the exit codes and the open (d) decision moved to
+`docs/process-rationale.md` → *The review gate that wrote over its own evidence*. ⚠ `check-docs.py`
+refused the first draft — plugins.md was 36 lines over its 260-line budget — and its message is
+right: move detail, do not raise the budget. The file now sits at exactly 260.
+
+Verified end to end without invoking Codex: existing `--out` → `rc=2`, file byte-identical
+afterwards; `--allow-overwrite` proceeds to the model chain; a write-a-file prompt prints the warning
+quoting `'Write the review to'`.
