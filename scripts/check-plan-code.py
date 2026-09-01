@@ -455,6 +455,14 @@ EXPECTED_MUTATIONS = {
     # NON-repo, so it differed by the UNKNOWN text and never by the dirty flag,
     # and the git-cannot-launch branch was unreachable from a temp dir.
     "scripts/page_chrome.py": 11,
+    # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
+    # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
+    # directions (a token stops being forced OUT of the allowlist; the allowlist may name a
+    # token that no longer exists), the cannot-run arm (a missing shim block reading as an
+    # empty palette — the fail-open that would make it pass about nothing), and the
+    # declaration parser (counting a MENTION as a declaration, which would let a page
+    # "cover" a token by talking about it).
+    "scripts/check-theme-token-coverage.py": 4,
 }
 
 MANIFEST_DIR = "scripts/mutations"
@@ -1895,6 +1903,7 @@ def _self_test() -> int:
     case("the declared counts name every manifest that ships",
          sorted(EXPECTED_MUTATIONS), ["scripts/check-dashboard-entry.py",
                                       "scripts/check-plan-code.py",
+                                      "scripts/check-theme-token-coverage.py",
                                       "scripts/gen-dashboard.py",
                                       "scripts/page_chrome.py",
                                       "scripts/page_markup.py"])
@@ -1920,7 +1929,12 @@ def _self_test() -> int:
     # 123 → 126 (ask options render as a list: +3 gen-dashboard — the block firing at
     # all, the whole-document authority that keeps inert text inert, and the settled
     # label). Coverage may grow here; it may not shrink.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 127)
+    # 127 → 131 (backlog #79, the theme-token coverage guard: +4, a NEW manifest file rather than
+    # growth in an existing one). Both ratchet directions, the cannot-run arm, and the declaration
+    # parser. It joined the manifest in the same commit that added the guard — the alternative was
+    # a guard whose only evidence of working lived in one session's shell.
+    # Coverage may grow here; it may not shrink.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 131)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so

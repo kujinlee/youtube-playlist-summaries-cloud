@@ -1150,6 +1150,66 @@ Suite 276 → 290. Mutations 123 → 127, 0 survivors. One mutation SURVIVED on 
 ⚠ NOT DONE, deliberately: the card's options omit the tray's PR links and live PR-state notes, so for a LIVE ask the same option can read differently in the two places. Filed as a follow-up — it wants a shared option renderer, which is a seam change, not a patch.
 
 ## 2026-09-01
+Switch the dashboard to its light theme and point at either button at the top of the page, and the
+button's label disappears. It is still there and still clickable — it just becomes the same colour
+as the button underneath it. This is not new and it is not from yesterday's work on the cards; it
+arrived with the theme switch itself, and it only happens when your computer is set to dark mode
+and you have asked this page for light.
+
+Nobody had seen it because the buttons look perfectly fine until you point at them, which is not a
+state anyone photographs.
+
+The cause is more interesting than the symptom, and it is why this ships a check rather than a new
+colour. The pages are built from three files. One of them fills in a set of dark colours whenever
+your computer is in dark mode. Another declares the colours for light mode — but it names only some
+of them. For the eight it does not name, nobody ever supplied a light value, so the dark one simply
+stays. Seven of those eight are currently invisible problems: they tint the little bar chart and the
+badges slightly wrong on a light page. The eighth paints the buttons, and that is the one you can
+see. Nothing here is a badly chosen colour; the list of colours is just shorter than it should be.
+
+So the colours are not fixed yet — that is a design decision about what light versions those eight
+should be, and it is written up as backlog item 79. What ships today is a check that stops the
+problem growing: if a ninth colour ever goes missing the build fails, and as the eight are fixed the
+check forces the list of known-missing ones to shrink with them, so it cannot sit there claiming
+debt that has already been paid.
+
+Separately, yesterday's change that collapses long entries to one line was checked by hand in a real
+browser for the first time. Clicking a card opens it to the full sentence, the arrow turns, and the
+full text of a shortened title is still findable with the browser's own search — the words are on
+the page, just not painted. Two of the six checks could not be run as written and are recorded as
+not run rather than passed.
+<!--tech-->
+Ships `scripts/check-theme-token-coverage.py` (12 self-test cases) plus two CI callers, backlog #79,
+and the `GROUPS` entry that keeps `gen-backlog-page.py` building.
+
+MEASURED in Chrome: `--ink` `#1b2024` on `--card` `#1d1c22` = **1.03:1** against WCAG AA's 4.5, on
+both `#chrome-theme` and `#chrome-refresh`, so it is `.chrome-btn` and not one control. Un-hovered
+both are 9.94:1 — the resting state is readable *by accident*, because `--ink-soft` also kept a
+dark-theme value that happens to work on the dark pill. Dark theme is 13.62:1.
+
+`brief-compose.py:93-97` declares 11 tokens on `html` inside `@media (prefers-color-scheme: dark)`;
+that keys off the OS, so `data-theme` cannot override it, and its own comment says the shim "only
+supplies what nobody supplied". `gen-dashboard.py:1120` `light_vars` declares 17 and omits 8 of the
+shim's 11 — `--card --ink-soft --ink-faint --good --defect --structure --structure-bg
+--structure-br`. Confirmed live: all 8 read byte-identical in both themes while `--ink`/`--bg` flip.
+
+⚠ Why a new guard when two contrast guards exist. `gen-dashboard.py:1290` `LINK_SURFACES` omits
+`--card`, so the failing pair is never enumerated — but adding it would not have helped, because
+`scheme_palettes()` reads gen-dashboard's OWN emitted stylesheet and `--card` is not defined there
+at all. Each contrast guard owns one stylesheet; the reader opens a page composed from three. This
+check measures COVERAGE, not ratio: a ratio needs both colours, and the failure is that one is
+silently absent.
+
+Mutation-tested on a temp copy, control proved green first: 9th token falls through → rc=1; a
+pinned token becomes covered → rc=1; shim block deleted → rc=2 CANNOT RUN. All three name the case.
+
+Task #201 residue, recorded rather than ticked: `resize_window` reported success twice while
+`window.innerWidth` never moved, so "narrowing the window moves the clip" is NOT RUN — substituted
+by varying container width (painted chars 106/89/80/52/32 while textContent stayed 201). And the
+extension sends keystrokes to the page, not browser chrome, so literal Cmd-F is not drivable;
+verified via `window.find()`, which selected the phrase inside a closed card's clipped title.
+Falsifier (4), "a single-sentence entry has no triangle", has NO SUBJECT in current data — all 31
+entry cards have bodies; the one triangle-less `<details>` is the glossary.
 Several of the small checking scripts in this project state, in their own header, how many tests
 they run — "16 cases". Nothing ever confirmed that number, because a test suite cannot check its own
 final score: to do that it would have to watch itself finish. So the numbers were taken on trust.

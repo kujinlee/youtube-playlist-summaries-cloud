@@ -1473,6 +1473,59 @@ passes through it.
       dismissal of `caught = rc == 1` was wrong — rc 3 would be credited as caught).
 - [x] **Merge** — PR #182, squash `a5a012c`.
 
+## Theme token coverage — backlog #79 — anchor `status-visibility` — 🏗 GUARD SHIPPED, PALETTE NOT FIXED
+
+Found closing task #201, the manual browser gate on PR #189 — and **not caused by PR #189**
+(`git log -S` puts the hover rule in PR #185 and the `--card` token in PR #143). With the OS in dark
+mode and the page toggled to **light**, hovering either page-chrome button renders its label at
+**1.03 : 1** against WCAG AA's 4.5. Both buttons, so it is the class `.chrome-btn`. Resting state is
+9.94 : 1, which is why nobody saw it — a button looks correct until you point at it.
+
+**The cause is a set difference, not a wrong colour.** `brief-compose.py:93-97` supplies 11 tokens on
+`html` inside `@media (prefers-color-scheme: dark)` — keyed to the **OS**, so `data-theme` cannot
+override it — and says so: the shim *"only supplies what nobody supplied."* `gen-dashboard.py:1120`
+`light_vars` declares 17 and omits **8 of the shim's 11**. Confirmed live: all 8 read byte-identical
+in both themes while `--ink`/`--bg` flip. Only `--card` is visible; `--good`/`--defect` tint the
+sparkline bars and `--structure*` the badges. The resting state is readable **by accident**, because
+`--ink-soft` also kept a light value that happens to work on the dark pill.
+
+⚠ **Neither existing contrast guard could see it, and that is structural.** `gen-dashboard.py:1290`
+`LINK_SURFACES` omits `--card`; more fundamentally `scheme_palettes()` reads gen-dashboard's **own**
+emitted stylesheet, where `--card` is not defined at all. Each contrast guard owns one stylesheet;
+the reader opens a page composed from three files. Adding the pair would not have helped — this is
+the *instrument* carrying the same coverage gap as the palette.
+
+- [x] **`scripts/check-theme-token-coverage.py`** — measures COVERAGE, not ratio (a ratio needs both
+      colours; the whole failure is that one is silently absent). 12 self-test cases, two CI callers,
+      discovered by `check-ratchet-contract.py` (25 guards, passes).
+- [x] **Ratchet, not a flat assertion** — the 8 are pinned in `KNOWN_GAP`, so it is green today and
+      fails three ways: a ninth falls through; a pinned token becomes covered (the list must SHRINK
+      as the fix lands); the list names a token the shim dropped. A knowingly-red gate teaches people
+      to ignore CI.
+- [x] **Mutation coverage in the same commit** — `scripts/mutations/check-theme-token-coverage.json`,
+      4 entries; `EXPECTED_MUTATIONS` 127 → **131**, `--mutate .` → 6 files, 131 mutations,
+      **0 survivors**. Also verified by hand on a temp copy over a green control: all three
+      directions go red via the case they name, and a deleted shim block exits **2 CANNOT RUN**.
+- [x] **The `[FAIL]` line is a contract** — the self-test had to abandon a prettier `✗` form.
+      `check-plan-code.py` reads red cases from lines starting `[FAIL] `, split on the LAST
+      `": got "`; the `✗` form parses as **zero** red cases. Measured once before, over 12 mutations.
+- [ ] **Fix the palette** — backlog #79. ⚠ **Run the falsifier first:** with the OS in **light** mode
+      `--card` is never defined and `var(--card,transparent)` falls back to transparent, so the bug
+      should NOT reproduce. That decides between "the light palette is short" and "the OS/page theme
+      seam is wrong", and therefore between giving the light palette all 8 values and stopping the
+      chrome reading `--card`. Prefer whichever closes the coverage gap — patching `--card` alone
+      leaves seven of the same kind.
+- [ ] **Measure the blast radius** — `page_chrome.py` is shared by five pages. `gen-goals-page.py`
+      and `explainer-serve.py` DO define `--card` under `[data-theme="light"]`, so they may be
+      immune; that asymmetry is itself worth a look.
+
+**Task #201 residue, recorded rather than ticked.** `resize_window` reported success twice while
+`window.innerWidth` never moved, so "narrowing the window moves the clip" is **NOT RUN** —
+substituted by varying container width (painted chars 106/89/80/52/32 while `textContent` held at
+201). The extension sends keystrokes to the page, not browser chrome, so literal **Cmd-F is not
+drivable**; verified with `window.find()`, which selected the phrase inside a closed card's clipped
+title. Falsifier (4), "a single-sentence entry has no triangle", has **no subject** in current data:
+all 31 entry cards have bodies, and the one triangle-less `<details>` is the glossary.
 ## Declared self-test counts — backlog #69 — anchor `status-visibility` — ✅ DONE 2026-09-01
 
 A `--self-test` cannot verify its own declared case count: doing so means observing its own exit
