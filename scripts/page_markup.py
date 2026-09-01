@@ -250,25 +250,6 @@ def render_inline(s: str) -> str:
     return scan(escaped)
 
 
-def orphaned_delimiters(text: str) -> int:
-    """How many delimiters the REAL renderer leaves as literal punctuation.
-
-    Code spans are removed rather than stripped of tags: their content is literal BY
-    DESIGN, so a `**` the author typed inside backticks is not an orphan.
-
-    ⚠ Counts `**` and a backtick ONLY, deliberately, though the renderer now also emits
-    `<em>` and `<del>`. Its one consumer is `gen-dashboard._close_orphan_markup`, whose
-    candidate closers are `("", "`", "**", "**`", "`**")`. Counting a delimiter that
-    the caller has no closer for would make it drop words looking for a repair that
-    cannot exist. Widening both together is a truncation-policy change and belongs to
-    whoever makes it, not here.
-    """
-    out = render_inline(text)
-    out = re.sub(r"<code>.*?</code>", "", out, flags=re.S)
-    out = re.sub(r"<[^>]+>", "", out)
-    return out.count("**") + out.count("`")
-
-
 # ───────────────────────────────────────────────────────────────── self-test
 
 def _self_test() -> int:
@@ -432,12 +413,6 @@ def _self_test() -> int:
     case("trim: nothing to trim", trim_url_tail("https://x.ee/a"),
          "https://x.ee/a")
 
-    # ── orphaned_delimiters
-    case("orphans: balanced text has none", orphaned_delimiters("**a** `b`"), 0)
-    case("orphans: an unpaired bold counts", orphaned_delimiters("**a"), 1)
-    case("orphans: an unpaired backtick counts", orphaned_delimiters("a ` b"), 1)
-    case("orphans: a delimiter inside code is NOT an orphan",
-         orphaned_delimiters("`a ** b`"), 0)
 
     # ── scan is idempotent-safe only on escaped input; render_inline is the raw entry
     case("scan: does not double-escape", scan(escape("a & b")), "a &amp; b")

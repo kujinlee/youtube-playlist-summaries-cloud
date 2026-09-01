@@ -87,7 +87,6 @@ def _contrast(a: str, b: str) -> float:
 
 
 SENTENCE_END = re.compile(r'(?<=[.!?])\s+')
-TITLE_CAP = 110
 # Below this, a "sentence" is a fragment ("Fixed.", "Done.") that says nothing on
 # its own, so it is joined to the next. ⚠ Set by measurement, not taste: at 25
 # this swallowed "The page is ready." — a perfectly good headline — and the case
@@ -120,7 +119,7 @@ def _ends_in_abbreviation(text: str) -> bool:
     return "." in last or last.lower().strip(".") in ABBREVIATIONS
 
 
-def _first_sentence(text: str, cap: int = TITLE_CAP) -> str:
+def _first_sentence(text: str) -> str:
     """The headline for an entry: its first SENTENCE, not its first LINE.
 
     It was `the first non-blank line`, which is a physical artefact of where the
@@ -129,6 +128,15 @@ def _first_sentence(text: str, cap: int = TITLE_CAP) -> str:
 
     Short leading fragments ("Decided:", "Fixed.") are joined onto the next
     sentence rather than standing alone as the whole headline.
+
+    ⟳ 2026-08-31: NOT TRUNCATED, and that is the point. There was a `cap`
+    (TITLE_CAP = 110) plus a repair, `_close_orphan_markup`, for the `**bold**`
+    spans the cut orphaned. Both are gone. MEASURED on the live page: the cap cut
+    the title while `_prose` dropped the whole first sentence, so the words
+    between the cut and the full stop were displayed NOWHERE. Clipping is now CSS
+    (`text-overflow: ellipsis`), which keeps the text in the DOM where
+    find-in-page and an opened card can both reach it. The orphan repair existed
+    only to heal a wound the cap inflicted; removing the cut removed the class.
     """
     text = " ".join(text.split())
     if not text:
@@ -138,67 +146,7 @@ def _first_sentence(text: str, cap: int = TITLE_CAP) -> str:
         out = f"{out} {part}".strip() if out else part
         if len(out) >= TITLE_FLOOR and not _ends_in_abbreviation(out):
             break
-    if len(out) > cap:
-        # ⛔ H1 (round 3), REPRODUCED ON THE LIVE PAGE by this branch's own entry:
-        # `<p class="title">…plainly: **the check I added this morning to prove…`
-        # The title is truncated HERE and marked up LATER (`:774`), so a `**…**`
-        # span straddling the cap loses its closer, and `_inline` — behaving
-        # exactly as designed — prints the orphaned opener. Neither half is
-        # wrong; nothing owned the seam between them.
-        #
-        # ⚠ Closing the span, not cutting back to before it. The truncated words
-        # ARE still shown, so dropping them to balance the markup would be the
-        # content-loss trade this file refuses everywhere else.
-        #
-        # Only on the TRUNCATION path. A delimiter the AUTHOR left unpaired in a
-        # short title still prints as itself — that is `_inline_scan`'s rule and
-        # it is about the author's text. These orphans are artefacts of OUR cut.
-        _full = out
-        out = _close_orphan_markup(
-            _full[:cap].rsplit(" ", 1)[0].rstrip(",;:—-"), _full, cap) + "…"
     return out
-
-
-def _orphaned_delimiters(text: str) -> int:
-    """How many delimiters the renderer leaves as literal punctuation — via `page_markup`.
-
-    Kept as a name here because `_close_orphan_markup` below reads better calling it, but the
-    counting rule lives with the renderer that decides what a literal delimiter IS (backlog #71).
-    """
-    return page_markup.orphaned_delimiters(text)
-
-
-def _close_orphan_markup(s: str, full: str, cap: int) -> str:
-    """Close spans the TRUNCATION orphaned — judged by the RENDERER, not a copy of it.
-
-    ⛔ Round 4, Blocking. The first version was a second, simpler scanner sitting
-    beside `_inline_scan`, and the two disagreed on exactly one rule:
-    `_inline_scan` treats a code span's content as LITERAL, while the copy counted
-    a `**` inside one as bold. So ``…`code ** tail`` gained a `**` closer that then
-    rendered inside the `<code>` — a bare delimiter still on the page AND text the
-    author never typed. Two implementations of one rule drift; this is the fourth
-    round running in which a fix introduced the next round's worst finding.
-
-    There is now ONE implementation. The candidate closers are judged by running
-    the shipping renderer and requiring no MORE orphans than the untruncated text
-    already had — `full` is the baseline, so a delimiter the AUTHOR left unpaired
-    is preserved rather than "corrected". `""` is tried first, so a truncation
-    that orphaned nothing changes nothing.
-
-    ⚠ `cap` is a BOUND, so the closers live INSIDE it. Round 4 (Low) measured the
-    first version appending them AFTER the cut: 148 of 60,000 delimiter-rich
-    inputs produced a title longer than `TITLE_CAP`, up to 113. When nothing
-    fits, a word is dropped and the search repeats.
-    """
-    base = _orphaned_delimiters(full)
-    while True:
-        for closer in ("", "`", "**", "**`", "`**"):
-            if len(s + closer) <= cap and _orphaned_delimiters(s + closer) <= base:
-                return s + closer
-        shorter = s.rstrip().rsplit(" ", 1)[0]
-        if shorter == s or not shorter:
-            return s[:cap]
-        s = shorter
 
 
 # ── inline markup is NOT implemented here any more. Backlog #71. ───────────────────────────────
@@ -216,8 +164,6 @@ def _close_orphan_markup(s: str, full: str, cap: int) -> str:
 #
 # It now lives in `scripts/page_markup.py`, widened to the union of what the four supported, and
 # the mutations that guarded it moved with it — so they defend four pages instead of one.
-# `_close_orphan_markup` stays above: it is dashboard TRUNCATION POLICY, not inline rendering, and
-# it asks the renderer rather than re-implementing it.
 _inline = page_markup.render_inline
 
 
@@ -249,27 +195,33 @@ def _prose(text: str, drop_headline: bool = False) -> str:
     # from one rule means they cannot disagree.
     if drop_headline:
         first = " ".join(paras[0].split())
-        head = _first_sentence(first, cap=len(first))
-        # ⚠ Only drop a REAL sentence. Review REPRODUCED the alternative: a first
-        # paragraph with no `.?!` at all makes `head` the WHOLE paragraph, so the
-        # fold dropped all of it — while the title showed only the first
-        # TITLE_CAP characters. Everything past the cap then existed in the store
-        # and appeared NOWHERE on the page. Deleting prose the reader never saw
-        # is the worst outcome available here, so the drop is refused unless the
-        # headline genuinely ends a sentence.
-        if head == first and not first.rstrip().endswith((".", "!", "?")):
-            head = ""
+        # ⚠ NO `cap=` KEYWORD. `_first_sentence` takes one parameter now; passing
+        # the old one raises TypeError on EVERY normal entry, which is why the cap
+        # deletion and this call had to land in the same commit.
+        head = _first_sentence(first)
         rest = first[len(head):].lstrip() if head else first
         if rest:
             paras[0] = rest
-        elif len(paras) > 1:
-            # The whole first paragraph WAS the headline. Promote the next one
-            # rather than printing the headline twice — 6 of the store's 10
-            # entries open with a single-sentence paragraph, so keeping it was
-            # the common case, not the edge case.
+        else:
+            # The whole first paragraph WAS the headline. Promote the next one —
+            # or, with nothing to promote, return NOTHING and let the card render
+            # as a plain row with no fold and no triangle (spec §2f).
+            #
+            # ⟳ 2026-08-31. This branch used to KEEP the repetition when there was
+            # nothing to promote, on the stated premise that "an empty fold is
+            # worse than a repeated sentence, and there is nothing else to show."
+            # COLLAPSED CARDS OVERTURN THAT PREMISE: an empty fold is no longer the
+            # alternative — NO fold is. A triangle that opens onto the sentence just
+            # read is a promise of hidden content that is not there. 6 of the store's
+            # 10 entries open with a single-sentence paragraph, so this is the common
+            # case, not the edge case.
+            #
+            # ⚠ The no-terminator REFUSAL that used to guard this also went. Its own
+            # written reason was the cap — "the title showed only TITLE_CAP
+            # characters" — and with the title uncapped it always displays the
+            # paragraph whole, so dropping loses nothing. Keeping the refusal would
+            # have rendered an unbounded paragraph TWICE.
             paras.pop(0)
-        # else: the headline is the entire entry. Keep it — an empty fold is
-        # worse than a repeated sentence, and there is nothing else to show.
     return "".join(
         f'<p class="{"lede" if i == 0 else "body"}">{_inline(p)}</p>'
         for i, p in enumerate(paras))
@@ -991,15 +943,30 @@ def build(entries, days, prs, pr_error, git_error, window,
                     f'<pre>{_html.escape(e["tech"])}</pre></details>')
             _b = badge_of(e, _cleared)
             _bcls = "flag resolved" if _b == "resolved" else "flag"
-            flag = (f' <span class="{_bcls}">{_html.escape(_b)}</span>') if _b else ""
-            parts.append(
-                f'{day_anchor}<article class="entry" id="{eid}">'
-                f'<h3>{_html.escape(e["date"])} '
-                f'<span class="eid">{_html.escape(e["id"])}</span>{flag}</h3>'
-                f'<p class="title">{_inline(e["title"])}</p>'
-                f'<details id="{eid}-plain"><summary>What this means</summary>'
-                f'<div class="prose">{_prose(e["plain"], drop_headline=True)}</div>'
-                f'</details>{tech}</article>')
+            flag = (f'<span class="{_bcls}">{_html.escape(_b)}</span>') if _b else ""
+            prose = _prose(e["plain"], drop_headline=True)
+            # §2f — a disclosure that discloses NOTHING is a lie about the content.
+            # ⚠ The body is prose AND tech. Review round 2 measured that comparing
+            # prose TEXT to the title suppressed the fold for a one-sentence entry
+            # carrying a <!--tech--> block, taking the ONLY route to the raw detail
+            # with it. Emptiness needs no normalisation rules; a text comparison
+            # needs several, and each is a place to be wrong.
+            body = (f'<div class="prose">{prose}</div>' if prose else "") + tech
+            # ⚠ THE TRIANGLE IS CONDITIONAL. Plan review EXECUTED the unconditional
+            # version: the fold was correctly suppressed and the triangle stayed, so
+            # a row with nothing behind it still advertised that it opened. The
+            # affordance must disappear with the thing it affords.
+            tri = '<span class="tri" aria-hidden="true"></span>' if body else ""
+            # ⚠ ONE <h3> is the summary's ENTIRE content. <summary>'s content model is
+            # phrasing content OR a single heading element — the old `<p class="title">`
+            # was neither, and a <summary> is NOT itself a heading, so without this the
+            # page loses its per-entry heading stops. The bare date is gone: `e["id"]`
+            # is DERIVED from it (`:379`), so printing both was a guaranteed duplicate.
+            row = (f'<h3 class="row"><span class="eid">{_html.escape(e["id"])}</span>'
+                   f'{flag}<span class="title">{_inline(e["title"])}</span>{tri}</h3>')
+            inner = (f'<details id="{eid}-card"><summary>{row}</summary>{body}</details>'
+                     if body else row)
+            parts.append(f'{day_anchor}<article class="entry" id="{eid}">{inner}</article>')
         entries_html = "".join(parts)
 
     # ─── Recorded exemptions (spec §7) ───
@@ -1096,10 +1063,35 @@ margin-left:-3px;border-radius:50%;background:var(--need)}}
 .entry{{background:var(--panel);border:1px solid var(--rule);border-radius:4px;
 padding:14px 18px;margin-bottom:10px}}
 .entry.broken{{border-color:var(--err);background:var(--err-bg)}}
-.entry h3{{font-family:var(--mono);font-size:12px;color:var(--fg3);margin:0 0 6px}}
-.entry .eid{{color:var(--fg3);opacity:.75}}
-.entry .title{{margin:0;font-weight:600;line-height:1.4;max-width:60ch;
-  color:var(--p-head)}}
+/* ── The collapsed row. ────────────────────────────────────────────────────
+   Each card is one disclosure whose summary is a single level-3 heading, and
+   that heading is a flex line: id, badge, title, triangle.
+   ⚠ DO NOT write literal markup tokens in this comment. The stylesheet ships
+   INSIDE the page, so a tag written here is counted by every page-wide guard —
+   measured: naming the elements cost a false 2-vs-1 on the per-entry heading
+   count and on `every details has an id`. The guards were right. */
+.entry summary{{display:flex;list-style:none;cursor:pointer;padding:3px 0}}
+.entry summary::-webkit-details-marker{{display:none}}
+.entry .row{{display:flex;gap:.6rem;align-items:baseline;width:100%;min-width:0;
+  margin:0;font-size:15px;font-weight:600;line-height:1.45}}
+.entry .eid{{flex:none;font-family:var(--mono);font-size:12px;color:var(--fg3);
+  opacity:.75}}
+/* ⚠ `flex:1` AND `min-width:0`. A flex item defaults to min-width:auto and
+   refuses to shrink below its content, so `text-overflow:ellipsis` NEVER
+   engages without it — measured in spec review round 1. */
+.entry .title{{flex:1;min-width:0;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;font-weight:600;color:var(--p-head)}}
+/* Opening a card un-clips ITS OWN title. The selector is `.entry details[open]`,
+   NOT `details[open] .entry` — `.entry` is the ARTICLE, an ANCESTOR of the fold,
+   so the descendant form matches nothing at all. */
+.entry details[open] .title{{white-space:normal;overflow:visible;max-width:60ch}}
+.entry .tri{{flex:none;align-self:center;color:var(--fg3);font-size:10px}}
+.entry .tri::before{{content:"\\25B8"}}
+.entry details[open] .tri::before{{content:"\\25BE"}}
+/* A row with no fold (spec §2f) is a bare <h3> — give it the summary's padding
+   so the list does not jitter between foldable and non-foldable rows. */
+.entry > .row{{padding:3px 0}}
+.entry details details{{margin-top:10px}}
 /* ── The prose fold. Typeset, not dumped. ──────────────────────────────────
    Every entry's human half used to render as ONE <p> at the full 820px shell
    width, so the author's paragraphs vanished and each line ran ~110 characters
@@ -1655,35 +1647,43 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     case("exhaustion says WHY, distinctly from a gh failure",
          PR_NOTE["exhausted"] != PR_NOTE["unknown"], True)
 
+    # ⚠ NON-RAISING positional lookup. The cases below used raw `.index()` on title
+    # TEXT, so a mutation emptying the title CRASHED the suite instead of reddening
+    # a case — and the harness refuses a crash, correctly, because a crash cannot
+    # show WHICH guard caught it. `find` returns -1, which sorts before every real
+    # position, so an absent string FAILS the ordering rather than exploding.
+    def _at(hay: str, needle: str) -> int:
+        return hay.find(needle)
+
     # "In place" on the order the store is ACTUALLY written: newest at the END.
     appended = parse_entries("## 2026-08-27\nOlder good.\n"
                              "## 2026-02-30\nBroken middle.\n"
                              "## 2026-08-28\nNewest good.\n")
     ha = _B(appended, bucket_days([], appended, 2, "2026-08-28"))
     case("malformed renders BETWEEN its neighbours on an APPENDED store",
-         ha.index("Newest good.") < ha.index("Broken middle.") < ha.index("Older good."), True)
+         _at(ha, "Newest good.") < _at(ha, "Broken middle.") < _at(ha, "Older good."), True)
     case("newest date renders first on an APPENDED store",
-         ha.index("Newest good.") < ha.index("Older good."), True)
+         _at(ha, "Newest good.") < _at(ha, "Older good."), True)
 
     run2 = parse_entries("## 2026-08-27\nOlder.\n## 2026-99-01\nBroken ONE.\n"
                          "## 2026-99-02\nBroken TWO.\n## 2026-08-28\nNewer.\n")
     hr = _B(run2, bucket_days([], run2, 2, "2026-08-28"))
     case("a RUN of malformed blocks keeps file order among themselves",
-         hr.index("Broken ONE.") < hr.index("Broken TWO."), True)
+         _at(hr, "Broken ONE.") < _at(hr, "Broken TWO."), True)
     case("...and the run still sits between its valid neighbours",
-         hr.index("Newer.") < hr.index("Broken ONE.") < hr.index("Older."), True)
+         _at(hr, "Newer.") < _at(hr, "Broken ONE.") < _at(hr, "Older."), True)
 
     tie = parse_entries("## 2026-08-28\nFIRST in file.\n## 2026-08-28\nSECOND in file.\n")
     ht = _B(tie, bucket_days([], tie, 2, "2026-08-28"))
     case("same-date entries render NEWEST first, not file order",
-         ht.index("SECOND in file.") < ht.index("FIRST in file."), True)
+         _at(ht, "SECOND in file.") < _at(ht, "FIRST in file."), True)
     # ⚠ THE COUPLING THIS CHANGE COULD HAVE BROKEN. Entry ids are POSITIONAL — `N` counts
     # file order within a date — and a standing `[resolved: <id>]` points at one. If the
     # render order ever leaked into id assignment, reordering the page would silently
     # rebind every resolution to a different entry. Ids are claimed at parse time
     # (`:367`), so they must be unmoved by the sort above; this is the case that says so.
     case("...and the FIRST entry in the file still owns id /1",
-         ht.index("2026-08-28/1") > ht.index("SECOND in file."), True)
+         _at(ht, "2026-08-28/1") > _at(ht, "SECOND in file."), True)
     case("...so ids follow the FILE, not the page", ("2026-08-28/1" in ht, "2026-08-28/2" in ht),
          (True, True))
     # Seven entries in one day is the shape that produced the report; two does not
@@ -1691,11 +1691,119 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     seven = parse_entries("".join(f"## 2026-08-30\nentry number {n}.\n" for n in range(1, 8)))
     h7 = _B(seven, bucket_days([], seven, 2, "2026-08-30"))
     case("with seven same-date entries the NEWEST is the first card",
-         h7.index("entry number 7.") < h7.index("entry number 1."), True)
+         _at(h7, "entry number 7.") < _at(h7, "entry number 1."), True)
     case("...and they read strictly newest-to-oldest",
          [h7.index(f"entry number {n}.") for n in range(7, 0, -1)]
          == sorted(h7.index(f"entry number {n}.") for n in range(1, 8)), True)
     case("the entry id is rendered", "2026-08-28/1" in ht, True)
+    # ⚠ Asserts the STYLESHEET TEXT, which is weaker than asserting the rendered
+    # effect. A browser is the only instrument for that and Phase 4 owns it; this
+    # exists so the clip cannot be silently deleted, not to prove it works.
+    case("the collapsed title clips rather than wrapping",
+         ("white-space:nowrap" in ht, "text-overflow:ellipsis" in ht,
+          "min-width:0" in ht), (True, True, True))
+
+    # ── THE COLLAPSED CARD (spec §2) ─────────────────────────────────────────
+    # §4's binding rules: locate ONE synthetic entry's fragment and assert INSIDE
+    # it. A page-wide substring test is satisfied by the glossary and the ask
+    # tray — `:1470` records that exact vacuity biting this file before.
+    def _fragment(html_: str, eid: str) -> str:
+        _start = html_.index(f'<article class="entry" id="{eid}">')
+        return html_[_start:html_.index("</article>", _start)]
+
+    def _build1(entries_, when="2026-08-31"):
+        return build(entries=entries_, days=bucket_days([when], entries_, 2, when),
+                     prs=[], pr_error=None, git_error=None, window=2, exemptions=[],
+                     exempt_error=None, store="x", store_error=None, generated_at="t")
+
+    # Task 3 defines its OWN tag-stripper. Sharing one across two self-test
+    # regions crashed with UnboundLocalError in plan review round 1 — this block
+    # runs BEFORE the one that defines `_bare_tags`, so the name is unbound here.
+    _strip3 = re.compile(r"</?(?:strong|code|em|del|a)[^>]*>")
+    # ⚠ The first sentence is long AND markup-bearing, so this fixture carries F1
+    # and F7 through the RENDERED CARD, not just through the helper. A perfect
+    # helper can be entirely unwired — this file already records that once.
+    _c = parse_entries("## 2026-08-31\nZorbal quandle sentence that runs on well past one "
+                       "hundred and ten characters so that any surviving character cap would "
+                       "have to **cut** it somewhere in the `middle` here.\n\nGlimmerwax body.\n"
+                       "<!--tech-->\nVexipop detail.\n")
+    _ch = _build1(_c)
+    _frag = _fragment(_ch, "2026-08-31-1")
+    # POSITIVE EXISTENCE FIRST — an assertion over an absent fixture passes while
+    # the feature is missing.
+    case("the entry fold exists, with its own id",
+         ('<details id="2026-08-31-1-card"' in _frag, "<summary>" in _frag,
+          '<h3 class="row"' in _frag, '<span class="title"' in _frag),
+         (True, True, True, True))
+    _summary = _frag[_frag.index("<summary>"):_frag.index("</summary>")]
+    # F2 — MUST be asserted on visible TEXT. The date legitimately occurs 5x in a
+    # card's MARKUP: the day anchor, the article id, the fold id and the visible id.
+    case("F2: the date appears ONCE in what the reader sees",
+         _strip3.sub("", _summary).count("2026-08-31"), 1)
+    case("F1/F7: the long first sentence survives WHOLE in the rendered card",
+         ("somewhere in the middle here." in _strip3.sub("", _frag), "…" in _frag),
+         (True, False))
+    # ⚠ NON-RAISING. The raw .index() form crashes when the tech fold is absent, so
+    # a mutation could not redden this case — the harness refuses a mutation that
+    # crashes instead of reddening, correctly, and by no named guard.
+    _tech_at = _frag.find('id="2026-08-31-1-tech"')
+    _card_end = _frag.find("</details>", _frag.find('id="2026-08-31-1-card"'))
+    case("F4: the tech fold is INSIDE the card fold, not a sibling",
+         (_tech_at >= 0, _card_end >= 0, 0 <= _tech_at < _card_end), (True, True, True))
+    case("F6: cards are shut by default", '<details id="2026-08-31-1-card" open' in _frag, False)
+    case("the -plain fold is gone", "-plain" in _ch, False)
+    # F3 — the badge rides on the COLLAPSED row. That is the whole point of the
+    # derived badges that shipped in PR #186.
+    _bfix = parse_entries("## 2026-08-31 [heads-up]\nBadge fixture sentence.\n\nBody here.\n")
+    _bh2 = _build1(_bfix)
+    _bsum = _bh2[_bh2.index("<summary>"):_bh2.index("</summary>")]
+    case("F3: the badge is INSIDE the collapsed row",
+         ('class="flag"' in _bsum, "heads-up" in _bsum), (True, True))
+    # F5 — a parse failure must get LOUDER, not quieter.
+    _brk = parse_entries("## not-a-date\nSomething.\n")
+    _bh = build(entries=_brk, days=bucket_days([], _brk, 2, "2026-08-31"),
+                prs=[], pr_error=None, git_error=None, window=2, exemptions=[],
+                exempt_error=None, store="x", store_error=None, generated_at="t")
+    case("F5: a broken entry is NOT foldable",
+         ("entry broken" in _bh,
+          "<details" in _bh[_bh.index("entry broken"):
+                            _bh.index("</article>", _bh.index("entry broken"))]),
+         (True, False))
+    # F10 — entry-level heading stops survive. Broken entries emit no <h3>; the ask
+    # tray and Worth knowing emit <h2>.
+    case("F10: one h3 per non-broken entry in What changed", _ch.count('<h3 class="row"'), 1)
+    # F9 — the tray links to #{eid}, whose target lives on the ARTICLE. Moving the
+    # canonical id onto the fold would leave every tray link rendered, plausible,
+    # and resolving to nothing.
+    _ask = parse_entries("## 2026-08-31 [needs-you]\nSnorbit decision needed.\n\n"
+                         "**Decide:** pick one\n- yes\n- no\n")
+    _ah = _build1(_ask)
+    _targets = set(re.findall(r'\sid="([^"]+)"', _ah))
+    _trayrefs = set(re.findall(r'href="#([^"]+)"', _ah))
+    # ⚠ The first element is the NON-VACUITY assertion: a fixture producing no
+    # tray link would otherwise pass by having nothing to check.
+    case("F9: every in-page tray link resolves to an id that exists",
+         (bool(_trayrefs), sorted(_trayrefs - _targets)), (True, []))
+    # §2f — the rule that exists ONLY BECAUSE of the collapse, plus the hole
+    # review round 2 found in its first wording.
+    _solo = parse_entries("## 2026-08-31\nFlimbert solo sentence.\n")
+    _sfrag = _fragment(_build1(_solo), "2026-08-31-1")
+    case("F8: a single-sentence entry with no tech has NO fold and NO triangle",
+         ("<details" in _sfrag, 'class="tri"' in _sfrag,
+          "Flimbert solo sentence." in _sfrag),
+         (False, False, True))
+    # ⛔ F8b — THE ROUND-2 DEFECT, pinned. The first wording of §2f suppressed the
+    # fold when the prose TEXT equalled the title, which for this input took the
+    # ONLY route to the raw technical detail with it.
+    _solotech = parse_entries("## 2026-08-31\nWurbleflux alone.\n<!--tech-->\nQuixtan detail.\n")
+    _sth = _build1(_solotech)
+    _stfrag = _fragment(_sth, "2026-08-31-1")
+    case("F8b: a tech block ALWAYS keeps its route, even with an empty plain half",
+         ('<details id="2026-08-31-1-card"' in _stfrag,
+          'id="2026-08-31-1-tech"' in _stfrag, "Quixtan detail." in _stfrag),
+         (True, True, True))
+    case("F8c: no empty prose container is emitted", '<div class="prose"></div>' in _sth, False)
+
     all_ids = re.findall(r'\sid="([^"]+)"', ht)
     case("no duplicate DOM ids", len(all_ids), len(set(all_ids)))
     case("every details has an id", ht.count("<details id="), ht.count("<details"))
@@ -1836,7 +1944,7 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     d2 = bucket_days(["2026-08-28"], [], 2, "2026-08-28")
     two_bars = _section(_B([], d2), "The last 2 days")
     case("the chart draws oldest-first (left to right)",
-         two_bars.index("2026-08-27") < two_bars.index("2026-08-28"), True)
+         _at(two_bars, "2026-08-27") < _at(two_bars, "2026-08-28"), True)
 
     hx = _B([], bucket_days([], [], 2, "2026-08-28"),
             exemptions=[{"number": 9, "title": "T", "merged": "2026-08-28", "reason": "typo fix"}])
@@ -1858,8 +1966,29 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     anchored = _B(ents3, d3)
     case("a bar's day anchor exists for the day it links to",
          'id="day-2026-08-28"' in anchored, True)
-    case("the title is rendered outside the fold",
-         '<p class="title">Decide the thing.</p>' in anchored, True)
+    # ⟳ 2026-08-31. WAS "the title is rendered outside the fold", asserting
+    # `<p class="title">Decide the thing.</p>`. That case was a round-3 survivor
+    # and its PROPERTY — the title is legible without opening anything — still
+    # holds; it is now delivered by the title BEING the summary rather than by
+    # sitting outside a fold. Asserting the old MARKUP would be asserting the
+    # mechanism this slice replaced, so the case moves with the property.
+    #
+    # ⚠ Found by the plan gate, not by the suite going red on someone later: its
+    # NAME stated the property being reversed. A line grep missed it because it
+    # spans two lines; the population was then enumerated by parsing every
+    # `case()` block on paren balance, which found four such cases in total.
+    # ⚠ BOUND TO THE CARD'S OWN FRAGMENT, not to "the first <summary> on the page".
+    # The first version sliced from `anchored.index("<summary>")` and did NOT go red
+    # when a mutation emptied the title — measured. That is the §4 binding rule this
+    # slice wrote and then violated one screen later.
+    _anchor_frag = anchored[anchored.index('<article class="entry" id="2026-08-28-1">'):]
+    _anchor_frag = _anchor_frag[:_anchor_frag.index("</article>")]
+    _anchor_sum = _anchor_frag[_anchor_frag.index("<summary>"):_anchor_frag.index("</summary>")]
+    case("the title is the fold's own summary, so it is legible while shut",
+         ('<h3 class="row"' in _anchor_sum,
+          "Decide the thing." in _anchor_sum,
+          '<p class="title">' in anchored),
+         (True, True, False))
     tall = _bar({"date": "D", "commits": 8, "needs_you": False, "has_entry": True}, 8, False)
     short = _bar({"date": "D", "commits": 1, "needs_you": False, "has_entry": True}, 8, False)
     case("bar height scales with commits",
@@ -2082,13 +2211,6 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     case("...nor does 'e.g.'",
          _first_sentence("Checked e.g. examples in docs. Then more."),
          "Checked e.g. examples in docs.")
-    # Codex Medium 2 — REPRODUCED: a first paragraph with NO terminator made
-    # the whole paragraph the "headline", so the fold dropped it while the
-    # title showed only TITLE_CAP chars. Text existed in the store and appeared
-    # NOWHERE on the page. Deleting unseen prose is the worst outcome here.
-    _noterm = "A first paragraph with no terminator at all that runs on well past any cap"
-    case("a paragraph with no sentence end is never dropped from the fold",
-         _noterm in _prose(_noterm + "\n\nSecond.", drop_headline=True), True)
 
     # ── THE CHART'S KEY ──────────────────────────────────────────────────────
     # The chart encoded four meanings and carried NO key, so its ALARM state —
@@ -2199,15 +2321,21 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     case("a one-sentence first paragraph is replaced by the NEXT paragraph",
          ("Ready for you now." in _solo, '<p class="lede">The detail follows here.</p>' in _solo),
          (False, True))
-    # ...unless there is nothing else. An empty fold is worse than a repeat.
-    case("...but the headline is KEPT when it is the entire entry",
-         "Ready for you now." in _prose("Ready for you now.", drop_headline=True), True)
+    # ⟳ 2026-08-31. WAS "...but the headline is KEPT when it is the entire entry",
+    # on the premise that "an empty fold is worse than a repeat". COLLAPSED CARDS
+    # OVERTURN IT: the alternative to a repeat is now NO FOLD, not an empty one
+    # (spec §2f). The body comes back empty and the card renders as a plain row.
+    case("the headline is DROPPED when it is the entire entry, leaving no fold body",
+         _prose("Ready for you now.", drop_headline=True), "")
     # ⚠ THE ENTRY-2 CASE, measured on the real page. A first sentence longer
     # than TITLE_CAP is displayed truncated with "…", and the earlier version
     # of this matched on that displayed string — so it dropped nothing on
     # precisely the entries whose openings are longest and most repetitive.
     _long = "Decided: " + "the check stays and is written down " * 4 + "here. Then more."
-    case("a first sentence longer than the displayed cap is STILL dropped",
+    # ⟳ 2026-08-31: renamed. It asserted "longer than the displayed cap" and there
+    # is no cap now — a guard naming a deleted mechanism reads as evidence the
+    # mechanism exists. Assert the PROPERTY.
+    case("a long first sentence is STILL dropped from the fold",
          _prose(_long, drop_headline=True).count("Decided:"), 0)
     case("...and dropping it leaves the rest intact",
          "Then more." in _prose(_long, drop_headline=True), True)
@@ -2367,38 +2495,6 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     #
     # ⚠ Round 1 filed this exact SYMPTOM and fixed it — by wiring `_inline` into
     # the title. The class (no delimiter reaches the page unpaired) came back
-    # through a second route, because the search was for the mechanism rather
-    # than the property. The case below asserts the PROPERTY, and the filler is
-    # deliberately markup-BEARING: the pre-existing truncation case at `:1810`
-    # uses `"x" * 40` and could never have seen this.
-    # ⚠ `_delim`, not `_d` — `_d` is already a day-fixture factory at `:1644`, and
-    # a `for` target LEAKS into the enclosing scope. `:1252` records the same trap
-    # for `_raises`. Shadowing it here would have broken every later `_d(...)` call.
-    for _delim, _elem in (("**", "strong"), ("`", "code")):
-        _long_md = "x" * 95 + f" {_delim}bold tail that is long enough to be cut{_delim}"
-        _rendered = _inline(_first_sentence(_long_md))
-        case(f"a truncated headline never leaves a bare {_delim} on the page",
-             (_delim in _rendered.replace(f"<{_elem}>", "").replace(f"</{_elem}>", ""),
-              f"<{_elem}>" in _rendered, "bold tail" in _rendered),
-             (False, True, True))
-    # ⛔ ROUND 4, Blocking — REPRODUCED. `_close_orphan_markup` was a SECOND
-    # scanner beside `_inline_scan`, and they disagreed on one rule: code content
-    # is LITERAL. A truncated code span holding a `**` got a `**` closer, which
-    # then rendered inside the `<code>` — a bare delimiter still on the page AND
-    # text the author never typed (`…code ** tail**`).
-    #
-    # The assertion is the PROPERTY that catches it whatever the mechanism: the
-    # truncated span's CONTENT must be a prefix of the full span's. Asserting the
-    # bug's signature (`"**\`" not in title`) would have passed for any renderer
-    # that inserted a different character.
-    _cb = "x" * 95 + " `code ** tail that is long enough to be truncated here`"
-    _full_code = re.search(r"<code>(.*?)</code>", _inline(_cb))
-    _trunc_code = re.search(r"<code>(.*?)</code>", _inline(_first_sentence(_cb)))
-    case("a truncated code span's CONTENT is a prefix of the full span's",
-         (_trunc_code is not None,
-          _full_code is not None and _trunc_code is not None
-          and _full_code.group(1).startswith(_trunc_code.group(1))),
-         (True, True))
 
     # ⛔ ROUND 4, High — `ENTITY_TAIL` matched `&#39;` but not `&#x27;`, which is
     # what `html.escape` actually emits for an APOSTROPHE. The guard covered the
@@ -2408,49 +2504,6 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
          ("&#x27;" in _apos, "&#x27<" in _apos, "</a>;" in _apos),
          (True, False, False))
 
-    # ...and the same property over the REAL store, which is where it was found.
-    # Scoped to TRUNCATED titles: a delimiter the author left unpaired in a short
-    # title still prints as itself, which is `_inline_scan`'s deliberate rule.
-    #
-    # ⚠ `--mutate .` copies only `scripts/` into a temp tree, so the store is
-    # genuinely absent there — the gate caught this as a CANNOT RUN rather than
-    # letting it pass, which is the behaviour the project's checks doc demands.
-    # The skip is therefore DECLARED and itself asserted: it can only be taken in
-    # a tree that has no `docs/` at all, so it can never quietly swallow a real
-    # failure in the repo. The two synthetic cases above carry the property in
-    # both contexts; this one adds the real subject when the real subject exists.
-    if STORE_DEFAULT.exists():
-        _bare = re.compile(r"</?(?:strong|code|a)[^>]*>")
-        _store_titles = [_bare.sub("", _inline(_e["title"]))
-                         for _e in parse_entries(STORE_DEFAULT.read_text())
-                         if _e["title"].endswith("…")]
-        case("no truncated title in the REAL store renders a bare delimiter",
-             ([_t for _t in _store_titles if "**" in _t or "`" in _t], bool(_store_titles)),
-             ([], True))
-    else:
-        case("the REAL-store title check is skipped ONLY where there is no docs/",
-             (STORE_DEFAULT.exists(), (ROOT / "docs").exists()), (False, False))
-    # ⚠ ROUND 4 (Low) — the cap case below uses `"x" * 40 + " " + "y" * 200`:
-    # delimiter-free, so it never produces a closer and could never see closers
-    # appended PAST the cap. Measured: 148 of 60,000 delimiter-rich inputs
-    # exceeded `TITLE_CAP`, up to 113. Same blind-filler shape the H1 comment
-    # names for the older case — and then reintroduced one case later.
-    #
-    # ⚠ AND MY FIRST ATTEMPT AT THIS CASE REPEATED THE MISTAKE. `"**a`b** " +
-    # "word " * 40` puts the delimiters in the LEAD, so the cut lands in plain
-    # words, no closer is needed, and the mutation SURVIVED at 208/208. The cut
-    # has to land INSIDE a span, and it has to leave no word boundary to retreat
-    # to — which is why this input is dense and ugly rather than tidy. Taken from
-    # the fuzz that found the defect (148 of 60,000 inputs), not invented.
-    _capbust = ("abword  b `b a**word b word  `word wordba**abawordb `a** ** **a "
-                "`**   word word word **`** aa      **word `  awordbword wordword "
-                "``b word`a**   a")
-    case("the cap bounds a title even when closers have to be added",
-         (len(_first_sentence(_capbust)) <= TITLE_CAP + 1,
-          _first_sentence(_capbust).endswith("…")), (True, True))
-    case("an over-long headline is cut at a WORD, with an ellipsis",
-         (len(_first_sentence("x" * 40 + " " + "y" * 200)) <= TITLE_CAP + 1,
-          _first_sentence("x" * 40 + " " + "y" * 200).endswith("…")), (True, True))
     # A URL's dots are not sentence ends — the reported headline broke on one.
     case("a URL inside the first sentence does not end it",
          _first_sentence("Open http://127.0.0.1:7391/dashboard to see it. Next."),
@@ -2464,6 +2517,40 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
                           "http://example.com with three parts.\n")
     case("parse_entries USES the sentence headline (not the wrapped line)",
          _wrap[0]["title"], "The page is ready for you.")
+
+    # ⛔ THE DEFECT THIS SLICE EXISTS FOR. Two individually-correct rules composed
+    # into content loss: `:428` cut the title at TITLE_CAP and `_prose` dropped the
+    # whole first sentence, so everything between the cut and the full stop reached
+    # NO reader. Measured on the live page 2026-08-31.
+    #
+    # ⚠ Tag-stripped, and the fixture is markup-BEARING on purpose. `_inline`
+    # renders `**bold**` to `<strong>bold</strong>`, so a raw-substring assertion
+    # would be false for correct output.
+    #
+    # ⚠ DEFINED LOCALLY, and the card-fragment block above defines its own copy.
+    # Sharing one helper across two distant self-test regions crashed the suite
+    # with UnboundLocalError in plan review round 1 — that block runs EARLIER, so
+    # the name is unbound when it reads it. A duplicated two-line regex is cheaper
+    # than an ordering constraint invisible from either site.
+    _bare_tags = re.compile(r"</?(?:strong|code|em|del|a)[^>]*>")
+    _longsent = ("The backlog page refused to build until the newest item was described "
+                 "in **plain words**, which is the `guard` doing its job. Second para.")
+    _title_now = _bare_tags.sub("", _inline(_first_sentence(_longsent)))
+    case("a long first sentence reaches the reader WHOLE",
+         ("which is the guard doing its job." in _title_now,
+          _title_now.endswith("…")),
+         (True, False))
+    case("the title is no longer capped at a character count",
+         len(_first_sentence("y " * 200).strip()) > 110, True)
+    # ⚠ THE WIRING again. Every case above calls the helper directly; a complete
+    # page build is what catches a `cap=` keyword surviving in `_prose`.
+    _norm = parse_entries("## 2026-08-31\nAn ordinary entry here.\n\nWith a body.\n")
+    case("building a page with one ordinary entry does not raise",
+         "An ordinary entry here." in build(
+             entries=_norm, days=bucket_days(["2026-08-31"], _norm, 2, "2026-08-31"),
+             prs=[], pr_error=None, git_error=None, window=2, exemptions=[],
+             exempt_error=None, store="x", store_error=None, generated_at="t"),
+         True)
 
     # ── CWD INDEPENDENCE ─────────────────────────────────────────────────────
     # MEASURED 2026-08-29 from a real broken page: run from any directory that is

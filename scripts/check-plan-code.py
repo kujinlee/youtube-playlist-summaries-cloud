@@ -446,7 +446,7 @@ EXPECTED_MUTATIONS = {
     # and its budget, gh shape validation, and — on the gate — the decision grammar
     # including the NESTING rule, whose absence silently dropped every option after a
     # 4-space nest.
-    "scripts/gen-dashboard.py": 56,
+    "scripts/gen-dashboard.py": 59,
     "scripts/page_markup.py": 14,
     "scripts/check-dashboard-entry.py": 18,
     "scripts/check-plan-code.py": 21,
@@ -1905,8 +1905,19 @@ def _self_test() -> int:
     # LIVE `**` on the reader's page); 67 → 73 (round 4). 73 → 94 (backlog #74, the runner
     # itself, +21; four of them added by its own review round). 94 → 105 (page_chrome, +11).
     # 105 → 120 (the ask-choices slice: +9 gen-dashboard, +6 check-dashboard-entry).
+    # 120 → 123 (collapsed cards: gen-dashboard 56 → 59). THREE entries were DELETED
+    # WITH THE CODE THEY GUARDED, not narrowed — the orphan-delimiter repair existed
+    # only to heal a cut that no longer happens, so it went with TITLE_CAP:
+    #   "a truncated headline is not re-balanced, so an orphan delimiter ships"
+    #   "the orphan closer becomes a SECOND scanner again, disagreeing on code"
+    #   "closers are appended PAST the cap, so TITLE_CAP stops bounding"
+    # SIX were added for the collapse: the CSS clip, the §2f suppression in BOTH
+    # directions (no fold with nothing behind it / a tech block always keeps its
+    # route), the returning bare date, a re-introduced cap, and the row's heading
+    # element. Net +3. page_markup stays at 14 — MEASURED: none of its mutations
+    # named `orphaned_delimiters`, so deleting that function moved no coverage.
     # Coverage may grow here; it may not shrink.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 120)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 123)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so
