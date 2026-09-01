@@ -1574,3 +1574,73 @@ raise the budget as a reflex") is why the account sits in `process-rationale.md`
 Gates green: check-docs, check-roadmap-consistency, check-anchors, check-selftest-counts,
 check-review-rounds, check-ratchet-contract, check-producer-enumeration, check-explainer-delivery,
 check-theme-token-coverage, check-arch-findings, check-guard-coverage.
+
+## 2026-09-01
+The buttons at the top of every page stopped borrowing a colour they had no business borrowing —
+and the check that was supposed to make that safe turned out to say the opposite.
+
+You asked for the shared bar at the top of these pages to supply its own colours instead of taking
+them from whichever page it is sitting on. Reading the code first turned up a problem with that: the
+module has a written rule saying it must *never* name a colour, backed by an automatic check that
+rejects any colour written into it — a check that already caught one slipping in. The reason is
+good: five pages look deliberately different, and a shared component naming colours would make them
+all look the same.
+
+So the literal version of your instruction would have deleted a decision someone made on purpose.
+
+Looking at what the bar actually borrows narrowed the problem a lot. It takes five things from the
+page. Four of them are text and border colours, which are safe: a page picks its text colour to be
+readable on its own background, so borrowing it is fine. The fifth was a *background* — a second
+surface the page's text colour was never checked against. That one token was the entire cause of
+yesterday's invisible-label bug.
+
+The fix is that the buttons no longer take a background at all. They are outlines now, sitting
+directly on the page, so their label is on the surface the page chose its text for. No colour named,
+the rule intact, all five pages fixed at once.
+
+One thing nearly went wrong and was caught by measuring instead of assuming. Taking the background
+away moves the label onto the page's main background, which is a different surface — and on the
+dashboard, the grey used for that label measured just under the readability standard there. That is
+the *same* mistake this page's chart legend made once before, at the identical number. Fixed by
+using the darker grey that was already chosen for exactly this situation.
+
+Checked in a real browser afterwards, in both looks and on two different pages. Everything reads
+clearly.
+<!--tech-->
+Backlog **#80 CLOSED** — user chose (b). Branch `chrome-owns-its-surface`.
+
+⛔ **Literal (b) was refused by an existing decision.** `page_chrome.py`: *"reads the page's OWN
+variables, never its own colours … if this module named a colour, every page would acquire it"*,
+enforced by a case failing on any hex (it caught a `#777` pre-ship).
+
+**The narrowing.** Of five consumed tokens, four (`--ink-soft`, `--ink`, `--rule`, `--structural`)
+are foreground/border with `currentColor`/`inherit` fallbacks — page-derived and safe by
+construction. Only `--card` supplied a **second surface**. `.chrome-btn{background:transparent}`.
+⚠ `var(--card, transparent)` could never have helped: the shim **defines** `--card`, so the fallback
+never fires. The fix is refusing to borrow, not defaulting better.
+
+⚠ **It moved the floor.** Resting label now on `--bg`: dashboard `--ink-soft` #6b7780 = **4.32:1**,
+under AA — identical to the legend's recorded trap (*"the legend sits on --bg, not --panel"*, same
+4.32). Retuned to `#5c5b67`, the value already chosen for that surface. `--ink-soft` has exactly one
+consumer (the chrome), so the change is contained.
+
+**Browser-verified**, browser reporting dark throughout: dashboard light **15.46 / 6.28**, dashboard
+dark **14.37 / 5.84**, `/goals` light resting **7.36** with border intact, all `pillBg:
+rgba(0,0,0,0)`.
+
+**CONTROL:** reverting to `var(--card,transparent)` turns all three new cases red (rc=1). The rule
+asserts the PROPERTY — *paints no background it did not choose* — and pins the four legal tokens by
+name, so a fifth cannot arrive unexamined. page_chrome 47 → **50**.
+
+**`GROUPS` fired twice and was right twice** — when #68/#79 closed and #80 was filed, then again when
+#80 closed. It refuses to build until the open set is described in plain words. Not a red; the
+mechanism working, exactly as the 2026-08-31 entry describes.
+
+⚠ **Residue, stated:** the theme-token guard's population is still the dashboard alone, and three
+duplicated palettes still exist. This removed the chrome's DEPENDENCE on them, not the duplication.
+Option (a) stays available and is cheaper now — the property is one contrast pair per page.
+
+Gates green: check-docs, check-roadmap-consistency, check-anchors, check-selftest-counts,
+check-review-rounds, check-ratchet-contract, check-producer-enumeration, check-explainer-delivery,
+check-theme-token-coverage, check-arch-findings, check-guard-coverage. Self-tests: gen-dashboard
+294/294, page_chrome 50/50, gen-goals-page 15/15.
