@@ -1085,3 +1085,24 @@ returns to "Nothing needs you."
 
 This is the first exercise of the resolution mechanism on an entry written in the new grammar — the
 same `[resolved: <id>]` marker for both categories, which is why no expiry was needed.
+
+## 2026-08-31
+
+The status page is now a tight list: each update is one line you can read at a glance, and clicking it opens the explanation.
+
+Before, every update took four lines before it said anything — a date row, a title, and two closed folds — so about five fitted on a screen. Now there is one row per update: its id, any badge, and the title, with a small triangle at the end. Click the row and the plain-words explanation appears, with **Raw technical detail** tucked at the end of it. An update with nothing more to say has no triangle at all, because a control that opens onto nothing is a lie about the content.
+
+Two smaller things came with it. The date used to print twice on every row — "2026-08-31 2026-08-31/3" — because the id is built from the date, so the duplication was guaranteed rather than occasional. The bare date is gone and the id stays, since that is the reference you can quote back.
+
+And a real defect, found while measuring the first two: a title longer than 110 characters was cut, and the rest of that sentence was displayed **nowhere on the page**. Two rules that were each correct on their own — cut the title, and don't repeat the title inside the fold — combined to delete words you had written. The cap is gone; the line is clipped by the browser instead, so the full text stays in the page where find-in-page and an opened card can both reach it.
+
+<!--tech-->
+Spec `docs/superpowers/specs/2026-08-31-dashboard-collapsed-cards-design.md` v3; plan `docs/superpowers/plans/2026-08-31-dashboard-collapsed-cards.md` v2. Four review rounds, both halves each (2 spec, 1 plan, + fold-ins).
+
+Each entry is now one `<details>` inside the existing `<article id="{eid}">`, whose `<summary>` is a single `<h3 class="row">` — `<summary>`'s content model allows phrasing content or ONE heading element, and a `<summary>` is not itself a heading, so this keeps the per-entry heading stops and improves them (the outline used to read as 29 bare dates).
+
+DELETED, not disabled: `TITLE_CAP`, the truncation branch, `_close_orphan_markup`, `gen-dashboard._orphaned_delimiters` and `page_markup.orphaned_delimiters`. The orphan repair existed only to heal a wound the cut inflicted — cutting mid-`**bold**` orphaned the opener.
+
+Mutations 120 → 123 (3 deleted with the code they guarded, 6 added, 2 re-anchored). `--mutate .`: 5 files, 123 mutations, 0 survivors. Suite 266 → 276; page_markup 78 → 74.
+
+⚠ Two honest gaps. (1) Emptying the title is caught by the ORDERING guards, not by the title-specific one, which did not fire even after re-binding; recorded as a `note` in the mutation manifest. (2) No browser has yet been driven against this — the flex-ellipsis behaviour is asserted from the stylesheet text only, and the spec says the falsifiers are necessary and not sufficient.
