@@ -2,7 +2,7 @@
 """A review round has TWO halves, or a written reason why it does not — a RATCHET on silent gaps.
 
     python3 scripts/check-review-rounds.py             # audit docs/reviews/
-    python3 scripts/check-review-rounds.py --self-test # 14 cases
+    python3 scripts/check-review-rounds.py --self-test # 22 cases
 
 WHY THIS EXISTS
 ---------------
@@ -55,6 +55,7 @@ missing (exit 2 — treat as NOT RUN).
 from __future__ import annotations
 
 import collections
+import json
 import pathlib
 import re
 import sys
@@ -117,6 +118,68 @@ def has_gap_line(text: str) -> str | None:
     return f"{m.group(1)}: {m.group(2).strip()}" if m else None
 
 
+# ── backlog #68 (d): THIS IS THE CONSUMER THAT IS NOT THE CALLER ───────────────────────────────
+# `scripts/codex-review.py` now writes a verdict per run into `docs/reviews/verdicts/`, because its
+# exit code has a single consumer and no memory: measured 2026-08-28, a caller wrapped the run as
+# `… ; echo "WRAPPER_RC=$?"` and reported the ECHO's status, so `WRAPPER_RC=1` sat unread while the
+# round was treated as reviewed.
+#
+# ⚠ WRITING THE VERDICT DOWN FIXES NOTHING BY ITSELF. A file the caller ignores is an exit code the
+# caller ignores with extra steps. The mechanism is that THIS check reads it, in CI, where the
+# caller cannot intervene. What it catches is the exact round-3 shape: the gate did not run, and an
+# artifact bearing its name was filed anyway.
+#
+# ⚠ STATED LIMIT, NOT PAPERED OVER: this reads COMMITTED verdicts, so someone who deletes one
+# before committing evades it entirely. That is deliberate scope, not an oversight. The failure
+# being fixed was an ACCIDENT — a `$?` that read the wrong command's status — and an accident
+# cannot delete a file. A determined caller can still defeat this; a distracted one cannot, and
+# every occurrence so far has been the distracted kind. Claiming more would be the "green check
+# over the wrong subject" this project keeps measuring.
+VERDICT_DIRNAME = "verdicts"
+
+
+def verdict_problems(records: "list[tuple[str, dict]]", review_names: "set[str]") -> list[str]:
+    """One problem per verdict that contradicts what is on disk. PURE.
+
+    `gate_ran` is READ, never re-derived from `exit_code`. Deriving it here would be a second
+    implementation of the wrapper's rule, and the two would drift — this project has measured that.
+    """
+    out = []
+    for src, rec in records:
+        if rec.get("gate_ran"):
+            continue
+        review = rec.get("review") or "(unnamed)"
+        if review in review_names:
+            out.append(
+                f"{src}: the Codex gate did NOT run ({rec.get('reason', 'no reason recorded')}), "
+                f"yet `{review}` is filed in docs/reviews/. A failed gate must not leave an "
+                f"artifact that reads as a completed one — delete it, or if it is a Claude "
+                f"review, name it as one and record a `REVIEW GAP:` line")
+    return out
+
+
+def read_verdicts(directory: pathlib.Path) -> "tuple[list[tuple[str, dict]], list[str]]":
+    """(records, unreadable). A malformed verdict is a CANNOT-RUN, never a silent skip.
+
+    An absent directory is fine and returns nothing: verdicts only exist from the moment the
+    wrapper started writing them, and back-filling history would be inventing testimony.
+    """
+    records, bad = [], []
+    if not directory.is_dir():
+        return records, bad
+    for p in sorted(directory.glob("*.json")):
+        try:
+            rec = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            bad.append(f"{p.name}: unreadable ({exc})")
+            continue
+        if not isinstance(rec, dict) or "gate_ran" not in rec:
+            bad.append(f"{p.name}: no `gate_ran` field — cannot tell whether the gate ran")
+            continue
+        records.append((p.name, rec))
+    return records, bad
+
+
 def audit(reviews: pathlib.Path, known: set[tuple[str, int]] = KNOWN) -> tuple[list[str], dict]:
     """(problems, stats). Reads `reviews`; the parsing above is pure."""
     rounds: dict[tuple[str, int], dict[str, pathlib.Path]] = collections.defaultdict(dict)
@@ -151,7 +214,14 @@ def audit(reviews: pathlib.Path, known: set[tuple[str, int]] = KNOWN) -> tuple[l
             f"or the exemption outlives what it excused"
         )
 
-    return problems, {"rounds": len(rounds), "unparsed": unparsed, "exempt": len(exempt_used)}
+    # The verdict half. `review_names` is what is ACTUALLY on disk, so the contradiction the
+    # check reports is between two observations, never between an observation and an assumption.
+    vrecs, vbad = read_verdicts(reviews / VERDICT_DIRNAME)
+    review_names = {p.name for p in reviews.glob("*.md")}
+    problems.extend(verdict_problems(vrecs, review_names))
+
+    return problems, {"rounds": len(rounds), "unparsed": unparsed, "exempt": len(exempt_used),
+                      "verdicts": len(vrecs), "verdicts_bad": vbad}
 
 
 # ---------------------------------------------------------------- self-test
@@ -205,6 +275,44 @@ def self_test() -> int:
         d = tree({"p-r1-codex.md": "x", "p-r1-claude.md": "y", "notes.md": "z"})
         check("unparsed files are counted, not judged", audit(d, set())[1]["unparsed"] == 1, True)
 
+    # ── backlog #68 (d): the verdict half ──
+    # THE ROUND-3 SHAPE, as a case: the gate did not run and an artifact bearing its name is filed.
+    # That is what actually happened — four models each overwrote a committed review while the
+    # wrapper wrote nothing — and no check could see it, because the only signal was an exit code
+    # the caller had already discarded.
+    _filed = {"plan-x-r3-codex.md"}
+    _did_not_run = ("plan-x-r3-codex.verdict.json",
+                    {"gate_ran": False, "review": "plan-x-r3-codex.md", "reason": "no candidate"})
+    _ran = ("plan-x-r3-codex.verdict.json",
+            {"gate_ran": True, "review": "plan-x-r3-codex.md", "reason": "ok"})
+    check("a failed gate with its artifact filed anyway is caught",
+          len(verdict_problems([_did_not_run], _filed)) == 1, True)
+    check("…and the message names the review",
+          "plan-x-r3-codex.md" in verdict_problems([_did_not_run], _filed)[0], True)
+    check("a failed gate that left NO artifact is not a contradiction",
+          verdict_problems([_did_not_run], set()) == [], True)
+    check("a gate that RAN is never a problem", verdict_problems([_ran], _filed) == [], True)
+    # gate_ran is READ, not re-derived. A verdict claiming the gate ran while exiting 1 is
+    # self-inconsistent, but it is the WRAPPER's job to be consistent; re-deriving here would be a
+    # second implementation of that rule, and the two copies would drift.
+    check("exit_code is not consulted",
+          verdict_problems([("v.json", {"gate_ran": True, "exit_code": 1,
+                                        "review": "plan-x-r3-codex.md"})], _filed) == [], True)
+
+    with tempfile.TemporaryDirectory() as td:
+        vd = pathlib.Path(td) / "verdicts"
+        vd.mkdir()
+        (vd / "good.json").write_text('{"gate_ran": true, "review": "a.md"}')
+        (vd / "broken.json").write_text("{not json")
+        (vd / "nofield.json").write_text('{"review": "b.md"}')
+        recs, bad = read_verdicts(vd)
+        check("a readable verdict is collected", len(recs) == 1, True)
+        # A verdict that cannot be parsed must be a CANNOT RUN, never a silent skip: "unreadable"
+        # and "the gate ran" are indistinguishable to a check that drops it.
+        check("malformed and field-less verdicts are reported, not skipped", len(bad) == 2, True)
+        check("an absent verdict directory is not an error",
+              read_verdicts(pathlib.Path(td) / "nope") == ([], []), True)
+
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
 
@@ -227,8 +335,15 @@ def main() -> int:
         print("    REVIEW GAP: codex — usage limit; Claude ran in its place per docs/plugins.md")
         return 1
 
+    if stats["verdicts_bad"]:
+        print("CANNOT RUN — a codex-review verdict could not be read, so whether that gate ran is "
+              "UNKNOWN. Treat these as NOT CHECKED:\n", file=sys.stderr)
+        for b in stats["verdicts_bad"]:
+            print(f"  ? {b}", file=sys.stderr)
+        return 2
+
     print(f"review rounds: {stats['rounds']} parsed, {stats['exempt']} pre-existing exemptions, "
-          f"0 silent gaps")
+          f"0 silent gaps; {stats['verdicts']} codex-review verdict(s) read, none contradicted")
     print(f"  ⚠ {stats['unparsed']} files in docs/reviews/ carry no round number and are NOT "
           f"covered by this check")
     return 0

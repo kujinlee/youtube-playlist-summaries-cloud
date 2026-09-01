@@ -1596,7 +1596,7 @@ were wrong**.
       `_load_plan_code` left the case green — **a second implementation of one rule, tested against
       itself**. Extracted as `borrow_errors()`; the case and the refusal now share it, and a new
       case covers the refusal's own branch. 17 → 18 cases.
-## Codex gate artifact safety — backlog #68 (a)(b)(c) — anchor `status-visibility` — 🔧 (d) OPEN
+## Codex gate artifact safety — backlog #68 — anchor `status-visibility` — ✅ CLOSED (a)(b)(c)(d)
 
 The adversarial review gate could fail silently AND overwrite a committed review — and did, four
 times in one run, with the verdict flipping NO→YES between reads. The wrapper wrote nothing at any
@@ -1623,11 +1623,27 @@ never the protection it looked like.
       deleted), not merely reported. Overwrites cannot be restored from a digest, so `git checkout --`
       is named verbatim instead of pretended away.
 - [x] **35 self-test cases** (20 new) + end-to-end verification without invoking Codex.
-- [ ] **(d) DECISION, not engineering** — nothing stops a CALLER masking the exit code
-      (`… ; echo "WRAPPER_RC=$?"` reported the echo's status; `WRAPPER_RC=1` sat unread while the run
-      was treated as successful — the `$?`-after-the-wrong-command trap, a FOURTH occurrence here).
-      **Fails if** a caller can still discard the verdict once this is settled. Choose: constrain the
-      caller, or have the wrapper write its verdict to a file the caller must read.
+- [x] **(d) DECIDED 2026-09-01 — the wrapper writes its verdict down** (user's call between the two
+      shapes). Every run emits `docs/reviews/verdicts/<review-stem>.verdict.json` on the success,
+      failure AND refusal paths, through a single `emit()` so a new branch cannot forget one.
+      ⚠ **The obvious form of this does not work, and the design turns on that:** "a file the caller
+      must read" is not a mechanism while the CALLER is the reader — a file ignored is an exit code
+      ignored with extra steps. So the verdict lands INSIDE the repo and
+      `scripts/check-review-rounds.py` consumes it **in CI**; the consumer is deliberately not the
+      caller. `gate_ran` is **stated, not derived** from `exit_code`, with a case pinning that
+      independence. Unwritable verdict → **CANNOT RUN (2)**; malformed verdict on the reading side →
+      **CANNOT RUN (2)**, never a silent skip.
+- [x] **It fires on the round-3 shape and nothing else — CONTROL RUN.** No verdict → green;
+      `gate_ran:false` **with** the artifact filed → RED, naming the review; `gate_ran:false` with
+      **nothing** filed → green, because that is the documented Codex-down fallback and punishing it
+      would push people back to silence. codex-review 35 → **51** cases, check-review-rounds 14 → **22**.
+- [x] **⚠ STATED LIMIT, not papered over** — it reads COMMITTED verdicts, so deleting one before
+      committing evades it. Deliberate scope: the failure being fixed was an **accident** (a `$?`
+      reading the wrong command), and an accident cannot delete a file. A determined caller still
+      defeats this; a distracted one no longer can.
+- [x] **It demonstrated itself by accident.** The end-to-end check piped the wrapper into `tail`, so
+      the shell reported `rc=0` — the same trap in a new costume — while the verdict on disk read
+      `exit_code: 1, gate_ran: false`. The shell lost the answer; the file kept it.
 
 ⚠ **`--mutate .` runs 13s → 3m13s.** Real, measured, and not addressed here; the lever if it bites
 is parallelising the mutation loop, not dropping coverage.

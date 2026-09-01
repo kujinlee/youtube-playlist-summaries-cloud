@@ -410,6 +410,28 @@ success and failure paths, and warns — quoting the phrase — when the prompt 
 to write a file. None of that substitutes for the brief being right; it makes the failure loud
 instead of silent.
 
-**Still open, and it is a decision rather than engineering (backlog #68 d):** nothing stops a
-*caller* masking the exit code. Decide whether to constrain the caller, or have the wrapper write
-its verdict to a file the caller must read. Until then: capture the exit code on its own line.
+**(d) — DECIDED AND CLOSED 2026-09-01: the wrapper writes its verdict down.** The open question was
+whether to constrain the caller or record the verdict; the user chose the second. Every run now
+writes `docs/reviews/verdicts/<review-stem>.verdict.json` — on the success path, the failure path
+and the refusal path alike, through a single `emit()` so a future branch cannot forget one.
+
+**The obvious version of this fix does not work, and that shaped the design.** "A file the caller
+must read" is not a mechanism if the *caller* is still the reader: a file ignored is an exit code
+ignored with extra steps, and nothing forces a read. So the verdict lands **inside the repository**
+and `scripts/check-review-rounds.py` consumes it **in CI**. The consumer is deliberately not the
+caller. It fails on exactly the round-3 shape — a verdict saying the gate did not run while a review
+is filed under its name — and stays silent on the honest fallback, where the gate failed and left
+nothing behind. That distinction is the whole point: the documented Codex-down path must not be
+punished, only the *silent* one.
+
+Three details worth keeping. **`gate_ran` is stated, not derived from the exit code** — a reader
+that recomputed it would be a second implementation of the wrapper's rule, and this repo has
+measured what those do. **A verdict that cannot be written is a CANNOT RUN (exit 2)**, not a
+warning: an unrecorded success is indistinguishable from the failure being fixed. And **a
+malformed verdict is exit 2 on the reading side too**, never a silent skip, because "unreadable"
+and "the gate ran" look identical to a check that drops it.
+
+⚠ **Demonstrated by accident while verifying it.** The end-to-end check ran the wrapper piped into
+`tail`, so the shell reported `rc=0` — `$?` after a pipe is the *last* command's status, the same
+trap in a new costume. The verdict on disk read `exit_code: 1, gate_ran: false` regardless. The
+shell lost the answer; the file kept it. That is the mechanism working, observed rather than argued.
