@@ -943,15 +943,30 @@ def build(entries, days, prs, pr_error, git_error, window,
                     f'<pre>{_html.escape(e["tech"])}</pre></details>')
             _b = badge_of(e, _cleared)
             _bcls = "flag resolved" if _b == "resolved" else "flag"
-            flag = (f' <span class="{_bcls}">{_html.escape(_b)}</span>') if _b else ""
-            parts.append(
-                f'{day_anchor}<article class="entry" id="{eid}">'
-                f'<h3>{_html.escape(e["date"])} '
-                f'<span class="eid">{_html.escape(e["id"])}</span>{flag}</h3>'
-                f'<p class="title">{_inline(e["title"])}</p>'
-                f'<details id="{eid}-plain"><summary>What this means</summary>'
-                f'<div class="prose">{_prose(e["plain"], drop_headline=True)}</div>'
-                f'</details>{tech}</article>')
+            flag = (f'<span class="{_bcls}">{_html.escape(_b)}</span>') if _b else ""
+            prose = _prose(e["plain"], drop_headline=True)
+            # §2f — a disclosure that discloses NOTHING is a lie about the content.
+            # ⚠ The body is prose AND tech. Review round 2 measured that comparing
+            # prose TEXT to the title suppressed the fold for a one-sentence entry
+            # carrying a <!--tech--> block, taking the ONLY route to the raw detail
+            # with it. Emptiness needs no normalisation rules; a text comparison
+            # needs several, and each is a place to be wrong.
+            body = (f'<div class="prose">{prose}</div>' if prose else "") + tech
+            # ⚠ THE TRIANGLE IS CONDITIONAL. Plan review EXECUTED the unconditional
+            # version: the fold was correctly suppressed and the triangle stayed, so
+            # a row with nothing behind it still advertised that it opened. The
+            # affordance must disappear with the thing it affords.
+            tri = '<span class="tri" aria-hidden="true"></span>' if body else ""
+            # ⚠ ONE <h3> is the summary's ENTIRE content. <summary>'s content model is
+            # phrasing content OR a single heading element — the old `<p class="title">`
+            # was neither, and a <summary> is NOT itself a heading, so without this the
+            # page loses its per-entry heading stops. The bare date is gone: `e["id"]`
+            # is DERIVED from it (`:379`), so printing both was a guaranteed duplicate.
+            row = (f'<h3 class="row"><span class="eid">{_html.escape(e["id"])}</span>'
+                   f'{flag}<span class="title">{_inline(e["title"])}</span>{tri}</h3>')
+            inner = (f'<details id="{eid}-card"><summary>{row}</summary>{body}</details>'
+                     if body else row)
+            parts.append(f'{day_anchor}<article class="entry" id="{eid}">{inner}</article>')
         entries_html = "".join(parts)
 
     # ─── Recorded exemptions (spec §7) ───
@@ -1648,6 +1663,108 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
          [h7.index(f"entry number {n}.") for n in range(7, 0, -1)]
          == sorted(h7.index(f"entry number {n}.") for n in range(1, 8)), True)
     case("the entry id is rendered", "2026-08-28/1" in ht, True)
+
+    # ── THE COLLAPSED CARD (spec §2) ─────────────────────────────────────────
+    # §4's binding rules: locate ONE synthetic entry's fragment and assert INSIDE
+    # it. A page-wide substring test is satisfied by the glossary and the ask
+    # tray — `:1470` records that exact vacuity biting this file before.
+    def _fragment(html_: str, eid: str) -> str:
+        _start = html_.index(f'<article class="entry" id="{eid}">')
+        return html_[_start:html_.index("</article>", _start)]
+
+    def _build1(entries_, when="2026-08-31"):
+        return build(entries=entries_, days=bucket_days([when], entries_, 2, when),
+                     prs=[], pr_error=None, git_error=None, window=2, exemptions=[],
+                     exempt_error=None, store="x", store_error=None, generated_at="t")
+
+    # Task 3 defines its OWN tag-stripper. Sharing one across two self-test
+    # regions crashed with UnboundLocalError in plan review round 1 — this block
+    # runs BEFORE the one that defines `_bare_tags`, so the name is unbound here.
+    _strip3 = re.compile(r"</?(?:strong|code|em|del|a)[^>]*>")
+    # ⚠ The first sentence is long AND markup-bearing, so this fixture carries F1
+    # and F7 through the RENDERED CARD, not just through the helper. A perfect
+    # helper can be entirely unwired — this file already records that once.
+    _c = parse_entries("## 2026-08-31\nZorbal quandle sentence that runs on well past one "
+                       "hundred and ten characters so that any surviving character cap would "
+                       "have to **cut** it somewhere in the `middle` here.\n\nGlimmerwax body.\n"
+                       "<!--tech-->\nVexipop detail.\n")
+    _ch = _build1(_c)
+    _frag = _fragment(_ch, "2026-08-31-1")
+    # POSITIVE EXISTENCE FIRST — an assertion over an absent fixture passes while
+    # the feature is missing.
+    case("the entry fold exists, with its own id",
+         ('<details id="2026-08-31-1-card"' in _frag, "<summary>" in _frag,
+          '<h3 class="row"' in _frag, '<span class="title"' in _frag),
+         (True, True, True, True))
+    _summary = _frag[_frag.index("<summary>"):_frag.index("</summary>")]
+    # F2 — MUST be asserted on visible TEXT. The date legitimately occurs 5x in a
+    # card's MARKUP: the day anchor, the article id, the fold id and the visible id.
+    case("F2: the date appears ONCE in what the reader sees",
+         _strip3.sub("", _summary).count("2026-08-31"), 1)
+    case("F1/F7: the long first sentence survives WHOLE in the rendered card",
+         ("somewhere in the middle here." in _strip3.sub("", _frag), "…" in _frag),
+         (True, False))
+    # ⚠ NON-RAISING. The raw .index() form crashes when the tech fold is absent, so
+    # a mutation could not redden this case — the harness refuses a mutation that
+    # crashes instead of reddening, correctly, and by no named guard.
+    _tech_at = _frag.find('id="2026-08-31-1-tech"')
+    _card_end = _frag.find("</details>", _frag.find('id="2026-08-31-1-card"'))
+    case("F4: the tech fold is INSIDE the card fold, not a sibling",
+         (_tech_at >= 0, _card_end >= 0, 0 <= _tech_at < _card_end), (True, True, True))
+    case("F6: cards are shut by default", '<details id="2026-08-31-1-card" open' in _frag, False)
+    case("the -plain fold is gone", "-plain" in _ch, False)
+    # F3 — the badge rides on the COLLAPSED row. That is the whole point of the
+    # derived badges that shipped in PR #186.
+    _bfix = parse_entries("## 2026-08-31 [heads-up]\nBadge fixture sentence.\n\nBody here.\n")
+    _bh2 = _build1(_bfix)
+    _bsum = _bh2[_bh2.index("<summary>"):_bh2.index("</summary>")]
+    case("F3: the badge is INSIDE the collapsed row",
+         ('class="flag"' in _bsum, "heads-up" in _bsum), (True, True))
+    # F5 — a parse failure must get LOUDER, not quieter.
+    _brk = parse_entries("## not-a-date\nSomething.\n")
+    _bh = build(entries=_brk, days=bucket_days([], _brk, 2, "2026-08-31"),
+                prs=[], pr_error=None, git_error=None, window=2, exemptions=[],
+                exempt_error=None, store="x", store_error=None, generated_at="t")
+    case("F5: a broken entry is NOT foldable",
+         ("entry broken" in _bh,
+          "<details" in _bh[_bh.index("entry broken"):
+                            _bh.index("</article>", _bh.index("entry broken"))]),
+         (True, False))
+    # F10 — entry-level heading stops survive. Broken entries emit no <h3>; the ask
+    # tray and Worth knowing emit <h2>.
+    case("F10: one h3 per non-broken entry in What changed", _ch.count('<h3 class="row"'), 1)
+    # F9 — the tray links to #{eid}, whose target lives on the ARTICLE. Moving the
+    # canonical id onto the fold would leave every tray link rendered, plausible,
+    # and resolving to nothing.
+    _ask = parse_entries("## 2026-08-31 [needs-you]\nSnorbit decision needed.\n\n"
+                         "**Decide:** pick one\n- yes\n- no\n")
+    _ah = _build1(_ask)
+    _targets = set(re.findall(r'\sid="([^"]+)"', _ah))
+    _trayrefs = set(re.findall(r'href="#([^"]+)"', _ah))
+    # ⚠ The first element is the NON-VACUITY assertion: a fixture producing no
+    # tray link would otherwise pass by having nothing to check.
+    case("F9: every in-page tray link resolves to an id that exists",
+         (bool(_trayrefs), sorted(_trayrefs - _targets)), (True, []))
+    # §2f — the rule that exists ONLY BECAUSE of the collapse, plus the hole
+    # review round 2 found in its first wording.
+    _solo = parse_entries("## 2026-08-31\nFlimbert solo sentence.\n")
+    _sfrag = _fragment(_build1(_solo), "2026-08-31-1")
+    case("F8: a single-sentence entry with no tech has NO fold and NO triangle",
+         ("<details" in _sfrag, 'class="tri"' in _sfrag,
+          "Flimbert solo sentence." in _sfrag),
+         (False, False, True))
+    # ⛔ F8b — THE ROUND-2 DEFECT, pinned. The first wording of §2f suppressed the
+    # fold when the prose TEXT equalled the title, which for this input took the
+    # ONLY route to the raw technical detail with it.
+    _solotech = parse_entries("## 2026-08-31\nWurbleflux alone.\n<!--tech-->\nQuixtan detail.\n")
+    _sth = _build1(_solotech)
+    _stfrag = _fragment(_sth, "2026-08-31-1")
+    case("F8b: a tech block ALWAYS keeps its route, even with an empty plain half",
+         ('<details id="2026-08-31-1-card"' in _stfrag,
+          'id="2026-08-31-1-tech"' in _stfrag, "Quixtan detail." in _stfrag),
+         (True, True, True))
+    case("F8c: no empty prose container is emitted", '<div class="prose"></div>' in _sth, False)
+
     all_ids = re.findall(r'\sid="([^"]+)"', ht)
     case("no duplicate DOM ids", len(all_ids), len(set(all_ids)))
     case("every details has an id", ht.count("<details id="), ht.count("<details"))
@@ -1810,8 +1927,23 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     anchored = _B(ents3, d3)
     case("a bar's day anchor exists for the day it links to",
          'id="day-2026-08-28"' in anchored, True)
-    case("the title is rendered outside the fold",
-         '<p class="title">Decide the thing.</p>' in anchored, True)
+    # ⟳ 2026-08-31. WAS "the title is rendered outside the fold", asserting
+    # `<p class="title">Decide the thing.</p>`. That case was a round-3 survivor
+    # and its PROPERTY — the title is legible without opening anything — still
+    # holds; it is now delivered by the title BEING the summary rather than by
+    # sitting outside a fold. Asserting the old MARKUP would be asserting the
+    # mechanism this slice replaced, so the case moves with the property.
+    #
+    # ⚠ Found by the plan gate, not by the suite going red on someone later: its
+    # NAME stated the property being reversed. A line grep missed it because it
+    # spans two lines; the population was then enumerated by parsing every
+    # `case()` block on paren balance, which found four such cases in total.
+    case("the title is the fold's own summary, so it is legible while shut",
+         ('<summary><h3 class="row"' in anchored,
+          "Decide the thing." in anchored[anchored.index("<summary>"):
+                                          anchored.index("</summary>")],
+          '<p class="title">' in anchored),
+         (True, True, False))
     tall = _bar({"date": "D", "commits": 8, "needs_you": False, "has_entry": True}, 8, False)
     short = _bar({"date": "D", "commits": 1, "needs_you": False, "has_entry": True}, 8, False)
     case("bar height scales with commits",
