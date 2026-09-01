@@ -87,7 +87,6 @@ def _contrast(a: str, b: str) -> float:
 
 
 SENTENCE_END = re.compile(r'(?<=[.!?])\s+')
-TITLE_CAP = 110
 # Below this, a "sentence" is a fragment ("Fixed.", "Done.") that says nothing on
 # its own, so it is joined to the next. ⚠ Set by measurement, not taste: at 25
 # this swallowed "The page is ready." — a perfectly good headline — and the case
@@ -120,7 +119,7 @@ def _ends_in_abbreviation(text: str) -> bool:
     return "." in last or last.lower().strip(".") in ABBREVIATIONS
 
 
-def _first_sentence(text: str, cap: int = TITLE_CAP) -> str:
+def _first_sentence(text: str) -> str:
     """The headline for an entry: its first SENTENCE, not its first LINE.
 
     It was `the first non-blank line`, which is a physical artefact of where the
@@ -129,6 +128,15 @@ def _first_sentence(text: str, cap: int = TITLE_CAP) -> str:
 
     Short leading fragments ("Decided:", "Fixed.") are joined onto the next
     sentence rather than standing alone as the whole headline.
+
+    ⟳ 2026-08-31: NOT TRUNCATED, and that is the point. There was a `cap`
+    (TITLE_CAP = 110) plus a repair, `_close_orphan_markup`, for the `**bold**`
+    spans the cut orphaned. Both are gone. MEASURED on the live page: the cap cut
+    the title while `_prose` dropped the whole first sentence, so the words
+    between the cut and the full stop were displayed NOWHERE. Clipping is now CSS
+    (`text-overflow: ellipsis`), which keeps the text in the DOM where
+    find-in-page and an opened card can both reach it. The orphan repair existed
+    only to heal a wound the cap inflicted; removing the cut removed the class.
     """
     text = " ".join(text.split())
     if not text:
@@ -138,67 +146,7 @@ def _first_sentence(text: str, cap: int = TITLE_CAP) -> str:
         out = f"{out} {part}".strip() if out else part
         if len(out) >= TITLE_FLOOR and not _ends_in_abbreviation(out):
             break
-    if len(out) > cap:
-        # ⛔ H1 (round 3), REPRODUCED ON THE LIVE PAGE by this branch's own entry:
-        # `<p class="title">…plainly: **the check I added this morning to prove…`
-        # The title is truncated HERE and marked up LATER (`:774`), so a `**…**`
-        # span straddling the cap loses its closer, and `_inline` — behaving
-        # exactly as designed — prints the orphaned opener. Neither half is
-        # wrong; nothing owned the seam between them.
-        #
-        # ⚠ Closing the span, not cutting back to before it. The truncated words
-        # ARE still shown, so dropping them to balance the markup would be the
-        # content-loss trade this file refuses everywhere else.
-        #
-        # Only on the TRUNCATION path. A delimiter the AUTHOR left unpaired in a
-        # short title still prints as itself — that is `_inline_scan`'s rule and
-        # it is about the author's text. These orphans are artefacts of OUR cut.
-        _full = out
-        out = _close_orphan_markup(
-            _full[:cap].rsplit(" ", 1)[0].rstrip(",;:—-"), _full, cap) + "…"
     return out
-
-
-def _orphaned_delimiters(text: str) -> int:
-    """How many delimiters the renderer leaves as literal punctuation — via `page_markup`.
-
-    Kept as a name here because `_close_orphan_markup` below reads better calling it, but the
-    counting rule lives with the renderer that decides what a literal delimiter IS (backlog #71).
-    """
-    return page_markup.orphaned_delimiters(text)
-
-
-def _close_orphan_markup(s: str, full: str, cap: int) -> str:
-    """Close spans the TRUNCATION orphaned — judged by the RENDERER, not a copy of it.
-
-    ⛔ Round 4, Blocking. The first version was a second, simpler scanner sitting
-    beside `_inline_scan`, and the two disagreed on exactly one rule:
-    `_inline_scan` treats a code span's content as LITERAL, while the copy counted
-    a `**` inside one as bold. So ``…`code ** tail`` gained a `**` closer that then
-    rendered inside the `<code>` — a bare delimiter still on the page AND text the
-    author never typed. Two implementations of one rule drift; this is the fourth
-    round running in which a fix introduced the next round's worst finding.
-
-    There is now ONE implementation. The candidate closers are judged by running
-    the shipping renderer and requiring no MORE orphans than the untruncated text
-    already had — `full` is the baseline, so a delimiter the AUTHOR left unpaired
-    is preserved rather than "corrected". `""` is tried first, so a truncation
-    that orphaned nothing changes nothing.
-
-    ⚠ `cap` is a BOUND, so the closers live INSIDE it. Round 4 (Low) measured the
-    first version appending them AFTER the cut: 148 of 60,000 delimiter-rich
-    inputs produced a title longer than `TITLE_CAP`, up to 113. When nothing
-    fits, a word is dropped and the search repeats.
-    """
-    base = _orphaned_delimiters(full)
-    while True:
-        for closer in ("", "`", "**", "**`", "`**"):
-            if len(s + closer) <= cap and _orphaned_delimiters(s + closer) <= base:
-                return s + closer
-        shorter = s.rstrip().rsplit(" ", 1)[0]
-        if shorter == s or not shorter:
-            return s[:cap]
-        s = shorter
 
 
 # ── inline markup is NOT implemented here any more. Backlog #71. ───────────────────────────────
@@ -216,8 +164,6 @@ def _close_orphan_markup(s: str, full: str, cap: int) -> str:
 #
 # It now lives in `scripts/page_markup.py`, widened to the union of what the four supported, and
 # the mutations that guarded it moved with it — so they defend four pages instead of one.
-# `_close_orphan_markup` stays above: it is dashboard TRUNCATION POLICY, not inline rendering, and
-# it asks the renderer rather than re-implementing it.
 _inline = page_markup.render_inline
 
 
@@ -249,27 +195,33 @@ def _prose(text: str, drop_headline: bool = False) -> str:
     # from one rule means they cannot disagree.
     if drop_headline:
         first = " ".join(paras[0].split())
-        head = _first_sentence(first, cap=len(first))
-        # ⚠ Only drop a REAL sentence. Review REPRODUCED the alternative: a first
-        # paragraph with no `.?!` at all makes `head` the WHOLE paragraph, so the
-        # fold dropped all of it — while the title showed only the first
-        # TITLE_CAP characters. Everything past the cap then existed in the store
-        # and appeared NOWHERE on the page. Deleting prose the reader never saw
-        # is the worst outcome available here, so the drop is refused unless the
-        # headline genuinely ends a sentence.
-        if head == first and not first.rstrip().endswith((".", "!", "?")):
-            head = ""
+        # ⚠ NO `cap=` KEYWORD. `_first_sentence` takes one parameter now; passing
+        # the old one raises TypeError on EVERY normal entry, which is why the cap
+        # deletion and this call had to land in the same commit.
+        head = _first_sentence(first)
         rest = first[len(head):].lstrip() if head else first
         if rest:
             paras[0] = rest
-        elif len(paras) > 1:
-            # The whole first paragraph WAS the headline. Promote the next one
-            # rather than printing the headline twice — 6 of the store's 10
-            # entries open with a single-sentence paragraph, so keeping it was
-            # the common case, not the edge case.
+        else:
+            # The whole first paragraph WAS the headline. Promote the next one —
+            # or, with nothing to promote, return NOTHING and let the card render
+            # as a plain row with no fold and no triangle (spec §2f).
+            #
+            # ⟳ 2026-08-31. This branch used to KEEP the repetition when there was
+            # nothing to promote, on the stated premise that "an empty fold is
+            # worse than a repeated sentence, and there is nothing else to show."
+            # COLLAPSED CARDS OVERTURN THAT PREMISE: an empty fold is no longer the
+            # alternative — NO fold is. A triangle that opens onto the sentence just
+            # read is a promise of hidden content that is not there. 6 of the store's
+            # 10 entries open with a single-sentence paragraph, so this is the common
+            # case, not the edge case.
+            #
+            # ⚠ The no-terminator REFUSAL that used to guard this also went. Its own
+            # written reason was the cap — "the title showed only TITLE_CAP
+            # characters" — and with the title uncapped it always displays the
+            # paragraph whole, so dropping loses nothing. Keeping the refusal would
+            # have rendered an unbounded paragraph TWICE.
             paras.pop(0)
-        # else: the headline is the entire entry. Keep it — an empty fold is
-        # worse than a repeated sentence, and there is nothing else to show.
     return "".join(
         f'<p class="{"lede" if i == 0 else "body"}">{_inline(p)}</p>'
         for i, p in enumerate(paras))
@@ -2082,13 +2034,6 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     case("...nor does 'e.g.'",
          _first_sentence("Checked e.g. examples in docs. Then more."),
          "Checked e.g. examples in docs.")
-    # Codex Medium 2 — REPRODUCED: a first paragraph with NO terminator made
-    # the whole paragraph the "headline", so the fold dropped it while the
-    # title showed only TITLE_CAP chars. Text existed in the store and appeared
-    # NOWHERE on the page. Deleting unseen prose is the worst outcome here.
-    _noterm = "A first paragraph with no terminator at all that runs on well past any cap"
-    case("a paragraph with no sentence end is never dropped from the fold",
-         _noterm in _prose(_noterm + "\n\nSecond.", drop_headline=True), True)
 
     # ── THE CHART'S KEY ──────────────────────────────────────────────────────
     # The chart encoded four meanings and carried NO key, so its ALARM state —
@@ -2199,15 +2144,21 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     case("a one-sentence first paragraph is replaced by the NEXT paragraph",
          ("Ready for you now." in _solo, '<p class="lede">The detail follows here.</p>' in _solo),
          (False, True))
-    # ...unless there is nothing else. An empty fold is worse than a repeat.
-    case("...but the headline is KEPT when it is the entire entry",
-         "Ready for you now." in _prose("Ready for you now.", drop_headline=True), True)
+    # ⟳ 2026-08-31. WAS "...but the headline is KEPT when it is the entire entry",
+    # on the premise that "an empty fold is worse than a repeat". COLLAPSED CARDS
+    # OVERTURN IT: the alternative to a repeat is now NO FOLD, not an empty one
+    # (spec §2f). The body comes back empty and the card renders as a plain row.
+    case("the headline is DROPPED when it is the entire entry, leaving no fold body",
+         _prose("Ready for you now.", drop_headline=True), "")
     # ⚠ THE ENTRY-2 CASE, measured on the real page. A first sentence longer
     # than TITLE_CAP is displayed truncated with "…", and the earlier version
     # of this matched on that displayed string — so it dropped nothing on
     # precisely the entries whose openings are longest and most repetitive.
     _long = "Decided: " + "the check stays and is written down " * 4 + "here. Then more."
-    case("a first sentence longer than the displayed cap is STILL dropped",
+    # ⟳ 2026-08-31: renamed. It asserted "longer than the displayed cap" and there
+    # is no cap now — a guard naming a deleted mechanism reads as evidence the
+    # mechanism exists. Assert the PROPERTY.
+    case("a long first sentence is STILL dropped from the fold",
          _prose(_long, drop_headline=True).count("Decided:"), 0)
     case("...and dropping it leaves the rest intact",
          "Then more." in _prose(_long, drop_headline=True), True)
@@ -2367,38 +2318,6 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     #
     # ⚠ Round 1 filed this exact SYMPTOM and fixed it — by wiring `_inline` into
     # the title. The class (no delimiter reaches the page unpaired) came back
-    # through a second route, because the search was for the mechanism rather
-    # than the property. The case below asserts the PROPERTY, and the filler is
-    # deliberately markup-BEARING: the pre-existing truncation case at `:1810`
-    # uses `"x" * 40` and could never have seen this.
-    # ⚠ `_delim`, not `_d` — `_d` is already a day-fixture factory at `:1644`, and
-    # a `for` target LEAKS into the enclosing scope. `:1252` records the same trap
-    # for `_raises`. Shadowing it here would have broken every later `_d(...)` call.
-    for _delim, _elem in (("**", "strong"), ("`", "code")):
-        _long_md = "x" * 95 + f" {_delim}bold tail that is long enough to be cut{_delim}"
-        _rendered = _inline(_first_sentence(_long_md))
-        case(f"a truncated headline never leaves a bare {_delim} on the page",
-             (_delim in _rendered.replace(f"<{_elem}>", "").replace(f"</{_elem}>", ""),
-              f"<{_elem}>" in _rendered, "bold tail" in _rendered),
-             (False, True, True))
-    # ⛔ ROUND 4, Blocking — REPRODUCED. `_close_orphan_markup` was a SECOND
-    # scanner beside `_inline_scan`, and they disagreed on one rule: code content
-    # is LITERAL. A truncated code span holding a `**` got a `**` closer, which
-    # then rendered inside the `<code>` — a bare delimiter still on the page AND
-    # text the author never typed (`…code ** tail**`).
-    #
-    # The assertion is the PROPERTY that catches it whatever the mechanism: the
-    # truncated span's CONTENT must be a prefix of the full span's. Asserting the
-    # bug's signature (`"**\`" not in title`) would have passed for any renderer
-    # that inserted a different character.
-    _cb = "x" * 95 + " `code ** tail that is long enough to be truncated here`"
-    _full_code = re.search(r"<code>(.*?)</code>", _inline(_cb))
-    _trunc_code = re.search(r"<code>(.*?)</code>", _inline(_first_sentence(_cb)))
-    case("a truncated code span's CONTENT is a prefix of the full span's",
-         (_trunc_code is not None,
-          _full_code is not None and _trunc_code is not None
-          and _full_code.group(1).startswith(_trunc_code.group(1))),
-         (True, True))
 
     # ⛔ ROUND 4, High — `ENTITY_TAIL` matched `&#39;` but not `&#x27;`, which is
     # what `html.escape` actually emits for an APOSTROPHE. The guard covered the
@@ -2408,49 +2327,6 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
          ("&#x27;" in _apos, "&#x27<" in _apos, "</a>;" in _apos),
          (True, False, False))
 
-    # ...and the same property over the REAL store, which is where it was found.
-    # Scoped to TRUNCATED titles: a delimiter the author left unpaired in a short
-    # title still prints as itself, which is `_inline_scan`'s deliberate rule.
-    #
-    # ⚠ `--mutate .` copies only `scripts/` into a temp tree, so the store is
-    # genuinely absent there — the gate caught this as a CANNOT RUN rather than
-    # letting it pass, which is the behaviour the project's checks doc demands.
-    # The skip is therefore DECLARED and itself asserted: it can only be taken in
-    # a tree that has no `docs/` at all, so it can never quietly swallow a real
-    # failure in the repo. The two synthetic cases above carry the property in
-    # both contexts; this one adds the real subject when the real subject exists.
-    if STORE_DEFAULT.exists():
-        _bare = re.compile(r"</?(?:strong|code|a)[^>]*>")
-        _store_titles = [_bare.sub("", _inline(_e["title"]))
-                         for _e in parse_entries(STORE_DEFAULT.read_text())
-                         if _e["title"].endswith("…")]
-        case("no truncated title in the REAL store renders a bare delimiter",
-             ([_t for _t in _store_titles if "**" in _t or "`" in _t], bool(_store_titles)),
-             ([], True))
-    else:
-        case("the REAL-store title check is skipped ONLY where there is no docs/",
-             (STORE_DEFAULT.exists(), (ROOT / "docs").exists()), (False, False))
-    # ⚠ ROUND 4 (Low) — the cap case below uses `"x" * 40 + " " + "y" * 200`:
-    # delimiter-free, so it never produces a closer and could never see closers
-    # appended PAST the cap. Measured: 148 of 60,000 delimiter-rich inputs
-    # exceeded `TITLE_CAP`, up to 113. Same blind-filler shape the H1 comment
-    # names for the older case — and then reintroduced one case later.
-    #
-    # ⚠ AND MY FIRST ATTEMPT AT THIS CASE REPEATED THE MISTAKE. `"**a`b** " +
-    # "word " * 40` puts the delimiters in the LEAD, so the cut lands in plain
-    # words, no closer is needed, and the mutation SURVIVED at 208/208. The cut
-    # has to land INSIDE a span, and it has to leave no word boundary to retreat
-    # to — which is why this input is dense and ugly rather than tidy. Taken from
-    # the fuzz that found the defect (148 of 60,000 inputs), not invented.
-    _capbust = ("abword  b `b a**word b word  `word wordba**abawordb `a** ** **a "
-                "`**   word word word **`** aa      **word `  awordbword wordword "
-                "``b word`a**   a")
-    case("the cap bounds a title even when closers have to be added",
-         (len(_first_sentence(_capbust)) <= TITLE_CAP + 1,
-          _first_sentence(_capbust).endswith("…")), (True, True))
-    case("an over-long headline is cut at a WORD, with an ellipsis",
-         (len(_first_sentence("x" * 40 + " " + "y" * 200)) <= TITLE_CAP + 1,
-          _first_sentence("x" * 40 + " " + "y" * 200).endswith("…")), (True, True))
     # A URL's dots are not sentence ends — the reported headline broke on one.
     case("a URL inside the first sentence does not end it",
          _first_sentence("Open http://127.0.0.1:7391/dashboard to see it. Next."),
@@ -2464,6 +2340,40 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
                           "http://example.com with three parts.\n")
     case("parse_entries USES the sentence headline (not the wrapped line)",
          _wrap[0]["title"], "The page is ready for you.")
+
+    # ⛔ THE DEFECT THIS SLICE EXISTS FOR. Two individually-correct rules composed
+    # into content loss: `:428` cut the title at TITLE_CAP and `_prose` dropped the
+    # whole first sentence, so everything between the cut and the full stop reached
+    # NO reader. Measured on the live page 2026-08-31.
+    #
+    # ⚠ Tag-stripped, and the fixture is markup-BEARING on purpose. `_inline`
+    # renders `**bold**` to `<strong>bold</strong>`, so a raw-substring assertion
+    # would be false for correct output.
+    #
+    # ⚠ DEFINED LOCALLY, and the card-fragment block above defines its own copy.
+    # Sharing one helper across two distant self-test regions crashed the suite
+    # with UnboundLocalError in plan review round 1 — that block runs EARLIER, so
+    # the name is unbound when it reads it. A duplicated two-line regex is cheaper
+    # than an ordering constraint invisible from either site.
+    _bare_tags = re.compile(r"</?(?:strong|code|em|del|a)[^>]*>")
+    _longsent = ("The backlog page refused to build until the newest item was described "
+                 "in **plain words**, which is the `guard` doing its job. Second para.")
+    _title_now = _bare_tags.sub("", _inline(_first_sentence(_longsent)))
+    case("a long first sentence reaches the reader WHOLE",
+         ("which is the guard doing its job." in _title_now,
+          _title_now.endswith("…")),
+         (True, False))
+    case("the title is no longer capped at a character count",
+         len(_first_sentence("y " * 200).strip()) > 110, True)
+    # ⚠ THE WIRING again. Every case above calls the helper directly; a complete
+    # page build is what catches a `cap=` keyword surviving in `_prose`.
+    _norm = parse_entries("## 2026-08-31\nAn ordinary entry here.\n\nWith a body.\n")
+    case("building a page with one ordinary entry does not raise",
+         "An ordinary entry here." in build(
+             entries=_norm, days=bucket_days(["2026-08-31"], _norm, 2, "2026-08-31"),
+             prs=[], pr_error=None, git_error=None, window=2, exemptions=[],
+             exempt_error=None, store="x", store_error=None, generated_at="t"),
+         True)
 
     # ── CWD INDEPENDENCE ─────────────────────────────────────────────────────
     # MEASURED 2026-08-29 from a real broken page: run from any directory that is
