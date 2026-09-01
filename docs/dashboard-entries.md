@@ -1812,3 +1812,69 @@ the prose above. Retaining the choice structurally would mean widening the marke
 separate change, not filed.
 
 **Not re-litigated:** tier 3 remains impossible by design (append-only store, positional ids).
+
+## 2026-09-01
+The check that makes sure every change gets written up here could not see the write-ups themselves.
+
+There is an automatic check that refuses a change if nobody wrote a note about it. It has a sensible
+exception: if the *only* thing you changed was this notes file, you obviously do not owe another
+note. That exception was doing too much work. It stopped the check dead, so the note you had just
+written was never looked at — and writing only a note is the most common way notes get written.
+
+The effect was that a badly formed note would sail through and only reveal itself on the page, as an
+item saying "could not read this". The page would tell you; the check never would.
+
+It was one yes-or-no question being asked to answer two different things — *does this change owe a
+note?* and *is the note it wrote any good?* — so excusing the first quietly excused the second. Those
+are now two questions. The exception still applies to the first, exactly as before. The second now
+runs no matter what.
+
+I confirmed the old behaviour before changing anything, by feeding the same made-up note to the old
+version and the new one: the old one said fine, the new one refuses and names what is wrong with it.
+That is the whole change, and it is the sort of hole that only ever shows up when you go looking for
+it, because everything reports success.
+<!--tech-->
+Backlog **#78 — half (1) shipped, row stays 🟠 because half (2) is open.** Branch `fix-78-entry-gate-content-split`.
+
+**THE DEFECT, and it was live on the branch that found it:** `verdict()` short-circuits at
+`if not real: return 0, "no tracked files changed outside the exempt paths"`
+(`check-dashboard-entry.py:145-148` as filed) ABOVE every other branch, and
+`docs/dashboard-entries.md` is in `EXEMPT_FILES`. So an entry-only branch never reached any
+inspection of the entry it added. Pinned by its own case — `case("entry-only branch is exempt", …)`.
+
+**CONTROL, run before the fix and quoted rather than characterised.** Same fake git output
+(entry-only branch, added header `## 2026-02-30 [needs-you]`), master's copy vs the branch's:
+
+```
+BEFORE (master): rc=0  ok — no tracked files changed outside the exempt paths
+AFTER  (branch): rc=1  REFUSED — the entry this branch adds is malformed … not a real calendar date
+```
+
+**THE SPLIT.** `_added_entry_line` stays strict — a malformed header is not an entry — because that
+is correct for *does this branch owe an entry?*. New `added_entry_problems()` recognises the
+**ATTEMPT** (`^\+##(?!#)`, not `^\+## <valid date>`) and reports why it fails, through the SAME
+`header_error` the page's parser uses. `verdict()` takes `entry_problems` and refuses on it **above**
+the exemption — the ORDER is the fix; below it the hole simply returns.
+
+⚠ `(?!#)` is load-bearing in the other direction: without it a `###` sub-heading inside a body reads
+as a failed entry header and the gate refuses entries that are fine. Mutation-covered.
+
+⚠ **SCOPE, stated rather than implied — the decision grammar is NOT wired in here.** Doing so would
+refuse a `[needs-you]` entry carrying no parsed decision, which is **#81's tier-2 guard, HELD by
+user decision today**. Different mechanism (structural flag, not prose phrase-matching), same
+effect — so it is the user's call, not a side effect of this fix. `added_entry_problems` is the seam
+that makes it a one-line change if #81's re-open trigger fires.
+
+Counts: `--self-test` **92 pure + 13 cannot-run**; `check-dashboard-entry` mutations **18 → 23**;
+`EXPECTED_MUTATIONS` **141 → 146**. THREE of the five mutations are on the WIRING — the predicate can
+be perfect and never called, and every pure case stays green either way.
+
+⚠ **The pinned total refused the run and was right to.** Bumping the per-file count to 23 without
+the separate `sum(...) == 141` case made the control exit 1, and the harness printed
+*"CANNOT RUN … Every verdict below would be an artefact"* rather than re-baselining. Two independent
+statements of one number, behaving as designed.
+
+**NOT done here, and it is half of #78 as filed:** the gate runs `if: github.event_name ==
+'pull_request'` while the skill regenerates the page immediately — the reader still sees the page
+before the gate sees the branch. That half is a CI-timing decision, not a code defect, and is left
+open on the row.

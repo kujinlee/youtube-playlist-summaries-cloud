@@ -287,7 +287,55 @@ def _is_exempt(path: str) -> bool:
     return path in EXEMPT_FILES or any(path.startswith(d) for d in EXEMPT_DIRS)
 
 
-def verdict(changed: list[str], added_entry: bool, pr_body: str) -> tuple[int, str]:
+# An ADDED line trying to be an entry header. `(?!#)` keeps `###` out: a level-3
+# heading is ordinary body markup and several entries use one, so treating it as a
+# failed entry header would refuse them.
+ENTRY_ISH = re.compile(r"^\+##(?!#)")
+
+
+def added_entry_problems(patch: str) -> list[str]:
+    """Every added line ATTEMPTING an entry header that is malformed (backlog #78).
+
+    ⛔ THIS IS THE SPLIT, and the reason one predicate could not stay.
+    `_added_entry_line` answers *does this branch add an entry?* and is strict on
+    purpose — a malformed header simply is not an entry. That is right for the
+    obligation question and FAIL-OPEN for the content question: on an entry-only
+    branch `verdict` returns 0 at "no tracked files changed outside the exempt
+    paths" and nothing ever inspects what was added. MEASURED on the branch that
+    fixed this: an entry-only branch reported ok with its entry unread.
+
+    So this recognises the ATTEMPT (`^## `, not `^## <valid date>`) and reports why
+    it fails, using the SAME `header_error` the page's parser uses — one grammar,
+    two questions, never two definitions.
+
+    ⚠ SCOPE, stated so the gap is visible rather than implied: this validates the
+    HEADER only. The decision grammar (`decision_errors`) is enforced by the
+    RENDERER and deliberately NOT wired in here — doing so would refuse a
+    `[needs-you]` entry carrying no parsed decision, which is backlog #81's tier-2
+    guard, HELD by user decision 2026-09-01. #81 records the mechanical re-open
+    trigger. This function is the seam that makes wiring it a one-line change if
+    that trigger ever fires.
+    """
+    out: list[str] = []
+    for line in patch.split("\n"):
+        if not ENTRY_ISH.match(line):
+            continue
+        err = header_error(line[1:])
+        if err:
+            out.append(f"{line[1:].strip()!r} — {err}")
+    return out
+
+
+def verdict(changed: list[str], added_entry: bool, pr_body: str,
+            entry_problems: list[str] | tuple = ()) -> tuple[int, str]:
+    # ⚠ ABOVE the exemption short-circuit, and that ORDER is the fix. Every branch
+    # below answers "does this branch owe an entry?"; this one answers "is what it
+    # added well-formed?". Putting it second would re-create the hole, because the
+    # exemption returns 0 before any of them run.
+    if entry_problems:
+        return 1, ("the entry this branch adds is malformed, so the page would render "
+                   "it under 'Could not parse this entry' — "
+                   + "; ".join(entry_problems))
     real = [p for p in changed if not _is_exempt(p)]
     if not real:
         return 0, "no tracked files changed outside the exempt paths"
@@ -332,6 +380,49 @@ def _self_test() -> int:
     case("NO-ENTRY reason is echoed", "typo fix" in verdict(["lib/x.ts"], False, "NO-ENTRY: typo fix")[1], True)
     case("a lookalike filename is NOT exempt", verdict(["docs/dashboard-entries.md.bak"], False, "")[0], 1)
     case("a lookalike directory is NOT exempt", verdict(["docs/reviews-not-really/x.ts"], False, "")[0], 1)
+
+    # ─── backlog #78: the two questions, split ───────────────────────────────
+    # ⛔ THE HOLE THESE CLOSE, measured on this very branch: `verdict` returned
+    # 0 with "no tracked files changed outside the exempt paths" for a branch
+    # whose ONLY change was the entry store, so the entry it added was never
+    # looked at. `_added_entry_line` is strict by design — a malformed header
+    # simply is not an entry — which answers "does this branch OWE an entry?"
+    # correctly and answers "is the entry it ADDED well-formed?" fail-open.
+    case("a malformed added header is a problem",
+         len(added_entry_problems("+## 2026-02-30\n")), 1)
+    case("a well-formed added header is not",
+         added_entry_problems("+## 2026-08-28 [needs-you]\n"), [])
+    case("...nor is a well-formed bare one",
+         added_entry_problems("+## 2026-08-28\n"), [])
+    # The ATTEMPT is what must be recognised, not the success — that is the split.
+    case("'##' with no space is an ATTEMPT and is caught",
+         len(added_entry_problems("+##2026-08-28\n")), 1)
+    case("a typo'd flag is caught", len(added_entry_problems("+## 2026-08-28 [needs-yo]\n")), 1)
+    case("both flags at once is caught",
+         len(added_entry_problems("+## 2026-08-28 [needs-you] [heads-up]\n")), 1)
+    case("a REMOVED malformed header is not this branch's problem",
+         added_entry_problems("-## 2026-02-30\n"), [])
+    case("a CONTEXT line is not an added line",
+         added_entry_problems(" ## 2026-02-30\n"), [])
+    # ⚠ `###` is a sub-heading inside a body, NOT a failed entry header. Flagging it
+    # would refuse every entry that uses one, which several already do.
+    case("a level-3 heading is not an entry attempt",
+         added_entry_problems("+### Worth knowing\n"), [])
+    case("the message names the offending header",
+         "2026-02-30" in added_entry_problems("+## 2026-02-30\n")[0], True)
+    # The whole point: this fires on an ENTRY-ONLY branch, where `real` is empty.
+    case("entry-only branch with a MALFORMED entry is refused",
+         verdict(["docs/dashboard-entries.md"], False, "", ["bad header"])[0], 1)
+    case("entry-only branch with a good entry still passes",
+         verdict(["docs/dashboard-entries.md"], False, "", [])[0], 0)
+    case("...and the refusal says the entry is the problem",
+         "malformed" in verdict(["docs/dashboard-entries.md"], False, "", ["bad"])[1], True)
+    # A malformed entry is refused even when the branch would otherwise pass on
+    # its own merits — content and obligation are now independent.
+    case("a NO-ENTRY declaration does NOT excuse a malformed entry",
+         verdict(["lib/x.ts"], False, "NO-ENTRY: typo", ["bad header"])[0], 1)
+    case("...nor does adding a good entry alongside a bad one",
+         verdict(["lib/x.ts"], True, "", ["bad header"])[0], 1)
 
     fenced = "```\nNO-ENTRY: example from the docs\n```"
     case("NO-ENTRY inside a code fence does not exempt", verdict(["lib/x.ts"], False, fenced)[0], 1)
@@ -451,7 +542,7 @@ def _self_test() -> int:
     print(f"\n{ok}/{ok+fail} passed")
     return 1 if fail else 0
 
-def collect(base: str) -> tuple[list[str], bool, str | None]:
+def collect(base: str) -> tuple[list[str], bool, str | None, list[str]]:
     try:
         names = subprocess.run(["git", "diff", "--name-only", f"{base}...HEAD"],
                                cwd=ROOT, capture_output=True, text=True, timeout=20)
@@ -459,12 +550,17 @@ def collect(base: str) -> tuple[list[str], bool, str | None]:
                                 "--", "docs/dashboard-entries.md"],
                                cwd=ROOT, capture_output=True, text=True, timeout=20)
     except (OSError, subprocess.SubprocessError) as exc:
-        return [], False, f"could not run git: {exc}"
+        return [], False, f"could not run git: {exc}", []
     if names.returncode != 0:
-        return [], False, f"git diff exited {names.returncode}: {names.stderr.strip()[:200]}"
+        return [], False, f"git diff exited {names.returncode}: {names.stderr.strip()[:200]}", []
     changed = [l for l in names.stdout.split("\n") if l.strip()]
     added = any(_added_entry_line(l) for l in patch.stdout.split("\n"))
-    return changed, added, None
+    # ⚠ The SAME `-U0` patch already fetched. Measured on 7183111: an appended entry
+    # arrives in full, header through `<!--tech-->`, 39 added lines — so the content
+    # question needs no second revision and no working-tree read. (Author and both
+    # reviewers once agreed `-U0` omits the body; one `git diff` refuted all three.)
+    problems = added_entry_problems(patch.stdout)
+    return changed, added, None, problems
 
 
 def _impure_self_test() -> int:
@@ -507,9 +603,14 @@ def _impure_self_test() -> int:
     def _boom(*a, **k):
         raise OSError("git is not installed")
 
-    ch, ad, err = _with_run(_boom, lambda: collect("master"))
+    ch, ad, err, pr = _with_run(_boom, lambda: collect("master"))
     case("collect: a missing git is a could-not-tell, not 'nothing changed'",
          (ch, ad, bool(err)), ([], False, True))
+    # ⚠ The 4th element on the CANNOT-RUN paths. An empty list here is not a
+    # cosmetic default: `verdict` refuses on a non-empty `entry_problems`, so a
+    # sentinel or a None would turn "git is missing" into "your entry is malformed"
+    # — a wrong REASON on the one path whose whole job is to say it could not tell.
+    case("collect: a could-not-tell reports no entry problems either", pr, [])
 
     # ⟲ Asserts the VALUE, not the presence of the kwarg. `collect` makes TWO
     # git calls, so both are captured and both are checked — a fix applied to
@@ -523,11 +624,12 @@ def _impure_self_test() -> int:
     _with_run(_spy, lambda: collect("master"))
     case("collect: asks about THIS repo, not the caller's cwd — on EVERY call",
          (_cwds, len(_cwds)), ([ROOT, ROOT], 2))
-    ch, ad, err = _with_run(lambda *a, **k: _R(128, "", "fatal: no merge base"),
+    ch, ad, err, pr = _with_run(lambda *a, **k: _R(128, "", "fatal: no merge base"),
                             lambda: collect("master"))
     case("collect: a non-zero git exit is a could-not-tell, not 'nothing changed'",
          (ch, ad, bool(err)), ([], False, True))
-    ch, ad, err = _with_run(lambda *a, **k: _R(0, "lib/x.ts\n", ""),
+    case("...and that path reports no entry problems either", pr, [])
+    ch, ad, err, pr = _with_run(lambda *a, **k: _R(0, "lib/x.ts\n", ""),
                             lambda: collect("master"))
     # ⟲ `ad` is asserted, not just ch/err. Branch review of backlog #70 mutated
     # `added = any(...)` to `added = True` and it SURVIVED the whole manifest: this
@@ -536,13 +638,29 @@ def _impure_self_test() -> int:
     # green. The diff here carries no `## YYYY-MM-DD` line, so `added` must be False.
     case("collect: a working git still reports the changed files, and NO entry added",
          (ch, ad, err), (["lib/x.ts"], False, None))
+    case("collect: a clean diff carries no entry problems", pr, [])
+
+    # ⛔ backlog #78, END TO END through the real `collect`: the SECOND git call is
+    # the entry patch, and its malformed header must arrive as a problem. Without
+    # this the wiring could be dropped and every pure case above would stay green —
+    # `added_entry_problems` would still be correct and still never be CALLED.
+    def _entry_patch(*a, **k):
+        argv = a[0] if a else k.get("args", [])
+        if "-U0" in argv:
+            return _R(0, "@@ -1 +1,2 @@\n+## 2026-02-30 [needs-you]\n+body\n", "")
+        return _R(0, "docs/dashboard-entries.md\n", "")
+    ch, ad, err, pr = _with_run(_entry_patch, lambda: collect("master"))
+    case("collect: a malformed ADDED header reaches the caller as a problem",
+         (len(pr), ad, err), (1, False, None))
+    case("...and an entry-only branch is then REFUSED, not exempted",
+         verdict(ch, ad, "", pr)[0], 1)
 
     # main's dispatch on that error is the fail-closed half, and it is the single
     # worst line in this file to get wrong: rc 0 merges the branch.
     import contextlib as _cl, io as _io
     g = globals()
     real_collect = g["collect"]
-    g["collect"] = lambda base: ([], False, "could not run git: boom")
+    g["collect"] = lambda base: ([], False, "could not run git: boom", [])
     try:
         with _cl.redirect_stdout(_io.StringIO()) as buf:
             rc = main(["--base", "master"])
@@ -550,6 +668,21 @@ def _impure_self_test() -> int:
         g["collect"] = real_collect
     case("main: a could-not-tell exits 2 — NEVER 0", rc, 2)
     case("...and says NOT CHECKED", "NOT CHECKED" in buf.getvalue(), True)
+
+    # ⛔ backlog #78 at the OUTERMOST layer. `main` is where the fix can be
+    # silently undone — dropping `entry_problems` from the `verdict(...)` call
+    # leaves every other case in both suites green, because they all reach
+    # `verdict` directly. This is the only case that fails if the argument is
+    # not passed through, so it is the one that makes the wiring load-bearing.
+    g["collect"] = lambda base: (["docs/dashboard-entries.md"], False, None,
+                                 ["'## 2026-02-30' — not a real calendar date"])
+    try:
+        with _cl.redirect_stdout(_io.StringIO()) as buf2:
+            rc2 = main(["--base", "master"])
+    finally:
+        g["collect"] = real_collect
+    case("main: an entry-only branch with a malformed entry exits 1", rc2, 1)
+    case("...and the refusal reaches stdout", "REFUSED" in buf2.getvalue(), True)
 
     print(f"{ok}/{ok+fail} cannot-run cases passed")
     return 1 if fail else 0
@@ -568,7 +701,7 @@ def main(argv: list[str]) -> int:
         # cannot-run cases whenever the pure suite is already red.
         pure, impure = _self_test(), _impure_self_test()
         return 1 if (pure or impure) else 0
-    changed, added, err = collect(a.base)
+    changed, added, err, entry_problems = collect(a.base)
     if err:
         print(f"CANNOT RUN — {err}\nTreat this as NOT CHECKED.")
         return 2
@@ -577,7 +710,7 @@ def main(argv: list[str]) -> int:
         import pathlib
         p = pathlib.Path(a.pr_body_file)
         body = p.read_text(encoding="utf-8") if p.exists() else ""
-    code, reason = verdict(changed, added, body)
+    code, reason = verdict(changed, added, body, entry_problems)
     print(("ok — " if code == 0 else "REFUSED — ") + reason)
     return code
 
