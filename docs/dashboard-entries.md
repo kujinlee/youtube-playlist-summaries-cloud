@@ -1355,3 +1355,73 @@ incident argued against.
 
 ⚠ Verified nothing was lost: the path was new (`git log` on it shows no prior commit) and
 `find -newermt '-35 minutes'` reports no other modified file in the repo.
+
+## 2026-09-01
+Two of our own tests turned out not to be testing anything — and the only reason we know is that we
+went looking with a tool that breaks things on purpose.
+
+Some background. We keep a set of small programs that check the project for mistakes. Each one comes
+with its own tests. But a test that has quietly stopped working looks exactly like a test that is
+passing, so once a year's worth of them pile up you are trusting a lot of green ticks that nobody has
+ever challenged. The way to challenge them is to deliberately break the thing being tested and check
+that the test notices. If it doesn't notice, the test was decoration.
+
+We did that to the checker that verifies our test counts — the one added a few days ago after it
+turned out five of nine declared numbers were wrong. Eight deliberate breakages. Six were caught as
+expected. Two were not:
+
+- One test claimed to check that a stray number on an unrelated line gets ignored. It didn't. The
+  rule it was aimed at had been changed a while back to read the *last* number rather than the first,
+  and that change quietly made the test unable to see what it was pointed at. We deleted the rule
+  entirely and the test still passed.
+- Another test was checking its own copy of a rule rather than the real one. Delete the real rule and
+  the test carried on happily comparing its duplicate against itself.
+
+Both are the same story, and it is a story this project keeps living: two changes that were each
+correct on their own, combining into a test that no longer bites. Reviewing one change at a time
+cannot see it, because neither change looks wrong.
+
+Both are fixed, and the deliberate-breakage set is now permanent, so neither can rot back without
+something going red. No behaviour anyone uses has changed — this is the safety net being checked, not
+the product.
+<!--tech-->
+Task #203, backlog #69 follow-on. Branch `selftest-counts-mutations`, commit `11bd559f`.
+
+Adds `scripts/mutations/check-selftest-counts.json` (8 entries); `EXPECTED_MUTATIONS` **131 → 139**
+at `check-plan-code.py`. Measured: `python3 scripts/check-plan-code.py --mutate .` → **7 files, 139
+mutations, 0 survivors**. `check-selftest-counts.py` 17 → **18** self-test cases.
+
+The two defects, precisely:
+
+1. **`"a ratio on a line without the word is ignored"` was VACUOUS.** `printed_total` was hardened to
+   take the LAST `N/M … passed` match (a real first-match defect it found in itself). The case's
+   input was `"scanned 3/4 files\n8/8 passed"` — the stray ratio BEFORE the real summary — so
+   last-match-wins discards it and deleting the `if "passed" not in line: continue` guard *still*
+   returns 8. **Proved by execution, not reading:** the mutated parser was run standalone against
+   both orderings. Input is now `"8/8 passed\nscanned 3/4 files"`, which returns 4 when the guard is
+   deleted.
+2. **`"every borrowed name is present upstream"` tested its own copy.** It re-derived
+   `[n for n in BORROWED if not hasattr(pc, n)]` rather than calling the rule in `_load_plan_code`,
+   so `missing = []` there left the case green. Extracted as `borrow_errors(mod)`; the case and the
+   refusal now share one implementation, and a new case (`"a missing borrowed name is named, not
+   swallowed"`) covers the refusal's own branch via a stub. That is the 18th case.
+
+Also: `"…and it names the script"` indexed `[0]` on a list a mutation can empty. IndexError kills the
+suite, so every later case prints nothing and the mutation would be scored against a truncated
+`[FAIL]` list rather than a red case. Now `any(...)`.
+
+⚠ **One number left alone deliberately.** The `EXPECTED_MUTATIONS` narrative comment closes one step
+at 126 and opens the next at 127. The literal has always matched the table — the case asserting it
+has never been red — so the discrepancy is in the prose. Editing a past step to make the story add up
+would invent a +1 nobody can point at, so it is annotated in place instead.
+
+Batched doc fixes riding this branch: backlog row 69 said "16 self-test cases" — stale, in the row
+about stale declared counts, and invisible to the guard because the guard reads the script's own
+docstring, never prose about it. The roadmap's deferred manifest checkbox is ticked; its written
+**Fails if** condition (`scripts/mutations/check-selftest-counts.json` does not exist once PR #191
+merges) is now satisfied.
+
+Gates green: `check-docs`, `check-roadmap-consistency`, `check-producer-enumeration`,
+`check-ratchet-contract`, `check-anchors`, `check-review-rounds`, `check-selftest-counts`,
+`check-theme-token-coverage`, `check-explainer-delivery`, `check-arch-findings`,
+`check-guard-coverage` — all rc=0. `check-plan-code --self-test` 158/158.
