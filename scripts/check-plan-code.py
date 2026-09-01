@@ -463,6 +463,17 @@ EXPECTED_MUTATIONS = {
     # declaration parser (counting a MENTION as a declaration, which would let a page
     # "cover" a token by talking about it).
     "scripts/check-theme-token-coverage.py": 4,
+    # ⟳ 2026-09-01, backlog #69 follow-on (task #203): the external count observer joins the
+    # manifest. Its eight entries cover the printed-total parser (first-match vs last-match — the
+    # defect it found in ITSELF), the `passed` requirement, the `N of M` arm, BOTH directions of
+    # the population ratchet, the borrowed-name refusal, and both arms of `declares`.
+    # ⚠ ADDING IT FOUND TWO DEFECTS IN THE SUITE IT WAS MEASURING, both of the same shape as the
+    # ones this file already records: (1) `a ratio on a line without the word is ignored` was
+    # VACUOUS — the stray ratio sat BEFORE the real summary, so last-match-wins discarded it and
+    # deleting the `passed` filter still returned 8; (2) the borrowed-name case re-derived the
+    # comprehension instead of calling it, so deleting the real rule left the case green. A
+    # second implementation of one rule, tested against itself.
+    "scripts/check-selftest-counts.py": 8,
 }
 
 MANIFEST_DIR = "scripts/mutations"
@@ -1903,6 +1914,7 @@ def _self_test() -> int:
     case("the declared counts name every manifest that ships",
          sorted(EXPECTED_MUTATIONS), ["scripts/check-dashboard-entry.py",
                                       "scripts/check-plan-code.py",
+                                      "scripts/check-selftest-counts.py",
                                       "scripts/check-theme-token-coverage.py",
                                       "scripts/gen-dashboard.py",
                                       "scripts/page_chrome.py",
@@ -1933,8 +1945,16 @@ def _self_test() -> int:
     # growth in an existing one). Both ratchet directions, the cannot-run arm, and the declaration
     # parser. It joined the manifest in the same commit that added the guard — the alternative was
     # a guard whose only evidence of working lived in one session's shell.
+    # ⚠ THE LINE ABOVE OPENS AT 127 WHILE THE ONE BEFORE IT CLOSES AT 126. Noticed 2026-09-01 and
+    # left as it stands: the discrepancy is in the NARRATIVE, and the literal below has always
+    # matched the table (verified by the case itself, which is why nothing was ever red). Editing
+    # a past step to make the story add up would be inventing a +1 nobody can point at.
+    # 131 → 139 (backlog #69 follow-on: check-selftest-counts, +8, a NEW manifest file). The
+    # external count observer was the last member of this stack with cases and no mutations —
+    # the same "layer nothing checked back" that brought this file into the manifest at 73 → 94.
     # Coverage may grow here; it may not shrink.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 131)
+    # Coverage may grow here; it may not shrink.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 139)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so
