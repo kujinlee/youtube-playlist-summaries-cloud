@@ -1801,3 +1801,78 @@ statements of one number, behaving as designed.
 'pull_request'` while the skill regenerates the page immediately — the reader still sees the page
 before the gate sees the branch. That half is a CI-timing decision, not a code defect, and is left
 open on the row.
+
+## 2026-09-01
+A way of writing a note-exemption that looks completely normal was being rejected.
+
+When a change genuinely does not need a write-up, you say so in the pull request with a short marker
+and a reason. If you wrote that marker in **bold** — which is the natural thing to do, and which the
+project's own documents do constantly — the check did not recognise it and refused the change anyway.
+
+Nobody noticed because the failure is loud and harmless: you get refused, you shrug, you rewrite the
+line without the bold, it works. It never let anything through that should have been stopped. It just
+wasted a minute and made the tool look arbitrary.
+
+This is the third time today that the same underlying mistake has surfaced in a different place —
+looking for a word at the very start of a line, when in practice people decorate it. Earlier the same
+thing made me report a feature as completely unused when it had in fact been used the day before.
+
+Bold now counts. Everything that should *not* count still does not: a marker inside quoted code, or
+indented, or in a comment, or in a quotation still exempts nothing, because those all mean somebody
+was showing an example rather than making a declaration. Bold means the opposite — somebody made it
+louder on purpose.
+<!--tech-->
+Branch `fix-no-entry-emphasis`, stacked on `fix-78-entry-gate-content-split` (PR #201). **NOT a filed
+backlog row** — noted in entry 2026-09-01/9's tech block as *"not filed; filing is the user's step"*,
+and fixed here under the AFK instruction to work items that need no decision. Trivially revertable.
+
+**MEASURED BEFORE THE FIX**, `exemption_reason` on six bodies:
+
+```
+'NO-ENTRY: typo fix'            -> 'typo fix'
+'**NO-ENTRY:** typo fix'        -> None      <- refused a well-formed declaration
+'*NO-ENTRY:* typo fix'          -> None
+'> NO-ENTRY: quoted'            -> None      <- correct, blockquote is inert
+'NO-ENTRY: keep **bold** here'  -> 'keep **bold** here'
+```
+
+**⚠ EMPHASIS IS NOT AN INERT CONTEXT — that is the whole distinction, and it is why this is a fix
+rather than a loosening.** Fenced, indented, commented and blockquoted all mean *not deliberate*, so
+they must not exempt. `**NO-ENTRY:**` means the OPPOSITE: someone made it louder. The stated principle
+("an exemption must be DELIBERATE") already covered this; only the implementation did not.
+
+**THIRD INSTANCE OF ONE CLASS IN ONE DAY:** `REVIEW GAP:` (fixed for it once already), this, and
+`Decide:` — where `grep -c '^Decide:'` returned **0** over **10** bold occurrences and put a false
+premise into backlog #81 and PR #199. **A marker people are told to write WILL be emphasised.**
+
+`_declaration_reason()` is ONE definition called from BOTH of `exemption_reason`'s scan points — the
+bare line and the text before an inline `<!--`. They were separate copies of `startswith(NO_ENTRY)`
+and would each have needed the same fix; one mutation exists purely to prove the second site is
+wired, because no other case reaches it with an emphasised marker.
+
+The closer is stripped **only when it matches the opener**, so the author's own emphasis inside a
+reason survives verbatim (`NO-ENTRY: keep **bold** here`), and `**NO-ENTRY:* odd` keeps the unmatched
+`*` as reason text rather than silently eating it.
+
+Counts: `--self-test` **104 + 13**; `check-dashboard-entry` mutations **23 → 27**;
+`EXPECTED_MUTATIONS` **146 → 150**.
+
+⛔ **THE MOST USEFUL THING THIS BRANCH FOUND, and it is about the branch itself: collapsing two
+copies into one helper ORPHANED TWO EXISTING MUTATIONS.** `head path skips the indent check` and
+`line-leading rule removed` both anchored on text the refactor deleted. The harness refused them by
+name — *"anchor NOT FOUND — it was not applied, so its 'caught' verdict would be meaningless"* — and
+reported **FAILED**, not a clean run with two fewer mutations.
+
+**This is the SAME CLASS as the red I put on master four hours ago** (`86ecade5`, PR #198: the #80
+palette retune orphaned a mutation anchor). Twice in one day, and the shape is exact: *a refactor
+that improves the code silently unhooks the coverage that was protecting it.* Both repaired to the
+new anchors with their INTENT preserved — delete the indent guard, accept the marker mid-line — so
+the same two cases still go red.
+
+⚠ **And a third refusal worth keeping:** my new mutation named TWO expected cases, one of which
+(`NO-ENTRY reason is echoed`) never goes red, because it asserts the reason is a SUBSTRING of the
+message and an un-stripped reason still contains it. The harness rejected the entry rather than
+crediting it — *"an expect must name EXACTLY ONE, or it cannot show which case is the guard"*. A
+mutation whose expectation is vaguely right is a mutation that proves nothing.
+
+**None of these three would have been visible from a green suite.** 104/104 passed throughout.

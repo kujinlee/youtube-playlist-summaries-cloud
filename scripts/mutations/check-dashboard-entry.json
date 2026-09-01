@@ -32,8 +32,8 @@
     "file": "scripts/check-dashboard-entry.py",
     "edits": [
       [
-        "if not _indented(head) and head.strip().startswith(NO_ENTRY):",
-        "if head.strip().startswith(NO_ENTRY):"
+        "                if not _indented(head):",
+        "                if True:"
       ]
     ],
     "expect": "exemption_reason \u2014 indented, with a comment later on the line"
@@ -82,8 +82,8 @@
     "file": "scripts/check-dashboard-entry.py",
     "edits": [
       [
-        "if s.startswith(NO_ENTRY):",
-        "if NO_ENTRY in s:"
+        "    if not rest.startswith(NO_ENTRY):",
+        "    if NO_ENTRY not in rest:"
       ]
     ],
     "expect": "exemption_reason \u2014 blockquoted"
@@ -281,5 +281,49 @@
       ]
     ],
     "expect": "main: an entry-only branch with a malformed entry exits 1"
+  },
+  {
+    "name": "emphasis matcher forgets underscores",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "EMPH = re.compile(r\"^(\\*{1,3}|_{1,3})\")",
+        "EMPH = re.compile(r\"^(\\*{1,3})\")"
+      ]
+    ],
+    "expect": "__underscore__ marker is recognised"
+  },
+  {
+    "name": "closer stripped without matching the opener",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "    if opener and rest.startswith(opener):",
+        "    if opener:"
+      ]
+    ],
+    "expect": "a mismatched closer is left in the reason"
+  },
+  {
+    "name": "the marker itself is left in the reason",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "    rest = rest[len(NO_ENTRY):]",
+        "    rest = rest[0:]"
+      ]
+    ],
+    "expect": "exemption_reason reads a real declaration"
+  },
+  {
+    "name": "the pre-comment head goes back to its own marker test",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "                if not _indented(head):\n                    r = _declaration_reason(head.strip())\n                    if r is not None:\n                        return r",
+        "                if not _indented(head) and head.strip().startswith(NO_ENTRY):\n                    return head.strip()[len(NO_ENTRY):].strip() or \"\""
+      ]
+    ],
+    "expect": "bold works on the pre-comment head too"
   }
 ]
