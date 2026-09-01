@@ -1505,3 +1505,72 @@ Gates green: check-docs, check-roadmap-consistency, check-anchors, check-theme-t
 check-producer-enumeration, check-ratchet-contract, check-review-rounds, check-selftest-counts,
 check-explainer-delivery, check-arch-findings, check-guard-coverage — all rc=0. Self-tests:
 gen-dashboard 294/294, check-plan-code 158/158, check-theme-token-coverage 12/12.
+
+## 2026-09-01 [resolved: 2026-09-01/3]
+The tool that runs our second opinion now writes down whether it actually ran — and the note goes
+somewhere the person calling it can't quietly drop.
+
+This closes the question that was waiting on you. Background: we ask an outside reviewer to attack
+our own work, and the tool that runs it reports success or failure the way most command-line tools
+do — with a status code. The trouble with a status code is that it exists for about a second, has
+exactly one reader, and is trivially thrown away by accident. That is precisely what happened: the
+call was written in a way that reported the status of the *wrong command*, so a failure sat unread
+in a log while everyone carried on believing the review had happened.
+
+You chose to have the tool write its verdict to a file instead. It now does, on every path —
+succeeded, failed, or refused to start.
+
+But a file on its own would not have fixed anything, and that is the interesting part. If the person
+calling the tool is also the only one reading the file, then ignoring the file is exactly as easy as
+ignoring the status code — the same problem with an extra step. So the verdict is filed into the
+project itself, and one of our automatic checks reads it during the build, where nobody is in a
+position to skip it. It complains about one specific thing: the review did not run, yet a document
+claiming to be that review was filed anyway. That is the original accident, described precisely.
+
+It stays quiet when the review genuinely could not run and nothing was filed — that is our documented
+fallback and punishing it would just push people back toward saying nothing.
+
+Two honest notes. It only sees verdicts that get committed, so someone determined could delete one;
+we chose that scope deliberately, because the failure we were fixing was an accident and accidents
+do not delete files. And while testing it, the old trap sprang again — a command was piped, the shell
+reported success, and the failure was real. The verdict file recorded the truth anyway. That was not
+planned, and it is the best evidence we have that this works.
+<!--tech-->
+Backlog **#68(d) CLOSED** — user decision 2026-09-01. Branch `codex-verdict-file`, commit `b90c8ba9`.
+Resolves the ask filed as 2026-09-01/3.
+
+`scripts/codex-review.py` writes `docs/reviews/verdicts/<review-stem>.verdict.json` via a single
+`emit()` covering the success, failure and refusal returns — a new branch cannot forget one.
+`verdict_path`, `verdict_record` and `write_verdict` are pure/near-pure so cases reach them.
+
+**Design point.** The verdict lands INSIDE the repo, not beside `--out` (which the documented safe
+call shape puts outside it). A verdict where only the caller can see it recreates the defect; the
+consumer had to be something else. `scripts/check-review-rounds.py` — already a CI ratchet — reads
+`verdicts/*.json` and fails on `gate_ran == false` while the named review exists in `docs/reviews/`.
+
+- `gate_ran` is **stated, not derived** from `exit_code`. Case *"exit_code is not consulted"* pins it;
+  re-deriving would be a second implementation of the wrapper's rule.
+- Unwritable verdict → **exit 2 CANNOT RUN** (an unrecorded success is the failure being fixed).
+- Malformed/field-less verdict → **exit 2** on the reading side, never a silent skip.
+- Absent verdicts directory → not an error. Verdicts exist only from now; back-filling would be
+  inventing testimony.
+
+**CONTROL** through `audit()` on a temp tree: no verdict → 0 problems; `gate_ran:false` + artifact
+filed → 1 problem naming the review; `gate_ran:false` + nothing filed → 0 problems.
+**END-TO-END:** `--model definitely-not-a-model` → HTTP 400 → verdict `{gate_ran:false, exit_code:1}`,
+no `r.md` left behind.
+
+⚠ **The `$?` trap sprang again during that very check** — the run was piped into `tail`, so the shell
+printed `rc=0` while the wrapper had returned 1. The verdict file was correct regardless. Unplanned,
+and the strongest evidence in this entry.
+
+⚠ **STATED LIMIT:** committed verdicts only. Deleting one pre-commit evades the check. Deliberate —
+the fixed failure was an accident, and accidents do not delete files.
+
+Counts: codex-review 35 → **51**, check-review-rounds 14 → **22**. `docs/plugins.md` holds at exactly
+**260/260** — `check-docs.py` refused two drafts that went over, and its message ("move detail, do not
+raise the budget as a reflex") is why the account sits in `process-rationale.md`.
+
+Gates green: check-docs, check-roadmap-consistency, check-anchors, check-selftest-counts,
+check-review-rounds, check-ratchet-contract, check-producer-enumeration, check-explainer-delivery,
+check-theme-token-coverage, check-arch-findings, check-guard-coverage.

@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import re
 import subprocess
@@ -142,6 +143,81 @@ def prompt_demands_a_file(text: str) -> "str | None":
 def _digest(path: str) -> str:
     with open(path, "rb") as f:
         return hashlib.sha256(f.read()).hexdigest()
+
+
+# ── backlog #68 (d): THE VERDICT IS WRITTEN DOWN, BECAUSE THE EXIT CODE CAN BE THROWN AWAY ──
+#
+# The exit code is a channel with exactly one consumer and no memory. Measured 2026-08-28: the call
+# was wrapped as `python3 scripts/codex-review.py … ; echo "WRAPPER_RC=$?"`, so the reported status
+# was the ECHO's. `WRAPPER_RC=1` sat unread in a log while the run was treated as successful and the
+# round's Codex half never ran. That is the `$?`-after-the-wrong-command trap, measured a FOURTH
+# time in this repo.
+#
+# ⚠ THE OBVIOUS FIX IS NOT ENOUGH, AND SAYING SO IS THE POINT. "Write a file the caller must read"
+# only moves the problem if the CALLER is still the reader — a file ignored is an exit code ignored
+# with extra steps. So the verdict lands INSIDE the repository, where `check-review-rounds.py`
+# reads it in CI. The consumer is deliberately NOT the caller.
+#
+# It is a subdirectory of `docs/reviews/` on purpose: `dir_snapshot` is non-recursive, so the
+# wrapper's own verdict writes cannot register as agent intrusions into the artifact root.
+VERDICT_DIR = os.path.join("docs", "reviews", "verdicts")
+VERDICT_SCHEMA = 1
+
+
+def verdict_path(out_path: str, override: "str | None" = None) -> str:
+    """Where this run's testimony goes. PURE.
+
+    Defaults into the repo — not next to `--out`, which the documented safe call shape puts
+    OUTSIDE the repo precisely so a stray write cannot reach an artifact. A verdict written there
+    would be invisible to CI, which is the whole failure being fixed.
+    """
+    if override:
+        return os.path.abspath(override)
+    stem = os.path.basename(out_path)
+    for ext in (".md", ".markdown", ".txt"):
+        if stem.endswith(ext):
+            stem = stem[: -len(ext)]
+            break
+    return os.path.join(REPO_ROOT, VERDICT_DIR, f"{stem or 'review'}.verdict.json")
+
+
+def verdict_record(*, gate_ran: bool, exit_code: int, out_path: str, reason: str,
+                   model: "str | None" = None, attempts: "list[str] | None" = None,
+                   intrusions_seen: "list[str] | None" = None) -> dict:
+    """The testimony, as data. PURE — no clock, no filesystem, so a case can assert every field.
+
+    `gate_ran` is the load-bearing field and is stated SEPARATELY from `exit_code`, not derived
+    from it by the reader. A reader that re-derives the verdict from a number is a second
+    implementation of the rule, and this project has measured what those do.
+    """
+    return {
+        "schema": VERDICT_SCHEMA,
+        "tool": "codex-review",
+        "gate_ran": bool(gate_ran),
+        "exit_code": int(exit_code),
+        "review": os.path.basename(out_path),
+        "model": model,
+        "reason": reason,
+        "attempts": list(attempts or []),
+        "intrusions": list(intrusions_seen or []),
+    }
+
+
+def write_verdict(path: str, record: dict) -> "str | None":
+    """Write the testimony. Returns an error string, or None on success.
+
+    ⚠ A FAILURE HERE IS A CANNOT-RUN, not a warning. If the verdict cannot be written then nothing
+    outside this process can later establish whether the gate ran — which is the exact condition
+    this mechanism exists to abolish. The caller turns this into exit 2.
+    """
+    try:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(record, f, indent=2, sort_keys=True)
+            f.write("\n")
+        return None
+    except OSError as exc:
+        return f"{exc}"
 
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -390,6 +466,8 @@ def main() -> int:
                     help="minimum final-message length that counts as a real review")
     ap.add_argument("--allow-overwrite", action="store_true",
                     help="permit --out to replace an existing file (refused by default: backlog #68)")
+    ap.add_argument("--verdict", help="write the run's verdict here "
+                                      f"(default: {VERDICT_DIR}/<review-stem>.verdict.json)")
     ap.add_argument("--self-test", action="store_true", help="run classifier checks and exit")
     args = ap.parse_args()
 
@@ -429,6 +507,27 @@ def main() -> int:
     out_name = os.path.basename(args.out)
     watched = watched_dirs(args.out)
     before = snapshot_all(watched)
+
+    # ── backlog #68 (d): every exit from here on leaves testimony on disk ──
+    # `emit` is the ONLY way out below, so a new branch cannot forget to record one. A verdict that
+    # cannot be written downgrades the run to CANNOT RUN (2) rather than reporting the outcome it
+    # was about to report — an unrecorded success is indistinguishable from the failure this fixes.
+    vpath = verdict_path(args.out, args.verdict)
+
+    def emit(rc: int, *, gate_ran: bool, reason: str, model=None, attempts=None, hits=None) -> int:
+        rec = verdict_record(gate_ran=gate_ran, exit_code=rc, out_path=args.out, reason=reason,
+                             model=model, attempts=attempts,
+                             intrusions_seen=[f"{os.path.join(d, n)}: {w}" for d, n, w in (hits or [])])
+        err = write_verdict(vpath, rec)
+        if err:
+            print(f"[codex-review] CANNOT RUN — the verdict could not be written to {vpath}: {err}.\n"
+                  f"[codex-review]   Nothing outside this process can now establish whether the gate\n"
+                  f"[codex-review]   ran, which is the very condition the verdict exists to abolish.\n"
+                  f"[codex-review]   Treat this run as NOT RUN.", file=sys.stderr)
+            return 2
+        print(f"[codex-review] verdict: gate_ran={str(gate_ran).lower()} -> {vpath}", file=sys.stderr)
+        return rc
+
     if out_name in before.get(out_dir, {}) and not args.allow_overwrite:
         print(f"[codex-review] REFUSING — {args.out} already exists.\n"
               f"[codex-review]   A filed review is an artifact; replacing it silently is what this\n"
@@ -436,7 +535,8 @@ def main() -> int:
               f"[codex-review]   turn, and its verdict flipped from NO to YES between two reads).\n"
               f"[codex-review]   Choose a new path, or pass --allow-overwrite deliberately.",
               file=sys.stderr)
-        return 2
+        return emit(2, gate_ran=False,
+                    reason="refused: --out already exists and --allow-overwrite was not given")
 
     models = [args.model] if args.model else resolve_candidates()
     print(f"[codex-review] candidates: {', '.join(models)}", file=sys.stderr)
@@ -469,7 +569,8 @@ def main() -> int:
                       "--`, and fix the brief so it does not tell the agent to write.",
                       file=sys.stderr)
             print(f"[codex-review] OK via {slug} -> {args.out} ({reason})", file=sys.stderr)
-            return 0
+            return emit(0, gate_ran=True, reason=reason, model=slug, attempts=attempts,
+                        hits=hits)
 
         print(f"[codex-review] {slug} unusable: {reason}", file=sys.stderr)
 
@@ -505,7 +606,8 @@ def main() -> int:
               file=sys.stderr)
     print("[codex-review] The Codex gate did NOT run. Fall back to a Claude adversarial review "
           "and note the gap in the review doc.", file=sys.stderr)
-    return 1
+    return emit(1, gate_ran=False,
+                reason="no candidate produced a usable review", attempts=attempts, hits=hits)
 
 
 def self_test() -> int:
@@ -656,6 +758,37 @@ def self_test() -> int:
         chk("…and is gone from where the agent put it", os.path.exists(stray), False)
         chk("…and still exists in quarantine, never deleted",
             os.path.exists(os.path.join(td, "q", "guessed.md")), True)
+
+    # ── backlog #68 (d): the verdict ──
+    chk("the default verdict lands INSIDE the repo, not beside --out",
+        verdict_path("/tmp/anywhere/plan-x-r3-codex.md").startswith(
+            os.path.join(REPO_ROOT, VERDICT_DIR)), True)
+    chk("…named after the review, with the extension stripped",
+        os.path.basename(verdict_path("/tmp/a/plan-x-r3-codex.md")),
+        "plan-x-r3-codex.verdict.json")
+    chk("an explicit --verdict wins", os.path.basename(verdict_path("/a/b.md", "/c/mine.json")),
+        "mine.json")
+    # gate_ran is STATED, not derived. This case exists so that a later "simplification" which
+    # computes it from exit_code fails here rather than in production: the two are independent
+    # fields on purpose, and a reader must never have to infer one from the other.
+    _r = verdict_record(gate_ran=False, exit_code=0, out_path="x/y.md", reason="r")
+    chk("gate_ran is independent of exit_code", (_r["gate_ran"], _r["exit_code"]), (False, 0))
+    chk("the verdict names the review it is about", _r["review"], "y.md")
+    with tempfile.TemporaryDirectory() as td:
+        vp = os.path.join(td, "deep", "v.json")
+        chk("write_verdict creates its directory and returns no error",
+            write_verdict(vp, _r), None)
+        with open(vp, encoding="utf-8") as f:
+            chk("…and round-trips the record", json.load(f)["gate_ran"], False)
+        # An unwritable path must yield an ERROR STRING, not an exception and not silence — the
+        # caller turns it into exit 2 (CANNOT RUN). Silence here would recreate the whole defect:
+        # a run whose testimony nobody can find.
+        clash = os.path.join(td, "afile")
+        with open(clash, "w", encoding="utf-8") as f:
+            f.write("not a directory")
+        chk("an unwritable verdict path reports an error rather than passing quietly",
+            isinstance(write_verdict(os.path.join(clash, "v.json"), _r), str), True)
+    extra += 8
 
     total = len(cases) + extra
     print(f"\n{total - failures}/{total} passed")

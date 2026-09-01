@@ -151,13 +151,13 @@ re-run) is fine; beyond that, fall back. The Claude adversarial review satisfies
 ```bash
 # PREFERRED — always for a real review prompt. See the backtick footgun below.
 python3 scripts/codex-review.py --prompt-file <path> --out "$(mktemp -d)/r.md"  # then promote
-#   exit 0 = review written   exit 1 = gate did NOT run → fall back   exit 2 = REFUSED, see below
+#   exit 0 = review written   exit 1 = gate did NOT run → fall back   exit 2 = REFUSED / CANNOT RUN
 ```
 
 > ### ⛔ OUTPUT CONTRACT IS PER HALF — Claude writes a file; **Codex must not**. Its brief says
 > *"your final message IS the review; write no file"*: the capture IS that message, so "write"
 > yields a *report* — rejected, gate silently not run. Enforcement, the overwritten committed
-> review, and open #68(d): [`process-rationale.md`](process-rationale.md) → *The review gate that wrote over its own evidence*.
+> review, and **#68(d) — CLOSED 2026-09-01**: each run writes `docs/reviews/verdicts/<stem>.verdict.json` stating `gate_ran`, read **in CI** by `check-review-rounds.py`, never by the caller who loses it. [`process-rationale.md`](process-rationale.md) → *The review gate that wrote over its own evidence*.
 
 **Pass the prompt in a FILE, not as a shell argument (added 2026-08-04).** A review prompt is full of
 identifiers, and any **backtick** inside a double-quoted bash string is **command substitution** — the
