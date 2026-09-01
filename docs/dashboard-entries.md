@@ -1210,6 +1210,8 @@ extension sends keystrokes to the page, not browser chrome, so literal Cmd-F is 
 verified via `window.find()`, which selected the phrase inside a closed card's clipped title.
 Falsifier (4), "a single-sentence entry has no triangle", has NO SUBJECT in current data — all 31
 entry cards have bodies; the one triangle-less `<details>` is the glossary.
+
+## 2026-09-01
 Several of the small checking scripts in this project state, in their own header, how many tests
 they run — "16 cases". Nothing ever confirmed that number, because a test suite cannot check its own
 final score: to do that it would have to watch itself finish. So the numbers were taken on trust.
