@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 47 cases
+    python3 scripts/page_chrome.py --self-test          # 50 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -124,8 +124,25 @@ def chrome_css() -> str:
         # caught before it shipped.
         ".chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;"
         "font-size:.82rem;color:var(--ink-soft,currentColor)}"
+        # ⚠ `background:transparent`, NOT `var(--card,…)` — backlog #80, 2026-09-01.
+        # Of the five tokens this module reads, four are FOREGROUND or BORDER and fall back to
+        # `currentColor`/`inherit`, so they are page-derived and safe by construction. `--card` was
+        # the only one supplying a SECOND SURFACE — one the page's own ink was never chosen against.
+        # That is the whole of backlog #79: the shim defined `--card` dark, a page toggled light did
+        # not override it, and `--ink` (light-mode, therefore dark) landed on it at 1.03:1.
+        #
+        # A `var(--card, transparent)` fallback could never have saved it: the shim DEFINES `--card`,
+        # so the fallback never fires. The fix is not a better default, it is refusing to borrow a
+        # surface at all. The button is now a bordered outline over whatever the page paints, so its
+        # label sits on `--bg` — a pair the page chose together.
+        #
+        # ⚠ AND THAT MOVES THE FLOOR: the resting label is `--ink-soft` on `--bg`, not on a pill.
+        # MEASURED before shipping — the dashboard's `--ink-soft` #6b7780 was **4.32:1** on its
+        # #f7f8fa, under AA, the identical trap its own legend hit ("the legend sits on --bg, not
+        # --panel"). Retuned there rather than papered over here; naming a colour in this module is
+        # what the case below forbids.
         ".chrome-btn{display:inline-flex;align-items:center;gap:.35rem;"
-        "font:inherit;color:inherit;background:var(--card,transparent);"
+        "font:inherit;color:inherit;background:transparent;"
         "border:1px solid var(--rule,currentColor);border-radius:.4rem;"
         "padding:.2rem .55rem;cursor:pointer}"
         ".chrome-btn:hover{color:var(--ink,inherit)}"
@@ -405,6 +422,23 @@ def self_test() -> int:
     css = chrome_css()
     case("the chrome CSS defines no literal colour, only the page's variables",
          re.search(r"#[0-9a-fA-F]{3,6}\b", css), None)
+
+    # ── backlog #80: the chrome borrows no SURFACE from the page ──
+    # Every token it still reads is a foreground or a border, falling back to `currentColor` /
+    # `inherit` — page-derived, and safe because the page chose its ink against its own background.
+    # A token supplying a BACKGROUND is different in kind: it introduces a second surface the
+    # page's ink was never chosen against, which is exactly how #79 reached 1.03:1. The rule is
+    # therefore about the PROPERTY (no borrowed surface), not about the one token that broke.
+    _bg_decls = re.findall(r"background:([^;}]*)", css)
+    case("the chrome paints no background it did not choose itself",
+         [d for d in _bg_decls if "var(" in d], [])
+    case("…and `--card` in particular is gone — the token #79 turned on",
+         "--card" in css, False)
+    # ⚠ The four tokens that MAY still be read, pinned by name. If a fifth appears, someone must
+    # come back here and say which kind it is; a silently widened set is how the first one got in.
+    case("the tokens it reads are exactly the four foreground/border ones",
+         sorted(set(re.findall(r"var\((--[a-z0-9-]+)", css))),
+         ["--ink", "--ink-soft", "--rule", "--structural"])
 
     print(f"\n{ok}/{ok + fail} passed")
     return 1 if fail else 0

@@ -1146,7 +1146,7 @@ def build(entries, days, prs, pr_error, git_error, window,
         "--ink:#1b2024;--fg3:#6b7780;--rule:#d8d6ce;--bg:#f7f8fa;--panel:#fff;"
         "--need:#9c5d0e;--need-bg:#f7ebd9;--ok:#2e6349;--err:#8e3627;--err-bg:#f5e3df;"
         "--link:#1f5d8c;--link-visited:#6a4593;"
-        "--card:#fff;--ink-soft:#6b7780;--ink-faint:#838a9b;"
+        "--card:#fff;--ink-soft:#5c5b67;--ink-faint:#838a9b;"
         "--good:#2f7d63;--defect:#a3323c;"
         "--structure:#33607a;--structure-br:#33607a;--structure-bg:#eaf0f4;"
         "--mono:ui-monospace,SFMono-Regular,Menlo,monospace;"
@@ -2480,16 +2480,19 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     # `.chrome-btn` (page_chrome.py) paints `background:var(--card,…)`, hovers to
     # `color:var(--ink,…)`, and rests on the chrome bar's `color:var(--ink-soft,…)`.
     for _theme, _dark in (("light", False), ("dark", True)):
-        _card = _css_var(ht, "card", _dark)
+        # ⟳ backlog #80: the surface is `--bg`, NOT `--card`. `.chrome-btn` no longer borrows a
+        # background, so its label sits on whatever the page paints. Checking the old pill would
+        # now be checking a surface nothing renders on — a green tick over the wrong subject.
+        _card = _css_var(ht, "bg", _dark)
         _ink = _css_var(ht, "ink", _dark)
         _soft = _css_var(ht, "ink-soft", _dark)
         # ⚠ A MISSING token FAILS rather than crashing or skipping. Undefined is exactly the
         # state that let the shim's dark value through, so it must never read as "nothing to
         # check" — that is the shape the original defect hid in.
-        case(f"{_theme}: .chrome-btn HOVER label clears AA on its own pill",
+        case(f"{_theme}: .chrome-btn HOVER label clears AA on the page surface",
              _card is not None and _ink is not None
              and _contrast(_ink, _card) >= PROSE_CONTRAST_MIN, True)
-        case(f"{_theme}: .chrome-btn RESTING label clears AA on its own pill",
+        case(f"{_theme}: .chrome-btn RESTING label clears AA on the page surface",
              _card is not None and _soft is not None
              and _contrast(_soft, _card) >= PROSE_CONTRAST_MIN, True)
 

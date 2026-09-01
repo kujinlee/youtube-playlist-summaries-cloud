@@ -1473,7 +1473,37 @@ passes through it.
       dismissal of `caught = rc == 1` was wrong — rc 3 would be credited as caught).
 - [x] **Merge** — PR #182, squash `a5a012c`.
 
-## Theme token coverage — backlog #79 — anchor `status-visibility` — ✅ CLOSED (residue → #80)
+## Theme token coverage — backlog #79 — anchor `status-visibility` — ✅ CLOSED · #80 ✅ CLOSED too
+
+⟳ **#80 CLOSED 2026-09-01 — the chrome stopped borrowing a surface.** ⛔ **Literal option (b) was
+refused by an existing decision, and finding that out was the useful part.** `page_chrome.py`'s
+docstring records that it *"reads the page's OWN variables, never its own colours"*, enforced by a
+case failing on any hex, which caught a `#777` before it shipped. Naming colours there would have
+deleted a tested decision and flattened five deliberately different pages.
+
+- [x] **The defect was narrower than the row said.** Of the five tokens the chrome reads, FOUR are
+      foreground or border, falling back to `currentColor`/`inherit` — page-derived and safe, because
+      a page picks its ink against its own background. **Only `--card` supplied a second SURFACE**,
+      one that ink was never chosen against. That is the whole of #79 in one sentence.
+- [x] **`.chrome-btn{background:transparent}`** — refuse to borrow a surface rather than borrow one
+      with a nicer fallback. ⚠ `var(--card, transparent)` could never have helped: the shim DEFINES
+      `--card`, so the fallback never fires.
+- [x] **⚠ IT MOVED THE FLOOR, and measuring first is what caught it.** With no pill the resting label
+      sits on `--bg`, where the dashboard's `--ink-soft` #6b7780 was **4.32:1** — under AA, and the
+      identical trap its own legend hit (*"the legend sits on --bg, not --panel"*, the same 4.32 in
+      that comment). Retuned page-side to `#5c5b67`, the colour already chosen for that surface.
+- [x] **VERIFIED IN CHROME, browser reporting dark throughout** — dashboard light **15.46 / 6.28**,
+      dashboard dark **14.37 / 5.84**, `/goals` light resting **7.36** with its border intact.
+- [x] **CONTROL** — reverting to `var(--card,transparent)` turns all three new cases red (rc=1).
+      page_chrome 47 → **50** cases; the rule asserts the PROPERTY (no borrowed surface) and pins the
+      four legal tokens by name, so a fifth cannot arrive unexamined.
+- [x] **The backlog page's `GROUPS` guard fired twice and was right both times** — once when #68/#79
+      closed and #80 was filed, once when #80 closed. It refuses to build until a human describes the
+      open set in plain words. Not a red: the mechanism working.
+- [ ] **Residue, stated:** the guard's population is still the dashboard alone, and three duplicated
+      palettes still exist. This removed the chrome's DEPENDENCE on them, not the duplication.
+      Option (a) — widen the guard — stays available and is now cheaper, because the property to
+      assert is one contrast pair per page rather than a token set.
 
 Found closing task #201, the manual browser gate on PR #189 — and **not caused by PR #189**
 (`git log -S` puts the hover rule in PR #185 and the `--card` token in PR #143). With the OS in dark

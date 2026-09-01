@@ -178,9 +178,6 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
         (5, "The colour palette is copy-pasted between two renderers; extract it once."),
         (6, "The gold “lead” line is over-emphasised and competes with the section heading."),
         (7, "Bold bullet labels usually just repeat the first words of the sentence. Drop them."),
-        (79, "In light mode eight colours never get a light value and quietly stay dark. One of "
-             "them makes the buttons at the top of every generated page lose their label when you "
-             "point at them. A guard now stops a ninth joining them."),
      ]),
     ("The reusable toolkit — the second deliverable",
      "Not about the product: about the development harness being reusable on a new project.", [
@@ -227,10 +224,6 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
              "from git, and have no backup. Nobody has decided whether they are worth keeping. "
              "The expensive part of that folder was already reclaimed; this is the residue, and "
              "the decision is yours."),
-        (68, "The tool that runs the second opinion on our work can fail without saying so — and "
-             "while failing, quietly replace a review that had already been filed with a different "
-             "one reaching the opposite verdict. It happened four times in a single run. Each part "
-             "is now worked around by hand; none of it is prevented."),
         (67, "Two helpers working at the same time can corrupt each other's results — measured "
              "twice, once producing a false alarm that was filed as a blocking defect before anyone "
              "traced it, and once nearly swallowing uncommitted work. Most of the danger has since "
