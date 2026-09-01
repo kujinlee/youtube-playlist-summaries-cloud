@@ -446,7 +446,7 @@ EXPECTED_MUTATIONS = {
     # and its budget, gh shape validation, and — on the gate — the decision grammar
     # including the NESTING rule, whose absence silently dropped every option after a
     # 4-space nest.
-    "scripts/gen-dashboard.py": 64,
+    "scripts/gen-dashboard.py": 65,
     "scripts/page_markup.py": 14,
     "scripts/check-dashboard-entry.py": 18,
     "scripts/check-plan-code.py": 21,
@@ -1958,7 +1958,7 @@ def _self_test() -> int:
     # token, which is the mechanism. `check-theme-token-coverage.py` holds the token set; a
     # palette could satisfy it and still pick an unreadable pair.
     # Coverage may grow here; it may not shrink.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 140)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 141)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so

@@ -757,13 +757,25 @@
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
-        "\"--card:#fff;--ink-soft:#6b7780;--ink-faint:#838a9b;\"\n        \"--good:#2f7d63;--defect:#a3323c;\"\n        \"--structure:#33607a;--structure-br:#33607a;--structure-bg:#eaf0f4;\"",
+        "\"--card:#fff;--ink-soft:#5c5b67;--ink-faint:#838a9b;\"\n        \"--good:#2f7d63;--defect:#a3323c;\"\n        \"--structure:#33607a;--structure-br:#33607a;--structure-bg:#eaf0f4;\"",
         "\"\""
       ]
     ],
     "expect": [
-      "light: .chrome-btn HOVER label clears AA on its own pill",
-      "light: .chrome-btn RESTING label clears AA on its own pill"
+      "light: .chrome-btn RESTING label clears AA on the page surface"
+    ]
+  },
+  {
+    "name": "the light palette stops defining the hover ink",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "\"--ink:#1b2024;--fg3:#6b7780;--rule:#d8d6ce;--bg:#f7f8fa;--panel:#fff;\"",
+        "\"--fg3:#6b7780;--rule:#d8d6ce;--bg:#f7f8fa;--panel:#fff;\""
+      ]
+    ],
+    "expect": [
+      "light: .chrome-btn HOVER label clears AA on the page surface"
     ]
   }
 ]
