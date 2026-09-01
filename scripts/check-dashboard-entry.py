@@ -90,6 +90,36 @@ def _indented(text: str) -> bool:
     return False
 
 
+EMPH = re.compile(r"^(\*{1,3}|_{1,3})")
+
+
+def _declaration_reason(s: str) -> str | None:
+    """The reason after a `NO-ENTRY:` marker at the START of `s`, else None.
+
+    ONE definition, called from BOTH of `exemption_reason`'s scan points. They had
+    the marker test written out twice and would have needed the same fix twice —
+    the divergence `header_error`'s docstring exists to prevent, in the same file.
+
+    ⚠ EMPHASIS IS NOT AN INERT CONTEXT, and that is the whole distinction. Fenced,
+    indented, commented and blockquoted all mean *not deliberate*, so they do not
+    exempt. `**NO-ENTRY:**` means the opposite — someone made it louder. It was
+    still refused, because the test was `startswith(NO_ENTRY)` on the raw line.
+
+    The closer is only stripped when it MATCHES the opener, so an author's own
+    emphasis inside the reason survives verbatim: `NO-ENTRY: keep **bold** here`
+    keeps its bold, and `**NO-ENTRY:* odd` keeps the unmatched `*` as reason text.
+    """
+    m = EMPH.match(s)
+    opener = m.group(1) if m else ""
+    rest = s[len(opener):]
+    if not rest.startswith(NO_ENTRY):
+        return None
+    rest = rest[len(NO_ENTRY):]
+    if opener and rest.startswith(opener):
+        rest = rest[len(opener):]
+    return rest.strip()
+
+
 def exemption_reason(pr_body: str) -> str | None:
     """The reason after a line-leading `NO-ENTRY:`, or None.
 
@@ -138,13 +168,15 @@ def exemption_reason(pr_body: str) -> str | None:
                 # The head runs through the SAME indent rule as a bare line. It
                 # did not, so an indented declaration exempted the moment the
                 # line also carried a comment — measured.
-                if not _indented(head) and head.strip().startswith(NO_ENTRY):
-                    return head.strip()[len(NO_ENTRY):].strip() or ""
+                if not _indented(head):
+                    r = _declaration_reason(head.strip())
+                    if r is not None:
+                        return r
         if in_comment or not probe or _indented(probe):
             continue
-        s = probe.strip()
-        if s.startswith(NO_ENTRY):
-            return s[len(NO_ENTRY):].strip() or ""
+        r = _declaration_reason(probe.strip())
+        if r is not None:
+            return r
     return None
 
 
@@ -426,6 +458,46 @@ def _self_test() -> int:
 
     fenced = "```\nNO-ENTRY: example from the docs\n```"
     case("NO-ENTRY inside a code fence does not exempt", verdict(["lib/x.ts"], False, fenced)[0], 1)
+    # ─── the marker survives EMPHASIS ──────────────────────────────────────
+    # ⛔ MEASURED 2026-09-01: `**NO-ENTRY:** typo fix` returned None, so a PR body
+    # that GitHub renders exactly as intended was REFUSED. The failure is a false
+    # refusal, not a false pass, which is why it went unnoticed — the author simply
+    # rewrote the line. THIRD instance of one class in a day: `REVIEW GAP:` was
+    # fixed for it once, and `Decide:` was MEASURED AS ZERO by an anchored pattern
+    # over ten bold occurrences. A marker people are told to write WILL be
+    # emphasised in the wild.
+    # ⚠ Emphasis is NOT an inert context. Fenced, indented, comment and blockquote
+    # all mean "not deliberate"; bold means the opposite — someone made it louder.
+    case("**bold** marker is recognised", exemption_reason("**NO-ENTRY:** typo fix"), "typo fix")
+    case("*single* marker is recognised", exemption_reason("*NO-ENTRY:* typo fix"), "typo fix")
+    case("__underscore__ marker is recognised", exemption_reason("__NO-ENTRY:__ typo fix"), "typo fix")
+    case("an emphasised marker with no reason is EMPTY, not absent",
+         exemption_reason("**NO-ENTRY:**"), "")
+    # The four inert contexts must be untouched by this — emphasis is orthogonal.
+    case("a blockquoted bold marker is still inert", exemption_reason("> **NO-ENTRY:** x"), None)
+    case("a fenced bold marker is still inert",
+         exemption_reason("```\n**NO-ENTRY:** x\n```"), None)
+    case("an indented bold marker is still inert",
+         exemption_reason("    **NO-ENTRY:** x"), None)
+    # ⚠ Emphasis in the REASON is the author's text and must survive verbatim. A
+    # naive lstrip("*") on the remainder would eat it.
+    case("emphasis inside the reason is preserved",
+         exemption_reason("NO-ENTRY: keep **bold** here"), "keep **bold** here")
+    case("...and also when the marker itself was emphasised",
+         exemption_reason("**NO-ENTRY:** keep **bold** here"), "keep **bold** here")
+    # A closer that does not match the opener is not a closer; it is the reason.
+    case("a mismatched closer is left in the reason",
+         exemption_reason("**NO-ENTRY:* odd"), "* odd")
+    case("a bold declaration exempts at the VERDICT level",
+         verdict(["lib/x.ts"], False, "**NO-ENTRY:** typo fix")[0], 0)
+    # ⚠ THE SECOND SCAN POINT. `exemption_reason` tests the marker in TWO places —
+    # the bare line, and the text BEFORE an inline `<!--`. They were separate
+    # copies of `startswith(NO_ENTRY)`; fixing one and not the other is the exact
+    # divergence this file has already paid for twice. Only this case reaches the
+    # comment-head branch with an emphasised marker.
+    case("bold works on the pre-comment head too",
+         exemption_reason("**NO-ENTRY:** typo fix <!-- note -->"), "typo fix")
+
     case("exemption_reason reads a real declaration", exemption_reason("NO-ENTRY: typo fix"), "typo fix")
     case("exemption_reason distinguishes empty from absent",
          (exemption_reason("NO-ENTRY:"), exemption_reason("nothing here")), ("", None))
