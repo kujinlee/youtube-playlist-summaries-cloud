@@ -144,6 +144,68 @@ def _digest(path: str) -> str:
         return hashlib.sha256(f.read()).hexdigest()
 
 
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# The directories an agent has actually been observed to guess its way into. `docs/reviews/` is
+# NOT optional and is NOT derived from `--out`:
+#
+# ⚠ MEASURED ON THIS BRANCH, 2026-09-01, while verifying this very fix. A test run with
+# `--out <tempdir>/exists.md` ended with a real adversarial review at
+# `docs/reviews/codex-gate-artifact-safety-review.md` — a path never passed to anything. The agent
+# inferred it from the BRANCH NAME and wrote it under `-s danger-full-access`. The first version of
+# this code snapshotted only `--out`'s directory, so it watched the temp dir and reported nothing
+# while the write landed in the repo. The round-3 failure reproduced live, on the branch fixing it,
+# past the fix. Watching `--out` alone protects the unsafe call shape and misses the safe one, which
+# is backwards: the documented mitigation puts `--out` OUTSIDE the repo precisely so a direct write
+# cannot reach an artifact — and that is exactly when `--out`'s directory is the wrong thing to watch.
+ARTIFACT_ROOTS = ("docs/reviews",)
+
+
+def watched_dirs(out_path: str) -> "list[str]":
+    """Every directory whose contents must not change behind the wrapper's back. PURE-ish."""
+    dirs = [os.path.dirname(os.path.abspath(out_path)) or "."]
+    for rel in ARTIFACT_ROOTS:
+        d = os.path.join(REPO_ROOT, rel)
+        if os.path.isdir(d) and d not in dirs:
+            dirs.append(d)
+    return dirs
+
+
+def snapshot_all(dirs: "list[str]") -> "dict[str, dict[str, str]]":
+    return {d: dir_snapshot(d) for d in dirs}
+
+
+def intrusions(before: "dict[str, dict[str, str]]", after: "dict[str, dict[str, str]]",
+               ours: "set[str]") -> "list[tuple[str, str, str]]":
+    """(directory, filename, what) for every change the wrapper did not make. PURE."""
+    out = []
+    for d, b in before.items():
+        for line in unexpected_writes(b, after.get(d, {}), ours):
+            name, _, what = line.partition(": ")
+            out.append((d, name, what))
+    return out
+
+
+def quarantine(created: "list[tuple[str, str]]", dest: str) -> "list[str]":
+    """Move agent-CREATED files out of the artifact tree. Returns what moved.
+
+    ⚠ ONLY created files, and that limit is stated rather than papered over. An OVERWRITTEN file
+    cannot be restored from a hash — the snapshot keeps digests, not bytes — so the honest remedy
+    there is `git checkout --`, which the caller is told verbatim. Keeping a full byte copy of
+    `docs/reviews/` (600+ files) on every run to cover a case git already covers would be the more
+    expensive half of a worse trade.
+    """
+    moved = []
+    os.makedirs(dest, exist_ok=True)
+    for d, name in created:
+        src = os.path.join(d, name)
+        try:
+            os.replace(src, os.path.join(dest, name))
+            moved.append(src)
+        except OSError:
+            continue
+    return moved
+
+
 def dir_snapshot(directory: str) -> "dict[str, str]":
     """{filename: sha256} for the files directly in `directory`. Missing dir -> {}. PURE-ish."""
     try:
@@ -365,8 +427,9 @@ def main() -> int:
     # directory so an intrusion is detected and named instead of being discovered days later.
     out_dir = os.path.dirname(os.path.abspath(args.out)) or "."
     out_name = os.path.basename(args.out)
-    before = dir_snapshot(out_dir)
-    if out_name in before and not args.allow_overwrite:
+    watched = watched_dirs(args.out)
+    before = snapshot_all(watched)
+    if out_name in before.get(out_dir, {}) and not args.allow_overwrite:
         print(f"[codex-review] REFUSING — {args.out} already exists.\n"
               f"[codex-review]   A filed review is an artifact; replacing it silently is what this\n"
               f"[codex-review]   check exists to stop (measured: four models overwrote one file in\n"
@@ -395,16 +458,16 @@ def main() -> int:
             with open(args.out, "w", encoding="utf-8") as f:
                 f.write(f"<!-- codex-review: model={slug} -->\n\n")
                 f.write(body + "\n")
-            intruded = unexpected_writes(before, dir_snapshot(out_dir), {out_name})
-            if intruded:
-                print(f"[codex-review] ⚠ THE AGENT WROTE INTO {out_dir} BEHIND THE WRAPPER:",
+            hits = intrusions(before, snapshot_all(watched), {out_name})
+            if hits:
+                print("[codex-review] ⚠ THE AGENT WROTE BEHIND THE WRAPPER:", file=sys.stderr)
+                for d, name, what in hits:
+                    print(f"[codex-review]     {os.path.join(d, name)} — {what}", file=sys.stderr)
+                print("[codex-review]   The review above was captured from the final message and is "
+                      "valid, but those\n[codex-review]   files are not it. Inspect with `git diff` "
+                      "/ `git status`, restore any overwrite\n[codex-review]   with `git checkout "
+                      "--`, and fix the brief so it does not tell the agent to write.",
                       file=sys.stderr)
-                for p in intruded:
-                    print(f"[codex-review]     {p}", file=sys.stderr)
-                print("[codex-review]   The review above was still captured from the final message "
-                      "and is valid,\n[codex-review]   but treat those files as suspect — inspect "
-                      "them with `git diff` before trusting\n[codex-review]   any of them, and fix "
-                      "the brief so it does not tell the agent to write.", file=sys.stderr)
             print(f"[codex-review] OK via {slug} -> {args.out} ({reason})", file=sys.stderr)
             return 0
 
@@ -415,14 +478,28 @@ def main() -> int:
     # A FAILED GATE MUST NOT LEAVE AN ARTIFACT. The wrapper writes nothing on this path — but the
     # agent may have, which is the round-3 failure exactly. Say so, loudly, on the path where the
     # caller is about to conclude "the gate did not run".
-    intruded = unexpected_writes(before, dir_snapshot(out_dir), set())
-    if intruded:
-        print(f"[codex-review] ⚠ AND THE AGENT WROTE INTO {out_dir} DESPITE THE FAILURE:",
-              file=sys.stderr)
-        for p in intruded:
-            print(f"[codex-review]     {p}", file=sys.stderr)
-        print("[codex-review]   These are NOT a review this wrapper produced. `git checkout` them "
-              "unless you can\n[codex-review]   account for each one.", file=sys.stderr)
+    hits = intrusions(before, snapshot_all(watched), set())
+    if hits:
+        print("[codex-review] ⚠ AND THE AGENT WROTE DESPITE THE FAILURE:", file=sys.stderr)
+        for d, name, what in hits:
+            print(f"[codex-review]     {os.path.join(d, name)} — {what}", file=sys.stderr)
+        # A FAILED GATE MUST NOT LEAVE AN ARTIFACT. Reporting alone was not enough: if the caller
+        # misses the exit code — the measured fourth occurrence of that trap — an agent-written file
+        # sits in docs/reviews/ looking exactly like a filed gate artifact. So created files are
+        # MOVED OUT. Overwrites cannot be undone from a digest; git is the remedy and is named.
+        created = [(d, n) for d, n, what in hits if what.startswith("CREATED")]
+        if created:
+            dest = tempfile.mkdtemp(prefix="codex-review-quarantine-")
+            moved = quarantine(created, dest)
+            if moved:
+                print(f"[codex-review]   QUARANTINED {len(moved)} agent-created file(s) -> {dest}",
+                      file=sys.stderr)
+                print("[codex-review]   A failed gate leaves no artifact behind. Nothing was "
+                      "deleted; inspect them there.", file=sys.stderr)
+        if any(w.startswith("OVERWRITTEN") or w.startswith("DELETED") for _, _, w in hits):
+            print("[codex-review]   ⚠ An existing file was overwritten or deleted and CANNOT be "
+                  "restored from a digest.\n[codex-review]   Run `git checkout -- <path>` for each "
+                  "one listed above.", file=sys.stderr)
     if demand:
         print(f"[codex-review] ⚠ LIKELY CAUSE: the prompt says {demand!r}. See the warning above.",
               file=sys.stderr)
@@ -552,6 +629,33 @@ def self_test() -> int:
         ["b.md: DELETED during the run"])
     chk("a missing directory snapshots empty, never raises",
         dir_snapshot("/nonexistent/path/for/self/test"), {})
+
+    # THE DEFECT THIS BRANCH REPRODUCED IN ITSELF. Watching only --out's directory means that when
+    # --out is OUTSIDE the repo — the documented safe call shape — docs/reviews/ goes unwatched, and
+    # that is exactly where the agent guessed its way to. Measured live on this branch.
+    chk("docs/reviews is watched even when --out is outside the repo",
+        os.path.join(REPO_ROOT, "docs/reviews") in watched_dirs("/tmp/elsewhere/out.md"), True)
+    chk("--out's own directory is watched too",
+        "/tmp/elsewhere" in watched_dirs("/tmp/elsewhere/out.md"), True)
+    chk("no directory is watched twice",
+        len(watched_dirs(os.path.join(REPO_ROOT, "docs/reviews/x.md")))
+        == len(set(watched_dirs(os.path.join(REPO_ROOT, "docs/reviews/x.md")))), True)
+    chk("an intrusion is reported with the directory it happened in",
+        intrusions({"/d": {}}, {"/d": {"g.md": "x"}}, set()),
+        [("/d", "g.md", "CREATED by the agent during the run")])
+
+    # A failed gate must LEAVE NOTHING, not merely complain. Reporting alone was the first version,
+    # and it fails whenever the caller misses the exit code — the measured fourth occurrence.
+    with tempfile.TemporaryDirectory() as td:
+        src_dir = os.path.join(td, "reviews"); os.makedirs(src_dir)
+        stray = os.path.join(src_dir, "guessed.md")
+        with open(stray, "w") as f:
+            f.write("an agent wrote this")
+        moved = quarantine([(src_dir, "guessed.md")], os.path.join(td, "q"))
+        chk("a created file is moved out of the artifact tree", moved, [stray])
+        chk("…and is gone from where the agent put it", os.path.exists(stray), False)
+        chk("…and still exists in quarantine, never deleted",
+            os.path.exists(os.path.join(td, "q", "guessed.md")), True)
 
     total = len(cases) + extra
     print(f"\n{total - failures}/{total} passed")

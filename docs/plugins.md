@@ -150,7 +150,7 @@ re-run) is fine; beyond that, fall back. The Claude adversarial review satisfies
 
 ```bash
 # PREFERRED — always for a real review prompt. See the backtick footgun below.
-python3 scripts/codex-review.py --prompt-file <path> --out docs/reviews/task-N-<name>-codex.md
+python3 scripts/codex-review.py --prompt-file <path> --out "$(mktemp -d)/r.md"  # then promote
 #   exit 0 = review written   exit 1 = gate did NOT run → fall back   exit 2 = REFUSED, see below
 ```
 
@@ -176,7 +176,7 @@ writing an empty one, so the mangled run failed **loud**. A caller checking only
 
 It walks every candidate model in priority order, and decides success **solely** by whether
 `codex exec -o/--output-last-message` wrote a substantive final-message file — never the exit code,
-never stdout text. Run `--self-test` (15 cases) after touching it. Prefer it over raw `codex exec`
+never stdout text. Run `--self-test` (35 cases) after touching it. Prefer it over raw `codex exec`
 for anything that must actually produce a review; `scripts/codex-frontier-model.py` alone cannot
 guarantee a runnable model and says so in its docstring.
 

@@ -1194,3 +1194,37 @@ right: move detail, do not raise the budget. The file now sits at exactly 260.
 Verified end to end without invoking Codex: existing `--out` → `rc=2`, file byte-identical
 afterwards; `--allow-overwrite` proceeds to the model chain; a write-a-file prompt prints the warning
 quoting `'Write the review to'`.
+
+## 2026-09-01
+A correction to the entry above, which is worth more than the fix it corrects.
+
+While testing the new safeguard, the outside reviewer wrote a file into our reviews folder — a
+location nobody gave it, which it worked out from the name of the branch. That is precisely the
+failure the safeguard was built to stop, happening during the test of the safeguard, and getting
+past it. The reason is almost funny: the new watcher was told to watch wherever the output was being
+sent, and for that test the output was being sent to a scratch folder, so it watched the scratch
+folder attentively while the real folder was written to behind it.
+
+It watched the unsafe way of calling it and ignored the safe one.
+
+That is now fixed — the reviews folder is watched always, whatever the output setting says. And a
+failed run no longer merely complains about files the reviewer left behind; it moves them out of the
+way, so a run that failed cannot leave something behind that looks like a finished review. Nothing is
+deleted.
+
+The file the reviewer wrote turned out to be a genuine, and correct, critique of this very change. It
+has been kept, with a note at the top explaining how it arrived.
+<!--tech-->
+`ARTIFACT_ROOTS = ("docs/reviews",)`; `watched_dirs()` returns `--out`'s directory UNION the repo
+artifact roots, so the documented safe shape (`--out` outside the repo, promote on success) is no
+longer the blind spot. Failure path now QUARANTINES created files via `os.replace` into a temp dir
+and prints the destination; overwrites cannot be restored from a digest, so `git checkout --` is
+named rather than implied — the trade against keeping byte copies of 600+ review files every run is
+stated in the docstring. Self-test 28 → **35**.
+
+Also corrected, both caught by that same review: `plugins.md` claimed `--self-test (15 cases)` when
+it runs 35, and still advertised `--out docs/reviews/...` as the example — the very call shape the
+incident argued against.
+
+⚠ Verified nothing was lost: the path was new (`git log` on it shows no prior commit) and
+`find -newermt '-35 minutes'` reports no other modified file in the repo.

@@ -1,3 +1,23 @@
+<!-- codex-review: NOT written by scripts/codex-review.py -->
+
+# Codex adversarial review — codex-gate-artifact-safety (round 1)
+
+⚠ **HOW THIS FILE GOT HERE IS ITSELF THE FINDING.** It was written by the Codex agent directly,
+during an end-to-end verification run on 2026-09-01 whose `--out` pointed at a temp file. Nobody
+passed this path to anything: the agent inferred it from the BRANCH NAME and wrote it under
+`-s danger-full-access`. That is the round-3 failure of backlog #68 reproducing live, on the branch
+fixing it, past the first version of the fix — which watched only `--out`'s directory and so was
+looking at the temp dir while the write landed in `docs/reviews/`.
+
+Nothing was overwritten (the path was new) and nothing else in the repo was touched — verified by
+`find -newermt` and `git log` on the path. The review below is kept because it is a real adversarial
+review of this branch and its Blocking #1 is correct. Its findings are addressed in the same commit:
+`ARTIFACT_ROOTS` now watches `docs/reviews/` regardless of where `--out` points, a failed gate
+QUARANTINES agent-created files instead of merely reporting them, and both stale `plugins.md` claims
+are corrected. The self-test grew 28 → 35.
+
+---
+
 **Blocking**
 
 1. **The intrusion detector watches only `--out`'s directory, so the documented safe call shape is blind to the real artifact directory.**  
