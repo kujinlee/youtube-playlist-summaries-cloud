@@ -1735,3 +1735,80 @@ three. "Whether to merge" must be written with its choices.
 **Tier 3 is impossible by design:** the store is append-only and ids are POSITIONAL — editing the
 three existing entries renumbers ids and silently rebinds standing `[resolved:]` markers. They stay,
 and they were true on their date.
+
+## 2026-09-01 [resolved: 2026-09-01/10]
+You chose to hold the automatic check. No code changes; what changes is how I write.
+
+The question was whether to add a check that refuses an entry claiming to wait on you unless the
+question is written in the form the page can recognise. You said hold it and see whether simply
+writing them properly is enough — which is what I recommended, so this is not a compromise between
+us, it is the same answer twice.
+
+What that means in practice: from now on, every question I put in front of you here gets written as
+a question with its choices listed underneath. Not as a sentence buried in a paragraph. That is all
+tier one ever was.
+
+Now the part I got wrong, which you should know because I told you the opposite this morning.
+
+I said the page's mechanism for marking a question as answered had never once run, because I had
+never written a question in the form it recognises. That is false. I checked it properly this time,
+by asking the page's own reader rather than searching the text myself, and there was already an
+entry from yesterday with two questions written correctly — both answered, both already displaying
+as settled. The machinery has been working. I simply had not looked at it with the right instrument.
+
+What went wrong is worth one sentence, because it is a mistake this project keeps making in
+different costumes: I searched for questions written at the start of a line, and every real one is
+written in bold, so my search found none and I believed the feature was dead. The search was
+looking at a different thing than the page reads.
+
+So the real problem is smaller and more ordinary than I described. The page understands these
+questions perfectly well. I have just been inconsistent — sometimes writing them properly,
+sometimes burying them in a paragraph — and the three entries you spotted are the buried ones. Being
+consistent is the whole fix, which makes holding the automatic check a better decision than it was
+when you made it, not a worse one.
+
+I should also be straight about one limit, because it affects what you will see. The page records
+*that* a question was answered, never *which* answer you gave. So your choice survives only because
+it is written into this text. If that turns out to matter to you, it is a separate change.
+
+There is no deadline on this and nothing expires. If I go back to burying questions in prose, that
+is the evidence the check is needed, and we add it then.
+<!--tech-->
+Backlog **#81 — tier 2 HELD by user decision 2026-09-01.** Resolves the ask filed as
+**2026-09-01/10** (PR #199, squash `8ef18f4d`). Tier 1 is in force and needs no mechanism: author
+asks as `**Decide:** <question?>` + `- option` bullets, all one paragraph.
+
+⛔ **#81's HEADLINE PREMISE IS REFUTED, by the render this entry was written to produce.**
+*"The ask grammar has never been used, so the settle mechanism has never fired"* is **false**.
+MEASURED by `check-dashboard-entry.decisions()` — the gate's own parser, over every entry:
+
+| Entry | Decisions the GATE counts | State |
+|---|---|---|
+| **2026-08-31/3** | **2** | resolved by `[resolved: 2026-08-31/3]`; both render `<div class="ask settled">` |
+| 2026-09-01/10 | 1 | resolved by this entry |
+
+Render of the store as of this commit: **3 settled ask blocks, 0 live**. Two of the three predate
+today. The mechanism has fired **since 2026-08-31** and was never dead.
+
+**How the false measurement happened** (reconstruction consistent with every number, not a recovered
+command): `grep -c '^Decide:'` → **0**, because all 10 occurrences are `**Decide:**`. Anchoring at
+line start cannot see a bold marker. That is the SAME emphasis-blindness class as `NO-ENTRY:` and
+`REVIEW GAP:` — recorded in entry 2026-09-01/9's tech note, hours earlier, about a different script.
+The instrument that measured the grammar had the defect the grammar's own gates keep being fixed for.
+
+**What survives, unchanged:** the user's actual report. 2026-08-30/6, 2026-08-30/5 and 2026-08-29/1
+carry their asks as PROSE, so they read present-tense after resolution. The defect is **inconsistent
+authoring**, not an unused mechanism — narrower than filed, same fix (tier 1), same severity (🟢).
+
+**Falsifier for this entry's own claim, run before committing:** `[resolved: 2026-09-01/10]` must
+make `_ask_block` (`gen-dashboard.py:279`) emit `<div class="ask settled">` with
+`<span class="was">Decided:</span>` for 2026-09-01/10, and `unresolved()` must return `[]`. Both
+observed. ⚠ Counting the STRING `Decided:` in the HTML is NOT this falsifier — it returns 7, mostly
+from this entry's own prose. Count the rendered BLOCKS.
+
+⚠ **Stated limit, not a defect:** `[resolved: <id>]` records the resolving ENTRY, never the CHOICE
+(docstring `:305-306`). The page cannot display which option was taken, so the choice lives only in
+the prose above. Retaining the choice structurally would mean widening the marker grammar — a
+separate change, not filed.
+
+**Not re-litigated:** tier 3 remains impossible by design (append-only store, positional ids).
