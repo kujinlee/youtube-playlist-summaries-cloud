@@ -207,9 +207,6 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
      "from recurring.", [
         (16, "After a deploy, a browser tab left open keeps running the old JavaScript with no "
              "“refresh available” prompt."),
-        (69, "A script's self-test cannot check its own exit code, so the one line that guards its "
-             "declared case count could be deleted without anything noticing. The count is right "
-             "today; what is missing is a watcher outside the script."),
         (29, "A guard-coverage checker only inspects the parked schema, so the guards in real "
              "migrations are invisible to it."),
         (38, "Extract the sidebar's load/refresh state machine into a hook — a reviewer, asked "

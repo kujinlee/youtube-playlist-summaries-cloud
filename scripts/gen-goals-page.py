@@ -3,7 +3,7 @@
 
     python3 scripts/gen-goals-page.py              # -> ~/explainers/goals.html, served at /goals
     python3 scripts/gen-goals-page.py --fragment-only <path>
-    python3 scripts/gen-goals-page.py --self-test  # 16 cases, pure functions only
+    python3 scripts/gen-goals-page.py --self-test  # 15 cases, pure functions only
 
 WHY THIS EXISTS
 ---------------

@@ -63,7 +63,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 47 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 71 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script

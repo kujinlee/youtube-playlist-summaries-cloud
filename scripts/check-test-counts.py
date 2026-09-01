@@ -42,7 +42,7 @@ USAGE
     npm test -- --ci --json --outputFile=jest-results.json
     python3 scripts/check-test-counts.py --results jest-results.json
 
-    python3 scripts/check-test-counts.py --self-test     # 12 cases, no jest, no git
+    python3 scripts/check-test-counts.py --self-test     # 27 cases, no jest, no git
 """
 from __future__ import annotations
 
