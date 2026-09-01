@@ -1124,3 +1124,27 @@ DELETED, not disabled: `TITLE_CAP`, the truncation branch, `_close_orphan_markup
 Mutations 120 → 123 (3 deleted with the code they guarded, 6 added, 2 re-anchored). `--mutate .`: 5 files, 123 mutations, 0 survivors. Suite 266 → 276; page_markup 78 → 74.
 
 ⚠ Two honest gaps. (1) Emptying the title is caught by the ORDERING guards, not by the title-specific one, which did not fire even after re-binding; recorded as a `note` in the mutation manifest. (2) No browser has yet been driven against this — the flex-ellipsis behaviour is asserted from the stylesheet text only, and the spec says the falsifiers are necessary and not sufficient.
+
+## 2026-08-31
+
+An ask's choices now render as an actual list, and a settled ask stops looking like it is still waiting for you.
+
+You reported both from the live page. The options ran together on one line — "Merge the ask-choices change - merge PR #186 [recommended] - hold it and tell me what to change - close it unmerged" — with the dashes you typed showing as hyphens mid-sentence. And the card said **Decide:** over three live-looking options while its badge said resolved, so a settled decision read as an open one.
+
+The cause was that the renderer split your text on blank lines only, so an opener and its bullets counted as one paragraph and went out as a single block of prose. The structure you wrote was in the file the whole time; nothing looked at it. That is the same thing this renderer was fixed for once before, for paragraphs — lists were simply never done.
+
+A resolved ask now reads **Was decided:** and recedes. It deliberately does **not** say which choice you made, because the store records which entry resolved an ask, never which option won — and where there are two asks in one entry it keeps asking rather than claim either was settled.
+
+<!--tech-->
+`_ask_block` renders a `**Decide:**` paragraph as a question plus `<ul class="opts">`. The option grammar is NOT re-implemented — it comes from the gate's `decisions()`, the same parser the ask tray reads.
+
+⚠ THREE DEFECTS FOUND AND FIXED DURING THE ONE REVIEW PASS, all in the fix itself:
+1. Parsing the PARAGRAPH ALONE stripped the surrounding context, so a `**Decide:**` inside a fence or indented code — 0 decisions to the gate over the whole entry — parsed as 1 and drew a live options list over inert text. Found by probe.
+2. Matching asks by QUESTION TEXT is not an identity: an inert copy of a later ask's question consumed that ask's options, so the real ask flattened. Now matched by LINE POSITION using the gate's own `_inert_lines`.
+3. Two openers in one paragraph rendered only the first and dropped the rest of the paragraph. Now the whole paragraph stays prose — nothing is lost.
+
+Also: `settled` is an entry-level fact, so with two asks it claimed both were decided. It now applies only when the entry holds exactly one ask.
+
+Suite 276 → 290. Mutations 123 → 127, 0 survivors. One mutation SURVIVED on first run and was replaced: `d = live[0]` never reached the code it named, because an early return already protected inert text. A mutation that cannot reproduce the defect it describes is a claim, not a guard.
+
+⚠ NOT DONE, deliberately: the card's options omit the tray's PR links and live PR-state notes, so for a LIVE ask the same option can read differently in the two places. Filed as a follow-up — it wants a shared option renderer, which is a seam change, not a patch.
