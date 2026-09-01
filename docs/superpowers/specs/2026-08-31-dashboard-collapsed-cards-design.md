@@ -3,13 +3,23 @@
 > **Anchor:** `status-visibility` — **ADR:** none
 > **Goal:** A person who was away can see the current state, what changed, and what needs them — without reading the chat transcript.
 
-**Status:** **v2 — round 1 folded in, BOTH halves. Both reported NOT CONVERGED.**
-Reviews at `docs/reviews/spec-dashboard-collapsed-cards-r1-{codex,claude}.md`.
-Codex: 1 Blocking, 3 High, 1 Medium, 1 Low — and it **executed** (`--self-test` 266/266,
-`--mutate .` 120 mutations / 0 survivors). Claude: 2 Blocking, 2 High, 2 Medium, 1 Low.
-**The two halves overlapped on three findings and each found things the other missed** — §7 records
-which. The design shape in §2 is unchanged from the version the user approved; v2 adds one rule the
-collapse itself created (§2f) and repairs the falsifiers, the CSS and the blast radius.
+**Status:** **v3 — rounds 1 and 2 folded in, BOTH halves each round.**
+**Approved by the user 2026-08-31; proceeding in AFK mode from here.**
+Reviews at `docs/reviews/spec-dashboard-collapsed-cards-r{1,2}-{codex,claude}.md`.
+
+| Round | Codex | Claude |
+|---|---|---|
+| 1 | 1 Blocking, 3 High, 1 Medium, 1 Low — **executed** (`--self-test` 266/266, `--mutate .` 120/0) | 2 Blocking, 2 High, 2 Medium, 1 Low |
+| 2 *(scoped to round 1's own fixes)* | **0 Blocking**, 1 High, 1 Low — executed 3 suites | **0 Blocking**, 1 High, 2 Medium, 1 Low |
+
+**The two halves overlapped and each found things the other missed, in both rounds** — §7 and §8
+record which. The design shape in §2 is unchanged from the version the user approved.
+
+> ⚠ **v3's §2f is SMALLER than v2's, and that is the point.** Round 2 was scoped to what round 1's
+> fixes added, on the measured expectation that a fix is where the next defect lives — the immediately
+> preceding slice had *every* round-2 Blocking turn out to be a regression from round 1's own fix.
+> It paid: v2's brand-new §2f could hide an entry's raw technical detail entirely. v3 does not
+> widen the rule to cover that case; it **deletes the text comparison** that made the case possible.
 
 Extends [`2026-08-28-project-dashboard-design.md`](2026-08-28-project-dashboard-design.md) §5 (the
 *What changed* section) and [`2026-08-31-dashboard-ask-choices-design.md`](2026-08-31-dashboard-ask-choices-design.md)
@@ -202,11 +212,24 @@ entry: "## 2026-08-31\nThe page can no longer contradict itself.\n"
 with the repetition"*. Sound while the title was fully visible beside a small fold. Once the triangle
 is the card's only affordance, it advertises hidden content and returns the line just read.
 
-**Rule.** Compute the fold body first. If it is empty, **or** its tag-stripped text equals the row
-title's tag-stripped text, emit the row as a plain non-interactive line — **no `<details>`, no
-triangle** — with the `<h3>` and the article id unchanged.
+**Rule** *(narrowed in v3; round 2 found the v2 wording could hide the raw technical detail)*:
 
-A disclosure that discloses nothing is a lie about the content.
+> **Suppress the fold iff the rendered prose is empty AND the entry has no tech block.** Then emit the
+> row as a plain non-interactive line — **no `<details>`, no triangle** — with the `<h3>` and the
+> article id unchanged.
+
+When the prose is empty but a tech block exists, the fold **stays**, and the empty
+`<div class="prose">` is **omitted** — the fold contains the nested tech fold alone.
+
+A disclosure that discloses nothing is a lie about the content. But a row that hides the only route to
+the raw detail is worse, and v2's wording did exactly that — see §8 for the reproduced probe.
+
+**There is no text comparison.** v2 also suppressed when the body's tag-stripped text *equalled* the
+title's, which was (a) unspecifiable — the two sides are produced by different functions with
+different whitespace handling, so `Same  title.` versus `Same title.` and a `**bold**` span were all
+undefined — and (b) unnecessary, once §3a's COUPLING 3 makes the prose genuinely empty in that case.
+Emptiness needs no normalisation rules; an equality test needs several, and each is a place to be
+wrong.
 
 ### 2g. Everything else starts collapsed
 
@@ -271,6 +294,31 @@ So: delete the no-terminator refusal and its case, and let §2f suppress the fol
 then has nothing behind it. Ship the cap deletion alone → text duplicates on the page. Ship the guard
 relaxation alone → §1c's content loss returns. **Same commit, or neither.**
 
+**⚠ COUPLING 3 — the `else` branch pops, and its comment must be rewritten** *(r2: Claude H1).*
+`_prose`'s tail (`:265-271`) keeps the first paragraph when nothing else remains, and states why:
+
+```python
+# else: the headline is the entire entry. Keep it — an empty fold is worse than a repeated
+# sentence, and there is nothing else to show.
+```
+
+**§2f overturns that premise:** with no fold, an empty fold is not the alternative — a plain row is.
+So the branch pops unconditionally. **Measured**, simulating the pop:
+
+```
+single sentence  -> paras after drop: []
+sentence + para  -> paras after drop: ['Second paragraph.']
+no terminator    -> paras after drop: []
+markup only      -> paras after drop: []
+```
+
+The prose comes back genuinely empty in every shape that previously repeated, which is what lets §2f
+test emptiness instead of comparing strings.
+
+**The comment is load-bearing documentation of a decision this slice reverses, and rewriting it is
+part of the change, not tidying.** Changing the behaviour and leaving the comment would leave the file
+arguing against its own code.
+
 ### 3b. The mutation-count revision, stated as a rule not a number
 
 `EXPECTED_MUTATIONS` in `scripts/check-plan-code.py` pins `gen-dashboard` at **56** and `page_markup`
@@ -316,7 +364,9 @@ assertion that passed with the tech fold **deleted**, because the glossary alway
 | F5 | A broken entry is not foldable | a `class="entry broken"` fragment contains `<details` |
 | F6 | Cards are shut by default | any entry fold renders with `open` |
 | F7 | The title clip is CSS, not a character cap | a rendered title ends in `…` the author did not write, for a fixture whose first sentence exceeds 110 characters |
-| F8 | An entry whose body adds nothing has no fold | a single-sentence, no-tech fixture emits `<details` or a triangle (§2f) |
+| F8 | An entry whose body adds nothing has no fold | a single-sentence, **no-tech** fixture emits `<details` or a triangle (§2f) |
+| F8b | …but a tech block always keeps its route | a single-sentence fixture **with** a unique `<!--tech-->` block fails to emit both `{eid}-card` and a nested `{eid}-tech` (§2f; this is the defect r2 found in v2) |
+| F8c | No empty prose container | a fixture with empty prose and a tech block emits `<div class="prose"></div>` (§2f) |
 | F9 | The entry anchor still resolves | any *What needs you* link's target id is absent from the What changed section (§2b) |
 | F10 | Entry-level headings survive | the count of `<h3` in the What changed section is not one per non-broken entry (§2a) |
 | F11 | A complete normal entry renders at all | building a page with one ordinary entry raises (§3a, coupling 1) |
@@ -353,7 +403,7 @@ way. Extend the comment; do not drop the history.
 - `scripts/gen-dashboard.py` — the only emitter of these cards, verified by
   `grep -rn 'class="entry' scripts/`, which returns only that file's two sites. `brief-compose.py`
   composes the page but renders no entry cards.
-- `scripts/page_markup.py` — loses `orphaned_delimiters` and its 5 cases (§3a). `_inline` and every
+- `scripts/page_markup.py` — loses `orphaned_delimiters` and its 4 cases (§3a). `_inline` and every
   other shared renderer is untouched: this slice changes card *structure*, not inline markup.
 
 Plus `scripts/mutations/gen-dashboard.json` and the `EXPECTED_MUTATIONS` pin (§3b).
@@ -390,3 +440,44 @@ which is `scripts/codex-review.py` behaving exactly as designed.
 choice. The previous session measured the dispatched half out-finding the coordinator in all three of
 its rounds. Its two Blockings here were both real, but treat it as the weaker instrument and prefer a
 dispatched half for round 2.
+
+---
+
+## 8. Round 2 — scoped to round 1's own fixes, and it paid
+
+Round 2 deliberately did **not** re-read the whole document. It attacked only what round 1 added,
+because the immediately preceding slice measured that every round-2 Blocking was a regression from
+round 1's own fix. Both halves returned 0 Blocking and converged on one High.
+
+| Finding | Codex | Claude | Where it landed |
+|---|---|---|---|
+| §2f can suppress the only route to the tech block | **High** | **High** *(reproduced independently)* | §2f, **narrowed** |
+| §2f's tag-stripped equality was never specifiable | *implied* | Medium | §2f, comparison **deleted** |
+| Nothing says whether an empty prose div is emitted | *missed* | Medium | §2f + F8c |
+| §6 still said 5 `orphaned_delimiters` cases | Low | Low | §6, now 4 |
+| Couplings 1 and 2, the cascade, §2b, §4's fragment boundary, F10's scope | **verified correct, by execution** | verified correct | unchanged |
+
+**The reproduced probe** — v2's §2f, on an entry with one plain sentence and a tech block:
+
+```
+title            : 'Same title.'
+prose stripped   : 'Same title.'
+tech             : 'raw unique detail'
+prose == title?    True
+-> v2 §2f would SUPPRESS the fold and take the tech with it: True
+```
+
+**Why the fix is a deletion, not a widening.** Codex proposed comparing over the complete hidden
+payload. That works, but it keeps a string comparison whose normalisation v2 never defined. Instead,
+COUPLING 3 makes `_prose` return genuinely empty text in the repeating case, so §2f tests emptiness —
+which has no normalisation rules at all. **v3's rule is one clause shorter than v2's and covers a case
+v2 got wrong.**
+
+**Codex executed, again:** `gen-dashboard --self-test` 266/266, `page_markup --self-test` 78/78,
+`check-plan-code --mutate .` 5 files / 120 mutations / 0 survivors. It also confirmed there is no
+case-count pin on `page_markup` in CI (`.github/workflows/ci.yml:195-196`) that the deletion would
+break — a question §3a raised and neither half had answered.
+
+⚠ Both Claude halves were **coordinator-run**, not dispatched subagents (session constraint). Both
+found real defects the executing half missed, but the previous session measured a dispatched half
+out-finding the coordinator in three of three rounds. If a round 3 becomes necessary, dispatch it.
