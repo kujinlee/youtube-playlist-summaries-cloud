@@ -1,0 +1,46 @@
+[
+  {
+    "name": "the allowlist stops being forced to shrink",
+    "file": "scripts/check-theme-token-coverage.py",
+    "edits": [
+      [
+        "    for tok in sorted(known_gap & light):",
+        "    for tok in sorted(set()):"
+      ]
+    ],
+    "expect": ["a fixed token left in KNOWN_GAP fails"]
+  },
+  {
+    "name": "the allowlist may name tokens the shim no longer defines",
+    "file": "scripts/check-theme-token-coverage.py",
+    "edits": [
+      [
+        "    for tok in sorted(known_gap - shim):",
+        "    for tok in sorted(set()):"
+      ]
+    ],
+    "expect": ["KNOWN_GAP naming a token the shim dropped fails"]
+  },
+  {
+    "name": "a missing shim block reads as an empty palette instead of raising",
+    "file": "scripts/check-theme-token-coverage.py",
+    "edits": [
+      [
+        "        raise ValueError(\"no `@media (prefers-color-scheme: dark) { html { … } }` block found\")",
+        "        return set()"
+      ]
+    ],
+    "expect": ["missing shim block RAISES, never returns empty"]
+  },
+  {
+    "name": "a token merely mentioned counts as declared",
+    "file": "scripts/check-theme-token-coverage.py",
+    "edits": [
+      [
+        "    return set(re.findall(r\"(--[\\w-]+)\\s*:\", m.group(1)))\n\n\ndef audit",
+        "    return set(re.findall(r\"(--[\\w-]+)\", m.group(1)))\n\n\ndef audit"
+      ]
+    ],
+    "expect": ["a token mentioned without a colon is not declared"]
+  }
+]

@@ -1150,6 +1150,133 @@ Suite 276 → 290. Mutations 123 → 127, 0 survivors. One mutation SURVIVED on 
 ⚠ NOT DONE, deliberately: the card's options omit the tray's PR links and live PR-state notes, so for a LIVE ask the same option can read differently in the two places. Filed as a follow-up — it wants a shared option renderer, which is a seam change, not a patch.
 
 ## 2026-09-01
+Switch the dashboard to its light theme and point at either button at the top of the page, and the
+button's label disappears. It is still there and still clickable — it just becomes the same colour
+as the button underneath it. This is not new and it is not from yesterday's work on the cards; it
+arrived with the theme switch itself, and it only happens when your computer is set to dark mode
+and you have asked this page for light.
+
+Nobody had seen it because the buttons look perfectly fine until you point at them, which is not a
+state anyone photographs.
+
+The cause is more interesting than the symptom, and it is why this ships a check rather than a new
+colour. The pages are built from three files. One of them fills in a set of dark colours whenever
+your computer is in dark mode. Another declares the colours for light mode — but it names only some
+of them. For the eight it does not name, nobody ever supplied a light value, so the dark one simply
+stays. Seven of those eight are currently invisible problems: they tint the little bar chart and the
+badges slightly wrong on a light page. The eighth paints the buttons, and that is the one you can
+see. Nothing here is a badly chosen colour; the list of colours is just shorter than it should be.
+
+So the colours are not fixed yet — that is a design decision about what light versions those eight
+should be, and it is written up as backlog item 79. What ships today is a check that stops the
+problem growing: if a ninth colour ever goes missing the build fails, and as the eight are fixed the
+check forces the list of known-missing ones to shrink with them, so it cannot sit there claiming
+debt that has already been paid.
+
+Separately, yesterday's change that collapses long entries to one line was checked by hand in a real
+browser for the first time. Clicking a card opens it to the full sentence, the arrow turns, and the
+full text of a shortened title is still findable with the browser's own search — the words are on
+the page, just not painted. Two of the six checks could not be run as written and are recorded as
+not run rather than passed.
+<!--tech-->
+Ships `scripts/check-theme-token-coverage.py` (12 self-test cases) plus two CI callers, backlog #79,
+and the `GROUPS` entry that keeps `gen-backlog-page.py` building.
+
+MEASURED in Chrome: `--ink` `#1b2024` on `--card` `#1d1c22` = **1.03:1** against WCAG AA's 4.5, on
+both `#chrome-theme` and `#chrome-refresh`, so it is `.chrome-btn` and not one control. Un-hovered
+both are 9.94:1 — the resting state is readable *by accident*, because `--ink-soft` also kept a
+dark-theme value that happens to work on the dark pill. Dark theme is 13.62:1.
+
+`brief-compose.py:93-97` declares 11 tokens on `html` inside `@media (prefers-color-scheme: dark)`;
+that keys off the OS, so `data-theme` cannot override it, and its own comment says the shim "only
+supplies what nobody supplied". `gen-dashboard.py:1120` `light_vars` declares 17 and omits 8 of the
+shim's 11 — `--card --ink-soft --ink-faint --good --defect --structure --structure-bg
+--structure-br`. Confirmed live: all 8 read byte-identical in both themes while `--ink`/`--bg` flip.
+
+⚠ Why a new guard when two contrast guards exist. `gen-dashboard.py:1290` `LINK_SURFACES` omits
+`--card`, so the failing pair is never enumerated — but adding it would not have helped, because
+`scheme_palettes()` reads gen-dashboard's OWN emitted stylesheet and `--card` is not defined there
+at all. Each contrast guard owns one stylesheet; the reader opens a page composed from three. This
+check measures COVERAGE, not ratio: a ratio needs both colours, and the failure is that one is
+silently absent.
+
+Mutation-tested on a temp copy, control proved green first: 9th token falls through → rc=1; a
+pinned token becomes covered → rc=1; shim block deleted → rc=2 CANNOT RUN. All three name the case.
+
+Task #201 residue, recorded rather than ticked: `resize_window` reported success twice while
+`window.innerWidth` never moved, so "narrowing the window moves the clip" is NOT RUN — substituted
+by varying container width (painted chars 106/89/80/52/32 while textContent stayed 201). And the
+extension sends keystrokes to the page, not browser chrome, so literal Cmd-F is not drivable;
+verified via `window.find()`, which selected the phrase inside a closed card's clipped title.
+Falsifier (4), "a single-sentence entry has no triangle", has NO SUBJECT in current data — all 31
+entry cards have bodies; the one triangle-less `<details>` is the glossary.
+
+## 2026-09-01
+Several of the small checking scripts in this project state, in their own header, how many tests
+they run — "16 cases". Nothing ever confirmed that number, because a test suite cannot check its own
+final score: to do that it would have to watch itself finish. So the numbers were taken on trust.
+
+They were wrong. Five of the nine were out of date, one of them badly: a script claiming 12 tests
+actually runs 27, and another claiming 47 runs 71. Two had drifted the other way and claimed more
+tests than they run, which is the direction that matters — a stated number that is too high reads as
+reassurance nobody earned.
+
+There is now a check that runs each of those suites and compares what it printed against what it
+claims. All five stale numbers are corrected. The check is included in its own list, so the thing
+that could not previously be checked from the inside now has something outside it watching — and
+that immediately paid off: it failed on itself the first time it ran, because it was reading an
+example number quoted in one of its own test names rather than the real total. That was a genuine
+bug, found only because it was pointed at itself.
+
+Deliberately not done yet: this check has no entry in the automated sabotage suite — the tool that
+breaks our checks on purpose to confirm they notice. Adding one would have collided with the change
+already waiting for you in the other pull request, so it is filed as follow-up rather than forced
+through. Its ability to fail was instead confirmed by hand, and doing so turned up one more real
+weakness, now fixed: if a helper it borrows were renamed, it used to crash in a way that looked like
+"the numbers disagree" instead of "this tool is broken".
+<!--tech-->
+Ships `scripts/check-selftest-counts.py` (17 self-test cases) plus two CI callers. Closes backlog
+**#69**; `GROUPS` updated so `gen-backlog-page.py` still builds (78 rows, 55 open).
+
+DESIGN. Runs each declaring suite as a SUBPROCESS and compares the printed total against the
+docstring. Reuses `check-plan-code.count_drift` — the declaration form `--self-test  # N cases` and
+its regex ALREADY EXIST, and a second copy of one rule is a measured defect in this repo. Also
+imports `child_env`, so every spawned suite runs under a redirected `$HOME`: six delivered scripts
+resolve `Path.home()` at MODULE level and would otherwise write to the reader's live pages. A new
+spawner inherits none of that protection unless it asks — which is exactly how the earlier incident
+happened.
+
+POPULATION is PINNED, not derived: 38 scripts accept `--self-test`, 8 declared a count, this is the
+9th. Declaring is voluntary, so the ratchet runs both ways — a pinned script that stops declaring
+fails, and a new declaration outside the set fails.
+
+CORRECTED: check-anchors 14→15, check-test-counts 12→27, explainer-serve 47→71, gen-goals-page
+16→15, page_chrome 35→47.
+
+⚠ SEPARATELY VERIFIED, and it came out clean: `dev-process.md` quotes eight case counts for scripts
+OUTSIDE this population. All eight are accurate against the real suites — including
+`check-handoff-path.py` (10) and `check-producer-enumeration.py` (11), which print no total at all,
+so their case lines were counted directly.
+
+⚠ TWO DEFECTS THE WORK FOUND IN ITSELF.
+(1) `printed_total` took the FIRST `N/M … passed` line; this script's own case labels quote example
+summaries, so it read 12 while the suite printed 13. Now LAST-match, with the two-summary limit
+(`check-dashboard-entry` ends `6/6 cannot-run cases passed`) stated and pinned by a case rather than
+hidden. A guard whose test data resembles its input is where a first-match parser breaks.
+(2) Mutating it revealed that renaming `count_drift` upstream got past the import and died on
+attribute access — uncaught `AttributeError`, rc=1, i.e. the code for "a count disagrees" when the
+truth was "the instrument is broken". `BORROWED` is now asserted at load; that mutation re-run exits
+**2 CANNOT RUN**.
+
+Hand mutation on a temp copy, control green first, repo untouched: population ratchet neutered →
+rc=1; parser reverted to first-match → rc=1 naming both affected cases; borrowed name renamed →
+rc=2.
+
+⚠ NOT DONE: no `scripts/mutations/` manifest entry. `EXPECTED_MUTATIONS` is edited by the open
+theme-token PR, and a second edit here would conflict; basing this branch on that one would make
+this PR silently carry it. Filed as follow-up, to land once that merges.
+
+## 2026-09-01
 The tool that runs the second opinion on our own work — an outside reviewer we ask to attack each
 plan — turned out to be able to fail without telling anyone, and on one occasion it destroyed the
 very thing it was supposed to produce. A review you had already committed was overwritten four times
