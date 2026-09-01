@@ -1644,3 +1644,52 @@ Gates green: check-docs, check-roadmap-consistency, check-anchors, check-selftes
 check-review-rounds, check-ratchet-contract, check-producer-enumeration, check-explainer-delivery,
 check-theme-token-coverage, check-arch-findings, check-guard-coverage. Self-tests: gen-dashboard
 294/294, page_chrome 50/50, gen-goals-page 15/15.
+
+## 2026-09-01
+Fifteen minutes ago I broke the main branch, and the way I broke it is worth more than the fix.
+
+Every change here goes through an automatic check before it is allowed in. This time I merged a
+change *while that check was still running*, because I used a command I believed would wait for it.
+It does not — on this project that setting was never switched on, so the command quietly merged
+straight away instead. The check then ran on the main branch, after the fact, and failed.
+
+Compounding it: earlier today I agreed to skip one slow local check on the grounds that the
+automatic one would catch anything. That was reasonable on its own. It is only reasonable if I
+actually wait for the automatic one. I did both things — skipped locally, and did not wait — and the
+two together are what put a failure on the main branch.
+
+The failure itself was small and the machinery caught it exactly as designed. Yesterday's colour fix
+changed one grey. A deliberate-breakage test was pinned to the old grey by name, so it no longer
+matched anything, and the tooling refused rather than pretending the test still ran.
+
+Fixing that revealed a second thing I would not otherwise have found: because the buttons no longer
+paint a background, that same test now only exercises one of the two things it used to. The other
+had quietly lost its safety net. It has its own test now.
+
+Everything is measured green again. The lesson is recorded rather than smoothed over: skipping a
+local check is only safe if you wait for the remote one.
+<!--tech-->
+Branch `fix-mutation-anchor`, repairing a red I introduced by merging PR #197 early.
+
+**Root cause of the red:** `gh pr merge --auto` does **not** queue on this repo — auto-merge is not
+enabled, so `gh` falls back to an immediate merge. `verify` was `IN_PROGRESS` at the time; it ran on
+master and failed. Compounded by the 2026-09-01 lighter-verification decision to skip local
+`--mutate .` *because CI runs it* — sound only if CI is actually awaited.
+
+**Defect 1 — orphaned anchor.** PR #195's mutation *"the light palette stops covering the OS-dark
+shim's tokens"* pins the literal `light_vars` string, including `--ink-soft:#6b7780`. PR #197 retuned
+that to `#5c5b67` for the AA floor. Anchor stopped matching → `anchor NOT FOUND — it was not applied,
+so its 'caught' verdict would be meaningless`. The manifest refusing is correct behaviour.
+
+**Defect 2 — only visible after fixing 1.** The `expect` named two cases, by pre-#80 names (*"on its
+own pill"* → *"on the page surface"*). Not just a rename: with the chrome no longer painting a pill,
+removing the eight gap tokens now reaches only **RESTING** (`--ink-soft`). **HOVER** reads `--ink`,
+which the light palette still defines, so it stays green. One red case now, not two — which left the
+HOVER guard with **no mutation at all**. Added *"the light palette stops defining the hover ink"*.
+
+gen-dashboard 64 → **65**; `EXPECTED_MUTATIONS` 140 → **141**; `--mutate .` → 7 files, 141 mutations,
+**0 survivors**. check-plan-code --self-test 158/158.
+
+⚠ **Also learned:** `check-dashboard-entry.py` did not recognise `NO-ENTRY:` wrapped in `**bold**` in
+a PR body — the line must start with the marker. Same emphasis-tolerance class as `REVIEW GAP:`,
+which was fixed once already. Not filed; noted here because the next person will hit it.
