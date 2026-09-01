@@ -1425,3 +1425,83 @@ Gates green: `check-docs`, `check-roadmap-consistency`, `check-producer-enumerat
 `check-ratchet-contract`, `check-anchors`, `check-review-rounds`, `check-selftest-counts`,
 `check-theme-token-coverage`, `check-explainer-delivery`, `check-arch-findings`,
 `check-guard-coverage` — all rc=0. `check-plan-code --self-test` 158/158.
+
+## 2026-09-01
+The buttons at the top of this page had labels that vanished when you pointed at them — and finding
+out why turned up something more useful than the bug.
+
+If you switched this page to its light look, the two small buttons up top ("Theme" and "Refresh")
+stayed dark, and hovering one made its label almost exactly the same colour as the button behind it.
+Not hard to read — *invisible*. Sitting still they were fine, which is why nobody caught it: a button
+only breaks at the moment you reach for it.
+
+The cause was not a badly chosen colour. The page borrows a set of colours from a shared component,
+and that component hands over a dark set whenever it thinks you want dark. The page's light look was
+only replacing some of those colours and quietly inheriting the rest — eight of them. One was the
+button background, and that one showed. The other seven were sitting there waiting for something to
+use them.
+
+Then the check we set up to confirm all this **disproved its own reasoning**, which is the part worth
+keeping. The note said the problem only happens when your computer is set to dark mode. So we set the
+computer to light mode and tried again — and it happened anyway. It turns out the browser has its own
+light/dark setting that overrides the computer's, and that is what the page actually listens to. So
+the problem was **more common than we thought**, not less: anyone whose browser is set to dark hits
+it, whatever their computer says. Three separate documents recorded that backwards. All three are
+corrected.
+
+All eight colours are now filled in, in both looks, and none of them was invented — each was copied
+from somewhere that already had the right answer. Checked in a real browser afterwards: the label
+went from unreadable to plainly readable, and the dark look is unchanged.
+
+Two extra things. First, we now check the thing that actually matters — *can you read the label* —
+rather than only *is the colour filled in*. Those are not the same, and a page could pass the second
+while failing the first. Second, the sister page at /goals turned out to be fine, but only by luck:
+it happens to define its own colours. Nothing was making sure of that, and nothing checks the other
+three pages either. That is filed separately.
+<!--tech-->
+Backlog **#79 CLOSED**; residue filed as **#80**. Branch `theme-token-coverage`, commit `651f64ab`.
+
+**The refuted premise.** #79 recorded the trigger as OS `prefers-color-scheme: dark`. Measured with
+macOS in LIGHT mode — `osascript … dark mode` → `false`, `AppleInterfaceStyle` unset — and it
+reproduced at **1.03:1** regardless, because Chrome's own Appearance setting overrides the OS for web
+content. A freshly created tab reported `prefers-color-scheme: dark` too, ruling out per-tab DevTools
+emulation. Trigger is **"browser reports dark AND page toggled light"**. Corrected in `docs/backlog.md`
+row 79, the roadmap section, and `check-theme-token-coverage.py`'s own header.
+
+**The prediction held, so the verdict is the seam.** Counterfactual run through the browser's cascade,
+not arithmetic: the eight shim-only tokens set to `initial` on `html` (list from the guard's own
+`shim_tokens()` parser, not from reading CSS) → pill `rgba(0,0,0,0)`, hover **15.46:1**.
+
+**Fix.** `gen-dashboard.py` `light_vars` **and** `dark_vars` each declare all 8. `--card`/`--ink-soft`
+= this page's own `--panel`/`--fg3`; `--good`/`--defect`/`--structure`/`--structure-br`/`--structure-bg`
+= the shim's own values (light from its UNCONDITIONAL block, dark from its media block, so a purely
+light or purely dark render is byte-unchanged); `--ink-faint` from `gen-goals-page.py`. Six of the
+eight have no consumer here — declared anyway, because the leak is a property of the token SET.
+`KNOWN_GAP` → **empty**; guard reads `shim declares 11, light palette declares 25, 0 pinned, 0
+unexplained`.
+
+**Property, not mechanism.** 4 cases in `gen-dashboard --self-test` read the EMITTED stylesheet and
+require `.chrome-btn` hover + resting to clear `PROSE_CONTRAST_MIN` (4.5) on their own pill, per
+theme. A missing token FAILS rather than skipping — undefined is the exact state the bug hid in.
+**CONTROL:** stripping the 8 light tokens on a temp copy turns exactly `light: .chrome-btn HOVER…`
+and `light: .chrome-btn RESTING…` red (rc=1); restored → rc=0. Dark correctly unaffected.
+
+**Browser verification**, `http://127.0.0.1:7391/dashboard`, `isHovered: true` both times:
+light `--card` `#1d1c22` → `#fff`, hover **1.03 → 16.42:1**; dark `--card` `#1b2125`, hover
+**13.1:1** (13.62 before — the palette swap, not a regression).
+
+**Mutations:** `scripts/mutations/gen-dashboard.json` 63 → **64**; `EXPECTED_MUTATIONS` 139 → **140**;
+`--mutate .` → 7 files, 140 mutations, **0 survivors**.
+
+**#80, the cause behind the symptom.** `page_chrome.py` is ONE module rendering `.chrome-btn` onto
+FIVE pages, consuming `--card`/`--rule`/`--ink`/`--ink-soft`/`--structural`, and no page is obliged to
+define any of them. Counted: gen-dashboard **0 of 8**, gen-goals-page **7 of 8**, explainer-serve
+**2 of 8**. `/goals` measured immune (`--card: #fffefb`) — luck, not mechanism. And
+`check-theme-token-coverage.py`'s population is `brief-compose.py` vs `gen-dashboard.py` **only**, so
+the ratchet protects one page of five. The #76/#77 seam unified the chrome markup and left the
+palette duplicated.
+
+Gates green: check-docs, check-roadmap-consistency, check-anchors, check-theme-token-coverage,
+check-producer-enumeration, check-ratchet-contract, check-review-rounds, check-selftest-counts,
+check-explainer-delivery, check-arch-findings, check-guard-coverage — all rc=0. Self-tests:
+gen-dashboard 294/294, check-plan-code 158/158, check-theme-token-coverage 12/12.

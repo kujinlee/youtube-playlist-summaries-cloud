@@ -751,5 +751,19 @@
       ]
     ],
     "expect": "an entry with TWO asks marks BOTH decided — resolution is entry-level"
+  },
+  {
+    "name": "the light palette stops covering the OS-dark shim's tokens",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "\"--card:#fff;--ink-soft:#6b7780;--ink-faint:#838a9b;\"\n        \"--good:#2f7d63;--defect:#a3323c;\"\n        \"--structure:#33607a;--structure-br:#33607a;--structure-bg:#eaf0f4;\"",
+        "\"\""
+      ]
+    ],
+    "expect": [
+      "light: .chrome-btn HOVER label clears AA on its own pill",
+      "light: .chrome-btn RESTING label clears AA on its own pill"
+    ]
   }
 ]

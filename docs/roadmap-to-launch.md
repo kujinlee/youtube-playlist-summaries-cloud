@@ -1473,7 +1473,7 @@ passes through it.
       dismissal of `caught = rc == 1` was wrong — rc 3 would be credited as caught).
 - [x] **Merge** — PR #182, squash `a5a012c`.
 
-## Theme token coverage — backlog #79 — anchor `status-visibility` — 🏗 GUARD SHIPPED, PALETTE NOT FIXED
+## Theme token coverage — backlog #79 — anchor `status-visibility` — ✅ CLOSED (residue → #80)
 
 Found closing task #201, the manual browser gate on PR #189 — and **not caused by PR #189**
 (`git log -S` puts the hover rule in PR #185 and the `--card` token in PR #143). With the OS in dark
@@ -1509,15 +1509,46 @@ the *instrument* carrying the same coverage gap as the palette.
 - [x] **The `[FAIL]` line is a contract** — the self-test had to abandon a prettier `✗` form.
       `check-plan-code.py` reads red cases from lines starting `[FAIL] `, split on the LAST
       `": got "`; the `✗` form parses as **zero** red cases. Measured once before, over 12 mutations.
-- [ ] **Fix the palette** — backlog #79. ⚠ **Run the falsifier first:** with the OS in **light** mode
-      `--card` is never defined and `var(--card,transparent)` falls back to transparent, so the bug
-      should NOT reproduce. That decides between "the light palette is short" and "the OS/page theme
-      seam is wrong", and therefore between giving the light palette all 8 values and stopping the
-      chrome reading `--card`. Prefer whichever closes the coverage gap — patching `--card` alone
-      leaves seven of the same kind.
-- [ ] **Measure the blast radius** — `page_chrome.py` is shared by five pages. `gen-goals-page.py`
-      and `explainer-serve.py` DO define `--card` under `[data-theme="light"]`, so they may be
-      immune; that asymmetry is itself worth a look.
+- [x] **The falsifier RAN, and refuted its own premise (2026-09-01).** It said the bug needs the OS
+      in dark mode. Measured with macOS in **LIGHT** mode — `osascript … dark mode` → `false`,
+      `AppleInterfaceStyle` unset — and it **still reproduced at 1.03 : 1**, because Chrome's own
+      Appearance setting overrides the OS for web content, so the page saw
+      `prefers-color-scheme: dark` regardless. A freshly created tab reported the same, ruling out
+      per-tab DevTools emulation. **`prefers-color-scheme` is what the BROWSER says, not the OS**,
+      so the trigger is *browser reports dark **and** page toggled light* — **wider** than filed,
+      not narrower. ⚠ The row, this section and the guard all stated it wrong; all three corrected.
+- [x] **Its prediction held, so the verdict is the SEAM.** Counterfactual driven through the
+      browser's own cascade rather than arithmetic: the eight tokens where the shim is the sole
+      source were set to `initial` on `html` — exactly the state when the media block does not
+      match — with the list taken from the guard's own `shim_tokens()` parser. The pill went
+      `rgba(0,0,0,0)` (the `var(--card,transparent)` fallback firing) and hover reached
+      **15.46 : 1**. So it is the OS/page **seam**, not "light theme is broken".
+- [x] **Fix the palette — all eight, both directions, no invented colours.** `--card`/`--ink-soft`
+      are this page's own `--panel`/`--fg3`; the five structural/status values are the **shim's
+      own** (light from its UNCONDITIONAL block, dark from its media block, so a purely-light or
+      purely-dark render is unchanged); `--ink-faint` takes `gen-goals-page.py`'s. Declared in
+      `dark_vars` too — a page that overrides only light still leans on the shim for dark, and that
+      asymmetry is what hid the gap. **Six of the eight have no consumer on this page** and are
+      declared anyway: the leak is a property of the token SET, so covering only today's consumers
+      fixes the instance and leaves the class. `KNOWN_GAP` is now **EMPTY** — from here any
+      uncovered shim token fails immediately, with no slack to spend.
+- [x] **VERIFIED IN CHROME, BOTH THEMES** — light hover **1.03 → 16.42 : 1** (`--card`
+      `#1d1c22` → `#fff`), dark **13.1 : 1** (was 13.62, unchanged within the palette swap), with
+      `isHovered: true` on both. Guard now reads *shim declares 11, light palette declares 25,
+      0 pinned, 0 unexplained*.
+- [x] **The PROPERTY is asserted, not just the mechanism.** Four new cases in
+      `gen-dashboard.py --self-test` read the **emitted** stylesheet and require `.chrome-btn`'s
+      hover and resting labels to clear AA on their own pill in both themes. The token guard holds
+      the cause; a palette could satisfy it and still pick an unreadable pair. **CONTROL:** strip
+      the eight light tokens on a temp copy → exactly the two *light* cases go red, `rc=1`;
+      restored → `rc=0`. Mutation pinned: gen-dashboard 63 → **64**, `EXPECTED_MUTATIONS` 139 →
+      **140**, `--mutate .` → 7 files, 140 mutations, **0 survivors**.
+- [x] **Blast radius MEASURED, and it is narrower than feared — by luck, not by mechanism.** Under
+      identical conditions `/goals` read `--card: #fffefb` and rendered a light pill: **immune**.
+      Counted: `gen-dashboard.py` declared **none** of the eight, `gen-goals-page.py` **7 of 8**,
+      `explainer-serve.py` **2 of 8**. ⚠ **That asymmetry is now backlog #80** — `page_chrome.py`
+      is *shared* chrome reading tokens no page is obliged to define, and this guard's population
+      is the **dashboard alone**, so four of the five pages remain unguarded.
 
 **Task #201 residue, recorded rather than ticked.** `resize_window` reported success twice while
 `window.innerWidth` never moved, so "narrowing the window moves the clip" is **NOT RUN** —

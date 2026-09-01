@@ -1117,10 +1117,38 @@ def build(entries, days, prs, pr_error, git_error, window,
     # colours, and this project has already measured what a second implementation of one
     # rule does. The enumerating reader checks all four, so a drift would be caught — but
     # not drifting in the first place is better than catching it.
+    # ⚠ THE LAST EIGHT ON EACH SIDE CLOSE BACKLOG #79, AND THEY ARE NOT DECORATION.
+    # `brief-compose.py`'s SHIM declares 11 tokens on `html` inside
+    # `@media (prefers-color-scheme: dark)`. That media query keys off what the BROWSER
+    # reports, and this page's own `[data-theme]` toggle cannot override a token it never
+    # declares — so any shim token missing here KEEPS ITS DARK VALUE on a light page.
+    # Measured 2026-09-01: `--card` did exactly that, giving `.chrome-btn` a dark pill whose
+    # hover colour `--ink` (#1b2024) landed at 1.03:1. Seven more were latent.
+    #
+    # ⚠ THE TRIGGER IS THE BROWSER, NOT THE OS — measured, because the original report said OS.
+    # macOS was in LIGHT mode (`osascript … dark mode` -> false) while Chrome still reported
+    # `prefers-color-scheme: dark`, because Chrome's own Appearance setting overrides the OS for
+    # web content. A fresh tab reported the same, so it is browser-wide, not DevTools emulation.
+    # The bug therefore needs "browser says dark AND page toggled light" — WIDER than "OS dark".
+    #
+    # NO COLOUR HERE IS INVENTED. `--card`/`--ink-soft` are this page's OWN `--panel`/`--fg3`
+    # (one source per concept — the same rule the shim states about its aliases); the five
+    # structural/status values are the shim's own, light ones from its UNCONDITIONAL block and
+    # dark ones from its media block, so a page rendered purely light or purely dark looks
+    # exactly as it did. `--ink-faint` has no equivalent here and takes gen-goals-page.py's,
+    # which is the reviewed light source of truth for that token.
+    #
+    # ⚠ SIX OF THE EIGHT HAVE NO CONSUMER ON THIS PAGE (only `--card` and `--ink-soft` do, both
+    # via the SHARED `page_chrome.py`). They are declared anyway: the leak is a property of the
+    # token SET, so covering only what happens to be consumed today fixes the instance and leaves
+    # the class — and the next element to read `--good` would reintroduce it silently.
     light_vars = (
         "--ink:#1b2024;--fg3:#6b7780;--rule:#d8d6ce;--bg:#f7f8fa;--panel:#fff;"
         "--need:#9c5d0e;--need-bg:#f7ebd9;--ok:#2e6349;--err:#8e3627;--err-bg:#f5e3df;"
         "--link:#1f5d8c;--link-visited:#6a4593;"
+        "--card:#fff;--ink-soft:#6b7780;--ink-faint:#838a9b;"
+        "--good:#2f7d63;--defect:#a3323c;"
+        "--structure:#33607a;--structure-br:#33607a;--structure-bg:#eaf0f4;"
         "--mono:ui-monospace,SFMono-Regular,Menlo,monospace;"
         f'--p-lede:{PROSE_COLOURS["lede"][0]};--p-head:{PROSE_COLOURS["head"][0]};'
         f'--p-detail:{PROSE_COLOURS["detail"][0]};--p-mark:{PROSE_COLOURS["mark"][0]}')
@@ -1128,6 +1156,13 @@ def build(entries, days, prs, pr_error, git_error, window,
         "--ink:#e6e7e3;--fg3:#8b959b;--rule:#2c343a;"
         "--bg:#14181b;--panel:#1b2125;--need:#e0a050;--need-bg:#2c2317;--ok:#6fb894;"
         "--err:#d98873;--err-bg:#2a1a16;--link:#8cbde0;--link-visited:#c3a6e0;"
+        # The mirror of the light block above — same eight, dark values. Declared here too so
+        # the page owns its palette in BOTH directions rather than inheriting the shim in one:
+        # a page that only overrides light still depends on the shim for dark, which is the
+        # asymmetry that made the gap invisible in the first place.
+        "--card:#1b2125;--ink-soft:#8b959b;--ink-faint:#7d8496;"
+        "--good:#6fcf9a;--defect:#f0937c;"
+        "--structure:#82b4ee;--structure-br:#2b4666;--structure-bg:#131f2e;"
         f'--p-lede:{PROSE_COLOURS["lede"][1]};--p-head:{PROSE_COLOURS["head"][1]};'
         f'--p-detail:{PROSE_COLOURS["detail"][1]};--p-mark:{PROSE_COLOURS["mark"][1]}')
     return f"""<title>Project dashboard</title>
@@ -2429,6 +2464,34 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
         _detail = _css_var(ht, "p-detail", _dark)
         case(f"{_theme}: the legend's text clears AA on the surface it SITS on",
              _contrast(_detail, _bg) >= PROSE_CONTRAST_MIN, True)
+
+    # ⭐ BACKLOG #79 — ASSERTED AS THE PROPERTY, NOT THE MECHANISM.
+    # `scripts/check-theme-token-coverage.py` holds the CAUSE: every token the OS-dark shim
+    # declares is covered by this page's palettes. These four hold the SYMPTOM, and they are
+    # not the same claim — a future palette could cover all eleven tokens and still choose a
+    # `--card` that the hover `--ink` cannot be read on, leaving the coverage guard green.
+    # A guard that names the tokens the fix introduced defends only that fix's deletion.
+    #
+    # MEASURED IN CHROME BEFORE THE FIX: light `--ink` #1b2024 on the shim's dark `--card`
+    # #1d1c22 = 1.03:1 against AA's 4.5 — the label was effectively invisible. Both buttons,
+    # so it was the class `.chrome-btn`. Resting measured 9.94:1 and was readable BY ACCIDENT,
+    # which is why the resting case is here too rather than only the hover one.
+    #
+    # `.chrome-btn` (page_chrome.py) paints `background:var(--card,…)`, hovers to
+    # `color:var(--ink,…)`, and rests on the chrome bar's `color:var(--ink-soft,…)`.
+    for _theme, _dark in (("light", False), ("dark", True)):
+        _card = _css_var(ht, "card", _dark)
+        _ink = _css_var(ht, "ink", _dark)
+        _soft = _css_var(ht, "ink-soft", _dark)
+        # ⚠ A MISSING token FAILS rather than crashing or skipping. Undefined is exactly the
+        # state that let the shim's dark value through, so it must never read as "nothing to
+        # check" — that is the shape the original defect hid in.
+        case(f"{_theme}: .chrome-btn HOVER label clears AA on its own pill",
+             _card is not None and _ink is not None
+             and _contrast(_ink, _card) >= PROSE_CONTRAST_MIN, True)
+        case(f"{_theme}: .chrome-btn RESTING label clears AA on its own pill",
+             _card is not None and _soft is not None
+             and _contrast(_soft, _card) >= PROSE_CONTRAST_MIN, True)
 
     # Codex Medium 1 — REPRODUCED: "Met with Dr. Smith about the release."
     # became the headline "Met with Dr.", and the fold then opened with the
