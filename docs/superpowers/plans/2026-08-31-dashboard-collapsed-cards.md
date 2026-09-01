@@ -53,6 +53,13 @@ Add these three cases immediately after the existing `case("a URL inside the fir
     # ⚠ Tag-stripped, and the fixture is markup-BEARING on purpose. `_inline`
     # renders `**bold**` to `<strong>bold</strong>`, so a raw-substring assertion
     # would be false for correct output — the vacuity the spec's §4 M2 names.
+    #
+    # ⚠ DEFINED LOCALLY, and Task 3 defines its own copy. Sharing one helper
+    # across two distant self-test regions crashed the suite with
+    # UnboundLocalError in plan review round 1 — Task 3's block runs EARLIER in
+    # `_self_test` than this one, so the name is unbound when it is read. A
+    # two-line regex duplicated is cheaper than an ordering constraint nobody
+    # can see from either site.
     _bare_tags = re.compile(r"</?(?:strong|code|em|del|a)[^>]*>")
     _longsent = ("The backlog page refused to build until the newest item was described "
                  "in **plain words**, which is the `guard` doing its job. Second para.")
@@ -159,12 +166,43 @@ In the self-test region, delete:
 4. `case("the cap bounds a title even when closers have to be added", …)`, its `_capbust` fixture and its comment;
 5. `case("an over-long headline is cut at a WORD, with an ellipsis", …)`.
 
-Also delete the case asserting the no-terminator refusal (search for `_noterm`, ~`:2087-2091`).
+- [ ] **Step 5b: ⛔ The THREE existing `_prose` cases that assert reversed behaviour**
 
-**KEEP** — these are not about truncation and deleting them is a coverage loss:
+> **This is a CLASS, not three instances.** Plan review round 1 found two of these; a
+> paren-balanced parse of all **242** `case()` blocks — rather than a line grep — found the third and
+> proved there is no fourth. **Measured** against the new `_prose`:
+>
+> | case | line | after the change |
+> |---|---|---|
+> | `a paragraph with no sentence end is never dropped from the fold` | `:2090` | **RED** — delete (coupling 2) |
+> | `...but the headline is KEPT when it is the entire entry` | `:2203` | **RED** — replace (coupling 3) |
+> | `a first sentence longer than the displayed cap is STILL dropped` | `:2210` | **PASSES** — but rename |
+> | `...and dropping it leaves the rest intact` | `:2212` | passes, keep as-is |
+
+**`:2090` — delete it,** with the same rationale coupling 2 records: its premise was the cap.
+
+**`:2203` — replace, do not delete.** Its property inverts rather than disappearing:
+
+```python
+    # ⟳ 2026-08-31. WAS "...but the headline is KEPT when it is the entire entry",
+    # on the premise that "an empty fold is worse than a repeat". Collapsed cards
+    # overturn it: the alternative to a repeat is now NO FOLD, not an empty one
+    # (spec §2f). The fold body is empty and the card renders as a plain row.
+    case("the headline is DROPPED when it is the entire entry, leaving no fold body",
+         _prose("Ready for you now.", drop_headline=True), "")
+```
+
+**`:2210` — rename only.** It still passes, but its name asserts a "displayed cap" that will no longer
+exist, so it would document a mechanism this slice deleted. Assert the property, not the mechanism:
+
+```python
+    case("a long first sentence is STILL dropped from the fold",
+```
+
+**KEEP unchanged** — these are not about truncation and deleting them is a coverage loss:
 - `case("the URL trim keeps a HEX numeric entity too, not just the decimal form", …)`
 - `case("a URL inside the first sentence does not end it", …)`
-- every `_prose` case that does not mention a cap.
+- `case("...and dropping it leaves the rest intact", …)`
 
 - [ ] **Step 6: Run the suite**
 
@@ -242,8 +280,10 @@ git commit -F "$SCRATCH/c1.txt"
 
 - [ ] **Step 1: Prove it is callerless before deleting**
 
-Run: `grep -rn "orphaned_delimiters" scripts/ | grep -v "^scripts/page_markup.py"`
+Run: `grep -rn --include='*.py' "orphaned_delimiters" scripts/ | grep -v "^scripts/page_markup.py"`
 Expected: **no output.** If anything prints, STOP — Task 1 is incomplete and this deletion would break a caller.
+
+> ⚠ **`--include='*.py'` is load-bearing.** Plan review round 1 executed the unrestricted form after Task 1's deletion and it printed three hits in `scripts/mutations/gen-dashboard.json` plus a match inside `scripts/__pycache__/page_markup.cpython-314.pyc` — a "STOP" on evidence that proves nothing about callers. The JSON hits are the mutation entries Task 6 deletes; the `.pyc` is a stale compiled artefact. A gate that cannot distinguish a caller from a cache is a gate that gets ignored.
 
 - [ ] **Step 2: Delete the function and its cases**
 
@@ -298,7 +338,17 @@ Add near the existing `case("the entry id is rendered", …)`:
         _start = html_.index(f'<article class="entry" id="{eid}">')
         return html_[_start:html_.index("</article>", _start)]
 
-    _c = parse_entries("## 2026-08-31\nZorbal quandle sentence.\n\nGlimmerwax body.\n"
+    # Task 3 defines its OWN tag-stripper. See Task 1 step 1: sharing one across
+    # two self-test regions crashed with UnboundLocalError, because THIS block runs
+    # first.
+    _strip3 = re.compile(r"</?(?:strong|code|em|del|a)[^>]*>")
+    # ⚠ The first sentence is long AND markup-bearing, so this fixture carries F1
+    # and F7 through the RENDERED CARD, not just through the helper. Plan review
+    # round 1 (Codex M8) noted the helper-level cases prove nothing about the page —
+    # `:2465` already records that a perfect helper can be entirely unwired.
+    _c = parse_entries("## 2026-08-31\nZorbal quandle sentence that runs on well past one "
+                       "hundred and ten characters so that any surviving character cap would "
+                       "have to **cut** it somewhere in the `middle` here.\n\nGlimmerwax body.\n"
                        "<!--tech-->\nVexipop detail.\n")
     _ch = build(entries=_c, days=bucket_days(["2026-08-31"], _c, 2, "2026-08-31"),
                 prs=[], pr_error=None, git_error=None, window=2, exemptions=[],
@@ -312,10 +362,30 @@ Add near the existing `case("the entry id is rendered", …)`:
          (True, True, True, True))
     _summary = _frag[_frag.index("<summary>"):_frag.index("</summary>")]
     case("F2: the date appears ONCE in what the reader sees",
-         _bare_tags.sub("", _summary).count("2026-08-31"), 1)
+         _strip3.sub("", _summary).count("2026-08-31"), 1)
+    # F1 + F7 THROUGH THE CARD: the whole first sentence is present tag-stripped,
+    # and no ellipsis the author never typed was generated.
+    case("F1/F7: the long first sentence survives WHOLE in the rendered card",
+         ("somewhere in the middle here." in _strip3.sub("", _frag), "…" in _frag),
+         (True, False))
+    # F3: the badge rides on the COLLAPSED row, which is the entire point of the
+    # derived badges that shipped in PR #186.
+    _bfix = parse_entries("## 2026-08-31 [heads-up]\nBadge fixture sentence.\n\nBody here.\n")
+    _bh2 = build(entries=_bfix, days=bucket_days(["2026-08-31"], _bfix, 2, "2026-08-31"),
+                 prs=[], pr_error=None, git_error=None, window=2, exemptions=[],
+                 exempt_error=None, store="x", store_error=None, generated_at="t")
+    _bsum = _bh2[_bh2.index("<summary>"):_bh2.index("</summary>")]
+    case("F3: the badge is INSIDE the collapsed row",
+         ('class="flag"' in _bsum, "heads-up" in _bsum), (True, True))
+    # ⚠ NON-RAISING. The raw `.index()` form crashed the suite when the tech fold
+    # was absent, so Task 6's mutation 3 could not redden the case it names — the
+    # harness refuses a mutation that crashes instead of reddening, correctly, and
+    # by no named guard. Presence is asserted BEFORE position is compared.
+    _tech_at = _frag.find('id="2026-08-31-1-tech"')
+    _card_end = _frag.find("</details>", _frag.find('id="2026-08-31-1-card"'))
     case("F4: the tech fold is INSIDE the card fold, not a sibling",
-         _frag.index('id="2026-08-31-1-tech"') <
-         _frag.index("</details>", _frag.index('id="2026-08-31-1-card"')), True)
+         (_tech_at >= 0, _card_end >= 0, 0 <= _tech_at < _card_end),
+         (True, True, True))
     case("F6: cards are shut by default", "<details id=\"2026-08-31-1-card\" open" in _frag, False)
     case("the -plain fold is gone", "-plain" in _ch, False)
     # F5: a parse failure must get LOUDER, not quieter.
@@ -373,9 +443,14 @@ Replace the non-broken branch (`:989-1002`) with:
             # is phrasing content OR a single heading element — the old
             # `<p class="title">` was neither, and a <summary> is not itself a
             # heading, so without this the page loses its per-entry heading stops.
+            # ⚠ THE TRIANGLE IS CONDITIONAL. Plan review round 1 EXECUTED the
+            # unconditional version and F8 failed with got=(False, True, True):
+            # the fold was correctly suppressed and the triangle stayed, so a row
+            # with nothing behind it still advertised that it opened. The affordance
+            # has to disappear with the thing it affords.
+            tri = '<span class="tri" aria-hidden="true"></span>' if body else ""
             row = (f'<h3 class="row"><span class="eid">{_html.escape(e["id"])}</span>'
-                   f'{flag}<span class="title">{_inline(e["title"])}</span>'
-                   f'<span class="tri" aria-hidden="true"></span></h3>')
+                   f'{flag}<span class="title">{_inline(e["title"])}</span>{tri}</h3>')
             inner = (f'<details id="{eid}-card"><summary>{row}</summary>{body}</details>'
                      if body else row)
             parts.append(f'{day_anchor}<article class="entry" id="{eid}">{inner}</article>')
@@ -383,12 +458,46 @@ Replace the non-broken branch (`:989-1002`) with:
 
 The bare date is gone from the row: `e["id"]` already contains it (`:379`).
 
-- [ ] **Step 4: Run the suite**
+- [ ] **Step 4: ⛔ Replace the ONE existing case whose property this slice reverses**
+
+**This will go red and the plan must not let you discover it by surprise.** `scripts/gen-dashboard.py:1861-1862`:
+
+```python
+    case("the title is rendered outside the fold",
+         '<p class="title">Decide the thing.</p>' in anchored, True)
+```
+
+Its *name* states the property being reversed, so do **not** patch the string. Replace it, keeping the
+history — the old case was a round-3 survivor whose real property (the title is legible without
+opening anything) still holds, delivered now by the title *being* the summary:
+
+```python
+    # ⟳ 2026-08-31. WAS "the title is rendered outside the fold", asserting
+    # `<p class="title">…</p>`. That case was a round-3 survivor and its property —
+    # the title is legible without opening anything — still holds; it is now
+    # delivered by the title BEING the summary rather than by sitting outside a
+    # fold. Asserting the old MARKUP would be asserting the mechanism this slice
+    # replaced, so the case moves with the property.
+    case("the title is the fold's own summary, so it is legible while shut",
+         ('<summary><h3 class="row"' in anchored,
+          "Decide the thing." in anchored[anchored.index("<summary>"):
+                                          anchored.index("</summary>")],
+          '<p class="title">' in anchored),
+         (True, True, False))
+```
+
+> **How this was found, because the method matters more than the finding.** A grep for the old markup
+> that required the pattern and `case(` on the *same line* reported "none" for all four strings — this
+> case spans two lines. Same defect class as the repo's *"measure the population the CODE sees"* scar.
+> The corrected grep, whole-file with the emission site excluded, found three hits: two comments
+> (`:143`, `:2364`, which are historical and stay) and this live assertion.
+
+- [ ] **Step 5: Run the suite**
 
 Run: `python3 scripts/gen-dashboard.py --self-test 2>&1 | tail -6`
 Expected: PASS. If `every details has an id` (`:1701`) fails, the new fold is missing its id.
 
-- [ ] **Step 5: Extend the `:1525` comment, do not replace it**
+- [ ] **Step 6: Extend the `:1525` comment, do not replace it**
 
 The case `"tech is behind a fold"` stays. Append to its comment:
 
@@ -398,7 +507,7 @@ The case `"tech is behind a fold"` stays. Append to its comment:
     # fold deleted for two independent reasons rather than one.
 ```
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 Message file, then `git commit -F`. Subject: `feat(dashboard): each entry card is one row that opens on a triangle`.
 
@@ -500,12 +609,29 @@ Add:
 .entry .prose{{margin-top:10px}}
 ```
 
-- [ ] **Step 3: Run the suite — the contrast guards read the EMITTED stylesheet**
+- [ ] **Step 3: Add the case Task 6's first mutation names**
+
+Task 6 mutation 1 reddens this; without it the mutation **crashes** the suite instead of reddening a
+case, which `--mutate .` refuses. Add near the other stylesheet cases:
+
+```python
+    _css = _B([], bucket_days([], [], 2, "2026-08-31"))
+    case("the collapsed title clips rather than wrapping",
+         ("white-space:nowrap" in _css, "text-overflow:ellipsis" in _css,
+          "min-width:0" in _css),
+         (True, True, True))
+```
+
+⚠ **This asserts the stylesheet TEXT, which is weaker than asserting the rendered effect.** A browser
+is the only instrument for the latter, and Task 7 step 2 owns it. Recorded as a known weakness rather
+than left to imply the case proves the behaviour.
+
+- [ ] **Step 4: Run the suite — the contrast guards read the EMITTED stylesheet**
 
 Run: `python3 scripts/gen-dashboard.py --self-test 2>&1 | tail -6`
 Expected: PASS, including every `clears WCAG AA` case. Those parse the emitted CSS and will raise, not silently skip, if a palette block goes missing.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 Subject: `style(dashboard): collapsed rows clip with an ellipsis and un-clip when opened`.
 
@@ -545,7 +671,12 @@ Each entry needs `name`, `file`, `edits` (a `find`/`replace` pair matching the d
    **edit:** `<span class="eid">{_html.escape(e["id"])}</span>` → `{_html.escape(e["date"])} <span class="eid">{_html.escape(e["id"])}</span>`
    **expect:** `F2: the date appears ONCE in what the reader sees`
 5. **name:** `the title is capped again, so its tail vanishes`
-   **edit:** in `_first_sentence`, `    return out` → `    return out[:110] + "…" if len(out) > 110 else out`
+   **edit:** ⚠ **`    return out` alone matches SEVEN times** — measured in plan review round 1, and the harness refuses a non-unique anchor. Anchor the whole tail of `_first_sentence` instead:
+   ```
+   find:    "            break\n    return out"
+   replace: "            break\n    return out[:110] + \"…\" if len(out) > 110 else out"
+   ```
+   Confirm uniqueness before committing: `python3 -c "print(open('scripts/gen-dashboard.py').read().count('            break\n    return out'))"` must print `1`.
    **expect:** `a long first sentence reaches the reader WHOLE`
 6. **name:** `the row stops being a heading, losing every per-entry stop`
    **edit:** `<h3 class="row">` → `<div class="row">` (and the closing tag)
