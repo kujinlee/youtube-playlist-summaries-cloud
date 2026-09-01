@@ -178,6 +178,10 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
         (5, "The colour palette is copy-pasted between two renderers; extract it once."),
         (6, "The gold “lead” line is over-emphasised and competes with the section heading."),
         (7, "Bold bullet labels usually just repeat the first words of the sentence. Drop them."),
+        (81, "Entries you have already answered still say “waiting on you” in their text. The "
+             "machinery to fix that was built and works — it has simply never been used, because "
+             "the asks were always written as ordinary sentences instead of in the form the page "
+             "understands. Costs nothing to start doing correctly."),
      ]),
     ("The reusable toolkit — the second deliverable",
      "Not about the product: about the development harness being reusable on a new project.", [
