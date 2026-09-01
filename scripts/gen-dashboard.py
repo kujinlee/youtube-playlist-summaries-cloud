@@ -167,7 +167,7 @@ def _first_sentence(text: str) -> str:
 _inline = page_markup.render_inline
 
 
-def _prose(text: str, drop_headline: bool = False) -> str:
+def _prose(text: str, drop_headline: bool = False, settled: bool = False) -> str:
     """Blank-line-separated paragraphs, first one as the LEDE.
 
     9 of the store's 10 entries were already written with paragraph breaks
@@ -222,9 +222,110 @@ def _prose(text: str, drop_headline: bool = False) -> str:
             # paragraph whole, so dropping loses nothing. Keeping the refusal would
             # have rendered an unbounded paragraph TWICE.
             paras.pop(0)
+    # ── which paragraphs are REAL asks, decided by POSITION not by text ──────
+    # ⚠ Question text is NOT an identity. Review round 1, executed: inert indented
+    # text repeating a later ask's question consumed that ask's options, so the card
+    # drew the real choices under the inert copy and flattened the real ask. And two
+    # openers in ONE paragraph rendered only the first, silently dropping the rest of
+    # the paragraph — content loss on the feature whose job is listing your choices.
+    #
+    # So: ask the GATE which lines are inert, find the live opener lines in document
+    # order, and pair them with `decisions(text)` — which the gate produced from the
+    # same reading, in the same order. A paragraph is an ask only if it holds EXACTLY
+    # ONE live opener and that opener is its first line. Anything else falls through
+    # to plain prose: wrong-but-whole beats confidently-wrong-and-truncated.
+    asks: dict[str, dict] = {}
+    if _decisions and _inert_lines:
+        try:
+            _lines = text.split("\n")
+            _inert = _inert_lines(text)
+            _open_at = [i for i, l in enumerate(_lines)
+                        if i not in _inert and l.lstrip().startswith(_OPENER)]
+            _ds = list(_decisions(text))
+            if len(_ds) == len(_open_at):
+                _by_line = dict(zip(_open_at, _ds))
+                # paragraph spans in the ORIGINAL text, so a line index is knowable
+                _pos, _seen = 0, {}
+                for _m in re.finditer(r"[^\n]*(?:\n(?!\s*\n)[^\n]*)*", text):
+                    _seg = _m.group(0)
+                    if not _seg.strip():
+                        continue
+                    _start_line = text.count("\n", 0, _m.start())
+                    _n = len(_seg.split("\n"))
+                    _here = [i for i in _open_at if _start_line <= i < _start_line + _n]
+                    if len(_here) == 1 and _here[0] == _start_line + (
+                            0 if _seg.split("\n")[0].strip() else 1):
+                        _seen[_seg.strip()] = _by_line[_here[0]]
+                asks = _seen
+        except Exception:
+            asks = {}
+
+    # ⚠ `settled` is an ENTRY-level fact (the badge), and an entry may carry MORE
+    # THAN ONE ask. Review round 1: with two asks and one resolution, BOTH rendered
+    # as "Was decided" — the page asserting that a live, unanswered ask was settled.
+    # `[resolved: <id>]` names the ENTRY, never the ask, so with two asks the page
+    # genuinely cannot tell which. It therefore says the weaker true thing rather
+    # than the stronger false one, and keeps asking.
+    _settled_ok = settled and len(asks) == 1
     return "".join(
+        _ask_block(asks.get(p), _settled_ok) or
         f'<p class="{"lede" if i == 0 else "body"}">{_inline(p)}</p>'
         for i, p in enumerate(paras))
+
+
+def _ask_block(d: dict | None, settled: bool) -> str:
+    """A `**Decide:**` paragraph as a QUESTION plus a real list — or "" if it isn't one.
+
+    ⛔ REPORTED BY THE READER, 2026-08-31, from the live page: the options ran
+    together on one line — "Merge the ask-choices change - merge PR #186
+    [recommended] - hold it and tell me what to change - close it unmerged" —
+    with the author's `-` bullets showing as literal hyphens mid-sentence.
+
+    `_prose` splits on BLANK lines, so an opener and its bullets are ONE
+    paragraph; it emitted them inside a single <p> with the newlines intact, and
+    HTML collapses newlines to spaces. This is the same defect this function's
+    own docstring records for paragraphs — "the author's structure existed the
+    entire time, it was never rendered" — one level down. Paragraphs were fixed;
+    lists never were.
+
+    ⚠ THE OPTION GRAMMAR IS NOT RE-IMPLEMENTED HERE. It is parsed by the GATE's
+    `decisions()`, the same function the ask tray reads, applied to this one
+    paragraph. A second bullet scanner beside the first is how `**` inside a code
+    span shipped a bare delimiter to the reader once already: two implementations
+    of one rule drift. If the gate cannot be reached, or the paragraph does not
+    parse as exactly one decision, this returns "" and the caller renders the
+    paragraph as ordinary prose — the behaviour before this change, so a parse
+    the gate refuses degrades to plain text rather than to a wrong list.
+
+    `settled` relabels the opener for an ask that is already resolved: the badge
+    said "resolved" while the body still read "Decide:" over three live-looking
+    options. ⚠ It does NOT claim WHICH option was taken — `[resolved: <id>]`
+    records the entry that resolved the ask, never the choice, so the page has no
+    way to know. Saying "these were the options" is the most it can honestly say.
+    """
+    if not d or not d["options"]:
+        return ""
+    # ⛔ MEASURED, and it is why `live` is passed IN rather than parsed here. The
+    # first version called the gate on THIS PARAGRAPH ALONE. That strips the
+    # surrounding context, so a `**Decide:**` inside a fenced or indented code
+    # block — which the gate reads as 0 decisions over the whole entry — parsed as
+    # 1 decision over the paragraph, and the card rendered a live-looking options
+    # list for inert text. Probe: fenced -> gate 0, card list True; indented ->
+    # gate 0, card list True.
+    #
+    # `live` is `decisions(WHOLE TEXT)`, consumed in document order: the gate's
+    # reading of the entry is the authority, and a paragraph the gate did not
+    # count as a decision can never become one here. On any mismatch we fall
+    # through to plain prose — wrong-but-plain beats confidently-wrong.
+
+    items = "".join(
+        f'<li>{_inline(o["text"])}'
+        f'{" <span class=\"rec\">recommended</span>" if o["recommended"] else ""}</li>'
+        for o in d["options"])
+    label = "Was decided:" if settled else "Decide:"
+    cls = "ask settled" if settled else "ask"
+    return (f'<div class="{cls}"><p class="ask-q"><strong>{label}</strong> '
+            f'{_inline(d["question"])}</p><ul class="opts">{items}</ul></div>')
 
 
 def _store_label(p) -> str:
@@ -266,6 +367,13 @@ _GATE = _gate_module()          # the GRAMMAR is required to parse at all
 header_error = _GATE.header_error
 FLAG = _GATE.FLAG
 HEADER = _GATE.HEADER
+# ⚠ OPTIONAL, and read at module level so the CARD BODY can reach the same
+# parser the tray uses. `getattr` not attribute access: a gate that no longer
+# exposes `decisions` must degrade the ask block to plain prose, not kill the
+# page — the same posture `_exemption_reader` takes one section down.
+_decisions = getattr(_GATE, "decisions", None)
+_inert_lines = getattr(_GATE, "_inert_lines", None)
+_OPENER = getattr(_GATE, "OPENER", "**Decide:**")
 
 
 def _exemption_reader():
@@ -944,7 +1052,9 @@ def build(entries, days, prs, pr_error, git_error, window,
             _b = badge_of(e, _cleared)
             _bcls = "flag resolved" if _b == "resolved" else "flag"
             flag = (f'<span class="{_bcls}">{_html.escape(_b)}</span>') if _b else ""
-            prose = _prose(e["plain"], drop_headline=True)
+            # `settled` is DERIVED from the badge, not from a second reading of the
+            # entry — one computation, so the badge and the ask label cannot disagree.
+            prose = _prose(e["plain"], drop_headline=True, settled=_b == "resolved")
             # §2f — a disclosure that discloses NOTHING is a lie about the content.
             # ⚠ The body is prose AND tech. Review round 2 measured that comparing
             # prose TEXT to the title suppressed the fold for a one-sentence entry
@@ -1092,6 +1202,15 @@ padding:14px 18px;margin-bottom:10px}}
    so the list does not jitter between foldable and non-foldable rows. */
 .entry > .row{{padding:3px 0}}
 .entry details details{{margin-top:10px}}
+/* The ask block inside a card body. A SETTLED ask recedes: the badge already
+   says resolved, so the block is history, not a question. */
+.entry .ask{{margin:.9em 0}}
+.entry .ask-q{{margin:0 0 .35em;color:var(--p-detail)}}
+.entry .ask-q strong{{color:var(--p-mark)}}
+.entry .opts{{margin:.2em 0 0 1.1rem;padding:0;color:var(--p-detail)}}
+.entry .opts li{{margin:.2em 0}}
+.entry .ask.settled{{opacity:.72}}
+.entry .ask.settled .ask-q strong{{color:var(--fg3);font-weight:600}}
 /* ── The prose fold. Typeset, not dumped. ──────────────────────────────────
    Every entry's human half used to render as ONE <p> at the full 820px shell
    width, so the author's paragraphs vanished and each line ran ~110 characters
@@ -1784,6 +1903,87 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     # tray link would otherwise pass by having nothing to check.
     case("F9: every in-page tray link resolves to an id that exists",
          (bool(_trayrefs), sorted(_trayrefs - _targets)), (True, []))
+    # ── THE ASK BLOCK IN THE CARD BODY ──────────────────────────────────────
+    # ⛔ REPORTED FROM THE LIVE PAGE: the options ran together on one line, the
+    # author's `-` bullets showing as literal hyphens mid-sentence, because
+    # `_prose` splits on BLANK lines and emitted opener+bullets inside one <p>.
+    _askmd = ("Something happened.\n\n"
+              "**Decide:** Merge the change\n"
+              "- merge PR #186 [recommended]\n"
+              "- hold it and tell me what to change\n"
+              "- close it unmerged\n")
+    _live = _prose(_askmd, drop_headline=True)
+    case("an ask's options render as a LIST, one item each",
+         (_live.count("<li>"), '<ul class="opts">' in _live), (3, True))
+    # ⚠ THE REPORTED SYMPTOM, asserted directly: no option text may sit inside the
+    # question paragraph. Counting <li> alone would pass a renderer that emitted
+    # the list AND left the flattened line above it.
+    _q = _live[_live.index('class="ask-q"'):_live.index("</p>", _live.index('class="ask-q"'))]
+    case("no option text is left flattened into the question line",
+         ("close it unmerged" in _q, "- merge PR" in _live), (False, False))
+    case("[recommended] becomes a span, not literal text",
+         ('<span class="rec">recommended</span>' in _live, "[recommended]" in _live),
+         (True, False))
+    # A resolved ask must not read as if it still wants an answer.
+    _done = _prose(_askmd, drop_headline=True, settled=True)
+    case("a settled ask says it was decided, and recedes",
+         ("Was decided:" in _done, "ask settled" in _done, "Decide:" in _done.replace("Was decided:", "")),
+         (True, True, False))
+    case("an UNsettled ask still asks", ("Decide:" in _live, "Was decided:" in _live), (True, False))
+    # ⚠ It must NOT claim which option won — `[resolved: <id>]` names the entry
+    # that resolved the ask, never the choice, so the page cannot know.
+    # ⚠ WAS VACUOUS — it asserted the absence of "chosen"/"you picked", strings this
+    # renderer never had a path to emit, so it would have passed against any output.
+    # Binds instead to the OPTION MARKUP: every option must render identically to an
+    # unsettled ask's, because the store records WHICH ENTRY resolved an ask, never
+    # WHICH OPTION won. No option may be marked, dropped, or reordered.
+    import re as _re
+    _li = lambda h: _re.findall(r"<li>(.*?)</li>", h)
+    case("a settled ask marks NO option as the one taken",
+         (_li(_done) == _li(_live), len(_li(_done))), (True, 3))
+    # Two openers in ONE paragraph: render nothing as a list rather than render the
+    # first and silently drop the rest. Review round 1 measured the drop.
+    _twop = _prose("Lede.\n\n**Decide:** One\n- a\n**Decide:** Two\n- b\n", drop_headline=True)
+    case("a paragraph with two openers stays whole prose, losing nothing",
+         ('<ul class="opts">' in _twop,
+          all(x in re.sub(r"<[^>]+>", "", _twop) for x in ("One", "Two", "a", "b"))),
+         (False, True))
+    # ...and with TWO asks in one entry it must NOT claim either was decided.
+    _two = _prose("Lede.\n\n**Decide:** First\n- a\n- b\n\n**Decide:** Second\n- c\n- d\n",
+                  drop_headline=True, settled=True)
+    case("an entry with TWO asks does not claim either was decided",
+         ("Was decided:" in _two, _two.count("Decide:")), (False, 2))
+    # Ordinary prose is untouched, and a paragraph the gate refuses degrades to
+    # plain text rather than to a wrong list.
+    # ⚠ NOT the first paragraph — `drop_headline=True` removes it BY DESIGN, so
+    # asserting on it tested the fixture, not the renderer. Caught by this case
+    # failing on its first run.
+    _mixed = _prose("Lede sentence.\n\nOrdinary middle paragraph.\n\n"
+                    "**Decide:** Pick\n- a\n- b\n", drop_headline=True)
+    case("a non-ask paragraph is still a plain <p>",
+         '<p class="lede">Ordinary middle paragraph.</p>' in _mixed, True)
+    case("...and the ask in the same body still becomes a list",
+         (_mixed.count("<li>"), '<ul class="opts">' in _mixed), (2, True))
+    # ⛔ THE DEFECT THIS SLICE ALMOST SHIPPED. The first version parsed the
+    # PARAGRAPH ALONE, so a `**Decide:**` inside a fence or indented code — 0
+    # decisions to the gate reading the whole entry — became 1 decision to a
+    # paragraph-local parse, and the card drew a live options list over inert
+    # text. Found by probe, not by the suite.
+    #
+    # ⚠ Asserts BOTH halves: the gate sees nothing AND the card draws nothing.
+    # Asserting only the card would pass if the gate itself started counting them.
+    for _label, _md in (
+            ("fence", "Intro.\n\n```\nnot code yet\n\n**Decide:** in a fence\n- a\n- b\n```\n"),
+            ("indent", "Intro.\n\n    **Decide:** indented\n    - a\n    - b\n"),
+            ("quote", "Intro.\n\n> **Decide:** quoted\n> - a\n> - b\n")):
+        case(f"an inert {_label} Decide draws no options list",
+             (len(_decisions(_md)) if _decisions else 0,
+              '<ul class="opts">' in _prose(_md, drop_headline=True)),
+             (0, False))
+    case("an opener with NO options degrades to prose, not an empty list",
+         ('<ul class="opts">' in _prose("x.\n\n**Decide:** nothing follows\n",
+                                        drop_headline=True)), False)
+
     # §2f — the rule that exists ONLY BECAUSE of the collapse, plus the hole
     # review round 2 found in its first wording.
     _solo = parse_entries("## 2026-08-31\nFlimbert solo sentence.\n")

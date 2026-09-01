@@ -390,7 +390,7 @@
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
-        "            prose = _prose(e[\"plain\"], drop_headline=True)",
+        "            prose = _prose(e[\"plain\"], drop_headline=True, settled=_b == \"resolved\")",
         "            prose = _html.escape(e[\"plain\"])"
       ]
     ],
@@ -706,5 +706,50 @@
       ]
     ],
     "expect": "F10: one h3 per non-broken entry in What changed"
+  },
+  {
+    "name": "the ask block never fires, so options flatten into one line again",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    if not d or not d[\"options\"]:\n        return \"\"",
+        "    if True or not d or not d[\"options\"]:\n        return \"\""
+      ]
+    ],
+    "expect": "an ask's options render as a LIST, one item each"
+  },
+  {
+    "name": "a paragraph with TWO openers renders only the first, dropping the rest",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "                    if len(_here) == 1 and _here[0] == _start_line + (",
+        "                    if len(_here) >= 1 and _here[0] == _start_line + ("
+      ]
+    ],
+    "expect": "a paragraph with two openers stays whole prose, losing nothing",
+    "note": "Its first form (`d = live[0]`) SURVIVED at 125 mutations: the early return already protected inert text, so it never reached the code it named. A mutation that cannot reproduce the defect it describes is a claim, not a guard."
+  },
+  {
+    "name": "a settled ask still says Decide, so resolved reads as waiting",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    label = \"Was decided:\" if settled else \"Decide:\"",
+        "    label = \"Decide:\""
+      ]
+    ],
+    "expect": "a settled ask says it was decided, and recedes"
+  },
+  {
+    "name": "an entry with two asks claims BOTH were decided",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    _settled_ok = settled and len(asks) == 1",
+        "    _settled_ok = settled"
+      ]
+    ],
+    "expect": "an entry with TWO asks does not claim either was decided"
   }
 ]

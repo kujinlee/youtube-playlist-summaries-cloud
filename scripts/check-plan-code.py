@@ -446,7 +446,7 @@ EXPECTED_MUTATIONS = {
     # and its budget, gh shape validation, and — on the gate — the decision grammar
     # including the NESTING rule, whose absence silently dropped every option after a
     # 4-space nest.
-    "scripts/gen-dashboard.py": 59,
+    "scripts/gen-dashboard.py": 63,
     "scripts/page_markup.py": 14,
     "scripts/check-dashboard-entry.py": 18,
     "scripts/check-plan-code.py": 21,
@@ -1917,7 +1917,10 @@ def _self_test() -> int:
     # element. Net +3. page_markup stays at 14 — MEASURED: none of its mutations
     # named `orphaned_delimiters`, so deleting that function moved no coverage.
     # Coverage may grow here; it may not shrink.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 123)
+    # 123 → 126 (ask options render as a list: +3 gen-dashboard — the block firing at
+    # all, the whole-document authority that keeps inert text inert, and the settled
+    # label). Coverage may grow here; it may not shrink.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 127)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so
