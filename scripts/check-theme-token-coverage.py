@@ -178,6 +178,12 @@ _LIGHT = """
 def self_test() -> int:
     cases, failures = 0, 0
 
+    # ⚠ THE FAILURE LINE IS A CONTRACT, NOT A STYLE CHOICE. `check-plan-code.py` reads red cases by
+    # taking lines that START WITH `[FAIL] ` and splitting on the LAST `": got "`. A prettier `✗`
+    # form parses as ZERO red cases, so every mutation against this file would report "expect
+    # matched 0 red cases" — which reads as a broken manifest rather than as a guard that works.
+    # This project has already paid for that once: 12 mutations reported no red cases over exactly
+    # this mismatch, masking three real bugs. Do not reformat.
     def check(label: str, got, want) -> None:
         nonlocal cases, failures
         cases += 1
@@ -185,7 +191,7 @@ def self_test() -> int:
             print(f"  ✓ {label}")
         else:
             failures += 1
-            print(f"  ✗ {label}: got {got!r}, want {want!r}")
+            print(f"  [FAIL] {label}: got {got!r} want {want!r}")
 
     def raises(fn) -> bool:
         try:
