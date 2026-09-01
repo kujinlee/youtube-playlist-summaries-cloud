@@ -1693,3 +1693,45 @@ gen-dashboard 64 → **65**; `EXPECTED_MUTATIONS` 140 → **141**; `--mutate .` 
 ⚠ **Also learned:** `check-dashboard-entry.py` did not recognise `NO-ENTRY:` wrapped in `**bold**` in
 a PR body — the line must start with the marker. Same emphasis-tolerance class as `REVIEW GAP:`,
 which was fixed once already. Not filed; noted here because the next person will hit it.
+
+## 2026-09-01 [needs-you]
+You spotted that answered items still say "waiting on you", and the cause turned out to be me, not
+the page.
+
+There is already machinery for this. When something you have answered gets marked as settled, the
+page is supposed to change its wording from "Decide:" to "Decided:" and drop the orange emphasis —
+built and tested a few days ago. It has never once run, because it only recognises a specific way of
+writing the question, and I have always written those questions as ordinary sentences instead.
+
+So the page could not know those sentences were questions. Nothing was broken; the feature was
+simply never fed.
+
+Costs nothing to start doing right, and this entry is the first one written the correct way — you
+should see the difference below when it settles.
+
+**Decide:** should I also add an automatic check that refuses an entry claiming to wait on you without writing the question in the recognised form?
+- hold it for now, see whether writing them correctly is enough [recommended]
+- add the check as well
+- neither — this is fine as it is
+
+I lean toward holding: the check would have to recognise phrases in freely written prose, and this
+project has repeatedly found that checks like that go stale silently. If I slip back into the old
+habit, that is the evidence the check is needed.
+<!--tech-->
+Filed as backlog **#81** 🟢 at the user's request. Branch `file-ask-grammar-disuse`.
+
+**MEASURED:** `Decide:` appears **zero times** in `docs/dashboard-entries.md`. All seven "waiting on
+you" occurrences are free prose. The three the user cited — **2026-08-30/6**, **2026-08-30/5**,
+**2026-08-29/1** — are resolved and still read in the present tense.
+
+`_ask_block` (`gen-dashboard.py:279`) flips a resolved ask's opener to `Decided:` and drops the
+warning colour, with `settled` **derived from the badge** (`:1072`). Shipped in PR #186, tested,
+mutation-covered — and unreachable from prose, because prose carries no state. A derived badge over
+a hand-written body is two implementations of one rule; only one can update itself.
+
+⚠ `_ask_block` renders nothing without **option bullets**, which is why this entry's ask carries
+three. "Whether to merge" must be written with its choices.
+
+**Tier 3 is impossible by design:** the store is append-only and ids are POSITIONAL — editing the
+three existing entries renumbers ids and silently rebinds standing `[resolved:]` markers. They stay,
+and they were true on their date.
