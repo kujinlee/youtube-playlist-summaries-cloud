@@ -1473,6 +1473,35 @@ passes through it.
       dismissal of `caught = rc == 1` was wrong — rc 3 would be credited as caught).
 - [x] **Merge** — PR #182, squash `a5a012c`.
 
+## Declared self-test counts — backlog #69 — anchor `status-visibility` — ✅ DONE 2026-09-01
+
+A `--self-test` cannot verify its own declared case count: doing so means observing its own exit
+code from inside itself. `check-plan-code.py` ends with `_drift_rc(__doc__, ok, fail)`, and
+replacing that line deletes the check invisibly. So the numbers were trusted, and **five of nine
+were wrong**.
+
+- [x] **`scripts/check-selftest-counts.py`** — runs each declaring suite as a SUBPROCESS and
+      compares printed vs declared. 17 self-test cases, two CI callers, discovered by
+      `check-ratchet-contract.py` (25 guards).
+- [x] **One convention, not a second one** — reuses `check-plan-code.count_drift` (the declaration
+      form and its regex already existed) and `child_env` (six scripts resolve `Path.home()` at
+      module level; a new spawner inherits no protection unless it asks).
+- [x] **POPULATION pinned, ratchet both ways** — 38 scripts accept `--self-test`, 8 declared, this
+      is the 9th. A pinned script that stops declaring fails; a new declaration outside the set
+      fails.
+- [x] **Five stale declarations corrected** — check-anchors 14→15, check-test-counts 12→27,
+      explainer-serve 47→71, gen-goals-page 16→15, page_chrome 35→47.
+- [x] **`dev-process.md`'s eight quoted counts verified separately — all accurate**, including the
+      two printing no total, whose case lines were counted directly (10 and 11).
+- [x] **Two defects found in the work itself** — a first-match parser that read one of its own case
+      labels (now last-match, with the two-summary limit pinned by a case), and a borrowed-name
+      rename that crashed with rc=1 instead of CANNOT RUN (now asserted at load; the re-run exits 2).
+- [ ] **Mutation manifest entry** — deliberately deferred. `EXPECTED_MUTATIONS` is edited by the
+      open theme-token PR and a second edit would conflict; basing this branch on that one would
+      make this PR silently carry it. **Fails if** `scripts/mutations/check-selftest-counts.json`
+      does not exist once that PR merges. Ability to fail was confirmed by hand meanwhile: control
+      green, then rc=1 / rc=1 / rc=2 across three mutations on a temp copy.
+
 ⚠ **`--mutate .` runs 13s → 3m13s.** Real, measured, and not addressed here; the lever if it bites
 is parallelising the mutation loop, not dropping coverage.
 

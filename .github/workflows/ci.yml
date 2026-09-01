@@ -159,6 +159,17 @@ jobs:
       - name: Plan task order
         run: python3 scripts/check-plan-task-order.py
 
+      # Backlog #69. A `--self-test` cannot check its own declared case count — doing so means
+      # observing its own exit code from inside itself. So this runs each one as a subprocess and
+      # compares what it PRINTED with what its docstring DECLARES, the same way
+      # check-test-counts.py treats the jest suite. Five of the nine declarations were stale on the
+      # first run; it also caught a defect in itself, which is why it is in its own population.
+      - name: Declared self-test counts match the suites
+        run: python3 scripts/check-selftest-counts.py
+
+      - name: check-selftest-counts self-test
+        run: python3 scripts/check-selftest-counts.py --self-test
+
       - name: Producer enumeration matches the defining expression
         run: python3 scripts/check-producer-enumeration.py
 

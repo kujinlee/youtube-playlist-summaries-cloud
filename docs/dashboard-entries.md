@@ -1148,3 +1148,68 @@ Also: `settled` is an entry-level fact, so with two asks it claimed both were de
 Suite 276 → 290. Mutations 123 → 127, 0 survivors. One mutation SURVIVED on first run and was replaced: `d = live[0]` never reached the code it named, because an early return already protected inert text. A mutation that cannot reproduce the defect it describes is a claim, not a guard.
 
 ⚠ NOT DONE, deliberately: the card's options omit the tray's PR links and live PR-state notes, so for a LIVE ask the same option can read differently in the two places. Filed as a follow-up — it wants a shared option renderer, which is a seam change, not a patch.
+
+## 2026-09-01
+Several of the small checking scripts in this project state, in their own header, how many tests
+they run — "16 cases". Nothing ever confirmed that number, because a test suite cannot check its own
+final score: to do that it would have to watch itself finish. So the numbers were taken on trust.
+
+They were wrong. Five of the nine were out of date, one of them badly: a script claiming 12 tests
+actually runs 27, and another claiming 47 runs 71. Two had drifted the other way and claimed more
+tests than they run, which is the direction that matters — a stated number that is too high reads as
+reassurance nobody earned.
+
+There is now a check that runs each of those suites and compares what it printed against what it
+claims. All five stale numbers are corrected. The check is included in its own list, so the thing
+that could not previously be checked from the inside now has something outside it watching — and
+that immediately paid off: it failed on itself the first time it ran, because it was reading an
+example number quoted in one of its own test names rather than the real total. That was a genuine
+bug, found only because it was pointed at itself.
+
+Deliberately not done yet: this check has no entry in the automated sabotage suite — the tool that
+breaks our checks on purpose to confirm they notice. Adding one would have collided with the change
+already waiting for you in the other pull request, so it is filed as follow-up rather than forced
+through. Its ability to fail was instead confirmed by hand, and doing so turned up one more real
+weakness, now fixed: if a helper it borrows were renamed, it used to crash in a way that looked like
+"the numbers disagree" instead of "this tool is broken".
+<!--tech-->
+Ships `scripts/check-selftest-counts.py` (17 self-test cases) plus two CI callers. Closes backlog
+**#69**; `GROUPS` updated so `gen-backlog-page.py` still builds (78 rows, 55 open).
+
+DESIGN. Runs each declaring suite as a SUBPROCESS and compares the printed total against the
+docstring. Reuses `check-plan-code.count_drift` — the declaration form `--self-test  # N cases` and
+its regex ALREADY EXIST, and a second copy of one rule is a measured defect in this repo. Also
+imports `child_env`, so every spawned suite runs under a redirected `$HOME`: six delivered scripts
+resolve `Path.home()` at MODULE level and would otherwise write to the reader's live pages. A new
+spawner inherits none of that protection unless it asks — which is exactly how the earlier incident
+happened.
+
+POPULATION is PINNED, not derived: 38 scripts accept `--self-test`, 8 declared a count, this is the
+9th. Declaring is voluntary, so the ratchet runs both ways — a pinned script that stops declaring
+fails, and a new declaration outside the set fails.
+
+CORRECTED: check-anchors 14→15, check-test-counts 12→27, explainer-serve 47→71, gen-goals-page
+16→15, page_chrome 35→47.
+
+⚠ SEPARATELY VERIFIED, and it came out clean: `dev-process.md` quotes eight case counts for scripts
+OUTSIDE this population. All eight are accurate against the real suites — including
+`check-handoff-path.py` (10) and `check-producer-enumeration.py` (11), which print no total at all,
+so their case lines were counted directly.
+
+⚠ TWO DEFECTS THE WORK FOUND IN ITSELF.
+(1) `printed_total` took the FIRST `N/M … passed` line; this script's own case labels quote example
+summaries, so it read 12 while the suite printed 13. Now LAST-match, with the two-summary limit
+(`check-dashboard-entry` ends `6/6 cannot-run cases passed`) stated and pinned by a case rather than
+hidden. A guard whose test data resembles its input is where a first-match parser breaks.
+(2) Mutating it revealed that renaming `count_drift` upstream got past the import and died on
+attribute access — uncaught `AttributeError`, rc=1, i.e. the code for "a count disagrees" when the
+truth was "the instrument is broken". `BORROWED` is now asserted at load; that mutation re-run exits
+**2 CANNOT RUN**.
+
+Hand mutation on a temp copy, control green first, repo untouched: population ratchet neutered →
+rc=1; parser reverted to first-match → rc=1 naming both affected cases; borrowed name renamed →
+rc=2.
+
+⚠ NOT DONE: no `scripts/mutations/` manifest entry. `EXPECTED_MUTATIONS` is edited by the open
+theme-token PR, and a second edit here would conflict; basing this branch on that one would make
+this PR silently carry it. Filed as follow-up, to land once that merges.

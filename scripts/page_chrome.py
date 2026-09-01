@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 35 cases
+    python3 scripts/page_chrome.py --self-test          # 47 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
