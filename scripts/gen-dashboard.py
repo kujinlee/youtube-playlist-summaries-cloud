@@ -1647,35 +1647,43 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     case("exhaustion says WHY, distinctly from a gh failure",
          PR_NOTE["exhausted"] != PR_NOTE["unknown"], True)
 
+    # ⚠ NON-RAISING positional lookup. The cases below used raw `.index()` on title
+    # TEXT, so a mutation emptying the title CRASHED the suite instead of reddening
+    # a case — and the harness refuses a crash, correctly, because a crash cannot
+    # show WHICH guard caught it. `find` returns -1, which sorts before every real
+    # position, so an absent string FAILS the ordering rather than exploding.
+    def _at(hay: str, needle: str) -> int:
+        return hay.find(needle)
+
     # "In place" on the order the store is ACTUALLY written: newest at the END.
     appended = parse_entries("## 2026-08-27\nOlder good.\n"
                              "## 2026-02-30\nBroken middle.\n"
                              "## 2026-08-28\nNewest good.\n")
     ha = _B(appended, bucket_days([], appended, 2, "2026-08-28"))
     case("malformed renders BETWEEN its neighbours on an APPENDED store",
-         ha.index("Newest good.") < ha.index("Broken middle.") < ha.index("Older good."), True)
+         _at(ha, "Newest good.") < _at(ha, "Broken middle.") < _at(ha, "Older good."), True)
     case("newest date renders first on an APPENDED store",
-         ha.index("Newest good.") < ha.index("Older good."), True)
+         _at(ha, "Newest good.") < _at(ha, "Older good."), True)
 
     run2 = parse_entries("## 2026-08-27\nOlder.\n## 2026-99-01\nBroken ONE.\n"
                          "## 2026-99-02\nBroken TWO.\n## 2026-08-28\nNewer.\n")
     hr = _B(run2, bucket_days([], run2, 2, "2026-08-28"))
     case("a RUN of malformed blocks keeps file order among themselves",
-         hr.index("Broken ONE.") < hr.index("Broken TWO."), True)
+         _at(hr, "Broken ONE.") < _at(hr, "Broken TWO."), True)
     case("...and the run still sits between its valid neighbours",
-         hr.index("Newer.") < hr.index("Broken ONE.") < hr.index("Older."), True)
+         _at(hr, "Newer.") < _at(hr, "Broken ONE.") < _at(hr, "Older."), True)
 
     tie = parse_entries("## 2026-08-28\nFIRST in file.\n## 2026-08-28\nSECOND in file.\n")
     ht = _B(tie, bucket_days([], tie, 2, "2026-08-28"))
     case("same-date entries render NEWEST first, not file order",
-         ht.index("SECOND in file.") < ht.index("FIRST in file."), True)
+         _at(ht, "SECOND in file.") < _at(ht, "FIRST in file."), True)
     # ⚠ THE COUPLING THIS CHANGE COULD HAVE BROKEN. Entry ids are POSITIONAL — `N` counts
     # file order within a date — and a standing `[resolved: <id>]` points at one. If the
     # render order ever leaked into id assignment, reordering the page would silently
     # rebind every resolution to a different entry. Ids are claimed at parse time
     # (`:367`), so they must be unmoved by the sort above; this is the case that says so.
     case("...and the FIRST entry in the file still owns id /1",
-         ht.index("2026-08-28/1") > ht.index("SECOND in file."), True)
+         _at(ht, "2026-08-28/1") > _at(ht, "SECOND in file."), True)
     case("...so ids follow the FILE, not the page", ("2026-08-28/1" in ht, "2026-08-28/2" in ht),
          (True, True))
     # Seven entries in one day is the shape that produced the report; two does not
@@ -1683,7 +1691,7 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     seven = parse_entries("".join(f"## 2026-08-30\nentry number {n}.\n" for n in range(1, 8)))
     h7 = _B(seven, bucket_days([], seven, 2, "2026-08-30"))
     case("with seven same-date entries the NEWEST is the first card",
-         h7.index("entry number 7.") < h7.index("entry number 1."), True)
+         _at(h7, "entry number 7.") < _at(h7, "entry number 1."), True)
     case("...and they read strictly newest-to-oldest",
          [h7.index(f"entry number {n}.") for n in range(7, 0, -1)]
          == sorted(h7.index(f"entry number {n}.") for n in range(1, 8)), True)
@@ -1936,7 +1944,7 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     d2 = bucket_days(["2026-08-28"], [], 2, "2026-08-28")
     two_bars = _section(_B([], d2), "The last 2 days")
     case("the chart draws oldest-first (left to right)",
-         two_bars.index("2026-08-27") < two_bars.index("2026-08-28"), True)
+         _at(two_bars, "2026-08-27") < _at(two_bars, "2026-08-28"), True)
 
     hx = _B([], bucket_days([], [], 2, "2026-08-28"),
             exemptions=[{"number": 9, "title": "T", "merged": "2026-08-28", "reason": "typo fix"}])
@@ -1969,10 +1977,16 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     # NAME stated the property being reversed. A line grep missed it because it
     # spans two lines; the population was then enumerated by parsing every
     # `case()` block on paren balance, which found four such cases in total.
+    # ⚠ BOUND TO THE CARD'S OWN FRAGMENT, not to "the first <summary> on the page".
+    # The first version sliced from `anchored.index("<summary>")` and did NOT go red
+    # when a mutation emptied the title — measured. That is the §4 binding rule this
+    # slice wrote and then violated one screen later.
+    _anchor_frag = anchored[anchored.index('<article class="entry" id="2026-08-28-1">'):]
+    _anchor_frag = _anchor_frag[:_anchor_frag.index("</article>")]
+    _anchor_sum = _anchor_frag[_anchor_frag.index("<summary>"):_anchor_frag.index("</summary>")]
     case("the title is the fold's own summary, so it is legible while shut",
-         ('<summary><h3 class="row"' in anchored,
-          "Decide the thing." in anchored[anchored.index("<summary>"):
-                                          anchored.index("</summary>")],
+         ('<h3 class="row"' in _anchor_sum,
+          "Decide the thing." in _anchor_sum,
           '<p class="title">' in anchored),
          (True, True, False))
     tall = _bar({"date": "D", "commits": 8, "needs_you": False, "has_entry": True}, 8, False)

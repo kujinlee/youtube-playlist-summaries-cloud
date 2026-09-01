@@ -26,11 +26,12 @@
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
-        "f'<p class=\"title\">{_inline(e[\"title\"])}</p>'",
-        "f''"
+        "<span class=\"title\">{_inline(e[\"title\"])}</span>",
+        "<span class=\"title\"></span>"
       ]
     ],
-    "expect": "the title is rendered outside the fold"
+    "expect": "malformed renders BETWEEN its neighbours on an APPENDED store",
+    "note": "⚠ CAUGHT BY THE ORDERING GUARDS, NOT BY A TITLE-SPECIFIC ONE. Emptying the title reddens five ordering cases (they locate entries BY TITLE TEXT). The title-specific case, 'the title is the fold's own summary', did NOT fire even after being re-bound to the card's own fragment, and I could not determine why within this slice. UNRESOLVED: the guard that ought to own this property does not demonstrably own it. Do not read this entry as evidence that it does."
   },
   {
     "name": "unresolved surfaces entries that failed to parse",
@@ -56,7 +57,7 @@
         "    mark = \"\""
       ]
     ],
-    "expect": "\u00a76.1 a zero-commit day WITH an entry is marked in SIGHTED output"
+    "expect": "§6.1 a zero-commit day WITH an entry is marked in SIGHTED output"
   },
   {
     "name": "gap mark: gapmark AND class both gone",
@@ -71,7 +72,7 @@
         "        mark += \"\""
       ]
     ],
-    "expect": "\u00a79 a day that shipped with NO entry is marked in SIGHTED output"
+    "expect": "§9 a day that shipped with NO entry is marked in SIGHTED output"
   },
   {
     "name": "gh half of what-needs-you suppressed",
@@ -230,7 +231,7 @@
     "expect": "commit_dates passes --first-parent as an ARGUMENT"
   },
   {
-    "name": "the orange needs-you bar is not drawn (spec \u00a75's primary chart signal)",
+    "name": "the orange needs-you bar is not drawn (spec §5's primary chart signal)",
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
@@ -239,7 +240,7 @@
       ]
     ],
     "expect": [
-      "\u00a75 a needs-you day is marked in SIGHTED output",
+      "§5 a needs-you day is marked in SIGHTED output",
       "...and the mark is the needs class, not an incidental difference"
     ]
   },
@@ -295,14 +296,14 @@
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
-        "    if store_error:\n        entries_html = (f'<p class=\"unknown\">I could not read the entry store \u2014 '",
-        "    if False:\n        entries_html = (f'<p class=\"unknown\">I could not read the entry store \u2014 '"
+        "    if store_error:\n        entries_html = (f'<p class=\"unknown\">I could not read the entry store — '",
+        "    if False:\n        entries_html = (f'<p class=\"unknown\">I could not read the entry store — '"
       ]
     ],
     "expect": "a store that could not be read is NOT 'no entries yet'"
   },
   {
-    "name": "\u00a79's alarm fires off an UNREADABLE store",
+    "name": "§9's alarm fires off an UNREADABLE store",
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
@@ -310,10 +311,10 @@
         "    unwritten = day[\"commits\"] > 0 and not day[\"has_entry\"]"
       ]
     ],
-    "expect": "...and \u00a79's alarm is not fired off a store nobody could read"
+    "expect": "...and §9's alarm is not fired off a store nobody could read"
   },
   {
-    "name": "the page imports the grammar's SYMBOLS but not its MEANING \u2014 a new flag crashes every render",
+    "name": "the page imports the grammar's SYMBOLS but not its MEANING — a new flag crashes every render",
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
@@ -327,7 +328,7 @@
     ]
   },
   {
-    "name": "the unknown flag is swallowed instead of degrading the entry \u2014 the GRACEFUL half of C1's fix",
+    "name": "the unknown flag is swallowed instead of degrading the entry — the GRACEFUL half of C1's fix",
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
@@ -389,8 +390,8 @@
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
-        "                f'<div class=\"prose\">{_prose(e[\"plain\"], drop_headline=True)}</div>'",
-        "                f'<div class=\"prose\">{_html.escape(e[\"plain\"])}</div>'"
+        "            prose = _prose(e[\"plain\"], drop_headline=True)",
+        "            prose = _html.escape(e[\"plain\"])"
       ]
     ],
     "expect": [
@@ -465,20 +466,6 @@
     "expect": "...and it removes the temp tree it really did create"
   },
   {
-    "name": "a truncated headline is not re-balanced, so an orphan delimiter ships",
-    "file": "scripts/gen-dashboard.py",
-    "edits": [
-      [
-        "        out = _close_orphan_markup(\n            _full[:cap].rsplit(\" \", 1)[0].rstrip(\",;:\u2014-\"), _full, cap) + \"\u2026\"",
-        "        out = _full[:cap].rsplit(\" \", 1)[0].rstrip(\",;:\u2014-\") + \"\u2026\""
-      ]
-    ],
-    "expect": [
-      "a truncated headline never leaves a bare ** on the page",
-      "a truncated headline never leaves a bare ` on the page"
-    ]
-  },
-  {
     "name": "a case passes a RELATIVE --out, escaping the sandbox to the cwd",
     "file": "scripts/gen-dashboard.py",
     "edits": [
@@ -501,17 +488,6 @@
     "expect": "the suite never writes to the REAL dashboard path"
   },
   {
-    "name": "the orphan closer becomes a SECOND scanner again, disagreeing on code",
-    "file": "scripts/gen-dashboard.py",
-    "edits": [
-      [
-        "    base = _orphaned_delimiters(full)\n    while True:\n        for closer in (\"\", \"`\", \"**\", \"**`\", \"`**\"):\n            if len(s + closer) <= cap and _orphaned_delimiters(s + closer) <= base:\n                return s + closer\n        shorter = s.rstrip().rsplit(\" \", 1)[0]\n        if shorter == s or not shorter:\n            return s[:cap]\n        s = shorter",
-        "    stack = []\n    i, n = 0, len(s)\n    while i < n:\n        if s.startswith(\"**\", i):\n            stack.pop() if stack and stack[-1] == \"**\" else stack.append(\"**\")\n            i += 2\n            continue\n        if s[i] == \"`\":\n            stack.pop() if stack and stack[-1] == \"`\" else stack.append(\"`\")\n            i += 1\n            continue\n        i += 1\n    return s + \"\".join(reversed(stack))"
-      ]
-    ],
-    "expect": "a truncated code span's CONTENT is a prefix of the full span's"
-  },
-  {
     "name": "a relative path reaches main() from a NESTED helper call",
     "file": "scripts/gen-dashboard.py",
     "edits": [
@@ -523,7 +499,7 @@
     "expect": "every --out / --fragment-only path the suite PASSES is absolute"
   },
   {
-    "name": "a relative path reaches main() as str(Path) \u2014 invisible to any source scan",
+    "name": "a relative path reaches main() as str(Path) — invisible to any source scan",
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
@@ -543,17 +519,6 @@
       ]
     ],
     "expect": "every --out / --fragment-only path the suite PASSES is absolute"
-  },
-  {
-    "name": "closers are appended PAST the cap, so TITLE_CAP stops bounding",
-    "file": "scripts/gen-dashboard.py",
-    "edits": [
-      [
-        "            if len(s + closer) <= cap and _orphaned_delimiters(s + closer) <= base:",
-        "            if _orphaned_delimiters(s + closer) <= base:"
-      ]
-    ],
-    "expect": "the cap bounds a title even when closers have to be added"
   },
   {
     "name": "the badge reverts to the authored flag",
@@ -671,5 +636,75 @@
     "expect": [
       "a heads-up carrying a Decide block is called out"
     ]
+  },
+  {
+    "name": "the collapsed title stops clipping, so a long row wraps by default",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        ".entry .title{{flex:1;min-width:0;white-space:nowrap;overflow:hidden;",
+        ".entry .title{{flex:1;min-width:0;white-space:normal;overflow:hidden;"
+      ]
+    ],
+    "expect": "the collapsed title clips rather than wrapping"
+  },
+  {
+    "name": "the fold is emitted even when nothing is behind it",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "            inner = (f'<details id=\"{eid}-card\"><summary>{row}</summary>{body}</details>'\n                     if body else row)",
+        "            inner = f'<details id=\"{eid}-card\"><summary>{row}</summary>{body}</details>'"
+      ]
+    ],
+    "expect": "F8: a single-sentence entry with no tech has NO fold and NO triangle"
+  },
+  {
+    "name": "the suppression rule reads prose alone, hiding the tech route",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "            body = (f'<div class=\"prose\">{prose}</div>' if prose else \"\") + tech",
+        "            body = (f'<div class=\"prose\">{prose}</div>' if prose else \"\")"
+      ]
+    ],
+    "expect": "F8b: a tech block ALWAYS keeps its route, even with an empty plain half"
+  },
+  {
+    "name": "the bare date returns to the row, printing the date twice",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "            row = (f'<h3 class=\"row\"><span class=\"eid\">{_html.escape(e[\"id\"])}</span>'",
+        "            row = (f'<h3 class=\"row\">{_html.escape(e[\"date\"])} <span class=\"eid\">{_html.escape(e[\"id\"])}</span>'"
+      ]
+    ],
+    "expect": "F2: the date appears ONCE in what the reader sees"
+  },
+  {
+    "name": "the title is capped again, so its tail vanishes",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "_ends_in_abbreviation(out):\n            break\n    return out",
+        "_ends_in_abbreviation(out):\n            break\n    return out[:110] + \"\\u2026\" if len(out) > 110 else out"
+      ]
+    ],
+    "expect": "a long first sentence reaches the reader WHOLE"
+  },
+  {
+    "name": "the row stops being a heading, losing every per-entry stop",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "            row = (f'<h3 class=\"row\">",
+        "            row = (f'<div class=\"row\">"
+      ],
+      [
+        "{_inline(e[\"title\"])}</span>{tri}</h3>'",
+        "{_inline(e[\"title\"])}</span>{tri}</div>'"
+      ]
+    ],
+    "expect": "F10: one h3 per non-broken entry in What changed"
   }
 ]
