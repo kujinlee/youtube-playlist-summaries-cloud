@@ -325,5 +325,30 @@
       ]
     ],
     "expect": "bold works on the pre-comment head too"
+  },
+  {
+    "name": "the empty-resolved refusal is dropped",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        if not payload:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "an empty resolved payload is refused",
+      "a whitespace-only resolved payload is refused"
+    ]
+  },
+  {
+    "name": "a whitespace-only payload counts as a real id",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        payload = f[len(\"resolved:\"):].strip()",
+        "        payload = f[len(\"resolved:\"):]"
+      ]
+    ],
+    "expect": "a whitespace-only resolved payload is refused"
   }
 ]

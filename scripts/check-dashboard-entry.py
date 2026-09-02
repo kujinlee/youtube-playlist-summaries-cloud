@@ -37,11 +37,30 @@ def valid_date(s: str) -> bool:
 def header_error(line: str) -> str | None:
     """None if `line` is a well-formed entry header, else why not.
 
-    Shared by the parser and the ratchet so they CANNOT disagree about what a
-    header is. v2.2 claimed they already agreed; measured, they diverged on
-    five shapes — `## D-foo`, `## D.`, a typo'd flag, an unknown-flag payload,
-    and a title on the header line — each of which the ratchet waved through
-    while the page rendered it under "Could not parse this entry".
+    Shared by the parser and the ratchet so they cannot disagree about header
+    SYNTAX.
+
+    ⛔ THIS DOCSTRING USED TO CLAIM THEY "CANNOT DISAGREE ABOUT WHAT A HEADER IS".
+    That was FALSE, and it was false before the sentence was written. The page's
+    `parse_entries` has a SECOND pass this function has never had: it checks that a
+    `[resolved: <id>]` names an entry that actually EXISTS. Codex's retrospective
+    review r1 found the empty-payload instance; measuring the class found FIVE
+    headers the gate accepted and the page rejected, of which THREE
+    (`[resolved: nonsense]`, `[resolved: 2026-09-01/99]`, `[resolved: 2026-13-45/1]`)
+    are REFERENTIAL and cannot be judged from a header alone at all — they are
+    properties of the whole store.
+
+    So the honest contract is: SYNTAX agrees; REFERENCE does not, and this function
+    cannot make it agree. Closing that needs the entry parser itself to live here,
+    where the grammar already does — backlog #82. Until then a wrong-but-existing
+    `[resolved:]` id reaches the reader as "could not parse this entry" on the page
+    rather than as a refusal at the gate.
+
+    The SYNTAX half is still worth the shared definition, and was earned the hard
+    way: v2.2 claimed the two already agreed; measured, they diverged on five
+    shapes — `## D-foo`, `## D.`, a typo'd flag, an unknown-flag payload, and a
+    title on the header line — each of which the ratchet waved through while the
+    page rendered it under "Could not parse this entry".
     """
     m = HEADER.match(line)
     if m is None:
@@ -58,6 +77,21 @@ def header_error(line: str) -> str | None:
     # this function's docstring exists to prevent, and the ask-choices spec §9 names
     # it as a falsifier. Both callers read the verdict from here.
     flags = FLAG.findall(m.group(2))
+    # ⟳ 2026-09-01, Codex retrospective review r1 (High). `resolved:\s*[^\]]*`
+    # permits a payload of ZERO characters, so `[resolved:]` was a well-formed
+    # header HERE and "with no entry id after it" on the PAGE. Written as a named
+    # check rather than a tighter regex for three reasons: the message can then be
+    # WORD-FOR-WORD the page's, so the two do not merely both refuse but say the
+    # same thing; the rule is legible; and `strip()` is a SEPARATE decision from
+    # emptiness, so each can be mutated on its own line.
+    # ⚠ `+` alone would NOT have been enough: `\s*` matches nothing and `[^\]]+`
+    # then eats the spaces of `[resolved:   ]`. Measured in a temp copy first.
+    for f in flags:
+        if not f.startswith("resolved:"):
+            continue
+        payload = f[len("resolved:"):].strip()
+        if not payload:
+            return "[resolved:] with no entry id after it"
     if "needs-you" in flags and "heads-up" in flags:
         return ("an entry is [needs-you] OR [heads-up], never both — "
                 "a heads-up asks for nothing")
@@ -547,6 +581,29 @@ def _self_test() -> int:
          header_error("## 2026-08-28 [needs-you] [heads-up]") is not None, True)
     case("both flags does not count as an added entry",
          _added_entry_line("+## 2026-08-28 [needs-you] [heads-up]"), False)
+
+    # ─── the empty resolved payload — Codex retrospective review r1, High ────
+    # ⛔ FOUND BY THE ADVERSARIAL HALF. Not by this suite, not by 150 mutations,
+    # not by any gate — all of which measure this code against itself.
+    # `[resolved:]` passed `header_error`, so `added_entry_problems` returned []
+    # and an ENTRY-ONLY branch got `(0, "no tracked files changed outside the
+    # exempt paths")` while `gen-dashboard.parse_entries` set
+    # "[resolved:] with no entry id after it". Gate green, page broken — the exact
+    # class backlog #78 set out to close, surviving inside #78's own fix.
+    case("an empty resolved payload is refused",
+         header_error("## 2026-09-01 [resolved:]") is not None, True)
+    # ⚠ WHITESPACE-ONLY IS A SECOND SHAPE, and the obvious one-character `*`->`+`
+    # fix does NOT close it: `\s*` matches nothing and `[^\]]+` then eats the
+    # spaces. MEASURED in a temp copy before this fix was written.
+    case("a whitespace-only resolved payload is refused",
+         header_error("## 2026-09-01 [resolved:   ]") is not None, True)
+    case("a real resolved payload still passes",
+         header_error("## 2026-09-01 [resolved: 2026-08-31/1]"), None)
+    # The refusal must reach the VERDICT on an entry-only branch — the path the
+    # High actually travelled.
+    case("an entry-only branch with an empty resolved payload is REFUSED",
+         verdict(["docs/dashboard-entries.md"], False, "",
+                 added_entry_problems("+## 2026-09-01 [resolved:]\n"))[0], 1)
 
     # ── the decision grammar (ask-choices spec §4) ──
     GOOD = ("An ask.\n\n**Decide:** Merge it\n- merge PR #181 [recommended]\n"
