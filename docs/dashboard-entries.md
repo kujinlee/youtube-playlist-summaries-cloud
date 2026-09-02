@@ -2331,3 +2331,54 @@ That is mechanically detectable and would have caught this at the gate. Left for
 filing is their step.
 
 No code change on this branch. Backlog row + this entry; `master` is `f76eaa7e`.
+
+## 2026-09-02
+The backlog page had been silently missing its four newest items since yesterday afternoon — you found it by looking for one of them.
+The page at `/backlog-table` is built from the backlog file rather than being the file, and it had
+stopped rebuilding. Four items were filed after the last successful build and none of them appeared:
+the two from yesterday evening and the two from this session.
+
+Two things had to go wrong together, and both did.
+
+The rebuild is supposed to happen automatically whenever the backlog file is written. It watches for
+a particular *kind* of write, and the edits that added these items were made a different way, so it
+never noticed them. Separately, the builder refuses to publish at all until every open item has a
+plain-English description written for it — a deliberate rule, and the right one, because an item
+that appears as a bare row nobody wrote a sentence for is not really on the page. But the refusal
+was printed into a log at the moment it happened, and nobody was reading that log afterwards.
+
+So the page did not break loudly. It just stopped moving, and looked exactly like a current page.
+All four items are now described and the page is rebuilt.
+<!--tech-->
+Found by the user: *"I refreshed /backlog-table and tried to find backlog #85, but couldn't."*
+`docs/backlog.md` had row 85 on master (`392e6175`) the whole time; `~/explainers/backlog-table.html`
+was last written 2026-09-01 13:22.
+
+**CAUSE 1 — the hook watches the TOOL, not the FILE.** `.claude/hooks/regen-backlog-page.sh` reads
+`tool_input.file_path`, a field only present on Write/Edit tool calls. Rows #84 and #85 were added
+by a `python3` heredoc inside a **Bash** call, so the path came back empty, the `case` fell through
+to `exit 0`, and the hook did nothing. It is not that the hook failed — it never saw the edit.
+
+**CAUSE 2 — the generator had been REFUSING since #82.**
+
+    REFUSED: GROUPS does not cover the open set — open items missing from GROUPS: [82, 83, 84, 85]
+    Nothing was written; the existing page is left as it was.
+
+That refusal is correct and deliberate (the script's own header explains it, and the hook's header
+even predicts it). It fails closed rather than publishing an ungrouped row. But its only audience
+was a transcript line at the moment of the edit.
+
+⚠ **The two compose into the failure that actually matters:** cause 1 meant the refusal was never
+even reached for #84/#85, and for #82/#83 it was reached, printed, and scrolled past. The page's own
+header comment describes exactly this — *"NOTHING on the page says the source has moved on since"* —
+which is why the reader is the one who discovers it.
+
+FIXED HERE: `GROUPS` in `scripts/gen-backlog-page.py` gains all four items. Page regenerated:
+**85 rows, 59 open**, all four verified present by their own text (not by a row-number grep — the
+first grep I wrote looked for an anchor format the page does not use and reported 0 for items that
+were there).
+
+⚠ **NOT FIXED, and it is the part that will recur:** nothing makes staleness visible. The hook stays
+blind to non-tool edits, and a refusal still only reaches whoever is watching that turn. Two shapes
+worth considering — have the page state the source commit it was built from, or have a gate compare
+them — but that is a design question, and filing is the user's step.
