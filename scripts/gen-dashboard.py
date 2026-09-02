@@ -26,6 +26,11 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 # page rendered a green "No entries yet" while sitting in the wrong directory.
 # The guard for an unreadable store existed and was correct; its PREMISE moved.
 STORE_DEFAULT = ROOT / "docs" / "dashboard-entries.md"
+# The store as `gh` reports a changed path: repo-relative, forward slashes.
+# DERIVED from STORE_DEFAULT rather than written out again, because a mismatch
+# here fails SILENTLY — no PR would ever match, and `no_entry_prs` would quietly
+# go back to trusting the body alone, which is the defect it was fixed for.
+ENTRY_STORE = STORE_DEFAULT.relative_to(ROOT).as_posix()
 TECH_MARKER = "<!--tech-->"
 
 
@@ -731,13 +736,31 @@ def no_entry_prs(limit: int = 40) -> tuple[list[dict] | None, str | None]:
     Reads the gate's own `exemption_reason`, so the page shows exactly the
     exemptions the gate granted. A display that disagrees with the gate is worse
     than none. Bounded at `limit`: an older exemption stops being shown.
+
+    ⛔ A DECLARED EXEMPTION IS NOT A TAKEN ONE, and this listing used to conflate
+    them. It re-derives a verdict for ALREADY-MERGED PRs by re-parsing their
+    bodies, so widening the gate's matcher REWROTE HISTORY: PR #198 carries
+    `**NO-ENTRY: …**` in its body and also changed `docs/dashboard-entries.md` by
+    49 lines. After the matcher widened, this function reported it as an
+    exemption — the page asserting a PR was excused from writing an entry that it
+    demonstrably wrote. The list had been empty; 100% of its content was false.
+    Found by the Claude half of the retrospective review, 2026-09-01.
+
+    The body was never sufficient evidence. A PR that ADDED an entry did not take
+    an exemption whatever its body says, so the FILE LIST is the authority here.
+    That makes this independent of any future change to the matcher — the class,
+    not the instance.
+
+    ⚠ A missing `files` key is a CANNOT-TELL, not "wrote no entry". Defaulting it
+    to empty would silently restore the defect on any `gh` that stops returning
+    the field.
     """
     try:
         reader = _exemption_reader()
     except Exception as exc:
         return None, f"could not load the gate's exemption reader: {exc}"
     data, err = _gh_json(["pr", "list", "--state", "merged", "--limit", str(limit),
-                          "--json", "number,title,body,mergedAt"])
+                          "--json", "number,title,body,mergedAt,files"])
     if err:
         return None, err
     if not isinstance(data, list):
@@ -747,7 +770,15 @@ def no_entry_prs(limit: int = 40) -> tuple[list[dict] | None, str | None]:
         if not isinstance(p, dict):
             return None, "gh returned JSON in an unexpected shape"
         reason = reader(p.get("body") or "")
-        if reason:
+        if not reason:
+            continue
+        files = p.get("files")
+        if not isinstance(files, list):
+            return None, ("gh did not return the changed-file list, so an "
+                          "exemption cannot be distinguished from a written entry")
+        wrote_entry = any(isinstance(f, dict) and f.get("path") == ENTRY_STORE
+                          for f in files)
+        if not wrote_entry:
             out.append({"number": p.get("number"), "title": p.get("title") or "",
                         "merged": (p.get("mergedAt") or "")[:10], "reason": reason})
     return out, None
@@ -2299,6 +2330,38 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
         def _f(*a, **k):
             raise exc
         return _f
+
+    # ─── an exemption is only real if the PR wrote NO entry ────────────────
+    # ⛔ Claude retro review r1, HIGH. This listing re-derives a verdict for
+    # ALREADY-MERGED PRs by re-parsing their bodies, so WIDENING the gate's
+    # matcher rewrote history: PR #198 carries `**NO-ENTRY: …**` in its body AND
+    # changed docs/dashboard-entries.md by 49 lines. After #203 it appeared here
+    # as an exemption — the page asserting a PR was excused from writing an entry
+    # that it demonstrably wrote. The list was empty before; 100% of it was false.
+    # ⚠ The body was never sufficient evidence. A PR that ADDED an entry did not
+    # take an exemption whatever its body says, so the file list is the authority
+    # and this is independent of any future matcher change.
+    _EX_BODY = "NO-ENTRY: a typo fix"
+    def _pr(n, files):
+        return _R(0, json.dumps([{"number": n, "title": "t", "body": _EX_BODY,
+                                  "mergedAt": "2026-09-01T00:00:00Z",
+                                  "files": [{"path": f} for f in files]}]), "")
+    v, err = _with_run(lambda *a, **k: _pr(1, ["lib/x.ts"]), no_entry_prs)
+    case("no_entry_prs: a declared exemption with no entry IS listed",
+         ([r["number"] for r in (v or [])], err), ([1], None))
+    v, err = _with_run(lambda *a, **k: _pr(198, ["docs/dashboard-entries.md"]), no_entry_prs)
+    case("no_entry_prs: a PR that WROTE an entry is NOT an exemption",
+         ([r["number"] for r in (v or [])], err), ([], None))
+    v, err = _with_run(lambda *a, **k: _pr(2, ["lib/x.ts", "docs/dashboard-entries.md"]),
+                       no_entry_prs)
+    case("no_entry_prs: ...even alongside other files", [r["number"] for r in (v or [])], [])
+    # A `files` key gh did not return must not be read as "wrote no entry" — that
+    # would silently restore the defect on any gh version that drops the field.
+    v, err = _with_run(lambda *a, **k: _R(0, json.dumps(
+        [{"number": 3, "title": "t", "body": _EX_BODY, "mergedAt": "2026-09-01T00:00:00Z"}]), ""),
+        no_entry_prs)
+    case("no_entry_prs: a MISSING files list is a could-not-tell, not an exemption",
+         (v, bool(err)), (None, True))
 
     for label, call in (("commit_dates", lambda: commit_dates(14)),
                         ("open_prs", open_prs),

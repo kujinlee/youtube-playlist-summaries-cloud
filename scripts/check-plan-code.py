@@ -446,7 +446,7 @@ EXPECTED_MUTATIONS = {
     # and its budget, gh shape validation, and — on the gate — the decision grammar
     # including the NESTING rule, whose absence silently dropped every option after a
     # 4-space nest.
-    "scripts/gen-dashboard.py": 65,
+    "scripts/gen-dashboard.py": 67,
     "scripts/page_markup.py": 14,
     # ⟳ 2026-09-01, backlog #78: 18 -> 23. The entry gate now answers TWO questions
     # instead of one — "does this branch owe an entry?" (unchanged) and "is the entry
@@ -1968,7 +1968,7 @@ def _self_test() -> int:
     # This literal is a SECOND, independent statement of the total, and that is the
     # point: moving a per-file count without it makes the control refuse to run
     # rather than silently re-baselining. It did exactly that here.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 152)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 154)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so

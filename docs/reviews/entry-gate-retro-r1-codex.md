@@ -54,21 +54,27 @@ coordinator before reading the Codex review. Fails CLOSED. Low stands.
   position 0 — correct by luck, not construction.
 - `+++ b/docs/dashboard-entries.md` does NOT match `^\+##(?!#)`; no misfire on patch headers.
 
-## The Claude half did not run
+## ⛔ CORRECTION — the Claude half DID run; my gap note was false
 
-REVIEW GAP: claude — dispatched with the same brief, signalled idle TWICE and produced no review; a second narrowed request also produced nothing. Treated as a hang per docs/plugins.md's bounded-wait rule. Codex ran and found a real High. RE-RUN THE CLAUDE HALF before treating this round as converged.
+An earlier revision of this file said `REVIEW GAP: claude — produced nothing`. **That was wrong.**
+The half ran ~25 tool calls and wrote **26,764 characters** of review, twice. Its output never
+reached the coordinator, and the cause was the COORDINATOR'S BRIEF: it said *"YOUR FINAL MESSAGE IS
+THE REVIEW. Write no file."* — correct for a Task-tool subagent whose final message is returned,
+WRONG for a named background teammate, where plain text is not delivered and `SendMessage` is
+required. It followed the brief and went idle. Recovered from its transcript and filed as
+`entry-gate-retro-r1-claude.md`.
 
-⚠ Note how this line had to be written: it was first placed as a MARKDOWN HEADING (`## REVIEW GAP: …`) and `check-review-rounds.py` did not see it, because the marker must START the line. That is the SAME prefix-blindness class as `NO-ENTRY:` in bold, fixed in PR #203 hours earlier, and as `Decide:` counted with an anchored pattern. THIRD marker in the family, caught by the gate rather than by me.
+⚠ **The gap note itself was the day's own failure class**: a confident claim about a mechanism,
+written without checking the mechanism. The transcript was on disk the whole time.
 
-Dispatched as a subagent with the same brief. It signalled idle TWICE without producing a review;
-a second, narrowed request also produced nothing. Per `docs/plugins.md`'s bounded-wait rule this is
-a hang, and the half is recorded as **NOT RUN** rather than as clean. The coordinator's own checks
-above are AUTHOR-RUN and do not substitute for an independent half.
+**Its three Highs, two verified by the coordinator:**
+1. `(?!#)` re-opens the gate/page divergence on `###` — the renderer's `BLOCK = ^##\s*\S` MATCHES
+   `### Worth knowing` (`\s*` takes zero, `\S` takes the third `#`). VERIFIED. My justification
+   *"several entries use one"* is FALSE — the store has **zero** `^###` lines. Still open.
+2. `no_entry_prs` retroactively re-judged merged PR bodies, putting a FALSE exemption for PR #198
+   (which wrote a 49-line entry) on the live page. VERIFIED, and **FIXED in this branch** — control
+   against live `gh`: before `[198]`, after `[]`.
+3. Further gate-passes/page-breaks shapes (blank title line; PASS-2 dangling references) — the
+   referential family, filed as backlog #82.
 
-⚠ The Codex half found a real High that the author's gates, 150 mutations and 0 survivors all
-passed over. A single-half round is exactly the shape this project has recorded as unsafe
-(memory: dual review halves are not redundant). Re-run the Claude half before treating this
-round as converged.
-
-**ROUND VERDICT: NOT CONVERGED** — 1 High (confirmed, class widened to 5 shapes), 1 Low
-(confirmed), 1 nit; one review half NOT RUN.
+**ROUND VERDICT: NOT CONVERGED** — finding 1 remains open.

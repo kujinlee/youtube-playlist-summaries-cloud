@@ -2022,3 +2022,66 @@ Counts: mutations 27 → **29**, `EXPECTED_MUTATIONS` 150 → **152**.
 ⚠ **The Claude review half NEVER RAN** (idled twice, produced nothing). Recorded as
 `REVIEW GAP: claude` in the review doc. This round is **NOT CONVERGED** and one-sided — and a
 single-half round is the shape this project has already recorded as unsafe.
+
+## 2026-09-01
+Your dashboard was telling you something untrue about your own work, and I put it there.
+
+Near the bottom of the page there is a list of changes that were allowed to skip their write-up.
+The point of it is so you can see how often the discipline slips — if eleven of the last twelve
+changes skipped a note, that list is how you would find out.
+
+It was empty. Then a change I merged a few hours ago made it show one entry: a change from earlier
+today, marked as having skipped its write-up. That change wrote forty-nine lines of write-up. So
+every item in the list was false, and it was false in the direction that flatters me.
+
+The cause is worth understanding because it is not obvious. I widened what counts as a valid
+"skip this one" note. But that same reading is also used, after the fact, to re-examine changes
+that were merged long ago — so widening it did not merely change what happens next, it rewrote what
+the page says about the past.
+
+The repair is that the list now checks whether a change actually wrote a note, rather than trusting
+what its description claimed. A change that wrote one cannot appear as having skipped one, whatever
+its text says. That holds regardless of how the wording rules change later.
+
+Confirmed against the real data: before, the list showed that one false item; after, it is empty
+again, which is the truth.
+
+I did not find this. The second reviewer did — the one I reported as having produced nothing. It had
+in fact done the whole review and my message about it never arrived.
+<!--tech-->
+Fixes the second **HIGH** of the retrospective round, from the Claude half
+(`docs/reviews/entry-gate-retro-r1-claude.md`, recovered from its transcript).
+
+**CONTROL against live `gh`, same call both sides:**
+
+```
+BEFORE (master)      no_entry_prs(40) -> [198]
+AFTER  (this branch) no_entry_prs(40) -> []
+```
+
+**ROOT CAUSE, and it is the generalisable part:** `no_entry_prs` RE-DERIVES a verdict for
+already-merged PRs by re-parsing their bodies through the gate's CURRENT `exemption_reason`. PR #203
+widened that matcher to accept `**NO-ENTRY:**`. PR #198's body carries
+`**NO-ENTRY: repair of a red I introduced in #197…**` AND it changed `docs/dashboard-entries.md` by
+49 lines. So the widening did not only change future verdicts — **it rewrote the displayed past**,
+against a docstring that says *"the page shows exactly the exemptions the gate granted. A display
+that disagrees with the gate is worse than none."*
+
+**THE FIX IS THE CLASS, NOT THE INSTANCE:** a declared exemption is not a taken one. The listing now
+requires that the PR did **not** touch the entry store, using `gh`'s own file list as the authority
+— so it is correct no matter how the matcher changes later. `ENTRY_STORE` is DERIVED from
+`STORE_DEFAULT`, not written out again, because a path mismatch here fails SILENTLY (nothing would
+ever match and the defect would quietly return).
+
+⚠ A missing `files` key is a CANNOT-TELL that returns an error, not a default of "wrote no entry" —
+mutation-covered, because the fail-open version is the one that restores the bug invisibly.
+
+Counts: `gen-dashboard --self-test` **298**; mutations gen-dashboard 65 → **67**,
+`EXPECTED_MUTATIONS` 152 → **154**, 0 survivors.
+
+⛔ **STILL OPEN — the Claude half's first High:** `ENTRY_ISH`'s `(?!#)` excludes `###` while the
+renderer's `BLOCK = ^##\s*\S` MATCHES it, so an entry body carrying a sub-heading passes the gate
+and renders "could not parse". My justification for `(?!#)` — *"several entries use one"* — is FALSE:
+the store contains **zero** `^###` lines. I wrote that in a comment, repeated it in #201's commit
+message, and pinned it with a mutation. Not fixed here; it needs the two matchers derived from one
+grammar rather than hand-written twice.

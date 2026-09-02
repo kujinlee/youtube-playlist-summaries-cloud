@@ -31,7 +31,7 @@
       ]
     ],
     "expect": "malformed renders BETWEEN its neighbours on an APPENDED store",
-    "note": "⚠ CAUGHT BY THE ORDERING GUARDS, NOT BY A TITLE-SPECIFIC ONE. Emptying the title reddens five ordering cases (they locate entries BY TITLE TEXT). The title-specific case, 'the title is the fold's own summary', did NOT fire even after being re-bound to the card's own fragment, and I could not determine why within this slice. UNRESOLVED: the guard that ought to own this property does not demonstrably own it. Do not read this entry as evidence that it does."
+    "note": "\u26a0 CAUGHT BY THE ORDERING GUARDS, NOT BY A TITLE-SPECIFIC ONE. Emptying the title reddens five ordering cases (they locate entries BY TITLE TEXT). The title-specific case, 'the title is the fold's own summary', did NOT fire even after being re-bound to the card's own fragment, and I could not determine why within this slice. UNRESOLVED: the guard that ought to own this property does not demonstrably own it. Do not read this entry as evidence that it does."
   },
   {
     "name": "unresolved surfaces entries that failed to parse",
@@ -57,7 +57,7 @@
         "    mark = \"\""
       ]
     ],
-    "expect": "§6.1 a zero-commit day WITH an entry is marked in SIGHTED output"
+    "expect": "\u00a76.1 a zero-commit day WITH an entry is marked in SIGHTED output"
   },
   {
     "name": "gap mark: gapmark AND class both gone",
@@ -72,7 +72,7 @@
         "        mark += \"\""
       ]
     ],
-    "expect": "§9 a day that shipped with NO entry is marked in SIGHTED output"
+    "expect": "\u00a79 a day that shipped with NO entry is marked in SIGHTED output"
   },
   {
     "name": "gh half of what-needs-you suppressed",
@@ -231,7 +231,7 @@
     "expect": "commit_dates passes --first-parent as an ARGUMENT"
   },
   {
-    "name": "the orange needs-you bar is not drawn (spec §5's primary chart signal)",
+    "name": "the orange needs-you bar is not drawn (spec \u00a75's primary chart signal)",
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
@@ -240,7 +240,7 @@
       ]
     ],
     "expect": [
-      "§5 a needs-you day is marked in SIGHTED output",
+      "\u00a75 a needs-you day is marked in SIGHTED output",
       "...and the mark is the needs class, not an incidental difference"
     ]
   },
@@ -296,14 +296,14 @@
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
-        "    if store_error:\n        entries_html = (f'<p class=\"unknown\">I could not read the entry store — '",
-        "    if False:\n        entries_html = (f'<p class=\"unknown\">I could not read the entry store — '"
+        "    if store_error:\n        entries_html = (f'<p class=\"unknown\">I could not read the entry store \u2014 '",
+        "    if False:\n        entries_html = (f'<p class=\"unknown\">I could not read the entry store \u2014 '"
       ]
     ],
     "expect": "a store that could not be read is NOT 'no entries yet'"
   },
   {
-    "name": "§9's alarm fires off an UNREADABLE store",
+    "name": "\u00a79's alarm fires off an UNREADABLE store",
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
@@ -311,10 +311,10 @@
         "    unwritten = day[\"commits\"] > 0 and not day[\"has_entry\"]"
       ]
     ],
-    "expect": "...and §9's alarm is not fired off a store nobody could read"
+    "expect": "...and \u00a79's alarm is not fired off a store nobody could read"
   },
   {
-    "name": "the page imports the grammar's SYMBOLS but not its MEANING — a new flag crashes every render",
+    "name": "the page imports the grammar's SYMBOLS but not its MEANING \u2014 a new flag crashes every render",
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
@@ -328,7 +328,7 @@
     ]
   },
   {
-    "name": "the unknown flag is swallowed instead of degrading the entry — the GRACEFUL half of C1's fix",
+    "name": "the unknown flag is swallowed instead of degrading the entry \u2014 the GRACEFUL half of C1's fix",
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
@@ -499,7 +499,7 @@
     "expect": "every --out / --fragment-only path the suite PASSES is absolute"
   },
   {
-    "name": "a relative path reaches main() as str(Path) — invisible to any source scan",
+    "name": "a relative path reaches main() as str(Path) \u2014 invisible to any source scan",
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
@@ -750,7 +750,7 @@
         "        head = \"<strong>Decide:</strong>\""
       ]
     ],
-    "expect": "an entry with TWO asks marks BOTH decided — resolution is entry-level"
+    "expect": "an entry with TWO asks marks BOTH decided \u2014 resolution is entry-level"
   },
   {
     "name": "the light palette stops covering the OS-dark shim's tokens",
@@ -777,5 +777,27 @@
     "expect": [
       "light: .chrome-btn HOVER label clears AA on the page surface"
     ]
+  },
+  {
+    "name": "a missing files list is treated as 'wrote no entry'",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "        files = p.get(\"files\")",
+        "        files = p.get(\"files\") or []"
+      ]
+    ],
+    "expect": "no_entry_prs: a MISSING files list is a could-not-tell, not an exemption"
+  },
+  {
+    "name": "the wrote-an-entry test stops excluding",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "        if not wrote_entry:",
+        "        if True:"
+      ]
+    ],
+    "expect": "no_entry_prs: a PR that WROTE an entry is NOT an exemption"
   }
 ]
