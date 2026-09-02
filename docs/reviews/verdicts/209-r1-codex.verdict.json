@@ -1,0 +1,18 @@
+{
+  "attempts": [
+    "  gpt-5.6-sol: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.6-terra: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.6-luna: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.5: ok \u2014 3144 chars"
+  ],
+  "exit_code": 0,
+  "gate_ran": true,
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/a8887f7b-2ccd-4222-9ec7-0b5a099ffc18/scratchpad/gen-backlog-MASTER.py: CREATED by the agent during the run"
+  ],
+  "model": "gpt-5.5",
+  "reason": "3144 chars",
+  "review": "209-r1-codex.md",
+  "schema": 1,
+  "tool": "codex-review"
+}

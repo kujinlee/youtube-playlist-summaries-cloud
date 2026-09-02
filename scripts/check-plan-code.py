@@ -495,6 +495,19 @@ EXPECTED_MUTATIONS = {
     # comprehension instead of calling it, so deleting the real rule left the case green. A
     # second implementation of one rule, tested against itself.
     "scripts/check-selftest-counts.py": 8,
+    # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
+    # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
+    # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree
+    # while BOTH suites read repo files outside it — `gen-backlog-page --self-test` opens
+    # `docs/backlog.md`, and explainer-serve's new source-coverage case stats `docs/`.
+    # MEASURED: `FileNotFoundError: .../tmpw8okpx8z/docs/backlog.md`, 9 files mutated,
+    # 0 mutations run.
+    #
+    # That is a REASON, not an excuse, and it is why neither file was ever in here. Making
+    # them mutable means making their suites runnable outside a checkout — a separate piece
+    # of work. Recorded rather than papered over: shipping a manifest whose suite cannot
+    # execute would report coverage that does not exist, which is the exact failure this
+    # harness was built to prevent.
 }
 
 MANIFEST_DIR = "scripts/mutations"

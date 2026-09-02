@@ -2396,3 +2396,174 @@ and there is nothing to derive it from.
 refusal still only reaches whoever is watching that turn or thinks to press Refresh. Two shapes
 worth considering — have the page state the source commit it was built from, or have a gate compare
 them — but that is a design question, and filing is the user's step.
+
+## 2026-09-02
+The pages can now tell you when they are out of date, instead of sitting there looking current.
+Three changes, all from you asking what the Refresh button actually does.
+
+**The backlog page no longer refuses to build.** Until now, filing a new item and not writing it a
+plain-English summary stopped the page being rebuilt at all — which is how four items went missing
+for a day. Undescribed items now appear in a section that says plainly that nobody has described
+them yet. The pressure to write the summary is still there; it just sits on the page where you can
+see it, rather than in a log line nobody re-reads.
+
+**A page whose server has died now says so.** Previously the page kept quietly retrying forever and
+looked perfectly normal, so a dead server and a healthy one were indistinguishable. After three
+failed checks in a row it says "server not responding — this page may be out of date". Three, not
+one, because a single blip is not worth shouting about and a warning that cries wolf gets ignored.
+
+**A page that has fallen behind its source now says that too.** The page already stamped which
+version of the project it was built from, but nothing compared that to the current state. It does
+now, and says "the backlog file has changed since this page was built — press Refresh".
+
+Together those mean the answer to "is what I am reading current?" is on the page, rather than
+something you have to know to check.
+<!--tech-->
+Branch `feat/page-staleness-visible`, off `d39fa658`. All three approved by the user after the
+`/backlog-table` incident.
+
+**1 — fail-visible.** `undescribed()` split out of `coverage_errors`; `build` appends a synthetic
+final group; `main` re-calls the same pure function to print a `⚠` line, which
+`explainer-serve._regenerate` already forwards to the Refresh button as *"rebuilt WITH A WARNING"*.
+No new channel. ⚠ ONLY the missing half moved — `extra` and `dupes` still refuse, because missing
+means the reader LOSES information while those two mean the page ASSERTS something false.
+
+**2 — the empty catch speaks.** The injected poller counted nothing; now `misses`/`MISS_LIMIT=3`
+writes into `#chrome-refresh-say`, the span the Refresh button already owns.
+
+**3 — `/_stale?p=`.** A DIFFERENT question from `/_rev` ("has the output changed?") so it is a
+different endpoint, not a fourth field. `PAGE_SOURCES` maps page → source; a self-test asserts its
+keys equal `REGENERABLE`'s, because two maps of one thing drift. Fails QUIET on unknown/missing
+sources — a false staleness banner would teach you to ignore the true ones.
+
+⚠ **A defect in my own test, caught before it shipped:** the first draft defined `_stale_verdict`
+INSIDE `self_test` — a second copy of `newest > built` that would have kept passing after the
+handler changed. Extracted to a module-level `stale_verdict` both call. Writing that duplication
+into the test of a duplication fix would have been remarkable.
+
+⚠ **An existing case was REWRITTEN, not deleted:** *"coverage FAILS on an open item nobody
+grouped"* asserted the behaviour being removed. It now asserts the split — `coverage_errors`
+returns `[]`, `undescribed` returns the item — so the record shows the old contract existed and
+the change was deliberate.
+
+⛔ **THE THING I TRIED AND COULD NOT DO, stated because a silent omission here is the whole theme.**
+Neither `explainer-serve.py` nor `gen-backlog-page.py` has ANY mutation coverage, and this slice
+attempted to give them some. Manifests were written, then WITHDRAWN: `mutate_delivered` copies only
+`scripts/` into its temp tree, while both suites read repo files outside it. Measured:
+`FileNotFoundError: …/tmpw8okpx8z/docs/backlog.md`, 9 files mutated, **0 mutations run**. Shipping
+a manifest whose suite cannot execute would report coverage that does not exist — the exact failure
+the harness exists to prevent. Making them mutable means making their suites runnable outside a
+checkout; that is its own piece of work and is NOT done here.
+
+⚠ The harness also refused a redundant mutation for sharing an anchor — correct, and the second
+time today that refusal improved the result. Kept the WEAKER edit (`>` → `>=`) that still fails via
+the case it names.
+
+Counts: `explainer-serve --self-test` 71 → **76**; `gen-backlog-page` 74 → **75**; `gen-dashboard`
+307; `check-plan-code` 158; `EXPECTED_MUTATIONS` **162 unchanged** — deliberately, since the two
+touched files could not join. `--mutate .`: 7 files, 162 mutations, 0 survivors.
+Falsifier, driven against the live server: `/_stale` answered `fresh` → **`stale`** after touching
+`docs/backlog.md` → `fresh` after a rebuild, and `fresh` for an unknown page (no false alarm).
+
+## 2026-09-02 [needs-you]
+PR #209 finally got the review it was missing, and the review was worth running: the new "this page
+is out of date" warning was being wiped out most of the time by the other check running next to it.
+So the feature built to stop a page looking current while stale was itself, intermittently, letting
+a page look current while stale. Fixed and confirmed in a real browser. The page now also names the
+file that actually changed, instead of telling everyone the backlog moved.
+
+**Waiting on you:** PR #209 is ready to merge. I do not merge; that stays your call.
+
+Also filed backlog #86 — the `/clean_gone` repair you asked about lives only in files a plugin
+update will quietly orphan.
+<!--tech-->
+**Round 1, Codex half** — `docs/reviews/209-r1-codex.md`, model `gpt-5.5`, verdict
+`docs/reviews/verdicts/209-r1-codex.verdict.json` (`gate_ran=true`). `gpt-5.6-sol`, `-terra` and
+`-luna` each returned HTTP 400 from the pinned CLI; `scripts/codex-review.py` walked down to a
+working model on its own. A raw `codex exec` would have died on the first one.
+
+⛔ **REVIEW GAP: claude — not invoked** (session instruction forbids unasked subagents). One
+reviewer, not two. Recorded in the review doc rather than papered over.
+
+**High — the stale warning was erased by the liveness poll.** `check()` fires `poll()` and
+`pollStale()` together at a `ThreadingHTTPServer`; `poll()`'s success ran `say('')`, an
+unconditional clear of a status line it shared with `pollStale()`. Last promise to settle won.
+Codex modelled the ordering; I ran it instead, in Chrome, source genuinely touched and `/_stale`
+answering `stale` every time — the warning survived **2 of 6** trials. Fix: neither poll owns the
+string, each owns its own state (`serverMsg`, `staleMsg`) and one `render()` composes them with
+unreachable outranking stale. After: **6 of 6**. ⚠ The rate is measured; the *direction* of the
+bias is NOT — latency sampling (15 pairs, ~1.2–1.6 ms both) does not support the obvious
+"`/_stale` does more `stat()` work" story, and 6 trials cannot separate bias from chance.
+
+**Medium — every page claimed the backlog had changed.** One hardcoded literal against a
+`PAGE_SOURCES` map of three different sources, so `/dashboard` correctly detected staleness and
+then pointed at a file that had not moved. Fixed server-side: `/_stale` now answers
+`stale <repo-relative path>` and the client renders that path. The client already matched with
+`indexOf(...) === 0`, so the suffix needed no protocol change — and `PAGE_SOURCES` stays the single
+source of truth rather than growing a second slug→label map on the client. Verified live:
+`backlog-table → stale docs/backlog.md`, `dashboard → stale docs/dashboard-entries.md`,
+`goals → fresh`, unknown page → `fresh`.
+
+**Low — a case that could not fail for the feature it named.** `"reload client asks /_rev, the only
+endpoint added"` stayed green if the entire `/_stale` poll were deleted, and its name had been
+false since `/_stale` shipped. Renamed and joined by three cases, one asserting the *property*
+(nothing blanks the whole line) rather than the tokens this fix introduced.
+
+⚠ **That new case went red on my own comments, which is the right failure.** Written as a plain
+substring test it matched the prose quoting the old call while explaining its removal — a check
+about code answered by prose. Now strips `//` comments via `_js_code_only`, whose one precondition
+(no `//` inside a string literal) is itself asserted rather than assumed.
+
+**Change 1 independently confirmed, against the real store, by accident of timing.** Filing backlog
+#86 left a genuinely undescribed open item; varying only the code: `master` → `REFUSED … [86]`,
+exit 1, nothing written, page left stale. This branch → `wrote (86 rows, 60 open)`, exit 0, plus
+`⚠ 1 open item(s) have no description in GROUPS: [86]`. Real condition, not a fixture. The control
+needed a `master` worktree — a scratchpad copy died on `ModuleNotFoundError: page_chrome`, then
+`FileNotFoundError: …/scripts/check-docs.py`, which is a **second independent measurement of why
+those two suites cannot join the mutation harness**: neither script is runnable outside a checkout.
+`EXPECTED_MUTATIONS` stays **162**, still deliberately.
+
+Counts: `explainer-serve --self-test` 76 → **80** (declaration updated; `check-selftest-counts.py`
+caught the drift on the first run). Gates green: `check-docs`, `check-review-rounds` (131 rounds,
+0 silent gaps), `check-selftest-counts`, `check-ratchet-contract`, `check-dashboard-entry`,
+`check-plan-code --self-test` 158/158.
+
+## 2026-09-02
+A second review round on PR #209 came back clean apart from one thing, and the one thing was a
+check I had written an hour earlier that could not actually catch what it claimed to. Fixed, with
+a control showing the old version passing the exact case it was supposed to fail on.
+
+PR #209 is still ready and still waiting on you; nothing here changes that.
+<!--tech-->
+Round 2 was **scoped at round 1's own fixes**, not the original change, because this project keeps
+measuring that the next round's findings are regressions from the previous round's fix.
+`docs/reviews/209-r2-codex.md`, model `gpt-5.5`, verdict `gate_ran=true`. **CONVERGED — no
+Blocking, no High, one Low.** `REVIEW GAP: claude` again, recorded not hidden.
+
+**The Low, and it is the interesting one.** Round 1 added `_js_code_only` (strip `//` comments) so
+a check about CODE could not be satisfied by PROSE, and guarded its unsound assumption with
+`"://" not in RELOAD_JS`. Codex produced a counterexample and executed it:
+
+`var path = '//local'; say('')` contains no `://`, so the guard stayed green — while
+`_js_code_only` truncated the line to `var path = '`, deleting a `say('')` that had just
+reintroduced the round-1 High. ⛔ **Same defect class as the finding it was written to prevent:** a
+check answering a narrower question than it claims. `://` was one instance; the class is "a `//`
+the helper thinks is a comment and is not".
+
+Replaced with `_js_strip_is_sound` — quote parity before the first `//`, i.e. the helper's actual
+question. Control run, all five as expected: the counterexample, its double-quoted variant, and the
+URL case the old guard *did* catch all report unsound (nothing lost); an ordinary trailing comment
+and a comment-free line report sound. And the old guard on the counterexample returns **True** —
+the hole, executed rather than asserted. The new predicate also has its own falsifier case, since
+one with no negative case can return a constant unnoticed.
+
+⚠ Residual written into the docstring: it does not model escaped quotes or template literals.
+`RELOAD_JS` has neither. If it grows them, **replace the helper, do not widen it**.
+
+**Found while probing, NOT filed and NOT this branch's.** `GET /_stale?p=%00` closes the connection
+with no response (`curl` 52, `RemoteDisconnected`). Checked before claiming: `/_rev?p=%00`, `/%00`
+and `/dashboard%00` do the same, and `/_rev` predates #209 — pre-existing and server-wide. Every
+other hostile input failed closed to `fresh`, which is the safe direction. Filing is yours.
+
+Counts: `explainer-serve --self-test` 80 → **81**. Gates green: check-docs, check-review-rounds
+(132 rounds, 0 silent gaps, 4 verdicts read), check-selftest-counts, check-ratchet-contract.
