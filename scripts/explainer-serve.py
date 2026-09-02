@@ -63,7 +63,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 80 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 81 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -162,13 +162,41 @@ def _js_code_only(js: str) -> str:
     """`js` with `//` line comments removed, so a check about CODE cannot be answered by PROSE.
 
     ⚠ NAIVE ON PURPOSE — it cuts at the first `//` on each line and knows nothing about string
-    literals or block comments. That is sound for `RELOAD_JS` and nothing else, which is why the
-    self-test asserts the precondition (`"://" not in RELOAD_JS`) rather than trusting it. A
-    real JS parser here would be a second implementation of a language for one substring check.
+    literals or block comments. That is sound for `RELOAD_JS` and nothing else, which is why
+    `_js_strip_is_sound` asserts the precondition rather than trusting it. A real JS parser here
+    would be a second implementation of a language for one substring check.
 
     It exists because the round-1 fix's own guard went red on the comment explaining the fix.
     """
     return "\n".join(line.split("//", 1)[0] for line in js.splitlines())
+
+
+def _js_strip_is_sound(js: str) -> bool:
+    """True when no line's first `//` sits inside an unterminated string literal.
+
+    ⛔ THIS REPLACED A GUARD THAT NAMED ONE EXAMPLE INSTEAD OF THE FAILURE. Round 2 of the
+    PR #209 review (Codex, Low) showed the first version — `"://" not in RELOAD_JS` — was
+    satisfied by code the helper still mangles, and proved it: `_js_code_only` applied to
+
+        var path = '//local'; say('')
+
+    returns `"var path = '"`, so a `say('')` reintroducing the round-1 High would be truncated
+    away and the regression case would pass. `://` is one instance of the class; the class is
+    "a `//` the helper thinks is a comment and is not".
+
+    So: quote parity BEFORE the first `//`. Odd count means we are inside a literal and the
+    strip would cut executable code. Conservative by design — a `//` inside a *balanced* pair
+    on the same line also reports unsound, which fails closed.
+
+    ⚠ RESIDUAL, stated rather than implied: this does not model escaped quotes (`\\'`) or
+    template literals. `RELOAD_JS` contains neither today. If it grows them, this returns a
+    confident answer about a question it can no longer see — replace it, do not widen it.
+    """
+    for line in js.splitlines():
+        head, sep, _rest = line.partition("//")
+        if sep and (head.count("'") % 2 or head.count('"') % 2):
+            return False
+    return True
 
 
 SERVABLE = {".html", ".md", ".css", ".js", ".svg", ".png"}
@@ -1259,13 +1287,21 @@ def _self_test() -> int:
         case("no poll clears the whole status line; each owns its own state",
              lambda: "say('')" not in _js_code_only(RELOAD_JS)
                      and "serverMsg" in RELOAD_JS and "staleMsg" in RELOAD_JS)
-        # ⛔ THE PRECONDITION OF THE STRIP ABOVE, ASSERTED RATHER THAN ASSUMED. `_js_code_only`
-        # cuts at the first `//` on each line, which is wrong if a string literal ever contains
-        # one — `"https://x"` would be truncated mid-literal and the check above would quietly
-        # start reading mangled code. There is no such literal today; if someone adds one, this
-        # fails and points at the stripper instead of letting it rot into a false green.
-        case("_js_code_only is safe here: RELOAD_JS holds no '//' inside a string literal",
-             lambda: "://" not in RELOAD_JS)
+        # ⛔ THE PRECONDITION OF THE STRIP ABOVE, ASSERTED RATHER THAN ASSUMED — AND THE FIRST
+        # VERSION OF IT WAS ITSELF TOO WEAK. It read `"://" not in RELOAD_JS`, which names one
+        # EXAMPLE (a URL) rather than the failure CLASS. Round 2 of the PR #209 review proved
+        # the gap: `var path = '//local'; say('')` contains no `://`, so that guard stayed
+        # green while `_js_code_only` truncated the line to `var path = '` — deleting a
+        # `say('')` that had just reintroduced the round-1 High. The regression case above
+        # would have passed over the exact defect it exists to catch.
+        case("_js_code_only is sound here: no line's first '//' sits inside a string literal",
+             lambda: _js_strip_is_sound(RELOAD_JS))
+        # The falsifier for the guard itself: the round-2 counterexample must be REJECTED, and
+        # an ordinary trailing comment must still be ACCEPTED. Without this pair the predicate
+        # could return a constant and nothing would notice.
+        case("that soundness check REJECTS the round-2 counterexample and ACCEPTS real code",
+             lambda: _js_strip_is_sound("var path = '//local'; say('')") is False
+                     and _js_strip_is_sound("var a = '';   // owned by poll()") is True)
         # ⛔ THE DEFECT THE FIRST VERSION SHIPPED WITH. An interval alone is throttled to ~1/min in a
         # HIDDEN tab, which is the only state that matters here: the reader asks, switches away, and
         # comes back. Reported by the reader 2026-08-18 — "I had to manually refresh".

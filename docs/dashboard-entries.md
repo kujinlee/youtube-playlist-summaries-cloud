@@ -2527,3 +2527,43 @@ Counts: `explainer-serve --self-test` 76 → **80** (declaration updated; `check
 caught the drift on the first run). Gates green: `check-docs`, `check-review-rounds` (131 rounds,
 0 silent gaps), `check-selftest-counts`, `check-ratchet-contract`, `check-dashboard-entry`,
 `check-plan-code --self-test` 158/158.
+
+## 2026-09-02
+A second review round on PR #209 came back clean apart from one thing, and the one thing was a
+check I had written an hour earlier that could not actually catch what it claimed to. Fixed, with
+a control showing the old version passing the exact case it was supposed to fail on.
+
+PR #209 is still ready and still waiting on you; nothing here changes that.
+<!--tech-->
+Round 2 was **scoped at round 1's own fixes**, not the original change, because this project keeps
+measuring that the next round's findings are regressions from the previous round's fix.
+`docs/reviews/209-r2-codex.md`, model `gpt-5.5`, verdict `gate_ran=true`. **CONVERGED — no
+Blocking, no High, one Low.** `REVIEW GAP: claude` again, recorded not hidden.
+
+**The Low, and it is the interesting one.** Round 1 added `_js_code_only` (strip `//` comments) so
+a check about CODE could not be satisfied by PROSE, and guarded its unsound assumption with
+`"://" not in RELOAD_JS`. Codex produced a counterexample and executed it:
+
+`var path = '//local'; say('')` contains no `://`, so the guard stayed green — while
+`_js_code_only` truncated the line to `var path = '`, deleting a `say('')` that had just
+reintroduced the round-1 High. ⛔ **Same defect class as the finding it was written to prevent:** a
+check answering a narrower question than it claims. `://` was one instance; the class is "a `//`
+the helper thinks is a comment and is not".
+
+Replaced with `_js_strip_is_sound` — quote parity before the first `//`, i.e. the helper's actual
+question. Control run, all five as expected: the counterexample, its double-quoted variant, and the
+URL case the old guard *did* catch all report unsound (nothing lost); an ordinary trailing comment
+and a comment-free line report sound. And the old guard on the counterexample returns **True** —
+the hole, executed rather than asserted. The new predicate also has its own falsifier case, since
+one with no negative case can return a constant unnoticed.
+
+⚠ Residual written into the docstring: it does not model escaped quotes or template literals.
+`RELOAD_JS` has neither. If it grows them, **replace the helper, do not widen it**.
+
+**Found while probing, NOT filed and NOT this branch's.** `GET /_stale?p=%00` closes the connection
+with no response (`curl` 52, `RemoteDisconnected`). Checked before claiming: `/_rev?p=%00`, `/%00`
+and `/dashboard%00` do the same, and `/_rev` predates #209 — pre-existing and server-wide. Every
+other hostile input failed closed to `fresh`, which is the safe direction. Filing is yours.
+
+Counts: `explainer-serve --self-test` 80 → **81**. Gates green: check-docs, check-review-rounds
+(132 rounds, 0 silent gaps, 4 verdicts read), check-selftest-counts, check-ratchet-contract.
