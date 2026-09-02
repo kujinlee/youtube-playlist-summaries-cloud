@@ -446,7 +446,15 @@ EXPECTED_MUTATIONS = {
     # and its budget, gh shape validation, and — on the gate — the decision grammar
     # including the NESTING rule, whose absence silently dropped every option after a
     # 4-space nest.
-    "scripts/gen-dashboard.py": 67,
+    # ⟳ 2026-09-01, the block-start divergence: gen-dashboard 67 -> 68. The ENTRY
+    # GATE's count does NOT move in the same change, and the asymmetry is the point.
+    # `BLOCK` RELOCATED into check-dashboard-entry.py, so its existing mutation was
+    # retargeted there (a retarget, not an addition — same count, 29); what is NEW
+    # is a mutation on the seam itself, restoring the page's private copy of the
+    # rule. That copy is what the defect WAS, and scanning the manifest to repair
+    # the orphaned anchor showed the page's `BLOCK` had never had a mutation at all
+    # — the regex at the centre of the bug was the one thing nothing measured.
+    "scripts/gen-dashboard.py": 68,
     "scripts/page_markup.py": 14,
     # ⟳ 2026-09-01, backlog #78: 18 -> 23. The entry gate now answers TWO questions
     # instead of one — "does this branch owe an entry?" (unchanged) and "is the entry
@@ -454,7 +462,14 @@ EXPECTED_MUTATIONS = {
     # which is the most common way an entry is written). THREE of the five mutations
     # are on the WIRING, not the predicate: `added_entry_problems` can be perfectly
     # correct and never called, and the pure cases stay green either way.
-    "scripts/check-dashboard-entry.py": 29,
+    # ⟳ 2026-09-01, the block-start divergence: 29 -> 30. The BLOCK mutation was a
+    # RETARGET (count unmoved, so a relocation cannot read as new coverage); this +1
+    # is a genuinely new guard, added by the Claude review half after the Codex half
+    # rated the agreement case Low. It restores a HAND-WRITTEN `ENTRY_ISH`, which the
+    # BLOCK mutation provably cannot reach: corrupting the shared rule moves both
+    # sides together and leaves the agreement case green. Only breaking the
+    # DERIVATION separates them, and that is the regression the seam exists to stop.
+    "scripts/check-dashboard-entry.py": 30,
     "scripts/check-plan-code.py": 21,
     # ⟳ 2026-08-31, backlog #76/#77: the shared page chrome. Adding it found TWO
     # vacuous cases of my own — a "dirty tree" assertion compared against a
@@ -1968,7 +1983,17 @@ def _self_test() -> int:
     # This literal is a SECOND, independent statement of the total, and that is the
     # point: moving a per-file count without it makes the control refuse to run
     # rather than silently re-baselining. It did exactly that here.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 154)
+    # ⟳ 154 -> 156, the block-start divergence. TWO entries, and neither is the
+    # relocation: `BLOCK`'s existing mutation was RETARGETED onto its new home rather
+    # than duplicated, so a move cannot read as new coverage. The two additions are
+    # the two ways the seam can be undone, and they are NOT redundant —
+    #   (1) gen-dashboard takes back a private copy of the rule (the original defect);
+    #   (2) check-dashboard-entry re-types ENTRY_ISH instead of deriving it.
+    # Corrupting the SHARED rule cannot stand in for either: it moves both sides
+    # together, so the agreement case stays green. Only breaking the derivation
+    # separates them. (2) came from the Claude review half answering the Codex half's
+    # Low — the agreement case was load-bearing and nothing proved it fired.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 156)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so

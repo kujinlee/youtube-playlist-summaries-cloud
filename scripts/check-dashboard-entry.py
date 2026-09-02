@@ -24,6 +24,29 @@ NO_ENTRY = "NO-ENTRY:"
 # ─── the entry-header grammar — ONE definition, imported by scripts/gen-dashboard.py
 HEADER = re.compile(r"^## (\S+)(.*)$")
 FLAG = re.compile(r"\[(needs-you|heads-up|resolved:\s*[^\]]*)\]")
+# What starts an entry block in the store — and read the name as block-ATTEMPT,
+# not as a transcription of spec §6.2's "Block start" row. §6.2 defines a block
+# start as `## ` at column 0 WITH the space; this is deliberately WIDER, and the
+# gap is the parser's recovery policy, not the grammar. Saying so because the
+# earlier framing implied exact §6.2 compliance and it does not have it.
+#
+# Where it is FAITHFUL to §6.2 is the part that was broken: row "`##` inside
+# detail" reads "only column-0 `## ` splits blocks", so a `###` line is body
+# markup. `(?!#)` is that rule's teeth.
+#
+# ⟳ MOVED HERE 2026-09-01. It lived in `gen-dashboard.py` as `^##\s*\S`, which
+# MATCHES `### Worth knowing` — `\s*` takes zero characters and `\S` takes the
+# third `#`. Two hand-written near-copies of one grammar, and they diverged on
+# exactly the input the gate's `(?!#)` was written to exclude. Measured cost, end
+# to end: a level-3 heading in a body did not merely add a "could not parse" card,
+# it SPLIT the entry — the prose after it was swallowed into the orphan block and
+# the entry above rendered TRUNCATED, losing content with no error next to it.
+#
+# It stays PERMISSIVE about the space (`##Nospace` still starts a block) on
+# purpose: that is a near-miss header, and swallowing one into the previous
+# entry's body is the silent failure this whole gate exists to prevent. `###` is
+# different in kind — it is markup an author writes deliberately, not a typo.
+BLOCK = re.compile(r"^##(?!#)\s*\S")
 
 
 def valid_date(s: str) -> bool:
@@ -353,10 +376,21 @@ def _is_exempt(path: str) -> bool:
     return path in EXEMPT_FILES or any(path.startswith(d) for d in EXEMPT_DIRS)
 
 
-# An ADDED line trying to be an entry header. `(?!#)` keeps `###` out: a level-3
-# heading is ordinary body markup and several entries use one, so treating it as a
-# failed entry header would refuse them.
-ENTRY_ISH = re.compile(r"^\+##(?!#)")
+# An ADDED line trying to be an entry header: `BLOCK`, in its diff-line form.
+#
+# ⛔ DERIVED, NOT RE-TYPED — and the reason is measured, not stylistic. This was
+# hand-written as `^\+##(?!#)` next to a hand-written `^##\s*\S` in the page, and
+# the pair silently disagreed about `###` for as long as both existed. Anything
+# spelled out here again is a third copy free to drift; the only way the gate and
+# the page cannot answer "does this line start an entry?" differently is for one
+# of them not to hold an opinion.
+#
+# ⚠ The previous comment justified `(?!#)` with "several entries use one".
+# That was FALSE when written: `grep -c '^###' docs/dashboard-entries.md` → 0.
+# The real justification is spec §6.2, quoted at `BLOCK` — a `###` line is body
+# markup, and no live entry depends on either reading, which is precisely why the
+# divergence survived. The rule is right; only its stated evidence was invented.
+ENTRY_ISH = re.compile(r"^\+" + BLOCK.pattern.removeprefix("^"))
 
 
 def added_entry_problems(patch: str) -> list[str]:
@@ -470,10 +504,31 @@ def _self_test() -> int:
          added_entry_problems("-## 2026-02-30\n"), [])
     case("a CONTEXT line is not an added line",
          added_entry_problems(" ## 2026-02-30\n"), [])
-    # ⚠ `###` is a sub-heading inside a body, NOT a failed entry header. Flagging it
-    # would refuse every entry that uses one, which several already do.
+    # ⚠ `###` is a sub-heading inside a body, NOT a failed entry header — spec §6.2
+    # says only column-0 `## ` splits blocks. (The comment here used to justify that
+    # with "several entries use one"; measured, `grep -c '^###'` on the store is 0.
+    # The rule is right, its stated evidence was invented, and the real evidence is
+    # the spec plus the truncation the divergence caused — quoted at `BLOCK`.)
     case("a level-3 heading is not an entry attempt",
          added_entry_problems("+### Worth knowing\n"), [])
+    # ⛔ THE DIVERGENCE ITSELF, asserted on the OBJECT both sides now share rather
+    # than on either side's behaviour. The case above passed for months while the
+    # page disagreed, because nothing compared them — that is the whole defect, and
+    # a test of one half could not have caught it.
+    case("the block-start rule excludes a sub-heading", bool(BLOCK.match("### Worth knowing")), False)
+    case("...and still starts on a real header", bool(BLOCK.match("## 2026-08-28")), True)
+    case("...and still catches a missing space", bool(BLOCK.match("##2026-08-28")), True)
+    # ⚠ Asserts the PROPERTY — the two rules answer alike on every shape — not the
+    # mechanism. Comparing `ENTRY_ISH.pattern` to a derived string was the first
+    # draft; it pins today's spelling and would go red on a legitimate re-spelling
+    # while staying green for any shape the corpus does not name. This form is what
+    # actually failed: the pair agreed on all four of these EXCEPT `###`.
+    _agree = [(ln, bool(BLOCK.match(ln)) == bool(ENTRY_ISH.match("+" + ln)))
+              for ln in ["## 2026-08-28", "## 2026-08-28 [needs-you]", "##2026-08-28",
+                         "### Worth knowing", "#### deeper", "## ", "  ## indented",
+                         "ordinary body prose"]]
+    case("the gate and the page agree on every block-start shape",
+         [ln for ln, same in _agree if not same], [])
     case("the message names the offending header",
          "2026-02-30" in added_entry_problems("+## 2026-02-30\n")[0], True)
     # The whole point: this fires on an ENTRY-ONLY branch, where `real` is empty.
