@@ -2671,3 +2671,57 @@ gate's CALL to the shared rule, one on the COMPOSITION (that the three rules are
 
 Gates: check-docs, check-review-rounds, check-selftest-counts, check-ratchet-contract,
 check-dashboard-entry all green; `check-dashboard-entry --self-test` 123 → **127**.
+
+## 2026-09-02 [resolved: 2026-09-02/3]
+All three pull requests merged, so nothing is waiting on you any more — that item is closed here.
+
+Then I audited the backlog for rows that were already fixed but still marked open, and found two.
+The honest part: I found them because you asked me to look, not because anything in the repo could
+have told you. A finished piece of work can sit on the list as outstanding indefinitely and no
+check notices.
+
+Open items: **60 → 59**. High-severity: **20 → 18**.
+<!--tech-->
+**Merged:** #209 → `e18cc83f`, #210 → `b3d44f09`, #211 → `7a99fb2e`. Branch protection now requires
+the `verify` check on `master`, with `enforce_admins` on. Proven rather than assumed: a throwaway PR
+showed `mergeStateStatus=BLOCKED` with `verify:QUEUED`, and a merge attempt was refused with *"the
+base branch policy prohibits the merge"*. PR closed, branch deleted.
+
+**Re-tagged CLOSED, with evidence:**
+
+- **#71** — `scripts/page_markup.py` shipped in PR #180 (`0972c55e`, *"One renderer for four pages"*),
+  and grepping every generator for a private inline renderer returns nothing; all four delegate.
+  Tasks T1–T4 all closed. The row had said OPEN for **three days** after the fix landed.
+- **#84** — the parser half shipped in PR #206 (`parse_entries` asks `fenced_lines`, 3 call sites)
+  and the CLASS closed today in PR #211. Its own GROUPS prose already said *"Fixed and merged; the
+  row stays for the record"* — the prose knew, the row did not.
+
+⚠ **Also corrected: #68 was never open.** Its status cell leads `✅ CLOSED 2026-09-01`. My first
+audit script counted it as open because it substring-matched the word "OPEN" inside 400 characters
+of prose — the same wrong-population mistake this project keeps recording, this time in my own
+instrument. Two further hand-rolled counts also disagreed (32, then 62) before I stopped guessing
+and called `gen-backlog-page.parse()`, whose answer cross-checks against the page footer exactly.
+**The only trustworthy count came from the consumer that already computes it.**
+
+⚠ **And the repo caught me twice more, which is the encouraging part.** `gen-backlog-page.py`
+refused to build because `GROUPS` still described two now-closed items — the coverage check is
+bidirectional, not just "every open item is described". Then `check-docs.py` refused because both
+rows still LED with 🟠 while their status said `✅`, and it named the reason: *"a severity scan will
+count it as open"*. That is exactly the bug my audit script had. The convention already knew.
+
+**Filed: #87** 🟢 — a NUL byte in any query makes the explainer server close the connection with no
+response (`curl` 52, `RemoteDisconnected`). Checked before blaming the new endpoint: `/_rev?p=%00`,
+`/%00` and `/dashboard%00` do the same and `/_rev` predates #209, so it is pre-existing and
+server-wide. Every other hostile input in that sweep failed CLOSED to `fresh`, the safe direction.
+🟢 because it binds 127.0.0.1 only, fails closed, the server survives, and nobody types a NUL byte
+into a URL.
+
+⚠ **NOT decided, left for you:** **#41** (M3.1-B prod read-only smoke) says *"NO LONGER GATES M3"*
+and its task is marked completed, but the row keeps itself open for the smoke test itself. That is
+a judgement call about scope, not a stale tag, so I have not touched it.
+
+**What the tooling lane actually contains, after the audit:** **#67** (concurrent-agent
+interference — the rule is in the wrong place and names deleted scripts), **#72** (the guard
+inventory cannot see a guard that is not NAMED like one), and **#78 half (2)** (the entry gate runs
+on `pull_request` while the skill regenerates the page immediately). Three items, not the five it
+looked like this morning.

@@ -234,11 +234,6 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
              "been engineered out. What is left is that the warning about it sits in a comment "
              "inside one script, names two scripts that no longer exist, and is absent from the "
              "document where the decision to run two helpers is actually made."),
-        (71, "Four of the pages this project generates — including this one — each turn markdown "
-             "into HTML with their own separate code, and they no longer agree. On this page it "
-             "shows: a piece of SQL renders with a character swallowed, and file paths lose the "
-             "asterisks in them. The fix that removes it already exists in a fourth generator and "
-             "cannot be reached from the other three."),
         (72, "The inventory that polices our safety checks cannot see one that is not NAMED like "
              "one. It says in writing that it catches a check even before anyone wires it up; that "
              "second route is unreachable, and was measured to be."),
@@ -257,11 +252,6 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
         (83, "A settled item tells you it was decided but never what was decided, and the card "
              "carrying it still wears the styling of something live. Two small things, one "
              "effect: you cannot tell from the page which questions are actually closed."),
-        (84, "The guide for writing these entries says you may put an example in a code block "
-             "and the page will leave it alone. The page had no idea what a code block was, so "
-             "one example could cut an entry in half and quietly take the identifier belonging "
-             "to the next one — and those identifiers are how an entry says which earlier "
-             "question it answers. Fixed and merged; the row stays for the record."),
         (85, "Three separate pieces of that same machinery each work out for themselves what a "
              "code block is, and only one of them is the shared version. Nothing is broken "
              "today and the part the page uses is the correct one — but these copies have "
@@ -271,6 +261,10 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
              "clean up” on a repository full of dead branches — and reads as success. The "
              "durable copy now lives in this repository; what is left is confirming whether it "
              "actually takes precedence over the plugin's own version."),
+        (87, "Sending a deliberately malformed web address to the local page server makes it hang up "
+             "instead of answering. Nothing a person would ever type, nothing reachable from another "
+             "machine, and it fails in the safe direction — but a connection that dies without saying "
+             "anything is the kind of thing that costs someone an afternoon one day."),
      ]),
 ]
 
