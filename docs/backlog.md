@@ -139,3 +139,5 @@ Possible minor follow-up: strip markdown code fences / handle leading `[` before
 
 ## Notes
 - All near-term bundles stack on PR #3 (`feat/summary-deepdive-quality`) → merge order: #1 timestamps → #2 versioned-regen → #3 quality-pass → A → B …
+
+<!-- branch-protection falsifier, deleted immediately -->
