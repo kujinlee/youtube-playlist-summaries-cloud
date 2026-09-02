@@ -177,6 +177,61 @@ def _declaration_reason(s: str) -> str | None:
     return rest.strip()
 
 
+def fenced_lines(text: str) -> set[int]:
+    """Indices of every line a Markdown reader shows as fenced code, the fence
+    markers themselves included.
+
+    ⟳ EXTRACTED 2026-09-01, backlog #84. It was written out by hand inside
+    `_inert_lines`, and a THIRD copy was about to be written inside the page's
+    `parse_entries`. Two hand-written copies of one rule have already drifted once
+    in this very file — the `startswith` note beside `_inert_lines` records a real
+    decision parsing as inert because of it.
+
+    ⛔ WHY `parse_entries` GETS THIS AND NOT `_inert_lines`, WHICH IT WOULD BE
+    CHEAPER TO REUSE. `_inert_lines` deliberately OVER-approximates: any line
+    carrying `<!--` with no `-->` opens a comment that runs to the end of input.
+    For deciding "is there an ask here?" that fails SAFE — an over-marked line is
+    merely not read as a decision. For deciding "does a block start here?" it fails
+    DANGEROUS: the entry disappears.
+
+    Not hypothetical, measured on the real store the first time this was wired that
+    way: entry `2026-09-01/16` VANISHED (47 entries -> 46). The culprit is line 1924
+    of `docs/dashboard-entries.md`, an entry that mentions `<!--` in prose while
+    explaining this very machinery, with no `-->` after it. One entry describing a
+    comment marker silently deleted every entry that followed it.
+
+    So the two consumers need genuinely different questions answered, and this is
+    the narrow one: FENCES ONLY, no comments, no blockquotes, no indent.
+
+    CommonMark, and each rule cost a measured escape in `exemption_reason` before it
+    was written down: a fence closes only on its OWN character (``` is not closed by
+    ~~~), and the closer must be AT LEAST AS LONG as the opener, so a 3-backtick line
+    cannot close a 5-backtick block.
+
+    ⚠ THE TWO CLOSING RULES ARE SEPARATE STATEMENTS ON PURPOSE. Written as one
+    `and`-chain they share a single mutation anchor, and the harness refused the pair
+    — "it measures nothing new" — which is right: one line cannot show that BOTH
+    rules are load-bearing. Splitting them is not style, it is what makes each
+    independently falsifiable.
+    """
+    out: set[int] = set()
+    fence = None
+    for i, line in enumerate(text.split("\n")):
+        m = FENCE.match(line)
+        if fence is not None:
+            out.add(i)
+            if m:
+                same_char = m.group("ch")[0] == fence[0]
+                long_enough = len(m.group("ch")) >= len(fence)
+                if same_char and long_enough:
+                    fence = None
+            continue
+        if m:
+            fence = m.group("ch")
+            out.add(i)
+    return out
+
+
 def exemption_reason(pr_body: str) -> str | None:
     """The reason after a line-leading `NO-ENTRY:`, or None.
 
@@ -529,6 +584,30 @@ def _self_test() -> int:
                          "ordinary body prose"]]
     case("the gate and the page agree on every block-start shape",
          [ln for ln, same in _agree if not same], [])
+
+    # ─── backlog #84: fenced_lines, the scanner the PAGE's parser asks ───────
+    case("a fence opens and closes", sorted(fenced_lines("a\n```\nx\n```\nb\n")), [1, 2, 3])
+    case("the fence markers are themselves fenced",
+         1 in fenced_lines("a\n```\nx\n```\n") and 3 in fenced_lines("a\n```\nx\n```\n"), True)
+    # ⚠ No trailing newline on the two UNCLOSED probes. `"…\n".split("\n")` yields a
+    # final empty line, and an unclosed fence genuinely swallows it — correct, but it
+    # made the expectation a statement about `split` rather than about the rule.
+    case("``` is NOT closed by ~~~",
+         sorted(fenced_lines("a\n```\nx\n~~~\ny")), [1, 2, 3, 4])
+    case("a SHORT inner fence does not close a longer one",
+         sorted(fenced_lines("a\n`````\n```\nx\n`````\nb\n")), [1, 2, 3, 4])
+    case("an unclosed fence runs to the end", sorted(fenced_lines("a\n```\nx\ny")), [1, 2, 3])
+    case("no fence, nothing marked", fenced_lines("a\nb\n## 2026-08-28\n"), set())
+    # ⛔ THE WHOLE REASON THIS FUNCTION EXISTS RATHER THAN REUSING `_inert_lines`.
+    # An unclosed `<!--` makes `_inert_lines` mark everything after it — correct for
+    # "is there an ask here?" (fails safe), catastrophic for "does a block start
+    # here?" (the entry vanishes). MEASURED: wiring the parser to `_inert_lines`
+    # deleted entry 2026-09-01/16 from the live store, because an earlier entry
+    # mentions `<!--` in prose while explaining this machinery.
+    _trap = "a\nI mention `<!--` in prose.\n## 2026-08-28\n"
+    case("prose mentioning an unclosed <!-- is NOT fenced", fenced_lines(_trap), set())
+    case("...and _inert_lines DOES swallow it — the difference is the point",
+         2 in _inert_lines(_trap), True)
     case("the message names the offending header",
          "2026-02-30" in added_entry_problems("+## 2026-02-30\n")[0], True)
     # The whole point: this fires on an ENTRY-ONLY branch, where `real` is empty.

@@ -2184,3 +2184,64 @@ derivation guard the review added. `--mutate .`: 7 files, **156 mutations, 0 sur
 All guard self-tests green; `check-selftest-counts`, `check-docs`, `check-anchors`,
 `check-ratchet-contract`, `check-review-rounds` green on real runs.
 Falsifier: rendered page byte-identical before and after (958,032 bytes both).
+
+## 2026-09-01
+The spec told entry authors they could fence a code example. The parser never learned to read fences, so one example could quietly delete every entry after it.
+Entries are written in a file, and the page splits that file into cards wherever a line begins a
+new entry. The guide for writing them says: if you want to *show* what an entry header looks like,
+put it in a code block and the page will leave it alone. The page never did leave it alone. It had
+no idea what a code block was.
+
+So an entry containing a code example got cut in half, and the example itself became a card of its
+own — a real-looking one, with a real date, no error on it. It also took the identifier that the
+next real entry should have had. Those identifiers are how one entry says *"this answers the thing
+you were asked about on Tuesday"*, so a stray example could point that answer at the wrong item, or
+leave a question sitting in "what needs you" forever.
+
+Nothing you have read was affected — no entry had ever used a fenced example until the one written
+yesterday, which is how this was found. The fix teaches the page what a code block is, using the
+rules the pull-request checker already knew.
+
+Worth knowing, because it says something about how these fixes go wrong: the first version of this
+fix looked correct, passed, and **deleted a real entry from the page**. Caught by counting the
+entries before and after rather than by reading the code.
+<!--tech-->
+Backlog #84. Branch `fix-parser-fence-blindness`. Closes the third Blocking from PR #205's review
+round 1, deferred there by agreement and filed with the user's approval.
+
+**CONTROL, run before the fix and quoted rather than characterised:**
+
+    backtick fence   entries=2 ids=['2026-08-28/1','2026-08-29/1'] errors=0 tail_kept=False
+    tilde fence      entries=2 ids=['2026-08-28/1','2026-08-29/1'] errors=0 tail_kept=False
+    indented         entries=1 ids=['2026-08-28/1']                errors=0 tail_kept=True
+
+⚠ **Note `errors=0`.** The phantom is not a visible "could not parse" card — it is a fully VALID
+entry holding a real id, rendering like any other. My backlog filing said otherwise, having only
+seen the variant whose header carried trailing text. A regression case asserting only "no error"
+would have passed ON THE BUG; the id list is what discriminates.
+
+**⛔ THE FIRST CUT WAS WRONG IN THE OTHER DIRECTION, AND IT REACHED THE LIVE STORE.** `parse_entries`
+was wired to the gate's `_inert_lines`, which was cheaper reuse and looked equivalent — a probe over
+blockquote, indent and fence shapes showed the only newly-suppressed line was the fenced header.
+**That probe had no HTML comment in it.** Run against the real store: **47 entries → 46. Entry
+2026-09-01/16 VANISHED** — line 1924 of this file mentions `` `<!--` `` in prose while explaining
+this machinery, `_inert_lines` treats an unclosed `<!--` as running to end-of-input, and everything
+after it disappeared. Over-approximating fails SAFE for *"is there an ask here?"* and DANGEROUS for
+*"does a block start here?"*. A measurement is only as good as its corpus.
+
+**THE SEAM.** `fenced_lines()` EXTRACTED into `check-dashboard-entry.py` beside `FENCE`; the page
+binds `_FENCED_LINES = _GATE.fenced_lines` as **required**, not `getattr`-optional — losing it does
+not degrade, it silently mints phantom entries. Deliberately NOT a third hand-written scanner: this
+file already carries two (`exemption_reason`, `_inert_lines`) which have drifted once before, per
+the `startswith` note. Same shape as PR #205, one seam over.
+
+⚠ **The harness refused the first mutation pair** — *"it measures nothing new"* — because both fence
+rules sat in one `and`-chain sharing an anchor. Correct refusal, and it improved the design for the
+second time today: the closing test is now two named decisions (`same_char`, `long_enough`), each
+independently falsifiable.
+
+Counts: `check-dashboard-entry --self-test` 112 → **120** + 13; `gen-dashboard` 301 → **307**;
+`EXPECTED_MUTATIONS` 156 → **161** (gate 30 → 33, gen-dashboard 68 → 70). Five mutations, and the
+split is the point: three pin the extracted scanner's rules, two pin BOTH directions the parser can
+fail — under-rejecting (fence-blind) and over-rejecting (the `_inert_lines` wiring that deleted a
+live entry). `--mutate .`: 7 files, **161 mutations, 0 survivors**.

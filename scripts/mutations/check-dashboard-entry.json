@@ -369,5 +369,47 @@
       "the gate and the page agree on every block-start shape",
       "a level-3 heading is not an entry attempt"
     ]
+  },
+  {
+    "name": "fence closes on the WRONG character",
+    "file": "scripts/check-dashboard-entry.py",
+    "_note": "backlog #84. `exemption_reason` paid for this rule with a measured escape before it was written down; the extracted scanner must keep it or the page inherits the same hole one seam over.",
+    "edits": [
+      [
+        "                same_char = m.group(\"ch\")[0] == fence[0]",
+        "                same_char = True"
+      ]
+    ],
+    "expect": [
+      "``` is NOT closed by ~~~"
+    ]
+  },
+  {
+    "name": "fence LENGTH ignored in the extracted scanner",
+    "file": "scripts/check-dashboard-entry.py",
+    "_note": "backlog #84. CommonMark: a closer is at least as long as the opener. Dropping it lets a 3-backtick line close a 5-backtick block — exactly the shape anyone quoting markdown-inside-markdown writes, and the SKILL teaches people to quote it.",
+    "edits": [
+      [
+        "                long_enough = len(m.group(\"ch\")) >= len(fence)",
+        "                long_enough = True"
+      ]
+    ],
+    "expect": [
+      "a SHORT inner fence does not close a longer one"
+    ]
+  },
+  {
+    "name": "the scanner stops marking the fence MARKERS themselves",
+    "file": "scripts/check-dashboard-entry.py",
+    "_note": "backlog #84. The opening marker line must be in the set: a ``` line is not an entry header, but leaving it out is the kind of off-by-one that only shows up on a store nobody re-reads.",
+    "edits": [
+      [
+        "        if m:\n            fence = m.group(\"ch\")\n            out.add(i)",
+        "        if m:\n            fence = m.group(\"ch\")"
+      ]
+    ],
+    "expect": [
+      "a fence opens and closes"
+    ]
   }
 ]
