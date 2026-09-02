@@ -2464,3 +2464,66 @@ Counts: `explainer-serve --self-test` 71 → **76**; `gen-backlog-page` 74 → *
 touched files could not join. `--mutate .`: 7 files, 162 mutations, 0 survivors.
 Falsifier, driven against the live server: `/_stale` answered `fresh` → **`stale`** after touching
 `docs/backlog.md` → `fresh` after a rebuild, and `fresh` for an unknown page (no false alarm).
+
+## 2026-09-02 [needs-you]
+PR #209 finally got the review it was missing, and the review was worth running: the new "this page
+is out of date" warning was being wiped out most of the time by the other check running next to it.
+So the feature built to stop a page looking current while stale was itself, intermittently, letting
+a page look current while stale. Fixed and confirmed in a real browser. The page now also names the
+file that actually changed, instead of telling everyone the backlog moved.
+
+**Waiting on you:** PR #209 is ready to merge. I do not merge; that stays your call.
+
+Also filed backlog #86 — the `/clean_gone` repair you asked about lives only in files a plugin
+update will quietly orphan.
+<!--tech-->
+**Round 1, Codex half** — `docs/reviews/209-r1-codex.md`, model `gpt-5.5`, verdict
+`docs/reviews/verdicts/209-r1-codex.verdict.json` (`gate_ran=true`). `gpt-5.6-sol`, `-terra` and
+`-luna` each returned HTTP 400 from the pinned CLI; `scripts/codex-review.py` walked down to a
+working model on its own. A raw `codex exec` would have died on the first one.
+
+⛔ **REVIEW GAP: claude — not invoked** (session instruction forbids unasked subagents). One
+reviewer, not two. Recorded in the review doc rather than papered over.
+
+**High — the stale warning was erased by the liveness poll.** `check()` fires `poll()` and
+`pollStale()` together at a `ThreadingHTTPServer`; `poll()`'s success ran `say('')`, an
+unconditional clear of a status line it shared with `pollStale()`. Last promise to settle won.
+Codex modelled the ordering; I ran it instead, in Chrome, source genuinely touched and `/_stale`
+answering `stale` every time — the warning survived **2 of 6** trials. Fix: neither poll owns the
+string, each owns its own state (`serverMsg`, `staleMsg`) and one `render()` composes them with
+unreachable outranking stale. After: **6 of 6**. ⚠ The rate is measured; the *direction* of the
+bias is NOT — latency sampling (15 pairs, ~1.2–1.6 ms both) does not support the obvious
+"`/_stale` does more `stat()` work" story, and 6 trials cannot separate bias from chance.
+
+**Medium — every page claimed the backlog had changed.** One hardcoded literal against a
+`PAGE_SOURCES` map of three different sources, so `/dashboard` correctly detected staleness and
+then pointed at a file that had not moved. Fixed server-side: `/_stale` now answers
+`stale <repo-relative path>` and the client renders that path. The client already matched with
+`indexOf(...) === 0`, so the suffix needed no protocol change — and `PAGE_SOURCES` stays the single
+source of truth rather than growing a second slug→label map on the client. Verified live:
+`backlog-table → stale docs/backlog.md`, `dashboard → stale docs/dashboard-entries.md`,
+`goals → fresh`, unknown page → `fresh`.
+
+**Low — a case that could not fail for the feature it named.** `"reload client asks /_rev, the only
+endpoint added"` stayed green if the entire `/_stale` poll were deleted, and its name had been
+false since `/_stale` shipped. Renamed and joined by three cases, one asserting the *property*
+(nothing blanks the whole line) rather than the tokens this fix introduced.
+
+⚠ **That new case went red on my own comments, which is the right failure.** Written as a plain
+substring test it matched the prose quoting the old call while explaining its removal — a check
+about code answered by prose. Now strips `//` comments via `_js_code_only`, whose one precondition
+(no `//` inside a string literal) is itself asserted rather than assumed.
+
+**Change 1 independently confirmed, against the real store, by accident of timing.** Filing backlog
+#86 left a genuinely undescribed open item; varying only the code: `master` → `REFUSED … [86]`,
+exit 1, nothing written, page left stale. This branch → `wrote (86 rows, 60 open)`, exit 0, plus
+`⚠ 1 open item(s) have no description in GROUPS: [86]`. Real condition, not a fixture. The control
+needed a `master` worktree — a scratchpad copy died on `ModuleNotFoundError: page_chrome`, then
+`FileNotFoundError: …/scripts/check-docs.py`, which is a **second independent measurement of why
+those two suites cannot join the mutation harness**: neither script is runnable outside a checkout.
+`EXPECTED_MUTATIONS` stays **162**, still deliberately.
+
+Counts: `explainer-serve --self-test` 76 → **80** (declaration updated; `check-selftest-counts.py`
+caught the drift on the first run). Gates green: `check-docs`, `check-review-rounds` (131 rounds,
+0 silent gaps), `check-selftest-counts`, `check-ratchet-contract`, `check-dashboard-entry`,
+`check-plan-code --self-test` 158/158.

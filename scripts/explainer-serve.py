@@ -63,7 +63,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 76 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 80 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -156,6 +156,21 @@ def stale_verdict(built_ns: int, newest_source_ns: int) -> str:
     stale, and a banner that is always lit is one nobody reads.
     """
     return "stale" if newest_source_ns > built_ns else "fresh"
+
+
+def _js_code_only(js: str) -> str:
+    """`js` with `//` line comments removed, so a check about CODE cannot be answered by PROSE.
+
+    ⚠ NAIVE ON PURPOSE — it cuts at the first `//` on each line and knows nothing about string
+    literals or block comments. That is sound for `RELOAD_JS` and nothing else, which is why the
+    self-test asserts the precondition (`"://" not in RELOAD_JS`) rather than trusting it. A
+    real JS parser here would be a second implementation of a language for one substring check.
+
+    It exists because the round-1 fix's own guard went red on the comment explaining the fix.
+    """
+    return "\n".join(line.split("//", 1)[0] for line in js.splitlines())
+
+
 SERVABLE = {".html", ".md", ".css", ".js", ".svg", ".png"}
 
 # OPTIONAL second read-only root, for pages that want to link at the SOURCE they were derived from.
@@ -683,6 +698,20 @@ RELOAD_JS = """
     var s = document.getElementById('chrome-refresh-say');
     if (s && s.textContent !== msg) s.textContent = msg;
   }
+  // ⛔ TWO WRITERS, ONE SPAN — AND UNTIL 2026-09-02 THE LAST PROMISE TO SETTLE WON.
+  // `check()` fires poll() and pollStale() together against a ThreadingHTTPServer, so they race.
+  // poll()'s success path used to call `say('')` unconditionally to clear its own warning, which
+  // also wiped a stale warning pollStale() had just written. MEASURED in Chrome on the real page,
+  // source genuinely touched and the server answering "stale" every time: the warning survived
+  // only 2 of 6 trials. That is the ORIGINAL BUG REBUILT — a blank span meant both "fresh" and
+  // "stale, wrong promise landed last", so the reader could conclude nothing from it.
+  //
+  // The fix is that neither poll owns the status STRING; each owns its own STATE, and one place
+  // renders. Precedence is deliberate: an unreachable server outranks a stale file, because if we
+  // cannot reach the server we cannot trust the staleness answer either.
+  var serverMsg = '';   // owned by poll()      — "I cannot reach the server"
+  var staleMsg  = '';   // owned by pollStale() — "the output is behind its source"
+  function render() { say(serverMsg || staleMsg); }
   var misses = 0;
   // ⛔ NOT 1. A single failed poll is a blip — a laptop waking, a restart mid-request — and
   // shouting on the first one trains the reader to ignore the message, which is worse than
@@ -693,7 +722,10 @@ RELOAD_JS = """
     fetch('/_rev?p=' + encodeURIComponent(here), { cache: 'no-store' })
       .then(function (r) { return r.ok ? r.text() : null; })
       .then(function (rev) {
-        misses = 0; say('');                      // reachable again — clear any warning
+        // ⚠ CLEARS ONLY ITS OWN WARNING. This line used to be `say('')`, which erased whatever
+        // pollStale() had written. It may say "the server is reachable"; it may NOT say
+        // "this page is up to date" — it did not ask that question.
+        misses = 0; serverMsg = ''; render();
         if (rev === null) return;                 // page gone or not servable — stay put
         if (mine === null) { mine = rev; return; }  // first sample establishes the baseline
         if (rev === mine || busyTyping()) return;
@@ -708,7 +740,8 @@ RELOAD_JS = """
         // reader, so a page can sit indefinitely while looking perfectly current. It still
         // keeps trying — the only change is that it admits it cannot check.
         if (++misses >= MISS_LIMIT) {
-          say('server not responding — this page may be out of date');
+          serverMsg = 'server not responding — this page may be out of date';
+          render();
         }
       });
   }
@@ -718,10 +751,23 @@ RELOAD_JS = """
     fetch('/_stale?p=' + encodeURIComponent(here), { cache: 'no-store' })
       .then(function (r) { return r.ok ? r.text() : null; })
       .then(function (v) {
-        if (v === null || misses >= MISS_LIMIT) return;   // unreachable wins; do not overwrite it
-        say(v.indexOf('stale') === 0
-              ? 'the backlog file has changed since this page was built — press Refresh'
-              : '');
+        if (v === null) return;
+        // ⚠ THE GUARD THAT USED TO BE HERE IS GONE ON PURPOSE. It read
+        // `|| misses >= MISS_LIMIT` — "unreachable wins; do not overwrite it" — which was a
+        // SECOND mechanism for the precedence `render()` now owns in one place. Two mechanisms
+        // for one concern is the duplicate-vocabulary shape this repo has a script to catch.
+        //
+        // ⚠ THE RESPONSE NAMES ITS OWN SOURCE: "fresh", or "stale <repo-relative path>".
+        // The path comes from the server's PAGE_SOURCES, so there is NO slug->label map on this
+        // side to drift out of step with it. Before 2026-09-02 this string was the hardcoded
+        // "the backlog file", which told a reader of /dashboard or /goals to go look at a file
+        // that had not changed — on the one page whose entire job is saying what to look at.
+        var stale = v.indexOf('stale') === 0;
+        var src = stale ? v.slice('stale'.length).trim() : '';
+        staleMsg = stale
+          ? (src || 'this page’s source') + ' has changed since this page was built — press Refresh'
+          : '';
+        render();
       })
       .catch(function () {});                     // the /_rev poll above owns the unreachable case
   }
@@ -821,12 +867,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._send(200, b"fresh", "text/plain; charset=utf-8")
             try:
                 built = target.stat().st_mtime_ns
-                newest = max((REPO / s).stat().st_mtime_ns for s in sources
-                             if (REPO / s).is_file())
+                # ⚠ CARRY THE PATH, NOT JUST THE TIMESTAMP. The client has to tell the reader
+                # WHICH file moved, and the only place that knows is PAGE_SOURCES — here. The
+                # alternative was a second slug->label map in the injected JS, i.e. a second
+                # implementation of one fact, which is how the hardcoded "the backlog file"
+                # ended up on /dashboard and /goals in the first place.
+                newest, newest_src = max(
+                    ((REPO / s).stat().st_mtime_ns, s) for s in sources
+                    if (REPO / s).is_file())
             except (OSError, ValueError):
                 return self._send(200, b"fresh", "text/plain; charset=utf-8")
-            return self._send(200, stale_verdict(built, newest).encode(),
-                              "text/plain; charset=utf-8")
+            verdict = stale_verdict(built, newest)
+            # ⚠ "stale <path>" — the client matches with indexOf(...) === 0, which has always
+            # tolerated a suffix. "fresh" stays bare so nothing downstream has to parse a
+            # payload it does not need.
+            body = verdict if verdict == "fresh" else f"{verdict} {newest_src}"
+            return self._send(200, body.encode(), "text/plain; charset=utf-8")
         if path.startswith("/src/"):
             root = src_root()
             if root is None:
@@ -1179,8 +1235,37 @@ def _self_test() -> int:
              lambda: "sessionStorage" in RELOAD_JS and "scrollY" in RELOAD_JS)
         case("reload client establishes a baseline before it can reload",
              lambda: "mine === null" in RELOAD_JS)
-        case("reload client asks /_rev, the only endpoint added",
+        case("reload client asks /_rev — has the output CHANGED?",
              lambda: "/_rev?p=" in RELOAD_JS)
+        # ⛔ THE CASE ABOVE WAS NAMED "/_rev, the only endpoint added" AND WAS THE ONLY ASSERTION
+        # ABOUT THE CLIENT'S ENDPOINTS. Deleting the entire /_stale poll left it green, and its
+        # name had been false since the moment /_stale shipped. Codex half, PR #209 round 1 (Low).
+        case("reload client also asks /_stale — is the output BEHIND its source?",
+             lambda: "/_stale?p=" in RELOAD_JS)
+        case("both questions are asked at every trigger, not just one",
+             lambda: "poll(); pollStale();" in RELOAD_JS)
+        # ⛔ THE PROPERTY, NOT THE TOKENS THE FIX HAPPENED TO INTRODUCE. The High in round 1 was
+        # that poll()'s success blanked a status line it SHARED with pollStale() — so whichever
+        # promise settled last won, and the stale warning was erased (measured in Chrome:
+        # survived 2 of 6). Asserting "serverMsg exists" alone would defend only this fix's
+        # deletion; asserting that NOTHING blanks the whole line defends the invariant against
+        # the next writer too.
+        #
+        # ⚠ CODE ONLY, AND THE FIRST DRAFT OF THIS CASE FAILED FOR EXACTLY THE RIGHT REASON.
+        # Written as a plain substring test over RELOAD_JS it went red — not on code, but on the
+        # COMMENTS above that quote the old call while explaining why it is gone. A check about
+        # code that prose can satisfy is measuring the wrong population; this one strips line
+        # comments first. `_stale_no_url_literals` below guards the strip's one precondition.
+        case("no poll clears the whole status line; each owns its own state",
+             lambda: "say('')" not in _js_code_only(RELOAD_JS)
+                     and "serverMsg" in RELOAD_JS and "staleMsg" in RELOAD_JS)
+        # ⛔ THE PRECONDITION OF THE STRIP ABOVE, ASSERTED RATHER THAN ASSUMED. `_js_code_only`
+        # cuts at the first `//` on each line, which is wrong if a string literal ever contains
+        # one — `"https://x"` would be truncated mid-literal and the check above would quietly
+        # start reading mangled code. There is no such literal today; if someone adds one, this
+        # fails and points at the stripper instead of letting it rot into a false green.
+        case("_js_code_only is safe here: RELOAD_JS holds no '//' inside a string literal",
+             lambda: "://" not in RELOAD_JS)
         # ⛔ THE DEFECT THE FIRST VERSION SHIPPED WITH. An interval alone is throttled to ~1/min in a
         # HIDDEN tab, which is the only state that matters here: the reader asks, switches away, and
         # comes back. Reported by the reader 2026-08-18 — "I had to manually refresh".
