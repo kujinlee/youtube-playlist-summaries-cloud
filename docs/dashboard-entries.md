@@ -2396,3 +2396,71 @@ and there is nothing to derive it from.
 refusal still only reaches whoever is watching that turn or thinks to press Refresh. Two shapes
 worth considering — have the page state the source commit it was built from, or have a gate compare
 them — but that is a design question, and filing is the user's step.
+
+## 2026-09-02
+The pages can now tell you when they are out of date, instead of sitting there looking current.
+Three changes, all from you asking what the Refresh button actually does.
+
+**The backlog page no longer refuses to build.** Until now, filing a new item and not writing it a
+plain-English summary stopped the page being rebuilt at all — which is how four items went missing
+for a day. Undescribed items now appear in a section that says plainly that nobody has described
+them yet. The pressure to write the summary is still there; it just sits on the page where you can
+see it, rather than in a log line nobody re-reads.
+
+**A page whose server has died now says so.** Previously the page kept quietly retrying forever and
+looked perfectly normal, so a dead server and a healthy one were indistinguishable. After three
+failed checks in a row it says "server not responding — this page may be out of date". Three, not
+one, because a single blip is not worth shouting about and a warning that cries wolf gets ignored.
+
+**A page that has fallen behind its source now says that too.** The page already stamped which
+version of the project it was built from, but nothing compared that to the current state. It does
+now, and says "the backlog file has changed since this page was built — press Refresh".
+
+Together those mean the answer to "is what I am reading current?" is on the page, rather than
+something you have to know to check.
+<!--tech-->
+Branch `feat/page-staleness-visible`, off `d39fa658`. All three approved by the user after the
+`/backlog-table` incident.
+
+**1 — fail-visible.** `undescribed()` split out of `coverage_errors`; `build` appends a synthetic
+final group; `main` re-calls the same pure function to print a `⚠` line, which
+`explainer-serve._regenerate` already forwards to the Refresh button as *"rebuilt WITH A WARNING"*.
+No new channel. ⚠ ONLY the missing half moved — `extra` and `dupes` still refuse, because missing
+means the reader LOSES information while those two mean the page ASSERTS something false.
+
+**2 — the empty catch speaks.** The injected poller counted nothing; now `misses`/`MISS_LIMIT=3`
+writes into `#chrome-refresh-say`, the span the Refresh button already owns.
+
+**3 — `/_stale?p=`.** A DIFFERENT question from `/_rev` ("has the output changed?") so it is a
+different endpoint, not a fourth field. `PAGE_SOURCES` maps page → source; a self-test asserts its
+keys equal `REGENERABLE`'s, because two maps of one thing drift. Fails QUIET on unknown/missing
+sources — a false staleness banner would teach you to ignore the true ones.
+
+⚠ **A defect in my own test, caught before it shipped:** the first draft defined `_stale_verdict`
+INSIDE `self_test` — a second copy of `newest > built` that would have kept passing after the
+handler changed. Extracted to a module-level `stale_verdict` both call. Writing that duplication
+into the test of a duplication fix would have been remarkable.
+
+⚠ **An existing case was REWRITTEN, not deleted:** *"coverage FAILS on an open item nobody
+grouped"* asserted the behaviour being removed. It now asserts the split — `coverage_errors`
+returns `[]`, `undescribed` returns the item — so the record shows the old contract existed and
+the change was deliberate.
+
+⛔ **THE THING I TRIED AND COULD NOT DO, stated because a silent omission here is the whole theme.**
+Neither `explainer-serve.py` nor `gen-backlog-page.py` has ANY mutation coverage, and this slice
+attempted to give them some. Manifests were written, then WITHDRAWN: `mutate_delivered` copies only
+`scripts/` into its temp tree, while both suites read repo files outside it. Measured:
+`FileNotFoundError: …/tmpw8okpx8z/docs/backlog.md`, 9 files mutated, **0 mutations run**. Shipping
+a manifest whose suite cannot execute would report coverage that does not exist — the exact failure
+the harness exists to prevent. Making them mutable means making their suites runnable outside a
+checkout; that is its own piece of work and is NOT done here.
+
+⚠ The harness also refused a redundant mutation for sharing an anchor — correct, and the second
+time today that refusal improved the result. Kept the WEAKER edit (`>` → `>=`) that still fails via
+the case it names.
+
+Counts: `explainer-serve --self-test` 71 → **76**; `gen-backlog-page` 74 → **75**; `gen-dashboard`
+307; `check-plan-code` 158; `EXPECTED_MUTATIONS` **162 unchanged** — deliberately, since the two
+touched files could not join. `--mutate .`: 7 files, 162 mutations, 0 survivors.
+Falsifier, driven against the live server: `/_stale` answered `fresh` → **`stale`** after touching
+`docs/backlog.md` → `fresh` after a rebuild, and `fresh` for an unknown page (no false alarm).

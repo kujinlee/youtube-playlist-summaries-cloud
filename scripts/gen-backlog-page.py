@@ -749,15 +749,41 @@ def attach_history(rows: list[dict], working_text: str) -> None:
         r["hist"] = dict(h, raw=live.get(r["num"], "")) if h else None
 
 
+def undescribed(groups: list, open_nums: set[int]) -> list[int]:
+    """Open items with no GROUPS sentence — RENDERED, not refused.
+
+    ⟳ 2026-09-02. This used to be folded into `coverage_errors` and it BLOCKED THE
+    BUILD. Measured cost, and the user is the one who found it: four items (#82-#85)
+    were filed over two days, the generator refused every time, and the page silently
+    stayed a day behind while looking current. The refusal was correct in intent —
+    a bare row nobody wrote a sentence for is not really on the page — and wrong in
+    consequence: refusing to publish ANYTHING is worse for a reader than publishing a
+    row that is merely undescribed.
+
+    ⛔ WHY THIS HALF AND NOT THE OTHERS. Missing means the reader LOSES information;
+    extra and duplicate mean the page SHOWS SOMETHING UNTRUE (a description attached
+    to an item that is not open, or one item claimed by two groups). Only the first is
+    safe to render through, so only the first moved. `coverage_errors` keeps the rest
+    and still refuses.
+
+    The pressure to write the sentence does not disappear — it moves onto the page,
+    where the reader can see it, instead of into a log line at the moment of the edit.
+    """
+    grouped = {n for _, _, items in groups for n, _ in items}
+    return sorted(open_nums - grouped)
+
+
 def coverage_errors(groups: list, open_nums: set[int]) -> list[str]:
-    """PURE. The grouping is prose; this is the part that cannot be wrong silently."""
+    """PURE. The grouping is prose; this is the part that cannot be wrong silently.
+
+    ⚠ NO LONGER REPORTS MISSING ITEMS — see `undescribed`. What remains here is the
+    set of shapes that would make the page ASSERT something false, which is why these
+    still refuse rather than render.
+    """
     grouped = [n for _, _, items in groups for n, _ in items]
     errors = []
-    missing = sorted(open_nums - set(grouped))
     extra = sorted(n for n in grouped if n not in open_nums)
     dupes = sorted({n for n in grouped if grouped.count(n) > 1})
-    if missing:
-        errors.append(f"open items missing from GROUPS: {missing}")
     if extra:
         errors.append(f"GROUPS names items that are not open: {extra}")
     if dupes:
@@ -847,12 +873,32 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str,
     if errors:
         raise ShapeError("DEPENDS is incoherent — " + "; ".join(errors))
 
+    # ⟳ 2026-09-02. Items with no GROUPS sentence used to REFUSE the build. They now get
+    # a group of their own, at the END, and the run reports a ⚠ line — which the serve
+    # layer already forwards verbatim to the Refresh button as "rebuilt WITH A WARNING".
+    # No new channel: `_regenerate` has surfaced ⚠ lines since the Ask-tray case.
+    #
+    # The framing text is deliberately blunt. This section is meant to look unfinished,
+    # because it IS, and the previous design's whole merit — pressure to write the
+    # sentence — only survives if the gap is visible rather than comfortable.
+    missing = undescribed(GROUPS, open_nums)
+    groups_for_page = list(GROUPS)
+    if missing:
+        groups_for_page.append((
+            "Filed, but nobody has described them yet",
+            "These are open items with no plain-English summary written for them, so all you get "
+            "here is the row. They are on the page rather than held back, because a page that "
+            "refuses to build tells you nothing at all — which is exactly how four of these went "
+            "unnoticed for a day. Someone should write them a sentence.",
+            [(n, "") for n in missing],
+        ))
+
     order = {"crit": 0, "high": 1, "med": 2, "low": 3, "none": 4}
     open_rows.sort(key=lambda r: (order[r["sev"]], r["num"]))
     closed_rows.sort(key=lambda r: r["num"])
 
     gate_of, groups_html = {}, ""
-    for gi, (title, framing, items) in enumerate(GROUPS, 1):
+    for gi, (title, framing, items) in enumerate(groups_for_page, 1):
         # ORDERED, not as listed. Items that survive the root — or have no root — come first;
         # anything the root deletes sinks to the bottom, because that is work you should not start.
         ordered = sorted(items, key=lambda it: (dep_rank(it[0]), it[0]))
@@ -1669,8 +1715,14 @@ def self_test() -> int:
 
     case("coverage passes when the groups match exactly",
          lambda: coverage_errors([("g", "f", [(1, "x"), (2, "y")])], {1, 2}) == [])
-    case("coverage FAILS on an open item nobody grouped",
-         lambda: "missing" in " ".join(coverage_errors([("g", "f", [(1, "x")])], {1, 2})))
+    # ⟳ 2026-09-02, REWRITTEN not deleted. This used to assert that an ungrouped open item
+    # made `coverage_errors` FAIL, which is the behaviour that kept the reader's page a day
+    # behind. The item is still detected — by `undescribed`, asserted below — but detection no
+    # longer blocks the build. Keeping the case and inverting it records that the change was
+    # deliberate; deleting it would have left no trace that the old contract ever existed.
+    case("coverage no longer refuses an ungrouped open item — `undescribed` renders it",
+         lambda: coverage_errors([("g", "f", [(1, "x")])], {1, 2}) == []
+         and undescribed([("g", "f", [(1, "x")])], {1, 2}) == [2])
     case("coverage FAILS when a group names a closed item",
          lambda: "not open" in " ".join(coverage_errors([("g", "f", [(1, "x"), (7, "z")])], {1})))
     case("coverage FAILS on a duplicate across groups",
@@ -1759,6 +1811,30 @@ def self_test() -> int:
         case(f"the full statement of root {_rk!r} appears exactly once",
              lambda d=_root["detail"]: _page.count(d) == 1)
     case("the dependency map is drawn exactly once", lambda: _page.count("<figure class=\"depmap\"") == 1)
+
+    # ── an undescribed item RENDERS rather than blocking the build (2026-09-02) ─────────────────
+    # ⛔ THE DEFECT THIS REPLACES, and the user is the one who hit it: the generator refused
+    # while four items sat unwritten, so the page stayed a day behind and looked current. The
+    # refusal's intent was right; refusing to publish anything was the wrong consequence.
+    case("an undescribed open item is reported",
+         lambda: undescribed([("t", "f", [(1, "x")])], {1, 2}) == [2])
+    case("a fully described set reports nothing",
+         lambda: undescribed([("t", "f", [(1, "x"), (2, "y")])], {1, 2}) == [])
+    # ⚠ THE WIRING, not the predicate. This repo keeps finding a correct predicate that nothing
+    # calls — `undescribed` can be perfectly right and never reach the page. Built from the REAL
+    # backlog with one item's description withheld, so it exercises the actual render path.
+    _short = [g for g in GROUPS]
+    _short[-1] = (_short[-1][0], _short[-1][1], [it for it in _short[-1][2] if it[0] != 85])
+    _rows85 = [dict(r, hist=None) for r in parse(BACKLOG.read_text().splitlines())]
+    _saved, globals()["GROUPS"] = GROUPS, _short
+    try:
+        _undesc_page = build(_rows85, "sha", "2026-01-01 00:00", "stamp")
+    finally:
+        globals()["GROUPS"] = _saved
+    case("an undescribed item still lands in a rendered group",
+         lambda: "Filed, but nobody has described them yet" in _undesc_page)
+    case("...and the page is still built, not refused",
+         lambda: len(_undesc_page) > 1000)
 
     # ── links are READABLE, in every palette this page can be rendered under ────────────────────
     case("every link colour clears WCAG AA on every surface it lands on, all four palettes",
@@ -1951,6 +2027,21 @@ def main() -> int:
         return 0
 
     print(f"wrote {args.out}  ({len(rows)} rows, {open_n} open, Ask tray lifted)")
+    # ⚠ SAME PURE FUNCTION `build` used, called again rather than threaded through its
+    # return — `build` is the renderer and its signature belongs to rendering. This is a
+    # second CALL SITE of one implementation, not a second implementation, which is the
+    # distinction this repo keeps paying for when it gets it wrong.
+    #
+    # It is printed AFTER the success line on purpose: the page WAS written, and the
+    # warning qualifies it rather than replacing it. `explainer-serve._regenerate`
+    # collects lines starting with ⚠ into the JSON `warning`, which the Refresh button
+    # renders as "rebuilt WITH A WARNING: …" — the channel already exists.
+    still = undescribed(GROUPS, {r["num"] for r in rows if not r["closed"]})
+    if still:
+        print(f"⚠  {len(still)} open item(s) have no description in GROUPS: {still}")
+        print("   They render under \"Filed, but nobody has described them yet\" — the page is "
+              "complete, the prose is not.")
+        print("   Add them to GROUPS in scripts/gen-backlog-page.py.")
     print("     http://127.0.0.1:7391/backlog-table   (start: python3 scripts/explainer-serve.py)")
     return 0
 
