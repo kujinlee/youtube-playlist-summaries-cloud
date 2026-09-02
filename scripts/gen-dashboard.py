@@ -393,6 +393,20 @@ HEADER = _GATE.HEADER
 # not `getattr`-optional: without a block-start rule there is nothing to parse,
 # which is the same posture `header_error`/`HEADER`/`FLAG` take one line up.
 BLOCK = _GATE.BLOCK
+# ⛔ REQUIRED, unlike the ask block's OPTIONAL `_inert_lines` binding below. Losing
+# that one costs a section rendered as plain prose; losing this one costs the parser
+# the ability to tell a fenced example from an entry header, which does not degrade
+# — it SILENTLY MINTS A PHANTOM ENTRY holding a real id. Ids are positional and
+# `[resolved: <id>]` binds by id, so there is no safe state to fall back to. A
+# `getattr(..., None)` here would restore backlog #84 the day the symbol is renamed.
+#
+# ⚠ `fenced_lines`, NOT `_inert_lines`, and the difference is not cosmetic —
+# see the docstring on `fenced_lines`. `_inert_lines` over-approximates on purpose
+# (any `<!--` without a closer runs to end-of-input), which fails SAFE for "is there
+# an ask here?" and DANGEROUS for "does a block start here?". Wiring this to
+# `_inert_lines` first DELETED entry 2026-09-01/16 from the live store, because an
+# earlier entry mentions `<!--` in prose while explaining this machinery.
+_FENCED_LINES = _GATE.fenced_lines
 # ⚠ OPTIONAL, and read at module level so the CARD BODY can reach the same
 # parser the tray uses. `getattr` not attribute access: a gate that no longer
 # exposes `decisions` must degrade the ask block to plain prose, not kill the
@@ -439,10 +453,46 @@ def parse_entries(text: str) -> list[dict]:
     `resolves` is a LIST: spec §6.2 says flags are "zero or more", and a
     second [resolved:] used to overwrite the first silently, clearing one item
     and leaving the other open forever with error=None.
+
+    ⟳ 2026-09-01, backlog #84: "column-0 '##'" was not the whole rule and the spec
+    always said so. §6.2's `##`-inside-detail row reads "indent OR FENCE it to
+    include one literally". The indent half worked by accident — `BLOCK` is
+    `^`-anchored, so an indented line never matched — and the FENCE half had no
+    implementation at all. MEASURED before the fix, on this parser:
+
+        "## 2026-08-28\\nTitle.\\n```\\n## 2026-08-29\\nfenced\\n```\\nTail prose.\\n"
+        -> 2 entries, ids ['2026-08-28/1', '2026-08-29/1'], errors 0, tail LOST
+
+    Note `errors 0`. The phantom is not a visible "could not parse" card — it is a
+    fully VALID entry that renders like any other, holding a real id. Ids are
+    positional and a standing `[resolved: <id>]` binds by id, so one fenced example
+    renumbers every later entry that day and can rebind a resolution to the wrong
+    item. Silent, on the section whose whole job is telling the reader what needs
+    them.
+
+    ⛔ THE FIX ADDS A CONSUMER, NOT AN IMPLEMENTATION. The obvious repair — track
+    fence state right here — would have been the THIRD hand-written fence scanner in
+    this feature: `check-dashboard-entry.py` already carries one in
+    `exemption_reason` and one in `_inert_lines`, and those two have already drifted
+    once (see the `startswith` comment beside `_inert_lines`). PR #205 merged hours
+    earlier for exactly this shape, one seam over. So the parser asks the gate what a
+    Markdown reader treats as literal, and holds no opinion of its own.
+
+    ⚠ IT ASKS FOR FENCES, NOT FOR "INERT". The first cut of this fix reused the
+    gate's `_inert_lines`, which is the cheaper reuse and looked equivalent — a probe
+    over blockquote, indent and fence shapes showed the only line it newly suppressed
+    was the fenced header. That probe had NO HTML COMMENT in it. Run against the real
+    store, `_inert_lines` DELETED entry 2026-09-01/16: an earlier entry mentions
+    `<!--` in prose while explaining this very machinery, `_inert_lines` treats an
+    unclosed `<!--` as a comment running to end-of-input, and every entry after it
+    vanished (47 -> 46). Over-approximating fails SAFE for "is there an ask here?"
+    and DANGEROUS for "does a block start here?". A measurement is only as good as
+    its corpus.
     """
     blocks: list[list[str]] = []
-    for line in text.split("\n"):
-        if BLOCK.match(line):
+    fenced = _FENCED_LINES(text)
+    for i, line in enumerate(text.split("\n")):
+        if BLOCK.match(line) and i not in fenced:
             blocks.append([line])
         elif blocks:
             blocks[-1].append(line)
@@ -1617,6 +1667,25 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     # both worlds — the error lived on the ORPHAN block the bug created, `sub[1]`,
     # which the assertion never looked at. The control is what exposed it.
     case("...and nothing is marked unparseable", [e["error"] for e in sub], [None])
+    # ─── backlog #84: a fenced example is not an entry ───────────────────────
+    # ⚠ The phantom this prevents carried NO error — it was a fully VALID entry
+    # holding a real id, rendering like any other card. Asserting only "no error"
+    # would therefore pass on the BUG. The id list is what discriminates.
+    fen = parse_entries("## 2026-08-28\nTitle.\n```\n## 2026-08-29\nfenced\n```\nAfter.\n")
+    case("a fenced header does not split the entry", len(fen), 1)
+    case("...and mints no phantom id", [e["id"] for e in fen], ["2026-08-28/1"])
+    case("...and the prose after the fence survives", "After." in fen[0]["plain"], True)
+    tld = parse_entries("## 2026-08-28\nT.\n~~~\n## 2026-08-29\n~~~\n")
+    case("a TILDE fence hides a header too", len(tld), 1)
+    # ⛔ THE OVER-REJECTION REGRESSION, and it is not hypothetical: the first cut of
+    # this fix reused the gate's `_inert_lines`, and an entry that merely MENTIONS an
+    # unclosed `<!--` in prose deleted every entry after it from the live page
+    # (47 -> 46, measured). A test that only proves fences are hidden would have
+    # shipped that.
+    trap = parse_entries("## 2026-08-28\nI mention `<!--` in prose.\n## 2026-08-29\nB.\n")
+    case("prose mentioning <!-- does not swallow the NEXT entry", len(trap), 2)
+    case("...and both keep their ids", [e["id"] for e in trap],
+         ["2026-08-28/1", "2026-08-29/1"])
     case("empty file", parse_entries(""), [])
     case("no entries yet", parse_entries("# Heading only\n"), [])
 

@@ -815,5 +815,35 @@
       "...and the prose after it is not lost",
       "...and nothing is marked unparseable"
     ]
+  },
+  {
+    "name": "the parser stops asking which lines are fenced",
+    "file": "scripts/gen-dashboard.py",
+    "_note": "backlog #84, THE defect. Restores the fence-blind split, which minted a fully VALID phantom entry holding a real id — no error, renders like any other card. Ids are positional and `[resolved: <id>]` binds by id.",
+    "edits": [
+      [
+        "        if BLOCK.match(line) and i not in fenced:",
+        "        if BLOCK.match(line):"
+      ]
+    ],
+    "expect": [
+      "a fenced header does not split the entry",
+      "...and mints no phantom id"
+    ]
+  },
+  {
+    "name": "the parser asks for INERT lines instead of fenced ones",
+    "file": "scripts/gen-dashboard.py",
+    "_note": "backlog #84, and this is the OVER-rejection half — the first cut of the fix, which looked equivalent and DELETED entry 2026-09-01/16 from the live store. `_inert_lines` treats an unclosed `<!--` as running to end-of-input; one entry mentioning the marker in prose erased every entry after it. A mutation only on the under-rejection half would let this ship again.",
+    "edits": [
+      [
+        "    fenced = _FENCED_LINES(text)",
+        "    fenced = _GATE._inert_lines(text)"
+      ]
+    ],
+    "expect": [
+      "prose mentioning <!-- does not swallow the NEXT entry",
+      "...and both keep their ids"
+    ]
   }
 ]
