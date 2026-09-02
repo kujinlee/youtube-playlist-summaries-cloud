@@ -266,6 +266,11 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
              "code block is, and only one of them is the shared version. Nothing is broken "
              "today and the part the page uses is the correct one — but these copies have "
              "already disagreed twice, once in a way that made a real question invisible."),
+        (86, "The repair to the branch-cleanup command sits in files that a plugin update will "
+             "quietly stop reading, so one day the command goes back to reporting “nothing to "
+             "clean up” on a repository full of dead branches — and reads as success. The "
+             "durable copy now lives in this repository; what is left is confirming whether it "
+             "actually takes precedence over the plugin's own version."),
      ]),
 ]
 
