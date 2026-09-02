@@ -3,13 +3,15 @@
     "  gpt-5.6-sol: try_next \u2014 CLI reported HTTP 400",
     "  gpt-5.6-terra: try_next \u2014 CLI reported HTTP 400",
     "  gpt-5.6-luna: try_next \u2014 CLI reported HTTP 400",
-    "  gpt-5.5: ok \u2014 2139 chars"
+    "  gpt-5.5: ok \u2014 4621 chars"
   ],
   "exit_code": 0,
   "gate_ran": true,
-  "intrusions": [],
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/138a01b6-fe0e-4a55-ab4d-ad4f06513742/scratchpad/codex.log: OVERWRITTEN by the agent during the run"
+  ],
   "model": "gpt-5.5",
-  "reason": "2139 chars",
+  "reason": "4621 chars",
   "review": "codex-review.md",
   "schema": 1,
   "tool": "codex-review"

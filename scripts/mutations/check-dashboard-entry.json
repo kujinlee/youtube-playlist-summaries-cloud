@@ -25,7 +25,7 @@
         "            col += 0"
       ]
     ],
-    "expect": "exemption_reason \u2014 TAB-indented code block"
+    "expect": "exemption_reason — TAB-indented code block"
   },
   {
     "name": "head path skips the indent check",
@@ -36,7 +36,7 @@
         "                if True:"
       ]
     ],
-    "expect": "exemption_reason \u2014 indented, with a comment later on the line"
+    "expect": "exemption_reason — indented, with a comment later on the line"
   },
   {
     "name": "fence closes on either character",
@@ -47,7 +47,7 @@
         "elif True:"
       ]
     ],
-    "expect": "exemption_reason \u2014 ``` is not closed by ~~~"
+    "expect": "exemption_reason — ``` is not closed by ~~~"
   },
   {
     "name": "fence LENGTH ignored (short inner fence closes a long outer one)",
@@ -59,8 +59,8 @@
       ]
     ],
     "expect": [
-      "exemption_reason \u2014 a SHORT fence does not close a longer fence",
-      "exemption_reason \u2014 ...same for tildes"
+      "exemption_reason — a SHORT fence does not close a longer fence",
+      "exemption_reason — ...same for tildes"
     ]
   },
   {
@@ -73,8 +73,8 @@
       ]
     ],
     "expect": [
-      "exemption_reason \u2014 indented code block",
-      "exemption_reason \u2014 TAB-indented code block"
+      "exemption_reason — indented code block",
+      "exemption_reason — TAB-indented code block"
     ]
   },
   {
@@ -86,7 +86,7 @@
         "    if NO_ENTRY not in rest:"
       ]
     ],
-    "expect": "exemption_reason \u2014 blockquoted"
+    "expect": "exemption_reason — blockquoted"
   },
   {
     "name": "the three-valued reason collapses: empty and absent become one message",
@@ -122,15 +122,15 @@
     "expect": "collect: a missing git is a could-not-tell, not 'nothing changed'"
   },
   {
-    "name": "THE RATCHET GOES FAIL-OPEN \u2014 a git failure exits 0 and the branch merges",
+    "name": "THE RATCHET GOES FAIL-OPEN — a git failure exits 0 and the branch merges",
     "file": "scripts/check-dashboard-entry.py",
     "edits": [
       [
-        "        print(f\"CANNOT RUN \u2014 {err}\\nTreat this as NOT CHECKED.\")\n        return 2",
-        "        print(f\"CANNOT RUN \u2014 {err}\\nTreat this as NOT CHECKED.\")\n        return 0"
+        "        print(f\"CANNOT RUN — {err}\\nTreat this as NOT CHECKED.\")\n        return 2",
+        "        print(f\"CANNOT RUN — {err}\\nTreat this as NOT CHECKED.\")\n        return 0"
       ]
     ],
-    "expect": "main: a could-not-tell exits 2 \u2014 NEVER 0"
+    "expect": "main: a could-not-tell exits 2 — NEVER 0"
   },
   {
     "name": "the entry ratchet fails OPEN: added is hardcoded true",
@@ -222,15 +222,19 @@
     ]
   },
   {
-    "name": "entry-attempt regex stops excluding sub-headings",
+    "name": "block-start regex stops excluding sub-headings",
     "file": "scripts/check-dashboard-entry.py",
+    "_note": "RETARGETED 2026-09-01. It used to edit `ENTRY_ISH = re.compile(r'^\\+##(?!#)')` in this same file; that literal no longer exists, because ENTRY_ISH is now DERIVED from BLOCK and BLOCK moved here from gen-dashboard.py. Left unrepaired the anchor would stop matching and the coverage would vanish silently — the third time in this repo that a refactor orphaned the mutation guarding it. ⚠ `expect` NAMES ONLY CASES IN THIS FILE'S OWN SUITE: `mutate_delivered` calls `run_suite(d, fname)` for the MUTATED FILE ALONE (check-plan-code.py:694), so a renderer case named here resolves to 0 red cases and the manifest fails. The first draft named `a level-3 heading does not split the entry` — a gen-dashboard case — and the Codex review half caught it by running `--mutate .`. The page-side blast radius of this same edit is covered by its own entry in gen-dashboard.json.",
     "edits": [
       [
-        "ENTRY_ISH = re.compile(r\"^\\+##(?!#)\")",
-        "ENTRY_ISH = re.compile(r\"^\\+##\")"
+        "BLOCK = re.compile(r\"^##(?!#)\\s*\\S\")",
+        "BLOCK = re.compile(r\"^##\\s*\\S\")"
       ]
     ],
-    "expect": "a level-3 heading is not an entry attempt"
+    "expect": [
+      "the block-start rule excludes a sub-heading",
+      "a level-3 heading is not an entry attempt"
+    ]
   },
   {
     "name": "content check forgets to strip the diff marker",
@@ -350,5 +354,20 @@
       ]
     ],
     "expect": "a whitespace-only resolved payload is refused"
+  },
+  {
+    "name": "the added-line rule is re-typed instead of derived",
+    "file": "scripts/check-dashboard-entry.py",
+    "_note": "NEW 2026-09-01, added by the Claude review half after the Codex half rated the agreement case Low ('verifies agreement, not derivation'). The point stands and this is the answer to it: the agreement case WAS load-bearing but nothing proved it fired, which by this repo's own standard is an unproven guard — the layer nothing checks back. Restoring a hand-written ENTRY_ISH is the exact regression the seam exists to prevent, and it is NOT covered by the BLOCK mutation: that one corrupts the shared rule so both sides move together and the agreement case stays green. Only breaking the DERIVATION separates them.",
+    "edits": [
+      [
+        "ENTRY_ISH = re.compile(r\"^\\+\" + BLOCK.pattern.removeprefix(\"^\"))",
+        "ENTRY_ISH = re.compile(r\"^\\+##\")"
+      ]
+    ],
+    "expect": [
+      "the gate and the page agree on every block-start shape",
+      "a level-3 heading is not an entry attempt"
+    ]
   }
 ]

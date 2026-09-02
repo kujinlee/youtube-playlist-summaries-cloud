@@ -362,7 +362,6 @@ def _store_label(p) -> str:
         return str(p.relative_to(ROOT))
     except ValueError:
         return str(p)
-BLOCK = re.compile(r"^##\s*\S")
 
 
 def _gate_module():
@@ -387,6 +386,13 @@ _GATE = _gate_module()          # the GRAMMAR is required to parse at all
 header_error = _GATE.header_error
 FLAG = _GATE.FLAG
 HEADER = _GATE.HEADER
+# ⟳ 2026-09-01. This was a LOCAL `re.compile(r"^##\s*\S")` — the one piece of the
+# entry grammar the page still kept its own copy of, while importing the other
+# three from the gate. That copy matched `### Worth knowing` and the gate's did
+# not, so a level-3 heading in a body split the entry and truncated it. Required,
+# not `getattr`-optional: without a block-start rule there is nothing to parse,
+# which is the same posture `header_error`/`HEADER`/`FLAG` take one line up.
+BLOCK = _GATE.BLOCK
 # ⚠ OPTIONAL, and read at module level so the CARD BODY can reach the same
 # parser the tray uses. `getattr` not attribute access: a gate that no longer
 # exposes `decisions` must degrade the ask block to plain prose, not kill the
@@ -1594,6 +1600,23 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     case("inline marker is text", inline[0]["tech"], None)
     nested = parse_entries("## 2026-08-28\nTitle.\n<!--tech-->\n  ## indented heading\n")
     case("indented ## does not split", len(nested), 1)
+    # ⛔ REGRESSION, 2026-09-01. `BLOCK` was a LOCAL `^##\s*\S` here and matched
+    # `###` — `\s*` takes zero characters, `\S` takes the third `#`. The visible
+    # symptom was not the "could not parse" card it added; it was the entry it
+    # DESTROYED. The `###` split off a second block, "After the heading." went with
+    # it, and the real entry rendered truncated at the sub-heading with no error on
+    # it. Asserting `len == 1` alone would pass on a parser that dropped the tail,
+    # so the tail is asserted too — that is the content the reader was losing.
+    sub = parse_entries("## 2026-08-28\nTitle.\n### Worth knowing\nAfter the heading.\n")
+    case("a level-3 heading does not split the entry", len(sub), 1)
+    case("...and the prose after it is not lost",
+         "After the heading." in sub[0]["plain"], True)
+    # ⚠ ACROSS ALL ENTRIES, not `sub[0]["error"]`. Written the obvious way first,
+    # this case passed IN THE CONTROL RUN too and was therefore worth nothing:
+    # `sub[0]` is the well-formed `## 2026-08-28` header, which parses cleanly in
+    # both worlds — the error lived on the ORPHAN block the bug created, `sub[1]`,
+    # which the assertion never looked at. The control is what exposed it.
+    case("...and nothing is marked unparseable", [e["error"] for e in sub], [None])
     case("empty file", parse_entries(""), [])
     case("no entries yet", parse_entries("# Heading only\n"), [])
 

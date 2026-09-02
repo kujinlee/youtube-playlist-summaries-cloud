@@ -2085,3 +2085,102 @@ and renders "could not parse". My justification for `(?!#)` — *"several entrie
 the store contains **zero** `^###` lines. I wrote that in a comment, repeated it in #201's commit
 message, and pinned it with a mutation. Not fixed here; it needs the two matchers derived from one
 grammar rather than hand-written twice.
+
+## 2026-09-01
+Closed a trap in the dashboard's own plumbing: an entry containing a sub-heading would have been cut in half, losing everything written after it.
+Two separate programs read the file these entries live in — the one that builds the page you are
+reading, and the check that refuses a branch whose entry is malformed. Each kept its own private
+rule for where one entry stops and the next begins, and the two rules disagreed about a single
+shape: a line starting with three hashes. The page-builder treated such a line as the start of a
+brand-new entry; the check did not.
+
+The consequence was not a visible error. It was silent loss: the entry would render truncated at
+the sub-heading, the prose after it would be absorbed into a fragment labelled "could not parse
+this entry", and nothing anywhere would say that words had gone missing.
+
+Nobody has hit this — no entry has ever used a sub-heading — so no page you have read was affected,
+and this change alters nothing you can see today. The page renders byte-for-byte identically. What
+changes is that the trap is gone for whoever writes the first one.
+
+There is now one rule instead of two. The check owns it, and the page-builder asks the check rather
+than keeping a copy, so the two can no longer drift apart.
+<!--tech-->
+Branch `fix-block-start-divergence`. The open High from the retrospective dual review recorded at
+the end of entry 2026-09-01/15.
+
+**The previous entry got the DIRECTION wrong, and the spec settles it.** That entry proposed the
+gate's `(?!#)` was what "re-opened the divergence", and warned that fixing it meant deleting a case
+and the mutation pinning them — *"a test now protects the bug."* It does not. Spec §6.2 defines
+block start as `` `## ` `` at column 0 **with the space**, and its `##`-inside-detail row reads *"only
+column-0 `## ` splits blocks"*. So the GATE was correct and `gen-dashboard.py`'s
+`BLOCK = ^##\s*\S` was the divergent one — `\s*` takes zero characters and `\S` takes the third `#`.
+Nothing was deleted; coverage went up.
+
+Measured end to end before choosing, because the symptom was worse than "could not parse":
+
+    ## 2026-08-28        -> entry renders, body TRUNCATED at the ###
+    ### Worth knowing    -> splits off as a second block, "could not parse this entry"
+    After the heading.   -> swallowed into the orphan; never reaches the reader
+
+⚠ **That example is INDENTED, not fenced, and writing it fenced first is how a second live defect
+was found.** §6.2 says *"indent **or fence** it to include one literally"* — but `parse_entries`
+has no fence awareness whatever: it tests every line against `BLOCK` regardless of fencing. Written
+in a ``` block, the `## 2026-08-28` line above split THIS entry, rendered the remainder as *"could
+not parse this entry"*, and — worse — CLAIMED the id `2026-08-28/2`, which is exactly how a standing
+`[resolved:]` gets silently rebound to the wrong item. Measured on the real store with the real
+parser: 48 entries, 1 error, before this was indented. Same shape as the bug this branch fixes — the
+spec promises a behaviour the code never implemented — and NOT fixed here. Filed below.
+
+`BLOCK` MOVED to `check-dashboard-entry.py` beside `HEADER`/`FLAG`; `gen-dashboard.py` binds
+`BLOCK = _GATE.BLOCK` (required, not `getattr`-optional — without a block-start rule there is nothing
+to parse); `ENTRY_ISH` is now DERIVED, `r"^\+" + BLOCK.pattern.lstrip("^")`. Dependency arrow
+unchanged and still generator → gate.
+
+⚠ It stays permissive about the space — `##Nospace` still starts a block — deliberately. That is a
+near-miss header, and swallowing one into the previous body is the silent failure the gate exists to
+prevent. `###` differs in kind: deliberate markup, not a typo.
+
+**The alternative was rejected on measurement, not taste.** Making the gate refuse `###` instead
+would have both sides agree too, but `header_error("### Worth knowing")` returns *"check the space
+after the ##"* — misleading advice for a deliberate sub-heading — and its only advantage, failing
+loudly pre-merge, is defeated by backlog #78 half (2), still open: the gate runs on `pull_request`
+while the skill regenerates the page immediately, so the reader sees the page before the gate sees
+the branch.
+
+**The control did real work.** Reverting only the fix on a temp copy reddened the new cases — and
+exposed one of my own as VACUOUS: `sub[0]["error"] is None` passed in BOTH worlds, because `sub[0]`
+is the well-formed header and the error lived on the orphan `sub[1]` the bug created. Rewritten to
+assert across all returned entries; it now fails in the control.
+
+⚠ **A refactor orphaned a mutation, for the third time in this repo** — caught by scanning every
+anchor against disk, not by recollection. `entry-attempt regex stops excluding sub-headings` pinned
+a literal that no longer exists. RETARGETED onto `BLOCK` (not duplicated), so one edit now reddens
+both suites. The same scan found `gen-dashboard`'s `BLOCK` had **zero** mutation coverage for its
+whole life — the regex at the centre of this bug was the one thing nothing measured. New mutation
+restores the page's private copy, failing exactly the way the original defect did.
+
+**REVIEW ROUND 1 — NOT CONVERGED at dispatch: 3 Blocking, all addressed.**
+`docs/reviews/whole-branch-block-start-divergence-review.md`. Two of the three were mine and
+neither was visible by reading — the Codex half found both by running `--mutate .`:
+
+- `expect` in the gate's manifest named a case from the RENDERER's suite. `mutate_delivered` runs
+  `run_suite(d, fname)` for the MUTATED FILE ALONE (`check-plan-code.py:694`), so it resolved to
+  zero red cases. **I had told the user the harness runs every suite per mutation. It does not, and
+  I never ran it before saying so** — the same shape as the defect this branch fixes.
+- The other `expect` dropped a leading `...` the case name actually carries. Exact match, not
+  substring (`check-plan-code.py:730-735`, a round-6 hardening).
+- Third Blocking is the FENCE defect above — pre-existing, deferred, awaiting your call.
+
+⚠ **REVIEW GAP: claude — author self-review, not an independent half** (session instructions
+forbid spawning a reviewer unless asked). Recorded rather than hidden. It still found that the
+agreement case was an UNPROVEN guard: load-bearing when measured, but the `BLOCK` mutation cannot
+prove it fires, because corrupting the shared rule moves both sides together and leaves the case
+green. Only breaking the DERIVATION separates them, so that is now its own mutation.
+
+Counts: `check-dashboard-entry --self-test` 108 → **112** + 13; `gen-dashboard` 298 → **301**;
+`check-plan-code` 158; `EXPECTED_MUTATIONS` 154 → **156** (gen-dashboard 67 → 68, gate 29 → **30**).
+The gate's +1 is NOT the relocation — that was a retarget and deliberately moved no count. It is the
+derivation guard the review added. `--mutate .`: 7 files, **156 mutations, 0 survivors**, rc=0.
+All guard self-tests green; `check-selftest-counts`, `check-docs`, `check-anchors`,
+`check-ratchet-contract`, `check-review-rounds` green on real runs.
+Falsifier: rendered page byte-identical before and after (958,032 bytes both).
