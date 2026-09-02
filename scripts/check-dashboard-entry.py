@@ -177,6 +177,37 @@ def _declaration_reason(s: str) -> str | None:
     return rest.strip()
 
 
+def fence_closes(run: str, rest: str, open_run: str) -> bool:
+    """CommonMark: does the fence marker `run` on this line CLOSE the fence `open_run`?
+
+    ⛔ ONE RULE, THREE CONSUMERS — `fenced_lines`, `_inert_lines`, `exemption_reason`.
+    Backlog #85, and by the time it was fixed it was NOT the "drift hazard, nothing
+    broken today" the row filed. MEASURED 2026-09-02: the no-trailing-text rule PR #206
+    added lived in `fenced_lines` ALONE. The other two closed on an annotated inner
+    fence, and one of them is a gate:
+
+        exemption_reason("```\\n``` x\\nNO-ENTRY: r\\n```\\n")  ->  'r'
+
+    A `NO-ENTRY:` that GitHub renders as grey code INSIDE a code block exempted the
+    branch from the dashboard-entry gate. That is the same escape the length rule below
+    was added to stop, one rule over — because when #206 fixed the instance, nobody
+    asked what else it was true of. Across a 420-case corpus the two line scanners
+    disagreed on 8 bare inputs.
+
+    ⚠ THREE SEPARATE STATEMENTS, NOT AN `and`-CHAIN, and that is not style. One line
+    cannot show that three rules are each load-bearing, and the mutation harness refuses
+    a pair sharing an anchor. Splitting is what makes each independently falsifiable —
+    the same reasoning `fenced_lines` recorded when these lines lived there.
+
+    ⚠ `open_run` carries the OPENER's full run, not just its character, because the
+    length rule needs it. Callers holding only a character cannot ask this question.
+    """
+    same_char = run[0] == open_run[0]
+    long_enough = len(run) >= len(open_run)
+    no_trailing_text = not rest.strip()
+    return same_char and long_enough and no_trailing_text
+
+
 def fenced_lines(text: str) -> set[int]:
     """Indices of every line a Markdown reader shows as fenced code, the fence
     markers themselves included.
@@ -220,24 +251,11 @@ def fenced_lines(text: str) -> set[int]:
         m = FENCE.match(line)
         if fence is not None:
             out.add(i)
-            if m:
-                same_char = m.group("ch")[0] == fence[0]
-                long_enough = len(m.group("ch")) >= len(fence)
-                # ⛔ CommonMark: an OPENING fence may carry an info string
-                # (```python), a CLOSING one may carry only whitespace. Found by the
-                # Codex half of this branch's review round 1, rated High, and
-                # reproduced before fixing — WITHOUT this the very bug being fixed
-                # survives one shape over:
-                #     ```
-                #     ``` not a CommonMark closing fence   <- read as CLOSING
-                #     ## 2026-08-29                        <- now "outside" -> phantom
-                # measured 2 entries, ids ['2026-08-28/1', '2026-08-29/1'], errors
-                # [None, None]. A fenced example that merely ANNOTATES its inner
-                # fence — which is exactly how anyone quotes markdown inside
-                # markdown — still minted a valid phantom entry holding a real id.
-                no_trailing_text = not line[m.end():].strip()
-                if same_char and long_enough and no_trailing_text:
-                    fence = None
+            # ⟳ 2026-09-02, backlog #85: the three closing rules moved to `fence_closes`,
+            # which `_inert_lines` and `exemption_reason` now ask too. They previously
+            # each carried a hand-written subset, and the subsets were not the same one.
+            if m and fence_closes(m.group("ch"), line[m.end():], fence):
+                fence = None
             continue
         if m:
             fence = m.group("ch")
@@ -262,18 +280,16 @@ def exemption_reason(pr_body: str) -> str | None:
             m = FENCE.match(line)
             if m:
                 run = m.group("ch")
-                ch = run[0]
                 if fence_ch is None:
-                    fence_ch, fence_run = ch, run
-                elif ch == fence_ch:
-                    # CommonMark: the CLOSING fence must be AT LEAST AS LONG as
-                    # the opener. Keeping only the character let a 3-backtick
-                    # line close a 5-backtick block, so a NO-ENTRY: that GitHub
-                    # renders as grey code inside a code block exempted the
-                    # branch — measured. Anyone quoting markdown-inside-markdown
-                    # nests fences, and the SKILL.md teaches people to quote it.
-                    if len(run) >= len(fence_run):
-                        fence_ch, fence_run = None, ""
+                    fence_ch, fence_run = run[0], run
+                # ⟳ 2026-09-02, backlog #85. This carried its OWN character+length
+                # check and was missing no-trailing-text, so the very escape the
+                # length rule was added to stop came back one rule over: a
+                # `NO-ENTRY:` inside a code block exempted the branch, MEASURED.
+                # It now asks `fence_closes`, so the gate and the page cannot
+                # disagree about where a code block ends.
+                elif fence_closes(run, line[m.end():], fence_run):
+                    fence_ch, fence_run = None, ""
                 continue
         if fence_ch is not None:
             continue
@@ -334,8 +350,14 @@ def _inert_lines(text: str) -> set[int]:
         if fence is not None:
             inert.add(i)
             m = FENCE.match(line)
-            # CommonMark: a closing fence is at least as long as the opener.
-            if m and m.group("ch")[0] == fence[0] and len(m.group("ch")) >= len(fence):
+            # ⟳ 2026-09-02, backlog #85. This used to be a hand-written `and`-chain of
+            # TWO rules; `fenced_lines` had THREE. The missing one was no-trailing-text,
+            # so an annotated inner fence closed the block here and a `**Decide:**`
+            # after it parsed as a real decision. Now it asks the same question the
+            # page asks. The COMMENT-FIRST branch above is deliberately NOT shared —
+            # see `fence_closes` and the `_inert_lines` docstring for why the two
+            # consumers must keep different priorities.
+            if m and fence_closes(m.group("ch"), line[m.end():], fence):
                 fence = None
             continue
         m = FENCE.match(line)
@@ -621,6 +643,36 @@ def _self_test() -> int:
     case("an opener may carry an info string",
          sorted(fenced_lines("a\n```python\nx\n```\nb")), [1, 2, 3])
     case("no fence, nothing marked", fenced_lines("a\nb\n## 2026-08-28\n"), set())
+    # ─── backlog #85: ONE closing rule, and the two escapes it was hiding ───────────
+    # ⛔ THESE ARE REGRESSION CASES FOR A LIVE DEFECT, NOT A TIDY-UP. Measured
+    # 2026-09-02: the no-trailing-text rule existed in `fenced_lines` ALONE, so the
+    # other two consumers closed on an annotated inner fence. The whole suite was
+    # 123/123 GREEN over it — no case compared the consumers against each other,
+    # which is exactly how the drift survived PR #206 fixing one of the three.
+    _ANNOTATED = "```\n``` not a closing fence\n## 2026-08-29\nstill inside\n"
+    # ⚠ WHAT THIS CASE CAN AND CANNOT SHOW, because over-trusting it would be the same
+    # mistake in a new place. It goes red if the two scanners DIVERGE — which is what
+    # happened before backlog #85 and is why it is here. It CANNOT go red for a wrong
+    # shared rule: both now call `fence_closes`, so breaking that rule breaks them
+    # identically and they still agree. MEASURED — under the `no_trailing_text = True`
+    # mutation this case matched 0 red cases, and the harness said so. It guards
+    # against RE-FORKING the rule; the three rule mutations guard the rule itself.
+    case("the page's scanner and the gate's agree about where a fence ENDS",
+         sorted(_inert_lines(_ANNOTATED)), sorted(fenced_lines(_ANNOTATED)))
+    # ⛔ THE BYPASS. A `NO-ENTRY:` that GitHub renders as grey code inside a code
+    # block used to exempt the branch from this very gate — the same escape the
+    # LENGTH rule was added to stop, arriving one rule over.
+    case("a NO-ENTRY: inside a fence closed only by an ANNOTATED fence does NOT exempt",
+         exemption_reason("```\n``` x\nNO-ENTRY: smuggled\n```\n"), None)
+    # ...and the control: with a REAL closer the same declaration is genuinely
+    # outside the block and MUST still exempt. Without this the case above passes
+    # for a scanner that simply never exempts anything.
+    case("...but after a REAL closer the same declaration still exempts",
+         exemption_reason("```\nx\n```\nNO-ENTRY: genuine\n"), "genuine")
+    case("fence_closes: same char, long enough, no trailing text",
+         (fence_closes("```", "", "```"), fence_closes("~~~", "", "```"),
+          fence_closes("``", "", "```"), fence_closes("```", " x", "```")),
+         (True, False, False, False))
     # ⛔ THE WHOLE REASON THIS FUNCTION EXISTS RATHER THAN REUSING `_inert_lines`.
     # An unclosed `<!--` makes `_inert_lines` mark everything after it — correct for
     # "is there an ask here?" (fails safe), catastrophic for "does a block start

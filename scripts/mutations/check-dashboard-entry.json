@@ -1,429 +1,436 @@
 [
-  {
-    "name": "gate stops sharing the parser grammar",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "return line.startswith(\"+\") and header_error(line[1:]) is None",
-        "import re as _r; return bool(_r.match(r\"^\\+## (\\d{4}-\\d{2}-\\d{2})\\b\", line))"
-      ]
-    ],
-    "expect": [
-      "an impossible date does NOT count",
-      "a suffixed date does NOT count",
-      "a trailing dot does NOT count",
-      "a typo'd flag does NOT count",
-      "a title on the header line does NOT count"
-    ]
-  },
-  {
-    "name": "tab indent not counted",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "            col += 4 - (col % 4)",
-        "            col += 0"
-      ]
-    ],
-    "expect": "exemption_reason — TAB-indented code block"
-  },
-  {
-    "name": "head path skips the indent check",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "                if not _indented(head):",
-        "                if True:"
-      ]
-    ],
-    "expect": "exemption_reason — indented, with a comment later on the line"
-  },
-  {
-    "name": "fence closes on either character",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "elif ch == fence_ch:",
-        "elif True:"
-      ]
-    ],
-    "expect": "exemption_reason — ``` is not closed by ~~~"
-  },
-  {
-    "name": "fence LENGTH ignored (short inner fence closes a long outer one)",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "if len(run) >= len(fence_run):",
-        "if True:"
-      ]
-    ],
-    "expect": [
-      "exemption_reason — a SHORT fence does not close a longer fence",
-      "exemption_reason — ...same for tildes"
-    ]
-  },
-  {
-    "name": "indent rule removed entirely",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "if in_comment or not probe or _indented(probe):",
-        "if in_comment or not probe:"
-      ]
-    ],
-    "expect": [
-      "exemption_reason — indented code block",
-      "exemption_reason — TAB-indented code block"
-    ]
-  },
-  {
-    "name": "line-leading rule removed",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "    if not rest.startswith(NO_ENTRY):",
-        "    if NO_ENTRY not in rest:"
-      ]
-    ],
-    "expect": "exemption_reason — blockquoted"
-  },
-  {
-    "name": "the three-valued reason collapses: empty and absent become one message",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "    if reason == \"\":",
-        "    if False:"
-      ]
-    ],
-    "expect": "...and says the marker was present with nothing after it"
-  },
-  {
-    "name": "the GATE reads a broken git as 'nothing changed'",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "    if names.returncode != 0:",
-        "    if False:"
-      ]
-    ],
-    "expect": "collect: a non-zero git exit is a could-not-tell, not 'nothing changed'"
-  },
-  {
-    "name": "the GATE's missing-git branch reports no error",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "        return [], False, f\"could not run git: {exc}\"",
-        "        return [], False, None"
-      ]
-    ],
-    "expect": "collect: a missing git is a could-not-tell, not 'nothing changed'"
-  },
-  {
-    "name": "THE RATCHET GOES FAIL-OPEN — a git failure exits 0 and the branch merges",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "        print(f\"CANNOT RUN — {err}\\nTreat this as NOT CHECKED.\")\n        return 2",
-        "        print(f\"CANNOT RUN — {err}\\nTreat this as NOT CHECKED.\")\n        return 0"
-      ]
-    ],
-    "expect": "main: a could-not-tell exits 2 — NEVER 0"
-  },
-  {
-    "name": "the entry ratchet fails OPEN: added is hardcoded true",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "    added = any(_added_entry_line(l) for l in patch.stdout.split(\"\\n\"))",
-        "    added = True"
-      ]
-    ],
-    "expect": "collect: a working git still reports the changed files, and NO entry added"
-  },
-  {
-    "name": "decision_errors stops requiring two options",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "if len(d[\"options\"]) < 2:",
-        "if len(d[\"options\"]) < 1:"
-      ]
-    ],
-    "expect": [
-      "one option fails"
-    ]
-  },
-  {
-    "name": "the inert-line scanner is switched off",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "inert = _inert_lines(plain)",
-        "inert = set()"
-      ]
-    ],
-    "expect": [
-      "a fenced Decide is not a decision"
-    ]
-  },
-  {
-    "name": "a heads-up may carry a decision block",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "if category == \"heads-up\":",
-        "if False:"
-      ]
-    ],
-    "expect": [
-      "a heads-up that asks fails"
-    ]
-  },
-  {
-    "name": "two recommendations are tolerated",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "if sum(1 for o in d[\"options\"] if o[\"recommended\"]) > 1:",
-        "if sum(1 for o in d[\"options\"] if o[\"recommended\"]) > 2:"
-      ]
-    ],
-    "expect": [
-      "two recommendations fail"
-    ]
-  },
-  {
-    "name": "the gate stops refusing both flags at once",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "if \"needs-you\" in flags and \"heads-up\" in flags:",
-        "if False:"
-      ]
-    ],
-    "expect": [
-      "both flags is a header error"
-    ]
-  },
-  {
-    "name": "nested options end the list instead of continuing it",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "if options and base_indent is not None and indent > base_indent:",
-        "if False:"
-      ]
-    ],
-    "expect": [
-      "a 4-space nest does not DROP the options after it"
-    ]
-  },
-  {
-    "name": "block-start regex stops excluding sub-headings",
-    "file": "scripts/check-dashboard-entry.py",
-    "_note": "RETARGETED 2026-09-01. It used to edit `ENTRY_ISH = re.compile(r'^\\+##(?!#)')` in this same file; that literal no longer exists, because ENTRY_ISH is now DERIVED from BLOCK and BLOCK moved here from gen-dashboard.py. Left unrepaired the anchor would stop matching and the coverage would vanish silently — the third time in this repo that a refactor orphaned the mutation guarding it. ⚠ `expect` NAMES ONLY CASES IN THIS FILE'S OWN SUITE: `mutate_delivered` calls `run_suite(d, fname)` for the MUTATED FILE ALONE (check-plan-code.py:694), so a renderer case named here resolves to 0 red cases and the manifest fails. The first draft named `a level-3 heading does not split the entry` — a gen-dashboard case — and the Codex review half caught it by running `--mutate .`. The page-side blast radius of this same edit is covered by its own entry in gen-dashboard.json.",
-    "edits": [
-      [
-        "BLOCK = re.compile(r\"^##(?!#)\\s*\\S\")",
-        "BLOCK = re.compile(r\"^##\\s*\\S\")"
-      ]
-    ],
-    "expect": [
-      "the block-start rule excludes a sub-heading",
-      "a level-3 heading is not an entry attempt"
-    ]
-  },
-  {
-    "name": "content check forgets to strip the diff marker",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "        err = header_error(line[1:])",
-        "        err = header_error(line)"
-      ]
-    ],
-    "expect": [
-      "a well-formed added header is not",
-      "...nor is a well-formed bare one"
-    ]
-  },
-  {
-    "name": "the content check sinks below the exemption short-circuit",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "    if entry_problems:",
-        "    if entry_problems and False:"
-      ]
-    ],
-    "expect": [
-      "entry-only branch with a MALFORMED entry is refused",
-      "a NO-ENTRY declaration does NOT excuse a malformed entry"
-    ]
-  },
-  {
-    "name": "collect stops reading the entry patch it already fetched",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "    problems = added_entry_problems(patch.stdout)",
-        "    problems = []"
-      ]
-    ],
-    "expect": "collect: a malformed ADDED header reaches the caller as a problem"
-  },
-  {
-    "name": "main drops the entry problems on the floor",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "    code, reason = verdict(changed, added, body, entry_problems)",
-        "    code, reason = verdict(changed, added, body)"
-      ]
-    ],
-    "expect": "main: an entry-only branch with a malformed entry exits 1"
-  },
-  {
-    "name": "emphasis matcher forgets underscores",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "EMPH = re.compile(r\"^(\\*{1,3}|_{1,3})\")",
-        "EMPH = re.compile(r\"^(\\*{1,3})\")"
-      ]
-    ],
-    "expect": "__underscore__ marker is recognised"
-  },
-  {
-    "name": "closer stripped without matching the opener",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "    if opener and rest.startswith(opener):",
-        "    if opener:"
-      ]
-    ],
-    "expect": "a mismatched closer is left in the reason"
-  },
-  {
-    "name": "the marker itself is left in the reason",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "    rest = rest[len(NO_ENTRY):]",
-        "    rest = rest[0:]"
-      ]
-    ],
-    "expect": "exemption_reason reads a real declaration"
-  },
-  {
-    "name": "the pre-comment head goes back to its own marker test",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "                if not _indented(head):\n                    r = _declaration_reason(head.strip())\n                    if r is not None:\n                        return r",
-        "                if not _indented(head) and head.strip().startswith(NO_ENTRY):\n                    return head.strip()[len(NO_ENTRY):].strip() or \"\""
-      ]
-    ],
-    "expect": "bold works on the pre-comment head too"
-  },
-  {
-    "name": "the empty-resolved refusal is dropped",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "        if not payload:",
-        "        if False:"
-      ]
-    ],
-    "expect": [
-      "an empty resolved payload is refused",
-      "a whitespace-only resolved payload is refused"
-    ]
-  },
-  {
-    "name": "a whitespace-only payload counts as a real id",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "        payload = f[len(\"resolved:\"):].strip()",
-        "        payload = f[len(\"resolved:\"):]"
-      ]
-    ],
-    "expect": "a whitespace-only resolved payload is refused"
-  },
-  {
-    "name": "the added-line rule is re-typed instead of derived",
-    "file": "scripts/check-dashboard-entry.py",
-    "_note": "NEW 2026-09-01, added by the Claude review half after the Codex half rated the agreement case Low ('verifies agreement, not derivation'). The point stands and this is the answer to it: the agreement case WAS load-bearing but nothing proved it fired, which by this repo's own standard is an unproven guard — the layer nothing checks back. Restoring a hand-written ENTRY_ISH is the exact regression the seam exists to prevent, and it is NOT covered by the BLOCK mutation: that one corrupts the shared rule so both sides move together and the agreement case stays green. Only breaking the DERIVATION separates them.",
-    "edits": [
-      [
-        "ENTRY_ISH = re.compile(r\"^\\+\" + BLOCK.pattern.removeprefix(\"^\"))",
-        "ENTRY_ISH = re.compile(r\"^\\+##\")"
-      ]
-    ],
-    "expect": [
-      "the gate and the page agree on every block-start shape",
-      "a level-3 heading is not an entry attempt"
-    ]
-  },
-  {
-    "name": "fence closes on the WRONG character",
-    "file": "scripts/check-dashboard-entry.py",
-    "_note": "backlog #84. `exemption_reason` paid for this rule with a measured escape before it was written down; the extracted scanner must keep it or the page inherits the same hole one seam over.",
-    "edits": [
-      [
-        "                same_char = m.group(\"ch\")[0] == fence[0]",
-        "                same_char = True"
-      ]
-    ],
-    "expect": [
-      "``` is NOT closed by ~~~"
-    ]
-  },
-  {
-    "name": "fence LENGTH ignored in the extracted scanner",
-    "file": "scripts/check-dashboard-entry.py",
-    "_note": "backlog #84. CommonMark: a closer is at least as long as the opener. Dropping it lets a 3-backtick line close a 5-backtick block — exactly the shape anyone quoting markdown-inside-markdown writes, and the SKILL teaches people to quote it.",
-    "edits": [
-      [
-        "                long_enough = len(m.group(\"ch\")) >= len(fence)",
-        "                long_enough = True"
-      ]
-    ],
-    "expect": [
-      "a SHORT inner fence does not close a longer one"
-    ]
-  },
-  {
-    "name": "the scanner stops marking the fence MARKERS themselves",
-    "file": "scripts/check-dashboard-entry.py",
-    "_note": "backlog #84. The opening marker line must be in the set: a ``` line is not an entry header, but leaving it out is the kind of off-by-one that only shows up on a store nobody re-reads.",
-    "edits": [
-      [
-        "        if m:\n            fence = m.group(\"ch\")\n            out.add(i)",
-        "        if m:\n            fence = m.group(\"ch\")"
-      ]
-    ],
-    "expect": [
-      "a fence opens and closes"
-    ]
-  },
-  {
-    "name": "a closing fence may carry trailing text",
-    "file": "scripts/check-dashboard-entry.py",
-    "_note": "Review round 1, Codex High, reproduced before fixing. CommonMark lets an OPENER carry an info string but a CLOSER only whitespace. Without the rule the scanner closes on an annotated inner fence and the lines after it stop being code — so a fenced example quoting markdown inside markdown STILL minted a valid phantom entry with a real id, which is the whole defect this branch exists to close, surviving one shape over. Separately anchored from same_char/long_enough because the harness is right that one line cannot show three rules are each load-bearing.",
-    "edits": [
-      [
-        "                no_trailing_text = not line[m.end():].strip()",
-        "                no_trailing_text = True"
-      ]
-    ],
-    "expect": [
-      "a closer with trailing text does NOT close"
-    ]
-  }
+ {
+  "name": "gate stops sharing the parser grammar",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "return line.startswith(\"+\") and header_error(line[1:]) is None",
+    "import re as _r; return bool(_r.match(r\"^\\+## (\\d{4}-\\d{2}-\\d{2})\\b\", line))"
+   ]
+  ],
+  "expect": [
+   "an impossible date does NOT count",
+   "a suffixed date does NOT count",
+   "a trailing dot does NOT count",
+   "a typo'd flag does NOT count",
+   "a title on the header line does NOT count"
+  ]
+ },
+ {
+  "name": "tab indent not counted",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "            col += 4 - (col % 4)",
+    "            col += 0"
+   ]
+  ],
+  "expect": "exemption_reason — TAB-indented code block"
+ },
+ {
+  "name": "head path skips the indent check",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "                if not _indented(head):",
+    "                if True:"
+   ]
+  ],
+  "expect": "exemption_reason — indented, with a comment later on the line"
+ },
+ {
+  "name": "indent rule removed entirely",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "if in_comment or not probe or _indented(probe):",
+    "if in_comment or not probe:"
+   ]
+  ],
+  "expect": [
+   "exemption_reason — indented code block",
+   "exemption_reason — TAB-indented code block"
+  ]
+ },
+ {
+  "name": "line-leading rule removed",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "    if not rest.startswith(NO_ENTRY):",
+    "    if NO_ENTRY not in rest:"
+   ]
+  ],
+  "expect": "exemption_reason — blockquoted"
+ },
+ {
+  "name": "the three-valued reason collapses: empty and absent become one message",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "    if reason == \"\":",
+    "    if False:"
+   ]
+  ],
+  "expect": "...and says the marker was present with nothing after it"
+ },
+ {
+  "name": "the GATE reads a broken git as 'nothing changed'",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "    if names.returncode != 0:",
+    "    if False:"
+   ]
+  ],
+  "expect": "collect: a non-zero git exit is a could-not-tell, not 'nothing changed'"
+ },
+ {
+  "name": "the GATE's missing-git branch reports no error",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "        return [], False, f\"could not run git: {exc}\"",
+    "        return [], False, None"
+   ]
+  ],
+  "expect": "collect: a missing git is a could-not-tell, not 'nothing changed'"
+ },
+ {
+  "name": "THE RATCHET GOES FAIL-OPEN — a git failure exits 0 and the branch merges",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "        print(f\"CANNOT RUN — {err}\\nTreat this as NOT CHECKED.\")\n        return 2",
+    "        print(f\"CANNOT RUN — {err}\\nTreat this as NOT CHECKED.\")\n        return 0"
+   ]
+  ],
+  "expect": "main: a could-not-tell exits 2 — NEVER 0"
+ },
+ {
+  "name": "the entry ratchet fails OPEN: added is hardcoded true",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "    added = any(_added_entry_line(l) for l in patch.stdout.split(\"\\n\"))",
+    "    added = True"
+   ]
+  ],
+  "expect": "collect: a working git still reports the changed files, and NO entry added"
+ },
+ {
+  "name": "decision_errors stops requiring two options",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "if len(d[\"options\"]) < 2:",
+    "if len(d[\"options\"]) < 1:"
+   ]
+  ],
+  "expect": [
+   "one option fails"
+  ]
+ },
+ {
+  "name": "the inert-line scanner is switched off",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "inert = _inert_lines(plain)",
+    "inert = set()"
+   ]
+  ],
+  "expect": [
+   "a fenced Decide is not a decision"
+  ]
+ },
+ {
+  "name": "a heads-up may carry a decision block",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "if category == \"heads-up\":",
+    "if False:"
+   ]
+  ],
+  "expect": [
+   "a heads-up that asks fails"
+  ]
+ },
+ {
+  "name": "two recommendations are tolerated",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "if sum(1 for o in d[\"options\"] if o[\"recommended\"]) > 1:",
+    "if sum(1 for o in d[\"options\"] if o[\"recommended\"]) > 2:"
+   ]
+  ],
+  "expect": [
+   "two recommendations fail"
+  ]
+ },
+ {
+  "name": "the gate stops refusing both flags at once",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "if \"needs-you\" in flags and \"heads-up\" in flags:",
+    "if False:"
+   ]
+  ],
+  "expect": [
+   "both flags is a header error"
+  ]
+ },
+ {
+  "name": "nested options end the list instead of continuing it",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "if options and base_indent is not None and indent > base_indent:",
+    "if False:"
+   ]
+  ],
+  "expect": [
+   "a 4-space nest does not DROP the options after it"
+  ]
+ },
+ {
+  "name": "block-start regex stops excluding sub-headings",
+  "file": "scripts/check-dashboard-entry.py",
+  "_note": "RETARGETED 2026-09-01. It used to edit `ENTRY_ISH = re.compile(r'^\\+##(?!#)')` in this same file; that literal no longer exists, because ENTRY_ISH is now DERIVED from BLOCK and BLOCK moved here from gen-dashboard.py. Left unrepaired the anchor would stop matching and the coverage would vanish silently — the third time in this repo that a refactor orphaned the mutation guarding it. ⚠ `expect` NAMES ONLY CASES IN THIS FILE'S OWN SUITE: `mutate_delivered` calls `run_suite(d, fname)` for the MUTATED FILE ALONE (check-plan-code.py:694), so a renderer case named here resolves to 0 red cases and the manifest fails. The first draft named `a level-3 heading does not split the entry` — a gen-dashboard case — and the Codex review half caught it by running `--mutate .`. The page-side blast radius of this same edit is covered by its own entry in gen-dashboard.json.",
+  "edits": [
+   [
+    "BLOCK = re.compile(r\"^##(?!#)\\s*\\S\")",
+    "BLOCK = re.compile(r\"^##\\s*\\S\")"
+   ]
+  ],
+  "expect": [
+   "the block-start rule excludes a sub-heading",
+   "a level-3 heading is not an entry attempt"
+  ]
+ },
+ {
+  "name": "content check forgets to strip the diff marker",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "        err = header_error(line[1:])",
+    "        err = header_error(line)"
+   ]
+  ],
+  "expect": [
+   "a well-formed added header is not",
+   "...nor is a well-formed bare one"
+  ]
+ },
+ {
+  "name": "the content check sinks below the exemption short-circuit",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "    if entry_problems:",
+    "    if entry_problems and False:"
+   ]
+  ],
+  "expect": [
+   "entry-only branch with a MALFORMED entry is refused",
+   "a NO-ENTRY declaration does NOT excuse a malformed entry"
+  ]
+ },
+ {
+  "name": "collect stops reading the entry patch it already fetched",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "    problems = added_entry_problems(patch.stdout)",
+    "    problems = []"
+   ]
+  ],
+  "expect": "collect: a malformed ADDED header reaches the caller as a problem"
+ },
+ {
+  "name": "main drops the entry problems on the floor",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "    code, reason = verdict(changed, added, body, entry_problems)",
+    "    code, reason = verdict(changed, added, body)"
+   ]
+  ],
+  "expect": "main: an entry-only branch with a malformed entry exits 1"
+ },
+ {
+  "name": "emphasis matcher forgets underscores",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "EMPH = re.compile(r\"^(\\*{1,3}|_{1,3})\")",
+    "EMPH = re.compile(r\"^(\\*{1,3})\")"
+   ]
+  ],
+  "expect": "__underscore__ marker is recognised"
+ },
+ {
+  "name": "closer stripped without matching the opener",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "    if opener and rest.startswith(opener):",
+    "    if opener:"
+   ]
+  ],
+  "expect": "a mismatched closer is left in the reason"
+ },
+ {
+  "name": "the marker itself is left in the reason",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "    rest = rest[len(NO_ENTRY):]",
+    "    rest = rest[0:]"
+   ]
+  ],
+  "expect": "exemption_reason reads a real declaration"
+ },
+ {
+  "name": "the pre-comment head goes back to its own marker test",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "                if not _indented(head):\n                    r = _declaration_reason(head.strip())\n                    if r is not None:\n                        return r",
+    "                if not _indented(head) and head.strip().startswith(NO_ENTRY):\n                    return head.strip()[len(NO_ENTRY):].strip() or \"\""
+   ]
+  ],
+  "expect": "bold works on the pre-comment head too"
+ },
+ {
+  "name": "the empty-resolved refusal is dropped",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "        if not payload:",
+    "        if False:"
+   ]
+  ],
+  "expect": [
+   "an empty resolved payload is refused",
+   "a whitespace-only resolved payload is refused"
+  ]
+ },
+ {
+  "name": "a whitespace-only payload counts as a real id",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "        payload = f[len(\"resolved:\"):].strip()",
+    "        payload = f[len(\"resolved:\"):]"
+   ]
+  ],
+  "expect": "a whitespace-only resolved payload is refused"
+ },
+ {
+  "name": "the added-line rule is re-typed instead of derived",
+  "file": "scripts/check-dashboard-entry.py",
+  "_note": "NEW 2026-09-01, added by the Claude review half after the Codex half rated the agreement case Low ('verifies agreement, not derivation'). The point stands and this is the answer to it: the agreement case WAS load-bearing but nothing proved it fired, which by this repo's own standard is an unproven guard — the layer nothing checks back. Restoring a hand-written ENTRY_ISH is the exact regression the seam exists to prevent, and it is NOT covered by the BLOCK mutation: that one corrupts the shared rule so both sides move together and the agreement case stays green. Only breaking the DERIVATION separates them.",
+  "edits": [
+   [
+    "ENTRY_ISH = re.compile(r\"^\\+\" + BLOCK.pattern.removeprefix(\"^\"))",
+    "ENTRY_ISH = re.compile(r\"^\\+##\")"
+   ]
+  ],
+  "expect": [
+   "the gate and the page agree on every block-start shape",
+   "a level-3 heading is not an entry attempt"
+  ]
+ },
+ {
+  "name": "the scanner stops marking the fence MARKERS themselves",
+  "file": "scripts/check-dashboard-entry.py",
+  "_note": "backlog #84. The opening marker line must be in the set: a ``` line is not an entry header, but leaving it out is the kind of off-by-one that only shows up on a store nobody re-reads.",
+  "edits": [
+   [
+    "        if m:\n            fence = m.group(\"ch\")\n            out.add(i)",
+    "        if m:\n            fence = m.group(\"ch\")"
+   ]
+  ],
+  "expect": [
+   "a fence opens and closes"
+  ]
+ },
+ {
+  "name": "fence closes on the WRONG character",
+  "file": "scripts/check-dashboard-entry.py",
+  "_note": "⟳ 2026-09-02, backlog #85. RETARGETED, not deleted: the three closing rules moved out of `fenced_lines` into `fence_closes`, which all THREE consumers now ask. Anchoring by text means a refactor orphans the guard unless it is moved with the code — this file has recorded that twice.",
+  "edits": [
+   [
+    "    same_char = run[0] == open_run[0]",
+    "    same_char = True"
+   ]
+  ],
+  "expect": [
+   "``` is NOT closed by ~~~",
+   "fence_closes: same char, long enough, no trailing text"
+  ]
+ },
+ {
+  "name": "fence LENGTH ignored in the shared closer",
+  "file": "scripts/check-dashboard-entry.py",
+  "_note": "⟳ 2026-09-02, backlog #85. RETARGETED, not deleted: the three closing rules moved out of `fenced_lines` into `fence_closes`, which all THREE consumers now ask. Anchoring by text means a refactor orphans the guard unless it is moved with the code — this file has recorded that twice.",
+  "edits": [
+   [
+    "    long_enough = len(run) >= len(open_run)",
+    "    long_enough = True"
+   ]
+  ],
+  "expect": [
+   "a SHORT inner fence does not close a longer one",
+   "fence_closes: same char, long enough, no trailing text"
+  ]
+ },
+ {
+  "name": "a closing fence may carry trailing text",
+  "file": "scripts/check-dashboard-entry.py",
+  "_note": "⟳ 2026-09-02, backlog #85. RETARGETED, not deleted: the three closing rules moved out of `fenced_lines` into `fence_closes`, which all THREE consumers now ask. Anchoring by text means a refactor orphans the guard unless it is moved with the code — this file has recorded that twice. This is the rule that existed in ONE of three copies and let a NO-ENTRY: inside a code block exempt the branch — measured 2026-09-02. ⚠ The 'two scanners agree' case is deliberately NOT listed: now that both ask fence_closes, a wrong shared rule breaks them IDENTICALLY and they still agree. That case guards against RE-FORKING the rule, not against the rule being wrong — measured, it matched 0 red cases here.",
+  "edits": [
+   [
+    "    no_trailing_text = not rest.strip()",
+    "    no_trailing_text = True"
+   ]
+  ],
+  "expect": [
+   "a closer with trailing text does NOT close",
+   "a NO-ENTRY: inside a fence closed only by an ANNOTATED fence does NOT exempt"
+  ]
+ },
+ {
+  "name": "exemption_reason stops asking the shared closer",
+  "file": "scripts/check-dashboard-entry.py",
+  "_note": "Replaces two anchors that lived on exemption_reason's own hand-written copy. Guards the CALL, so unwiring the gate from the shared rule goes red even if the rule is fine.",
+  "edits": [
+   [
+    "                elif fence_closes(run, line[m.end():], fence_run):",
+    "                elif True:"
+   ]
+  ],
+  "expect": [
+   "a NO-ENTRY: inside a fence closed only by an ANNOTATED fence does NOT exempt"
+  ]
+ },
+ {
+  "name": "the shared closer says yes to everything",
+  "file": "scripts/check-dashboard-entry.py",
+  "_note": "Guards the COMPOSITION: the three rules must be ANDed. Each rule has its own anchor above; none of them shows that all three are required together.",
+  "edits": [
+   [
+    "    return same_char and long_enough and no_trailing_text",
+    "    return True"
+   ]
+  ],
+  "expect": [
+   "fence_closes: same char, long enough, no trailing text",
+   "a NO-ENTRY: inside a fence closed only by an ANNOTATED fence does NOT exempt"
+  ]
+ }
 ]
