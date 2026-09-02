@@ -2378,7 +2378,21 @@ FIXED HERE: `GROUPS` in `scripts/gen-backlog-page.py` gains all four items. Page
 first grep I wrote looked for an anchor format the page does not use and reported 0 for items that
 were there).
 
-⚠ **NOT FIXED, and it is the part that will recur:** nothing makes staleness visible. The hook stays
-blind to non-tool edits, and a refusal still only reaches whoever is watching that turn. Two shapes
+⚠ **CORRECTION, same day, prompted by the user asking what the Refresh button does.** An earlier
+draft of this entry said *"nothing makes staleness visible."* That is FALSE and I had not read the
+button before writing it. `POST /regenerate` re-runs the generator, and a refusal comes back as
+**500 NOT REBUILT** with the reason attached, which the button renders as *"could not rebuild:
+… REFUSED: GROUPS does not cover the open set …"*. Pressing Refresh WOULD have shown this.
+
+**What is actually missing is PASSIVE visibility.** A browser reload re-serves the stale file and
+says nothing; you have to press the button to learn the page is behind. The reader has no reason to
+press a button on a page that looks current — which is exactly how this went unnoticed for a day.
+
+⚠ For the record on what the button does and does not do: it re-runs `gen-backlog-page.py`; it does
+not and cannot update it. `GROUPS` is hand-written prose, one plain-English sentence per open item,
+and there is nothing to derive it from.
+
+⚠ **NOT FIXED, and it is the part that will recur:** the hook stays blind to non-tool edits, and a
+refusal still only reaches whoever is watching that turn or thinks to press Refresh. Two shapes
 worth considering — have the page state the source commit it was built from, or have a gate compare
 them — but that is a design question, and filing is the user's step.
