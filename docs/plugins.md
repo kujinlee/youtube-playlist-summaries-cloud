@@ -110,6 +110,11 @@ file. Run `python3 scripts/check-handoff-path.py --self-test` after touching it.
 outcome — it cannot observe where the file actually lands. The lagging check still has a job: **if a
 resume ever finds a `handoff-XXXXXX.md` in `$TMPDIR`, something wrote one anyway.**
 
+⛔ **Same layer-3 logic applies to a repaired plugin COMMAND: re-author it under
+`.claude/commands/`, never patch the vendored copy** (`.claude/commands/clean_gone.md` is the
+worked example). ⚠ That directory is a real git checkout whose `.gitignore` is a bare `*`, so
+`git status` there answers "clean" about a file it cannot see — measured 2026-09-02, **backlog #86**.
+
 ### Code Review (dual review per task)
 
 Both must complete before marking a task done.
@@ -250,11 +255,5 @@ The following plugins were installed for this project's workflow and may not be 
 Plugins that are clearly general-purpose and should be kept regardless:
 `superpowers`, `remember`, `playwright`, `pr-review-toolkit`, `hookify`
 
-### Uninstall commands (if user confirms)
-
-```bash
-# mattpocock/skills (installed via npx, not /plugin)
-npx skills@latest remove mattpocock/skills
-
-# codex — uninstall via Claude Code plugin manager
-```
+**Uninstall, if the user confirms:** `npx skills@latest remove mattpocock/skills` (it was installed
+via npx, not `/plugin`); `codex` goes through the Claude Code plugin manager.

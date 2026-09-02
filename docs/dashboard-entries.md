@@ -2567,3 +2567,54 @@ other hostile input failed closed to `fresh`, which is the safe direction. Filin
 
 Counts: `explainer-serve --self-test` 80 → **81**. Gates green: check-docs, check-review-rounds
 (132 rounds, 0 silent gaps, 4 verdicts read), check-selftest-counts, check-ratchet-contract.
+
+## 2026-09-02
+The branch-cleanup command's repair now lives in this repository instead of in files a plugin
+update would quietly stop reading. Left alone, it would eventually have gone back to announcing
+"no cleanup was needed" on a repository full of dead branches — and that reads as success, which
+is the kind of wrong answer nobody goes back and checks.
+
+Filed as backlog #86 and fixed in the same change, because the fix is one file.
+<!--tech-->
+**The trap, measured, and it is worse than "a vendored edit gets reverted".**
+`~/.claude/plugins/marketplaces/claude-plugins-official` **is** a real git checkout (`origin` =
+`kujinlee/claude-config`), so `git status` inside it runs and looks authoritative — but
+`.gitignore` line 3 is a bare `*`. `git check-ignore -v` on the command file returns
+`.gitignore:3:*`, and `git status --untracked-files=all` over that subtree is **empty**: the file
+cannot even surface as a `??`. Asking "is my fix committed?" the obvious way returns a clean tree
+that means nothing at all.
+
+⚠ **"A `/plugin update` reverts it" was imprecise.** `installed_plugins.json` records a
+`gitCommitSha` and the cache path's version segment IS that SHA, so an update installs a **new**
+SHA-keyed directory and stops reading the old one. The edit is not overwritten — it is orphaned.
+Nothing changes and nothing warns, which is quieter than a clobber and harder to notice.
+
+**What was at risk** — four repairs, each bought by a measured failure: `git fetch --prune` as
+step 1 (fixture recorded inline: before 0 `[gone]`, after 2); `git branch -v` printing the literal
+`[gone]` where `-vv` prints `[origin/<branch>: gone]` and the grep silently matches nothing
+(git 2.49.0); the skip for the branch you are standing on (the loop otherwise dies on *"cannot
+delete branch used by worktree"*); and echoing each SHA before `git branch -D` so a force-delete
+leaves a reflog handle.
+
+**Shipped:** `.claude/commands/clean_gone.md` (repo-tracked, `disable-model-invocation: true`,
+`allowed-tools: Bash(git *)`), plus a section in `docs/plugins.md` beside the existing
+`mattpocock:handoff` three-layer table — this is the second instance of that same layer-3 class,
+so it belongs next to the first rather than in a new place.
+
+⚠ **NOT confirmed, and it decides whether one layer suffices:** a repo command appears to invoke
+as `/clean_gone` while the plugin's is `/commit-commands:clean_gone`, so the two **coexist** rather
+than one shadowing the other — anyone typing the plugin's name after an update still gets the
+unrepaired version. Falsifier written into both the backlog row and `docs/plugins.md`: run
+`/plugin update`, invoke the plugin's name, check whether step 1 is `git fetch --prune`. Not run
+here because it mutates the local plugin install, which is not mine to do unattended.
+
+⚠ **A `GROUPS` line was written for #86 rather than leaning on PR #209's new tolerance.** This
+branch is based on `master`, whose `gen-backlog-page.py` still REFUSES on an undescribed item —
+measured: `REFUSED: GROUPS does not cover the open set … [86]`, exit 1, nothing written. #209's
+change is a safety net for a forgotten description, not a licence never to write one. With the
+prose in place the page builds on both generators: `86 rows, 60 open`, exit 0, no warning.
+
+⚠ **Expect a conflict in this file.** This branch and `feat/page-staleness-visible` both append to
+`docs/dashboard-entries.md` from a common base, which this project has measured before: same-day
+parallel branches conflict on the append. Whichever merges second needs a rebase. The two entries
+reference no ids of each other, so positional renumbering is harmless.
