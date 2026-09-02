@@ -2618,3 +2618,56 @@ prose in place the page builds on both generators: `86 rows, 60 open`, exit 0, n
 `docs/dashboard-entries.md` from a common base, which this project has measured before: same-day
 parallel branches conflict on the append. Whichever merges second needs a rebase. The two entries
 reference no ids of each other, so positional renumbering is harmless.
+
+## 2026-09-02
+Backlog #85 was filed as tidy-up — three copies of one rule, "nothing is broken today". It was
+broken. One of the three copies is the check that decides whether a branch is allowed to skip
+writing you a dashboard entry, and a declaration hidden inside a code block was getting through it.
+Fixed, with the before-and-after measured across 420 cases rather than argued.
+
+The row has been re-rated from 🟡 to 🟠 to match what was actually found.
+<!--tech-->
+**What was wrong.** PR #206 added the CommonMark rule that a *closing* fence carries no trailing
+text — to `fenced_lines` and nowhere else. `_inert_lines` and `exemption_reason` kept hand-written
+subsets. MEASURED 2026-09-02:
+
+    exemption_reason("```\n``` x\nNO-ENTRY: r\n```\n")  ->  'r'
+
+A `NO-ENTRY:` that GitHub renders as grey code **inside a code block** exempted the branch from the
+dashboard-entry gate. That is the same escape the LENGTH rule was added to stop, one rule over —
+the class question was never asked when #206 fixed the instance. Across a 420-case corpus spanning
+the four dimensions the row itself names (HTML comments, tildes, fence length, trailing text), the
+two line scanners disagreed on **8** bare inputs.
+
+⚠ **The row's own reasoning is the more useful lesson.** It rated 🟡 because *"`fenced_lines` is
+the one the page uses, so the reader-facing path is correct"* — true, and beside the point. The
+consumer that mattered was the GATE, not the page.
+
+**The fix.** One `fence_closes(run, rest, open_run)` holding the three rules as **three separately
+anchored statements** — not an `and`-chain, because one line cannot show that three rules are each
+load-bearing. All three consumers call it; each keeps its own comment-vs-fence priority, which is
+exactly why the obvious unification (precomputing `fenced_lines` inside `_inert_lines`) was refused.
+
+**Differential, 420 cases, old vs new:** scanner disagreements **8 → 0**; exemptions **revoked 4**
+(precisely the trailing-text bypasses, backtick and tilde, bare and after-comment); exemptions
+**newly granted 0** — no new hole. The 10 surviving exemptions are correct: `` ``` `` closed by
+`` ``` ``, `` ```` `` or `` ````` `` are all valid closers.
+
+**The new tests were controlled against master before being trusted.** Two go False → True (real
+regression guards); one control stays True → True (the fix broke nothing). Worth noting the suite
+was **123/123 green over the live defect** — no case had ever compared the consumers to each other,
+which is how the drift survived.
+
+⚠ **A guard that turned out to be weaker than it looks, recorded rather than quietly kept.** The
+new "the two scanners agree" case matched **0 red cases** under the trailing-text mutation, and the
+harness said so. Of course: both now call `fence_closes`, so a wrong shared rule breaks them
+identically and they still agree. It guards against RE-FORKING the rule, not against the rule being
+wrong. That limit is now written into the case and into the manifest note.
+
+**Mutations: 162, 0 survivors, count HELD.** Five anchors were retargeted onto the extracted rule
+rather than orphaned — anchoring is by text, so a refactor silently unhooks its own guards, which
+this repo has recorded twice. Two of the five became better guards than they replaced: one on the
+gate's CALL to the shared rule, one on the COMPOSITION (that the three rules are ANDed).
+
+Gates: check-docs, check-review-rounds, check-selftest-counts, check-ratchet-contract,
+check-dashboard-entry all green; `check-dashboard-entry --self-test` 123 → **127**.
