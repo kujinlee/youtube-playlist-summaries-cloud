@@ -2245,7 +2245,7 @@ independently falsifiable.
 
 ⛔ **The Codex half found that the defect SURVIVED MY FIX, one shape over.** A closing fence may
 carry only whitespace in CommonMark; mine accepted trailing text, so an annotated inner fence —
-```` ``` not a CommonMark closing fence ```` — read as a closer, the lines after it stopped being
+    ``` ``` not a CommonMark closing fence ``` — read as a closer, the lines after it stopped being
 code, and a valid phantom entry appeared again. Reproduced before fixing: 2 entries, ids
 `['2026-08-28/1','2026-08-29/1']`, errors `[None, None]`. That shape is not exotic — it is how
 anyone quotes markdown inside markdown, which this project's own skill teaches. `exemption_reason`
@@ -2270,3 +2270,64 @@ the extracted scanner's rules (wrong closing character, ignored LENGTH, dropped 
 trailing text on a closer), two pin BOTH directions the parser can fail — under-rejecting
 (fence-blind) and over-rejecting (the `_inert_lines` wiring that deleted a live entry).
 `--mutate .`: 7 files, **162 mutations, 0 survivors**.
+
+## 2026-09-01
+Filed the leftover from yesterday's fence fix: three copies of one rule where there should be one.
+The fence fix that just shipped left something behind, and it is now written down rather than
+living in a merge note. The checker that reads pull-request bodies, the part that decides whether a
+question is really being asked, and the new shared scanner all separately know what a code block
+is. Only one of them is the shared one.
+
+Nothing is broken by this today, and the part your page actually uses is the correct one. It is
+filed because these copies have already disagreed twice — once silently, in a way that made a real
+question invisible — and because the next person to touch any of them has no way to know the other
+two exist unless it is recorded.
+
+Worth knowing about how the last fix was described: the merge notes could be read as saying the
+duplication was solved. It was not. It went from two copies to three, one of which is now the
+official one. That is progress and it is not a fix, and the difference is the sort of thing that
+quietly becomes untrue in a summary.
+<!--tech-->
+Backlog #85 🟡, filed with the user's agreement from the Codex half of PR #206's review round 1
+(rated Medium there, accepted as debt rather than folded into a branch already carrying a High fix).
+`exemption_reason` and `_inert_lines` hold hand-written copies; `fenced_lines` is the extracted
+canonical one that `parse_entries` asks.
+
+⚠ `_inert_lines`' docstring still claims *"⚠ ONE scanner, sharing `exemption_reason`'s discipline"*
+— true about the RULES, false about the CODE. Same shape as the false comment PR #205 deleted, and
+left in place deliberately rather than patched here, so the row and the code say the same thing.
+
+⛔ **The obvious unification is wrong, and was measured wrong once already.** Precomputing
+`fenced_lines` inside `_inert_lines` changes comment-vs-fence PRIORITY: today a ``` inside an HTML
+comment does not open a fence, and precomputing would make it. Shape is Codex's — a fence-TOKEN
+helper returning marker plus rest, called AFTER the comment branch.
+
+⚠ A differential check is mandatory, not a green suite. Both of PR #206's wrong turns passed
+everything until the corpus grew, so the corpus must carry all four dimensions that have each
+already produced a defect: HTML comments, tildes, fence length, trailing text on a closer.
+
+⛔ **AND WRITING THIS ENTRY IMMEDIATELY FOUND A LANDMINE I SHIPPED IN PR #206.** Line 2247 of this
+store — inside entry 2026-09-01/17, the one describing the fence fix — began at column 0 with four
+backticks. Under CommonMark that OPENS a fence with an info string, and nothing ever closed it, so
+**every future entry would have been silently swallowed.** This entry was the first to exist after
+it, and it vanished: 48 entries, last id 2026-09-01/17, mine absent.
+
+The fix worked exactly as designed. I wrote the bug.
+
+⚠ **THIRD INSTANCE OF ONE LESSON IN A DAY, and the sharpest.** Entry /17 verified clean when I
+committed it — 48 entries, 0 errors — because the swallowed region was AFTER the last entry and
+there was nothing yet to lose. A true measurement over a corpus that could not yet contain the
+failure. The same shape as the probe with no HTML comment and the fence cases with no trailing
+text.
+
+⚠ **REPAIRED IN PLACE, and disclosed rather than done quietly.** The line is now indented, so it is
+inert code rather than a fence opener. This edits an already-merged entry, which the store's
+append-only rule forbids — the rule exists so that ids cannot be rebound, and this change touches
+no header, so `/16` and `/17` keep their ids (verified: 49 entries, last `/18`, 0 errors). Appending
+a correction could not have fixed it: the landmine would still be armed.
+
+⚠ **WORTH A GUARD, NOT FILED:** nothing refuses an entry that leaves a fence open at end-of-store.
+That is mechanically detectable and would have caught this at the gate. Left for the user's call —
+filing is their step.
+
+No code change on this branch. Backlog row + this entry; `master` is `f76eaa7e`.
