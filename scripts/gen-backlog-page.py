@@ -250,6 +250,22 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
              "one test: excusing a branch from owing an entry silently excuses the entry it added "
              "from being well-formed. It also runs only when a pull request opens, by which time "
              "you have already read the page."),
+        (82, "The same check reads the SHAPE of an entry's header but never asks whether the "
+             "thing it points at exists. An entry can say “this settles the question from "
+             "Tuesday” while naming a Tuesday that never happened, and it passes — the page is "
+             "left to say “could not parse this entry” after you have already opened it."),
+        (83, "A settled item tells you it was decided but never what was decided, and the card "
+             "carrying it still wears the styling of something live. Two small things, one "
+             "effect: you cannot tell from the page which questions are actually closed."),
+        (84, "The guide for writing these entries says you may put an example in a code block "
+             "and the page will leave it alone. The page had no idea what a code block was, so "
+             "one example could cut an entry in half and quietly take the identifier belonging "
+             "to the next one — and those identifiers are how an entry says which earlier "
+             "question it answers. Fixed and merged; the row stays for the record."),
+        (85, "Three separate pieces of that same machinery each work out for themselves what a "
+             "code block is, and only one of them is the shared version. Nothing is broken "
+             "today and the part the page uses is the correct one — but these copies have "
+             "already disagreed twice, once in a way that made a real question invisible."),
      ]),
 ]
 
