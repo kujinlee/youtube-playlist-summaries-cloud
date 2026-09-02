@@ -223,7 +223,20 @@ def fenced_lines(text: str) -> set[int]:
             if m:
                 same_char = m.group("ch")[0] == fence[0]
                 long_enough = len(m.group("ch")) >= len(fence)
-                if same_char and long_enough:
+                # ⛔ CommonMark: an OPENING fence may carry an info string
+                # (```python), a CLOSING one may carry only whitespace. Found by the
+                # Codex half of this branch's review round 1, rated High, and
+                # reproduced before fixing — WITHOUT this the very bug being fixed
+                # survives one shape over:
+                #     ```
+                #     ``` not a CommonMark closing fence   <- read as CLOSING
+                #     ## 2026-08-29                        <- now "outside" -> phantom
+                # measured 2 entries, ids ['2026-08-28/1', '2026-08-29/1'], errors
+                # [None, None]. A fenced example that merely ANNOTATES its inner
+                # fence — which is exactly how anyone quotes markdown inside
+                # markdown — still minted a valid phantom entry holding a real id.
+                no_trailing_text = not line[m.end():].strip()
+                if same_char and long_enough and no_trailing_text:
                     fence = None
             continue
         if m:
@@ -597,6 +610,16 @@ def _self_test() -> int:
     case("a SHORT inner fence does not close a longer one",
          sorted(fenced_lines("a\n`````\n```\nx\n`````\nb\n")), [1, 2, 3, 4])
     case("an unclosed fence runs to the end", sorted(fenced_lines("a\n```\nx\ny")), [1, 2, 3])
+    # Review round 1, Codex High. An OPENER may carry an info string; a CLOSER may
+    # carry only whitespace. Without this the fence "closes" on its own annotated
+    # inner fence and the lines after it stop being code — which is how a fenced
+    # example that quotes markdown inside markdown still minted a phantom entry.
+    case("a closer with trailing text does NOT close",
+         sorted(fenced_lines("a\n```\n``` not a closer\nx")), [1, 2, 3])
+    case("...but a closer with trailing SPACES does",
+         sorted(fenced_lines("a\n```\nx\n```   \nb")), [1, 2, 3])
+    case("an opener may carry an info string",
+         sorted(fenced_lines("a\n```python\nx\n```\nb")), [1, 2, 3])
     case("no fence, nothing marked", fenced_lines("a\nb\n## 2026-08-28\n"), set())
     # ⛔ THE WHOLE REASON THIS FUNCTION EXISTS RATHER THAN REUSING `_inert_lines`.
     # An unclosed `<!--` makes `_inert_lines` mark everything after it — correct for

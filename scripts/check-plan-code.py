@@ -469,7 +469,7 @@ EXPECTED_MUTATIONS = {
     # BLOCK mutation provably cannot reach: corrupting the shared rule moves both
     # sides together and leaves the agreement case green. Only breaking the
     # DERIVATION separates them, and that is the regression the seam exists to stop.
-    "scripts/check-dashboard-entry.py": 33,
+    "scripts/check-dashboard-entry.py": 34,
     "scripts/check-plan-code.py": 21,
     # ⟳ 2026-08-31, backlog #76/#77: the shared page chrome. Adding it found TWO
     # vacuous cases of my own — a "dirty tree" assertion compared against a
@@ -1983,6 +1983,9 @@ def _self_test() -> int:
     # This literal is a SECOND, independent statement of the total, and that is the
     # point: moving a per-file count without it makes the control refuse to run
     # rather than silently re-baselining. It did exactly that here.
+    # ⟳ 161 -> 162, review round 1 of backlog #84 (Codex High): a CLOSING fence may
+    # carry only whitespace. Without it the scanner closed on an annotated inner fence
+    # and the branch's own defect survived one shape over — measured, not argued.
     # ⟳ 156 -> 161, backlog #84 (the parser's fence blindness). FIVE entries, and the
     # split across the two files is the point. THREE on the gate pin the extracted
     # `fenced_lines` — wrong closing character, ignored fence LENGTH, and dropping the
@@ -2002,7 +2005,7 @@ def _self_test() -> int:
     # together, so the agreement case stays green. Only breaking the derivation
     # separates them. (2) came from the Claude review half answering the Codex half's
     # Low — the agreement case was load-bearing and nothing proved it fired.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 161)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 162)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so

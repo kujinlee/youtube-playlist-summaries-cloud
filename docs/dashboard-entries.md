@@ -2240,8 +2240,33 @@ rules sat in one `and`-chain sharing an anchor. Correct refusal, and it improved
 second time today: the closing test is now two named decisions (`same_char`, `long_enough`), each
 independently falsifiable.
 
-Counts: `check-dashboard-entry --self-test` 112 → **120** + 13; `gen-dashboard` 301 → **307**;
-`EXPECTED_MUTATIONS` 156 → **161** (gate 30 → 33, gen-dashboard 68 → 70). Five mutations, and the
-split is the point: three pin the extracted scanner's rules, two pin BOTH directions the parser can
-fail — under-rejecting (fence-blind) and over-rejecting (the `_inert_lines` wiring that deleted a
-live entry). `--mutate .`: 7 files, **161 mutations, 0 survivors**.
+**REVIEW ROUND 1 — NOT CONVERGED at dispatch: 1 High, 0 Blocking.**
+`docs/reviews/whole-branch-parser-fence-blindness-review.md`.
+
+⛔ **The Codex half found that the defect SURVIVED MY FIX, one shape over.** A closing fence may
+carry only whitespace in CommonMark; mine accepted trailing text, so an annotated inner fence —
+```` ``` not a CommonMark closing fence ```` — read as a closer, the lines after it stopped being
+code, and a valid phantom entry appeared again. Reproduced before fixing: 2 entries, ids
+`['2026-08-28/1','2026-08-29/1']`, errors `[None, None]`. That shape is not exotic — it is how
+anyone quotes markdown inside markdown, which this project's own skill teaches. `exemption_reason`
+had already paid for the sibling fence-LENGTH rule the same way; I ported two of its three rules
+and missed the third. FIXED as `no_trailing_text`, its own decision, cases and mutation.
+
+⚠ **SECOND TIME THIS BRANCH that my measurement was sound and my CORPUS was not** — first a probe
+with no HTML comment (which deleted a live entry), then fence cases with no trailing text. Both
+times the code did what I measured; both times I measured the wrong set.
+
+⚠ **STATED, NOT HIDDEN:** three fence-aware implementations still exist. This branch takes the
+duplication from "two copies, one about to become three" to "three copies, one canonical and
+documented". An improvement, not a resolution. Unifying them needs a fence-token helper called
+after `_inert_lines`' comment branch, and it touches two functions whose escapes were paid for in
+production — deliberately not folded into a branch already carrying a High fix.
+
+⚠ **REVIEW GAP: claude — author self-review, not an independent half** (session instructions).
+
+Counts: `check-dashboard-entry --self-test` 112 → **123** + 13; `gen-dashboard` 301 → **307**;
+`EXPECTED_MUTATIONS` 156 → **162** (gate 30 → 34, gen-dashboard 68 → 70). Six mutations: four pin
+the extracted scanner's rules (wrong closing character, ignored LENGTH, dropped marker lines,
+trailing text on a closer), two pin BOTH directions the parser can fail — under-rejecting
+(fence-blind) and over-rejecting (the `_inert_lines` wiring that deleted a live entry).
+`--mutate .`: 7 files, **162 mutations, 0 survivors**.
