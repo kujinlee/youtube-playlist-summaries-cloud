@@ -152,7 +152,7 @@ Run: `python3 scripts/check-ratchet-contract.py --self-test`
 Expected: FAIL — `NameError: name 'population_paths' is not defined`
 ⚠ Not a `case` NameError: Step 1 defined it.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [ ] **Step 4: Write the minimal implementation**
 
 Add above `discover_guards`:
 
@@ -169,12 +169,12 @@ def population_paths(scripts_dir: Path, pattern: str = "check-*.py") -> list[str
     return sorted(f"scripts/{p.name}" for p in scripts_dir.glob(pattern))
 ```
 
-- [ ] **Step 4: Run the tests and make sure they pass**
+- [ ] **Step 5: Run the tests and make sure they pass**
 
 Run: `python3 scripts/check-ratchet-contract.py --self-test`
 Expected: PASS, count rises by 3.
 
-- [ ] **Step 5: Rewire `main()` to use it, with the pattern unchanged**
+- [ ] **Step 6: Rewire `main()` to use it, with the pattern unchanged**
 
 Replace the loop at `:394-401`:
 
@@ -188,12 +188,12 @@ Replace the loop at `:394-401`:
             return 1
 ```
 
-- [ ] **Step 6: Prove behaviour is unchanged**
+- [ ] **Step 7: Prove behaviour is unchanged**
 
 Run: `python3 scripts/check-ratchet-contract.py`
 Expected: `guards discovered (26)` … `ratchet contract OK`, exit 0. **Still 26.**
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add scripts/check-ratchet-contract.py
@@ -766,7 +766,7 @@ PY
 ```
 Expected: 87 total, **57 open**, 30 closed (was 59/28). ⚠ Never hand-roll this count.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add -A
