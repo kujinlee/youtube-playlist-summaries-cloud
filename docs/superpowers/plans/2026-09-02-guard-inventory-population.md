@@ -20,9 +20,19 @@ first, because a mutation cannot go red against a line no test case drives.
 **Spec:** [`docs/superpowers/specs/2026-09-02-guard-inventory-population-design.md`](../specs/2026-09-02-guard-inventory-population-design.md) **v4**.
 **Backlog:** closes #72 and #73.
 
-**Status: v2 — Post-Plan Gate round 1 folded in, BOTH halves.** Codex 2 Blocking, 1 High, 1 Low;
-Claude **4 Blocking**, 2 High, 4 Medium, 2 Low; overlapping on two. Reviews:
-[`plan-guard-inventory-population-r1-{codex,claude}.md`](../../reviews/plan-guard-inventory-population-r1-codex.md).
+**Status: v3 — Post-Plan Gate rounds 1 and 2 folded in.**
+
+| Round | Codex | Claude |
+|---|---|---|
+| 1 | 2 Blocking, 1 High, 1 Low | **4 Blocking**, 2 High, 4 Medium, 2 Low |
+| 2 *(scoped to v2's own fixes)* | 2 Blocking, 1 High | ⛔ **NOT RUN — `REVIEW GAP: claude`** |
+
+Reviews: [`plan-guard-inventory-population-r{1,2}-*.md`](../../reviews/plan-guard-inventory-population-r1-codex.md).
+
+⛔ **Round 2's Claude half DID NOT RUN** — dispatched twice, both attempts died on `API Error: 529
+Overloaded`. Recorded as a written gap, not passed over. **A missing half is NOT a clean half**, and
+in every prior round of this slice the second half found Blockings the first missed. Re-attempt
+against v3 in round 3.
 
 > ⛔ **Every Blocking would have surfaced as a CI failure or a SILENT NO-OP, after an implementation
 > subagent had already written code.** `case()` did not exist (a `NameError` on the first task);
@@ -115,12 +125,44 @@ def _make_case(state: dict[str, int]):
     return case
 ```
 
-and at the top of `self_test()`:
+⛔ **CONVERT THE WHOLE ACCOUNTING IN THIS STEP. Do not defer the tally to T4.**
+
+Gate round 2 measured what deferring costs — helper added, tally left on the old `failures` counter,
+one deliberately failing case:
+
+```
+[FAIL] a DELIBERATELY failing probe: got 1
+       expected 2
+self-test: 21/21 passed
+rc=0
+```
+
+**The suite reports success over a failure.** Every "run it to make sure it fails / passes" step in
+T1, T2 and T3 would be unfalsifiable, across several commits. So in this step: add the helper, and
+**rewrite every existing comparison loop to call it**, delete the `failures` variable, and replace
+the tally and return:
 
 ```python
+def self_test() -> int:
     state = {"total": 0, "failures": 0}
     case = _make_case(state)
+
+    for name, text, expected in CASES:
+        case(name, sorted({v.rule for v in check_contract("t.py", text)}), sorted(expected))
+    # …every other loop likewise…
+
+    print(f"self-test: {state['total'] - state['failures']}/{state['total']} passed")
+    return 1 if state["failures"] else 0
 ```
+
+⚠ The old `total` was `len(CASES) + len(DISCOVERY_CASES) + …` — a count of **table rows**. The helper
+counts **comparisons**. They differ as soon as a step adds a case outside a table (T1 Step 2 adds
+two), and T3 deletes `DISCOVERY_CASES` entirely, so the old expression cannot survive anyway.
+
+- [ ] **Step 1b: Prove the accounting is live before writing another line**
+
+Add a temporary `case("probe", 1, 2)`, run the suite, confirm it prints `[FAIL]` **and exits 1**,
+then delete the probe. A green exit here means the tally is still inert.
 
 - [ ] **Step 2: Write the failing case — the DEFAULT pattern is what the case exercises**
 
@@ -424,22 +466,11 @@ deleted the `DISCOVERY_CASES` loop and its print, and T3 rewrote the `POPULATION
 **Files:**
 - Modify: `scripts/check-ratchet-contract.py` (the remaining `print(f"  FAIL …")` sites, and `main`)
 
-- [ ] **Step 1: Convert each remaining block**
+⟳ **The conversion and the tally moved to T1 Step 1** — gate round 2 showed that deferring them made
+T1–T3's red-green loops report success over failure. What remains here is the CANNOT-RUN exit, plus
+the check that no second print format survived the conversion.
 
-```python
-    for name, text, expected in CASES:
-        got = sorted({v.rule for v in check_contract("t.py", text)})
-        case(name, got, sorted(expected))
-```
-
-Then replace the trailing tally with the helper's state:
-
-```python
-    print(f"self-test: {state['total'] - state['failures']}/{state['total']} passed")
-    return 1 if state["failures"] else 0
-```
-
-- [ ] **Step 1b: Prove no `  FAIL` print survives**
+- [ ] **Step 1: Prove no `  FAIL` print survives**
 
 ```bash
 grep -n 'print(f"  FAIL' scripts/check-ratchet-contract.py; echo "exit=$?"
@@ -728,8 +759,17 @@ git commit -F .git/COMMIT_MSG_T8
 
 - [ ] **Step 1: Close the rows**
 
-Each closed row's status cell must **lead** `✅ (was 🟠)` / `✅ (was 🟢)` — a severity scan counts a
-trailing marker as open, and `check-docs.py` refuses it by name.
+⛔ **It is the ITEM cell that changes, not the Status cell.** `scripts/check-docs.py:456` is
+
+```python
+        num, item, status = cells[1].strip(), cells[2].strip(), cells[-2].strip()
+        if "✅" in status and item[:1] in severity:
+```
+
+so: put `✅` in the **Status** cell, and make the **Item** cell **lead** `✅ (was 🟠)` /
+`✅ (was 🟢)` instead of the bare severity marker. The guard's own error text says *"Write
+`✅ (was {item[:1]})` instead, keeping the original severity in parentheses."* A severity scan counts
+a bare leading marker as open — which is how #46 and #50 were once closed while still open.
 
 - [ ] **Step 2: Delete both `GROUPS` tuples**
 
@@ -764,7 +804,12 @@ assert rows and opens, "empty — refuse to report it"
 print(f"TOTAL {len(rows)}  OPEN {len(opens)}  CLOSED {len(rows)-len(opens)}")
 PY
 ```
-Expected: 87 total, **57 open**, 30 closed (was 59/28). ⚠ Never hand-roll this count.
+Expected: **88 total, 58 open, 30 closed** (from 87/59/28).
+
+⛔ **v2 said 87/57/30 and that was arithmetically impossible.** This task closes two rows **and**
+Step 3 files a new **open** one: −2 open, +2 closed, +1 total, +1 open. The old number was right
+before Step 3 was added in the same editing pass and was never re-derived — the seventh instance in
+this slice of stating a count from a prior state. ⚠ Never hand-roll it; run the parser above.
 
 - [ ] **Step 6: Commit**
 
