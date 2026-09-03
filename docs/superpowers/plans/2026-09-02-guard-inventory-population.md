@@ -751,7 +751,7 @@ promises it twice, so shipping without it makes the spec's own limits section fa
 
 The branch changes tracked files, so an entry is required or the gate refuses it.
 
-- [ ] **Step 4: Verify the counts through the owning parser**
+- [ ] **Step 5: Verify the counts through the owning parser**
 
 ```bash
 python3 - <<'PY'
