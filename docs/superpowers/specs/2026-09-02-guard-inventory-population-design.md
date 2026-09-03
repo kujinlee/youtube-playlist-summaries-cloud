@@ -4,496 +4,414 @@
 > **Goal:** A person who was away can see the current state, what changed, and what needs them — without reading the chat transcript.
 
 **Backlog:** #72 (and #73, which closes with it).
-**Status: v2 — round 1 folded in, BOTH halves.** Design shape (declare-out) approved by the user
-2026-09-02 and unchanged; every change below is an accuracy or mechanism repair.
+**Status: v3 — rounds 1 and 2 folded in, BOTH halves each round.** The shape the user approved
+(declare-out) is unchanged. **The declaration's ENCODING has changed twice**, and §3 explains why the
+second change is structural rather than another attempt at the same idea.
 
 | Round | Codex (`gpt-5.5`) | Claude |
 |---|---|---|
-| 1 | 1 Blocking, 2 High, 2 Medium — **NOT CONVERGED** | 1 Blocking, 5 High, 5 Medium, 4 Low — **NOT CONVERGED** |
+| 1 | 1 Blocking, 2 High, 2 Medium | 1 Blocking, 5 High, 5 Medium, 4 Low |
+| 2 *(scoped to round 1's own fixes)* | 1 Blocking, 2 High, 1 Medium, 1 Low | **2 Blocking**, 4 High, 4 Medium, Low |
 
-Reviews: [`spec-guard-inventory-population-r1-codex.md`](../../reviews/spec-guard-inventory-population-r1-codex.md),
-[`spec-guard-inventory-population-r1-claude.md`](../../reviews/spec-guard-inventory-population-r1-claude.md).
+Reviews: `docs/reviews/spec-guard-inventory-population-r{1,2}-{codex,claude}.md`.
+**Both round-2 Blockings are defects in round 1's own fixes**, which is what the scoping was for.
 
-> ⚠ **The halves disagreed once, and the disagreement was the signal.** Codex found
-> `build-m4-schema.py` misclassified; the Claude half independently listed it among conforming OUT
-> files and never questioned it. Codex was right (§4.1). This repo's record is that when the halves
-> split, the finding-half has been right every time.
-
-> ⚠ **v2's §3 is a MECHANISM change, not a wording change.** v1's grammar let the guard delete itself
-> from its own population *by documenting its own rule* — demonstrated by execution, not argued. §5
-> item 2 instructed the implementer to write exactly that sentence. See §3.1.
-
-**Anchor fit, stated rather than assumed.** `status-visibility` is the anchor **most** tooling specs
-here use, including `2026-08-29-mutation-manifest-retarget-design.md`. ⚠ Not all: the pure-tooling
-`2026-08-19-prod-readonly-smoke-design.md:3` allocated its own `prod-smoke`, so "every tooling spec"
-(v1) was false. The fit here is analogical — a guard inventory exists to make guard coverage visible,
-and the defect below is a case of it reporting coverage it did not have. No new anchor is allocated;
-a name in `docs/anchors.md` is permanent and allocating one is the user's call.
+> ⛔ **THE COUNT IS 28, NOT 29 — and v2's "correction" to 29 was the author's error.**
+> Round 1 (Codex) said `build-m4-schema.py` was misclassified; v2 moved it IN and wrote §12 claiming
+> *"the finding-half was right"*, citing a memory heuristic. Round 2 (Claude) showed the criterion v2
+> wrote **to settle exactly this** derives it **OUT**. See §4.1. v1's number was right; v2's
+> correction was not. Recorded rather than quietly reverted, because adopting a reviewer's
+> reclassification and then writing a rule that contradicts it is the failure this spec is about.
 
 ---
 
 ## §1 — The defect, as measured against `77c5676d`
 
-`scripts/check-ratchet-contract.py` polices every guard in the repo: each must have a `--self-test`
-(R1), must not return `0` from an `except` handler (R2), and must have a caller or a written
-`NO-CALLER:` reason (R3). Its value depends entirely on **which files it looks at**.
-
-It looks at 26 of 45. And it says otherwise, in two places:
+`scripts/check-ratchet-contract.py` polices every guard: each needs a `--self-test` (R1), no `except`
+returning `0` (R2), and a caller or a written `NO-CALLER:` reason (R3). Its value depends entirely on
+**which files it looks at**. It looks at **26 of 45**, and says otherwise in two places:
 
 | Where | The claim | What the code does |
 |---|---|---|
-| `discover_ratchets:67` (dead) | discovery from *"TWO independent sources"* — CI step names, and a docstring self-declaring via `RATCHET_DOCSTRING_RE` | Source 2 is **unreachable**. No caller ever offers it a non-`check-*` file |
-| **`discover_guards:132` (live)** | **"EVERY guard on disk. The population is the FILESYSTEM."** | It is only ever handed a name-filtered list |
+| `discover_ratchets:67` (dead) | discovery from *"TWO independent sources"* | source 2 is unreachable — no caller offers it a non-`check-*` file |
+| **`discover_guards:132` (live)** | **"EVERY guard on disk. The population is the FILESYSTEM."** | it is only ever handed a name-filtered list |
 
-The second row is the sharper one and is **not** in backlog #72 as filed. The row is about a function
-nothing calls; the same false claim is in the function that runs.
+⚠ **One narrowing site:** `main:395` — `glob("check-*.py")` — builds `texts`. `evaluate:174` does not
+glob; it forwards. `GUARD_PATH_RE` (`:108`) then filters an already-filtered list, which is why the
+narrowing is invisible when reading `discover_guards` alone.
 
-⚠ **There is exactly ONE narrowing site, and naming it precisely matters** (v1 blurred this):
-`main:395` — `for p in sorted((ROOT / "scripts").glob("check-*.py")):` — builds `texts`.
-`evaluate:174` does **not** glob; it forwards whatever `main` handed it. `GUARD_PATH_RE`
-(`scripts/check-[\w.-]+\.py`, `:108`) then filters an already-filtered list — a second sieve with the
-same mesh, which is why the narrowing is invisible when reading `discover_guards` alone.
+**Reproduced by all four review halves:** 45 / 26 / 19; `guards discovered (26)`, exit 0;
+`--self-test` 21/21.
 
-**Measured 2026-09-02, reproduced independently by both review halves:** `scripts/*.py` = 45;
-`check-*.py` = 26; live run reports `guards discovered (26)`, exit 0; `--self-test` 21/21.
+### 1.1 — Why backlog #72's own proposal fails
 
-### 1.1 — Why the row's first proposed shape does not work
-
-Backlog #72 offers *"widen the population to `scripts/*.py` and let `RATCHET_DOCSTRING_RE` do the
-selecting it already claims to do."* **Measured: that enrolls 6 files, of which 1 is a genuine
-self-declaration.** Both halves reproduced all six.
-
-| File | The line that matches `\bratchet\b` | Verdict |
-|---|---|---|
-| `gen-m4-manifest.py` | *"regenerate and FAIL if it differs (ratchet)"* | genuine declaration |
-| `explainer-serve.py` | *"NOT a ratchet, and deliberately not claiming to be."* | **denial** |
-| `page_markup.py` | *"THIS FILE IS **NOT** IN THE RATCHET INVENTORY, AND CANNOT BE."* | **denial** |
-| `prior-art.py` | *"NOT a ratchet — a research tool."* | **denial** |
-| `gen-backlog-page.py` | *"…this page and the marker ratchet…"* | citation |
-| `subject_status.py` | *"Tell a ratchet's reader what its SUBJECT is…"* | citation |
-
-A bare-word regex cannot distinguish a declaration from a denial. `page_markup.py`'s docstring
-*predicted this outcome* on 2026-08-30 and the sentence that predicted it is the sentence that would
-enroll the file. Same emphasis- and context-blindness class as `**Decide:**` (backlog #81),
-`NO-ENTRY:` and `REVIEW GAP:`.
+*"Let `RATCHET_DOCSTRING_RE` do the selecting"* enrolls 6 files, of which **1** is a genuine
+declaration. `explainer-serve.py`, `page_markup.py` and `prior-art.py` match because they **deny**
+being ratchets; `gen-backlog-page.py` and `subject_status.py` by citation. `page_markup.py`'s
+docstring predicted this on 2026-08-30, and the sentence that predicted it is the sentence that would
+enroll the file. Same class as `**Decide:**` (backlog #81), `NO-ENTRY:`, `REVIEW GAP:`.
 
 ### 1.2 — Why the fact was known and did not travel
 
-`scripts/explainer-serve.py:68-73` already records the exact mechanism — *"that script discovers by
-globbing `scripts/check-*.py`, so this file is never even read"*. **A true statement in a neighbour's
-comment did not correct the false one at the source.** That is the same shape as the defect itself,
-and it is why §7 exists: the fix is not complete until every site stating the old population is
-corrected.
+`scripts/explainer-serve.py:68-73` already recorded the mechanism. **A true statement in a
+neighbour's comment did not correct the false one at the source.** §7 exists because of this.
 
 ---
 
 ## §2 — The decision: declare-out
 
-**The population is every `scripts/*.py`. A file leaves the inventory only by saying so in writing.**
+**The population is every `scripts/*.py`. A file leaves only by saying so in writing.**
 
-Two alternatives were costed and rejected:
+- **Honesty-only (rejected).** Correct the docstrings, change no behaviour. Honest, but retires the
+  ambition rather than meeting it.
+- **Declare-in via a central roster (rejected).** Evadable by omission: a guard nobody adds is a guard
+  nobody polices, and noticing what nobody is looking at is the inventory's job.
 
-**Honesty-only (rejected).** Correct both docstrings to say the population is `scripts/check-*.py`,
-delete the dead function, change no behaviour. XS, and honest — but it closes the row by retiring the
-ambition rather than meeting it, and leaves the next unconventionally-named guard invisible.
+> ⛔ **v1 attached a false cause to that argument; deleted.** v1 said non-registration is *"precisely
+> how `gen-m4-manifest.py` came to be missed"* — refuted by §1.1's own table, where it is the one
+> **genuine declaration**. It registered; the *population* never offered it. v1 also cited
+> `discover_ratchets:70`'s objection to *"a registry **list**"* against a per-file marker, inverting a
+> docstring that offers per-file self-declaration as the defence against rosters.
 
-**Declare-in with an unambiguous marker (rejected).** Widen the population, select on an explicit
-token such as `GUARD: yes`. It fixes §1.1's false positives cheaply, but **a central roster is
-evadable by omission**: a guard nobody adds is a guard nobody polices, and the inventory's whole job
-is noticing what nobody is looking at.
-
-> ⛔ **v1 attached a false cause to that argument and it is deleted.** v1 said non-registration is
-> *"precisely how `gen-m4-manifest.py` came to be missed"*. **That is refuted by §1.1's own table**,
-> where `gen-m4-manifest.py` is the one row marked *genuine declaration* — it **did** register. It was
-> missed **by the population**, which is the whole of §1. Struck rather than quietly removed, because
-> writing a persuasive causal sentence that the same document refutes two pages earlier is exactly the
-> failure mode this spec is about.
->
-> ⚠ Second correction to the same paragraph: `discover_ratchets`'s docstring objects to *"a registry
-> **list**"* (`:70`) and offers per-file self-declaration as the **defence against** it (`:71-72`).
-> v1 cited that docstring against a per-file marker, inverting what it says. The general evadability
-> argument stands on its own; the borrowed authority does not.
-
-**Declare-out (chosen)** is the only shape where **omission fails**. A new script that declares
-nothing is in the inventory and stays red until someone decides which it is. It is also not a new
-idea in this file: `NO-CALLER: <reason>` is the same move one level down.
+**Declare-out** is the only shape where **omission fails**: a script that declares nothing is IN and
+stays red until someone decides.
 
 ---
 
-## §3 — The declaration grammar
-
-One line in the **module docstring**, written **flush left**:
-
-```
-NOT-A-GUARD: <reason>
-```
+## §3 — The declaration is an AST node, not text
 
 ```python
-NOT_A_GUARD_RE = re.compile(r"(?m)^NOT-A-GUARD:[ \t]*(\S[^\n]*)")
+NOT_A_GUARD = "a page generator; its product is an artefact, not a verdict"
 ```
 
-### 3.1 — Why flush-left, and why v1's grammar was a Blocking defect
+A **module-level assignment** to the name `NOT_A_GUARD` whose value is a non-empty string constant,
+read via `ast`. Nothing else counts.
 
-v1 used `NOT-A-GUARD:[ \t]*(\S[^\n]*)`, unanchored, searched over the whole docstring. That matches
-**any occurrence anywhere**, including prose describing the rule and indented examples demonstrating
-it.
+### 3.1 — Why text failed, twice, and why this is not a third attempt at the same thing
 
-⛔ **The consequence was demonstrated by execution in round 1, not argued.** v1 §5 item 2 *instructs*
-the implementer to rewrite `check-ratchet-contract.py`'s docstrings to describe the new mechanism.
-Doing so:
+v1 used an unanchored docstring match. v2 anchored it flush-left. **Round 2 defeated both**, and the
+executed counter-cases show why the whole approach is unsound:
+
+| Docstring shape | v1 | v2 flush-left | Should be |
+|---|---|---|---|
+| genuine declaration | EXCLUDE | EXCLUDE | EXCLUDE |
+| prose describing the rule, mid-sentence | EXCLUDE ❌ | in | in |
+| **prose describing the rule, marker at line start** | EXCLUDE ❌ | **EXCLUDE ❌** | in |
+| example indented under prose | EXCLUDE ❌ | in | in |
+| **example that is the body's only content** | EXCLUDE ❌ | **EXCLUDE ❌** | in |
+| **body uniformly indented, example inside it** | EXCLUDE ❌ | **EXCLUDE ❌** | in |
+
+`ast.get_docstring(clean=True)` dedents by the **minimum** indent across body lines. So whether a
+demonstration survives the anchor depends on an unrelated property of the *rest of the docstring*.
+**After cleaning, a declaration and a demonstration of a declaration can be byte-identical.** No
+text-position rule can separate them; a third regex would be the third wrong answer.
+
+⚠ **v2's §3.1 measurement was itself the repo's corpus error** — it enumerated "indented example" from
+**one instance** instead of from the rule, two paragraphs after §4.3 corrects exactly that. Third of
+four instances in this slice (see §12).
+
+⛔ **The consequence was not cosmetic.** With v2's grammar, documenting the rule in the contract's own
+docstring — which v2 §5 *instructed* — produced:
 
 ```
-=== SELF-EXCLUSION: the guard documents its own rule in its module docstring ===
-EXIT=0
-guards discovered (27): scripts/check-anchors.py, …
-occurrences of "check-ratchet-contract" in the discovered list: 0
+v2 flush-left  flushleft_demo   run_exit=0  count=28  self_in_population=False   selftest 22/23
 ```
 
-**The guard that polices every guard removed itself from its own population, and reported success.**
-A mechanism whose stated advantage is inevitability must not have an evasion its own change list walks
-into.
+**The guard removed itself from its own population and printed `ratchet contract OK`.**
 
-**The anchor was MEASURED, not assumed** — this repo's `^marker` cannot see `**marker**` lesson says
-an anchoring claim is a measurement, and `ast.get_docstring` *dedents*, which changes what "line
-start" means. Three candidates over five realistic docstrings:
+### 3.2 — The AST rule, measured across 8 cases
 
-| Case | v1 unanchored | `^[ \t]*` | **`^` flush-left** | Wanted |
-|---|---|---|---|---|
-| genuine declaration, flush left | EXCLUDE | EXCLUDE | **EXCLUDE** | EXCLUDE |
-| prose describing the rule | EXCLUDE ❌ | in | **in** | in |
-| indented example of the rule | EXCLUDE ❌ | EXCLUDE ❌ | **in** | in |
-| bare colon, reason on next line | in | in | **in** | in |
-| mid-sentence mention | EXCLUDE ❌ | in | **in** | in |
+| Input | Result |
+|---|---|
+| `NOT_A_GUARD = "a page generator…"` at module level | **EXCLUDED** ✅ |
+| docstring documenting the rule | IN ✅ |
+| docstring showing an example, **any** indentation | IN ✅ |
+| a comment `# NOT_A_GUARD = "sneaky"` | IN ✅ |
+| assignment nested inside a function | IN ✅ |
+| `NOT_A_GUARD = ""` (empty reason) | IN ✅ |
+| `NOT_A_GUARD = True` (non-string) | IN ✅ |
+| unparseable file | IN ✅ |
 
-Only flush-left gets all five. `^[ \t]*` — the obvious anchor — still swallows the indented example,
-because dedenting preserves *relative* indent: a real declaration ends up flush left, a demonstrated
-one does not.
+Prose cannot forge an AST node. Every failure mode fails **closed** — toward being policed.
 
-⚠ **`[ \t]`, never `\s`**, retained verbatim from `NO_CALLER_RE` (`:117`) and for the reason recorded
-above it: `\s` crosses the newline and adopts the *next* docstring line as the reason, turning the
-opt-out into a rubber stamp. Row 4 above is that near-miss holding.
+The declaration is still a written, reviewable claim in the diff; it is now also greppable and
+linter-visible, and it cannot be produced by describing it.
 
-⚠ **Lowercase `not-a-guard:` does not match.** It fails closed (the file stays IN), so it is safe, but
-it is stated here rather than discovered.
+### 3.3 — `NO-CALLER:` keeps the text weakness, and that is a real defect in existing code
 
-### 3.2 — The same fix applies to `NO-CALLER:`, and it is free
+v2 proposed anchoring `NO_CALLER_RE` as a free class-fix. **That is retired**: anchoring does not work
+(§3.1), and converting `NO-CALLER:` to an AST form is a separate change to a rule this spec does not
+otherwise touch.
 
-Answering *"what else is this true of?"* with a grep rather than a recollection: `NO_CALLER_RE` is
-unanchored and has the identical hazard. **Measured: zero of the 26 current guards carry a
-`NO-CALLER:` declaration**, so anchoring it breaks nothing that exists. It ships in this change.
-Leaving one anchored and one not would be two grammars for one concern — the shape
-`scripts/check-vocabulary-collisions.py` exists to catch.
+**Stated as a limit, not fixed here:** a docstring example showing `NO-CALLER: <reason>` opts a guard
+out of R3 today. **Measured: zero of the 26 guards carry such a declaration and none has such an
+example**, so nothing is broken now. It is a latent hole surfaced by this work and belongs in the
+backlog, not smuggled into this PR.
 
-### 3.3 — The guard must be in its own population, permanently
+### 3.4 — Unparseable files are IN, and say so properly
 
-A one-shot count taken at implementation time cannot detect a later self-exclusion. **A standing
-self-test case asserts that `scripts/check-ratchet-contract.py` appears in its own discovered
-population.** Precedent, verbatim: `scripts/check-selftest-counts.py:20` — *"⚠ IT CHECKS ITSELF. This
-script is in `POPULATION`, so its own declared count is verified by the same external run."*
+`check_caller` (`:148-151`) falls back to `doc = text` on `SyntaxError`, so a token in a comment
+counts. `NOT_A_GUARD` detection does not inherit that: it needs a parse tree, and **no parse means
+IN**. An unparseable file is exactly what an inventory must not lose.
 
-### 3.4 — Files that do not parse
-
-`check_caller` already has a policy (`:148-151`): on `SyntaxError`, `doc = text` — the **whole file**
-becomes the searched text, so a token in a comment counts. Inherited unchanged, `NOT-A-GUARD:` in a
-comment of a broken file would remove it from the population entirely.
-
-**Decision: `NOT_A_GUARD_RE` reads the module docstring only, and a file that does not parse is IN.**
-An unparseable file is exactly the sort of thing an inventory should not lose. Today's population is
-26 files all known to parse; widening to 45 triples the surface, so this is stated rather than left to
-the `SyntaxError` fallback.
-
-⚠ A file that does not parse currently ends the run with a **raw Python traceback** from
+⚠ Today an unparseable `scripts/*.py` ends the run with a **raw traceback** from
 `fail_open_handlers:92`, where `docs/process-checklists.md` rule 1 requires *"exit non-zero and say
-treat this as NOT RUN."* It is fail-closed, so not a false green — but it is repaired here and given a
-case.
+treat this as NOT RUN."* Fail-closed, so not a false green, but repaired here with a case. §5 item 9
+and this section now specify **one** exit, not two.
 
-### 3.5 — What a declaration does
+### 3.5 — The self-inclusion check, and the wiring it depends on
 
-It removes the file from the inventory **entirely** — not listed, and R1/R2/R3 are not applied. It is
-a statement about the *population*, not an opt-out from one rule.
+A standing case asserts `scripts/check-ratchet-contract.py` is in its own discovered population.
+
+⛔ **v2 called this "standing" and it was not.** Nothing executes this script's `--self-test`:
+`.github/workflows/ci.yml:144` runs the bare script. The cited precedent
+(`check-selftest-counts.py:20`, *"IT CHECKS ITSELF"*) works only because
+`check-selftest-counts.run_self_test` (`:183-186`) spawns every `POPULATION` member with
+`--self-test`, wired at `ci.yml:178`.
+
+**So §5's `POPULATION` edit is a PREREQUISITE for this section, not test-infra polish.** Without it,
+the case that catches §3.1's self-exclusion runs nowhere. Stated here so an implementer cannot defer
+one and keep the other.
 
 ---
 
-## §4 — The criterion, and the 19 verdicts derived from it
-
-> ⛔ **v1 had no criterion.** It sorted the 19 into "generators / library modules / tools / builders"
-> and asserted 2 IN / 17 OUT. Round 1 found `build-m4-schema.py` on the wrong side, and the real
-> defect was that **nothing in the document could decide the next case either**. A count derived from
-> an unstated rule is not a measurement.
+## §4 — The criterion, and the verdicts derived from it
 
 **A script is a guard if it has a mode whose only product is a VERDICT about a subject other than
-itself.**
+itself.** Assertions protecting a script's own output are **self-protection, not policing**.
 
-The tempting criterion — *"exits non-zero on a defect"* — is useless here: nearly every script in this
-repo is fail-closed, because that is the house style. It would sweep in almost all 45. What
-discriminates is the **product**: a guard's is a verdict; a generator's is an artefact; a library's is
-functions for other code; a tool's is information for a human. Assertions that protect a script's own
-output are **self-protection, not policing**.
+The tempting *"exits non-zero on a defect"* is useless: nearly every script here is fail-closed. What
+discriminates is the **product** — a guard's is a verdict, a generator's an artefact, a library's
+functions, a tool's information for a human.
 
-### IN the inventory (3) — all three already satisfy R1+R2+R3, measured
+### IN (2), both already satisfying R1+R2+R3
 
 | File | Derivation |
 |---|---|
-| `verify-exclusion-reasons.py` | *"EXECUTE the written reasons in `check-catalog-coverage.py`, instead of re-reading them"* — subject is another file's claims |
-| `gen-m4-manifest.py` | `--check` is a verdict-only mode: *"regenerate and FAIL if it differs (ratchet)"*. Subject is the committed manifest |
-| **`build-m4-schema.py`** | ⟳ **Moved IN by round 1 (Codex).** `assert_end_state`'s own docstring says *"The verdict"* (`:186`); `main` reports *"the spec is in neither the pre- nor the post-ADR-0011 state"* (`:381-385`) — a verdict about **the spec files**, not its own output. Its docstring adds that it *"can be reduced to its assertions"* (`:28-30`) — it is becoming a pure guard |
+| `verify-exclusion-reasons.py` | the verdict is the whole product — it executes another file's written reasons |
+| `gen-m4-manifest.py` | `--check` is a verdict-only mode: *"regenerate and FAIL if it differs"*. Subject: the committed manifest |
 
-**Swept for others misclassified the same way:** `gen-m4-manifest.py` is the **only** non-`check-*`
-script with a verdict-only mode flag (`--check`/`--verify`/`--assert`/`--audit`). No fourth surprise.
+### 4.1 — `build-m4-schema.py` is OUT, and v2 had it wrong
 
-**Count after the change: 26 + 3 = 29.** ⚠ v1 said 28; that number was produced by the unstated
-criterion and is corrected here rather than defended.
+Applying the criterion, quoted against the file:
 
-### OUT (16) — each gets one flush-left `NOT-A-GUARD:` line
+- **No verdict-only mode.** Full flag set: `--out`, `--schema`, `--self-test`, `--quiet`
+  (`:365-369`). **Zero `--check`.** Every non-self-test mode emits SQL (`:394-398`).
+- **The assertion's subject is its own output.** `:245` — `errors += assert_end_state(sql)` where
+  `sql = s01 + s03 + s04` is built two lines above.
+- **"Can be reduced to its assertions" is a FUTURE state** (`:26-28`, *"⛔ EXPIRES when Tasks 1-2
+  land"*). v2 cited it as evidence of what the file **is**.
 
-| Category | Files |
-|---|---|
-| Page generators (product: an artefact) | `gen-backlog-page.py`, `gen-dashboard.py`, `gen-goals-page.py`, `brief-compose.py`, `regen-skills-doc.py` |
-| Library modules (product: functions) | `page_markup.py`, `page_chrome.py`, `subject_status.py`, `m4_catalog.py`, `m4_base_db.py` |
-| Tools (product: information for a human) | `explainer-serve.py`, `prior-art.py`, `codex-review.py`, `codex-frontier-model.py` |
-| Reporters | `session-skill-report.py`, `skill-usage-audit.py` |
+**Count: 26 + 2 = 28.** ⚠ v2's §12 asserted the finding-half was right on a memory heuristic. The
+heuristic is not a law, and here the derivation settles it the other way. **Adjudicate by deriving,
+not by counting votes** — including when the vote agrees with a memory.
 
-**Net: 16 declarations, 3 files join, zero code repairs, `BASELINE` stays at its hard floor of 0.**
+### 4.2 — `codex-review.py` stays OUT
 
-The zero is not luck: of the 10 non-`check-*` scripts failing R1/R2/R3 today, **all 10 are in the OUT
-set** — independently reproduced by both review halves — so each resolves to a declaration, not work.
+Its exit codes report on **its own run**; its product is a review file. It *runs* a gate rather than
+being one. Confirmed with the user 2026-09-02.
 
-### 4.1 — `codex-review.py` stays OUT, and it was the closest call
+### 4.3 — Library modules are OUT rather than a rule change
 
-It exits `1` for *"gate did NOT run"* and `2` for *"REFUSED"*, which is gate-shaped, and
-`docs/plugins.md` treats its failure modes as safety-critical. Under the criterion it is OUT: its
-product is a **review file**, and its exit codes report on **its own run**, not a verdict about the
-repo. Confirmed with the user 2026-09-02.
+`page_markup.py`, `page_chrome.py`, `subject_status.py`, `m4_catalog.py`, `m4_base_db.py` are imported,
+never invoked. R3's `invocation_re` (`:121-129`) matches an invocation, not an import — **R3 behaving
+correctly**. A library is not a guard. Backlog #72 warns against the mirror error; this spec decides
+guards and subjects are **not** the same population.
 
-### 4.2 — Library modules are OUT rather than a rule change
+⚠ Measured importers, self excluded: `page_markup` 4, `m4_catalog` 5, `subject_status` **3**,
+`m4_base_db` **3**. v1 said "4–5 each" — wrong for half the set.
 
-`page_markup.py`, `page_chrome.py`, `subject_status.py`, `m4_catalog.py` and `m4_base_db.py` are
-imported by other scripts and never invoked as programs. R3's `invocation_re` (`:121-129`) matches an
-*invocation*, not a mention or an import — so an imported module reads as caller-less. **That is R3
-behaving correctly.** The answer is not to teach R3 about imports; it is that a library is not a guard.
-Backlog #72 warns against the mirror error — *"a renderer belongs in a guard inventory only if we
-decide guards and subjects are the same population"* — and this spec decides: **they are not.**
+### 4.4 — How the OUT set was checked, and how v2's sweep was worthless
 
-⚠ **Measured importers, self excluded:** `page_markup` 4, `m4_catalog` 5, `subject_status` **3**,
-`m4_base_db` **3**. v1 said "4–5 each"; wrong for half the set.
+**OUT (17):** the five page generators, five library modules, four tools, two reporters, plus
+`build-m4-schema.py`.
 
-### 4.3 — How many OUT files already satisfy R3: EIGHT, not three
+⛔ **v2 claimed "no fourth surprise" from a sweep for verdict-mode flags
+(`--check`/`--verify`/`--assert`/`--audit`). That sweep returns exactly one file** — and **two of the
+three files in v2's own IN table had no such flag**. A screen that finds 1 of the 3 things it is
+screening for cannot support a completeness claim. Fourth instance of the corpus error, committed two
+paragraphs after §4.3 corrects it.
 
-⛔ **v1 said three, and the error is instructive.** It named `page_markup.py`, `page_chrome.py` and
-`gen-dashboard.py` *"because CI invokes their `--self-test`"* — enumerating from **one reason** rather
-than from **the rule**. Running `check_caller` over all OUT files with the live caller blob:
+**Replaced by:** the criterion applied by hand to all 19, independently by the author and by round 2's
+Claude half, agreeing on 2 IN / 17 OUT.
 
-```
-OUT files that SATISFY R3 today: 8
-   gen-backlog-page.py  gen-dashboard.py  gen-goals-page.py  regen-skills-doc.py
-   page_markup.py  page_chrome.py  explainer-serve.py  build-m4-schema.py
-```
+⚠ **Seven OUT files satisfy R3 today** — `gen-backlog-page`, `gen-dashboard`, `gen-goals-page`,
+`regen-skills-doc`, `page_markup`, `page_chrome`, `explainer-serve` (plus `build-m4-schema`, now also
+OUT: eight). v1 said "three", enumerated from *"CI invokes their `--self-test`"* — one reason, not the
+rule. **They are still declared out: satisfying a rule is not membership of a population**, and that
+distinction is this spec's subject.
 
-(`build-m4-schema.py` has since moved IN, leaving seven in the OUT set.) Every file whose caller is a
-shell gate or another script was missed. That is *"a measurement is only as good as its corpus"*, in
-the one ⚠ note whose job was honesty about the OUT set. **They are still declared out:** satisfying a
-rule is not membership of the population, and the difference between those two is this spec's subject.
+**Net: 17 declarations, 2 files join, zero code repairs, `BASELINE` stays 0.** Of the 10 non-`check-*`
+scripts failing R1/R2/R3 today, **all 10 are OUT** — reproduced by both round-1 halves.
 
 ---
 
-## §5 — The complete change surface
+## §5 — The change surface
 
-> ⛔ **v1's §5 was wrong in three ways** — it declared `evaluate` untouched while requiring a change
-> that forces it, omitted the single line where the narrowing physically happens, and listed a change
-> surface that §9 then contradicted. All three are round-1 findings.
+⚠ **Not labelled "complete".** v1's §5 omitted the narrowing line; v2's §5 claimed completeness and
+was then extended by §10 — the same self-contradiction, in the section written to fix it. This list is
+what is known to be required; §10 and §7 are part of the same change, not additions to it.
 
-### In `scripts/check-ratchet-contract.py`
+**In `scripts/check-ratchet-contract.py`:**
 
-1. **`main:395` — the narrowing site.** `glob("check-*.py")` → `glob("*.py")`. **This is the
-   load-bearing edit.** Widening `GUARD_PATH_RE` without it is a no-op, because `texts` would still
-   only ever contain `check-*.py`.
-2. **`GUARD_PATH_RE`** widens from `scripts/check-[\w.-]+\.py` to `scripts/[\w.-]+\.py`.
-3. **`discover_guards`** takes the `texts` mapping, not a path list, and excludes any file whose
-   module docstring matches `NOT_A_GUARD_RE`.
-4. **`evaluate:174`** passes `texts`, not `list(texts)`. ⚠ **`evaluate` IS touched** — v1 said
-   otherwise. `main:403` changes the same way.
-5. **`NOT_A_GUARD_RE` added; `NO_CALLER_RE` anchored** (§3.2).
-6. **Both false docstrings corrected in place**, keeping what made them false, per this repo's
-   practice of correcting rather than deleting.
-7. **`discover_ratchets` and `RATCHET_DOCSTRING_RE` deleted**, with their `DISCOVERY_CASES` (§8).
-8. **`POPULATION_CASES` (`:296-304`) rewritten.** ⚠ All three existing cases pass `list[str]` and
-   break on the signature change, and the third —
-   `("a non-guard script is not in the population", ["scripts/gen-dashboard.py", "scripts/check-a.py"], ["scripts/check-a.py"])`
-   — asserts the **opposite** of the new payload case. An implementer who does not know this hits a
-   red suite at the moment when the tempting repair is to weaken the new case.
-9. **The `SyntaxError` policy** (§3.4) stated in code, and the traceback replaced with a
-   CANNOT-RUN exit.
-10. **The stale sanity comment** at `:404` — `"This project has 24"` (already wrong; it is 26) —
-    reworded as a **magnitude**, not a count. ⚠ Pinning it to a number that now moves with every
-    declaration would re-create the same staleness on a faster clock.
+1. **`main:395`** — `glob("check-*.py")` → `glob("*.py")`. **The load-bearing edit**; widening
+   `GUARD_PATH_RE` without it is a no-op.
+2. **`GUARD_PATH_RE`** → `scripts/[\w.-]+\.py`.
+3. **`discover_guards`** takes `texts`, excludes any module with a `NOT_A_GUARD` assignment (§3.2).
+4. **`evaluate:174` and `main:403`** pass `texts`, not `list(texts)`. `evaluate` **is** touched.
+5. **`RATCHET_DOCSTRING_RE` and `discover_ratchets` deleted** with their `DISCOVERY_CASES` (§8).
+6. **Both false docstrings corrected in place**, keeping what made them false.
+7. **`POPULATION_CASES` (`:296-304`) rewritten** — all three pass `list[str]` and break on the
+   signature change, and the third asserts the **opposite** of the new payload case.
+8. **The self-test's failure output becomes `[FAIL] <case name>`** — see §10. Without this the
+   mutation manifest cannot go green.
+9. **`SyntaxError` → one CANNOT-RUN exit**, not a traceback (§3.4).
+10. **`:404`'s stale `"This project has 24"`** reworded as a magnitude, not a count — a number that
+    now moves with every declaration would re-create the staleness on a faster clock.
 
-### Outside that file
-
-11. **16 flush-left `NOT-A-GUARD:` docstring lines** (§4).
-12. **Every site that states the old population as fact** — §7. This is not optional tidying; leaving
-    it is §1.2 reproduced by the fix.
-13. **Mutation manifest and `EXPECTED_MUTATIONS`** — §9.
+**Outside it:** 17 `NOT_A_GUARD` assignments (§4); the §7 sites; §10's `POPULATION` edit (a
+prerequisite for §3.5) and mutation manifest.
 
 ---
 
 ## §6 — What this does NOT do
 
-**Held to a higher bar than most, because this spec's subject is overclaiming.** v1's version was
-honest about scope and silent about every failure mode round 1 then found; that silence read as a
-completeness claim it had not earned.
-
-- **It does not make lying impossible.** Nothing stops `NOT-A-GUARD:` being written on a real guard.
-  It is a written, reviewable claim — the same trade already accepted for `NO-CALLER:`. What changes
-  is that **silence is no longer an option**.
-- **It reduces, but does not eliminate, accidental declaration.** §3.1 measured five cases; a
-  flush-left `NOT-A-GUARD:` inside a docstring for some other purpose would still exclude. The
-  standing self-check (§3.3) covers only the contract itself.
-- **It does not verify that an IN file is a GOOD guard**, only R1/R2/R3.
-- **It does not reach outside `scripts/`.** Guards under `.claude/hooks/` are still discovered only as
-  *callers*, never as subjects. Moving a guard out of `scripts/` remains an evasion, and no gate sees
-  it.
-- **It does not police `scripts/*.sh`.** The population is `*.py`.
-- **After the count is checked once, only the self-check (§3.3) re-verifies membership** — and only
-  for `check-ratchet-contract.py`. There is no standing assertion of the total; §9 explains why a
-  count assertion was rejected.
-- **`gen-m4-manifest.py`'s own `--self-test` is never executed by anything** (`:260`: *"the
-  fourteen-gate suite runs `--check` and never `--self-test`"*) and it is not in
-  `check-selftest-counts.POPULATION`. So one newly-enrolled guard satisfies R1 on the existence of an
-  entry point nothing runs. R1 is unchanged by this spec; the gap is recorded, not fixed.
+- **It does not make lying impossible.** `NOT_A_GUARD = "…"` can be written on a real guard. It is a
+  reviewable claim — the trade already accepted for `NO-CALLER:`. What changes is that **silence is
+  no longer an option**.
+- **It does not fix `NO-CALLER:`'s text weakness** (§3.3). Stated, measured as currently harmless, and
+  left for the backlog.
+- **It does not verify an IN file is a GOOD guard**, only R1/R2/R3.
+- **It does not reach outside `scripts/`.** Moving a guard to another directory remains an evasion no
+  gate sees. `.claude/hooks/` files are discovered only as *callers*.
+- **It does not police `scripts/*.sh`.**
+- **Only `check-ratchet-contract.py`'s own membership is re-verified after merge** (§3.5). There is no
+  standing assertion of the total — §9 says why.
+- **`gen-m4-manifest.py`'s `--self-test` is executed by nothing** (`:260`) and it is not in
+  `check-selftest-counts.POPULATION`. One newly-enrolled guard satisfies R1 on an entry point nothing
+  runs. R1 is unchanged here; the gap is recorded, not fixed.
 
 ---
 
-## §7 — Blast radius: every site that states the old population as fact
+## §7 — Every site that states the old population as fact
 
-Round 1 (Claude) found nine. v1 corrected two. **§1.2 is the section that says a true statement in a
-neighbour did not correct the false one at the source** — shipping with these live reproduces that
-shape in the documents that define the convention.
+Ten. v1 corrected two.
 
-| Site | Today | After |
-|---|---|---|
-| `docs/process-checklists.md:294-296` | *"discovers ratchets from two independent sources … so neither a forgotten registry entry nor an unwired script can evade it"* | wholly false; describes the deleted function |
-| `docs/process-checklists.md:283-288` | *"There are EIGHT"* + *"prints it, from two independent sources"* | already stale; becomes 29, one source |
-| `docs/process-checklists.md:298` | *"Currently 4 violations, all rule 4"* | already false — `BASELINE = 0`, live run 0 |
-| `docs/dev-process.md:145` | *"the population is the FILESYSTEM … `--self-test`: 21 cases"* | the false claim §1 hunts, **in the process spine**; the count also moves |
-| `scripts/page_markup.py:42-45` | names `discover_ratchets:67` and the `check-*` glob | false, and names a deleted function |
-| `scripts/explainer-serve.py:68-73` | *"this file is never even read"* | false — it **is** read, for its declaration |
-| `.github/workflows/ci.yml:212-215`, `:220-223` | *"its population is `glob("check-*.py")"* (×2) | false for both steps |
-| `docs/roadmap-to-launch.md:1692-1693`, `:1530`, `:1599` | same claim; *"25 guards"* | false / already stale |
-| `docs/superpowers/specs/2026-08-30-inline-renderer-seam-design.md:176,183` | same claim, in a **living** spec | false |
-
-⚠ **F6's grep cannot see most of these** — it searches `scripts/ .github/ .claude/`, and the canonical
-description lives under `docs/`. Widened in §8.
+| Site | After the change |
+|---|---|
+| `docs/process-checklists.md:294-296` | wholly false; describes the deleted `discover_ratchets` |
+| `docs/process-checklists.md:283-288` | *"There are EIGHT"*, *"two independent sources"* — stale; becomes 28, one source |
+| `docs/process-checklists.md:298` | *"Currently 4 violations"* — already false, `BASELINE = 0` |
+| `docs/dev-process.md:145` | the false claim §1 hunts, **in the process spine**; its `21 cases` also moves |
+| `scripts/check-test-counts.py:31-33` | *"discoverable by it … from two independent sources"* — a **live script docstring** |
+| `scripts/page_markup.py:42-45` | false, and names a deleted function |
+| `scripts/explainer-serve.py:68-73` | false — the file **is** read now |
+| `.github/workflows/ci.yml:213` | *"its population is `glob("check-*.py")"*. ⚠ The `page_chrome` step (`:220-223`) states the same **conclusion** without the quoted mechanism — both go false, by different sentences |
+| `docs/roadmap-to-launch.md:1692-1693`, `:1530`, `:1599` | same claim; *"25 guards"* — already stale |
+| `docs/superpowers/specs/2026-08-30-inline-renderer-seam-design.md:176,183` | same claim, in a **living** spec |
+| `docs/backlog.md` rows #72/#73 | edited by this PR anyway; must not be left describing the old mechanism |
 
 ---
 
-## §8 — Backlog #73 is settled as DELETE, and closes here
+## §8 — Backlog #73 settles as DELETE
 
-Backlog #73 (*"`discover_ratchets` is dead production code, kept alive only by its own self-test"*)
-was filed deliberately blocked on this decision: *"if #72 is resolved by widening the population,
-`discover_ratchets` may be the right implementation to restore rather than delete."*
-
-**It is not the right implementation.** The chosen mechanism is declare-*out*; `discover_ratchets`
-implements declare-*in* via a bare-word match, which §1.1 measured as unable to tell a declaration
-from a denial. Restoring it would ship the defect. It is deleted with its `DISCOVERY_CASES`.
-
-Both rows close in this PR. Per the convention from PR #213, each closed row must **lead**
-`✅ (was 🟠)`, and its `GROUPS` tuple in `scripts/gen-backlog-page.py` must be deleted — the coverage
-check is bidirectional and refuses prose describing a closed item.
+`discover_ratchets` implements declare-**in** by bare-word match, which §1.1 measured as unable to
+tell a declaration from a denial. Restoring it would ship the defect. Deleted with its
+`DISCOVERY_CASES`. Both rows close in this PR; each closed row **leads** `✅ (was 🟠)` and its
+`GROUPS` tuple in `scripts/gen-backlog-page.py` is deleted (the coverage check is bidirectional).
 
 ---
 
 ## §9 — Falsifiers
 
-Each states the observation that would make it FAIL.
-
 | # | Falsifier | Fails if |
 |---|---|---|
-| F1 | `gen-m4-manifest.py`, `verify-exclusion-reasons.py` **and** `build-m4-schema.py` appear in the `guards discovered (…)` line | any is absent |
-| F2 | Count is exactly **29** | any other number — the criterion was applied wrongly, or a file was missed |
-| F3 | `scripts/zz-probe.py` with no `--self-test` and no declaration → **`zz-probe.py` appears in the discovered list** AND the run exits 1 | it is absent, or exits 0 |
-| F4 | Add a flush-left `NOT-A-GUARD: a probe` → contract exits 0 and `zz-probe.py` is absent from the list | it stays IN |
-| F5 | `NOT-A-GUARD:` with the reason on the *next* line → file still IN | excluded — the `\s` rubber-stamp regression |
-| **F6** | A docstring that **documents** the rule, and one that shows it as an **indented example**, both leave the file IN | either is excluded — v1's Blocking, returned |
-| **F7** | `scripts/check-ratchet-contract.py` appears in its own discovered population | absent — the guard excluded itself |
-| F8 | `grep -rn discover_ratchets scripts/ .github/ .claude/ docs/` returns nothing | any hit — #73 not closed, or §7 incomplete |
+| F1 | `gen-m4-manifest.py` and `verify-exclusion-reasons.py` appear in `guards discovered (…)` | either absent |
+| F2 | Count is exactly **28** | any other number |
+| F3 | `scripts/zz-probe.py`, no `--self-test`, no declaration → **appears in the discovered list** AND run exits 1 | absent, or exits 0 |
+| F4 | `NOT_A_GUARD = "a probe"` → exits 0 and `zz-probe.py` is absent from the list | it stays IN |
+| F5 | `NOT_A_GUARD` nested in a function, or set to `""`, or to a non-string → file stays IN | excluded — the fail-closed property broke |
+| F6 | A docstring **documenting** the rule, and one **demonstrating** it at any indent, both leave the file IN | either excluded — v1/v2's Blocking returned |
+| F7 | `check-ratchet-contract.py` appears in its own discovered population, **asserted by a case CI actually runs** | absent, or the case has no runner (§3.5) |
+| F8 | `grep -rn discover_ratchets scripts/ .github/ .claude/ docs/process-checklists.md docs/dev-process.md docs/roadmap-to-launch.md` returns nothing | any hit |
 | F9 | `BASELINE` is still `0` and the run is green | a raised baseline would launder the 10 failures |
 
-> ⛔ **F3 and F9 were repaired, not merely renumbered.** v1's F3 asserted **exit code 1 only** — which
-> `check-ratchet-contract.py:388-392` also returns when `.github/workflows/ci.yml` is simply absent
-> from the temp copy, and `:417-419` when there are fewer than three caller sources. The falsifier
-> carrying *"omission still escapes, which is the whole point"* passed for the wrong reason.
-> v1's F7 (now F9) *"`BASELINE` is 0 and the run is green"* holds on the **unchanged** repo, so it is
-> vacuous as evidence of the change; it is kept, relabelled as the anti-laundering check, and paired
-> with F2.
+> ⛔ **F3, F8 and F9 were repaired, not renumbered.** v1's F3 asserted exit 1 only — which
+> `:388-392` also returns when `ci.yml` is missing from the temp copy, and `:417-419` with too few
+> caller sources. v1's F6 grepped too narrowly to see `docs/`; **v2 widened it to all of `docs/` and
+> made it unsatisfiable** — historical text legitimately contains the token
+> (`docs/reviews/architecture-review-2026-08-30.md:73`, and this spec's own row). Both errors are the
+> same one: writing the grep without running it. F8 now names the **living process documents**
+> explicitly and excludes the review archive. v1's F7 (now F9) holds on the unchanged repo, so it is
+> relabelled the anti-laundering check and paired with F2.
 
-**Why no standing count assertion.** F2 is a one-shot check at implementation time. A permanent
-`assert len(guards) == 29` would go stale on the next legitimate script and train people to bump it —
-the failure mode `docs/dev-process.md` records for hand-maintained counts. F7 is the standing
-membership check instead, and §6 states plainly that the total is not re-verified.
+**Why no standing count assertion.** A permanent `assert len(guards) == 28` goes stale on the next
+legitimate script and trains people to bump it. F7 is the standing membership check; §6 states plainly
+that the total is not re-verified.
 
-F3–F7 run against a temp copy of the repo, never the live tree: an instrument that edits the repo
-corrupts its peers. ⚠ **The temp copy must include `.github/workflows/ci.yml` and the full caller
-sources**, or F3 passes for the wrong reason.
+F3–F7 run against a temp copy — an instrument that edits the repo corrupts its peers. ⚠ **The copy
+must include `.github/workflows/ci.yml` and the full caller sources**, or F3 passes for the wrong
+reason.
 
 ---
 
 ## §10 — Test and mutation coverage
 
-- **Self-test cases** for `discover_guards`: a `check-*` file (IN); a non-`check-*` file with no
-  declaration (IN — the payload); a flush-left declaration (OUT); the bare-colon near-miss (IN); a
-  docstring documenting the rule (IN); an indented example (IN); an unparseable file (IN, §3.4); the
-  standing self-inclusion case (§3.3).
-- **`POPULATION_CASES` rewritten** — §5 item 8. Its third case currently asserts the opposite of the
-  payload case.
-- ⛔ **v1's claim that `check-selftest-counts.py` ratchets this script's total is FALSE and is
-  deleted.** Its `POPULATION` (`:83-92`) pins exactly nine scripts and `check-ratchet-contract.py` is
-  not among them; the contract declares `--self-test` without the canonical `# N cases` form
-  (`:23-26`). **Nothing ratchets it today.** Worse, acting on v1 as written turns CI red: adding the
-  declaration without a `POPULATION` edit trips `check-selftest-counts.py:176-179` (*"declares a case
-  count but is not in POPULATION, so nothing checks it"*). **Decision: add the `# N cases`
-  declaration AND add the file to `POPULATION`, in the same commit.** That is a real gain — the
-  contract has never had its self-test count ratcheted.
-- **Mutation manifest.** ⛔ v1 warned that *"existing mutation anchors may target `discover_guards`"*.
-  **There are none.** No `scripts/mutations/*.json` mentions this file, and `EXPECTED_MUTATIONS`
-  (`scripts/check-plan-code.py:432-497`) has **no key for it**. The true state: the repo's most
-  structurally important guard ships today with **zero** mutation coverage. This change gives it its
-  first, via a new `scripts/mutations/check-ratchet-contract.json` and a new `EXPECTED_MUTATIONS` key:
-  - `GUARD_PATH_RE` / `main`'s glob narrowed back to `check-*` → red via the **payload discovery
-    case**, not a count assertion.
-  - `NOT_A_GUARD_RE`'s `[ \t]` widened to `\s` → red via the bare-colon near-miss case.
-  - `NOT_A_GUARD_RE`'s `(?m)^` anchor dropped → red via the rule-documenting case (F6).
-  - ⚠ Each `expect` entry must name **exactly one** red case (`check-plan-code.py:739-746`); `expect`
-    is a list, and each entry is matched individually.
-- ⚠ **The 16 docstring insertions touch `page_markup.py`, `page_chrome.py` and `gen-dashboard.py`,
-  which DO have mutation manifests.** Anchors bind by text. Round 1 (Claude) explicitly did **not**
-  measure whether the insertions collide with existing anchors — `--mutate .` must run before the PR.
+⛔ **The self-test's output format is a PREREQUISITE, not a detail.**
+`scripts/check-plan-code.py:723-724` collects red case names from lines starting `[FAIL] ` and nothing
+else. `check-ratchet-contract.py` contains **zero** occurrences and prints `  FAIL {name}` (`:343`,
+`:348`, `:353`, `:358`, `:375`); the seven scripts already in the manifest carry 1–18 each. Without
+§5 item 8, every `expect` resolves to **0 red cases** and `check-plan-code.py:778-786` fails the
+mutation as *"caught by something else"*. `--mutate .` is what CI runs, so the PR could not go green.
+⚠ Omitting `expect` to dodge this is the fail-open the harness's own comments exist to close.
+
+- **Cases:** the eight §3.2 rows, the payload case (non-`check-*`, no declaration → IN), the
+  rewritten `POPULATION_CASES`, and §3.5's self-inclusion case.
+- **`check-selftest-counts.POPULATION`:** add `check-ratchet-contract.py` **and** its
+  `--self-test  # N cases` declaration, in the same commit. Adding one without the other trips
+  `:176-179`. **This is what makes §3.5 real** — `run_self_test` (`:183-186`) spawns POPULATION
+  members with `--self-test`, wired at `ci.yml:178`, and nothing else runs this script's self-test.
+- **Mutation manifest** — new `scripts/mutations/check-ratchet-contract.json` and a new
+  `EXPECTED_MUTATIONS` key (`check-plan-code.py:432-497` has none). **The repo's most structurally
+  important guard ships today with zero mutation coverage; this is its first.**
+  - `main`'s glob narrowed back to `check-*` → red via the payload case.
+  - `NOT_A_GUARD` detection accepting a nested assignment → red via the nested case.
+  - `NOT_A_GUARD` detection accepting a non-string value → red via that case.
+  - ⚠ Each `expect` entry names **exactly one** red case (`check-plan-code.py:739-746`).
+- ✅ **Measured: the 17 declarations cannot orphan an existing anchor.** Only `gen-dashboard.py`,
+  `page_chrome.py` and `page_markup.py` are both OUT and manifested, and **0** of their anchors'
+  `before` text sits inside a module docstring. (`NOT_A_GUARD` is an assignment, not a docstring edit,
+  so the surface is smaller still.) `--mutate .` still runs before the PR.
 
 ---
 
 ## §11 — Delivery
 
-One branch, `fix/guard-inventory-population`, one PR, closing backlog **#72** and **#73**. The merge
-tick is written before the PR is opened. A dashboard entry is required, and row status ticks ride in
-the same PR as the work.
+One branch, `fix/guard-inventory-population`, one PR, closing **#72** and **#73**. Merge tick written
+before the PR opens. Dashboard entry required; row ticks ride in the same PR.
 
-## §12 — Round 1 record
+## §12 — Review record, and the one error that recurred four times
 
-**Both halves NOT CONVERGED.** Every finding was re-verified against the code by the author before
-acceptance; all sixteen reproduced and none was disputed.
+**Four halves, four NOT CONVERGED, 30 findings.** Every one re-verified against the code by the author
+before acceptance; none disputed.
 
-- **Codex** found the `evaluate` contradiction, the grammar hole, `build-m4-schema.py`'s
-  misclassification, the missing mutation-manifest surface, and the false `check-selftest-counts`
-  claim.
-- **Claude** additionally executed the self-exclusion, corrected "three" to eight, found the §2
-  causal claim refuted by §1.1, mapped the nine-site blast radius, and found the vacuous F3/F7, the
-  contradictory `POPULATION_CASES`, the `SyntaxError` policy gap, and that `gen-m4-manifest.py`'s
-  enrolment changes no verdict today.
-- **They disagreed on `build-m4-schema.py`** and the finding-half was right — recorded because this
-  repo's memory says disagreement is the signal, not noise.
-- The Claude half disclosed that a repo-wide grep surfaced ~6 lines of the Codex review written into
-  the tree while it worked; it did not open the file. Recorded so overlap is discounted rather than
-  read as independent corroboration.
+**Round 2 justified its scoping:** both Blockings are defects *in round 1's fixes* — the flush-left
+anchor (Codex, and Claude's H2 independently) and the criterion contradicting its own reclassification
+(Claude B2). A third, Claude B1, is in the *coverage* round 1's fix required.
 
-**Round 2 will be scoped to round 1's own fixes** — §3's new grammar, §4's criterion, §5's change
-list, §7, and the repaired falsifiers. In this repo's recent slices, round 2's Blockings have
-repeatedly been regressions introduced by round 1's fixes.
+⚠ **The same error occurred FOUR times in this slice, by the author, including twice in the sections
+written to correct it:**
+
+1. v1 §4's *"three OUT files satisfy R3"* — enumerated from CI self-test steps, not the rule. **Eight.**
+2. v2 §3.1's grammar table — "indented example" enumerated from one instance, not the rule.
+3. v2 §4's *"no fourth surprise"* sweep — screened by a flag that 2 of its own 3 IN files lack.
+4. v1/v2's F6/F8 grep — written without being run, first too narrow, then unsatisfiable.
+
+**Enumerate the dimensions from the RULE, then measure.** A screen that cannot find the things you
+already know are there proves nothing about the things you do not.
+
+**The halves disagreed on `build-m4-schema.py` in both rounds, and the derivation — not the vote —
+settled it.** v2 followed the vote and a memory heuristic, and was wrong (§4.1).
+
+**Round 3 will be scoped to §3's AST mechanism, §4.1's re-derivation, §5 item 8, and the repaired
+falsifiers.** Phase 6 fires at four non-converging rounds (`docs/dev-process.md`); this is **two**.
