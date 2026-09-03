@@ -20,6 +20,22 @@ first, because a mutation cannot go red against a line no test case drives.
 **Spec:** [`docs/superpowers/specs/2026-09-02-guard-inventory-population-design.md`](../specs/2026-09-02-guard-inventory-population-design.md) **v4**.
 **Backlog:** closes #72 and #73.
 
+**Status: v2 — Post-Plan Gate round 1 folded in, BOTH halves.** Codex 2 Blocking, 1 High, 1 Low;
+Claude **4 Blocking**, 2 High, 4 Medium, 2 Low; overlapping on two. Reviews:
+[`plan-guard-inventory-population-r1-{codex,claude}.md`](../../reviews/plan-guard-inventory-population-r1-codex.md).
+
+> ⛔ **Every Blocking would have surfaced as a CI failure or a SILENT NO-OP, after an implementation
+> subagent had already written code.** `case()` did not exist (a `NameError` on the first task);
+> T7's first mutation survived because v1 mutated a call site inside undriven `main()`; an `expect`
+> was short by the prefix its own loop prints, and the matcher is equality by design; and adding a
+> manifest turned two hand-written oracles in `check-plan-code.py` red, so its control run refused
+> and **zero mutations executed** while the process still looked like it ran.
+>
+> ⚠ **The surviving mutation was v1's own T1 fix failing one joint further along** — T1 made the
+> *function* reachable and then mutated an *argument at a call site that still was not*. Fourth
+> instance in this slice of "a fix is where the next defect lives"; it is why every round is scoped
+> at the previous round's fixes.
+
 ## Global Constraints
 
 - **The count after the change is exactly 28** — 26 `check-*.py` plus `gen-m4-manifest.py` and
@@ -71,36 +87,70 @@ Task 3 a green control to mutate against.
 - Produces: `population_paths(scripts_dir: Path, pattern: str = "check-*.py") -> list[str]` —
   repo-relative POSIX paths, sorted. Task 3 changes the default pattern.
 
-- [ ] **Step 1: Write the failing case**
+- [ ] **Step 1: Add the `case()` helper and the missing import — this is a PREREQUISITE**
 
-Add to the self-test block, alongside the existing `POPULATION_CASES`:
+⛔ **The Post-Plan Gate found there is no `case()` helper in this file.** `self_test()` (`:338`)
+repeats the same four-line compare-and-print block five times. Every later step in this plan writes
+cases as `case(...)`, so the helper is built first — and because it owns the failure format in ONE
+place, it also delivers what the mutation harness needs (see T4). Two findings, one fix.
+
+Add `import tempfile` to the imports, then above `self_test()`:
 
 ```python
-def _population_cases(tmp: Path) -> list[tuple[str, bool]]:
-    """(filename, expected-in-population) against a real directory."""
-    return [("check-a.py", True), ("gen-b.py", False), ("notes.txt", False)]
+def _make_case(state: dict[str, int]):
+    """One comparison, one place that decides how a failure PRINTS.
+
+    ⚠ The `[FAIL] ` prefix and the `: got ` separator are a CONTRACT with
+    `scripts/check-plan-code.py:723`, which recovers red case names with
+    `l.strip()[7:].rsplit(": got ", 1)[0]` and reads NOTHING else. While this
+    file printed `  FAIL {name}`, every mutation `expect` resolved to zero red
+    cases and was rejected as "caught by something else" — a mutation harness
+    reporting nothing, indistinguishable from a guard that holds.
+    """
+    def case(name: str, got, expected) -> None:
+        state["total"] += 1
+        if got != expected:
+            state["failures"] += 1
+            print(f"[FAIL] {name}: got {got}\n       expected {expected}")
+    return case
 ```
 
+and at the top of `self_test()`:
+
 ```python
-    # ── population_paths: the glob is a FUNCTION so a mutation can reach it ──
+    state = {"total": 0, "failures": 0}
+    case = _make_case(state)
+```
+
+- [ ] **Step 2: Write the failing case — the DEFAULT pattern is what the case exercises**
+
+⛔ **Call `population_paths(scripts)` with no pattern argument.** The gate showed that mutating the
+*call-site argument* in `main()` survives, because no case drives `main()`. The mutation in T7
+therefore targets the **signature default**, and only a case that relies on the default can catch it.
+
+```python
+    # ── population_paths: the glob is a FUNCTION, and its DEFAULT is load-bearing ──
     with tempfile.TemporaryDirectory() as d:
         scripts = Path(d) / "scripts"
         scripts.mkdir()
-        for name, _ in _population_cases(scripts):
+        for name in ("check-a.py", "gen-b.py", "notes.txt"):
             (scripts / name).write_text('"""x."""\n')
-        got = population_paths(scripts)
-        case("population_paths finds check-* files",
+        got = population_paths(scripts)          # NO pattern argument — the default decides
+        case("population_paths uses its default pattern",
              got, ["scripts/check-a.py"])
-        case("population_paths excludes a non-check .py",
-             any("gen-b.py" in p for p in got), False)
         case("population_paths excludes a non-.py file",
              any("notes.txt" in p for p in got), False)
 ```
 
-- [ ] **Step 2: Run it to make sure it fails**
+⚠ At this point the default is still `check-*.py`, so `gen-b.py` is correctly absent. **T3 changes
+the default to `*.py` and updates the first expectation to include `scripts/gen-b.py`** — that is the
+case T7's first mutation drives red.
+
+- [ ] **Step 3: Run it to make sure it fails**
 
 Run: `python3 scripts/check-ratchet-contract.py --self-test`
 Expected: FAIL — `NameError: name 'population_paths' is not defined`
+⚠ Not a `case` NameError: Step 1 defined it.
 
 - [ ] **Step 3: Write the minimal implementation**
 
@@ -317,11 +367,27 @@ def discover_guards(texts: dict[str, str]) -> list[str]:
     ratchets = discover_guards(texts)
 ```
 
-- [ ] **Step 5: Widen the glob and delete the dead discovery**
+- [ ] **Step 5: Widen the DEFAULT (not the call site) and delete the dead discovery**
 
-In `main`, change `population_paths(ROOT / "scripts")` to `population_paths(ROOT / "scripts", "*.py")`.
-Delete `discover_ratchets` (`:67`), `RATCHET_DOCSTRING_RE` (`:55`), `CI_RATCHET_STEP_RE`, and their
-`DISCOVERY_CASES`. Update the sanity comment at `:404` to a magnitude, not a count:
+⛔ **Change the signature default, and leave `main`'s call bare.**
+
+```python
+def population_paths(scripts_dir: Path, pattern: str = "*.py") -> list[str]:
+```
+
+`main` keeps calling `population_paths(ROOT / "scripts")`. A pattern passed at the call site would
+put the live behaviour back inside `main()`, where no case can reach it — the exact defect the gate
+found. Update T1's first case to expect the widened result:
+
+```python
+        case("population_paths uses its default pattern",
+             got, ["scripts/check-a.py", "scripts/gen-b.py"])
+```
+
+Delete `discover_ratchets` (`:67`), `RATCHET_DOCSTRING_RE` (`:55`), `CI_RATCHET_STEP_RE`, and
+`DISCOVERY_CASES` — **including the `for name, ci, scripts, expected in DISCOVERY_CASES:` loop inside
+`self_test()`**, not just the constant. Update the sanity comment at `:404` to a magnitude, not a
+count:
 
 ```python
     if not ratchets:
@@ -346,26 +412,39 @@ git commit -F .git/COMMIT_MSG_T3
 
 ---
 
-## Task 4: `[FAIL] ` output, and the CANNOT-RUN exit
+## Task 4: Route every comparison through `case()`, and add the CANNOT-RUN exit
 
-**Why:** `scripts/check-plan-code.py:723-724` collects red case names **only** from lines starting
-`[FAIL] `. This file emits `  FAIL {name}` and contains zero of the required prefix, so every
-`expect` in Task 7 would resolve to 0 red cases and `--mutate .` would fail the mutation as *"caught
-by something else"*. All seven scripts already in the manifest carry 1–18 occurrences.
+**Why:** T1 Step 1 put the `[FAIL] ` contract in one function. This task retires the remaining
+hand-rolled compare-and-print blocks so no second format can drift back in.
+
+⚠ **The plan previously said "five failure prints". By the time this task runs it is THREE** — T3
+deleted the `DISCOVERY_CASES` loop and its print, and T3 rewrote the `POPULATION_CASES` loop to use
+`case()`. Count them in the file rather than trusting this sentence.
 
 **Files:**
-- Modify: `scripts/check-ratchet-contract.py` (`:343`, `:348`, `:353`, `:358`, `:375`, and `main`)
+- Modify: `scripts/check-ratchet-contract.py` (the remaining `print(f"  FAIL …")` sites, and `main`)
 
-- [ ] **Step 1: Change the five failure prints**
-
-Each becomes:
+- [ ] **Step 1: Convert each remaining block**
 
 ```python
-            print(f"[FAIL] {name}: got {got}\n       expected {expected}")
+    for name, text, expected in CASES:
+        got = sorted({v.rule for v in check_contract("t.py", text)})
+        case(name, got, sorted(expected))
 ```
 
-⚠ Keep `: got ` in the line — `check-plan-code.py:723` splits on it with `rsplit(": got ", 1)` to
-recover the bare case name.
+Then replace the trailing tally with the helper's state:
+
+```python
+    print(f"self-test: {state['total'] - state['failures']}/{state['total']} passed")
+    return 1 if state["failures"] else 0
+```
+
+- [ ] **Step 1b: Prove no `  FAIL` print survives**
+
+```bash
+grep -n 'print(f"  FAIL' scripts/check-ratchet-contract.py; echo "exit=$?"
+```
+Expected: no matches (`exit=1`). A survivor is a second format that `check-plan-code.py` cannot read.
 
 - [ ] **Step 2: Replace the unparseable-file traceback with a CANNOT-RUN exit**
 
@@ -470,12 +549,16 @@ script. `check-selftest-counts.run_self_test` (`:183-186`) spawns every `POPULAT
 - Modify: `scripts/check-selftest-counts.py` (`POPULATION`, `:83-93`)
 - Modify: `scripts/check-ratchet-contract.py` (usage block, `:23-26`)
 
-- [ ] **Step 1: Add the case-count declaration**
+- [ ] **Step 1: Add the case-count declaration — MODIFY the existing usage line, do not add a second**
+
+`scripts/check-ratchet-contract.py:25` already reads
+`    python3 scripts/check-ratchet-contract.py --self-test`. Append the count to **that** line:
 
 ```
     python3 scripts/check-ratchet-contract.py --self-test   # N cases
 ```
-where `N` is the number the suite actually prints. **Read it from a run; do not recall it.**
+where `N` is the number the suite actually prints. **Read it from a run; do not recall it** — it
+moves as T1–T4 add and delete cases. A second usage line would leave two candidates for the parser.
 
 - [ ] **Step 2: Add the file to `POPULATION`**
 
@@ -508,14 +591,20 @@ git commit -F .git/COMMIT_MSG_T6
 
 - [ ] **Step 1: Write the manifest**
 
+⛔ **Two Blockings from the gate live in this block. Read both before writing it.**
+① The mutation must target the **signature default**, not `main`'s call site — a call-site mutation
+survives because no case drives `main()`. ② An `expect` is matched by **equality**
+(`check-plan-code.py:757`), and T3's loop prints `f"discover_guards: {label}"`, so an expect naming a
+case from that loop **must carry the prefix**. Round 6 replaced substring matching on purpose.
+
 ```json
 [
   {
-    "name": "the population narrows back to check-*.py",
+    "name": "the population default narrows back to check-*.py",
     "file": "scripts/check-ratchet-contract.py",
-    "edits": [["population_paths(ROOT / \"scripts\", \"*.py\")",
-               "population_paths(ROOT / \"scripts\", \"check-*.py\")"]],
-    "expect": ["a NON-check script with no declaration is IN — the payload case"]
+    "edits": [["def population_paths(scripts_dir: Path, pattern: str = \"*.py\")",
+               "def population_paths(scripts_dir: Path, pattern: str = \"check-*.py\")"]],
+    "expect": ["population_paths uses its default pattern"]
   },
   {
     "name": "an assignment nested in a function counts as a declaration",
@@ -526,7 +615,7 @@ git commit -F .git/COMMIT_MSG_T6
   {
     "name": "a whitespace-only reason counts as a declaration",
     "file": "scripts/check-ratchet-contract.py",
-    "edits": [["and value.value.strip()", "and value.value is not None"]],
+    "edits": [["and value.value.strip()", "and value.value != \"\""]],
     "expect": ["NOT_A_GUARD: whitespace-only reason"]
   },
   {
@@ -538,12 +627,35 @@ git commit -F .git/COMMIT_MSG_T6
 ]
 ```
 
-- [ ] **Step 2: Add the `EXPECTED_MUTATIONS` key**
+- [ ] **Step 2: Add the key AND update BOTH hardcoded oracles — three edits, one commit**
 
+⛔ **`check-plan-code.py` asserts its own manifest inventory TWICE, by hand.** Adding a manifest
+without updating both turns them red; its `--mutate .` **control** run then refuses, and **zero
+mutations execute** — so Step 3's expectation never happens and its two ⚠ notes never fire. A
+mutation harness that runs nothing looks exactly like one where everything passed.
+
+**(a)** the key, in `EXPECTED_MUTATIONS`:
 ```python
     "scripts/check-ratchet-contract.py": 4,
 ```
-⚠ The sum rises by 4. It cannot fall.
+
+**(b)** the inventory oracle at `:1948-1956` — insert in **sorted** position, between
+`scripts/check-plan-code.py` and `scripts/check-selftest-counts.py`:
+```python
+                                      "scripts/check-plan-code.py",
+                                      "scripts/check-ratchet-contract.py",
+                                      "scripts/check-selftest-counts.py",
+```
+
+**(c)** the sum oracle at `:2021` — **`162` becomes `166`.** A literal on purpose; the comment above
+it says its whole job is that the total cannot move without someone deciding it should. Write the
+number, not "rise by 4".
+
+- [ ] **Step 2b: Prove the harness's own suite is green BEFORE mutating**
+
+Run: `python3 scripts/check-plan-code.py --self-test`
+Expected: all pass. ⚠ A red here means the control run will refuse and every verdict in Step 3 would
+be an artefact — `mutate_delivered:643-648` says so in as many words.
 
 - [ ] **Step 3: Run the mutation suite**
 
@@ -624,7 +736,18 @@ trailing marker as open, and `check-docs.py` refuses it by name.
 `GROUPS` coverage is **bidirectional**: it refuses an open item with no prose *and* prose describing a
 now-closed item. Closing a row means deleting its tuple.
 
-- [ ] **Step 3: Write the dashboard entry**
+- [ ] **Step 3: File the `NO-CALLER:` row the spec twice promises**
+
+Spec §3.3 and §6 both say `NO_CALLER_RE`'s text weakness *"belongs in the backlog, not this PR"* — a
+docstring example showing `NO-CALLER: <reason>` would opt a guard out of R3. **Measured: zero of the
+26 guards carry such a declaration and none has such an example, so nothing is broken today.**
+Add the row 🟢, with that measurement, and note it is the same class the AST declaration solved one
+level up.
+
+⚠ **Filing to `docs/backlog.md` is normally the user's step.** This one is different: the spec
+promises it twice, so shipping without it makes the spec's own limits section false.
+
+- [ ] **Step 4: Write the dashboard entry**
 
 The branch changes tracked files, so an entry is required or the gate refuses it.
 
@@ -667,8 +790,12 @@ excludes `build-m4-schema.py`; `ratchet contract OK`; `BASELINE` still `0`.
 ⚠ The copy must include `.github/workflows/ci.yml` and the full caller sources, or F3 passes for the
 wrong reason (`main` returns 1 on a missing `ci.yml`, which looks identical to the intended failure).
 
+⚠ **The copy must not swallow its own failure.** `2>/dev/null` on the `cp` would hide a missing
+source and leave F3 passing because `main` returned 1 for the wrong reason.
+
 ```bash
-T=$(mktemp -d); cp -R scripts .github .claude "$T"/ 2>/dev/null
+T=$(mktemp -d); cp -R scripts .github .claude "$T"/ || { echo "CANNOT RUN — copy failed"; exit 2; }
+test -f "$T/.github/workflows/ci.yml" || { echo "CANNOT RUN — no ci.yml in the copy"; exit 2; }
 printf '"""A probe."""\nfrom __future__ import annotations\n' > "$T/scripts/zz-probe.py"
 ( cd "$T" && python3 scripts/check-ratchet-contract.py | tee /dev/stderr | grep -q "zz-probe" ) \
   && echo "F3 present-in-list ✓"
@@ -722,6 +849,20 @@ called with `"*.py"` in T3. `not_a_guard_reason(src) -> str | None` (T2) is cons
 `discover_guards(texts) -> list[str]` (T3), whose callers in T3 pass the mapping. The mutation
 `expect` strings in T7 are copied verbatim from the case labels in T1/T2/T3.
 
-**Known ordering constraints.** T1 **must** precede T7 (a mutation on an unreachable line survives).
-T4 **must** precede T7 (`expect` resolves to 0 red cases without the `[FAIL] ` prefix). T3 precedes T5
-(the count is 45 until the declarations land). T6's two edits are one commit.
+**Known ordering constraints — all five, after the Post-Plan Gate.**
+
+| Constraint | Why, in one line |
+|---|---|
+| **T1 → T7** | a mutation on a line no case drives SURVIVES. T1 makes the *default* load-bearing |
+| **T1 Step 1 → everything** | `case()` does not exist in the file; every later snippet calls it |
+| **T2, T3 → T7** | T7's anchors (`tree.body`, `value.value.strip()`, `compile(…)`, the signature default) and its `expect` names do not exist until T2 and T3 land |
+| **T4 → T7** | without the `[FAIL] ` format every `expect` resolves to 0 red cases and is rejected |
+| **T3 → T5** | the count is 45 until the declarations land |
+
+**Same-commit couplings.** T6's two edits (`# N cases` + `POPULATION`) — one without the other trips
+`check-selftest-counts.py:176-179`. T7 Step 2's three edits (key + both oracles) — one without the
+others makes the control run refuse and **zero** mutations execute.
+
+**`expect` strings are matched by EQUALITY** (`check-plan-code.py:757`, deliberately, since round 6).
+An expect naming a case from T3's loop must carry the `discover_guards: ` prefix that loop prints;
+one naming a T2 case must carry `NOT_A_GUARD: `. A prefix-short string matches nothing.
