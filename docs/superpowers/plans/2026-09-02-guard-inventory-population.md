@@ -20,14 +20,24 @@ first, because a mutation cannot go red against a line no test case drives.
 **Spec:** [`docs/superpowers/specs/2026-09-02-guard-inventory-population-design.md`](../specs/2026-09-02-guard-inventory-population-design.md) **v4**.
 **Backlog:** closes #72 and #73.
 
-**Status: v3 — Post-Plan Gate rounds 1 and 2 folded in.**
+**Status: v4 — Post-Plan Gate rounds 1, 2 and 3 folded in.**
 
 | Round | Codex | Claude |
 |---|---|---|
 | 1 | 2 Blocking, 1 High, 1 Low | **4 Blocking**, 2 High, 4 Medium, 2 Low |
 | 2 *(scoped to v2's own fixes)* | 2 Blocking, 1 High | ⛔ **NOT RUN — `REVIEW GAP: claude`** |
+| 3 *(scoped to v3's own fixes)* | **1 Blocking**, 2 High | **0 Blocking**, 2 High, 6 Medium, 2 Low |
 
-Reviews: [`plan-guard-inventory-population-r{1,2}-*.md`](../../reviews/plan-guard-inventory-population-r1-codex.md).
+Reviews: [`plan-guard-inventory-population-r{1,2,3}-*.md`](../../reviews/plan-guard-inventory-population-r1-codex.md).
+
+> ✅ **Round 3 is the first where the plan RUNS.** Codex applied T1–T7 in a temp copy:
+> `166 mutation(s), 0 survivor(s)`. Rounds 1 and 2 both established it could not. Round 3's findings
+> are **completeness** — what the suite does not cover, and one document the change forgets to
+> correct — which is a much later class of defect than "this cannot work".
+>
+> ⚠ **Two more count errors were mine** (`rises by 3` → 2; `three prints` → zero), bringing this
+> slice's tally of *stating a number from a prior state* to **nine**. Both are now "read the printed
+> number; do not predict it."
 
 ⛔ **Round 2's Claude half DID NOT RUN** — dispatched twice, both attempts died on `API Error: 529
 Overloaded`. Recorded as a written gap, not passed over. **A missing half is NOT a clean half**, and
@@ -214,7 +224,7 @@ def population_paths(scripts_dir: Path, pattern: str = "check-*.py") -> list[str
 - [ ] **Step 5: Run the tests and make sure they pass**
 
 Run: `python3 scripts/check-ratchet-contract.py --self-test`
-Expected: PASS, count rises by 3.
+Expected: PASS. ⚠ The count rises by **2**, not 3 — Step 2 adds two `case()` calls, and the old table-row `total` is gone. Read the printed number; do not predict it.
 
 - [ ] **Step 6: Rewire `main()` to use it, with the pattern unchanged**
 
@@ -459,7 +469,7 @@ git commit -F .git/COMMIT_MSG_T3
 **Why:** T1 Step 1 put the `[FAIL] ` contract in one function. This task retires the remaining
 hand-rolled compare-and-print blocks so no second format can drift back in.
 
-⚠ **The plan previously said "five failure prints". By the time this task runs it is THREE** — T3
+⚠ **The plan has twice mis-stated this count (five, then three). By the time this task runs it is ZERO** — T1 Step 1 now converts every loop — T3
 deleted the `DISCOVERY_CASES` loop and its print, and T3 rewrote the `POPULATION_CASES` loop to use
 `case()`. Count them in the file rather than trusting this sentence.
 
@@ -476,6 +486,23 @@ the check that no second print format survived the conversion.
 grep -n 'print(f"  FAIL' scripts/check-ratchet-contract.py; echo "exit=$?"
 ```
 Expected: no matches (`exit=1`). A survivor is a second format that `check-plan-code.py` cannot read.
+
+⛔ **The CANNOT-RUN branch must be REACHABLE by a case — the plan's own T1 argument, applied one
+function over.** T1 justifies its extraction with *"`main()` is driven by nothing"*; v3 then put a new
+`return 2` **inside `main()`** with no case, no mutation and no falsifier. Measured: the branch works
+(`CANNOT RUN — a script under scripts/ does not parse … rc=2`) and **nothing would notice if it became
+`return 0`.** Spec §3.4 promises it is *"repaired here with a case"*, and that sentence is what makes
+the gap invisible.
+
+So: put the read-and-parse step in a function the suite drives —
+
+```python
+def read_population(scripts_dir: Path) -> tuple[dict[str, str], str | None]:
+    """(texts, cannot_run_reason). A file that does not parse is a REFUSAL, not a skip."""
+```
+
+— give it a case (a directory containing `def broken(:` → a non-None reason) and a manifest entry
+mutating the reason to `None`, expecting that case.
 
 - [ ] **Step 2: Replace the unparseable-file traceback with a CANNOT-RUN exit**
 
@@ -654,9 +681,22 @@ case from that loop **must carry the prefix**. Round 6 replaced substring matchi
     "file": "scripts/check-ratchet-contract.py",
     "edits": [["        compile(src, \"<inventory>\", \"exec\")\n", ""]],
     "expect": ["NOT_A_GUARD: before __future__"]
+  },
+  {
+    "name": "a non-string value counts as a declaration",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [["isinstance(value.value, str) \\\n                and value.value.strip()",
+               "value.value is not None"]],
+    "expect": ["NOT_A_GUARD: non-string value"]
   }
 ]
 ```
+
+⟳ **The fifth entry is a round-3 repair.** Spec v4 §10 requires a mutation for *"`NOT_A_GUARD`
+detection accepting a non-string value"*; v3's manifest silently dropped it in favour of the
+whitespace one, leaving that discriminator with a test case but nothing proving it load-bearing.
+⚠ **Five entries, so `EXPECTED_MUTATIONS` is `5` and the sum oracle at `check-plan-code.py:2021`
+becomes `167`, not 166.** Step 2 below carries the corrected number.
 
 - [ ] **Step 2: Add the key AND update BOTH hardcoded oracles — three edits, one commit**
 
@@ -667,7 +707,7 @@ mutation harness that runs nothing looks exactly like one where everything passe
 
 **(a)** the key, in `EXPECTED_MUTATIONS`:
 ```python
-    "scripts/check-ratchet-contract.py": 4,
+    "scripts/check-ratchet-contract.py": 5,
 ```
 
 **(b)** the inventory oracle at `:1948-1956` — insert in **sorted** position, between
@@ -678,7 +718,7 @@ mutation harness that runs nothing looks exactly like one where everything passe
                                       "scripts/check-selftest-counts.py",
 ```
 
-**(c)** the sum oracle at `:2021` — **`162` becomes `166`.** A literal on purpose; the comment above
+**(c)** the sum oracle at `:2021` — **`162` becomes `167`** (five new mutations, not four). A literal on purpose; the comment above
 it says its whole job is that the total cannot move without someone deciding it should. Write the
 number, not "rise by 4".
 
@@ -691,7 +731,7 @@ be an artefact — `mutate_delivered:643-648` says so in as many words.
 - [ ] **Step 3: Run the mutation suite**
 
 Run: `python3 scripts/check-plan-code.py --mutate .`
-Expected: control green first, then **4 mutations, 0 survivors**, each red via the case it names.
+Expected: control green first, then **5 mutations, 0 survivors**, each red via the case it names.
 
 ⚠ If any reports *"matched 0 red case(s)"*, the `[FAIL] ` format from Task 4 did not land.
 ⚠ If any reports *"mutation SURVIVED"*, the extraction from Task 1 did not land.
@@ -729,12 +769,20 @@ becomes false and must go.
 
 - [ ] **Step 2: Run F8 — the grep, EXECUTED not authored**
 
+⛔ **DERIVE the path list from this task's own file list — do not restate it.** F8 has now been wrong
+in **four consecutive versions**: too narrow to see `docs/`; unsatisfiable via `docs/`; unsatisfiable
+via `__pycache__`; and narrower than the task it guards (it omitted the inline-renderer-seam spec and
+`docs/backlog.md`, both of which T8 requires). Every fix corrected the instance and left the class.
+
 ```bash
+# The paths ARE this task's modify list. Adding a site to T8 without adding it here is the defect.
 grep -rn --binary-files=without-match --exclude-dir=__pycache__ discover_ratchets \
-  scripts/ .github/ .claude/ docs/process-checklists.md docs/dev-process.md docs/roadmap-to-launch.md
+  scripts/ .github/ .claude/ \
+  docs/process-checklists.md docs/dev-process.md docs/roadmap-to-launch.md \
+  docs/backlog.md docs/superpowers/specs/2026-08-30-inline-renderer-seam-design.md
 ```
-Expected: **no output.** (`--binary-files` and `--exclude-dir` are load-bearing: `.pyc` files match
-the old symbol, and that made this falsifier wrong in three consecutive spec versions.)
+Expected: **no output.** (`--binary-files` and `--exclude-dir` are load-bearing — `.pyc` files match
+the old symbol.)
 
 - [ ] **Step 3: Run the doc gates**
 
@@ -757,6 +805,14 @@ git commit -F .git/COMMIT_MSG_T8
 - Modify: `scripts/gen-backlog-page.py` (`GROUPS`)
 - Modify: `docs/dashboard-entries.md`
 
+- [ ] **Step 0: Rewrite both row BODIES — they assert the mechanism this PR deletes**
+
+Measured: `grep -c 'discover_ratchets\|glob("check-\*\.py")' docs/backlog.md` → **2**, both inside
+#72 and #73. Spec §7 lists these rows: *"must not be left describing the old mechanism."* Closing a
+row while its body still states the deleted mechanism as fact is §1.2's shape **in the rows that
+record the finding**. Keep the history (the measurement, the falsified claim) — correct the tense and
+the mechanism.
+
 - [ ] **Step 1: Close the rows**
 
 ⛔ **It is the ITEM cell that changes, not the Status cell.** `scripts/check-docs.py:456` is
@@ -773,8 +829,23 @@ a bare leading marker as open — which is how #46 and #50 were once closed whil
 
 - [ ] **Step 2: Delete both `GROUPS` tuples**
 
-`GROUPS` coverage is **bidirectional**: it refuses an open item with no prose *and* prose describing a
-now-closed item. Closing a row means deleting its tuple.
+⛔ **v3 said `GROUPS` coverage is "bidirectional". It STOPPED being so in `d39fa658` — merged today,
+and an ancestor of this branch.** `coverage_errors` (`scripts/gen-backlog-page.py:775-781`) now says
+*"⚠ NO LONGER REPORTS MISSING ITEMS — see `undescribed`"*; only the `extra`/`dupes` direction still
+refuses. Prose describing a closed item still refuses, so **deleting both tuples is still required**.
+
+⚠ **Why the false premise looked safe, which is the durable part:**
+`.claude/hooks/regen-backlog-page.sh:45` still prints *"If this is a coverage refusal, add the item to
+GROUPS"* — I inherited the stale belief **from the repo's own error message**. That is this change's
+own defect class, arriving through a tool's output rather than a docstring.
+
+- [ ] **Step 2b: give the NEW row a `GROUPS` tuple, in the same commit as Step 3**
+
+Because coverage is no longer bidirectional, T9 as written does **not** refuse — it renders the new
+row into *"Filed, but nobody has described them yet"* and emits a ⚠, on a hook that fires on exactly
+this edit. Measured against T9's end state: `coverage_errors: []`, `undescribed: [88]`.
+**Not CI-red — a reader-facing page this PR would quietly make worse**, which is the failure
+`d39fa658` was written to stop after it cost four items over two days.
 
 - [ ] **Step 3: File the `NO-CALLER:` row the spec twice promises**
 
