@@ -2725,3 +2725,49 @@ interference — the rule is in the wrong place and names deleted scripts), **#7
 inventory cannot see a guard that is not NAMED like one), and **#78 half (2)** (the entry gate runs
 on `pull_request` while the skill regenerates the page immediately). Three items, not the five it
 looked like this morning.
+
+## 2026-09-03 [needs-you]
+Ran the architecture review that was convened yesterday and never written. The question it was
+convened to answer — *why has this plan failed four review rounds in a row?* — has an answer, and it
+is not "the plan is badly written".
+
+The repo keeps **four separate hand-maintained lists of its own safety checks**, and no two of them
+agree. There are 26 checks on disk. Nine are pinned for one kind of coverage, seven for another,
+twenty are named in CI — and **eighteen of the twenty-six have neither kind of coverage at all**.
+Nothing in the codebase compares these lists to each other. The only place they are reconciled is
+the plan document, and a document cannot enforce anything. So every review round finds a
+reconciliation error, the fix introduces the next one, and the count grows without the *kind* of
+problem ever changing.
+
+**The decision waiting on you: which fix becomes the next piece of work.** My recommendation is the
+narrow one — make one of those four lists derive itself from the directory it is currently copying
+by hand. It is small, it is measured, and it removes the exact defect the last four rounds kept
+producing rather than patching this instance of it.
+
+Also worth knowing: the previous architecture review's four findings are all **verified closed**.
+The ratchet built for them worked.
+
+<!--tech-->
+`docs/reviews/architecture-review-2026-09-03.md` — Phase 6, second arming condition, on the branch
+`fix/guard-inventory-population` (unpushed, no PR, zero lines of `scripts/` changed).
+
+Inventories measured **by importing the owning module**, never by string-splitting — an earlier
+string reader returned `0` for two of the four, and a zero is indistinguishable from a broken
+reader. `check-ratchet-contract` population **26**; `check-selftest-counts.POPULATION` **9** (6 are
+guards); `scripts/mutations/` + `EXPECTED_MUTATIONS` **7**, sum **162** (4 are guards); distinct
+`scripts/*.py` in `ci.yml` **20** (17 are guards). Reachability is fine — **0 of 26** guards are
+unrun (17 via CI, 8 via `check-schema-gates.sh`, 3 via a hook).
+
+Findings: **A** 🟠 four inventories, nothing reconciles them. **B** 🟠 `check-plan-code.py:625-626`
+returns on count drift five lines before the `copytree` at `:630`, so the run aborts having measured
+nothing while emitting `0 mutation(s), 0 survivor(s)` from the empty initializer at `:584` — not
+fail-open (exit is non-zero), but a true-looking coverage claim on a path where nothing ran.
+**C** 🟡 `EXPECTED_MUTATIONS`' key set is a verified duplicate of `scripts/mutations/*.json`; the
+per-file counts (`:426-431`) and the sum literal `162` (`:1956`) are deliberate and must survive any
+fix. **D** 🟡 backlog #48 records "STOP-HOOK VERDICT: NOT BUILT, deliberately" — it was built
+2026-08-24 (`8b9643d9`) on a better discriminator. **E** 🟢 `block-idle-stop.sh:5` says 18 self-test
+cases; the script reports 17, and nothing catches it.
+
+Review #4's A/B/C/D re-verified **CLOSED**. Findings deliberately **unfiled** pending your triage,
+per review #4's precedent. `.claude/plan-gate-pending` remains **ARMED**. Gates green:
+`check-arch-findings`, `check-anchors`, `check-docs`, `check-roadmap-consistency`.
