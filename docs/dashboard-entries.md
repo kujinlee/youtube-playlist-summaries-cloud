@@ -2816,3 +2816,47 @@ run the gate — drift message, **no** tally.
 ⚠ The claim that candidate 2 "dissolves round 4's Blocking" is **withdrawn with the candidate**.
 That Blocking is a plan defect (T4 vs T7) and still needs the count decided in one place: six
 entries, `EXPECTED_MUTATIONS` 6, sum **168**.
+
+## 2026-09-03
+The spec went through its review gate and came back **not converged** — both reviewers, independently,
+found the same fault, and it was in the fix I had recommended.
+
+The fix was meant to stop the tool printing a clean-looking summary on runs where it measured nothing.
+My version keyed off the wrong moment: it would have marked a run as "measured" slightly too early, so
+the single worst case — where the tool's own safety check fails before any real work starts — would
+still have printed **"7 files, 0 survivors"**, which reads like a clean sweep, on a run that says of
+itself *treat this as not checked*.
+
+The outside reviewer also caught something neither I nor my own review saw: the spec quoted a running
+total that **another in-flight document also quotes**, and whichever lands first changes the other's
+number. The fix is to stop quoting the total in either place and let each derive it when it lands.
+
+Nothing is built yet, and that is the point: the gate cost about twenty minutes and caught a fix that
+would not have fixed the thing it was for.
+
+<!--tech-->
+Spec **v2**; round 1 filed, BOTH halves, `check-review-rounds` green.
+
+**Blocking, found by both halves independently.** v1's R1 was scoped *"returns without reaching the
+`copytree` at `:630`"* and option (a) flipped its sentinel there. `mutate_delivered` has **four**
+returns (`ast`-enumerated): `:586`, `:626` before, **`:646`, `:663` after**. `:646` is the
+control-failure return — `ev["files"]` populated at `:639`, `mutations`/`survivors` set only at
+`:648` — so the flag would be `True` and the tally would print. Reproduced by forcing a target's
+control suite to exit 1: `FAILED — delivered scripts mutated: 7 file(s), 0 mutation(s), 0
+survivor(s)`. **v2 restates R1 as "were mutations RUN", moves the flip to `:648`, and adds R1a: the
+file count is part of the claim.**
+
+**Codex-only findings.** ① The `168` in §7 is unstable — this spec moves the sum 162→163, so the
+sibling plan's total is 168 *or* 169 depending on order; v2 states the dependency and drops the
+number, keeping only the per-file `6`. ② F2/F4 were vacuous — F4 named no anchor, no target, no case;
+v2 writes the manifest entry out and warns that `:723` parses only `[FAIL] ` lines, so an unmatched
+case name reports zero red cases rather than a mismatch. ③ Call sites are **8**, not 9.
+
+**Confirmed by both:** the 🟠→🟡 downgrade (no early return yields exit 0 or `OK`), and option (c)'s
+refutation (`ok=False` also at `:773`/`:779`). Codex ran F3: `OK — … 7 file(s), 162 mutation(s), 0
+survivor(s)`, exit 0.
+
+⚠ **The wrapper's "THE AGENT WROTE BEHIND THE WRAPPER" warning was a FALSE POSITIVE** — it names
+files the *coordinator* wrote while the two halves ran in parallel. Verified by `git status` and by
+the Claude half still holding its own text. A cry-wolf risk on the detector that exists to catch a
+real overwrite; noted in the Codex review doc, not filed.
