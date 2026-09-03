@@ -1742,11 +1742,18 @@ Branch `fix/guard-inventory-population`, unpushed, no PR. **Zero lines of `scrip
 - [x] **⟳ PHASE 6 CONVENED AND RUN (2026-09-03)** — `docs/reviews/architecture-review-2026-09-03.md`.
       Chosen by the user over a fifth round, on the cause not the count: **seven consecutive rounds
       whose new defects were inside the previous round's fixes.**
-- [ ] **DECISION OWED — which Phase 6 candidate becomes the next slice.** Recommendation: **candidate
-      2** (derive `EXPECTED_MUTATIONS`' key set from `scripts/mutations/`), inside candidate 1's
-      frame. It dissolves the defect class the last four rounds kept producing rather than patching
-      the instance. Findings are **deliberately unfiled** pending user triage, per review #4's
-      precedent.
+- [x] **DECIDED 2026-09-03 — the user chose candidate 2, and testing its premise REFUTED it.**
+      Deriving `EXPECTED_MUTATIONS`' key set would delete the manifest **deletion detector**:
+      `:592` is `got = counts.get(target, 0)`, so a vanished manifest is caught only because the
+      hand-maintained key still names it. Measured on a temp copy. **Candidate 2 WITHDRAWN.**
+- [ ] **⭐ NEXT — candidate 2′: the drift path must not report a coverage tally.** `mutate_delivered`
+      returns at `:625-626` five lines before the `copytree` at `:630` with `ev` still its `:584`
+      initializer, so the caller prints `0 mutation(s), 0 survivor(s)` on a run that never started.
+      Falsifier: add a manifest entry, leave `EXPECTED_MUTATIONS` alone — drift message, **no** tally.
+      Needs a spec (Phase 1) before code; the spec is the human gate.
+- [ ] Findings are **deliberately unfiled** pending user triage, per review #4's precedent. Finding
+      **E** is ✅ fixed (`4dc05e89`); **D** (backlog #48's stale stop-hook verdict) is the user's row
+      to edit.
 
 **⚠ `.claude/plan-gate-pending` IS ARMED** and has not converged. Clearing it is a deliberate act.
 

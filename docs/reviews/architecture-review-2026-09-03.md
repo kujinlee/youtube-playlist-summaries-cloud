@@ -125,7 +125,12 @@ falsifier. **The count must be decided in one place** — six entries, `EXPECTED
 **Falsifier:** run the gate with a manifest entry added and `EXPECTED_MUTATIONS` untouched; the
 output must not contain a mutation/survivor tally at all.
 
-## C — 🟡 `EXPECTED_MUTATIONS`' key set is a verified duplicate of `scripts/mutations/`
+## C — ⛔ REFUTED 2026-09-03, BY EXECUTION. Do not act on this finding.
+
+**The text below is preserved as written. Its conclusion is wrong, and the refutation is in
+§*Refuted* → *Finding C*. The key set is the manifest DELETION DETECTOR, not a duplicate.**
+
+### C (as originally filed) — 🟡 `EXPECTED_MUTATIONS`' key set is a verified duplicate of `scripts/mutations/`
 
 **MEASURED.** The two stem sets are **identical**:
 
@@ -173,7 +178,41 @@ value is as evidence, not as a defect worth a slice.
 
 ---
 
-# Refuted — recorded because it was nearly filed
+# Refuted
+
+## Finding C — ⛔ REFUTED BY EXECUTION, after the user had already chosen it as the next slice
+
+**The claim:** `EXPECTED_MUTATIONS`' key set duplicates `scripts/mutations/*.json` and can be derived
+from it. **Measured true** — the two stem sets are identical. **The inference from it was wrong.**
+
+Tested on a temp copy of `scripts/`, never the repo, by calling `mutate_delivered(root)` directly:
+
+| trial | result |
+|---|---|
+| delete `scripts/mutations/page_chrome.json` | `scripts/page_chrome.py: manifest holds 0 mutation(s), expected 11` |
+| add `scripts/mutations/zzz-undeclared.json` | `target scripts/zzz-undeclared.py does not exist` |
+
+**Deleting a manifest is caught ONLY because `EXPECTED_MUTATIONS` still names the file.** `:592` is
+`got = counts.get(target, 0)`, so a vanished manifest yields `got=0` against a non-zero `want`. Derive
+the key set from the directory and the file disappears from *both* sides — the deletion becomes
+silent. The key set is the **deletion detector**: the same ratchet reasoning the file already states
+for the counts at `:426-431`, applied to *existence* instead of *cardinality*, and simply not written
+down.
+
+**Why the error survived my own review.** I quoted `:598-600` as proof the lists are forced identical
+— true — and read "forced identical" as "the second list carries no information". It carries the
+*direction* the first cannot: `:598-600` catches an **undeclared** file, `:591-597` catches a
+**deleted** one. Two directions, two mechanisms, one of which I proposed to delete. This is the
+project's own recorded lesson — *a shim can fail in BOTH directions* — met from the other side.
+
+**Cost of catching it late:** none in code. It was caught before a spec was written, by testing the
+premise instead of building on it. **Cost had it not been caught:** a merged change making manifest
+deletion invisible, inside the very stack whose job is that coverage cannot shrink silently.
+
+**Finding B is unaffected and is now confirmed by execution, not just by reading** — both trials
+above report `mutations_run=0, survivors=0`.
+
+## Refuted before filing — a monitor agent for stalled execution
 
 **"A monitor agent should watch for stalled execution."** Raised by the user this session after an
 API stream stalled mid-turn. Investigated and **not filed**, for reasons that are measurable:
@@ -229,14 +268,36 @@ views of it. **Recommended as the frame**, not as a single slice — it is too l
 and this review's own subject is what happens when a large reconciliation is attempted in a
 document.
 
-## Candidate 2 — derive `EXPECTED_MUTATIONS`' key set from `scripts/mutations/` — ⭐ RECOMMENDED FIRST
+## Candidate 2 — ⛔ WITHDRAWN 2026-09-03, superseded by candidate 2′ below
 
-Narrow, measured, and it **dissolves finding B rather than patching it**. Keeps the per-file counts
-and the sum literal, both of which are deliberate (finding C). Its own falsifier is cheap.
+~~Derive `EXPECTED_MUTATIONS`' key set from `scripts/mutations/`.~~ **The user selected this and it
+was tested before a spec was written. It would delete the manifest deletion detector** — see
+§*Refuted* → *Finding C*. Recorded rather than quietly replaced, because the reason it was wrong is
+the useful part: two lists forced identical can still each carry a direction the other cannot.
 
-**Why first, specifically:** round 4's Blocking is caused by this duplication. Fixing it removes the
-defect *class* that the last four rounds kept producing, which is the only intervention that can be
-expected to change the round-on-round pattern rather than add to it.
+## Candidate 2′ — the drift path must not report a coverage tally — ⭐ RECOMMENDED FIRST
+
+**This is what candidate 2 was FOR.** It removes finding B's actual harm without touching either
+ratchet, and both ratchets survive intact — the counts, and the key set now understood as the
+deletion detector.
+
+`mutate_delivered` returns at `:625-626` on drift, five lines before the `copytree` at `:630`, with
+`ev` still its `:584` initializer. The caller renders a tally from that empty structure, so the
+output carries **`0 mutation(s), 0 survivor(s)`** on a path where the harness never started.
+Measured twice this session (manifest deleted; manifest undeclared) — both report
+`mutations_run=0, survivors=0`.
+
+**Shape (not decided):** the drift return should be distinguishable at the caller from a completed
+run, so no tally is rendered. Whether that is a distinct return state, a sentinel in `ev`, or the
+caller checking `ok` before formatting is an implementation choice for the spec.
+
+**Falsifier:** add a manifest entry, leave `EXPECTED_MUTATIONS` untouched, run the gate. The output
+must contain the drift message and **no** mutation/survivor count.
+
+⚠ **What this does NOT fix.** Round 4's Blocking is a *plan* defect, not a code one: T4 promises a
+sixth mutation and T7 leaves the count at 5. That still has to be decided in one place — six entries,
+`EXPECTED_MUTATIONS` 6, sum **168** — regardless of candidate 2′. Candidate 2 was claimed to
+"dissolve" it; **that claim is withdrawn with the candidate.**
 
 ## Candidate 3 — the plan document holds reconciliation no code holds
 
@@ -250,11 +311,17 @@ document's side, and candidates 1 and 2 are what acting on it looks like.
 | Finding | Disposition |
 |---|---|
 | A 🟠 | frame for candidate 1; **not** a slice on its own |
-| B 🟠 | fixed by candidate 2; also needs the plan's count decided in one place (six / 6 / 168) |
-| C 🟡 | candidate 2 |
-| D 🟡 | doc correction — one row edit, no code |
-| E 🟢 | one-line comment fix; the *class* is finding A |
+| B 🟠 | **candidate 2′** — the drift path must not render a tally. Confirmed by execution |
+| C ⛔ | **REFUTED by execution.** The key set is the deletion detector. Nothing to do |
+| D 🟡 | doc correction — one row edit, no code. **Not filed; the user's step** |
+| E 🟢 | ✅ **FIXED 2026-09-03** (`4dc05e89`). The *class* is finding A |
 
-**Recommendation: candidate 2 as the next slice, inside candidate 1's frame.** Then re-run the plan
-gate — with the duplication gone, round 5 is measuring a different artifact rather than repeating
-round 4.
+**Recommendation: candidate 2′ as the next slice, inside candidate 1's frame.**
+
+⚠ **And a correction to this review's own framing.** It opened by arguing that the four rounds failed
+because the plan reconciles inventories no code reconciles — which stands. But it then proposed a fix
+whose premise it had verified only by *reading*, and that fix would have removed a guard. **The
+review reproduced, in its own recommendation, the failure mode it was convened to diagnose.** The
+thing that caught it was running the premise instead of building on it, which cost one command.
+Round 5 of the plan gate should be read with that in mind: this document is not exempt from the
+pattern it describes.

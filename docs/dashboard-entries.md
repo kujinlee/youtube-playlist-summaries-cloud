@@ -2771,3 +2771,48 @@ cases; the script reports 17, and nothing catches it.
 Review #4's A/B/C/D re-verified **CLOSED**. Findings deliberately **unfiled** pending your triage,
 per review #4's precedent. `.claude/plan-gate-pending` remains **ARMED**. Gates green:
 `check-arch-findings`, `check-anchors`, `check-docs`, `check-roadmap-consistency`.
+
+## 2026-09-03
+You picked the narrow fix I recommended, and it was wrong. I tested its premise before writing a
+spec, and the test refuted it.
+
+The recommendation was to stop one of the four lists copying a directory by hand and let it derive
+itself. I had checked that the two always match. What I had not checked is **why** they always
+match — and it turns out the hand-maintained copy is the only thing that notices when a file is
+**deleted**. Derive it, and a deleted safety check would vanish from both sides at once and nobody
+would be told. I would have removed a working guard from the one stack whose entire job is that
+coverage cannot shrink quietly.
+
+**What replaces it is smaller and still worth doing.** When those two lists disagree, the tool stops
+before it measures anything — correctly — but still prints *"0 mutations, 0 survivors"* in the same
+breath. That line reads like a clean result. It should not be printed at all on a run that never
+started.
+
+Worth saying plainly: **this review recommended a fix built on a premise it had only read, not run —
+which is the exact failure it was convened to diagnose.** Catching it cost one command. It is
+recorded in the review rather than quietly swapped out.
+
+<!--tech-->
+Finding C **REFUTED BY EXECUTION**; candidate 2 **WITHDRAWN**; candidate 2′ replaces it.
+
+Tested on a temp copy of `scripts/` via `mutate_delivered(root)`, never the repo. Deleting
+`scripts/mutations/page_chrome.json` yields `scripts/page_chrome.py: manifest holds 0 mutation(s),
+expected 11` — caught **only** because `EXPECTED_MUTATIONS` still names the file (`:592` is
+`got = counts.get(target, 0)`). The key set is the **deletion detector**: the ratchet reasoning
+already written for the counts at `:426-431`, applied to *existence* rather than *cardinality*, and
+never written down. `:598-600` catches an **undeclared** file; `:591-597` catches a **deleted** one —
+two directions, two mechanisms, and I proposed deleting one of them.
+
+How the error survived the review: I quoted `:598-600` as proof the lists are forced identical (true)
+and read that as "the second list carries no information" (false). Same shape as the project's own
+recorded lesson that *a shim can fail in BOTH directions*, met from the other side.
+
+**Candidate 2′** — `mutate_delivered` returns at `:625-626` five lines before the `copytree` at
+`:630`, with `ev` still its `:584` initializer, so the caller renders a tally from an empty
+structure. Confirmed by execution twice (manifest deleted; manifest undeclared), both
+`mutations_run=0, survivors=0`. Falsifier: add a manifest entry, leave `EXPECTED_MUTATIONS` alone,
+run the gate — drift message, **no** tally.
+
+⚠ The claim that candidate 2 "dissolves round 4's Blocking" is **withdrawn with the candidate**.
+That Blocking is a plan defect (T4 vs T7) and still needs the count decided in one place: six
+entries, `EXPECTED_MUTATIONS` 6, sum **168**.
