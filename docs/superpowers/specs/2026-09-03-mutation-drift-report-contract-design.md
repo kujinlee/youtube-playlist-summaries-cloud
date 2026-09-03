@@ -1,14 +1,26 @@
 # The mutation harness's final line must say whether it measured anything
 
+> **Anchor:** `status-visibility` — **ADR:** none
+> **Goal:** A person who was away can see the current state, what changed, and what needs them —
+> without reading the chat transcript.
+
+⚠ **The header order is load-bearing, and `check-anchors` proved it.** `HEAD_LINES = 10`
+(`scripts/check-anchors.py:61`) — the Anchor and Goal must sit in the first ten lines. Adding the v3
+note *above* them pushed the declaration to line 16 and turned the gate red. **Version notes go
+BELOW the declaration**, always.
+
+> **v3 — 2026-09-03.** Rounds 1 **and 2** folded, both halves each
+> ([r2 claude](../../reviews/spec-mutation-drift-report-contract-r2-claude.md),
+> [r2 codex](../../reviews/spec-mutation-drift-report-contract-r2-codex.md)). Round 2 returned the
+> **same Blocking from both halves for the second consecutive round**, and the user's decision was to
+> **stop patching the landmark and write the state machine** — which §4 now is. Two positional
+> proxies failed; v3 enumerates the five states and derives the flag from the enumeration.
+>
 > **v2 — 2026-09-03.** Round 1 folded, BOTH halves
 > ([claude](../../reviews/spec-mutation-drift-report-contract-r1-claude.md),
 > [codex](../../reviews/spec-mutation-drift-report-contract-r1-codex.md)). Both independently
 > returned **NOT CONVERGED** on the same Blocking: **the recommended flip point was wrong and would
 > have left the worst case unfixed.** v1's §1, §2, §4, §5, §6 and §7 all changed.
-
-> **Anchor:** `status-visibility` — **ADR:** none
-> **Goal:** A person who was away can see the current state, what changed, and what needs them —
-> without reading the chat transcript.
 
 **Source:** `docs/reviews/architecture-review-2026-09-03.md`, finding **B**, candidate **2′**.
 Replaces candidate 2, which was withdrawn after its premise was refuted by execution.
@@ -87,20 +99,56 @@ was missed** — not a new idea.
 
 ## 4. What must become true
 
-**R1 — RESTATED IN v2. The predicate is "were mutations RUN", not "did we reach `copytree`".**
+**R1 — RESTATED IN v3 AS A STATE MACHINE. Two landmark-based attempts failed; this one enumerates
+what the final line may truthfully CLAIM, and derives the flag from that.**
 
-When `run_mutations` has not returned — i.e. any return at `:586`, `:626` or `:646` — the final line
-**must contain neither a mutation count nor a survivor count, and must not report a file count that
-implies work was measured.** It must say the harness did not run.
+⛔ **The history, kept because it is the reason for the shape.** v1 keyed on *"did we reach the
+`copytree` at `:630`"* — Blocking, both halves: `:646` returns after it. v2 keyed on *"did
+`run_mutations` return"* — Blocking, both halves: `:663` can return with the run declared NOT CHECKED.
+**Both were positional proxies for one property — is this tally a trustworthy measurement — and each
+was true while the property was false.** A third proxy would be the third instance.
 
-⛔ **v1 said "does not reach the `copytree` at `:630`". That was the Blocking, found by both review
-halves.** `:646` returns *after* `:630`, so a flag flipped there would already be `True` on the one
-path where the output is most misleading. **A line number is a proxy for a state; this one had
-drifted from the state it stood for.**
+### The five states, enumerated from the measured call taxonomy
 
-**R1a.** The file count is part of the claim. `:646` prints `7 file(s)` because `ev["files"]` is
-populated at `:639` for the *control* runs — which measure nothing about mutations. Suppressing only
-the mutation/survivor pair still leaves `7 file(s)` asserting work.
+| | state | return | `files` | `mutations` | the line may claim |
+|---|---|---|---|---|---|
+| **S0** | manifests unusable (`load_manifests` problems) | `:586` | 0 | 0 | **no tally at all** |
+| **S1** | declared coverage disagrees with the manifests | `:626` | 0 | 0 | **no tally at all** |
+| **S2** | control red **before** any mutation | `:646` | **N > 0** | 0 | **no tally at all — including the file count** |
+| **S3** | measured, after-control green | `:663` | N | M | **the full tally; this is a verdict** |
+| **S4** | measured, then **invalidated** by the after-control | `:663` | N | M | **the numbers exist but are NOT a verdict** |
+
+Measured by wrapping `mutate_delivered` across the whole suite (158/158): S3 = call 1, S2 = call 2,
+S0/S1 = calls 3-5 and 7, **S4 = call 6 `(ok=False, after_red=True, 1, 1, 0)`**.
+
+### R1 — the requirement
+
+**S0, S1, S2:** the final line contains **no** mutation count, **no** survivor count and **no** file
+count, and says the harness did not run. *(R1a: S2's `N file(s)` counts control runs, which measure
+nothing about mutations — suppressing only the mutation/survivor pair still leaves it asserting work.)*
+
+**S3:** unchanged from today, byte for byte.
+
+**S4:** the tally may be printed — the numbers are real — but the line must state that the run was
+invalidated, so `0 survivor(s)` cannot be read as "everything was caught". `:659-662` already says
+this in prose; the final line must not contradict it.
+
+### R2 — the flag is three-valued, and each transition sits where the FACT becomes true
+
+`ev["verdict"]`, not a boolean:
+
+| value | set at | because that is where |
+|---|---|---|
+| `"not-run"` | `:584`, the initializer | nothing has been measured yet |
+| `"measured"` | `:648`, where `ev["mutations"]` is assigned | `run_mutations` has returned real counts |
+| `"invalidated"` | `:657`, beside `ok = False` | the after-control has just falsified them |
+
+⚠ **A boolean cannot carry this.** S3-with-survivors and S4 are **both** `ok=False` — which is why
+option (c) was refuted in round 1, and why v2's two-valued flag could not see S4. **Three states
+require three values.**
+
+**R3** (unchanged): the distinction is carried in the return value, never re-derived at the caller.
+**R4** (unchanged): `--mutate`'s final line names what it measured, per `:2107`'s precedent.
 
 **R2.** When the harness *does* run, the final line is unchanged. This spec changes no green output.
 
@@ -114,22 +162,23 @@ shape the reviews keep finding.
 
 **How should the "did not run" state be carried?** Three shapes, all satisfying R1–R4:
 
+⟳ **v3 — the fork is NARROWER than it looks, because R2 settles the arity.** Three states need three
+values; only the carrier is open.
+
 | | shape | cost |
 |---|---|---|
-| **a** | a sentinel key in `ev`, e.g. `ev["ran"] = False` set at `:584`, **flipped at `:648`, immediately after `run_mutations` returns** | smallest diff; adds a key every reader of `ev` must know about |
-| **b** | a distinct return state — `mutate_delivered` returns `(ok, report, ev, ran)` | explicit; touches **8** call sites — 7 in `_self_test`, 1 in `main` |
-| **c** | the caller branches on `ok` before formatting | zero new state, but **violates R3** — `ok=False` is also returned by `:646` *and* by a completed run with survivors (`:773`, `:779`), so the caller would print no tally for a real failure. **Rejected: it loses information on the path that most needs it** |
+| **a** | `ev["verdict"]` ∈ `{"not-run","measured","invalidated"}`, transitions at `:584` / `:648` / `:657` | smallest diff; adds one key every reader of `ev` must know about |
+| **b** | a fourth return value — `mutate_delivered` returns `(ok, report, ev, verdict)` | explicit; touches **8** call sites — 7 in `_self_test`, 1 in `main` |
+| **c** | the caller branches on `ok` | ⛔ **REFUTED TWICE.** `ok=False` covers S2, S4 *and* S3-with-survivors (`:773`, `:779`). It cannot separate the three states, which is the whole requirement |
 
-⛔ **v1 said (a) flips "after `copytree`". WRONG — see R1.** The flip is at **`:648`**. Flipping any
-earlier marks a control-failure run as measured.
+**Recommendation: (a).** `ev` is already the channel through which this function reports what it did,
+and `ev.get(...)` is already used at `:843`, `:857` and `:917`, so an added key is structurally safe
+(verified, r1 L1).
 
-**Recommendation: (a), flipped at `:648`.** `ev` is already the channel through which this function
-reports what it did, and `ev.get(...)` is already used at `:843`, `:857` and `:917`, so an added key
-is structurally safe (verified, r1 L1).
-
-⚠ **v1 said (b) touches "9 call sites". That was wrong — it is 8** (r1 Low, Codex): `:1866`, `:1875`,
-`:1883`, `:1897`, `:1909`, `:1930`, `:1943` in `_self_test`, plus `:2069` in `main`. Corrected rather
-than quietly dropped, because a count nobody checked is what this whole slice keeps finding.
+⛔ **Two superseded claims, kept rather than quietly dropped.** v1 said (a) flips *"after `copytree`"*
+— wrong, S2. v2 said (a) flips at `:648` and is boolean — right about the point, wrong about the
+**arity**, because it could not see S4. ⚠ v1 also said (b) touches "9 call sites"; it is **8** (r1 Low,
+Codex): `:1866`, `:1875`, `:1883`, `:1897`, `:1909`, `:1930`, `:1943`, plus `:2069` in `main`.
 
 ## 6. Falsifiers
 
@@ -158,18 +207,43 @@ reproduced here in one attempt and caught in the next.
 the control-failure trial it means **three of the four returns are exercised**, which is what
 establishes R1's scope.
 
-**F2 — the fix. THREE runs, one per early return** (v1 had one, prose-only; r1 Cx-Medium).
+**F2 — the fix. ONE RUN PER STATE, five in total.** v1 had one prose sentence; v2 had three shell
+comments (r1/r2 Cx-Medium, twice). **v3 has one per row of R1's table, because the table is now the
+thing being satisfied** — a falsifier set that does not cover every enumerated state is how S4 was
+missed in the first place.
 
 ```bash
 T=$(mktemp -d); cp -R scripts "$T/scripts"
-# F2a -> :586   clone an existing manifest entry (duplicate anchors)
-# F2b -> :626   add an entry with a DISTINCT anchor, leave EXPECTED_MUTATIONS alone
-# F2c -> :646   append `raise SystemExit(1)` above `if __name__ ==` in one mutation target
+# --- F2-S0 -> :586  clone entry[0] of any manifest (duplicate edit anchors)
+python3 - "$T" <<'PY'
+import json,pathlib,sys
+p=pathlib.Path(sys.argv[1])/"scripts/mutations/check-selftest-counts.json"
+d=json.loads(p.read_text()); e=dict(d[0]); e["name"]="F2-S0 duplicate anchors"; d.append(e)
+p.write_text(json.dumps(d,indent=2))
+PY
+# --- F2-S1 -> :626  add an entry with a DISTINCT anchor, leave EXPECTED_MUTATIONS at 8
+# --- F2-S2 -> :646  prepend `raise SystemExit(1)` above `if __name__ ==` in a mutation target
+# --- F2-S3 -> :663  unmodified tree
+# --- F2-S4 -> :663  a target that passes the control and fails AFTER the sequence.
+#                    Use the shipped fixture shape: check-plan-code.py:1918-1933 — `thing.py`
+#                    counts its own runs in `runs.txt` and returns 1 on the THIRD, so the
+#                    before-control (1) and the mutated run (2) are green and only the
+#                    after-control (3) is red. DO NOT invent a new one; that fixture is
+#                    already asserted by a named case.
 python3 scripts/check-plan-code.py --mutate "$T"; echo "exit=$?"
 ```
 
-**Pass condition, all three:** the drift/CANNOT-RUN message is present, exit is `1`, and the final
-line contains **none of** `mutation(s)`, `survivor(s)`, `file(s)`.
+**Pass conditions, per state:**
+
+| | expected final line | exit |
+|---|---|---|
+| **S0 / S1 / S2** | the diagnostic message, and **none of** `mutation(s)`, `survivor(s)`, `file(s)` | 1 |
+| **S3** | byte-identical to today's `OK — …` | 0 |
+| **S4** | the tally **plus** an explicit statement that the run was invalidated | 1 |
+
+⚠ **S4 is the one that must not be skipped for being awkward to build.** It is the only state where
+the numbers are real *and* meaningless, and it is the state two rounds of reviewers had to find by
+reading. The fixture already exists — there is no excuse for asserting it by argument.
 
 **F3 — no green output moved.** `python3 scripts/check-plan-code.py --mutate .` prints a final line
 byte-identical to today's. **Today's line, run by the Codex half:**
@@ -179,14 +253,22 @@ byte-identical to today's. **Today's line, run by the Codex half:**
 own rule is a vacuous falsifier (r1 Cx-Medium). The entry appended to
 `scripts/mutations/check-plan-code.json` is:
 
+⟳ **v3: THREE transitions means the mutation must name WHICH one it deletes.** Deleting the `:657`
+transition is the one that matters — it is the S4 guard, the state two rounds missed, and deleting it
+silently collapses S4 into S3.
+
 ```json
 {
-  "name": "the ran flip is deleted, so a control failure reports a tally",
+  "name": "the invalidated transition is deleted, so an after-control failure reports a verdict",
   "file": "scripts/check-plan-code.py",
-  "edits": [["<the ran-flip statement as delivered at :648>", ""]],
-  "expect": ["<the named case asserting a control-failure run prints no tally>"]
+  "edits": [["<the ev['verdict'] = 'invalidated' assignment as delivered at :657>", ""]],
+  "expect": ["<the named F2-S4 case asserting an invalidated run does not read as a verdict>"]
 }
 ```
+
+⚠ The `:648` transition is separately covered: deleting it collapses S3 into `"not-run"`, which F2-S3
+catches by losing the `OK —` line. **The `:657` one has no such second reader**, which is exactly why
+it needs the mutation.
 
 The `expect` string **must name a case that exists** — `check-plan-code.py:723` parses only lines
 beginning `[FAIL] `, so a case whose name does not match is reported as zero red cases, not as a
