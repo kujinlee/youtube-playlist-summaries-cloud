@@ -1,0 +1,19 @@
+{
+  "attempts": [
+    "  gpt-5.6-sol: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.6-terra: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.6-luna: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.5: ok \u2014 2572 chars"
+  ],
+  "exit_code": 0,
+  "gate_ran": true,
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/c2bc498d-be8e-4506-ad67-8de0e6e78903/scratchpad/claude-r2.md: CREATED by the agent during the run",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/c2bc498d-be8e-4506-ad67-8de0e6e78903/scratchpad/codex-r2-run.log: OVERWRITTEN by the agent during the run"
+  ],
+  "model": "gpt-5.5",
+  "reason": "2572 chars",
+  "review": "codex-r2.md",
+  "schema": 1,
+  "tool": "codex-review"
+}
