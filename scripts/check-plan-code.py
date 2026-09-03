@@ -5,7 +5,7 @@
     python3 scripts/check-plan-code.py <plan.md> --evidence # ...and print the evidence block
     python3 scripts/check-plan-code.py <plan.md> --compare .   # ...and diff vs the REAL files
     python3 scripts/check-plan-code.py <plan.md> --verify-evidence   # ...and FAIL if it is stale
-    python3 scripts/check-plan-code.py --self-test          # 160 cases
+    python3 scripts/check-plan-code.py --self-test          # 162 cases
 
 ⚠ `--compare` takes the REPO ROOT, and each file tag is resolved under it as the
 repo-relative path it already is. It took the containing DIRECTORY until round 5,
@@ -470,7 +470,7 @@ EXPECTED_MUTATIONS = {
     # sides together and leaves the agreement case green. Only breaking the
     # DERIVATION separates them, and that is the regression the seam exists to stop.
     "scripts/check-dashboard-entry.py": 34,
-    "scripts/check-plan-code.py": 22,
+    "scripts/check-plan-code.py": 23,
     # ⟳ 2026-08-31, backlog #76/#77: the shared page chrome. Adding it found TWO
     # vacuous cases of my own — a "dirty tree" assertion compared against a
     # NON-repo, so it differed by the UNKNOWN text and never by the dirty flag,
@@ -663,7 +663,10 @@ def mutate_delivered(root: pathlib.Path) -> tuple[bool, list[str], dict]:
         # EVERY declared mutation must have produced a verdict. A skipped one leaves the tally
         # looking complete — 161 of 162 with 0 survivors reads as coverage confirmed.
         ev["declared"] = len(muts)
-        ev["trustworthy"] = len(m_muts) == len(muts)
+        # `.get("measured") is True` FAILS CLOSED: a future append site that forgets the
+        # key yields None, which is not True, so the run is untrusted rather than trusted.
+        ev["trustworthy"] = (len(m_muts) == len(muts)
+                             and all(m.get("measured") is True for m in m_muts))
         # THE CONTROL AGAIN, AFTER. A prologue proves the tree was good when we STARTED.
         # If it goes bad at mutation 17 — disk, OOM, a peer process — every later suite
         # exits 1, `run_mutations` only distinguishes rc==2, and an environmental red is
@@ -750,7 +753,12 @@ def run_mutations(d: pathlib.Path, muts: list[dict],
         # caller read it as one. Measured round 5, M2.
         if rc == 2:
             ok = False
-            ev_muts.append({"name": name, "caught": False, "fails": fails})
+            # `measured` False: this entry EXISTS so the cardinality check still balances,
+            # but it is a cannot-run, not a verdict. Without this the timeout is counted as
+            # a survivor and `trustworthy` stays True — found by the Codex half of the code
+            # review, 2026-09-03, in the fix that exists to prevent exactly this.
+            ev_muts.append({"name": name, "caught": False, "fails": fails,
+                            "measured": False})
             ev_survivors.append(name)
             report.append(
                 f"mutation {name!r}: the suite did NOT COMPLETE ({out.strip()[:120]}). "
@@ -790,7 +798,8 @@ def run_mutations(d: pathlib.Path, muts: list[dict],
         # were still asserting.
         unnamed = [(w, [f for f in fails if w == f]) for w in wants]
         unnamed = [(w, m) for w, m in unnamed if len(m) != 1]
-        ev_muts.append({"name": name, "caught": caught, "fails": fails})
+        ev_muts.append({"name": name, "caught": caught, "fails": fails,
+                        "measured": True})
         if not caught:
             ok = False
             ev_survivors.append(name)
@@ -1960,6 +1969,32 @@ def _self_test() -> int:
             case("...and it is NOT trustworthy, though every declared mutation ran",
                  (_ev6["trustworthy"], len(_ev6["mutations"]) == _ev6["declared"]),
                  (False, True))
+        # ⟳ 2026-09-03, Codex half of the CODE review. A TIMED-OUT mutation is rc 2 —
+        # `run_suite`'s CANNOT RUN — and it APPENDS to ev_muts (so the cardinality check
+        # still balances) AND to ev_survivors. Before `measured`, that made a two-minute
+        # NOT CHECKED print as `1 mutation(s), 1 survivor(s)` with trustworthy TRUE: the
+        # exact defect this flag exists to prevent, surviving inside its own fix.
+        # `run_suite` is stubbed rather than really hung — SUITE_TIMEOUT is 120s and a real
+        # hang would put two minutes into every CI run. The stub returns 2 for the MUTATED
+        # run only, so both controls are genuinely green and the run reaches :663 normally.
+        with tempfile.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td); _mini(_r)
+            _real_run_suite, _calls = run_suite, []
+            def _timeout_on_the_mutated_run(_d, _name):
+                _calls.append(_name)
+                if len(_calls) == 2:          # 1 = before-control, 2 = the mutation, 3 = after
+                    return 2, "CANNOT RUN — stub timeout. NOT CHECKED."
+                return _real_run_suite(_d, _name)
+            globals()["run_suite"] = _timeout_on_the_mutated_run
+            try:
+                _ok8, _rep8, _ev8 = mutate_delivered(_r)
+            finally:
+                globals()["run_suite"] = _real_run_suite
+            case("a TIMED-OUT mutation is counted but is NOT a verdict",
+                 (len(_ev8["mutations"]) == _ev8["declared"], _ev8["trustworthy"]),
+                 (True, False))
+            case("...and it is reported as a cannot-run, not as a catch",
+                 any("did NOT COMPLETE" in r for r in _rep8), True)
         # ⟲ Backlog #74. Two entries with the same edit anchors measure one thing twice, and the
         # second reports `caught` for coverage that does not exist. Also untested until now.
         with tempfile.TemporaryDirectory() as _td:
@@ -2047,7 +2082,7 @@ def _self_test() -> int:
     # together, so the agreement case stays green. Only breaking the derivation
     # separates them. (2) came from the Claude review half answering the Codex half's
     # Low — the agreement case was load-bearing and nothing proved it fired.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 163)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 164)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so

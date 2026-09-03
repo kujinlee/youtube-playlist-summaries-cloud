@@ -2910,3 +2910,50 @@ when a shortfall is actually the reason.
 Two named cases added (**160/160**), one mutation added (**163/0**), `EXPECTED_MUTATIONS`
 `check-plan-code.py` 21→22 and the deliberate sum literal 162→163, docstring 158→160 — that last one
 caught by `count_drift`. Nine gates green.
+
+## 2026-09-03
+You asked whether the code had been dual-reviewed. It had not — three rounds had reviewed the
+*document*, and the code had zero. Running that review found a real fault in the fix.
+
+The change stops the tool reporting coverage it didn't measure. **It had the same fault inside it.**
+When a check *times out*, the tool records it as a result rather than as a non-result — so a
+two-minute hang was being counted as "one check ran, one survivor found", and the new safeguard let
+it through because the arithmetic balanced.
+
+I had reviewed my own code and called it clean. The outside reviewer found this in one pass, and it
+had already been found once before at the same line — there is a comment there saying so, which my
+review walked straight past.
+
+**What that says about the process:** an author reviewing their own work is the weakest check
+available. The parts of my review that survived were the ones stated as claims someone could
+contradict; the part that failed was a characterisation nobody could test.
+
+Fixed, and the fix now has its own test and its own deliberate-sabotage check.
+
+<!--tech-->
+**Codex Blocking, reproduced and confirmed:** `check-plan-code.py:751-757` — `rc == 2` is
+`run_suite`'s CANNOT RUN. It appends to **both** `ev_muts` and `ev_survivors`, so
+`len(m_muts) == len(muts)` balanced, `trustworthy` stayed True, and the printer emitted
+`FAILED — … 1 mutation(s), 1 survivor(s)` over a timeout.
+
+**Why the Claude half missed it:** it enumerated the append sites with `ast` **for cardinality**
+(correct, and that claim still stands) and then asserted what the appends **MEAN** without reading
+the branch above one of them. The comment at `:746-750` records the identical defect being found in
+round 5 and the review walked past it.
+
+**Fix:** entries carry `"measured"` — False on the cannot-run append, True on the normal one:
+```python
+ev["trustworthy"] = (len(m_muts) == len(muts)
+                     and all(m.get("measured") is True for m in m_muts))
+```
+`.get("measured") is True` **fails closed**: a future append site that forgets the key yields `None`,
+so the run is untrusted. Chosen over `m["measured"]` (crashes the harness) and `.get(..., True)`
+(defaults to trusted — the shape being fixed).
+
+**Verified against the reviewer's own scenario**, rebuilt and run in-process with `run_suite` stubbed
+to time out the mutated run only: `NOT MEASURED … Treat this as NOT CHECKED.`, exit 1.
+
+Two cases added (**162/162**), one mutation added (**164 mutations, 0 survivors**),
+`EXPECTED_MUTATIONS` 22→23, sum 163→164, docstring 160→162 — the last caught by `count_drift`, its
+third catch today. Six gates green. Round 1 of the CODE review filed, both halves;
+**NOT CONVERGED → folded → round 2 owed.**
