@@ -1,235 +1,246 @@
 [
- {
-  "name": "a timeout is reported as a plain failure",
-  "file": "scripts/check-plan-code.py",
-  "edits": [
-   [
-    "        return 2, (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \"",
-    "        return 1, (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \""
-   ]
-  ],
-  "expect": "a hung suite is rc 2, distinct from both pass and fail"
- },
- {
-  "name": "a cannot-run is credited as a catch",
-  "file": "scripts/check-plan-code.py",
-  "edits": [
-   [
-    "        if rc == 2:\n            ok = False",
-    "        if rc == 99:\n            ok = False"
-   ]
-  ],
-  "expect": "...and the report says NOT CHECKED"
- },
- {
-  "name": "an ambiguous anchor is tolerated",
-  "file": "scripts/check-plan-code.py",
-  "edits": [
-   [
-    "            if src.count(find) > 1:",
-    "            if src.count(find) > 99:"
-   ]
-  ],
-  "expect": "an anchor matching MORE THAN ONCE fails the check"
- },
- {
-  "name": "a missing anchor is tolerated",
-  "file": "scripts/check-plan-code.py",
-  "edits": [
-   [
-    "            if find not in src:",
-    "            if find not in src and False:"
-   ]
-  ],
-  "expect": "...and says the anchor was NOT FOUND"
- },
- {
-  "name": "a mid-line FAIL marker is parsed as a case name",
-  "file": "scripts/check-plan-code.py",
-  "edits": [
-   [
-    "for l in out.split(\"\\n\") if l.strip().startswith(\"[FAIL] \")]",
-    "for l in out.split(\"\\n\") if \"[FAIL] \" in l]"
-   ]
-  ],
-  "expect": "a mid-line [FAIL] is NOT parsed as a case name"
- },
- {
-  "name": "coverage may shrink silently",
-  "file": "scripts/check-plan-code.py",
-  "edits": [
-   [
-    "        if got != want:",
-    "        if got > want:"
-   ]
-  ],
-  "expect": "a SHRUNKEN manifest is refused by name and number"
- },
- {
-  "name": "the control BEFORE the sequence is not checked",
-  "file": "scripts/check-plan-code.py",
-  "edits": [
-   [
-    "            if rc != 0:\n                report.append(f\"CANNOT RUN \u2014 control run of {name} exited {rc} BEFORE any \"",
-    "            if rc != 0 and False:\n                report.append(f\"CANNOT RUN \u2014 control run of {name} exited {rc} BEFORE any \""
-   ]
-  ],
-  "expect": "a RED control is refused, not reported as catches"
- },
- {
-  "name": "the control AFTER the sequence is not checked",
-  "file": "scripts/check-plan-code.py",
-  "edits": [
-   [
-    "            if rc != 0:\n                ok = False\n                m_report.append(",
-    "            if rc != 0 and False:\n                ok = False\n                m_report.append("
-   ]
-  ],
-  "expect": "a tree that goes bad DURING the sequence invalidates the run"
- },
- {
-  "name": "an empty expect list disables the check",
-  "file": "scripts/check-plan-code.py",
-  "edits": [
-   [
-    "        if isinstance(want, list) and not want:",
-    "        if isinstance(want, list) and not want and False:"
-   ]
-  ],
-  "expect": "an EMPTY expect list is refused"
- },
- {
-  "name": "a repeated edit anchor measures nothing twice",
-  "file": "scripts/check-plan-code.py",
-  "edits": [
-   [
-    "            if anchors and anchors in seen_anchors:",
-    "            if anchors and anchors in seen_anchors and False:"
-   ]
-  ],
-  "expect": "an entry REPEATING another's edit anchors is refused"
- },
- {
-  "name": "an absent docstring count is silent instead of CANNOT RUN",
-  "file": "scripts/check-plan-code.py",
-  "edits": [
-   [
-    "        return \"CANNOT RUN \u2014 the docstring no longer declares a case count.\"",
-    "        return None"
-   ]
-  ],
-  "expect": "count_drift CANNOT RUN when no count is declared"
- },
- {
-  "name": "count_drift stops reporting a mismatch",
-  "file": "scripts/check-plan-code.py",
-  "edits": [
-   [
-    "    if int(m.group(1)) != actual:",
-    "    if int(m.group(1)) == actual:"
-   ]
-  ],
-  "expect": "count_drift reports a mismatch"
- },
- {
-  "name": "the spawned suite is handed the real HOME again",
-  "file": "scripts/check-plan-code.py",
-  "edits": [
-   [
-    "timeout=SUITE_TIMEOUT,\n                           env=child_env(d))",
-    "timeout=SUITE_TIMEOUT)"
-   ]
-  ],
-  "expect": "a spawned suite resolves Path.home() into the run's own tree"
- },
- {
-  "name": "a home-escape route in the TARGET is ignored",
-  "file": "scripts/check-plan-code.py",
-  "edits": [
-   [
-    "        for why in home_escapes(src):",
-    "        for why in home_escapes(\"\"):"
-   ]
-  ],
-  "expect": "a target reaching the home by a route $HOME does not govern is refused"
- },
- {
-  "name": "a home-escape route in the MUTATION text is ignored",
-  "file": "scripts/check-plan-code.py",
-  "edits": [
-   [
-    "            for why in home_escapes(repl):",
-    "            for why in home_escapes(\"\"):"
-   ]
-  ],
-  "expect": "...and a CLEAN target whose MUTATION introduces the route is refused"
- },
- {
-  "name": "the plan tree gets a redirected home that does not exist",
-  "file": "scripts/check-plan-code.py",
-  "edits": [
-   [
-    "        (d / CHILD_HOME).mkdir()\n        for name, blocks in files.items():",
-    "        for name, blocks in files.items():"
-   ]
-  ],
-  "expect": "a PLAN suite may still write to Path.home() \u2014 the redirect is not a broken home"
- },
- {
-  "name": "the exemption marker needs no written reason",
-  "file": "scripts/check-plan-code.py",
-  "edits": [
-   [
-    "ESCAPE_EXEMPT = re.compile(r\"#\\s*not-a-home-escape:\\s*\\S\")",
-    "ESCAPE_EXEMPT = re.compile(r\"#\\s*not-a-home-escape:\")"
-   ]
-  ],
-  "expect": "...but a bare marker with NO reason does not exempt"
- },
- {
-  "name": "any nonzero exit is credited as a catch",
-  "file": "scripts/check-plan-code.py",
-  "edits": [
-   [
-    "        caught = rc == 1",
-    "        caught = rc != 0"
-   ]
-  ],
-  "expect": "a suite exiting 3 is a SURVIVOR, not a catch"
- },
- {
-  "name": "the exemption marker is taken from any token, not only a comment",
-  "file": "scripts/check-plan-code.py",
-  "edits": [
-   [
-    "        if t.type == tokenize.COMMENT:\n            if ESCAPE_EXEMPT.search(t.string):\n                exempt.add(ln)\n            continue",
-    "        if ESCAPE_EXEMPT.search(t.string):\n            exempt.add(ln)\n        if t.type == tokenize.COMMENT:\n            continue"
-   ]
-  ],
-  "expect": [
-   "...nor can it exempt a FIXTURE on the same line"
-  ]
- },
- {
-  "name": "an exemption also covers executable routes",
-  "file": "scripts/check-plan-code.py",
-  "edits": [
-   [
-    "            if ln in exempt and not rx.search(blanked.get(ln, \"\")):",
-    "            if ln in exempt:"
-   ]
-  ],
-  "expect": "a marker CANNOT exempt an executable route, only string data"
- },
- {
-  "name": "unparseable source is passed instead of scanned raw",
-  "file": "scripts/check-plan-code.py",
-  "edits": [
-   [
-    "    except (tokenize.TokenError, IndentationError, SyntaxError):\n        return [why for rx, why in HOME_ESCAPES if rx.search(src)]",
-    "    except (tokenize.TokenError, IndentationError, SyntaxError):\n        return []"
-   ]
-  ],
-  "expect": "source that will not tokenise is scanned raw, exempting nothing"
- }
+  {
+    "name": "a timeout is reported as a plain failure",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        return 2, (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \"",
+        "        return 1, (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \""
+      ]
+    ],
+    "expect": "a hung suite is rc 2, distinct from both pass and fail"
+  },
+  {
+    "name": "a cannot-run is credited as a catch",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if rc == 2:\n            ok = False",
+        "        if rc == 99:\n            ok = False"
+      ]
+    ],
+    "expect": "...and the report says NOT CHECKED"
+  },
+  {
+    "name": "an ambiguous anchor is tolerated",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if src.count(find) > 1:",
+        "            if src.count(find) > 99:"
+      ]
+    ],
+    "expect": "an anchor matching MORE THAN ONCE fails the check"
+  },
+  {
+    "name": "a missing anchor is tolerated",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if find not in src:",
+        "            if find not in src and False:"
+      ]
+    ],
+    "expect": "...and says the anchor was NOT FOUND"
+  },
+  {
+    "name": "a mid-line FAIL marker is parsed as a case name",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "for l in out.split(\"\\n\") if l.strip().startswith(\"[FAIL] \")]",
+        "for l in out.split(\"\\n\") if \"[FAIL] \" in l]"
+      ]
+    ],
+    "expect": "a mid-line [FAIL] is NOT parsed as a case name"
+  },
+  {
+    "name": "coverage may shrink silently",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if got != want:",
+        "        if got > want:"
+      ]
+    ],
+    "expect": "a SHRUNKEN manifest is refused by name and number"
+  },
+  {
+    "name": "the control BEFORE the sequence is not checked",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if rc != 0:\n                report.append(f\"CANNOT RUN \u2014 control run of {name} exited {rc} BEFORE any \"",
+        "            if rc != 0 and False:\n                report.append(f\"CANNOT RUN \u2014 control run of {name} exited {rc} BEFORE any \""
+      ]
+    ],
+    "expect": "a RED control is refused, not reported as catches"
+  },
+  {
+    "name": "the control AFTER the sequence is not checked",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            rc, out = run_suite(d, name)\n            if rc != 0:\n                ok = False\n",
+        "            rc, out = run_suite(d, name)\n            if rc != 0 and False:\n                ok = False\n"
+      ]
+    ],
+    "expect": "a tree that goes bad DURING the sequence invalidates the run"
+  },
+  {
+    "name": "an empty expect list disables the check",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if isinstance(want, list) and not want:",
+        "        if isinstance(want, list) and not want and False:"
+      ]
+    ],
+    "expect": "an EMPTY expect list is refused"
+  },
+  {
+    "name": "a repeated edit anchor measures nothing twice",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if anchors and anchors in seen_anchors:",
+        "            if anchors and anchors in seen_anchors and False:"
+      ]
+    ],
+    "expect": "an entry REPEATING another's edit anchors is refused"
+  },
+  {
+    "name": "an absent docstring count is silent instead of CANNOT RUN",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        return \"CANNOT RUN \u2014 the docstring no longer declares a case count.\"",
+        "        return None"
+      ]
+    ],
+    "expect": "count_drift CANNOT RUN when no count is declared"
+  },
+  {
+    "name": "count_drift stops reporting a mismatch",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if int(m.group(1)) != actual:",
+        "    if int(m.group(1)) == actual:"
+      ]
+    ],
+    "expect": "count_drift reports a mismatch"
+  },
+  {
+    "name": "the spawned suite is handed the real HOME again",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "timeout=SUITE_TIMEOUT,\n                           env=child_env(d))",
+        "timeout=SUITE_TIMEOUT)"
+      ]
+    ],
+    "expect": "a spawned suite resolves Path.home() into the run's own tree"
+  },
+  {
+    "name": "a home-escape route in the TARGET is ignored",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        for why in home_escapes(src):",
+        "        for why in home_escapes(\"\"):"
+      ]
+    ],
+    "expect": "a target reaching the home by a route $HOME does not govern is refused"
+  },
+  {
+    "name": "a home-escape route in the MUTATION text is ignored",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            for why in home_escapes(repl):",
+        "            for why in home_escapes(\"\"):"
+      ]
+    ],
+    "expect": "...and a CLEAN target whose MUTATION introduces the route is refused"
+  },
+  {
+    "name": "the plan tree gets a redirected home that does not exist",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        (d / CHILD_HOME).mkdir()\n        for name, blocks in files.items():",
+        "        for name, blocks in files.items():"
+      ]
+    ],
+    "expect": "a PLAN suite may still write to Path.home() \u2014 the redirect is not a broken home"
+  },
+  {
+    "name": "the exemption marker needs no written reason",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "ESCAPE_EXEMPT = re.compile(r\"#\\s*not-a-home-escape:\\s*\\S\")",
+        "ESCAPE_EXEMPT = re.compile(r\"#\\s*not-a-home-escape:\")"
+      ]
+    ],
+    "expect": "...but a bare marker with NO reason does not exempt"
+  },
+  {
+    "name": "any nonzero exit is credited as a catch",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        caught = rc == 1",
+        "        caught = rc != 0"
+      ]
+    ],
+    "expect": "a suite exiting 3 is a SURVIVOR, not a catch"
+  },
+  {
+    "name": "the exemption marker is taken from any token, not only a comment",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if t.type == tokenize.COMMENT:\n            if ESCAPE_EXEMPT.search(t.string):\n                exempt.add(ln)\n            continue",
+        "        if ESCAPE_EXEMPT.search(t.string):\n            exempt.add(ln)\n        if t.type == tokenize.COMMENT:\n            continue"
+      ]
+    ],
+    "expect": [
+      "...nor can it exempt a FIXTURE on the same line"
+    ]
+  },
+  {
+    "name": "an exemption also covers executable routes",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if ln in exempt and not rx.search(blanked.get(ln, \"\")):",
+        "            if ln in exempt:"
+      ]
+    ],
+    "expect": "a marker CANNOT exempt an executable route, only string data"
+  },
+  {
+    "name": "unparseable source is passed instead of scanned raw",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    except (tokenize.TokenError, IndentationError, SyntaxError):\n        return [why for rx, why in HOME_ESCAPES if rx.search(src)]",
+        "    except (tokenize.TokenError, IndentationError, SyntaxError):\n        return []"
+      ]
+    ],
+    "expect": "source that will not tokenise is scanned raw, exempting nothing"
+  },
+  {
+    "name": "the after-control stops invalidating the run, so an unusable run reports a verdict",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                ev[\"trustworthy\"] = False\n",
+        ""
+      ]
+    ],
+    "expect": "...and it is NOT trustworthy, though every declared mutation ran"
+  }
 ]

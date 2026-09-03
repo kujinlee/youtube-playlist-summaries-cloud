@@ -2860,3 +2860,53 @@ survivor(s)`, exit 0.
 files the *coordinator* wrote while the two halves ran in parallel. Verified by `git status` and by
 the Claude half still holding its own text. A cry-wolf risk on the detector that exists to catch a
 real overwrite; noted in the Codex review doc, not filed.
+
+## 2026-09-03
+**The first code of this branch — 28 commits in.** Everything before today was a spec, a plan, an
+architecture review and twenty-one review documents. This is the first change to a script.
+
+The tool that mutation-tests this repo's own guards could print a clean-looking summary on runs where
+it measured nothing. The worst version wasn't a row of zeros — it was **"161 of 162 mutations, 0
+survivors"**, which reads as coverage confirmed while one declared check silently never ran.
+
+Three attempts at this failed, each caught by both reviewers, because each keyed on *where the code
+stopped* rather than *whether the number could be trusted*. The fix stops asking about position and
+asks arithmetic instead: **did every declared check actually run, and were the before-and-after
+sanity runs both clean?** A skipped check now shows up as a count shortfall no matter where it
+happened — including in two skip paths nobody had enumerated.
+
+**It caught its own author on the very first run.** Editing the code moved a line that one of the
+existing checks was anchored to, so that check silently stopped applying. The old tool would have
+printed 161-of-162 and looked like an ordinary failure; the new one refused to give a verdict and
+said exactly how many were missing. Then the replacement anchor turned out to match *two* places in
+the file — caught before it shipped by checking, not by reading.
+
+Six situations were built and run, one per way the tool can fail. All six behave. A clean run's
+output is unchanged, byte for byte.
+
+<!--tech-->
+`scripts/check-plan-code.py` — first `scripts/` change on `fix/guard-inventory-population`.
+
+`ev["trustworthy"]` defaults **False** and is earned, never assumed: set at `:648` to
+`len(m_muts) == len(muts)`, cleared at the after-control. The `--mutate` printer emits **no tally at
+all** when it is False — including the **file count**, which on a control-failure run reports the
+*control* runs and asserts work that measured nothing.
+
+**Why arithmetic, not position.** `run_mutations` skips without appending at three places — unknown
+target file `:685`, anchor not found `:711`, empty `expect` `:763`. Only the middle one had been
+enumerated; the count comparison covers all three and any fourth added later. Three prior attempts
+keyed on `copytree`, on `run_mutations` returning, and on which return was taken; each was true while
+the property was false.
+
+**Six falsifiers, all executed.** S0 dup anchors `:586`, S1 count drift `:626`, S2 control red before
+`:646`, S3 clean, S4 after-control red `:663`, S5 mutation skipped `:663`. S0/S1/S2/S4/S5 →
+`NOT MEASURED … Treat this as NOT CHECKED`, exit 1. S3 → `OK — delivered scripts mutated: 7 file(s),
+163 mutation(s), 0 survivor(s)`, exit 0.
+
+**S4 was wrong on first run and the falsifier found it:** the message read *"produced no coverage
+verdict (162 of 162 declared mutation(s) produced a verdict)"*. The parenthetical now appears only
+when a shortfall is actually the reason.
+
+Two named cases added (**160/160**), one mutation added (**163/0**), `EXPECTED_MUTATIONS`
+`check-plan-code.py` 21→22 and the deliberate sum literal 162→163, docstring 158→160 — that last one
+caught by `count_drift`. Nine gates green.
