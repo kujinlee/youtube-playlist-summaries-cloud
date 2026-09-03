@@ -4,14 +4,25 @@
 > **Goal:** A person who was away can see the current state, what changed, and what needs them — without reading the chat transcript.
 
 **Backlog:** #72 (and #73, which closes with it).
-**Status: v3 — rounds 1 and 2 folded in, BOTH halves each round.** The shape the user approved
-(declare-out) is unchanged. **The declaration's ENCODING has changed twice**, and §3 explains why the
-second change is structural rather than another attempt at the same idea.
+**Status: v4 — rounds 1, 2 and 3 folded in, BOTH halves each round. EXITS PHASE 1.** The shape the
+user approved (declare-out) is unchanged and was never challenged in three rounds. The declaration's
+ENCODING changed twice; §3 explains why the second change is structural rather than a third attempt
+at the same idea.
 
 | Round | Codex (`gpt-5.5`) | Claude |
 |---|---|---|
 | 1 | 1 Blocking, 2 High, 2 Medium | 1 Blocking, 5 High, 5 Medium, 4 Low |
 | 2 *(scoped to round 1's own fixes)* | 1 Blocking, 2 High, 1 Medium, 1 Low | **2 Blocking**, 4 High, 4 Medium, Low |
+| 3 *(scoped to v3's AST mechanism)* | **0 Blocking**, 3 High, 1 Medium, 1 Low | 1 Blocking, 3 High, 4 Medium |
+
+> ⛔ **STOPPING THE REVIEW LOOP HERE IS A RULE, NOT FATIGUE.** `docs/dev-process.md`: *"⚠ **Read the
+> trigger off the CAUSE, not the count** — on a **document**, rounds can be right forever because
+> prose has nothing to execute; that is a signal to go build, not to convene Phase 6."*
+> Three rounds, **no round challenged the design**. Round 3's findings are: a mutation that cannot go
+> red (needs a code extraction), a placement that fails to compile, a whitespace-reason hole (one
+> line), a site list (a grep), a count literal (delete it). **Every one is settled by writing the code
+> and running it, and can be argued about in prose indefinitely.** Phase 6 is *not* convened; the
+> open items become plan tasks carrying their own falsifiers.
 
 Reviews: `docs/reviews/spec-guard-inventory-population-r{1,2}-{codex,claude}.md`.
 **Both round-2 Blockings are defects in round 1's own fixes**, which is what the scoping was for.
@@ -84,8 +95,21 @@ stays red until someone decides.
 NOT_A_GUARD = "a page generator; its product is an artefact, not a verdict"
 ```
 
-A **module-level assignment** to the name `NOT_A_GUARD` whose value is a non-empty string constant,
-read via `ast`. Nothing else counts.
+A **module-level assignment** to the name `NOT_A_GUARD` — plain (`ast.Assign`) **or annotated**
+(`ast.AnnAssign`, e.g. `NOT_A_GUARD: Final[str] = "…"`) — whose value is a string constant
+**containing at least one non-whitespace character**. Nothing else counts.
+
+⟳ **Both clauses are round-3 repairs, and both were decided from the corpus rather than from taste.**
+
+- **`AnnAssign` counts.** Measured across `scripts/*.py`: **366 bare `Assign` vs 40 `AnnAssign`** for
+  module-level uppercase constants — ~10%, including a guard (`check-anon-exposure.py:103 ALLOW`).
+  Rejecting the annotated form would trap one author in ten for no benefit; an annotation does not
+  make a declaration ambiguous.
+- **The reason needs `\S`, not merely non-emptiness.** v3 said *"non-empty"*, which an implementer
+  codes as `if v.value:` — accepting `NOT_A_GUARD = "   "` and **silently removing a real guard on a
+  meaningless reason**. The sibling rule in this same file already refuses exactly that:
+  `NO_CALLER_RE`'s `(\S[^\n]*)`. ⛔ v3's *"every failure mode fails closed"* was therefore **false**,
+  and is corrected rather than deleted.
 
 ### 3.1 — Why text failed, twice, and why this is not a third attempt at the same thing
 
@@ -158,6 +182,28 @@ IN**. An unparseable file is exactly what an inventory must not lose.
 `fail_open_handlers:92`, where `docs/process-checklists.md` rule 1 requires *"exit non-zero and say
 treat this as NOT RUN."* Fail-closed, so not a false green, but repaired here with a case. §5 item 9
 and this section now specify **one** exit, not two.
+
+### 3.4a — PLACEMENT: after the `__future__` import, and the guard must notice if it is not
+
+⟳ **Round 3 (M1). Measured: all 17 OUT files carry `from __future__ import annotations`,** so this
+applies to every declaration this change writes.
+
+```
+NOT_A_GUARD before the __future__ import :  ast.parse OK  |  compile SyntaxError:
+                                            "from __future__ imports must occur at the beginning of the file"
+NOT_A_GUARD after  the __future__ import :  ast.parse OK  |  compile OK
+```
+
+**The two tools disagree, and the guard uses the permissive one.** A declaration written in the
+obvious place — straight after the module docstring — leaves the file **excluded from the inventory
+and unimportable by Python**. The guard reads the declaration happily and moves on.
+
+**Two rules follow:**
+
+1. The assignment goes **after** the `__future__` import (and after any other `__future__` statement).
+2. **The detector compiles as well as parses.** A module that parses but does not compile is
+   **IN**, and reported as a defect — never silently excluded. §3.4 covered only `ast.parse`
+   failure; this is a second, quieter failure mode it missed.
 
 ### 3.5 — The self-inclusion check, and the wiring it depends on
 
@@ -254,8 +300,18 @@ what is known to be required; §10 and §7 are part of the same change, not addi
 
 **In `scripts/check-ratchet-contract.py`:**
 
-1. **`main:395`** — `glob("check-*.py")` → `glob("*.py")`. **The load-bearing edit**; widening
-   `GUARD_PATH_RE` without it is a no-op.
+1. **`main:395`'s glob is EXTRACTED into a function the suite drives**, then widened
+   `glob("check-*.py")` → `glob("*.py")`. **The load-bearing edit.**
+   ⛔ **Extraction is not tidiness — without it the mutation guarding this line cannot go red.**
+   Every case drives `discover_guards`/`check_contract`/`check_caller` directly; **`main()` is driven
+   by nothing**, so narrowing the glob back leaves the suite green, `check-plan-code.py:747` records
+   `caught = False`, and `--mutate .` (what CI runs) fails with *"mutation SURVIVED"*. Calling
+   `main()` from a case does not rescue it: `mutate_delivered:630` copies only `scripts/`, so
+   `ci.yml` is absent and `main:389-392` returns 1 — the **control** run goes red first.
+   ⚠ This is verbatim the lesson already in the file being changed
+   (`check-ratchet-contract.py:163-171`: *"EXTRACTED FOR THE WIRING, not for tidiness… coverage of
+   the function, none of its use"*), missed in the section that cites the same principle for
+   `discover_guards`.
 2. **`GUARD_PATH_RE`** → `scripts/[\w.-]+\.py`.
 3. **`discover_guards`** takes `texts`, excludes any module with a `NOT_A_GUARD` assignment (§3.2).
 4. **`evaluate:174` and `main:403`** pass `texts`, not `list(texts)`. `evaluate` **is** touched.
@@ -295,7 +351,16 @@ prerequisite for §3.5) and mutation manifest.
 
 ## §7 — Every site that states the old population as fact
 
-Ten. v1 corrected two.
+⛔ **No count is stated here, deliberately.** v3 wrote *"Ten."* over eleven rows — the fifth instance
+of this slice's recurring error, inside the section documenting it. Correcting it to "Eleven" would
+mint a new literal to go stale. **The table is the list; F8's grep is the mechanism that proves the
+list complete.** v1 corrected two of these sites.
+
+⟳ **The list below was DERIVED, not recalled** — swept for the claim-shapes (`discover_ratchets`,
+`check-*.py`, "two independent sources", "two ways", "the population is the FILESYSTEM",
+`RATCHET_DOCSTRING_RE`) and each hit read before inclusion. Two false positives were discarded
+(`check-plan-code.py:2014`, `page_chrome.py:358` — both unrelated uses of "two ways"). The sweep is
+what found the `check-review-rounds.py` row that three hand-enumerations missed.
 
 | Site | After the change |
 |---|---|
@@ -309,6 +374,7 @@ Ten. v1 corrected two.
 | `.github/workflows/ci.yml:213` | *"its population is `glob("check-*.py")"*. ⚠ The `page_chrome` step (`:220-223`) states the same **conclusion** without the quoted mechanism — both go false, by different sentences |
 | `docs/roadmap-to-launch.md:1692-1693`, `:1530`, `:1599` | same claim; *"25 guards"* — already stale |
 | `docs/superpowers/specs/2026-08-30-inline-renderer-seam-design.md:176,183` | same claim, in a **living** spec |
+| **`scripts/check-review-rounds.py:46-48`** | *"⚠ IT IS A RATCHET, and `check-ratchet-contract.py` discovers ratchets two ways… **Both are now true.**"* ⛔ Missed by three hand-enumerations. It is the guard that enforces **review-round completeness — including for this review**, asserting the very mechanism §8 deletes |
 | `docs/backlog.md` rows #72/#73 | edited by this PR anyway; must not be left describing the old mechanism |
 
 ---
@@ -333,7 +399,8 @@ tell a declaration from a denial. Restoring it would ship the defect. Deleted wi
 | F5 | `NOT_A_GUARD` nested in a function, or set to `""`, or to a non-string → file stays IN | excluded — the fail-closed property broke |
 | F6 | A docstring **documenting** the rule, and one **demonstrating** it at any indent, both leave the file IN | either excluded — v1/v2's Blocking returned |
 | F7 | `check-ratchet-contract.py` appears in its own discovered population, **asserted by a case CI actually runs** | absent, or the case has no runner (§3.5) |
-| F8 | `grep -rn discover_ratchets scripts/ .github/ .claude/ docs/process-checklists.md docs/dev-process.md docs/roadmap-to-launch.md` returns nothing | any hit |
+| F6b | A docstring containing the **old** `NOT-A-GUARD:` text marker leaves the file IN | excluded — someone reverted to text matching |
+| F8 | `grep -rn --binary-files=without-match --exclude-dir=__pycache__ discover_ratchets scripts/ .github/ .claude/ docs/process-checklists.md docs/dev-process.md docs/roadmap-to-launch.md` returns nothing | any hit |
 | F9 | `BASELINE` is still `0` and the run is green | a raised baseline would launder the 10 failures |
 
 > ⛔ **F3, F8 and F9 were repaired, not renumbered.** v1's F3 asserted exit 1 only — which
@@ -413,5 +480,23 @@ already know are there proves nothing about the things you do not.
 **The halves disagreed on `build-m4-schema.py` in both rounds, and the derivation — not the vote —
 settled it.** v2 followed the vote and a memory heuristic, and was wrong (§4.1).
 
-**Round 3 will be scoped to §3's AST mechanism, §4.1's re-derivation, §5 item 8, and the repaired
-falsifiers.** Phase 6 fires at four non-converging rounds (`docs/dev-process.md`); this is **two**.
+**Round 3 ran, scoped to v3's AST mechanism. Both halves NOT CONVERGED — and the mechanism itself was
+not challenged by either.** Its findings were the code-shaped ones now folded above: the glob needs
+extracting before its mutation can go red (§5 item 1); `NOT_A_GUARD` before a `__future__` import
+parses but does not compile (§3.4a); a whitespace-only reason silently excluded (§3.2); the site list
+was short by the one guard that polices reviews (§7); and the *"Ten."* literal (§7).
+
+⚠ **The recurring error reached SIX instances**, the last two inside the sections written to correct
+it: v3's §3.2 eight-case table (missing `AnnAssign`, `Final`, whitespace) and §7's *"Ten."* over
+eleven rows. Both fixed by **deriving**: the `AnnAssign` decision from a 366/40 corpus measurement,
+the site list from a claim-shape sweep, and the count deleted rather than corrected.
+
+⚠ **F8 was wrong in three consecutive versions** — too narrow, then unsatisfiable via `docs/`, then
+unsatisfiable via `__pycache__`. One cause: **it was authored, not run.** The durable fix is the
+practice — *a falsifier containing a shell command is EXECUTED against the real tree before it is
+written down*. F8 as it now stands was run.
+
+**PHASE 1 EXITS HERE.** See the ⛔ box in the header: `dev-process.md` says to read the trigger off
+the cause, and on a document with a stable design the signal is to go build. Phase 6 is not convened.
+The remaining items are carried into the plan as tasks with falsifiers, where executing them settles
+in minutes what prose cannot settle at all.
