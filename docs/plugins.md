@@ -181,7 +181,7 @@ writing an empty one, so the mangled run failed **loud**. A caller checking only
 
 It walks every candidate model in priority order, and decides success **solely** by whether
 `codex exec -o/--output-last-message` wrote a substantive final-message file — never the exit code,
-never stdout text. Run `--self-test` (57 cases) after touching it. ⟳ 2026-09-04: this said **35** while the suite ran **51** — measured, not noticed, for an unknown span. `codex-review.py` now declares its count in the canonical form and is pinned in `check-selftest-counts.POPULATION`, so the next drift fails a gate instead of sitting in prose. Prefer it over raw `codex exec`
+never stdout text. Run `--self-test` (63 cases) after touching it. ⟳ 2026-09-04: this said **35** while the suite ran **51** — measured, not noticed, for an unknown span. `codex-review.py` now declares its count in the canonical form and is pinned in `check-selftest-counts.POPULATION`, so the next drift fails a gate instead of sitting in prose. Prefer it over raw `codex exec`
 for anything that must actually produce a review; `scripts/codex-frontier-model.py` alone cannot
 guarantee a runnable model and says so in its docstring.
 
