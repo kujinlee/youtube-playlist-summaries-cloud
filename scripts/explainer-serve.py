@@ -63,7 +63,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 81 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 84 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -219,11 +219,21 @@ def safe_path(url_path: str, root: pathlib.Path) -> pathlib.Path | None:
     raw = urllib.parse.unquote(url_path.split("?", 1)[0].split("#", 1)[0]).lstrip("/")
     if not raw:
         return None
-    candidate = (root / raw).resolve()
+    # ⛔ RESOLUTION IS INSIDE THE TRY — backlog #87, and the placement IS the fix.
+    # `.resolve()` sat above it, so `ValueError: lstat: embedded null character in
+    # path` escaped this function entirely and killed the connection with no
+    # status line (curl exit 52, Python RemoteDisconnected). Measured 2026-09-02
+    # on `/_stale?p=%00`, `/_rev?p=%00`, `/%00` and `/dashboard%00` — four URLs,
+    # two handlers, ONE resolver. Making resolution total here answers all of
+    # them; widening each handler's `except` would have been the instance fix.
+    # OSError joins ValueError because a path can also be unresolvable for
+    # filesystem reasons (ENAMETOOLONG, ELOOP), and this function's contract is
+    # "a path inside root, or None" — never "or an exception".
     try:
+        candidate = (root / raw).resolve()
         candidate.relative_to(root.resolve())
-    except ValueError:
-        return None                      # escaped the root
+    except (OSError, ValueError):
+        return None                      # escaped the root, or is not a resolvable path at all
     if candidate.suffix.lower() not in SERVABLE:
         return None
     return candidate
@@ -1096,6 +1106,28 @@ def _self_test() -> int:
         case("refuses the bare root path", lambda: safe_path("/", root) is None)
         case("ignores a query string", lambda: safe_path("/a.html?x=1", root) is not None)
         case("ignores a fragment", lambda: safe_path("/a.html#s3", root) is not None)
+        # ⛔ BACKLOG #87 — A NUL BYTE MUST NOT ESCAPE THE RESOLVER.
+        # MEASURED 2026-09-02: `GET /_stale?p=%00` gave curl exit 52 ("empty
+        # reply from server") and Python `RemoteDisconnected` — the socket was
+        # dropped with no status line. Cause: `ValueError: embedded null byte`
+        # raised by `(root / raw).resolve()`, which sat OUTSIDE this function's
+        # own `try`, escaping a handler whose `except` wraps only the stat calls.
+        # ⚠ IT IS A CLASS, NOT AN INSTANCE, AND THAT DECIDED WHERE THE FIX GOES.
+        # `/_stale?p=%00`, `/_rev?p=%00`, `/%00` and `/dashboard%00` all behaved
+        # identically, and `/_rev` resolves through `resolve_page` rather than
+        # calling `safe_path` directly (pinned by the branch-source case below).
+        # Patching one handler would have left three broken; making RESOLUTION
+        # total fixes every caller at once.
+        # ⚠ Every other hostile input in that sweep failed CLOSED to `fresh` —
+        # traversal, empty `p`, wrong case, an embedded query, a space. `fresh`
+        # is the safe direction: this endpoint raises a banner, and a false
+        # banner teaches the reader to ignore true ones.
+        case("a raw NUL byte does not escape safe_path",
+             lambda: safe_path("/\x00.html", root) is None)
+        case("an ENCODED NUL byte does not escape safe_path",
+             lambda: safe_path("/%00.html", root) is None)
+        case("a NUL byte does not escape resolve_page either",
+             lambda: resolve_page("/\x00", root) is None)
 
         # newest-first, which is the whole point of /latest
         case("orders newest first", lambda: [p.name for p in explainers(root)] == ["b.html", "a.html"])

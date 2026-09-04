@@ -3417,3 +3417,46 @@ Branch `wrap-planned-residue`.
   The design defect is unfixed; unpark trigger is written on the row.
 - ⚠ **`dev-process.md` said `check-review-rounds.py` had 14 self-test cases; the suite ran 22.** A
   third declared-count drift, found only because this branch happened to touch the file.
+
+## 2026-09-04
+Settled items on this page now look settled, and say who settled them.
+
+Two small things you reported are fixed. First, an item that has been decided was still shouting:
+the bold "Waiting on you:" line stayed warning-orange while the little "resolved" badge beside it
+was almost invisible — so the marker that was *right* whispered and the sentence that was *stale*
+shouted. Both now follow the item's actual state.
+
+Second, a settled question used to go quiet without saying how it ended. It now names the entry that
+settled it and links to it, in that entry's own words — "settled by 2026-09-01/11: You chose to hold
+the automatic check". Nothing new had to be recorded; that link existed the whole time and was simply
+never drawn.
+
+Also fixed: a stray character in a web address could make the local page server hang up without
+answering at all, which cost nothing today but would have cost someone ten confused minutes later.
+
+<!--tech-->
+Branch `comprehensibility-slice-a` — backlog **#83 (A + B)** and **#87**, the two rows in the
+comprehensibility bundle whose shape was fully decided.
+
+- **A1** `<article>` gains `settled`, derived from the SAME `_b` as the badge and ask label. Also
+  hardened the `_fragment` self-test helper, which located cards by the exact string
+  `class="entry"` — every existing fixture is uncleared so it still passed, and the trap would have
+  sprung on whoever wrote the first settled fixture.
+- **A2** `.entry.settled .prose strong` → body token; `.entry.settled .flag.resolved` → opacity 1.
+  **Scoped to the state, never the token** — restyling `--p-mark` would silence every LIVE warning.
+- **A3** `resolvers(entries) -> {cleared_id: resolving entry}`; `cleared_ids` is now
+  `set(resolvers(...))`. ONE traversal, two views.
+- **A4** backlog #87: `safe_path` resolved outside its own `try`. Fixed at the RESOLVER, not the
+  handler — four URLs, two handlers, and `/_rev` goes through `resolve_page`.
+
+**MEASURED IN CHROME** on the live page: 7 settled cards; settled `.prose strong` `rgb(230,231,227)`;
+an INJECTED uncleared `**Waiting on you:**` still `rgb(224,160,80)` — the falsifier, which needed
+injecting because the store has no natural uncleared instance; settled flag opacity 1; 3
+back-references, all resolving to existing cards.
+
+**MEASURED against the server**: `/_stale?p=%00` → 200, `/_rev?p=%00` `/%00` `/dashboard%00` → 404.
+Before: curl exit 52, no status line.
+
+Suites: gen-dashboard 314/314 (was 309), explainer-serve 84/84 (was 81), check-plan-code 189/189.
+EXPECTED_MUTATIONS 70 → 73 for gen-dashboard, sum 176 → 179; three mutations added, each naming the
+case it must go red through. `--mutate .` deferred to CI per the lighter-verification default.
