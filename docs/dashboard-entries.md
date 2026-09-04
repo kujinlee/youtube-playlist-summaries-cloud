@@ -3460,3 +3460,37 @@ Before: curl exit 52, no status line.
 Suites: gen-dashboard 314/314 (was 309), explainer-serve 84/84 (was 81), check-plan-code 189/189.
 EXPECTED_MUTATIONS 70 → 73 for gen-dashboard, sum 176 → 179; three mutations added, each naming the
 case it must go red through. `--mutate .` deferred to CI per the lighter-verification default.
+
+## 2026-09-04
+A /brief page can now be answered in tomorrow, not just today — and two finished items finally say so.
+
+When I build you a /brief page, the page itself lands somewhere permanent but the working file it was
+built from used to live in a temporary folder named after the session. So the moment that session
+ended, nobody could rebuild the page to add an answer to it — while every page carried a printed
+promise that you could come back and ask. The promise was real; the means to keep it was not. The
+working file now sits next to the page, so any later session can pick it up.
+
+Also: two items I finished earlier today were still listed as open. That is now corrected.
+
+<!--tech-->
+Branch `comprehensibility-slice-b` — backlog **#88**, plus the **#83 / #87** status closes owed from
+PR #223.
+
+- **#88** `brief-compose.py main()` writes the fragment beside the page as `<page>.fragment.html`.
+  MEASURED 2026-09-03: 43 pages in `~/explainers/`, zero fragments; the source lived under
+  `.claude-tmp/<session-uuid>/scratchpad/`. `explainer-delivery.md` §1 puts the page outside the
+  repo so it outlives its session; §6 requires answers be written INTO it — unachievable once the
+  source dies with the session. ⛔ NOT a `--from-page` mode: that makes the rendered page its own
+  source of truth, the failure this script exists to prevent.
+- Four cases, and the last two are the point — existence proves nothing. The sibling must be
+  **byte-identical** to what composed the page, and must **re-compose into a page that still has the
+  tray**. ⚠ They drive `main()` with `--out` into a temp dir on purpose: `ROOT` binds at import from
+  `Path.home()`, so the default path would write into the reader's live `~/explainers/`. Verified
+  after the run: 0 fragments there.
+- **#83 / #87 closed** with their merge SHA and what was measured. ⚠ `check-docs` refused the first
+  attempt — a CLOSED row must lead `✅ (was <severity>)`, not the bare severity, or a severity scan
+  counts it as open. Same class as the missing-Status-column error that once marked #46 and #50
+  closed while they were open.
+
+Suites: brief-compose 44/44 (was 40). Not run locally: schema gates (need Postgres), `--mutate .`
+(CI runs it; `brief-compose.py` carries no manifest).
