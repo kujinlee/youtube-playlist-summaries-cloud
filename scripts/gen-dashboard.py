@@ -1380,6 +1380,18 @@ padding:14px 18px;margin-bottom:10px}}
 .needs .rec{{font-size:.78em;opacity:.75;border:1px solid currentColor;border-radius:3px;padding:0 .3em}}
 .needs .stale{{font-size:.78em;opacity:.8;font-style:italic}}
 .flag.resolved{{color:inherit;font-weight:400;opacity:.55;border:1px solid currentColor;border-radius:3px;padding:0 .3em;font-size:.82em}}
+/* ⛔ BACKLOG #83(B) — EMPHASIS FOLLOWS SETTLED STATE, AND BOTH SIDES MOVE.
+   Measured 2026-09-01: exactly TWO entries author a `**Waiting on you:**`
+   lead-in and BOTH are cleared, so 2 of 2 live-warning marks in the store sit
+   on already-settled items. The marker that is CORRECT whispered (opacity .55)
+   while the sentence that was STALE shouted (--p-mark). Doing only one half
+   makes it worse: lift the badge alone and two loud signals contradict each
+   other; mute the prose alone and the outcome goes invisible.
+   ⚠ SCOPED TO `.entry.settled`, NEVER TO THE TOKEN. Restyling `--p-mark` or
+   `.entry .prose strong` itself would silence every LIVE warning in the store
+   at once — the failure this row names as worse than the defect. */
+.entry.settled .prose strong{{color:var(--ink);font-weight:600}}
+.entry.settled .flag.resolved{{opacity:1;font-weight:600;color:var(--ink-soft)}}
 .err{{color:var(--err);font-weight:600;margin:0 0 8px}}
 details{{margin-top:10px}} summary{{cursor:pointer;color:var(--fg3);font-size:14px}}
 #glossary dt{{font-weight:600;margin-top:8px}} #glossary dd{{margin:2px 0 0;color:var(--fg3)}}
@@ -2041,6 +2053,23 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     # the store goes quiet at once, which is worse than the defect being fixed.
     case("an UNCLEARED card is not marked settled",
          '<article class="entry" id="2026-08-29-1">' in _sh, True)
+
+    # ── BACKLOG #83(B): the INVERSION, stated as three cases ─────────────────
+    # `.flag.resolved` is deliberately quiet (opacity .55, weight 400) while
+    # `.entry .prose strong` takes `--p-mark`, the loud token whose own comment
+    # says an author writing `**Waiting on you:**` is marking the sentence that
+    # must not be skimmed past. So the marker that is CORRECT whispers and the
+    # sentence that is STALE shouts. Both sides move, or the fix makes it worse:
+    # lifting the badge alone leaves two loud signals contradicting each other.
+    case("a settled card mutes its prose emphasis",
+         ".entry.settled .prose strong{color:var(--ink)" in _sh, True)
+    case("a settled card's resolved flag stops whispering",
+         ".entry.settled .flag.resolved{opacity:1" in _sh, True)
+    # ⛔ THE LIVE RULE MUST SURVIVE UNTOUCHED. If this goes, the fix reached the
+    # TOKEN instead of the STATE and every un-settled warning in the store lost
+    # its emphasis — the exact failure backlog #83 names as worse than the defect.
+    case("the LIVE prose-mark rule is untouched",
+         ".entry .prose strong{color:var(--p-mark)" in _sh, True)
 
     # Task 3 defines its OWN tag-stripper. Sharing one across two self-test
     # regions crashed with UnboundLocalError in plan review round 1 — this block
