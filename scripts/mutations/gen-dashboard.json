@@ -386,11 +386,11 @@
     "expect": "main: --window below 1 is a refusal, not a silent default"
   },
   {
-    "name": "the prose fold is not wired into the entry render",
+    "name": "the prose fold is not wired into the entry render (retargeted 2026-09-04: slice A added the resolver argument)",
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
-        "            prose = _prose(e[\"plain\"], drop_headline=True, settled=_b == \"resolved\")",
+        "            prose = _prose(e[\"plain\"], drop_headline=True, settled=_b == \"resolved\",\n                           resolver=_resolvers.get(e[\"id\"]))",
         "            prose = _html.escape(e[\"plain\"])"
       ]
     ],
