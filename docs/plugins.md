@@ -163,6 +163,7 @@ python3 scripts/codex-review.py --prompt-file <path> --out "$(mktemp -d)/r.md"  
 > *"your final message IS the review; write no file"*: the capture IS that message, so "write"
 > yields a *report* — rejected, gate silently not run. Enforcement, the overwritten committed
 > review, and **#68(d) — CLOSED 2026-09-01**: each run writes `docs/reviews/verdicts/<stem>.verdict.json` stating `gate_ran`, read **in CI** by `check-review-rounds.py`, never by the caller who loses it. [`process-rationale.md`](process-rationale.md) → *The review gate that wrote over its own evidence*.
+> **⛔ AND EACH HALF IS FILED UNDER `docs/reviews/<writer>/`, NEVER THE TOP LEVEL** (#92, 2026-09-04) — `claude/<stem>.md`, `coordinator/<stem>.md`; the `<subject>-r<N>-<who>.md` grammar is unchanged. The top level is a **no-legitimate-writes zone while a Codex run is in flight**: the wrapper snapshots it NON-RECURSIVELY and, on the FAILURE path, `quarantine()` MOVED a concurrent half out of the repo — measured, and that is the *fallback* path, so the victim was the replacement review. `check-review-rounds.py` reads BOTH layouts and refuses a basename filed in both. ⚠ Making that snapshot recursive brings the hazard straight back. → *The reviewer blamed for its partner's work*.
 
 **Pass the prompt in a FILE, not as a shell argument (added 2026-08-04).** A review prompt is full of
 identifiers, and any **backtick** inside a double-quoted bash string is **command substitution** — the

@@ -88,6 +88,11 @@ POPULATION: frozenset[str] = frozenset({
     "check-banner-armed.py",
     "check-ci-watched.py",           # ⟳ 2026-09-04: CI ran unwatched on 2 of 3 pushes         # ⟳ 2026-09-04, task #224 residue (warn-only detector)
     "check-plan-code.py",
+    "check-plan-progress.py",        # ⟳ 2026-09-04, architecture review #5 finding E. The Stop
+                                     # hook's comment declared a count NOTHING checked, and it had
+                                     # drifted (said 18, suite ran 17). The number is now declared
+                                     # by the script and verified here; the hook cites the script
+                                     # instead of restating it, so there is one copy, not three.
     "codex-review.py",              # ⟳ 2026-09-04, task #222: docs/plugins.md claimed 35
                                     # while the suite ran 51. Now declared AND externally observed.
     "check-plan-task-order.py",

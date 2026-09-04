@@ -25,10 +25,20 @@ IT CANNOT TRAP THE SESSION. It blocks only while blocking is *producing progress
 by and the unticked count has not fallen, the next stop is allowed. Deleting the sentinel, or adding
 a `paused:` line to it, also allows it immediately.
 
+⚠ BUT THE RELAXATION IS PER CONTINUATION CHAIN, NOT PER PLAN — and the sentence above, read alone,
+predicts the wrong thing (backlog #94, MEASURED 2026-09-04). The anti-nag rests on
+`stop_hook_active`, which is true only when THIS hook caused the continuation. A turn beginning
+from a background-task notification is a FRESH turn with the flag false, so the anti-nag never
+engages and the guard blocks again. Observed THREE times in one session, each time legitimately
+mid-plan and waiting on dispatched reviewers. The honest bound is therefore "at most one block per
+turn boundary that is not a hook continuation", not "at most one block per plan". Nothing here is
+malfunctioning — the plan really did have unticked steps every time — which is exactly why the
+docstring, not the code, was the thing that needed fixing.
+
 Usage (the hook calls form 1; a human can call form 2 to see where things stand):
     python3 scripts/check-plan-progress.py --decide [--stop-hook-active]
     python3 scripts/check-plan-progress.py --status
-    python3 scripts/check-plan-progress.py --self-test
+    python3 scripts/check-plan-progress.py --self-test  # 17 cases
 Exit codes for --decide:  0 = allow the stop   2 = block it (message on stderr)
 """
 from __future__ import annotations
@@ -133,6 +143,12 @@ def decide(
         f"     • the plan is finished          → tick the remaining steps\n"
         f"     • handing back to the human     → add a line `paused: <why>` to "
         f"{SENTINEL.relative_to(ROOT)}\n"
+        f"     • BLOCKED ON IN-FLIGHT WORK     → add a line `paused: waiting on <what>` to "
+        f"{SENTINEL.relative_to(ROOT)}\n"
+        "       (a dispatched review, CI, a background task. The plan is neither finished nor\n"
+        "        handed back nor abandoned, so the other three lines do not fit — and this is\n"
+        "        the case that actually arises most. `paused:` takes free text; say what you\n"
+        "        are waiting for so the next turn knows what to re-check.)\n"
         f"     • the plan is abandoned         → rm {SENTINEL.relative_to(ROOT)}"
     ), unticked
 

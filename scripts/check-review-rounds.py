@@ -2,7 +2,7 @@
 """A review round has TWO halves, or a written reason why it does not — a RATCHET on silent gaps.
 
     python3 scripts/check-review-rounds.py             # audit docs/reviews/
-    python3 scripts/check-review-rounds.py --self-test # 22 cases
+    python3 scripts/check-review-rounds.py --self-test # 27 cases
 
 WHY THIS EXISTS
 ---------------
@@ -180,11 +180,55 @@ def read_verdicts(directory: pathlib.Path) -> "tuple[list[tuple[str, dict]], lis
     return records, bad
 
 
+# ── WHERE A REVIEW HALF MAY LIVE — two layouts, and the reason is backlog #92, not taste ──────
+# `scripts/codex-review.py` watches the TOP LEVEL of docs/reviews/ NON-RECURSIVELY so it can catch
+# an agent that guesses its way into the artifact root; that is the round-3 failure and the
+# detector is worth keeping. But the documented dual-review workflow also wrote BOTH halves there,
+# so every run whose halves overlapped accused the agent falsely — recorded in four review docs —
+# and on the failure path the wrapper MOVED a concurrent half out of the tree entirely (measured
+# 2026-09-04). Halves now land in a per-writer SUBDIRECTORY, which the non-recursive snapshot
+# cannot see. That makes the two mechanisms consistent instead of contradictory: nothing legitimate
+# is written to the top level DURING a run, so anything appearing there really is an intrusion.
+# The ~700 historical files stay flat and are still audited — this reads both layouts.
+HALF_DIRS = ("codex", "claude", "coordinator")
+
+
+def review_files(reviews: pathlib.Path) -> tuple[list[pathlib.Path], list[str]]:
+    """Every review half on disk: the flat layout AND one level of per-writer subdirectories.
+
+    ONE level, and `verdicts/` is excluded because it holds JSON testimony, not reviews.
+
+    Returns `(paths, problems)`. A basename appearing in TWO places is a problem, never a silent
+    pick: `rounds[key][who] = p` would keep whichever it saw last, so a duplicate would shrink
+    coverage while the round still looked complete — a collision that overwrites cannot be found
+    by counting what survived it.
+    """
+    flat = sorted(reviews.glob("*.md"))
+    nested: list[pathlib.Path] = []
+    for d in sorted(p for p in reviews.iterdir() if p.is_dir()):
+        if d.name == VERDICT_DIRNAME:
+            continue
+        nested.extend(sorted(d.glob("*.md")))
+
+    seen: dict[str, pathlib.Path] = {}
+    problems: list[str] = []
+    for p in flat + nested:
+        if p.name in seen:
+            problems.append(
+                f"{p.name}: filed in BOTH `{seen[p.name].parent.name}/` and `{p.parent.name}/` — "
+                f"two files cannot be the same review half, and pairing would keep only one"
+            )
+            continue
+        seen[p.name] = p
+    return list(seen.values()), problems
+
+
 def audit(reviews: pathlib.Path, known: set[tuple[str, int]] = KNOWN) -> tuple[list[str], dict]:
     """(problems, stats). Reads `reviews`; the parsing above is pure."""
     rounds: dict[tuple[str, int], dict[str, pathlib.Path]] = collections.defaultdict(dict)
     unparsed = 0
-    for p in sorted(reviews.glob("*.md")):
+    paths, path_problems = review_files(reviews)
+    for p in paths:
         got = parse(p.name)
         if got is None:
             unparsed += 1
@@ -192,7 +236,7 @@ def audit(reviews: pathlib.Path, known: set[tuple[str, int]] = KNOWN) -> tuple[l
         subject, rnd, who = got
         rounds[(subject, rnd)][who] = p
 
-    problems, exempt_used = [], set()
+    problems, exempt_used = list(path_problems), set()
     for key, files in sorted(rounds.items()):
         present = [w for w in HALVES if w in files]
         if len(present) >= 2:
@@ -217,7 +261,9 @@ def audit(reviews: pathlib.Path, known: set[tuple[str, int]] = KNOWN) -> tuple[l
     # The verdict half. `review_names` is what is ACTUALLY on disk, so the contradiction the
     # check reports is between two observations, never between an observation and an assumption.
     vrecs, vbad = read_verdicts(reviews / VERDICT_DIRNAME)
-    review_names = {p.name for p in reviews.glob("*.md")}
+    # Both layouts, or a verdict naming a half filed in `claude/` would read as testimony about a
+    # review that does not exist — the check contradicting itself over a file it can plainly see.
+    review_names = {p.name for p in paths}
     problems.extend(verdict_problems(vrecs, review_names))
 
     return problems, {"rounds": len(rounds), "unparsed": unparsed, "exempt": len(exempt_used),
@@ -250,6 +296,9 @@ def self_test() -> int:
             d = pathlib.Path(td) / f"t{len(list(pathlib.Path(td).iterdir()))}"
             d.mkdir()
             for n, body in files.items():
+                # A key may carry ONE subdirectory (`claude/p-r1-claude.md`), so the cases can
+                # build the per-writer layout backlog #92 introduced, not only the flat one.
+                (d / n).parent.mkdir(parents=True, exist_ok=True)
                 (d / n).write_text(body)
             return d
 
@@ -274,6 +323,32 @@ def self_test() -> int:
 
         d = tree({"p-r1-codex.md": "x", "p-r1-claude.md": "y", "notes.md": "z"})
         check("unparsed files are counted, not judged", audit(d, set())[1]["unparsed"] == 1, True)
+
+        # ── backlog #92: the per-writer layout ──
+        # THE POINT OF THE WHOLE CHANGE. If this case fails, halves have become invisible to CI
+        # and every round reads as half-missing — the loud failure, but still worth naming.
+        d = tree({"codex/p-r1-codex.md": "x", "claude/p-r1-claude.md": "y"})
+        check("halves in per-writer subdirectories pair normally", audit(d, set())[0] == [], True)
+
+        # MIXED, because the migration is not atomic: ~700 files stay flat while new halves nest.
+        d = tree({"p-r1-codex.md": "x", "claude/p-r1-claude.md": "y"})
+        check("a nested half pairs with a flat one", audit(d, set())[0] == [], True)
+
+        # A subdirectory must not RESCUE a solo half — the gate still wants two writers.
+        d = tree({"claude/p-r1-claude.md": "y"})
+        check("a solo half in a subdirectory still FAILS", len(audit(d, set())[0]) == 1, True)
+
+        # ⛔ THE COLLISION, asserted rather than assumed. `rounds[key][who] = p` keeps the LAST
+        # write, so without this the duplicate would vanish and the round would look complete.
+        d = tree({"p-r1-claude.md": "y", "claude/p-r1-claude.md": "y2", "p-r1-codex.md": "x"})
+        probs = audit(d, set())[0]
+        check("the same half filed in two places is REPORTED, not silently deduped",
+              any("filed in BOTH" in s for s in probs), True)
+
+        # `verdicts/` holds JSON testimony; a stray .md there is not a review half. Without the
+        # exclusion it would parse as one and invent a round.
+        d = tree({"p-r1-codex.md": "x", "p-r1-claude.md": "y", "verdicts/q-r9-claude.md": "z"})
+        check("verdicts/ is not scanned for review halves", audit(d, set())[0] == [], True)
 
     # ── backlog #68 (d): the verdict half ──
     # THE ROUND-3 SHAPE, as a case: the gate did not run and an artifact bearing its name is filed.

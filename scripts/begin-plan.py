@@ -46,12 +46,19 @@ Usage:
     scripts/begin-plan.py --tick        # tick the first unticked step, print the NEXT banner
     scripts/begin-plan.py --banner      # reprint the current step's banner, change nothing
     scripts/begin-plan.py --status      # delegate to check-plan-progress.py --status
-    scripts/begin-plan.py --pause "<why>"   # hand back to the human; the Stop guard stands down
+    scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
     scripts/begin-plan.py --self-test  # 33 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
+
+⚠ `--pause` COVERS TWO CASES, AND ITS OLD ONE-LINER NAMED ONLY THE FIRST (backlog #94). Handing
+back to the human is one. The other — the one that actually arises most — is being legitimately
+BLOCKED ON IN-FLIGHT WORK: a dispatched review, a CI run, a background task. The reason field is
+free text, so `--pause "waiting on the Codex half of r6"` has always worked; nothing needed
+building. What was missing was anyone saying so, which is why three blocks in one session read as
+the guard misbehaving rather than as the documented escape going unused.
 """
 from __future__ import annotations
 
