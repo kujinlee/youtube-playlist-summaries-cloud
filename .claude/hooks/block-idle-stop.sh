@@ -3,11 +3,14 @@
 #
 # Refuses the stop while a plan named by `.claude/executing-plan` still has unticked steps, so a
 # mid-plan status summary cannot become a silent halt. All of the reasoning, the fail-closed rules
-# and the anti-nag guard live in scripts/check-plan-progress.py (17 self-test cases); this wrapper
-# ⟳ 2026-09-03, architecture review #5 finding E: this said 18 and the script reports 17. Nothing
-# catches the drift — check-plan-progress is not in check-selftest-counts.POPULATION, which is
-# finding A (four guard inventories, nothing reconciles them) in miniature.
-# only translates Claude Code's stdin JSON into that script's flags.
+# and the anti-nag guard live in scripts/check-plan-progress.py; this wrapper only translates
+# Claude Code's stdin JSON into that script's flags.
+#
+# ⟳ 2026-09-04, architecture review #5 finding E — CLOSED. This line used to state the script's
+# self-test case count. It said 18 while the suite ran 17, and nothing could catch that, because a
+# number in a shell comment has no reader. The count is now DECLARED BY THE SCRIPT and verified
+# externally: check-plan-progress.py is pinned in check-selftest-counts.POPULATION. Do not restate
+# the number here — a second copy is what drifted, and citing the source is the whole fix.
 #
 # Contract: exit 2 blocks the stop and feeds stderr back to Claude; exit 0 allows it.
 #

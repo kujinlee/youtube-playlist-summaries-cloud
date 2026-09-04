@@ -2533,6 +2533,33 @@ def main(argv: list[str]) -> int:
         ok, report, ev = mutate_delivered(mroot)
         for r in report:
             print(f"  \u2717 {r}")
+        # \u26d4 THIS GATE AND THE PLAN-MODE GATE AT THE END OF main() DIFFER ON PURPOSE.
+        # Backlog #93. This one is `trustworthy` ALONE; that one also lets through
+        # `declared is None`. Do not harmonise them \u2014 and note that harmonising is the
+        # tidy-up this project's OWN check-vocabulary-collisions.py encourages (one
+        # mechanism per concern), which is what makes it a trap rather than a mistake
+        # nobody would make.
+        # WHY THEY DIFFER: `declared is None` means "no mutations were attempted", which
+        # in PLAN mode is an honest zero \u2014 assemble/compare ran and mutated nothing. In
+        # THIS mode a run always intends to mutate, so `declared is None` can only mean
+        # the run died before declaring, and on that path `ev["files"]` already holds the
+        # CONTROL runs. Printing a tally there asserts work that measured no mutation.
+        # THE SHARED FUNCTION IS NOT THE FIX: a predicate covering both call sites would
+        # hold half of each contract \u2014 the recorded shape where de-duplicating drops the
+        # clause the signature cannot see. `verdicts_are_trustworthy` already failed this
+        # way in r3.
+        # THIS COMMENT IS AN EXPLANATION, NOT THE GUARD — and here is exactly what the
+        # guard is, because "it's covered" is the claim this project keeps catching itself
+        # making. MEASURED 2026-09-04 on a temp copy, control first: unmutated 189/189
+        # rc=0; this gate given the plan-mode predicate verbatim → 188/189 rc=1, red via
+        # `a run whose CONTROL failed prints no tally at all (r5 H1, path 2 of 3)`.
+        # ⚠ NO MANIFEST MUTATION PINS THAT SPECIFIC HARMONISATION, and it cannot: the
+        # anchor line below already carries `the --mutate printer stops gating on
+        # trustworthiness (r4 B1)`, and the harness REFUSES a second entry repeating an
+        # earlier entry's edit anchors. So a CASE is the guard here, and that case is held
+        # against deletion only by the self-test COUNT ratchet — which would notice the
+        # count moving, not the coverage leaving. Weaken this gate and the suite goes red;
+        # delete the case first and it will not.
         if ev["trustworthy"]:
             print(("OK — " if ok else "FAILED — ")
                   + f"delivered scripts mutated: {len(ev['files'])} file(s), "
@@ -2583,6 +2610,12 @@ def main(argv: list[str]) -> int:
     if ev.get("trustworthy") or ev.get("declared") is None:
         # `declared is None` = no mutations were attempted at all (assemble/compare only),
         # so the tally is a truthful zero rather than an unearned verdict.
+        # ⛔ THE SECOND DISJUNCT IS WHY THIS GATE IS NOT THE --mutate GATE. Backlog #93.
+        # That mode always intends to mutate, so there `declared is None` means the run
+        # died before declaring, over an `ev["files"]` holding the CONTROL runs. Same
+        # words, opposite meaning — which is exactly why one shared predicate would carry
+        # half of each contract. The long form, and the MEASURED evidence of what catches
+        # the harmonisation, is at the --mutate gate in main(). Do not unify them.
         print(("OK — " if ok else "FAILED — ") + f"{mode}: {len(ev['files'])} file(s), "
               f"{len(ev['mutations'])} mutation(s), {len(ev['survivors'])} survivor(s)")
     else:

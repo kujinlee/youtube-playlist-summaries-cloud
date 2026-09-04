@@ -353,15 +353,25 @@ def unexpected_writes(before: "dict[str, str]", after: "dict[str, str]",
     `written_by_us` is what this process deliberately wrote, so promoting a review is not reported
     as an intrusion. Everything else in the review directory changing during a review run means the
     agent reached past `-o <tempfile>` — the round-3 failure, which nothing detected at the time.
+
+    ⛔ IT CANNOT NAME THE WRITER, AND MUST NOT PRETEND TO (backlog #92). The evidence is a
+    before/after digest map for a directory. That supports exactly one claim — *this file changed
+    while the run was in flight* — and never *the agent changed it*. The wording used to assert the
+    second, and DUAL REVIEW GUARANTEES A CONCURRENT WRITER BY CONSTRUCTION: both halves are told to
+    write into `docs/reviews/`, so the correct documented workflow trips this every time the halves
+    overlap. Measured false accusations are on record in FOUR review docs (`209-r1-codex`,
+    `spec-…-r1-codex`, `spec-…-r2-codex`, `code-…-r5-coordinator`) before anyone filed it.
+    The detector is still worth having — a real intrusion looks like this too — so the fix is to
+    report what is observed and let the reader adjudicate, not to soften the alarm.
     """
     problems = []
     for name, sha in sorted(after.items()):
         if name in written_by_us:
             continue
         if name not in before:
-            problems.append(f"{name}: CREATED by the agent during the run")
+            problems.append(f"{name}: CREATED during the run (writer unattributed)")
         elif before[name] != sha:
-            problems.append(f"{name}: OVERWRITTEN by the agent during the run")
+            problems.append(f"{name}: OVERWRITTEN during the run (writer unattributed)")
     for name in sorted(set(before) - set(after)):
         problems.append(f"{name}: DELETED during the run")
     return problems
@@ -607,14 +617,18 @@ def main() -> int:
                 f.write(body + "\n")
             hits = intrusions(before, snapshot_all(watched), {out_name})
             if hits:
-                print("[codex-review] ⚠ THE AGENT WROTE BEHIND THE WRAPPER:", file=sys.stderr)
+                print("[codex-review] ⚠ WATCHED FILES CHANGED DURING THE RUN "
+                      "(this does NOT identify the writer):", file=sys.stderr)
                 for d, name, what in hits:
                     print(f"[codex-review]     {os.path.join(d, name)} — {what}", file=sys.stderr)
                 print("[codex-review]   The review above was captured from the final message and is "
-                      "valid, but those\n[codex-review]   files are not it. Inspect with `git diff` "
-                      "/ `git status`, restore any overwrite\n[codex-review]   with `git checkout "
-                      "--`, and fix the brief so it does not tell the agent to write.",
-                      file=sys.stderr)
+                      "valid, but those\n[codex-review]   files are not it. ADJUDICATE BEFORE "
+                      "BLAMING THE AGENT — if a concurrent review\n[codex-review]   half or the "
+                      "coordinator was writing into docs/reviews/, this is the expected,\n"
+                      "[codex-review]   documented workflow and not an intrusion (backlog #92). "
+                      "Otherwise inspect with\n[codex-review]   `git diff` / `git status`, restore "
+                      "any overwrite with `git checkout --`, and fix\n[codex-review]   the brief so "
+                      "it does not tell the agent to write.", file=sys.stderr)
             print(f"[codex-review] OK via {slug} -> {args.out} ({reason})", file=sys.stderr)
             return emit(0, gate_ran=True, reason=reason, model=slug, attempts=attempts,
                         hits=hits)
@@ -628,7 +642,22 @@ def main() -> int:
     # caller is about to conclude "the gate did not run".
     hits = intrusions(before, snapshot_all(watched), set())
     if hits:
-        print("[codex-review] ⚠ AND THE AGENT WROTE DESPITE THE FAILURE:", file=sys.stderr)
+        # ⛔ WHY QUARANTINING IS SAFE AGAIN — backlog #92, and it was NOT safe before 2026-09-04.
+        # `quarantine()` below MOVES every file this run saw appear at the top level of
+        # docs/reviews/, and a digest snapshot cannot tell a Codex intrusion from a CONCURRENT
+        # CLAUDE HALF writing its own review. Reproduced on temp dirs: a legitimate
+        # `slice-r6-claude.md` was moved out of the reviews directory. ⚠ AND THIS IS THE FALLBACK
+        # PATH — docs/plugins.md says a failed or rate-limited Codex run must be replaced by a
+        # Claude adversarial review, so the run most likely to quarantine was the very run whose
+        # replacement was being written beside it.
+        # THE FIX IS A LAYOUT, NOT A PREDICATE (the user chose it): review halves now land in
+        # `docs/reviews/<writer>/`, which this NON-RECURSIVE snapshot cannot see. Nothing legitimate
+        # is written to the top level during a run, so anything appearing there IS unexpected and
+        # moving it is right. `check-review-rounds.py` reads both layouts and refuses a basename
+        # filed in both. ⚠ IF YOU EVER MAKE THE SNAPSHOT RECURSIVE, this reasoning dies with it and
+        # the concurrent-half hazard comes straight back.
+        print("[codex-review] ⚠ AND WATCHED FILES CHANGED DESPITE THE FAILURE "
+              "(writer NOT identified — see backlog #92):", file=sys.stderr)
         for d, name, what in hits:
             print(f"[codex-review]     {os.path.join(d, name)} — {what}", file=sys.stderr)
         # A FAILED GATE MUST NOT LEAVE AN ARTIFACT. Reporting alone was not enough: if the caller
@@ -816,13 +845,16 @@ def self_test() -> int:
     chk("nothing changed -> no report", unexpected_writes(base, dict(base), set()), [])
     chk("the file WE wrote is not an intrusion",
         unexpected_writes(base, {**base, "out.md": "new"}, {"out.md"}), [])
-    chk("an agent-created file is reported",
+    # ⚠ THE REPORT NAMES THE OBSERVATION, NEVER THE WRITER (backlog #92). Asserting the exact
+    # wording is the point: a digest diff cannot see who wrote, and the old text said "by the
+    # agent", which the documented dual-review workflow falsified on four recorded runs.
+    chk("a newly created file is reported WITHOUT naming a writer",
         unexpected_writes(base, {**base, "guessed.md": "x"}, set()),
-        ["guessed.md: CREATED by the agent during the run"])
+        ["guessed.md: CREATED during the run (writer unattributed)"])
     # THE ROUND-3 FAILURE ITSELF: a committed review silently replaced.
     chk("an overwritten committed review is reported",
         unexpected_writes(base, {**base, "a.md": "different"}, set()),
-        ["a.md: OVERWRITTEN by the agent during the run"])
+        ["a.md: OVERWRITTEN during the run (writer unattributed)"])
     chk("a deleted file is reported",
         unexpected_writes(base, {"a.md": "sha-a"}, set()),
         ["b.md: DELETED during the run"])
@@ -841,7 +873,7 @@ def self_test() -> int:
         == len(set(watched_dirs(os.path.join(REPO_ROOT, "docs/reviews/x.md")))), True)
     chk("an intrusion is reported with the directory it happened in",
         intrusions({"/d": {}}, {"/d": {"g.md": "x"}}, set()),
-        [("/d", "g.md", "CREATED by the agent during the run")])
+        [("/d", "g.md", "CREATED during the run (writer unattributed)")])
 
     # A failed gate must LEAVE NOTHING, not merely complain. Reporting alone was the first version,
     # and it fails whenever the caller misses the exit code — the measured fourth occurrence.

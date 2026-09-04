@@ -435,3 +435,43 @@ and "the gate ran" look identical to a check that drops it.
 `tail`, so the shell reported `rc=0` — `$?` after a pipe is the *last* command's status, the same
 trap in a new costume. The verdict on disk read `exit_code: 1, gate_ran: false` regardless. The
 shell lost the answer; the file kept it. That is the mechanism working, observed rather than argued.
+
+## The reviewer blamed for its partner's work
+
+**Backlog #92, measured 2026-09-04.** `scripts/codex-review.py` takes a `{filename: sha256}`
+snapshot of `docs/reviews/` before and after a run and reports the difference as
+*"THE AGENT WROTE BEHIND THE WRAPPER"*. That detector exists for a real failure — round 3, where an
+agent guessed its way into the artifact root under `-s danger-full-access` and overwrote a committed
+review — so the instinct to keep it is right.
+
+**But a digest diff cannot see a writer.** It supports exactly one claim: *this file changed while
+the run was in flight*. The wrapper asserted a second, stronger one, and the documented dual-review
+workflow falsifies it by construction — both halves are told to write into `docs/reviews/`, so any
+overlap is reported as an intrusion. Four review docs carry the false accusation
+(`209-r1-codex`, `spec-…-r1-codex`, `spec-…-r2-codex`, `code-…-r5-coordinator`) and it was filed as
+a backlog item only on the fifth occurrence. **A detector that cries wolf is one people learn to
+skip**, and this one writes its accusation into `docs/reviews/verdicts/<stem>.verdict.json`, which
+CI reads.
+
+⛔ **The half nobody had noticed was not cosmetic.** On the FAILURE path the wrapper does not merely
+complain — `quarantine()` **moves** every newly-appeared file out of the tree. Reproduced on
+temporary directories: a legitimately written `slice-r6-claude.md` was relocated into a temp
+quarantine directory. And that is the *fallback* path — `docs/plugins.md` requires a failed or
+rate-limited Codex run to be replaced by a Claude adversarial review, so **the run most likely to
+quarantine was the very run whose replacement was being written beside it.** The row had been filed
+🟡 *"it corrupted nothing"*, which was true of the path that had been looked at.
+
+**The fix is a layout, not a predicate**, and that is the transferable part. Three shapes were on
+the table: attribute by narrowing the snapshot window (does not work — the concurrent writer writes
+inside it), record the wrapper's expected outputs (does not work — the writers are other
+processes), or move legitimate writes out of the watched directory. Only the third makes the two
+mechanisms consistent instead of contradictory. Halves now land in `docs/reviews/<writer>/`, which a
+**non-recursive** snapshot cannot see, so the top level becomes a place where nothing legitimate
+appears during a run — and quarantining what does appear becomes correct rather than dangerous.
+`verdicts/` had already used this trick for the same reason; the precedent was there and unread.
+
+**Two general lessons.** *An instrument must claim only what its evidence supports* — the wording
+fix (`CREATED during the run (writer unattributed)`) matters independently of the layout, because
+the next unattributable writer is not necessarily a review half. And *when a guard and a workflow
+contradict each other, check whether the layout can be changed before weakening the guard* — the
+predicate was never wrong; the directory was.

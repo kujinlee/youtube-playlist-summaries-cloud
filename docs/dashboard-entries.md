@@ -3366,3 +3366,54 @@ Branch `backlog-and-axis-fix` → PR #221. Commits `896f6ef5` (backlog), `5a641e
   degrades to a convention with a file attached.
 - **This entry exists because the ratchet refused the branch** — 5 tracked files changed, no entry.
   The gate worked; I skipped its step.
+
+## 2026-09-04 [resolved: 2026-09-04/1]
+Three small tooling items closed, one design decision made, and the big one deliberately shelved so the next stretch can be about making things easier to follow.
+
+You asked to focus on comprehensibility, and to finish what was already planned first. That is what
+this branch is. Four of the five planned items are done. The fifth — the deep fix behind the seven
+review rounds that kept circling — is **parked on purpose**, with a written reason and a written
+trigger for picking it up again, so it is shelved rather than forgotten.
+
+The one that turned out to matter more than filed: our review tool had been **accusing the wrong
+writer**. When two reviewers work at once, it saw a file appear and blamed whichever one it was
+watching — it had done this in four recorded reviews. Worse, and nobody had noticed: when a review
+*failed*, the tool would physically **move the other reviewer's finished work out of the project**.
+That is the exact situation where a second reviewer is most likely to be working, because a failed
+review is supposed to be replaced by one. Nothing was lost — it is caught now, and the fix was to
+change where reviewers file their work rather than to weaken the check.
+
+<!--tech-->
+Branch `wrap-planned-residue`.
+
+- **Backlog #93 — CLOSED as an explanation, not a fix.** Comments at both printer gates in
+  `check-plan-code.py` (now `:2536` and `:2583`, moved from the row's `:2459`/`:2506` by the axis
+  fix). ⚠ **My first draft of that comment was FALSE**: it named a mutation
+  `harmonise the two printer gates` that does not exist, and **cannot** — the harness refuses a
+  second manifest entry repeating an earlier entry's edit anchors, and that anchor is taken by
+  `the --mutate printer stops gating on trustworthiness (r4 B1)`. Corrected to name the real guard.
+  MEASURED on a temp copy, control first: unmutated `189/189 rc=0`; gate harmonised `188/189 rc=1`,
+  red via `a run whose CONTROL failed prints no tally at all (r5 H1, path 2 of 3)`.
+- **Backlog #94 — CLOSED.** `check-plan-progress.py` docstring now states the anti-nag is
+  **per continuation chain**, not per plan (`stop_hook_active` is false on a turn begun from a
+  background-task notification). Fourth escape line added for *blocked on in-flight work*, and
+  `begin-plan.py --pause` no longer sells itself as hand-back-only. Used it on this branch.
+- **Backlog #92 — CLOSED, both halves, and the second half was not in the row.** (a) Wording:
+  `CREATED/OVERWRITTEN by the agent` → `... (writer unattributed)`; a digest diff cannot see a
+  writer. (b) **MEASURED on temp dirs**: on the FAILED path `quarantine()` moved a legitimate
+  `slice-r6-claude.md` out of `docs/reviews/`. Fix chosen by the user — **halves file under
+  `docs/reviews/<writer>/`**, invisible to the non-recursive snapshot, so the top level becomes a
+  no-legitimate-writes zone and quarantining what appears there is correct.
+  `check-review-rounds.py` reads BOTH layouts and **refuses a basename filed in both**
+  (22→27 cases). Full account in `process-rationale.md` → *The reviewer blamed for its partner's work*.
+- **Phase 6 findings D and E — CLOSED.** D: backlog #48's `STOP-HOOK VERDICT: NOT BUILT,
+  deliberately` corrected in place — it WAS built (`8b9643d9`), and #48's reasoning was right about
+  the design it rejected, which is the actual lesson. E: the hook's hardcoded case count is
+  **deleted**, not corrected — `check-plan-progress.py` now declares its own count and is pinned in
+  `check-selftest-counts.POPULATION` (13→14 observed scripts).
+- **Backlog #91 — PARKED by user decision.** Spec approved, Phase 2 plan not written. MEASURED that
+  the round-4 Blocking on to-do note #217 no longer reproduces: an `EXPECTED_MUTATIONS` drift now
+  prints `NOT MEASURED — … Treat this as NOT CHECKED.` instead of `0 mutation(s), 0 survivor(s)`.
+  The design defect is unfixed; unpark trigger is written on the row.
+- ⚠ **`dev-process.md` said `check-review-rounds.py` had 14 self-test cases; the suite ran 22.** A
+  third declared-count drift, found only because this branch happened to touch the file.
