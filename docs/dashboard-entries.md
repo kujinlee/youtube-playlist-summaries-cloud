@@ -3235,3 +3235,82 @@ own to-do note, not a GitHub issue.
   only outside observer, which is why pinning it mattered.
 - ⚠ **Stated limit, in the module docstring:** the banner↔arming coupling is conventional, not
   mechanical. Not claimed as covered.
+
+## 2026-09-04 [needs-you]
+Three checks that were quietly not working now work — and the review round found the pattern is structural, not a run of bad luck.
+
+Following on from the entry above, three separate jobs landed, and they turned out to be the same
+problem wearing different clothes: a check that exists, reports success, and is not reaching the
+thing it claims to measure.
+
+First, you asked for the warning version of the "did you actually arm the guard" check rather than
+the blocking one. It is built. When a turn announces "step 3 of 6" and nothing was armed, it says
+so loudly and does not stop anything. Every time it fires it writes one line to a log, so the
+question "does this cry wolf?" will have a number rather than an impression when you decide whether
+it should ever block.
+
+Second, a guard that was supposed to catch a specific mistake in review instructions had missed the
+real occurrence, because it only recognised one way of phrasing it. It now recognises four more.
+While using it, it also turned out to *reject* the correctly-worded instruction — it read "do not
+write the review to a file" as a demand to write one. Fixed, with three extra tests whose only job
+is to stop that fix becoming a loophole.
+
+Third, two checks CI had never once run — because they were parked behind a database they do not
+need — now run on every push. One of them is specifically the check that would have caught the
+architectural problem the last review found.
+
+**Then the review round, and this is the part that needs you.** Two independent reviewers examined
+yesterday's fixes. Both said not converged. They disagreed with each other, and when I ran the code
+myself, *each was right about something the other missed* — so trusting either alone would have got
+the severity wrong.
+
+The substantive finding: the coverage added yesterday protects against someone *deleting* a check,
+but not against someone *weakening* it. Four different weakenings all pass the full suite. Worse,
+the most natural tidy-up a person would make — having two near-identical checks share one
+implementation — is one of those four. Doing the obviously-good thing silently reinstates
+yesterday's bug and the tests stay green.
+
+**Waiting on you — one call.** This is the seventh round running where the new defect is inside the
+previous round's fix. The project's own architecture review predicted exactly this and it happened.
+My recommendation is **do not run round eight on the same axis**: the repetition is structural, not
+carelessness, and another round will find a ninth instance. The alternative is a design change to
+how coverage is expressed. I have not started either — the axis is your decision.
+<!--tech-->
+Branch `queued-jobs-222-p6-223`, stacked on `task-224-begin-plan` (PR #218). Three commits:
+`5f1b536d`, `3c5d8a74`, `8c8179be`.
+
+- **Warn-only detector** — `scripts/check-banner-armed.py` (25 cases). Warns iff the HIGHEST banner
+  in the turn is `STEP i of N` with `i < N` AND nothing armed. Taking the HIGHEST is what keeps the
+  common case quiet: a 5-step job finished in one turn emits `STEP 5 of 5`, so `i == N`. Exit 1 =
+  Claude Code's non-blocking error (stderr to the user, stop proceeds); exit 2 = CANNOT RUN. Never
+  exit 2 from the hook — a detector that only observes must not be able to wedge a turn.
+  Log: `.claude/banner-warnings.log` (gitignored).
+- **#222** — `prompt_demands_a_file` widened for the relative clause, `at`, and the passive.
+  Control table old-vs-new: 4 missed→FIRES, 1 already-caught still fires, 2 false-positive controls
+  quiet in BOTH columns.
+- **Negation** — `do not write your review to a file` matched `write your review to`. Predates the
+  widening (pattern 1 is original); the existing prohibition case used "write no file", which has
+  no `write ... to`, so nothing covered it. Fail-CLOSED, so never unsafe — but it blocked the
+  CORRECT brief. `_is_negated`: 60-char lookback, `[^.!?\n]` stops it crossing a sentence. THREE of
+  six new cases exist to stop the negation becoming a universal off-switch. Suite 51→63.
+- **`docs/plugins.md` claimed 35 cases; the suite ran 51.** Drift of 16 for an unknown span.
+  `codex-review.py` now declares canonically and is pinned in `check-selftest-counts.POPULATION`.
+- **Phase 6 #7 finding 4** — `check-guard-coverage.py` + `check-vocabulary-collisions.py` had one
+  automated caller (`check-schema-gates.sh`, needs Postgres, itself referenced 0× in ci.yml).
+  Neither touches a DB; both docstrings already said "the rule never needed the container".
+  Own CI steps now. `dev-process.md` rows corrected — they claimed enforcement while nothing ran them.
+- **CI YAML validated by a real parser** (ruby/psych, 41 steps). PyYAML absent locally; skipping
+  silently would have been a NOT RUN reported as a pass.
+- **r5 Claude H1** — three refusal paths through the `--mutate` printer; `grep -n 'main(["--mutate"'`
+  returns exactly ONE hit (`:2225`), covering one. Four *weakening* mutations survive at 183/183.
+  M-A is the verbatim gate-harmonisation `check-vocabulary-collisions.py` encourages.
+- **r5 adjudication** — Codex High vs Claude Low on `control_is_green`. Executed:
+  `verdicts_are_trustworthy([], 0, True) = True` (Codex's route real);
+  `control_is_green(0,'0/0 passed') = True`. With mutations declared it IS fail-closed (Claude's
+  bound real). Settled **Medium**. Fourth "reviewers split = the signal", and the first where
+  picking the finding-reviewer would ALSO have been wrong.
+- ⚠ **The Codex half ran DEGRADED and the brief was the cause.** "Do not create, modify or delete
+  anything on disk" → it reported `NOT RUN` for `--self-test` and `--mutate .` and reviewed by
+  reading. Re-dispatched as `codex-code-r5b`. Corrected rule in the coordinator doc: forbid the
+  review ARTIFACT and repo writes, never "disk".
+- **NOT FOLDED.** Findings recorded only.
