@@ -2995,3 +2995,53 @@ two callers — `check-vocabulary-collisions.py`'s subject exactly.
 After: `--self-test` **164/164**; `--mutate .` **165 mutations, 0 survivors, exit 0**; both Codex
 observations reversed. Seven gates green. **Round 2 filed both halves, NOT CONVERGED, folded.
 Round 3 owed.**
+
+## 2026-09-03
+The tool that checks whether our safety-net tests actually work had been quietly reporting
+"everything passed" in situations where it had measured nothing at all. Three separate versions of
+that report were wrong in three different ways, and the third round of review found the most
+serious one: if the test suite was **already failing before any check began**, the tool would still
+announce that every check had passed. A change that altered nothing but a comment could be recorded
+as "caught".
+
+The deeper problem was subtler and worth saying plainly. The previous round had pulled the shared
+rule out into a single function so two places could not disagree — a good instinct. But the rule has
+three parts, and the extracted function could only see two of them. **A shared function that holds
+part of a rule is more dangerous than two copies, because it looks like the whole rule.** The part it
+dropped was the one that stops a broken environment being mistaken for a working test.
+
+Separately: the fix from the previous round could be deleted four different ways without any test
+noticing. It has now been given the missing tests, so a future edit that quietly removes it turns the
+build red instead of passing.
+
+One of the two automated reviewers read all of this and reported "no defects found". Everything it
+checked was true; it checked the parts that had already been fixed and not the part that had been
+changed. That disagreement is recorded in the review file rather than smoothed over, because a clean
+verdict from one reviewer has been wrong here before.
+<!--tech-->
+Code review r3 of the mutation-drift-report contract, both halves, folded.
+`scripts/check-plan-code.py` + `scripts/mutations/check-plan-code.json`.
+
+- **B1 (Blocking)** — `check()` asserted `trustworthy: True` over a RED control.
+  `verdicts_are_trustworthy` now takes `controls_green` and holds all three clauses; both producers
+  compute it once, after both controls.
+- **B2 (Blocking)** — the r2 fix had NO falsifier: four inversions each left `--self-test` at
+  164/164. Closed with 8 mutations + 13 cases.
+- **B4 (High)** — `evidence()` read neither `declared` nor `trustworthy`; its header asserted
+  "declared and run" over `NOT RUN` entries and over the after-control path. Now gated, and the
+  refusal sentence is ONE renderer (`not_measured_line`) with THREE callers — the third copy was
+  refused by the mutation pre-flight, which caught the duplicate anchor.
+- **B5 (High)** — the cardinality conjunct had no red case. **B6 (Low)** — the docstring credited
+  `is True` with fail-closed-on-missing-key; `.get()` already does that. Corrected + cased.
+- **TWO mutations were orphaned by this round's own refactor** and the pre-flight refused to write
+  the manifest until both were retargeted. Third occurrence of anchors-bind-by-text.
+- Counts: self-test 164 → **177**; this file's mutations 24 → **32**; `EXPECTED_MUTATIONS` sum
+  165 → **173**. `count_drift` caught the docstring for the fifth time this slice.
+
+⚠ The Codex half returned **CONVERGED** over 2 Blocking + 2 High. Adjudication is written into
+`docs/reviews/code-mutation-drift-report-contract-r3-codex.md`.
+
+⚠ This run also **overwrote a committed verdict file** — `--out` was named `r3-codex.md` and the
+wrapper derives the verdict path from that stem, colliding with the *spec* round-3 verdict. Restored
+from `HEAD`; re-saved as `codex-code-r3.verdict.json`. Backlog #68 closed the wrapper's path
+inference but not the collision channel: verdict names are a namespace with no allocator.

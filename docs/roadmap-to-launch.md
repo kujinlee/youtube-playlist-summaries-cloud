@@ -1722,7 +1722,12 @@ six delivered scripts resolve `Path.home()` at module level.
 process drift recorded once before for backlog #23 slice A. A slice with a spec, a plan and fourteen
 review documents and no roadmap entry is invisible to the one file that survives compaction.
 
-Branch `fix/guard-inventory-population`, unpushed, no PR. **Zero lines of `scripts/` have changed.**
+Branch `fix/guard-inventory-population`, unpushed, no PR. ⟳ **CORRECTED 2026-09-03: this line said
+"zero lines of `scripts/` have changed" and that stopped being true the same day.** The branch is
+named for THIS slice but the code it ships is the *mutation-drift-report contract* below —
+`scripts/check-plan-code.py` and its mutation manifest. The guard-inventory work is still spec + plan
+only, and its plan gate is still armed. Two bodies of work, one branch; stated rather than split,
+because the plan document executes nothing and rebasing 30 commits buys no safety.
 
 - [x] **Spec v4** — `docs/superpowers/specs/2026-09-02-guard-inventory-population-design.md`, three
       dual rounds, 30 findings. The shape (declare-out) was approved at v1 and never challenged.
@@ -1746,11 +1751,32 @@ Branch `fix/guard-inventory-population`, unpushed, no PR. **Zero lines of `scrip
       Deriving `EXPECTED_MUTATIONS`' key set would delete the manifest **deletion detector**:
       `:592` is `got = counts.get(target, 0)`, so a vanished manifest is caught only because the
       hand-maintained key still names it. Measured on a temp copy. **Candidate 2 WITHDRAWN.**
-- [ ] **⭐ NEXT — candidate 2′: the drift path must not report a coverage tally.** `mutate_delivered`
-      returns at `:625-626` five lines before the `copytree` at `:630` with `ev` still its `:584`
-      initializer, so the caller prints `0 mutation(s), 0 survivor(s)` on a run that never started.
-      Falsifier: add a manifest entry, leave `EXPECTED_MUTATIONS` alone — drift message, **no** tally.
-      Needs a spec (Phase 1) before code; the spec is the human gate.
+- [x] **⟳ BUILT 2026-09-03 — candidate 2′: the harness stops reporting a verdict it did not earn.**
+      Spec `docs/superpowers/specs/2026-09-03-mutation-drift-report-contract-design.md` (3 dual
+      rounds), code in `4c3d3390` + `7166921f` + `11512f58` + the r3 fold. `trustworthy` defaults
+      **False** and is earned through ONE predicate, `verdicts_are_trustworthy`, now holding all
+      **three** clauses — controls green, every declared mutation produced a verdict, every entry is
+      a real verdict. `not_measured_line` is the single renderer for the refusal sentence, with three
+      callers. **177 self-test cases, 32 mutations on this file, EXPECTED_MUTATIONS sum 173.**
+      - ⚠ **SIX consecutive rounds found the defect inside the previous round's fix**, and r3 broke
+        the streak's *cause*: rounds 1–2 and the three spec versions all keyed on a **position**
+        standing in for a semantic property; r3's findings were **scope** failures instead — the
+        named instance fixed and the sibling left. r3's own Claude half confirmed the positional
+        pattern did not recur and could not be broken.
+      - ⚠ **r3's Codex half returned CONVERGED over 2 Blocking + 2 High.** Its checks were each true
+        and confirmed only what r2 had *fixed*, never the producer r2 had *changed*. Adjudication is
+        written into `docs/reviews/code-mutation-drift-report-contract-r3-codex.md` so the verdict
+        cannot later be read as a clearance.
+      - **The Blocking that would have shipped:** `check()` asserted `trustworthy: True` over a run
+        whose control was RED before any mutation — a mutation editing only a comment was certified
+        `caught`. The extracted predicate held one of the contract's two clauses because its
+        signature had no access to the control result. **A shared function holding part of a contract
+        is worse than two copies, because it looks like the whole rule.**
+      - **And the fix had no falsifier.** Four ways to delete or invert r2's new code each left the
+        suite at 164/164, and CI runs exactly that suite. Closed by 8 new mutations + 13 new cases.
+      - **Two mutations were ORPHANED by this round's own refactor** and the pre-flight refused to
+        write the manifest until both were retargeted — anchors bind by TEXT, so improving code
+        unhooks the mutation guarding it while the suite stays green. Third occurrence.
 - [ ] Findings are **deliberately unfiled** pending user triage, per review #4's precedent. Finding
       **E** is ✅ fixed (`4dc05e89`); **D** (backlog #48's stale stop-hook verdict) is the user's row
       to edit.

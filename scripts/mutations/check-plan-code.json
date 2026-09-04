@@ -237,8 +237,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                ev[\"trustworthy\"] = False\n",
-        ""
+        "                controls_green = False\n                m_report.append(\n",
+        "                m_report.append(\n"
       ]
     ],
     "expect": "...and it is NOT trustworthy, though every declared mutation ran"
@@ -248,8 +248,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    return len(m_muts) == declared and all(m.get(\"measured\") is True for m in m_muts)",
-        "    return len(m_muts) == declared"
+        "            and all(m.get(\"measured\") is True for m in m_muts))",
+        "            and True)"
       ]
     ],
     "expect": "a TIMED-OUT mutation is counted but is NOT a verdict"
@@ -264,5 +264,93 @@
       ]
     ],
     "expect": "a cannot-run renders as NOT RUN, never as SURVIVED"
+  },
+  {
+    "name": "the shared predicate stops holding the CONTROL clause (r3 B1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return (controls_green\n",
+        "    return (True\n"
+      ]
+    ],
+    "expect": "...and a red control alone is disqualifying"
+  },
+  {
+    "name": "the shared predicate stops holding the CARDINALITY clause (r3 B5)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            and len(m_muts) == declared\n",
+        "            and True\n"
+      ]
+    ],
+    "expect": "a SHORTFALL is not trustworthy, however good the entries are"
+  },
+  {
+    "name": "`measured` is read by truthiness, so a truthy non-True passes (r3 B6)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "m.get(\"measured\") is True for m in m_muts",
+        "m.get(\"measured\") for m in m_muts"
+      ]
+    ],
+    "expect": "a TRUTHY-but-not-True `measured` is refused"
+  },
+  {
+    "name": "check() stops passing its control result to the predicate (r3 B1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        ev[\"trustworthy\"] = verdicts_are_trustworthy(m_muts, len(muts), controls_green)\n    return ok, report, ev",
+        "        ev[\"trustworthy\"] = verdicts_are_trustworthy(m_muts, len(muts), True)\n    return ok, report, ev"
+      ]
+    ],
+    "expect": "a RED control makes check() withhold trust, whatever the tally says"
+  },
+  {
+    "name": "check()'s evidence dict fails OPEN again (r3 B2)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                                  \"declared\": None, \"trustworthy\": False}",
+        "                                  \"declared\": None, \"trustworthy\": True}"
+      ]
+    ],
+    "expect": "a plan with NO tagged blocks reports no verdict, not a trustworthy zero"
+  },
+  {
+    "name": "the plan-mode printer stops gating on trustworthiness (r3 B2)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if ev.get(\"trustworthy\") or ev.get(\"declared\") is None:",
+        "    if True:"
+      ]
+    ],
+    "expect": "plan mode refuses to print a tally it did not earn"
+  },
+  {
+    "name": "the evidence BLOCK stops gating, so a durable artifact overstates coverage (r3 B4)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if ev.get(\"declared\") is not None and not ev.get(\"trustworthy\"):",
+        "    if False:"
+      ]
+    ],
+    "expect": "the evidence block refuses a tally over an untrustworthy run"
+  },
+  {
+    "name": "the NOT MEASURED sentence loses its shortfall arithmetic (r3 B4)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "             if want is not None and got != want else \"\")",
+        "             if False else \"\")"
+      ]
+    ],
+    "expect": "...and a SHORTFALL names how many of how many produced a verdict"
   }
 ]
