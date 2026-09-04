@@ -280,7 +280,30 @@ def main(argv: list[str]) -> int:
 
     if not has_tray(doc):                       # the check that makes the failure impossible to miss
         raise SystemExit(f"brief-compose: composed page LOST the tray — wrote nothing usable to {out}")
+
+    # ── BACKLOG #88: THE SOURCE TRAVELS WITH THE PAGE ────────────────────────
+    # MEASURED 2026-09-03: `ls ~/explainers/ | grep -iv '\.html$'` returned only
+    # `questions.md` — 43 pages, ZERO fragments. The fragment lived at
+    # `.claude-tmp/…/<session-uuid>/scratchpad/brief-fragment.html`, and the session
+    # uuid in that path is the whole problem: the page outlives its session, the
+    # source does not. So `explainer-delivery.md` §6 — answers are written INTO the
+    # page — becomes unachievable the moment the building session ends, while §1 puts
+    # the page outside the repo *deliberately* so it outlives that session. Two rules
+    # in one file, disagreeing. Worse, every page's §5a block promises "say read my
+    # questions" as the cross-session fallback, and for the WRITE half that promise
+    # was unbacked — worse than no promise, because the reader cannot tell.
+    # ⛔ NOT a `--from-page` mode that re-extracts content from between the tray
+    # boundaries. That would make the RENDERED PAGE its own source of truth, so a
+    # hand-edit to the page silently becomes canonical — the exact failure this
+    # script exists to prevent (see the docstring on hand-transcribed code).
+    # Copying the fragment is the whole fix: artifact and source travel together,
+    # and neither is in the repo.
+    frag_out = out.with_suffix("")
+    frag_out = frag_out.with_name(frag_out.name + ".fragment.html")
+    frag_out.write_text(content, encoding="utf-8")
+
     print(f"✅  {out}  ({len(doc)} bytes, tray lifted from {src.name})")
+    print(f"    source: {frag_out}  (re-compose with --content that path)")
     print("    serve: python3 scripts/explainer-serve.py   then open http://127.0.0.1:7391/latest")
     return 0
 
@@ -470,6 +493,37 @@ def self_test() -> int:
          all("2026-01-02 03:04" in chrome_for(f, "2026-01-02 03:04")[1]
              for f in (f"<style>{_pals}</style><p>x</p>",
                        "<style>body{color:#000}</style><p>x</p>")))
+
+    # ── BACKLOG #88: THE SOURCE MUST TRAVEL WITH THE PAGE ────────────────────
+    # ⚠ DRIVES main() FOR REAL, and passes --out into a TEMP DIR on purpose.
+    # `ROOT` is bound at import from `Path.home()`, so a case that let the default
+    # path apply would write into the READER'S LIVE ~/explainers/ — a self-test
+    # that pollutes the artifact it is testing, which is the recorded
+    # "an instrument that edits the repo corrupts its peers" defect one directory over.
+    with tempfile.TemporaryDirectory() as _td:
+        _d = pathlib.Path(_td)
+        _frag = _d / "frag.html"
+        _frag.write_text(good, encoding="utf-8")
+        _src = _d / "src.html"
+        _src.write_text(good, encoding="utf-8")
+        _page = _d / "2026-09-04-brief-x.html"
+        _rc = main(["--content", str(_frag), "--slug", "x",
+                    "--source", str(_src), "--out", str(_page)])
+        _sib = _d / "2026-09-04-brief-x.fragment.html"
+        case("composing writes the page", _rc == 0 and _page.is_file())
+        case("...and the FRAGMENT lands beside it", _sib.is_file())
+        # ⛔ THE PROPERTY, not the file's existence. The row's falsifier is that a
+        # LATER session can answer in the page without hand-rebuilding the source,
+        # which requires the sibling to be usable as `--content` — byte-identical
+        # to what was composed from, not a re-extraction of the rendered page.
+        case("...byte-identical to the fragment that built the page",
+             _sib.read_text(encoding="utf-8") == good)
+        # And it must actually re-compose: a fragment that no longer satisfies
+        # `--content`'s contract would pass the two cases above and still be useless.
+        _page2 = _d / "again.html"
+        case("...and re-composing FROM the sibling produces a page with the tray",
+             main(["--content", str(_sib), "--slug", "x", "--source", str(_src),
+                   "--out", str(_page2)]) == 0 and has_tray(_page2.read_text(encoding="utf-8")))
 
     failed = [n for n, ok in cases if not ok]
     for n, ok in cases:
