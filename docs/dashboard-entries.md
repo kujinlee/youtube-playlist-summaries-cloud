@@ -3093,3 +3093,45 @@ individually true and aimed at what the previous round *fixed*, not what it *cha
 Codex to write a file, so the wrapper captured a *report* rather than the review. Nothing was lost
 (`gate_ran: true`, real review on disk) but the loud-failure mechanism was bypassed. Fix: per-half
 output instructions, never one brief.
+
+## 2026-09-03 [needs-you]
+Phase 6 — the architecture review that fires when four review rounds in a row fail to settle —
+ran on the tooling we have been fixing all day, and found why it would not settle.
+
+Seven rounds of review each found a problem inside the previous round's fix. None of those rounds
+was wrong; each fix was correct. The reason they kept finding more is structural: the thing they
+were all reviewing is a bag of loose values passed between six functions, and the one rule that
+matters — *never report a coverage number without also reporting whether it was actually measured* —
+is written down nowhere except in comments. Each round fixed one place that forgot the rule. Nothing
+made the next place safe. The rounds were not failing; they were counting, one at a time, through a
+list a proper design could have closed in a single move.
+
+Two related things. Sixteen of our checking scripts each contain their own private copy of the same
+test-reporting helper, and none of them share one — which is exactly how we once got twelve checks
+reporting "nothing failed" over output nobody could read. And the project's glossary describes the
+product in nine sections but has no words at all for this checking machinery, so seven rounds of
+argument happened in vocabulary the project does not officially have.
+
+**Waiting on you:** three candidates are written up, in order of cost. The cheapest — giving this
+machinery a name in the glossary — is a precondition for discussing the other two. My recommendation
+is to do that first and then the interface fix, and NOT to run a fifth review round, which would
+most likely find an eighth instance of the same thing.
+<!--tech-->
+`docs/reviews/architecture-review-2026-09-03b.md`. Triggered by dev-process.md:107 (four
+non-converging rounds), not a milestone. Second arch review today; findings A–E of
+`architecture-review-2026-09-03.md` and ADRs 0001–0013 explicitly not re-opened.
+
+- **F1 🔴** — `ev` is a plain dict: 7 keys, 2 producers, 6 touchers. `trustworthy` read by 2 of 6;
+  `check` reads `mutations`/`survivors`/`files` and never reads it. Every one of the seven rounds'
+  defects was a producer holding part of the contract or a consumer skipping the verdict.
+  Measured by AST, `scratchpad/phase6-ev.py`.
+- **F2 🟠** — 16 scripts define a private `case()`; zero import a shared one. One `count_drift`,
+  one importer. Distinct from this morning's finding A: that was counting, this is shape.
+- **F3 🟡** — `check-plan-code.py` 2,517 lines, 50% its own suite, four jobs, one CLI seam.
+  Stated as the weakest of the three.
+- **Not written down:** `CONTEXT.md` has 9 sections, all product; `grep` for
+  mutation/harness/guard/ratchet returns ONE incidental line.
+
+Candidates: (3) name the stack in CONTEXT.md — precondition; (1) give the coverage verdict an
+interface — recommended; (2) one self-test-result seam across 16 guards — grill the cost first.
+Nothing filed to docs/backlog.md; triage is the user's step per review #4's precedent.
