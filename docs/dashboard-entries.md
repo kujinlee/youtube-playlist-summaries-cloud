@@ -3135,3 +3135,46 @@ non-converging rounds), not a milestone. Second arch review today; findings A–
 Candidates: (3) name the stack in CONTEXT.md — precondition; (1) give the coverage verdict an
 interface — recommended; (2) one self-test-result seam across 16 guards — grill the cost first.
 Nothing filed to docs/backlog.md; triage is the user's step per review #4's precedent.
+
+## 2026-09-04 [needs-you]
+The design for fixing the thing seven review rounds kept circling is written down, and it is short
+enough to disagree with.
+
+The problem in one line: the tool reports two things — some numbers, and whether those numbers mean
+anything — and nothing stops a reader taking the numbers without the second part. Seven rounds each
+found one more place that forgot to check. The design makes that impossible rather than discouraged:
+when a run measured nothing, **the numbers do not exist to be read**. A future author who copies a
+line from the working case onto the broken one gets an immediate error instead of a plausible wrong
+figure.
+
+The alternative — keep one object and put a guard in front of the numbers — was rejected, and the
+reason is specific rather than stylistic: that is exactly what the previous round already tried. It
+built one shared rule and still shipped holding two of its three parts, because nothing stopped a
+caller from being wrong. A guard you can forget to consult is a convention with a better name.
+
+**Waiting on you:** the spec is a Phase 1 gate, so it needs your approval before any code. It also
+carries three questions I deliberately did not settle alone — where the new type should live, what
+happens to the freshness check that re-derives the report, and how the test suite keeps building
+deliberately-broken states once broken states become unconstructable.
+
+One thing the spec says about itself, which matters more than the rest: it narrows the class of
+defect but does not close it. If an eighth round finds something, the honest prediction is that it
+will be in how a value is *produced*, not in how the report is *read*.
+<!--tech-->
+Backlog **#91** filed at the user's instruction (Phase 6 #7, finding 1). Spec v1 at
+`docs/superpowers/specs/2026-09-04-coverage-verdict-interface-design.md`, anchor `status-visibility`.
+
+- **Decided:** tagged union `Measured | NotMeasured`. `NotMeasured` has **no `survivors` field at
+  all** — the "0 survivor(s)" success sentence cannot be printed over a run that measured nothing —
+  and its list is named `entries`, not `mutations`, so copying a line from the measured path raises
+  `AttributeError` rather than returning a wrong number.
+- **`Measured`'s constructor enforces all three clauses** (controls green; `len == declared`; every
+  entry measured). The contract moves out of a predicate a caller may forget to call and into a
+  constructor that cannot be bypassed.
+- ⛔ **Guarded accessor REJECTED, reason recorded so it is not re-litigated:** it fails exactly as
+  `verdicts_are_trustworthy` did in r3.
+- **8 falsifiers**, including F6/F7 — a clean run's stdout must stay byte-identical (F2-S3).
+- **3 open questions carried deliberately:** own module vs inline; `verify_evidence` making the
+  pasted block's grammar part of the interface; the ~10 hand-built `ev` dicts in the suite that
+  construct invalid states on purpose.
+- §7 states what this does NOT fix: it stops bad *consumption*, not bad *production* of a clause.
