@@ -42,7 +42,7 @@ candidate yields a message ends in a loud non-zero exit.
 Usage:
   scripts/codex-review.py --out docs/reviews/task-N-foo-codex.md "<review prompt>"
   scripts/codex-review.py --out <file> --prompt-file <file> [--timeout 900] [--model <slug>]
-  scripts/codex-review.py --self-test  # 57 cases
+  scripts/codex-review.py --self-test  # 63 cases
 
 Exit codes:  0 = a real review was written   |   1 = no candidate produced one (gate did NOT run)
 """
@@ -157,10 +157,34 @@ def prompt_demands_a_file(text: str) -> "str | None":
         r"(?:written|saved|placed|put)\b",
     )
     for pat in patterns:
-        m = re.search(pat, text, re.I)
-        if m:
-            return m.group(0)
+        for m in re.finditer(pat, text, re.I):
+            if not _is_negated(text, m.start()):
+                return m.group(0)
     return None
+
+
+# ⚠ NEGATION, found 2026-09-04 while WRITING a corrected brief with this very guard.
+# "do not write your review to a file" matched `write your review to` and the guard refused the
+# run — a FALSE POSITIVE on the one wording that gets the contract right. It predates the #222
+# widening (pattern 1 is original); the existing prohibition case used "write no file", which has
+# no `write ... to`, so nothing covered the negated form.
+#
+# Fail-closed, so it was never unsafe — but it made the CORRECT brief unusable, which is worse
+# than useless for a guard whose whole job is to let a correct brief through.
+#
+# The window is deliberately short. A negator sentences away is not negating this clause, and a
+# long window would let "never" in an unrelated sentence silently disarm a real demand.
+_NEGATORS = re.compile(r"\b(?:do\s+not|don't|never|must\s+not|should\s+not|cannot|can't|no\s+need\s+to|"
+                       r"without|refrain\s+from|avoid)\b[^.!?\n]{0,40}$", re.I)
+
+
+def _is_negated(text: str, start: int) -> bool:
+    """True when a negator governs the match starting at `start`. PURE.
+
+    Looks back at most 60 characters AND never across a sentence boundary — `[^.!?\\n]` in the
+    pattern is what stops a previous sentence's "do not" from reaching forward.
+    """
+    return bool(_NEGATORS.search(text[max(0, start - 60):start]))
 
 
 def _digest(path: str) -> str:
@@ -762,6 +786,30 @@ def self_test() -> int:
     chk("the Codex brief's OWN prohibition does not trip it — it forbids writing, not demands it",
         prompt_demands_a_file(
             "Your final message IS the review; write no file."), None)
+
+    # ── NEGATION: found 2026-09-04 by using this guard on a corrected brief ────────────────────
+    # These are FALSE POSITIVES the guard produced against wording that gets the contract RIGHT.
+    # Fail-closed, so never unsafe — but it refused the correct brief, and a guard that blocks the
+    # right answer is worse than absent, because the fix people reach for is to weaken the guard.
+    chk("`do not write your review to a file` is a PROHIBITION, not a demand",
+        prompt_demands_a_file("Do not write your review to a file."), None)
+    chk("`never save the review at` is a prohibition too",
+        prompt_demands_a_file("You should never save the review at any path."), None)
+    chk("`must not write the findings to` is a prohibition",
+        prompt_demands_a_file("You must not write the findings to disk."), None)
+    # ⚠ AND THE NEGATION MUST NOT BE A UNIVERSAL OFF-SWITCH. If a stray negator anywhere could
+    # disarm the guard, the widening in #222 would be undone by one careless sentence.
+    chk("a negator in a PREVIOUS sentence does not reach across the full stop",
+        bool(prompt_demands_a_file(
+            "Do not use the network. Write the review to docs/reviews/x.md.")), True)
+    chk("a negator far away in the SAME sentence does not reach either",
+        bool(prompt_demands_a_file(
+            "Do not worry about formatting, style, tone, length, or ordering of the sections, "
+            "and write the review to docs/reviews/x.md")), True)
+    chk("a real demand LATER in the text is still caught when an earlier one is negated",
+        bool(prompt_demands_a_file(
+            "Do not write your review to a file.\nActually, save your findings as report.md.")),
+        True)
 
     # (a) The intrusion detector.
     base = {"a.md": "sha-a", "b.md": "sha-b"}
