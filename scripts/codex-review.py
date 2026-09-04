@@ -42,7 +42,7 @@ candidate yields a message ends in a loud non-zero exit.
 Usage:
   scripts/codex-review.py --out docs/reviews/task-N-foo-codex.md "<review prompt>"
   scripts/codex-review.py --out <file> --prompt-file <file> [--timeout 900] [--model <slug>]
-  scripts/codex-review.py --self-test
+  scripts/codex-review.py --self-test  # 57 cases
 
 Exit codes:  0 = a real review was written   |   1 = no candidate produced one (gate did NOT run)
 """
@@ -125,13 +125,36 @@ def prompt_demands_a_file(text: str) -> "str | None":
 
     Deliberately narrow. It matches an instruction aimed at the agent about *the review*, not any
     mention of writing — a review prompt discussing a script that writes files must not trip it.
+
+    ⟳ WIDENED 2026-09-04 (task #222), because it MISSED a live breach. Round 4 used one brief for
+    both halves again and this guard stayed silent: it only knew the IMPERATIVE word order.
+    Measured against the round-4 text, before the fix:
+
+        write the review to docs/reviews/x.md                     -> FIRED
+        Write your findings to the file below                     -> FIRED
+        except for the one review file you are asked to write     -> MISSED  <- the actual breach
+        save the review at this path                              -> MISSED
+        your review should be written to disk                     -> MISSED
+
+    The three added forms are a RELATIVE CLAUSE, `at` as the preposition, and the PASSIVE. The
+    passive one is deliberately anchored on `your` — an unanchored `report will be written` fires
+    on a brief describing the code under review, which is the false positive the docstring above
+    forbids, and a warning people learn to ignore protects nothing.
     """
     patterns = (
         r"write\s+(?:the|your|it|this)\s+(?:review|findings|report|output)\s+to\b",
         r"write\s+to\s+the\s+(?:review|output)\s+path\b",
-        r"save\s+(?:the|your)\s+(?:review|findings|report)\s+(?:to|as|in)\b",
+        # `at` added: "save the review at this path" reads as a location, not a destination.
+        r"save\s+(?:the|your)\s+(?:review|findings|report)\s+(?:to|as|in|at)\b",
         r"(?:create|produce)\s+(?:a|the)\s+file\s+at\b",
         r"output\s+file\s*[:=]",
+        # Relative clause. THE ROUND-4 BREACH: a prohibition that carves out one permitted write
+        # ("you must not write any files, except for the one review file you are asked to write")
+        # still instructs a write, and the capture is rejected exactly the same way.
+        r"file\s+you\s+(?:are\s+)?(?:asked|told|expected|supposed)\s+to\s+write\b",
+        # Passive, anchored on `your` so it cannot reach the code being reviewed.
+        r"your\s+(?:review|findings|report|output)\s+(?:should|must|needs?\s+to|is\s+to)\s+be\s+"
+        r"(?:written|saved|placed|put)\b",
     )
     for pat in patterns:
         m = re.search(pat, text, re.I)
@@ -713,6 +736,32 @@ def self_test() -> int:
         prompt_demands_a_file(
             "You are reviewing a plan. Report Blocking/High/Medium/Low findings with file:line."),
         None)
+
+    # ── task #222: the three phrasings this guard MISSED in round 4 ────────────────────────────
+    # Each is the literal text measured against the live guard, not a paraphrase. The guard was
+    # built for backlog #68 round 3 — the identical failure — and stayed silent one round later,
+    # so these are regression cases for a defect that has now occurred twice.
+    chk("round 4's ACTUAL breach — a prohibition carving out one permitted write — is caught",
+        bool(prompt_demands_a_file(
+            "You must not write any files, except for the one review file you are asked to "
+            "write.")), True)
+    chk("`save the review at <path>` is caught (`at`, not `to`)",
+        bool(prompt_demands_a_file("Please save the review at this path: /tmp/r.md")), True)
+    chk("the PASSIVE form is caught",
+        bool(prompt_demands_a_file("Your review should be written to disk when you finish.")),
+        True)
+    chk("`must be saved` is the same instruction in other clothes",
+        bool(prompt_demands_a_file("Your findings must be saved under docs/reviews/.")), True)
+    # ⚠ THE PASSIVE PATTERN IS THE ONE THAT COULD OVER-REACH, so it is anchored on `your`.
+    # Without that anchor this next case fires, and the guard starts crying wolf about the code
+    # under review — which is how a warning becomes noise and stops being read.
+    chk("a brief DESCRIBING code that writes a report does NOT trip the passive pattern",
+        prompt_demands_a_file(
+            "The report will be written to disk by gen-dashboard.py; check the sandbox holds."),
+        None)
+    chk("the Codex brief's OWN prohibition does not trip it — it forbids writing, not demands it",
+        prompt_demands_a_file(
+            "Your final message IS the review; write no file."), None)
 
     # (a) The intrusion detector.
     base = {"a.md": "sha-a", "b.md": "sha-b"}

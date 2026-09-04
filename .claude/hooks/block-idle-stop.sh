@@ -36,4 +36,23 @@ ARGS=(--decide)
 if ! python3 "$REPO_ROOT/scripts/check-plan-progress.py" "${ARGS[@]}"; then
     exit 2
 fi
+
+# ── Second question, added 2026-09-04 (task #224 residue) ────────────────────────────────────
+# The check above can only refuse a premature stop while a plan is ARMED. Nothing armed means it
+# says nothing — which is indistinguishable, from here, from "there was no plan". So ask the other
+# question: did this turn ANNOUNCE a multi-step job (`## ▶ STEP i of N`, i < N) with nothing armed?
+#
+# WARN-ONLY BY DECISION (user, 2026-09-04). Exit 1 is Claude Code's non-blocking error: stderr is
+# shown to the user, the stop proceeds. Exit 2 would block, and is deliberately NOT used here.
+# Every firing is appended to .claude/banner-warnings.log so the false-alarm rate is a number
+# before anyone decides whether this should ever block.
+#
+# The payload is re-fed on stdin because the read above consumed it.
+printf '%s' "$INPUT" | python3 "$REPO_ROOT/scripts/check-banner-armed.py" --decide
+BANNER_RC=$?
+# 0 = quiet. 1 = warn. 2 = CANNOT RUN (it could not read the transcript) — surfaced, not silent,
+# but still never blocking: a broken detector must not be able to wedge a turn it only observes.
+if [[ "$BANNER_RC" != "0" ]]; then
+    exit 1
+fi
 exit 0
