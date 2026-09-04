@@ -1178,7 +1178,13 @@ def build(entries, days, prs, pr_error, git_error, window,
                    f'{flag}<span class="title">{_inline(e["title"])}</span>{tri}</h3>')
             inner = (f'<details id="{eid}-card"><summary>{row}</summary>{body}</details>'
                      if body else row)
-            parts.append(f'{day_anchor}<article class="entry" id="{eid}">{inner}</article>')
+            # ⚠ DERIVED FROM THE SAME `_b` AS THE BADGE AND THE ASK LABEL — backlog #83(B).
+            # A third reading of the entry here is how the badge and the card would come to
+            # disagree, which is the defect `badge_of` was extracted to close. The class is
+            # what lets CSS scope to settled-ness; without it the correct marker whispers
+            # (`.flag.resolved`, opacity .55) while a stale `**Waiting on you:**` shouts.
+            _scls = "entry settled" if _b == "resolved" else "entry"
+            parts.append(f'{day_anchor}<article class="{_scls}" id="{eid}">{inner}</article>')
         entries_html = "".join(parts)
 
     # ─── Recorded exemptions (spec §7) ───
@@ -2000,13 +2006,41 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     # it. A page-wide substring test is satisfied by the glossary and the ask
     # tray — `:1470` records that exact vacuity biting this file before.
     def _fragment(html_: str, eid: str) -> str:
-        _start = html_.index(f'<article class="entry" id="{eid}">')
-        return html_[_start:html_.index("</article>", _start)]
+        # ⚠ MATCHES THE CLASS LIST, NOT THE EXACT STRING — backlog #83(B) added
+        # `settled` to cleared cards, so `class="entry"` stopped being the only
+        # shape. Every fixture here happens to be uncleared, so an exact match
+        # still passed and the trap would have sprung on whoever wrote the first
+        # settled fixture instead — the anchor-binds-by-text shape this repo has
+        # measured twice. Fixed at the helper so it cannot recur per-case.
+        _m = re.search(rf'<article class="entry[^"]*" id="{re.escape(eid)}">', html_)
+        if _m is None:
+            raise AssertionError(f"no entry card with id {eid!r} in the page")
+        return html_[_m.start():html_.index("</article>", _m.start())]
 
     def _build1(entries_, when="2026-08-31"):
         return build(entries=entries_, days=bucket_days([when], entries_, 2, when),
                      prs=[], pr_error=None, git_error=None, window=2, exemptions=[],
                      exempt_error=None, store="x", store_error=None, generated_at="t")
+
+    # ── BACKLOG #83(B): the CARD carries its settled state ───────────────────
+    # ⛔ WHY THIS IS NOT A CSS-ONLY CHANGE. MEASURED 2026-09-01, store-wide:
+    # exactly TWO entries author a `**Waiting on you:**` lead-in and BOTH are
+    # cleared — so 2 of 2 live-warning marks sit on already-settled items. The
+    # marker that is CORRECT whispers (`.flag.resolved` is opacity .55) while the
+    # sentence that is STALE shouts (`.entry .prose strong` takes `--p-mark`).
+    # No rule can scope to settled-ness because the <article> never carried it.
+    _settled_src = ("## 2026-08-28 [needs-you]\n**Waiting on you:** pick one.\n\n"
+                    "## 2026-08-29 [resolved: 2026-08-28/1]\nSettled it.\n")
+    _se = parse_entries(_settled_src)
+    _sh = _build1(_se, when="2026-08-29")
+    case("a cleared card is marked settled",
+         '<article class="entry settled" id="2026-08-28-1">' in _sh, True)
+    # ⛔ THE FALSIFIER, and it is the whole reason this is two cases and not one.
+    # If the resolver ALSO renders settled, the class followed the badge's
+    # ABSENCE rather than its `resolved` VALUE — and every live warning card in
+    # the store goes quiet at once, which is worse than the defect being fixed.
+    case("an UNCLEARED card is not marked settled",
+         '<article class="entry" id="2026-08-29-1">' in _sh, True)
 
     # Task 3 defines its OWN tag-stripper. Sharing one across two self-test
     # regions crashed with UnboundLocalError in plan review round 1 — this block
