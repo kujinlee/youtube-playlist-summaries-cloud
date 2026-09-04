@@ -4,7 +4,7 @@
 > **Goal:** A person who was away can see the current state, what changed, and what needs them —
 > without reading the chat transcript.
 
-**Backlog #91.** From Architecture Review #7 (`docs/reviews/architecture-review-2026-09-03b.md`),
+**Backlog #91.** v1.1 — §5 Q1 decided (own module). From Architecture Review #7 (`docs/reviews/architecture-review-2026-09-03b.md`),
 which fired on the four-non-converging-rounds trigger. **v1, 2026-09-04.**
 
 ⚠ **Header order is load-bearing** — `check-anchors.py:61` sets `HEAD_LINES = 10`, so the Anchor and
@@ -110,10 +110,14 @@ the one time round 4's fix changed output on a path nobody printed, the mutation
 
 ## 5. Open questions — carried in deliberately, not resolved here
 
-**Q1. Own module, or stay inside `check-plan-code.py`?** Only `count_drift` is importable by other
-guards today. A separate `scripts/coverage_verdict.py` is where backlog #92's shared-self-test seam
-could later grow; staying inline helps exactly one guard. **Leaning: own module**, but this is a
-design call and it changes the diff's shape.
+**Q1 — ⭐ DECIDED 2026-09-04 by the user: its OWN MODULE, `scripts/coverage_verdict.py`.**
+Not an open question any more. Only `count_drift` is importable by another guard today, so a separate
+module is where a shared seam can later grow; staying inline would help exactly one guard and mean
+moving it the moment a second wanted the same thing. **Cost accepted: one more file, and the import
+must not create a cycle** — `check-plan-code.py` imports the verdict, never the reverse. ⚠ **This does
+NOT pre-commit the wider seam of Architecture Review #7 finding 2** (one self-test-result module
+across sixteen guards). One adapter is a hypothetical seam; that stays a separate decision with its
+own cost argument.
 
 **Q2. What happens to `verify_evidence`?** It re-derives the evidence block and compares against the
 pasted one. Under the union it would render and compare a `NotMeasured` block — correct, but it makes
