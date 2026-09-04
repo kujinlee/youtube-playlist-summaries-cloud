@@ -3045,3 +3045,51 @@ Code review r3 of the mutation-drift-report contract, both halves, folded.
 wrapper derives the verdict path from that stem, colliding with the *spec* round-3 verdict. Restored
 from `HEAD`; re-saved as `codex-code-r3.verdict.json`. Backlog #68 closed the wrapper's path
 inference but not the collision channel: verdict names are a namespace with no allocator.
+
+## 2026-09-03
+A fourth review round on the same piece of tooling found that the previous round's fix had been
+applied to the wrong copy of the thing it was fixing.
+
+The tool has two places that print a result. The previous round's whole finding was "this fix has
+no test that would catch it being deleted" — and it then wrote that test for one of the two
+printers. It picked the one our automated build **never runs**, and left the one the build actually
+depends on with no test at all. Deleting that safety check left every test passing.
+
+That is the seventh round running where the new defect was inside the previous round's fix. The
+shape has been consistent enough to name: a correct fix gets applied to the instance in front of us
+and not to its sibling, and the sibling is often the one that matters more.
+
+Two smaller things in the same family. The report that gets pasted into documents — and therefore
+outlives the console output — was still printing "caught" next to each check, directly underneath
+its own line saying nothing had been measured. And the phrase "a working test run" quietly meant two
+different things in the two halves of the tool, one round after those halves were unified
+specifically to stop that.
+
+Four more of the tool's own safety checks were unhooked by this round's edits, and refused to be
+written until they were re-pointed. That is the fourth time; it is now a known property of how this
+code is guarded rather than a surprise.
+<!--tech-->
+Code review r4, both halves, on `review/drift-report-r4` off `87ea0001` (PR #214, merged).
+All four findings reproduced by the coordinator before folding.
+
+- **B1 🔴** — `--mutate`'s `if ev["trustworthy"]:` had zero mutations naming it; plan mode's gate
+  had one. `ci.yml` runs `--mutate .` and never plan mode. Gate hardcoded open → 177/177 green.
+  Closed with a mutation + a case driving `main(["--mutate", …])` on a freshly poisoned tree, so
+  the failure is the after-control path (complete counts, every entry measured).
+- **H1 🟠** — `evidence()`'s body printed `caught N` + per-entry `caught` under its own
+  `NOT MEASURED`. Now: no `caught` figure, and every entry renders `NOT RUN` when untrustworthy.
+- **M1 🟡** — extracted `control_is_green(rc, out)`; `mutate_delivered` had required rc 0 alone.
+- **L1 🟢** — four skip-without-append sites, not three; corrected in all four copies.
+- **4 mutations orphaned by these edits**, retargeted before the manifest was written.
+- ⚠ **The harness went RED on this round's own fix.** Doing *both* halves of H1's suggested
+  repair made the per-entry `measured` test unreachable; `--mutate .` reported 1 survivor naming
+  it. Collapsed to one mechanism, subsumed mutation retired with its reason.
+- Counts: 177 → **183** cases; 32 → **35** mutations here (36 then −1 retired); sum 173 → **176**.
+
+⚠ Codex returned **CONVERGED** for the second round running over live defects. Its checks were
+individually true and aimed at what the previous round *fixed*, not what it *changed*.
+
+⚠ I also broke the dual-review output contract this round: one shared brief for both halves told
+Codex to write a file, so the wrapper captured a *report* rather than the review. Nothing was lost
+(`gate_ran: true`, real review on disk) but the loud-failure mechanism was bypassed. Fix: per-half
+output instructions, never one brief.

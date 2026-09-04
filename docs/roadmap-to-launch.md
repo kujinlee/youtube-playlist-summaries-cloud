@@ -1777,6 +1777,40 @@ because the plan document executes nothing and rebasing 30 commits buys no safet
       - **Two mutations were ORPHANED by this round's own refactor** and the pre-flight refused to
         write the manifest until both were retargeted — anchors bind by TEXT, so improving code
         unhooks the mutation guarding it while the suite stays green. Third occurrence.
+- [x] **⟳ ROUND 4 (2026-09-03) — MERGED r3 was NOT the end. 1 Blocking, 1 High, 1 Medium, 1 Low,
+      all four reproduced by the coordinator before folding.** Codex returned **CONVERGED for the
+      second consecutive round** over live defects.
+      - **B1 🔴 — THERE ARE TWO PRINTERS AND r3 COVERED ONE.** r3's own Blocking was *"the fix has
+        no falsifier"*; it then built the falsifier for the **plan-mode** printer and left
+        `--mutate`'s `if ev["trustworthy"]:` with no mutation and no case. ⚠ **CI runs `--mutate .`
+        and never runs plan mode**, so the covered printer is the one CI does not invoke and the
+        uncovered one is the one it depends on. Hardcoding that gate open left the suite at
+        **177/177**. This is the seventh consecutive round whose defect sits in the previous
+        round's fix — and it is the *same sentence* r3's commit message wrote in capitals.
+      - **H1 🟠 — the durable artifact was the more permissive of the two producers.** r3 gated
+        `evidence()`'s HEADER and left its BODY printing `caught N` plus a `caught <name>` per
+        entry **underneath the NOT MEASURED refusal** — `caught` being the exact word the
+        after-control report calls an artefact. The console printer emits no tally at all there;
+        the block that gets **pasted into a plan and outlives the console** kept one.
+      - **M1 🟡 — `controls_green` meant two things**, one round after the predicate was unified to
+        stop exactly that: `check()` required rc 0 **and** a printed result, `mutate_delivered`
+        required only rc 0. A suite with no entrypoint exits 0 silently and was certified green.
+        Now one `control_is_green(rc, out)` with two callers.
+      - **L1 🟢 — "three skip sites" is four.** The AST walk finds a fourth (ambiguous anchor)
+        sharing a `continue` with the not-found branch. The sentence whose whole job is to bound a
+        set had the set's size wrong in four places, three written by the round being reviewed.
+      - **FOUR more mutations orphaned by r4's own edits**, caught by the pre-flight before the
+        manifest was written. **Fourth occurrence** — this is now a standing property of the repo,
+        not an accident.
+      - ⚠ **AND THE HARNESS CAUGHT THIS ROUND'S OWN FIX.** H1's reviewer offered *either*
+        rendering entries `NOT RUN` *or* dropping the `caught` figure; doing **both** made the
+        per-entry `measured` test **unreachable** — it is consulted only when `untrustworthy` is
+        False, which means `trustworthy` (every entry measured) or `declared is None` (no entries).
+        `--mutate .` went **red with 1 survivor**, naming it. Two mechanisms for one rule, so it was
+        collapsed to one and the subsumed mutation RETIRED with its reason, rather than kept as
+        unfalsifiable defence-in-depth.
+      - Counts: self-test 177 → **183**; this file's mutations 32 → **35** (36 then −1 retired);
+        sum 173 → **176**.
 - [ ] Findings are **deliberately unfiled** pending user triage, per review #4's precedent. Finding
       **E** is ✅ fixed (`4dc05e89`); **D** (backlog #48's stale stop-hook verdict) is the user's row
       to edit.
