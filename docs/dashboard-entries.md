@@ -2957,3 +2957,41 @@ Two cases added (**162/162**), one mutation added (**164 mutations, 0 survivors*
 `EXPECTED_MUTATIONS` 22→23, sum 163→164, docstring 160→162 — the last caught by `count_drift`, its
 third catch today. Six gates green. Round 1 of the CODE review filed, both halves;
 **NOT CONVERGED → folded → round 2 owed.**
+
+## 2026-09-03
+Second review of the code, and the outside reviewer was right about something I had rated as minor.
+
+We had both spotted the same thing — the tool has a *second* place that reports results, and it
+hadn't been fixed. I called it minor because I reasoned about it from the code. The outside reviewer
+**ran** it, and found it was worse than a wrong count: the detailed report was printing a check that
+timed out as **"SURVIVED"** — i.e. claiming the safeguard had been exercised and lost, when it had
+never run at all.
+
+**The lesson is about severity, not about the bug.** A severity assigned to something you haven't run
+is a guess with a number on it. I had even written "not checked" next to it.
+
+Fixed by making both reporters share one rule instead of two copies. And the harness caught me
+mid-fix: copying the rule made a sabotage-check ambiguous and the whole run refused to give a verdict
+— which is precisely the behaviour this change added.
+
+<!--tech-->
+**Codex Blocking (r2), reproduced.** `check()` — the second producer of the evidence dict — had no
+`trustworthy` concept, so `main([plan])` printed `1 file(s), 1 mutation(s), 1 survivor(s)` and
+`--evidence` printed `SURVIVED timeout mutation`. Pre-existing (`da5cd27e`, PR #176), out of CI, but
+the same class the change exists to remove.
+
+**Claude half rated it Low and had explicitly labelled the end-to-end run NOT CHECKED.** The gap was
+`evidence()` — a different function from the printer I reasoned about — rendering `SURVIVED`.
+
+**Fix:** `check()` gains the same default-deny flag; `evidence()` renders `NOT RUN` for
+`measured is not True`; the plan-mode printer gates identically, with `declared is None` as the
+escape for assemble/compare-only runs.
+
+⚠ **The fix's duplication was caught by the harness.** Copying the predicate made a mutation anchor
+match twice → `anchor matches 2 times … Tighten it`, **164 of 165**, exit 1. Correct fix was removing
+the duplicate, not tightening the anchor: `verdicts_are_trustworthy(m_muts, declared)`, one function
+two callers — `check-vocabulary-collisions.py`'s subject exactly.
+
+After: `--self-test` **164/164**; `--mutate .` **165 mutations, 0 survivors, exit 0**; both Codex
+observations reversed. Seven gates green. **Round 2 filed both halves, NOT CONVERGED, folded.
+Round 3 owed.**

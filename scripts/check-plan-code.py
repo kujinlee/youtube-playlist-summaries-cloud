@@ -5,7 +5,7 @@
     python3 scripts/check-plan-code.py <plan.md> --evidence # ...and print the evidence block
     python3 scripts/check-plan-code.py <plan.md> --compare .   # ...and diff vs the REAL files
     python3 scripts/check-plan-code.py <plan.md> --verify-evidence   # ...and FAIL if it is stale
-    python3 scripts/check-plan-code.py --self-test          # 162 cases
+    python3 scripts/check-plan-code.py --self-test          # 164 cases
 
 ⚠ `--compare` takes the REPO ROOT, and each file tag is resolved under it as the
 repo-relative path it already is. It took the containing DIRECTORY until round 5,
@@ -369,6 +369,23 @@ def home_escapes(src: str) -> list[str]:
     return out
 
 
+def verdicts_are_trustworthy(m_muts: list[dict], declared: int) -> bool:
+    """May the caller print the mutation tally as a coverage verdict?
+
+    TWO producers build this evidence dict — `mutate_delivered` and `check` — and code
+    review r2 (both halves) found the second printing a timed-out mutation as
+    `1 survivor(s)` and as `SURVIVED <name>`, because only the first had the rule. One
+    function, two callers: a duplicated predicate is a duplicated protocol, and this repo
+    has a script that hunts for exactly that.
+
+    Every DECLARED mutation must have produced a verdict — `run_mutations` skips without
+    appending at three places — AND every entry must be a real verdict rather than a
+    cannot-run. `.get("measured") is True` FAILS CLOSED: a future append site that forgets
+    the key yields None, which is not True, so the run is untrusted rather than trusted.
+    """
+    return len(m_muts) == declared and all(m.get("measured") is True for m in m_muts)
+
+
 def run_suite(d: pathlib.Path, name: str) -> tuple[int, str]:
     # A hung suite is a CANNOT RUN, not a traceback. rc 2 is distinct from both the
     # green 0 and the red 1, so a caller cannot read a timeout as either verdict.
@@ -470,7 +487,7 @@ EXPECTED_MUTATIONS = {
     # sides together and leaves the agreement case green. Only breaking the
     # DERIVATION separates them, and that is the regression the seam exists to stop.
     "scripts/check-dashboard-entry.py": 34,
-    "scripts/check-plan-code.py": 23,
+    "scripts/check-plan-code.py": 24,
     # ⟳ 2026-08-31, backlog #76/#77: the shared page chrome. Adding it found TWO
     # vacuous cases of my own — a "dirty tree" assertion compared against a
     # NON-repo, so it differed by the UNKNOWN text and never by the dirty flag,
@@ -665,8 +682,7 @@ def mutate_delivered(root: pathlib.Path) -> tuple[bool, list[str], dict]:
         ev["declared"] = len(muts)
         # `.get("measured") is True` FAILS CLOSED: a future append site that forgets the
         # key yields None, which is not True, so the run is untrusted rather than trusted.
-        ev["trustworthy"] = (len(m_muts) == len(muts)
-                             and all(m.get("measured") is True for m in m_muts))
+        ev["trustworthy"] = verdicts_are_trustworthy(m_muts, len(muts))
         # THE CONTROL AGAIN, AFTER. A prologue proves the tree was good when we STARTED.
         # If it goes bad at mutation 17 — disk, OOM, a peer process — every later suite
         # exits 1, `run_mutations` only distinguishes rc==2, and an environmental red is
@@ -820,8 +836,13 @@ def run_mutations(d: pathlib.Path, muts: list[dict],
 def check(plan: pathlib.Path, compare: pathlib.Path | None = None) -> tuple[bool, list[str], dict]:
     md = plan.read_text(encoding="utf-8")
     files, muts, problems, tally = extract(md)
+    # ONE contract, TWO producers. `check()` gets the same default-deny `trustworthy` as
+    # `mutate_delivered`: code review r2 (both halves) found this path printing a timed-out
+    # mutation as `1 survivor(s)` and as `SURVIVED <name>` in the evidence block — the exact
+    # class the flag exists to remove, left standing in the sibling producer.
     report, ev = list(problems), {"files": {}, "mutations": [], "survivors": [],
-                                  "tally": tally, "compared": None}
+                                  "tally": tally, "compared": None,
+                                  "declared": None, "trustworthy": False}
     if not files:
         report.append("no `<!-- file: … -->` tagged Python blocks found — nothing to assemble")
         return False, report, ev
@@ -865,6 +886,8 @@ def check(plan: pathlib.Path, compare: pathlib.Path | None = None) -> tuple[bool
         report.extend(m_report)
         ev["mutations"].extend(m_muts)
         ev["survivors"].extend(m_survivors)
+        ev["declared"] = len(muts)
+        ev["trustworthy"] = verdicts_are_trustworthy(m_muts, len(muts))
     return ok, report, ev
 
 
@@ -895,7 +918,11 @@ def evidence(ev: dict) -> str:
     out.append("")
     out.append(f"  mutations declared and run: {len(ev['mutations'])}, caught {caught}")
     for m in ev["mutations"]:
-        out.append(f"    {'caught  ' if m['caught'] else 'SURVIVED'} {m['name']}")
+        # A cannot-run is neither caught nor survived. Calling it SURVIVED reads as evidence
+        # that the guard was exercised and lost — the strongest possible false claim here.
+        verdict = ("caught  " if m["caught"]
+                   else "SURVIVED" if m.get("measured") is True else "NOT RUN ")
+        out.append(f"    {verdict} {m['name']}")
     out.append("```")
     return "\n".join(out)
 
@@ -1995,6 +2022,19 @@ def _self_test() -> int:
                  (True, False))
             case("...and it is reported as a cannot-run, not as a catch",
                  any("did NOT COMPLETE" in r for r in _rep8), True)
+        # ⟳ 2026-09-03, code review r2 (BOTH halves): `check()` is the SECOND producer of this
+        # evidence dict and it had no `trustworthy` concept, so plan mode printed a timeout as
+        # `1 survivor(s)` and the evidence block as `SURVIVED <name>`. One contract, two
+        # producers — the same default-deny now applies to both.
+        _ev_nr = {"files": {}, "tally": {}, "compared": None, "survivors": ["m"],
+                  "declared": 1, "trustworthy": False,
+                  "mutations": [{"name": "m", "caught": False, "measured": False}]}
+        case("a cannot-run renders as NOT RUN, never as SURVIVED",
+             ("NOT RUN" in evidence(_ev_nr), "SURVIVED" in evidence(_ev_nr)), (True, False))
+        _ev_sv = {**_ev_nr, "trustworthy": True,
+                  "mutations": [{"name": "m", "caught": False, "measured": True}]}
+        case("...and a REAL survivor still renders as SURVIVED",
+             ("SURVIVED" in evidence(_ev_sv), "NOT RUN" in evidence(_ev_sv)), (True, False))
         # ⟲ Backlog #74. Two entries with the same edit anchors measure one thing twice, and the
         # second reports `caught` for coverage that does not exist. Also untested until now.
         with tempfile.TemporaryDirectory() as _td:
@@ -2082,7 +2122,7 @@ def _self_test() -> int:
     # together, so the agreement case stays green. Only breaking the derivation
     # separates them. (2) came from the Claude review half answering the Codex half's
     # Low — the agreement case was load-bearing and nothing proved it fired.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 164)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 165)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so
@@ -2184,8 +2224,17 @@ def main(argv: list[str]) -> int:
             "compared" if cmp_dir else
             "evidence-verified, plan's copy only" if a.verify_evidence else
             "plan's copy only, NOT compared")
-    print(("OK — " if ok else "FAILED — ") + f"{mode}: {len(ev['files'])} file(s), "
-          f"{len(ev['mutations'])} mutation(s), {len(ev['survivors'])} survivor(s)")
+    if ev.get("trustworthy") or ev.get("declared") is None:
+        # `declared is None` = no mutations were attempted at all (assemble/compare only),
+        # so the tally is a truthful zero rather than an unearned verdict.
+        print(("OK — " if ok else "FAILED — ") + f"{mode}: {len(ev['files'])} file(s), "
+              f"{len(ev['mutations'])} mutation(s), {len(ev['survivors'])} survivor(s)")
+    else:
+        got, want = len(ev["mutations"]), ev["declared"]
+        short = (f" ({got} of {want} declared mutation(s) produced a verdict)"
+                 if got != want else "")
+        print(f"NOT MEASURED — {mode}: the mutation harness produced no coverage "
+              f"verdict{short}. Treat this as NOT CHECKED.")
     return 0 if ok else 1
 
 

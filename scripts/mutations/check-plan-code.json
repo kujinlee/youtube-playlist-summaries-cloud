@@ -248,10 +248,21 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "\n                             and all(m.get(\"measured\") is True for m in m_muts))",
-        "\n                             )"
+        "    return len(m_muts) == declared and all(m.get(\"measured\") is True for m in m_muts)",
+        "    return len(m_muts) == declared"
       ]
     ],
     "expect": "a TIMED-OUT mutation is counted but is NOT a verdict"
+  },
+  {
+    "name": "the evidence block calls a cannot-run SURVIVED again",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        verdict = (\"caught  \" if m[\"caught\"]\n                   else \"SURVIVED\" if m.get(\"measured\") is True else \"NOT RUN \")",
+        "        verdict = \"caught  \" if m[\"caught\"] else \"SURVIVED\""
+      ]
+    ],
+    "expect": "a cannot-run renders as NOT RUN, never as SURVIVED"
   }
 ]
