@@ -543,7 +543,11 @@ EXPECTED_MUTATIONS = {
     # rule. That copy is what the defect WAS, and scanning the manifest to repair
     # the orphaned anchor showed the page's `BLOCK` had never had a mutation at all
     # — the regex at the centre of the bug was the one thing nothing measured.
-    "scripts/gen-dashboard.py": 70,
+    # ⟳ 70 -> 73, comprehensibility slice A (backlog #83). THREE entries, one per new
+    # behaviour: the settled class, the settled CSS, the resolver back-reference. Each
+    # names the case it must go red through, so a mutation caught by a SIBLING case
+    # cannot be credited — the round-5 M1 defect where `expect` matched 7 case names.
+    "scripts/gen-dashboard.py": 73,
     "scripts/page_markup.py": 14,
     # ⟳ 2026-09-01, backlog #78: 18 -> 23. The entry gate now answers TWO questions
     # instead of one — "does this branch owe an entry?" (unchanged) and "is the entry
@@ -2482,7 +2486,10 @@ def _self_test() -> int:
     # together, so the agreement case stays green. Only breaking the derivation
     # separates them. (2) came from the Claude review half answering the Codex half's
     # Low — the agreement case was load-bearing and nothing proved it fired.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 176)
+    # ⟳ 176 -> 179, comprehensibility slice A. A SECOND, independent statement of the
+    # total, and that is the point: moving a per-file count without it makes the control
+    # refuse to run rather than silently re-baseline.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 179)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so

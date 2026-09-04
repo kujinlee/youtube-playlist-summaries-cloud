@@ -31,7 +31,7 @@
       ]
     ],
     "expect": "malformed renders BETWEEN its neighbours on an APPENDED store",
-    "note": "⚠ CAUGHT BY THE ORDERING GUARDS, NOT BY A TITLE-SPECIFIC ONE. Emptying the title reddens five ordering cases (they locate entries BY TITLE TEXT). The title-specific case, 'the title is the fold's own summary', did NOT fire even after being re-bound to the card's own fragment, and I could not determine why within this slice. UNRESOLVED: the guard that ought to own this property does not demonstrably own it. Do not read this entry as evidence that it does."
+    "note": "\u26a0 CAUGHT BY THE ORDERING GUARDS, NOT BY A TITLE-SPECIFIC ONE. Emptying the title reddens five ordering cases (they locate entries BY TITLE TEXT). The title-specific case, 'the title is the fold's own summary', did NOT fire even after being re-bound to the card's own fragment, and I could not determine why within this slice. UNRESOLVED: the guard that ought to own this property does not demonstrably own it. Do not read this entry as evidence that it does."
   },
   {
     "name": "unresolved surfaces entries that failed to parse",
@@ -57,7 +57,7 @@
         "    mark = \"\""
       ]
     ],
-    "expect": "§6.1 a zero-commit day WITH an entry is marked in SIGHTED output"
+    "expect": "\u00a76.1 a zero-commit day WITH an entry is marked in SIGHTED output"
   },
   {
     "name": "gap mark: gapmark AND class both gone",
@@ -72,7 +72,7 @@
         "        mark += \"\""
       ]
     ],
-    "expect": "§9 a day that shipped with NO entry is marked in SIGHTED output"
+    "expect": "\u00a79 a day that shipped with NO entry is marked in SIGHTED output"
   },
   {
     "name": "gh half of what-needs-you suppressed",
@@ -231,7 +231,7 @@
     "expect": "commit_dates passes --first-parent as an ARGUMENT"
   },
   {
-    "name": "the orange needs-you bar is not drawn (spec §5's primary chart signal)",
+    "name": "the orange needs-you bar is not drawn (spec \u00a75's primary chart signal)",
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
@@ -240,7 +240,7 @@
       ]
     ],
     "expect": [
-      "§5 a needs-you day is marked in SIGHTED output",
+      "\u00a75 a needs-you day is marked in SIGHTED output",
       "...and the mark is the needs class, not an incidental difference"
     ]
   },
@@ -296,14 +296,14 @@
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
-        "    if store_error:\n        entries_html = (f'<p class=\"unknown\">I could not read the entry store — '",
-        "    if False:\n        entries_html = (f'<p class=\"unknown\">I could not read the entry store — '"
+        "    if store_error:\n        entries_html = (f'<p class=\"unknown\">I could not read the entry store \u2014 '",
+        "    if False:\n        entries_html = (f'<p class=\"unknown\">I could not read the entry store \u2014 '"
       ]
     ],
     "expect": "a store that could not be read is NOT 'no entries yet'"
   },
   {
-    "name": "§9's alarm fires off an UNREADABLE store",
+    "name": "\u00a79's alarm fires off an UNREADABLE store",
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
@@ -311,10 +311,10 @@
         "    unwritten = day[\"commits\"] > 0 and not day[\"has_entry\"]"
       ]
     ],
-    "expect": "...and §9's alarm is not fired off a store nobody could read"
+    "expect": "...and \u00a79's alarm is not fired off a store nobody could read"
   },
   {
-    "name": "the page imports the grammar's SYMBOLS but not its MEANING — a new flag crashes every render",
+    "name": "the page imports the grammar's SYMBOLS but not its MEANING \u2014 a new flag crashes every render",
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
@@ -328,7 +328,7 @@
     ]
   },
   {
-    "name": "the unknown flag is swallowed instead of degrading the entry — the GRACEFUL half of C1's fix",
+    "name": "the unknown flag is swallowed instead of degrading the entry \u2014 the GRACEFUL half of C1's fix",
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
@@ -499,7 +499,7 @@
     "expect": "every --out / --fragment-only path the suite PASSES is absolute"
   },
   {
-    "name": "a relative path reaches main() as str(Path) — invisible to any source scan",
+    "name": "a relative path reaches main() as str(Path) \u2014 invisible to any source scan",
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
@@ -750,7 +750,7 @@
         "        head = \"<strong>Decide:</strong>\""
       ]
     ],
-    "expect": "an entry with TWO asks marks BOTH decided — resolution is entry-level"
+    "expect": "an entry with TWO asks marks BOTH decided \u2014 resolution is entry-level"
   },
   {
     "name": "the light palette stops covering the OS-dark shim's tokens",
@@ -803,7 +803,7 @@
   {
     "name": "the page takes back its own block-start rule",
     "file": "scripts/gen-dashboard.py",
-    "_note": "NEW 2026-09-01, and it covers the thing that actually broke. The defect was never a wrong regex — it was TWO regexes, and no mutation existed on either: scanning the manifest while repairing the orphaned ENTRY_ISH anchor found that this file's BLOCK had ZERO coverage for its whole life. This mutation restores the DUPLICATE rather than corrupting the shared rule, so it fails exactly the way the original defect did — the gate stays correct and only the page diverges, which is precisely why no gate-side case can catch it. ⚠ EXACT case names, not substrings (check-plan-code.py:730-735, a round-6 hardening): the first draft wrote `and the prose after it is not lost` and dropped the leading ellipsis the case actually carries, resolving to 0 red cases. Caught by the Codex half running `--mutate .`.",
+    "_note": "NEW 2026-09-01, and it covers the thing that actually broke. The defect was never a wrong regex \u2014 it was TWO regexes, and no mutation existed on either: scanning the manifest while repairing the orphaned ENTRY_ISH anchor found that this file's BLOCK had ZERO coverage for its whole life. This mutation restores the DUPLICATE rather than corrupting the shared rule, so it fails exactly the way the original defect did \u2014 the gate stays correct and only the page diverges, which is precisely why no gate-side case can catch it. \u26a0 EXACT case names, not substrings (check-plan-code.py:730-735, a round-6 hardening): the first draft wrote `and the prose after it is not lost` and dropped the leading ellipsis the case actually carries, resolving to 0 red cases. Caught by the Codex half running `--mutate .`.",
     "edits": [
       [
         "BLOCK = _GATE.BLOCK",
@@ -819,7 +819,7 @@
   {
     "name": "the parser stops asking which lines are fenced",
     "file": "scripts/gen-dashboard.py",
-    "_note": "backlog #84, THE defect. Restores the fence-blind split, which minted a fully VALID phantom entry holding a real id — no error, renders like any other card. Ids are positional and `[resolved: <id>]` binds by id.",
+    "_note": "backlog #84, THE defect. Restores the fence-blind split, which minted a fully VALID phantom entry holding a real id \u2014 no error, renders like any other card. Ids are positional and `[resolved: <id>]` binds by id.",
     "edits": [
       [
         "        if BLOCK.match(line) and i not in fenced:",
@@ -834,7 +834,7 @@
   {
     "name": "the parser asks for INERT lines instead of fenced ones",
     "file": "scripts/gen-dashboard.py",
-    "_note": "backlog #84, and this is the OVER-rejection half — the first cut of the fix, which looked equivalent and DELETED entry 2026-09-01/16 from the live store. `_inert_lines` treats an unclosed `<!--` as running to end-of-input; one entry mentioning the marker in prose erased every entry after it. A mutation only on the under-rejection half would let this ship again.",
+    "_note": "backlog #84, and this is the OVER-rejection half \u2014 the first cut of the fix, which looked equivalent and DELETED entry 2026-09-01/16 from the live store. `_inert_lines` treats an unclosed `<!--` as running to end-of-input; one entry mentioning the marker in prose erased every entry after it. A mutation only on the under-rejection half would let this ship again.",
     "edits": [
       [
         "    fenced = _FENCED_LINES(text)",
@@ -845,5 +845,38 @@
       "prose mentioning <!-- does not swallow the NEXT entry",
       "...and both keep their ids"
     ]
+  },
+  {
+    "name": "the settled class stops being emitted (backlog #83B)",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "_scls = \"entry settled\" if _b == \"resolved\" else \"entry\"",
+        "_scls = \"entry\""
+      ]
+    ],
+    "expect": "a cleared card is marked settled"
+  },
+  {
+    "name": "settled cards stop muting their prose emphasis (backlog #83B)",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        ".entry.settled .prose strong{{color:var(--ink);font-weight:600}}",
+        ".entry.settled .prose strong{{font-weight:600}}"
+      ]
+    ],
+    "expect": "a settled card mutes its prose emphasis"
+  },
+  {
+    "name": "a settled ask stops naming its resolver (backlog #83A)",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    if settled and resolver:",
+        "    if False:"
+      ]
+    ],
+    "expect": "a settled ask links its resolver"
   }
 ]
