@@ -172,7 +172,8 @@ def _first_sentence(text: str) -> str:
 _inline = page_markup.render_inline
 
 
-def _prose(text: str, drop_headline: bool = False, settled: bool = False) -> str:
+def _prose(text: str, drop_headline: bool = False, settled: bool = False,
+           resolver: dict | None = None) -> str:
     """Blank-line-separated paragraphs, first one as the LEDE.
 
     9 of the store's 10 entries were already written with paragraph breaks
@@ -276,12 +277,12 @@ def _prose(text: str, drop_headline: bool = False, settled: bool = False) -> str
     # reported: badge "resolved", tray empty, body still saying "Decide:" in
     # warning colour. Conservatism against a hypothetical is still a wrong answer.
     return "".join(
-        _ask_block(asks.get(p), settled) or
+        _ask_block(asks.get(p), settled, resolver) or
         f'<p class="{"lede" if i == 0 else "body"}">{_inline(p)}</p>'
         for i, p in enumerate(paras))
 
 
-def _ask_block(d: dict | None, settled: bool) -> str:
+def _ask_block(d: dict | None, settled: bool, resolver: dict | None = None) -> str:
     """A `**Decide:**` paragraph as a QUESTION plus a real list — or "" if it isn't one.
 
     ⛔ REPORTED BY THE READER, 2026-08-31, from the live page: the options ran
@@ -310,6 +311,16 @@ def _ask_block(d: dict | None, settled: bool) -> str:
     options. ⚠ It does NOT claim WHICH option was taken — `[resolved: <id>]`
     records the entry that resolved the ask, never the choice, so the page has no
     way to know. Saying "these were the options" is the most it can honestly say.
+
+    ⟳ BACKLOG #83(A), 2026-09-04. That paragraph is still true about the CHOICE
+    and was read too broadly: `[resolved: <id>]` names the RESOLVING ENTRY, and
+    that entry was on the page the entire time, unrendered — the "it existed the
+    entire time, it was never rendered" shape this file has now recorded three
+    times. `resolver` is that entry, so a settled ask can say who settled it and
+    link to their card. MEASURED across all 6 links in the store: the resolver
+    TITLE states the outcome in plain words in 6 of 6, so rendering the title
+    buys what recording the option would have — without a `FLAG` grammar change,
+    which is the regex that produced a High this same week (row #82).
     """
     if not d or not d["options"]:
         return ""
@@ -344,8 +355,17 @@ def _ask_block(d: dict | None, settled: bool) -> str:
     else:
         head = "<strong>Decide:</strong>"
     cls = "ask settled" if settled else "ask"
+    # ⚠ ONLY on a settled ask, and only when a resolver was actually found. A
+    # live ask has nothing to point at, and an id whose target is missing is
+    # exactly the case `resolvers()` already declines to record — so "no link"
+    # here means "nothing resolved this", never "the link broke".
+    by = ""
+    if settled and resolver:
+        by = (f'<p class="settled-by">settled by '
+              f'<a href="#{_html.escape(_slug(resolver["id"]))}">'
+              f'{_html.escape(resolver["id"])}</a>: {_inline(resolver["title"])}</p>')
     return (f'<div class="{cls}"><p class="ask-q">{head} '
-            f'{_inline(d["question"])}</p><ul class="opts">{items}</ul></div>')
+            f'{_inline(d["question"])}</p><ul class="opts">{items}</ul>{by}</div>')
 
 
 def _store_label(p) -> str:
@@ -598,16 +618,32 @@ def cleared_ids(entries: list[dict]) -> set[str]:
     raw authored flag that nothing ever clears while the tray derived its list
     here. One page, one question, two sources — see the ask-choices spec §1a.
     """
+    return set(resolvers(entries))
+
+
+def resolvers(entries: list[dict]) -> dict[str, dict]:
+    """{cleared_id: the LATER entry that cleared it} — backlog #83(A).
+
+    ⚠ `cleared_ids` is DERIVED from this rather than computed beside it. The
+    badge, the tray and the back-reference now answer from ONE traversal, which
+    is the same reason `cleared_ids` was split out of `unresolved` in the first
+    place: one page, one question, two sources is how the tray came to say
+    "Nothing needs you." while three cards wore a "needs you" chip.
+
+    If two later entries both resolve one ask, the FIRST in file order wins.
+    Ids are positional in an append-only store, so "first" is stable; picking
+    the last would silently re-point an existing link when someone appends.
+    """
     by_id = {e["id"]: e for e in entries if e["id"] and not e["error"]}
-    cleared = set()
+    out: dict[str, dict] = {}
     for e in entries:
         if e["error"]:
             continue
         for r in e["resolves"]:
             t = by_id.get(r)
             if t is not None and _pos(e) > _pos(t):
-                cleared.add(t["id"])
-    return cleared
+                out.setdefault(t["id"], e)
+    return out
 
 
 def unresolved(entries: list[dict]) -> list[dict]:
@@ -989,7 +1025,10 @@ def build(entries, days, prs, pr_error, git_error, window,
     # location it had never opened).
     # ─── What needs you ───
     # ONE computation, read by both the tray below and every card badge (§1a).
-    _cleared = cleared_ids(entries)
+    # ONE traversal, two views — backlog #83(A). `cleared_ids` is `set(resolvers(...))`,
+    # so the badge and the back-reference cannot disagree about what is settled.
+    _resolvers = resolvers(entries)
+    _cleared = set(_resolvers)
     need = unresolved(entries)
     REC_SPAN = ' <span class="rec">recommended</span>'
     _pr_cache: dict[int, str] = {}
@@ -1156,7 +1195,8 @@ def build(entries, days, prs, pr_error, git_error, window,
             flag = (f'<span class="{_bcls}">{_html.escape(_b)}</span>') if _b else ""
             # `settled` is DERIVED from the badge, not from a second reading of the
             # entry — one computation, so the badge and the ask label cannot disagree.
-            prose = _prose(e["plain"], drop_headline=True, settled=_b == "resolved")
+            prose = _prose(e["plain"], drop_headline=True, settled=_b == "resolved",
+                           resolver=_resolvers.get(e["id"]))
             # §2f — a disclosure that discloses NOTHING is a lie about the content.
             # ⚠ The body is prose AND tech. Review round 2 measured that comparing
             # prose TEXT to the title suppressed the fold for a one-sentence entry
@@ -2070,6 +2110,31 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     # its emphasis — the exact failure backlog #83 names as worse than the defect.
     case("the LIVE prose-mark rule is untouched",
          ".entry .prose strong{color:var(--p-mark)" in _sh, True)
+
+    # ── BACKLOG #83(A): a settled ask says WHO settled it ────────────────────
+    # `_ask_block`'s own docstring states the gap: "[resolved: <id>] records the
+    # entry that resolved the ask, never the choice, so the page has no way to
+    # know". True of the CHOICE — but the RESOLVER is right there and unrendered,
+    # the "it existed the entire time, it was never rendered" shape this file has
+    # recorded twice. MEASURED across all 6 links in the store: the resolver
+    # TITLE already states the outcome in plain words in 6 of 6.
+    # ⚠ Deliberately NOT the chosen option: that needs a FLAG grammar change, and
+    # that regex produced a High this same week (the empty `[resolved:]`, row 82).
+    # ⚠ THE TITLE LINE IS LOAD-BEARING IN THIS FIXTURE. The first non-blank line
+    # after the header IS the title, and `drop_headline=True` removes it from the
+    # prose — so a `**Decide:**` written there never reaches `_ask_block` and the
+    # options render as collapsed prose ("- option one - option two"). Measured
+    # while writing this case; the first draft asserted against a card that had
+    # no ask block in it at all.
+    _ask_src = ("## 2026-08-28 [needs-you]\nSomething needs deciding.\n\n"
+                "**Decide:** pick one.\n- option one\n- option two\n\n"
+                "## 2026-08-29 [resolved: 2026-08-28/1]\nYou chose option one.\n")
+    _ae = parse_entries(_ask_src)
+    _ah = _build1(_ae, when="2026-08-29")
+    _acard = _fragment(_ah, "2026-08-28-1")
+    case("a settled ask links its resolver", 'href="#2026-08-29-1"' in _acard, True)
+    case("a settled ask states the outcome in the resolver's own words",
+         "You chose option one." in _acard, True)
 
     # Task 3 defines its OWN tag-stripper. Sharing one across two self-test
     # regions crashed with UnboundLocalError in plan review round 1 — this block
