@@ -1,0 +1,19 @@
+{
+  "attempts": [
+    "  gpt-5.6-sol: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.6-terra: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.6-luna: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.5: ok \u2014 3121 chars"
+  ],
+  "exit_code": 0,
+  "gate_ran": true,
+  "intrusions": [
+    "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/docs/reviews/code-mutation-drift-report-contract-r5-claude.md: CREATED by the agent during the run",
+    "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/docs/reviews/code-mutation-drift-report-contract-r5-coordinator.md: CREATED by the agent during the run"
+  ],
+  "model": "gpt-5.5",
+  "reason": "3121 chars",
+  "review": "codex-code-r5b.md",
+  "schema": 1,
+  "tool": "codex-review"
+}

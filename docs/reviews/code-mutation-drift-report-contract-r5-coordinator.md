@@ -90,3 +90,99 @@ anchors*, which by construction cannot see a weakening. Another round finds a ni
 
 No fix is applied in this commit. The findings are recorded; the fold is a separate slice, and
 which axis it takes is a decision for the human given the Phase 6 recommendation above.
+
+---
+
+# ADDENDUM — the re-dispatched Codex half (`r5b`) came back, and it changes two things
+
+## 1. The brief correction WORKED, and it paid for itself
+
+The reading-only run reported `NOT RUN` for both suites. The re-run, with the corrected brief,
+executed:
+
+```
+--self-test                 183/183 passed
+--mutate .                  7 file(s), 176 mutation(s), 0 survivor(s)
+```
+
+plus five targeted temp-copy probes, each with a real count:
+
+```
+if ev["trustworthy"]: -> if True:              red, 181/183
+return rc == 0 and "passed" in out -> rc == 0  red, 179/183
+NOT RUN if untrustworthy -> if False           red, 180/183
+header appends ", caught {caught}"             red, 182/183
+DELETE the corrected neutral header line       GREEN, 183/183   <- the new finding
+```
+
+**It found a Medium the reading run could not have found**, because finding it required deleting a
+line and observing that nothing went red. That is the concrete cost of a degraded gate, measured
+rather than argued: same reviewer, same model, same scope, one sentence of brief difference.
+
+## 2. NEW — Medium: a vacuous absence-assertion (Codex r5b)
+
+`scripts/check-plan-code.py:2305-2306`:
+
+```python
+case("...and the word `caught` appears NOWHERE under that refusal",
+     "caught" in evidence(_ev_ac), False)
+```
+
+Deleting the neutral replacement line at `:1033` (`mutation entries recorded: …`) leaves the suite
+at **183/183**. The case proves a forbidden word is *absent*; it does not prove the replacement line
+is *present*. A refusal that printed nothing at all would satisfy it.
+
+This is the **vacuous absence-assertion** class this project has recorded before. It is the same
+root as Claude's H1 — *assert the property, not the mechanism* — and both fixes are the same shape.
+
+**Consumer enumeration agrees between the halves:** producers at `:785`, `:985`; live consumers at
+`:1030`, `:2459`, `:2506`. Neither half found a fourth. Two independent greps concurring is the
+strongest evidence available here that the "eighth consumer" is *not* a fourth consumer — it is
+under-asserted coverage of the three that exist.
+
+## 3. ⚠ THE INTRUSION DETECTOR RAISED A FALSE ACCUSATION — new finding, not in either half
+
+The wrapper reported:
+
+```
+⚠ THE AGENT WROTE BEHIND THE WRAPPER:
+    docs/reviews/code-mutation-drift-report-contract-r5-claude.md — CREATED by the agent
+    docs/reviews/code-mutation-drift-report-contract-r5-coordinator.md — CREATED by the agent
+```
+
+**Both claims are false.** `git status --porcelain` was clean apart from the new verdict file, and
+`git log` attributes both files to commit `8c8179be`. Timestamps:
+
+| time | event |
+|---|---|
+| ~08:03 | `r5b` dispatched; `dir_snapshot(docs/reviews/)` taken |
+| 08:09:15 | the **Claude** reviewer writes its review there |
+| 08:11:31 | the **coordinator** writes this file there |
+| ~08:14 | `r5b` ends, diffs the directory, attributes both to Codex |
+
+`dir_snapshot` compares a before/after listing of one directory. It therefore cannot distinguish
+*"the agent wrote this"* from *"this directory changed during the window"* — and **dual review
+guarantees a concurrent writer by construction**, since both halves are told to write into
+`docs/reviews/`.
+
+Severity: it is fail-LOUD and did not corrupt anything, and the capture was still valid. But it
+writes the false accusation into `verdicts/codex-code-r5b.verdict.json`, which **CI reads**, and a
+detector that cries wolf is one people learn to skip — the same "warning becomes noise" failure the
+warn-only decision elsewhere is being careful about.
+
+Same class as the recorded incident where two reviewers sharing one Postgres produced a FALSE
+BLOCKING: *re-measure alone before believing a red on a shared resource.*
+
+**Shape of a fix (not decided, not started):** attribute by writer rather than by window — e.g.
+snapshot immediately before and after the `codex exec` child only, or record the wrapper's own
+expected outputs and the mtimes it observed, or give each half its own output directory so the two
+reviewers do not share a watched namespace. The last is probably cheapest and also removes the
+stem-collision hazard that `--out` already had to work around.
+
+## Revised recommendation to the human — unchanged in direction, firmer in evidence
+
+Round 5 now has **three** independent findings pointing at one root: coverage asserts *mechanisms*
+(this exact line, deleted) rather than *properties* (the refusal prints no tally, whatever its
+wording). Claude's H1, Codex's Medium, and Codex's Low are the same defect at three sites.
+
+**Do not open round 6 on this axis.** Fix the axis instead.
