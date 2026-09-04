@@ -128,6 +128,45 @@ urgent.
 
 ---
 
+## Finding 4 — 🟠 **The guard whose job is "one mechanism per concern" never runs on a PR**
+
+Found while verifying finding 2, and it is the sharpest item here because of *which* guards they are.
+
+```bash
+grep -c check-guard-coverage        .github/workflows/ci.yml   # 0
+grep -c check-vocabulary-collisions .github/workflows/ci.yml   # 0
+grep -c check-schema-gates          .github/workflows/ci.yml   # 0   <- their only automated caller
+```
+
+Their sole automated caller is `scripts/check-schema-gates.sh` (gates **3/15** and **5/15**,
+`:37` and `:43`), which is not in `ci.yml` and is documented at `docs/dev-process.md:159` as needing
+a live Postgres.
+
+**But neither guard needs a database.** Executed standalone, nothing else running:
+
+```
+python3 scripts/check-guard-coverage.py         rc=0
+python3 scripts/check-vocabulary-collisions.py  rc=0
+```
+
+They ride a database-requiring **entry point** they do not use. `check-ratchet-contract.py` passes
+them because it asks *"does this guard have a caller?"* — and they do. It does not ask whether that
+caller ever runs.
+
+⚠ **Which guards these are is the point.** `check-vocabulary-collisions.py`'s whole subject is *one
+mechanism per concern* — findings 1 and 2 above are both duplicate-mechanism findings. The guard
+that exists to catch this class is the one CI cannot see. `check-guard-coverage.py` is the one
+asserting every SEQUENCE guard is mutated.
+
+**Known class, recurring.** Three ratchets once went eight days untestable for exactly this reason —
+their entry point needed docker, which was read as *the logic* needing a database. The rule and the
+fetch are still married here.
+
+**Shape of fix (not decided):** the structural gates move to a caller with no database precondition,
+or `ci.yml` invokes them directly. Cheap either way; the value is that the two guards most relevant
+to this review start running on every PR.
+
+
 ## What we decided this milestone that isn't written down
 
 The question `dev-process.md:123` requires. Three answers, and the first is the significant one:
