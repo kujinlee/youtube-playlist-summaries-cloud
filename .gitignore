@@ -95,6 +95,12 @@ playwright/.auth/
 # list is neither — it is per-machine execution state, like the two sentinels above.
 .claude/plans/
 
+# Warn-only firings of scripts/check-banner-armed.py — one tab-separated line per turn that
+# announced `## ▶ STEP i of N` with nothing armed. Per-machine evidence, not a shared record: it
+# exists so the decision to promote that check from warning to blocking rests on a COUNT rather
+# than an impression.
+.claude/banner-warnings.log
+
 # Generated pages never belong at the repo root. MEASURED 2026-08-30: `frag.html`
 # and `rel-nested.html` — two rendered dashboards — were committed in 96ae502 by
 # `git add -A`. They were written by the round-4 breach sweep, which applies every
