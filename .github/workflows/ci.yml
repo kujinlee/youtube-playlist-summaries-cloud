@@ -160,30 +160,32 @@ jobs:
         run: python3 scripts/check-plan-task-order.py
 
       # ⚠ TWO MORE GUARDS CI COULD NOT SEE — Phase 6 architecture review #7, finding 4.
-      # Same shape as the three above, one layer further out. Both were referenced by
-      # ci.yml ZERO times; their only automated caller was scripts/check-schema-gates.sh
-      # (gates 3/15 and 5/15), which is ALSO referenced zero times here and needs a live
-      # Postgres. So they rode a database-requiring entry point they never used.
+      # Their only automated caller was scripts/check-schema-gates.sh (gates 3/15 and 5/15),
+      # itself referenced zero times here.
       #
-      # MEASURED 2026-09-04, no database running: both exit 0 standalone, and their own
-      # docstrings say so — check-vocabulary-collisions.py:128 and
-      # check-guard-coverage.py:272 both record "the rule never needed the container".
-      # That is the separate-the-RULE-from-the-FETCH defect, already recorded once in
-      # this repo when three ratchets went eight days untestable for the same reason.
+      # ⟳ CORRECTED 2026-09-04, BY THIS WORKFLOW GOING RED. The first version of this block ran
+      # the guards' BARE ENTRY POINTS and claimed "neither needs a database". That claim was
+      # FALSE and the claim's own evidence was taken on a machine with a Supabase container
+      # running. Both import `read_catalog` from m4_base_db, which shells out to the
+      # `supabase_db_*` container; with no container it exits 2 CANNOT RUN, which is exactly
+      # what happened here:
+      #     CANNOT RUN — could not read the catalog from 'postgres'. TREAT THIS AS NOT RUN.
+      #     Error response from daemon: No such container: supabase_db_...
       #
-      # ⚠ WHY THIS ONE MATTERS MOST: check-vocabulary-collisions.py enforces "one
-      # mechanism per concern", which IS findings 1 and 2 of architecture review #7.
-      # The guard that would have caught that class was the guard CI could not run.
-      - name: Guard coverage (every guard classified; SEQUENCE guards reconcile)
-        run: python3 scripts/check-guard-coverage.py
-
-      - name: check-guard-coverage self-test
+      # This repo already records the opposite half of this mistake — three ratchets went eight
+      # days untestable because their ENTRY POINT needed docker and that was read as the LOGIC
+      # needing a DB. This was the mirror: the logic is genuinely pure
+      # (check-vocabulary-collisions.py:125 "PURE — catalog rows in ... No database"), and that
+      # was read as the entry point being pure too.
+      #
+      # So CI runs the SELF-TESTS, which exercise the pure rules and need nothing. The full
+      # catalog-reading run stays in check-schema-gates.sh where a database exists. This buys
+      # real coverage of the RULES — which was the actual gap — and does not pretend to cover
+      # the fetch.
+      - name: check-guard-coverage self-test (rules only; the full run needs a live catalog)
         run: python3 scripts/check-guard-coverage.py --self-test
 
-      - name: Vocabulary collisions (one mechanism per concern)
-        run: python3 scripts/check-vocabulary-collisions.py
-
-      - name: check-vocabulary-collisions self-test
+      - name: check-vocabulary-collisions self-test (rules only; full run needs a live catalog)
         run: python3 scripts/check-vocabulary-collisions.py --self-test
 
       # The warn-only banner detector (task #224 residue). Its --self-test runs here;
