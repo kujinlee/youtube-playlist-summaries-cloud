@@ -5,7 +5,7 @@
     python3 scripts/check-plan-code.py <plan.md> --evidence # ...and print the evidence block
     python3 scripts/check-plan-code.py <plan.md> --compare .   # ...and diff vs the REAL files
     python3 scripts/check-plan-code.py <plan.md> --verify-evidence   # ...and FAIL if it is stale
-    python3 scripts/check-plan-code.py --self-test          # 183 cases
+    python3 scripts/check-plan-code.py --self-test          # 189 cases
 
 ⚠ `--compare` takes the REPO ROOT, and each file tag is resolved under it as the
 repo-relative path it already is. It took the containing DIRECTORY until round 5,
@@ -2231,6 +2231,58 @@ def _self_test() -> int:
                 # ...and the FILE count goes too. The printer's own comment says a file count
                 # beside a refusal asserts work that measured nothing about mutations.
                 case("...and that includes the file count", "file(s)" in _mut_out, False)
+
+            # ⟳ r5 H1 — THE OTHER TWO REFUSAL PATHS. The case above drives ONE of the three ways
+            # `--mutate` reaches its refusal branch (after-control failure: counts complete, every
+            # entry measured). `grep -n 'main(["--mutate"'` returned exactly one hit, and r5 showed
+            # that FOUR weakenings of the gate survived at 183/183 because nothing exercised the
+            # other two paths.
+            #
+            # These assert the PROPERTY — a run that earned no verdict prints no tally — rather
+            # than the MECHANISM (this particular `if`). That distinction is the whole point of the
+            # fix: the manifest's mutations hardcode the gate OPEN, which only catches DELETION.
+            # A weakening keeps the `if` and adds a disjunct, and only a case that reaches the path
+            # can see it.
+            def _mutate_output(root) -> str:
+                """`--mutate` mode's stdout for `root`. The real entry point, not a helper."""
+                _s, sys.stdout = sys.stdout, io.StringIO()
+                try:
+                    main(["--mutate", str(root)])
+                    return sys.stdout.getvalue()
+                finally:
+                    sys.stdout = _s
+
+            def _no_tally(out: str) -> tuple:
+                """(refuses, prints a file count, prints a survivor count). One shape, two paths."""
+                return ("NOT MEASURED" in out, "file(s)" in out, "survivor(s)" in out)
+
+            # PATH 2 — BEFORE-CONTROL FAILURE. `mutate_delivered` returns early, so `declared` is
+            # still None while `ev["files"]` ALREADY holds the control runs. A tally here reports
+            # file counts for work that measured nothing about mutations, and prints this project's
+            # success sentence ("0 survivor(s)") over a run that never produced a verdict.
+            with tempfile.TemporaryDirectory() as _tdA:
+                _rA = pathlib.Path(_tdA); _mini(_rA, val=2)   # val=2 -> the control suite goes red
+                case("a run whose CONTROL failed prints no tally at all (r5 H1, path 2 of 3)",
+                     _no_tally(_mutate_output(_rA)), (True, False, False))
+
+            # PATH 3 — TOTAL SHORTFALL. Every declared mutation's anchor is absent, so
+            # `run_mutations` skips all of them: `declared > 0` while `ev["mutations"]` is empty.
+            # The counts are not merely incomplete, they are ZERO — and "0 of 2 produced a verdict"
+            # must not render as a clean "0 survivor(s)".
+            with tempfile.TemporaryDirectory() as _tdB:
+                _rB = pathlib.Path(_tdB); _mini(_rB)
+                (_rB / "scripts" / "mutations" / "thing.json").write_text(json.dumps([
+                    {"name": "anchor absent one", "file": "scripts/thing.py",
+                     "edits": [["NO SUCH TEXT ONE", "x"]], "expect": "value is one"},
+                    {"name": "anchor absent two", "file": "scripts/thing.py",
+                     "edits": [["NO SUCH TEXT TWO", "y"]], "expect": "value is one"}]))
+                EXPECTED_MUTATIONS["scripts/thing.py"] = 2
+                _outB = _mutate_output(_rB)
+                EXPECTED_MUTATIONS["scripts/thing.py"] = 1
+                case("a TOTAL SHORTFALL prints no tally either (r5 H1, path 3 of 3)",
+                     _no_tally(_outB), (True, False, False))
+                case("...and it names the arithmetic, so dropped entries are not invisible",
+                     "0 of 2" in _outB, True)
             # ⟳ r4 M1. `mutate_delivered` called a control green on rc 0 ALONE, while `check()`
             # also required a printed result. A script with no `__main__` exits 0 silently, so
             # the weaker producer certified a control that was never shown to execute.
@@ -2304,6 +2356,13 @@ def _self_test() -> int:
         # output because it only asserted the header string was gone.
         case("...and the word `caught` appears NOWHERE under that refusal",
              "caught" in evidence(_ev_ac), False)
+        # ⟳ r5b Medium (Codex, executing). The case above is an ABSENCE assertion, and on its own
+        # it is VACUOUS: measured by deleting the neutral replacement line entirely on a temp copy
+        # — the suite stayed at 183/183. "The forbidden word is gone" is satisfied by a refusal
+        # that prints nothing at all, which is a different defect wearing the same green.
+        # An absence assertion needs its presence twin, or it only proves half a rule.
+        case("...and the NEUTRAL replacement line is PRESENT, not merely the bad one absent",
+             "mutation entries recorded:" in evidence(_ev_ac), True)
         case("...so every entry renders NOT RUN, whatever its own flag says",
              evidence(_ev_ac).count("NOT RUN ") >= len(_ev_ac["mutations"]), True)
         # A SHORTFALL must name the arithmetic. The header used to print len(mutations)
@@ -2312,6 +2371,24 @@ def _self_test() -> int:
                      "mutations": [{"name": "a", "caught": True, "measured": True}]}
         case("...and a SHORTFALL names how many of how many produced a verdict",
              "1 of 3 declared mutation(s) produced a verdict" in evidence(_ev_short), True)
+        # ⟳ r5 H1, SECOND PASS — and this case exists because the FIRST pass at the axis fix was
+        # itself incomplete, which is worth stating rather than hiding.
+        #
+        # That pass added `--mutate` entry-point cases for the before-control and total-shortfall
+        # paths, and they DO catch a weakened printer gate. But `evidence()` is a DIFFERENT
+        # renderer — the durable block, not stdout — and it has its own total-shortfall path.
+        # MEASURED on a temp copy: weakening the refusal to `... and ev.get("mutations")` left the
+        # suite at 187/187, because `_ev_short` above is a PARTIAL shortfall (1 of 3, list
+        # non-empty) and nothing exercised the TOTAL one (0 of 2, list EMPTY).
+        #
+        # Same defect the whole round is about: cover one consumer, leave its sibling. The fixture
+        # differs from `_ev_short` in exactly the attribute the weakened predicate reads.
+        _ev_none = {**_ev_ac, "declared": 2, "mutations": []}
+        case("a TOTAL shortfall is refused by evidence() too — empty list, not merely short",
+             ("NOT MEASURED" in evidence(_ev_none),
+              "mutations declared and run" in evidence(_ev_none)), (True, False))
+        case("...and it still names the arithmetic when NOTHING produced a verdict",
+             "0 of 2 declared mutation(s) produced a verdict" in evidence(_ev_none), True)
         # F2-S3, ASSERTED RATHER THAN ASSUMED: a trustworthy run prints exactly the line it
         # printed before r3 touched this function. The gate must be invisible when earned.
         case("...and a trustworthy run still prints the plain tally, unchanged",

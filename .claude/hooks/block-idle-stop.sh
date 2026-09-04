@@ -52,7 +52,20 @@ printf '%s' "$INPUT" | python3 "$REPO_ROOT/scripts/check-banner-armed.py" --deci
 BANNER_RC=$?
 # 0 = quiet. 1 = warn. 2 = CANNOT RUN (it could not read the transcript) — surfaced, not silent,
 # but still never blocking: a broken detector must not be able to wedge a turn it only observes.
-if [[ "$BANNER_RC" != "0" ]]; then
+# ── Third question, added 2026-09-04 (user-reported) ────────────────────────────────────────
+# A background watcher that polls CI already existed and worked — it caught a red this session.
+# It was armed for ONE of three pushes, and after the other two the user had to ask whether CI had
+# finished. Same shape as the two checks above: a mechanism that works, unarmed.
+#
+# Its sentinel is SHA-scoped, so a new push un-arms it by design — "armed once, covered forever"
+# is the bug, not the fix. Warn-only; it costs no network call on the default branch.
+printf '%s' "$INPUT" | python3 "$REPO_ROOT/scripts/check-ci-watched.py" --decide
+CI_RC=$?
+
+# Any non-zero from EITHER observer surfaces as exit 1 — Claude Code's non-blocking error, which
+# shows stderr to the human and lets the stop proceed. Neither may return 2: a detector that only
+# observes must not be able to wedge a turn it has no stake in.
+if [[ "$BANNER_RC" != "0" || "$CI_RC" != "0" ]]; then
     exit 1
 fi
 exit 0

@@ -3314,3 +3314,55 @@ Branch `queued-jobs-222-p6-223`, stacked on `task-224-begin-plan` (PR #218). Thr
   reading. Re-dispatched as `codex-code-r5b`. Corrected rule in the coordinator doc: forbid the
   review ARTIFACT and repo writes, never "disk".
 - **NOT FOLDED.** Findings recorded only.
+
+## 2026-09-04
+Three backlog items filed, and the reason you had to ask "is CI done yet" turned out to be embarrassing.
+
+You asked me to file three things I had found, so they are now written down properly rather than
+living in a review document nobody re-reads: a review tool that accuses itself of writing files it
+did not write, a tidy-up that would silently reintroduce a bug we fixed yesterday, and a guard whose
+documentation promises slightly more than it delivers.
+
+While filing them I nearly created a fourth problem. An existing item pointed at "item 92" — and
+item 92 had never been written. Taking that number for one of mine would have quietly redirected
+the old pointer at something unrelated, which is the sort of thing nobody notices for months. The
+old item now says the thing it was pointing at was never filed, and why leaving it unnumbered is
+deliberate.
+
+**Then the more interesting one.** You noticed I had no way of knowing when CI finished, and you
+were right about the symptom. The cause was not what either of us assumed: I *did* have a watcher,
+it worked, and it had already caught a real failure earlier in the day. I had armed it for one push
+out of three. So the tool was fine and arming it was the problem — which is now the third time today
+that a perfectly good check sat switched off.
+
+There is now a check at the end of every turn that notices when CI is running and nobody is
+listening. It cannot start the watcher for me, so it is a nag rather than a cure, and the code says
+so plainly instead of implying otherwise. The design detail that matters: it remembers *which
+commit* is being watched, so pushing new work automatically switches it back on. "I armed it once,
+so I'm covered" is precisely the mistake it exists to catch.
+
+It earned its place within the hour: this very change went red in CI, and I knew before you did.
+<!--tech-->
+Branch `backlog-and-axis-fix` → PR #221. Commits `896f6ef5` (backlog), `5a641e19` (CI watcher).
+
+- **Backlog #92 🟡 / #93 🟠 / #94 🟢** — filed at the user's instruction. #92: `dir_snapshot` diffs a
+  directory across the run window, so it cannot separate *"the agent wrote this"* from *"this
+  directory changed"* — and dual review guarantees a concurrent writer, since both halves write into
+  `docs/reviews/`. #93: the M-A trap — harmonising the two printer gates is what
+  `check-vocabulary-collisions.py` encourages and it reinstates r4's Blocking with CI green; the
+  gates differ ON PURPOSE (`:2459` omits the `declared is None` escape). #94: the anti-nag is
+  per-continuation-chain; a background-task notification starts a fresh turn with
+  `stop_hook_active` false, so it blocked three times in one session.
+- ⚠ **#91 referenced a `#92` that never existed.** Claiming the number would have rebound the
+  pointer. Corrected in place with the reason stated — same class as the recorded positional-read
+  defect that closed two open items by hitting the wrong cell.
+- **`scripts/check-ci-watched.py`** (22 cases), Stop-hook question #3. Measured: watcher armed for
+  `26698462` ✅, absent for `cb4bfc7b` and `a62de138` ❌. **SHA-scoped sentinel** —
+  `decide(SHA, OLD_SHA, pending) -> WARN` is a dedicated case. An **unknown** check state counts as
+  unresolved, never as done. **No `gh` call at all** on the default branch or a branch with no
+  upstream: measured 0.03s.
+- ⚠ **Option B (a push-and-watch command) REJECTED with a reason:** unlike `begin-plan.py`, whose
+  banner is independently required and human-checked, there is no artifact to couple to, so it
+  degrades to a convention with a file attached.
+- **This entry exists because the ratchet refused the branch** — 5 tracked files changed, no entry.
+  The gate worked; I skipped its step.

@@ -453,3 +453,49 @@ there and invites a decision that does not exist.
 * **When one option is obviously superior** — decide, say what you decided and why, and move on.
 * **For a mechanical constraint** — an ordering forced by the code is not a decision. Say it is
   forced.
+
+---
+
+## Closing a job: the CHECK / RESULT table (added 2026-09-04)
+
+**Read when:** you are about to report that a unit of work is done.
+
+Do not close with a paragraph. Close with a table, one row per claim, evidence in the row:
+
+```
+| check                  | result                                            |
+|------------------------|---------------------------------------------------|
+| Rows 92, 93, 94 exist  | ✅ all three                                       |
+| Old wording gone       | ✅ absent — checked for absence, not just new text  |
+| Commit                 | `896f6ef5`                                        |
+| Pushed                 | ✅ same SHA on origin                              |
+```
+
+**Why the format and not prose.** MEASURED 2026-09-04: a correct prose report of three filings plus
+a pointer repair drew the reply *"Have you done this too?"* — because a paragraph asserting the work
+is indistinguishable from a paragraph asserting it wrongly. The same content as a table ended the
+question. The user's framing: *"this kind of visible marker is important for comprehensibility."*
+
+### Three rules
+
+1. **One row per claim.** Bundling four assertions into a sentence means a reader who doubts one
+   must re-check all four.
+2. **Evidence in the row.** A SHA, a count, a command's output. Not *"successfully"*.
+3. ⛔ **Every row must be a check that could have come back ❌.** A table whose rows can only say ✅
+   is a decorated assertion — worse than the paragraph, because the format implies verification that
+   did not happen. Ask each row: *what would have made this fail, and did I run that?*
+
+### Two traps, both measured the same day
+
+* **Presence is not absence.** Confirming the NEW text is there passes even if an edit appended
+  instead of replacing, leaving the broken version in the file too. Assert the old text is **gone**.
+* **The mislabelled row.** An agent printed *"(none listed = nothing left open)"* under a list
+  containing one item. Right data, wrong label — worse than no label, because the label is what the
+  reader keeps.
+
+### Where this sits
+
+Three affordances, three moments: the **step banner** (`## ▶ STEP n of N`) for *what is happening
+now*; the **option list** with rationale and trade-offs for *what you must decide*; this table for
+*what was actually verified*. See *Presenting a DECISION to the human* above, and
+`docs/portable-practices.md` §13–§14.

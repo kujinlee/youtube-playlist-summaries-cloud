@@ -801,3 +801,67 @@ duplicates another is a choice wearing a menu.
 During **design**, use prose — options force a fork before the shape is clear. When one option is
 obviously superior, **decide** and say why. And when something is a mechanical constraint rather than
 a choice, say it is forced instead of dressing it as an option.
+
+---
+
+## 14. End a job with a table of CHECKS AND RESULTS, not a paragraph saying it went well
+
+**Measured 2026-09-04.** An agent reported filing three items and repairing a dangling reference.
+The human's reply was:
+
+> *"Have you done this too?"*
+
+The prose report had been accurate and was not believable, because a paragraph saying *"I filed the
+items and fixed the pointer"* is indistinguishable from a paragraph saying so incorrectly. The
+follow-up was answered with a table — check, result, one row each — and the question did not recur.
+
+The human's own framing afterwards: *"this kind of visible marker is important for
+comprehensibility."*
+
+### The rule
+
+Close a unit of work with a table whose rows are **a claim paired with the evidence for it**:
+
+| check | result |
+|---|---|
+| Rows 92, 93, 94 exist | ✅ all three |
+| Old wording gone | ✅ absent — checked for absence, not just for the new text |
+| Commit | `896f6ef5` |
+| Pushed | ✅ same SHA on origin |
+
+Three properties make it worth more than prose:
+
+1. **One row per claim.** A paragraph bundles four assertions into one impression, and a reader who
+   doubts one of them has to re-read all four to find it.
+2. **The evidence is in the row**, not implied by the tone. `896f6ef5` and *"same SHA on origin"*
+   are checkable; *"pushed successfully"* is not.
+3. **Absence and presence are different checks, and the table forces you to say which.** Confirming
+   the *new* text is present passes even if an edit appended rather than replaced — leaving both the
+   correct and the broken version in the file. Asserting the old text is **gone** is the check that
+   settles it.
+
+### ⛔ What makes the table a lie
+
+**Every row must be a check that could have come back ❌.** A table of rows that could only ever
+say ✅ is a decorated assertion, and it is more dangerous than the paragraph it replaced, because
+the format implies verification that did not happen. Ask of each row: *what would have made this
+fail, and did I actually run that?* If the answer is "nothing", delete the row or replace it with
+one that can fail.
+
+The related trap is the **mislabelled row**. Measured the same day: an agent printed
+*"(none listed = nothing left open)"* directly under a list that visibly contained one item. The
+data was right and the label was wrong — which is worse than no label, because the label is what
+gets remembered.
+
+### Why this is one family with [§13](#13-an-option-list-must-carry-its-own-rationale-and-trade-off--and-every-option-must-produce-different-work)
+
+Both are **comprehensibility affordances**, and they cover the two moments a human needs to act:
+
+* **Before** — an option list carries its rationale and trade-offs, so a decision can be made
+  without reconstructing the analysis.
+* **After** — a check/result table carries the evidence, so a completion can be believed without
+  re-running the work.
+
+Between them sits the **step banner** (`## ▶ STEP n of N`), which answers *what is happening right
+now*. Prose is the right medium for none of these three: it is unstructured exactly where the reader
+needs structure.
