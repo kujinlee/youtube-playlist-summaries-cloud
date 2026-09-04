@@ -1716,6 +1716,81 @@ six delivered scripts resolve `Path.home()` at module level.
 
 ---
 
+## Guard inventory population — backlog #72/#73 — anchor `status-visibility` — 🏗 SPEC + PLAN ONLY, NOT IMPLEMENTED
+
+⚠ **This section did not exist until 2026-09-03**, thirteen commits into the branch — the same
+process drift recorded once before for backlog #23 slice A. A slice with a spec, a plan and fourteen
+review documents and no roadmap entry is invisible to the one file that survives compaction.
+
+Branch `fix/guard-inventory-population`, unpushed, no PR. ⟳ **CORRECTED 2026-09-03: this line said
+"zero lines of `scripts/` have changed" and that stopped being true the same day.** The branch is
+named for THIS slice but the code it ships is the *mutation-drift-report contract* below —
+`scripts/check-plan-code.py` and its mutation manifest. The guard-inventory work is still spec + plan
+only, and its plan gate is still armed. Two bodies of work, one branch; stated rather than split,
+because the plan document executes nothing and rebasing 30 commits buys no safety.
+
+- [x] **Spec v4** — `docs/superpowers/specs/2026-09-02-guard-inventory-population-design.md`, three
+      dual rounds, 30 findings. The shape (declare-out) was approved at v1 and never challenged.
+      The declaration is an **AST node** — `NOT_A_GUARD = "<reason>"` at module level, placed after
+      the `from __future__` import. Two text grammars were tried and both failed. **The count is 28,
+      not 29**: `build-m4-schema.py` is OUT by the criterion, which beats the memory heuristic that
+      argued it IN.
+- [x] **Plan v4** — `docs/superpowers/plans/2026-09-02-guard-inventory-population.md`, 10 tasks,
+      four Post-Plan Gate rounds, **all NOT CONVERGED**. Round 4's Claude half applied T1–T9 in a
+      temp tree: `guards discovered (28)`, `ratchet contract OK`, `self-test 35/35`,
+      **167 mutations / 0 survivors**, `check-docs` clean. **It builds.** Rounds 1–2 said it could
+      not run; rounds 3–4 say it runs and is under-covered.
+- [ ] **Round 4 findings are NOT folded — there is no v5.** Both halves, all
+      inventory-reconciliation. The Blocking: T4 promises a `read_population` mutation that T7 makes
+      impossible, because `check-plan-code.py:625-626` returns before the `copytree` at `:630`.
+      **Decide the count in ONE place** — six entries, `EXPECTED_MUTATIONS` 6, sum **168**.
+- [x] **⟳ PHASE 6 CONVENED AND RUN (2026-09-03)** — `docs/reviews/architecture-review-2026-09-03.md`.
+      Chosen by the user over a fifth round, on the cause not the count: **seven consecutive rounds
+      whose new defects were inside the previous round's fixes.**
+- [x] **DECIDED 2026-09-03 — the user chose candidate 2, and testing its premise REFUTED it.**
+      Deriving `EXPECTED_MUTATIONS`' key set would delete the manifest **deletion detector**:
+      `:592` is `got = counts.get(target, 0)`, so a vanished manifest is caught only because the
+      hand-maintained key still names it. Measured on a temp copy. **Candidate 2 WITHDRAWN.**
+- [x] **⟳ BUILT 2026-09-03 — candidate 2′: the harness stops reporting a verdict it did not earn.**
+      Spec `docs/superpowers/specs/2026-09-03-mutation-drift-report-contract-design.md` (3 dual
+      rounds), code in `4c3d3390` + `7166921f` + `11512f58` + the r3 fold. `trustworthy` defaults
+      **False** and is earned through ONE predicate, `verdicts_are_trustworthy`, now holding all
+      **three** clauses — controls green, every declared mutation produced a verdict, every entry is
+      a real verdict. `not_measured_line` is the single renderer for the refusal sentence, with three
+      callers. **177 self-test cases, 32 mutations on this file, EXPECTED_MUTATIONS sum 173.**
+      - ⚠ **SIX consecutive rounds found the defect inside the previous round's fix**, and r3 broke
+        the streak's *cause*: rounds 1–2 and the three spec versions all keyed on a **position**
+        standing in for a semantic property; r3's findings were **scope** failures instead — the
+        named instance fixed and the sibling left. r3's own Claude half confirmed the positional
+        pattern did not recur and could not be broken.
+      - ⚠ **r3's Codex half returned CONVERGED over 2 Blocking + 2 High.** Its checks were each true
+        and confirmed only what r2 had *fixed*, never the producer r2 had *changed*. Adjudication is
+        written into `docs/reviews/code-mutation-drift-report-contract-r3-codex.md` so the verdict
+        cannot later be read as a clearance.
+      - **The Blocking that would have shipped:** `check()` asserted `trustworthy: True` over a run
+        whose control was RED before any mutation — a mutation editing only a comment was certified
+        `caught`. The extracted predicate held one of the contract's two clauses because its
+        signature had no access to the control result. **A shared function holding part of a contract
+        is worse than two copies, because it looks like the whole rule.**
+      - **And the fix had no falsifier.** Four ways to delete or invert r2's new code each left the
+        suite at 164/164, and CI runs exactly that suite. Closed by 8 new mutations + 13 new cases.
+      - **Two mutations were ORPHANED by this round's own refactor** and the pre-flight refused to
+        write the manifest until both were retargeted — anchors bind by TEXT, so improving code
+        unhooks the mutation guarding it while the suite stays green. Third occurrence.
+- [ ] Findings are **deliberately unfiled** pending user triage, per review #4's precedent. Finding
+      **E** is ✅ fixed (`4dc05e89`); **D** (backlog #48's stale stop-hook verdict) is the user's row
+      to edit.
+
+**⚠ `.claude/plan-gate-pending` IS ARMED** and has not converged. Clearing it is a deliberate act.
+
+**The measurement, so nobody re-derives it wrongly.** Four inventories answer *"what does this repo
+check?"*: 26 guards on disk / 9 self-test pins (6 are guards) / 7 mutation manifests (4 are guards) /
+20 scripts named in CI (17 are guards). **18 of 26 guards have neither a self-test pin nor a mutation
+manifest.** Read them by importing the owning module — a string-splitting reader returned **`0` for
+two of the four**, and a zero is indistinguishable from a broken reader.
+
+---
+
 ## Backlog #68 — the Codex review gate can fail silently AND overwrite a filed review — 🟠 HIGH
 
 Filed 2026-08-29 after it happened four times in one run. Three defects in one chain:

@@ -5,7 +5,7 @@
     python3 scripts/check-plan-code.py <plan.md> --evidence # ...and print the evidence block
     python3 scripts/check-plan-code.py <plan.md> --compare .   # ...and diff vs the REAL files
     python3 scripts/check-plan-code.py <plan.md> --verify-evidence   # ...and FAIL if it is stale
-    python3 scripts/check-plan-code.py --self-test          # 158 cases
+    python3 scripts/check-plan-code.py --self-test          # 177 cases
 
 ⚠ `--compare` takes the REPO ROOT, and each file tag is resolved under it as the
 repo-relative path it already is. It took the containing DIRECTORY until round 5,
@@ -369,6 +369,73 @@ def home_escapes(src: str) -> list[str]:
     return out
 
 
+def verdicts_are_trustworthy(m_muts: list[dict], declared: int,
+                             controls_green: bool) -> bool:
+    """May the caller print the mutation tally as a coverage verdict?
+
+    TWO producers build this evidence dict — `mutate_delivered` and `check` — and code
+    review r2 (both halves) found the second printing a timed-out mutation as
+    `1 survivor(s)` and as `SURVIVED <name>`, because only the first had the rule. One
+    function, two callers: a duplicated predicate is a duplicated protocol, and this repo
+    has a script that hunts for exactly that.
+
+    ⚠ THE CONTRACT HAS THREE CLAUSES AND r2's VERSION HELD ONLY TWO. Code review r3
+    (Claude half, B1) found `check()` asserting `trustworthy: True` over a run whose
+    control was RED before any mutation — a mutation editing only a COMMENT was certified
+    `caught`, because every suite was already failing. The extracted helper could not see
+    that: its signature had no access to the control result, so the clause that stops an
+    environmental red reading as a catch was silently dropped on extraction. Widening the
+    signature is the fix; a shared function that holds part of a contract is worse than
+    two copies, because it *looks* like the whole rule.
+
+    1. `controls_green` — the suites were green WITHOUT the mutation, before and after.
+       Every `caught` claims the suite went red BECAUSE of its mutation, and that claim is
+       empty over a suite that was never green.
+    2. Every DECLARED mutation produced a verdict. `run_mutations` skips without appending
+       at three places, so `len(m_muts) < declared` catches all three — and any fourth
+       added later, with nobody re-enumerating them.
+    3. Every entry is a real verdict rather than a cannot-run.
+
+    ⚠ On `.get("measured") is True` — r3 (B6) corrected what this comment used to claim.
+    It said the `is True` bought fail-closed behaviour for a future append site that
+    forgets the key. It does not: `.get()` returns `None` for a missing key, `None` is
+    falsy, and plain truthiness fails closed on that case too. What `is True` actually
+    buys is rejecting a value that is truthy but not `True` — `1`, `"yes"`, a non-empty
+    dict — which is what an append site would produce by writing `measured=rc == 0` style
+    expressions through a JSON round-trip. Both properties are wanted; only the second is
+    this construct's doing, and it now has a case.
+    """
+    return (controls_green
+            and len(m_muts) == declared
+            and all(m.get("measured") is True for m in m_muts))
+
+
+def not_measured_line(ev: dict, subject: str = "") -> str:
+    """The ONE sentence that says a run produced no coverage verdict.
+
+    THREE consumers need it — the `--mutate` printer, the plan-mode printer, and the
+    evidence block. Code review r3 found `evidence()` printing a clean tally over an
+    UNTRUSTWORTHY run because it had none of this: on the after-control path every entry
+    is measured and the count is complete, so nothing in the per-entry data records the
+    failure and only `trustworthy` carries it. That is r2's own defect standing in the
+    third consumer of the same dict.
+
+    ⚠ Writing a third copy of the sentence was the first attempt, and the mutation
+    pre-flight refused it — the new anchor matched TWICE. A second copy of a sentence is a
+    second copy of a rule; `check-vocabulary-collisions.py` exists for exactly that.
+
+    The parenthetical appears ONLY when a shortfall is the reason. On the after-control
+    path the counts are complete and the reason is the CANNOT RUN line above, so
+    "(165 of 165 … produced a verdict)" beside "produced no coverage verdict" would
+    contradict itself — measured 2026-09-03 on F2-S4's first run.
+    """
+    got, want = len(ev["mutations"]), ev.get("declared")
+    short = (f" ({got} of {want} declared mutation(s) produced a verdict)"
+             if want is not None and got != want else "")
+    return (f"NOT MEASURED — {subject}the mutation harness produced no coverage "
+            f"verdict{short}. Treat this as NOT CHECKED.")
+
+
 def run_suite(d: pathlib.Path, name: str) -> tuple[int, str]:
     # A hung suite is a CANNOT RUN, not a traceback. rc 2 is distinct from both the
     # green 0 and the red 1, so a caller cannot read a timeout as either verdict.
@@ -470,7 +537,7 @@ EXPECTED_MUTATIONS = {
     # sides together and leaves the agreement case green. Only breaking the
     # DERIVATION separates them, and that is the regression the seam exists to stop.
     "scripts/check-dashboard-entry.py": 34,
-    "scripts/check-plan-code.py": 21,
+    "scripts/check-plan-code.py": 32,
     # ⟳ 2026-08-31, backlog #76/#77: the shared page chrome. Adding it found TWO
     # vacuous cases of my own — a "dirty tree" assertion compared against a
     # NON-repo, so it differed by the UNKNOWN text and never by the dirty flag,
@@ -581,7 +648,21 @@ def mutate_delivered(root: pathlib.Path) -> tuple[bool, list[str], dict]:
     files gives a red control, and a mutation table over a red control is not evidence.
     """
     muts, problems = load_manifests(root)
-    ev = {"files": {}, "mutations": [], "survivors": [], "tally": {}, "compared": None}
+    # ⟳ 2026-09-03. `trustworthy` answers ONE question: may the caller print the tally as a
+    # coverage verdict? It defaults FALSE, so every path that does not explicitly earn it —
+    # including ones added later — is untrustworthy by construction.
+    #
+    # ⚠ THREE ATTEMPTS AT THIS KEYED ON A POSITION AND ALL THREE WERE WRONG, each caught by
+    # both review halves: "did we reach the copytree" (:630 — the control-failure return is
+    # AFTER it), "did run_mutations return" (:647 — the after-control can still invalidate),
+    # and "which return did we take" (a mutation can be SKIPPED and still reach the normal
+    # return). The property is not a function of control-flow position, so this is arithmetic:
+    # every DECLARED mutation must have produced a verdict, and both controls must be green.
+    # `run_mutations` skips without appending at three places — unknown target file, anchor not
+    # found, empty `expect` — so `len(ev["mutations"]) < declared` catches all three, and any
+    # fourth skip added later, without anyone having to enumerate them again.
+    ev = {"files": {}, "mutations": [], "survivors": [], "tally": {}, "compared": None,
+          "declared": None, "trustworthy": False}
     if problems:
         return False, problems, ev
     counts = {}
@@ -646,20 +727,37 @@ def mutate_delivered(root: pathlib.Path) -> tuple[bool, list[str], dict]:
             return False, report, ev
         ok, m_report, m_muts, m_survivors = run_mutations(d, muts, set(targets))
         ev["mutations"], ev["survivors"] = m_muts, m_survivors
+        # EVERY declared mutation must have produced a verdict. A skipped one leaves the tally
+        # looking complete — 161 of 162 with 0 survivors reads as coverage confirmed.
+        ev["declared"] = len(muts)
         # THE CONTROL AGAIN, AFTER. A prologue proves the tree was good when we STARTED.
         # If it goes bad at mutation 17 — disk, OOM, a peer process — every later suite
         # exits 1, `run_mutations` only distinguishes rc==2, and an environmental red is
         # recorded as `caught` indistinguishably from a real one. Re-running on the
         # restored copy is what turns the control from a prologue into an invariant.
+        #
+        # ⟳ r3 B1: the BEFORE control is already proven green — a red one returns at :677
+        # without reaching here — so this flag starts True and only the after-control can
+        # clear it. It is passed to the predicate rather than overwriting its result,
+        # because the predicate is where the whole contract now lives.
+        controls_green = True
         for name in targets:
             rc, out = run_suite(d, name)
             if rc != 0:
                 ok = False
+                # The tree changed underneath the run, so every 'caught' above may be an
+                # artefact. The counts are real; they are no longer a verdict.
+                controls_green = False
                 m_report.append(
                     f"CANNOT RUN — {name} is no longer green AFTER the sequence (exit "
                     f"{rc}), so the tree changed underneath it. Any 'caught' above may be "
                     f"an artefact of that, not of its mutation. Treat this run as NOT "
                     f"CHECKED.\n    {out[-400:]}")
+        # ONE assignment, AFTER both controls, holding all three clauses. r2 computed this
+        # BEFORE the after-control and then overwrote it, which worked but split one rule
+        # across two statements — and the split is what let `check()` reproduce the bug
+        # with only half of it.
+        ev["trustworthy"] = verdicts_are_trustworthy(m_muts, len(muts), controls_green)
         return ok, m_report, ev
 
 
@@ -729,7 +827,12 @@ def run_mutations(d: pathlib.Path, muts: list[dict],
         # caller read it as one. Measured round 5, M2.
         if rc == 2:
             ok = False
-            ev_muts.append({"name": name, "caught": False, "fails": fails})
+            # `measured` False: this entry EXISTS so the cardinality check still balances,
+            # but it is a cannot-run, not a verdict. Without this the timeout is counted as
+            # a survivor and `trustworthy` stays True — found by the Codex half of the code
+            # review, 2026-09-03, in the fix that exists to prevent exactly this.
+            ev_muts.append({"name": name, "caught": False, "fails": fails,
+                            "measured": False})
             ev_survivors.append(name)
             report.append(
                 f"mutation {name!r}: the suite did NOT COMPLETE ({out.strip()[:120]}). "
@@ -769,7 +872,8 @@ def run_mutations(d: pathlib.Path, muts: list[dict],
         # were still asserting.
         unnamed = [(w, [f for f in fails if w == f]) for w in wants]
         unnamed = [(w, m) for w, m in unnamed if len(m) != 1]
-        ev_muts.append({"name": name, "caught": caught, "fails": fails})
+        ev_muts.append({"name": name, "caught": caught, "fails": fails,
+                        "measured": True})
         if not caught:
             ok = False
             ev_survivors.append(name)
@@ -790,8 +894,13 @@ def run_mutations(d: pathlib.Path, muts: list[dict],
 def check(plan: pathlib.Path, compare: pathlib.Path | None = None) -> tuple[bool, list[str], dict]:
     md = plan.read_text(encoding="utf-8")
     files, muts, problems, tally = extract(md)
+    # ONE contract, TWO producers. `check()` gets the same default-deny `trustworthy` as
+    # `mutate_delivered`: code review r2 (both halves) found this path printing a timed-out
+    # mutation as `1 survivor(s)` and as `SURVIVED <name>` in the evidence block — the exact
+    # class the flag exists to remove, left standing in the sibling producer.
     report, ev = list(problems), {"files": {}, "mutations": [], "survivors": [],
-                                  "tally": tally, "compared": None}
+                                  "tally": tally, "compared": None,
+                                  "declared": None, "trustworthy": False}
     if not files:
         report.append("no `<!-- file: … -->` tagged Python blocks found — nothing to assemble")
         return False, report, ev
@@ -808,6 +917,10 @@ def check(plan: pathlib.Path, compare: pathlib.Path | None = None) -> tuple[bool
             (d / name).parent.mkdir(parents=True, exist_ok=True)
             (d / name).write_text("\n\n".join(blocks) + "\n", encoding="utf-8")
         ok = not problems
+        # ⟳ r3 B1. THIS IS check()'s CONTROL and it is tracked separately from `ok`, which
+        # also carries `problems` and a `--compare` mismatch — neither of which invalidates
+        # a mutation verdict over the plan's own copy. Only a red or silent suite does.
+        controls_green = True
         if compare is not None:
             cmp_problems, ev["compared"] = compare_delivered(d, files, compare)
             if cmp_problems:
@@ -823,9 +936,11 @@ def check(plan: pathlib.Path, compare: pathlib.Path | None = None) -> tuple[bool
             ev["files"][name] = {"rc": rc, "tail": tail, "blocks": len(files[name])}
             if rc != 0:
                 ok = False
+                controls_green = False
                 report.append(f"{name}: --self-test exited {rc}\n    {out[-600:]}")
             elif "passed" not in out:
                 ok = False
+                controls_green = False
                 report.append(f"{name}: --self-test exited 0 but printed no result — "
                               f"a script with no entrypoint exits 0 silently. Got: {tail!r}")
 
@@ -835,6 +950,14 @@ def check(plan: pathlib.Path, compare: pathlib.Path | None = None) -> tuple[bool
         report.extend(m_report)
         ev["mutations"].extend(m_muts)
         ev["survivors"].extend(m_survivors)
+        ev["declared"] = len(muts)
+        # ⟳ r3 B1. `controls_green` is the clause r2 dropped. Without it this line asserted
+        # trustworthiness over a run whose suite was ALREADY RED — measured: a mutation
+        # editing only a comment, changing no behaviour, was certified `caught`, because
+        # every suite failed with or without it. `mutate_delivered` refuses that situation
+        # outright at :677; this producer merely withholds trust, which is the weaker of
+        # the two and the one that keeps `--compare`'s diff report useful.
+        ev["trustworthy"] = verdicts_are_trustworthy(m_muts, len(muts), controls_green)
     return ok, report, ev
 
 
@@ -863,9 +986,26 @@ def evidence(ev: dict) -> str:
         for name, verdict in sorted(cmp.items()):
             out.append(f"    {verdict:10} {name}")
     out.append("")
-    out.append(f"  mutations declared and run: {len(ev['mutations'])}, caught {caught}")
+    # ⟳ 2026-09-03, code review r3 (coordinator + Claude half B4). This header asserted
+    # "declared and run" over entries the next lines render NOT RUN; it counted
+    # len(ev["mutations"]) while calling the number DECLARED, so a mutation skipped at one
+    # of the three non-appending sites shrank the total invisibly; and on the AFTER-CONTROL
+    # path every entry IS measured and the count IS complete, so nothing in the per-entry
+    # data records the failure — only `trustworthy` does, and this was the one consumer of
+    # `ev` that never read it. The block is pasted into the plan and outlives the console
+    # line that carried the truth, and `--verify-evidence` re-derives it, so it certified
+    # the wrong block as FRESH.
+    if ev.get("declared") is not None and not ev.get("trustworthy"):
+        out.append("  " + not_measured_line(ev))
+        out.append(f"  mutation entries recorded: {len(ev['mutations'])}, caught {caught}")
+    else:
+        out.append(f"  mutations declared and run: {len(ev['mutations'])}, caught {caught}")
     for m in ev["mutations"]:
-        out.append(f"    {'caught  ' if m['caught'] else 'SURVIVED'} {m['name']}")
+        # A cannot-run is neither caught nor survived. Calling it SURVIVED reads as evidence
+        # that the guard was exercised and lost — the strongest possible false claim here.
+        verdict = ("caught  " if m["caught"]
+                   else "SURVIVED" if m.get("measured") is True else "NOT RUN ")
+        out.append(f"    {verdict} {m['name']}")
     out.append("```")
     return "\n".join(out)
 
@@ -1078,6 +1218,81 @@ def _self_test() -> int:
         case("a plan whose assembled suite goes RED fails the check", red_ok, False)
         case("...and reports the exit code", any("exited 1" in r for r in rep), True)
         case("...and the evidence records it", ev["files"]["m.py"]["rc"], 1)
+
+        # ── r3 B1: A RED CONTROL MUST NOT EARN TRUST ─────────────────────────
+        # ⟳ 2026-09-03, code review r3 (Claude half). `check()` ASSERTED trustworthy=True
+        # over a run whose suite was already failing: every mutation "goes red", so every
+        # entry is recorded `caught` and the tally reads as complete coverage. The Claude
+        # half's stronger form is reproduced here — the mutation below changes `return 2`
+        # to `return 3` in a suite that fails either way, so its `caught` is an artefact of
+        # the red control, not of the mutation.
+        #
+        # `mutate_delivered` has refused this since it was written (:747, and the case
+        # 'a RED control is refused, not reported as catches'). r2 extracted the shared
+        # predicate WITHOUT the control clause, so the sibling producer kept the bug the
+        # extraction was supposed to eliminate — the exact shape r2 itself was fixing.
+        RED_MUT = RED + ('<!-- mutations -->\n```json\n'
+                         '[{"name": "a no-op over an ALREADY-RED suite", "file": "m.py",'
+                         ' "edits": [["    return 2", "    return 3"]],'
+                         ' "expect": "f returns one"}]\n```\n')
+        pl.write_text(RED_MUT)
+        _rok, _rrep, _rev = check(pl)
+        case("a RED control makes check() withhold trust, whatever the tally says",
+             _rev["trustworthy"], False)
+        # ⚠ THE COUNTS ARE COMPLETE HERE. This is why the clause cannot be derived from the
+        # tally, and why it had to reach the predicate rather than sit beside it.
+        case("...though every declared mutation still produced a verdict",
+             len(_rev["mutations"]) == _rev["declared"], True)
+        # THE CONTRAST — without it the clause could be satisfied by refusing everything,
+        # which is the over-correction that F2-S3 exists to forbid.
+        pl.write_text(GOOD + MUTS)
+        _gok, _grep, _gev = check(pl)
+        case("...and a GREEN control with a complete run still earns it",
+             _gev["trustworthy"], True)
+
+        # ── r3 B2: THE PRINTER GATE, DRIVEN THROUGH main() ───────────────────
+        # Reverting the plan-mode gate to its pre-r2 unconditional print left the suite at
+        # 164/164 — measured by the Claude half. Nothing read the printer, so the branch
+        # that decides whether a tally is shown at all had no case.
+        pl.write_text(RED_MUT)
+        _saved_stdout, sys.stdout = sys.stdout, io.StringIO()
+        try:
+            main([str(pl)])
+            _out_main = sys.stdout.getvalue()
+        finally:
+            sys.stdout = _saved_stdout
+        case("plan mode refuses to print a tally it did not earn",
+             ("NOT MEASURED" in _out_main, "survivor(s)" in _out_main), (True, False))
+
+        # ── r3 B2: THE DEFAULT-DENY INIT ─────────────────────────────────────
+        # Flipping `check()`'s initializer to fail OPEN also left the suite green. The
+        # `not files` early return is the one path that ships the initializer untouched.
+        pl.write_text("a plan with prose and no tagged blocks at all\n")
+        _nok, _nrep, _nev = check(pl)
+        case("a plan with NO tagged blocks reports no verdict, not a trustworthy zero",
+             (_nev["trustworthy"], _nev["declared"]), (False, None))
+
+        # ── r3 B5 + B6: THE PREDICATE'S OWN CLAUSES ──────────────────────────
+        # Asserted on `verdicts_are_trustworthy` directly. The CARDINALITY clause is the
+        # half the design leans on to avoid re-enumerating the three skip sites, and
+        # deleting it left the suite at 164/164 — the load-bearing half with no falsifier.
+        _one_ok = [{"name": "m", "caught": True, "measured": True}]
+        case("a SHORTFALL is not trustworthy, however good the entries are",
+             verdicts_are_trustworthy(_one_ok, 3, True), False)
+        case("...and the same entries at their declared count are",
+             verdicts_are_trustworthy(_one_ok, 1, True), True)
+        case("...and a red control alone is disqualifying",
+             verdicts_are_trustworthy(_one_ok, 1, False), False)
+        # ⟳ r3 B6. What `is True` ACTUALLY buys. The docstring used to credit it with
+        # failing closed on a FORGOTTEN key — but `.get()` returns None there and None is
+        # falsy, so plain truthiness would do that too. Its real job is rejecting a value
+        # that is truthy and not `True`, which a JSON round-trip or an `rc == 0`-style
+        # expression can produce. Both cases below; the first is the one nothing tested.
+        case("a TRUTHY-but-not-True `measured` is refused",
+             verdicts_are_trustworthy([{"name": "m", "caught": True, "measured": 1}],
+                                      1, True), False)
+        case("...and a MISSING `measured` key is refused too",
+             verdicts_are_trustworthy([{"name": "m", "caught": True}], 1, True), False)
 
         # An untagged block is reported by extract(); check() must FAIL on it, or
         # the rule v5 added is advisory and CI (which reads the exit code) is blind.
@@ -1867,6 +2082,8 @@ def _self_test() -> int:
             case("--mutate catches a mutation in the DELIVERED tree", _ok, True)
             case("...the sibling import survived the copy, so no control complaint",
                  any("control" in r.lower() for r in _rep), False)
+            case("...and a complete run is TRUSTWORTHY, so the caller may print the tally",
+                 _ev["trustworthy"], True)
         # The falsifier for the instrument: break the UNMUTATED script. Without a control
         # check every mutation 'goes red' and a full table of catches is reported over a
         # suite that never worked.
@@ -1927,10 +2144,82 @@ def _self_test() -> int:
                 "    if _n >= 3:\n"
                 "        print('  [FAIL] the tree went bad underneath: got %r' % _n)\n"
                 "        return 1", 1))
-            _ok6, _rep6, _ = mutate_delivered(_r)
+            _ok6, _rep6, _ev6 = mutate_delivered(_r)
             case("a tree that goes bad DURING the sequence invalidates the run",
                  (_ok6, any("no longer green AFTER the sequence" in r for r in _rep6)),
                  (False, True))
+            # ⚠ THE COUNTS ARE COMPLETE HERE and the run is still not a verdict — which is
+            # why `trustworthy` cannot be derived from the tally, and why `ok` cannot carry
+            # it either (a real survivor is also ok=False). Both were tried and refuted.
+            case("...and it is NOT trustworthy, though every declared mutation ran",
+                 (_ev6["trustworthy"], len(_ev6["mutations"]) == _ev6["declared"]),
+                 (False, True))
+        # ⟳ 2026-09-03, Codex half of the CODE review. A TIMED-OUT mutation is rc 2 —
+        # `run_suite`'s CANNOT RUN — and it APPENDS to ev_muts (so the cardinality check
+        # still balances) AND to ev_survivors. Before `measured`, that made a two-minute
+        # NOT CHECKED print as `1 mutation(s), 1 survivor(s)` with trustworthy TRUE: the
+        # exact defect this flag exists to prevent, surviving inside its own fix.
+        # `run_suite` is stubbed rather than really hung — SUITE_TIMEOUT is 120s and a real
+        # hang would put two minutes into every CI run. The stub returns 2 for the MUTATED
+        # run only, so both controls are genuinely green and the run reaches :663 normally.
+        with tempfile.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td); _mini(_r)
+            _real_run_suite, _calls = run_suite, []
+            def _timeout_on_the_mutated_run(_d, _name):
+                _calls.append(_name)
+                if len(_calls) == 2:          # 1 = before-control, 2 = the mutation, 3 = after
+                    return 2, "CANNOT RUN — stub timeout. NOT CHECKED."
+                return _real_run_suite(_d, _name)
+            globals()["run_suite"] = _timeout_on_the_mutated_run
+            try:
+                _ok8, _rep8, _ev8 = mutate_delivered(_r)
+            finally:
+                globals()["run_suite"] = _real_run_suite
+            case("a TIMED-OUT mutation is counted but is NOT a verdict",
+                 (len(_ev8["mutations"]) == _ev8["declared"], _ev8["trustworthy"]),
+                 (True, False))
+            case("...and it is reported as a cannot-run, not as a catch",
+                 any("did NOT COMPLETE" in r for r in _rep8), True)
+        # ⟳ 2026-09-03, code review r2 (BOTH halves): `check()` is the SECOND producer of this
+        # evidence dict and it had no `trustworthy` concept, so plan mode printed a timeout as
+        # `1 survivor(s)` and the evidence block as `SURVIVED <name>`. One contract, two
+        # producers — the same default-deny now applies to both.
+        _ev_nr = {"files": {}, "tally": {}, "compared": None, "survivors": ["m"],
+                  "declared": 1, "trustworthy": False,
+                  "mutations": [{"name": "m", "caught": False, "measured": False}]}
+        case("a cannot-run renders as NOT RUN, never as SURVIVED",
+             ("NOT RUN" in evidence(_ev_nr), "SURVIVED" in evidence(_ev_nr)), (True, False))
+        _ev_sv = {**_ev_nr, "trustworthy": True,
+                  "mutations": [{"name": "m", "caught": False, "measured": True}]}
+        case("...and a REAL survivor still renders as SURVIVED",
+             ("SURVIVED" in evidence(_ev_sv), "NOT RUN" in evidence(_ev_sv)), (True, False))
+        # ⟳ 2026-09-03, code review r3 (coordinator + Claude half B4). r2 gated evidence()
+        # PER ENTRY and left the BLOCK HEADER asserting `mutations declared and run: N`
+        # over those same entries. The worst case is the AFTER-CONTROL path below: every
+        # entry measured, count complete, so nothing in the per-entry data records the
+        # failure — only `trustworthy` does, and evidence() was the one consumer of `ev`
+        # that never read it. This block is pasted into the plan and OUTLIVES the console
+        # line that carried the truth; `--verify-evidence` re-derives it, so it certified
+        # the wrong block as FRESH rather than noticing it was wrong.
+        _ev_ac = {"files": {}, "tally": {}, "compared": None, "survivors": [],
+                  "declared": 2, "trustworthy": False,
+                  "mutations": [{"name": "a", "caught": True, "measured": True},
+                                {"name": "b", "caught": True, "measured": True}]}
+        case("the evidence block refuses a tally over an untrustworthy run",
+             ("NOT MEASURED" in evidence(_ev_ac),
+              "mutations declared and run" in evidence(_ev_ac)), (True, False))
+        # A SHORTFALL must name the arithmetic. The header used to print len(mutations)
+        # while calling it `declared`, so two dropped entries were simply invisible.
+        _ev_short = {**_ev_ac, "declared": 3,
+                     "mutations": [{"name": "a", "caught": True, "measured": True}]}
+        case("...and a SHORTFALL names how many of how many produced a verdict",
+             "1 of 3 declared mutation(s) produced a verdict" in evidence(_ev_short), True)
+        # F2-S3, ASSERTED RATHER THAN ASSUMED: a trustworthy run prints exactly the line it
+        # printed before r3 touched this function. The gate must be invisible when earned.
+        case("...and a trustworthy run still prints the plain tally, unchanged",
+             "mutations declared and run: 2, caught 2" in evidence({**_ev_ac,
+                                                                   "trustworthy": True}),
+             True)
         # ⟲ Backlog #74. Two entries with the same edit anchors measure one thing twice, and the
         # second reports `caught` for coverage that does not exist. Also untested until now.
         with tempfile.TemporaryDirectory() as _td:
@@ -2018,7 +2307,7 @@ def _self_test() -> int:
     # together, so the agreement case stays green. Only breaking the derivation
     # separates them. (2) came from the Claude review half answering the Codex half's
     # Low — the agreement case was load-bearing and nothing proved it fired.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 162)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 173)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so
@@ -2069,9 +2358,21 @@ def main(argv: list[str]) -> int:
         ok, report, ev = mutate_delivered(mroot)
         for r in report:
             print(f"  \u2717 {r}")
-        print(("OK — " if ok else "FAILED — ")
-              + f"delivered scripts mutated: {len(ev['files'])} file(s), "
-                f"{len(ev['mutations'])} mutation(s), {len(ev['survivors'])} survivor(s)")
+        if ev["trustworthy"]:
+            print(("OK — " if ok else "FAILED — ")
+                  + f"delivered scripts mutated: {len(ev['files'])} file(s), "
+                    f"{len(ev['mutations'])} mutation(s), {len(ev['survivors'])} survivor(s)")
+        else:
+            # NO tally — and that includes the FILE count. On a control-failure run
+            # `ev["files"]` holds the CONTROL runs, so "7 file(s)" asserts work that measured
+            # nothing about mutations, and "0 survivor(s)" beside it is this project's success
+            # sentence printed over a run that never produced a verdict.
+            # The parenthetical explains WHY only when a shortfall IS the why. On the
+            # after-control path the counts are complete and the reason is the CANNOT RUN
+            # line above — printing "(162 of 162 … produced a verdict)" next to "produced no
+            # coverage verdict" contradicts itself. Measured 2026-09-03: the first run of
+            # F2-S4 emitted exactly that sentence.
+            print(not_measured_line(ev))
         return 0 if ok else 1
     if not a.plan:
         print("CANNOT RUN — no plan given. Treat this as NOT CHECKED.", file=sys.stderr)
@@ -2104,8 +2405,13 @@ def main(argv: list[str]) -> int:
             "compared" if cmp_dir else
             "evidence-verified, plan's copy only" if a.verify_evidence else
             "plan's copy only, NOT compared")
-    print(("OK — " if ok else "FAILED — ") + f"{mode}: {len(ev['files'])} file(s), "
-          f"{len(ev['mutations'])} mutation(s), {len(ev['survivors'])} survivor(s)")
+    if ev.get("trustworthy") or ev.get("declared") is None:
+        # `declared is None` = no mutations were attempted at all (assemble/compare only),
+        # so the tally is a truthful zero rather than an unearned verdict.
+        print(("OK — " if ok else "FAILED — ") + f"{mode}: {len(ev['files'])} file(s), "
+              f"{len(ev['mutations'])} mutation(s), {len(ev['survivors'])} survivor(s)")
+    else:
+        print(not_measured_line(ev, f"{mode}: "))
     return 0 if ok else 1
 
 

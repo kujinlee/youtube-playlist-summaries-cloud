@@ -1,0 +1,16 @@
+{
+  "attempts": [
+    "  gpt-5.6-sol: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.6-terra: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.6-luna: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.5: ok \u2014 2282 chars"
+  ],
+  "exit_code": 0,
+  "gate_ran": true,
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "reason": "2282 chars",
+  "review": "plan-r2-codex.md",
+  "schema": 1,
+  "tool": "codex-review"
+}

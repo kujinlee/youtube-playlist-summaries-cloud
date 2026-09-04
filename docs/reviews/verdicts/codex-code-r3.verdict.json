@@ -1,0 +1,35 @@
+{
+  "attempts": [
+    "  gpt-5.6-sol: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.6-terra: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.6-luna: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.5: ok \u2014 2605 chars"
+  ],
+  "exit_code": 0,
+  "gate_ran": true,
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/566236fc-7408-4c0d-a3c9-fb655a2e4621/scratchpad/DRAFT-fix.md: CREATED by the agent during the run",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/566236fc-7408-4c0d-a3c9-fb655a2e4621/scratchpad/apply_mut.py: CREATED by the agent during the run",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/566236fc-7408-4c0d-a3c9-fb655a2e4621/scratchpad/check-anchors-draft.py: CREATED by the agent during the run",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/566236fc-7408-4c0d-a3c9-fb655a2e4621/scratchpad/coord-probe.py: CREATED by the agent during the run",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/566236fc-7408-4c0d-a3c9-fb655a2e4621/scratchpad/coord-probe2.py: CREATED by the agent during the run",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/566236fc-7408-4c0d-a3c9-fb655a2e4621/scratchpad/f2s3.txt: CREATED by the agent during the run",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/566236fc-7408-4c0d-a3c9-fb655a2e4621/scratchpad/harness.py: CREATED by the agent during the run",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/566236fc-7408-4c0d-a3c9-fb655a2e4621/scratchpad/mutate-baseline.txt: CREATED by the agent during the run",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/566236fc-7408-4c0d-a3c9-fb655a2e4621/scratchpad/pre_r2.py: CREATED by the agent during the run",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/566236fc-7408-4c0d-a3c9-fb655a2e4621/scratchpad/t1_control_red.py: CREATED by the agent during the run",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/566236fc-7408-4c0d-a3c9-fb655a2e4621/scratchpad/t2_noop_certified.py: CREATED by the agent during the run",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/566236fc-7408-4c0d-a3c9-fb655a2e4621/scratchpad/t3_shortfall.py: CREATED by the agent during the run",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/566236fc-7408-4c0d-a3c9-fb655a2e4621/scratchpad/t4_mutate_side.py: CREATED by the agent during the run",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/566236fc-7408-4c0d-a3c9-fb655a2e4621/scratchpad/t5_uncovered.py: CREATED by the agent during the run",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/566236fc-7408-4c0d-a3c9-fb655a2e4621/scratchpad/t6_f2s3.py: CREATED by the agent during the run",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/566236fc-7408-4c0d-a3c9-fb655a2e4621/scratchpad/t7_falsify.py: CREATED by the agent during the run",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/566236fc-7408-4c0d-a3c9-fb655a2e4621/scratchpad/t8_more.py: CREATED by the agent during the run",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/566236fc-7408-4c0d-a3c9-fb655a2e4621/scratchpad/try-fix.py: CREATED by the agent during the run"
+  ],
+  "model": "gpt-5.5",
+  "reason": "2605 chars",
+  "review": "r3-codex.md",
+  "schema": 1,
+  "tool": "codex-review"
+}

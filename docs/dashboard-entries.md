@@ -2725,3 +2725,323 @@ interference — the rule is in the wrong place and names deleted scripts), **#7
 inventory cannot see a guard that is not NAMED like one), and **#78 half (2)** (the entry gate runs
 on `pull_request` while the skill regenerates the page immediately). Three items, not the five it
 looked like this morning.
+
+## 2026-09-03 [needs-you]
+Ran the architecture review that was convened yesterday and never written. The question it was
+convened to answer — *why has this plan failed four review rounds in a row?* — has an answer, and it
+is not "the plan is badly written".
+
+The repo keeps **four separate hand-maintained lists of its own safety checks**, and no two of them
+agree. There are 26 checks on disk. Nine are pinned for one kind of coverage, seven for another,
+twenty are named in CI — and **eighteen of the twenty-six have neither kind of coverage at all**.
+Nothing in the codebase compares these lists to each other. The only place they are reconciled is
+the plan document, and a document cannot enforce anything. So every review round finds a
+reconciliation error, the fix introduces the next one, and the count grows without the *kind* of
+problem ever changing.
+
+**The decision waiting on you: which fix becomes the next piece of work.** My recommendation is the
+narrow one — make one of those four lists derive itself from the directory it is currently copying
+by hand. It is small, it is measured, and it removes the exact defect the last four rounds kept
+producing rather than patching this instance of it.
+
+Also worth knowing: the previous architecture review's four findings are all **verified closed**.
+The ratchet built for them worked.
+
+<!--tech-->
+`docs/reviews/architecture-review-2026-09-03.md` — Phase 6, second arming condition, on the branch
+`fix/guard-inventory-population` (unpushed, no PR, zero lines of `scripts/` changed).
+
+Inventories measured **by importing the owning module**, never by string-splitting — an earlier
+string reader returned `0` for two of the four, and a zero is indistinguishable from a broken
+reader. `check-ratchet-contract` population **26**; `check-selftest-counts.POPULATION` **9** (6 are
+guards); `scripts/mutations/` + `EXPECTED_MUTATIONS` **7**, sum **162** (4 are guards); distinct
+`scripts/*.py` in `ci.yml` **20** (17 are guards). Reachability is fine — **0 of 26** guards are
+unrun (17 via CI, 8 via `check-schema-gates.sh`, 3 via a hook).
+
+Findings: **A** 🟠 four inventories, nothing reconciles them. **B** 🟠 `check-plan-code.py:625-626`
+returns on count drift five lines before the `copytree` at `:630`, so the run aborts having measured
+nothing while emitting `0 mutation(s), 0 survivor(s)` from the empty initializer at `:584` — not
+fail-open (exit is non-zero), but a true-looking coverage claim on a path where nothing ran.
+**C** 🟡 `EXPECTED_MUTATIONS`' key set is a verified duplicate of `scripts/mutations/*.json`; the
+per-file counts (`:426-431`) and the sum literal `162` (`:1956`) are deliberate and must survive any
+fix. **D** 🟡 backlog #48 records "STOP-HOOK VERDICT: NOT BUILT, deliberately" — it was built
+2026-08-24 (`8b9643d9`) on a better discriminator. **E** 🟢 `block-idle-stop.sh:5` says 18 self-test
+cases; the script reports 17, and nothing catches it.
+
+Review #4's A/B/C/D re-verified **CLOSED**. Findings deliberately **unfiled** pending your triage,
+per review #4's precedent. `.claude/plan-gate-pending` remains **ARMED**. Gates green:
+`check-arch-findings`, `check-anchors`, `check-docs`, `check-roadmap-consistency`.
+
+## 2026-09-03
+You picked the narrow fix I recommended, and it was wrong. I tested its premise before writing a
+spec, and the test refuted it.
+
+The recommendation was to stop one of the four lists copying a directory by hand and let it derive
+itself. I had checked that the two always match. What I had not checked is **why** they always
+match — and it turns out the hand-maintained copy is the only thing that notices when a file is
+**deleted**. Derive it, and a deleted safety check would vanish from both sides at once and nobody
+would be told. I would have removed a working guard from the one stack whose entire job is that
+coverage cannot shrink quietly.
+
+**What replaces it is smaller and still worth doing.** When those two lists disagree, the tool stops
+before it measures anything — correctly — but still prints *"0 mutations, 0 survivors"* in the same
+breath. That line reads like a clean result. It should not be printed at all on a run that never
+started.
+
+Worth saying plainly: **this review recommended a fix built on a premise it had only read, not run —
+which is the exact failure it was convened to diagnose.** Catching it cost one command. It is
+recorded in the review rather than quietly swapped out.
+
+<!--tech-->
+Finding C **REFUTED BY EXECUTION**; candidate 2 **WITHDRAWN**; candidate 2′ replaces it.
+
+Tested on a temp copy of `scripts/` via `mutate_delivered(root)`, never the repo. Deleting
+`scripts/mutations/page_chrome.json` yields `scripts/page_chrome.py: manifest holds 0 mutation(s),
+expected 11` — caught **only** because `EXPECTED_MUTATIONS` still names the file (`:592` is
+`got = counts.get(target, 0)`). The key set is the **deletion detector**: the ratchet reasoning
+already written for the counts at `:426-431`, applied to *existence* rather than *cardinality*, and
+never written down. `:598-600` catches an **undeclared** file; `:591-597` catches a **deleted** one —
+two directions, two mechanisms, and I proposed deleting one of them.
+
+How the error survived the review: I quoted `:598-600` as proof the lists are forced identical (true)
+and read that as "the second list carries no information" (false). Same shape as the project's own
+recorded lesson that *a shim can fail in BOTH directions*, met from the other side.
+
+**Candidate 2′** — `mutate_delivered` returns at `:625-626` five lines before the `copytree` at
+`:630`, with `ev` still its `:584` initializer, so the caller renders a tally from an empty
+structure. Confirmed by execution twice (manifest deleted; manifest undeclared), both
+`mutations_run=0, survivors=0`. Falsifier: add a manifest entry, leave `EXPECTED_MUTATIONS` alone,
+run the gate — drift message, **no** tally.
+
+⚠ The claim that candidate 2 "dissolves round 4's Blocking" is **withdrawn with the candidate**.
+That Blocking is a plan defect (T4 vs T7) and still needs the count decided in one place: six
+entries, `EXPECTED_MUTATIONS` 6, sum **168**.
+
+## 2026-09-03
+The spec went through its review gate and came back **not converged** — both reviewers, independently,
+found the same fault, and it was in the fix I had recommended.
+
+The fix was meant to stop the tool printing a clean-looking summary on runs where it measured nothing.
+My version keyed off the wrong moment: it would have marked a run as "measured" slightly too early, so
+the single worst case — where the tool's own safety check fails before any real work starts — would
+still have printed **"7 files, 0 survivors"**, which reads like a clean sweep, on a run that says of
+itself *treat this as not checked*.
+
+The outside reviewer also caught something neither I nor my own review saw: the spec quoted a running
+total that **another in-flight document also quotes**, and whichever lands first changes the other's
+number. The fix is to stop quoting the total in either place and let each derive it when it lands.
+
+Nothing is built yet, and that is the point: the gate cost about twenty minutes and caught a fix that
+would not have fixed the thing it was for.
+
+<!--tech-->
+Spec **v2**; round 1 filed, BOTH halves, `check-review-rounds` green.
+
+**Blocking, found by both halves independently.** v1's R1 was scoped *"returns without reaching the
+`copytree` at `:630`"* and option (a) flipped its sentinel there. `mutate_delivered` has **four**
+returns (`ast`-enumerated): `:586`, `:626` before, **`:646`, `:663` after**. `:646` is the
+control-failure return — `ev["files"]` populated at `:639`, `mutations`/`survivors` set only at
+`:648` — so the flag would be `True` and the tally would print. Reproduced by forcing a target's
+control suite to exit 1: `FAILED — delivered scripts mutated: 7 file(s), 0 mutation(s), 0
+survivor(s)`. **v2 restates R1 as "were mutations RUN", moves the flip to `:648`, and adds R1a: the
+file count is part of the claim.**
+
+**Codex-only findings.** ① The `168` in §7 is unstable — this spec moves the sum 162→163, so the
+sibling plan's total is 168 *or* 169 depending on order; v2 states the dependency and drops the
+number, keeping only the per-file `6`. ② F2/F4 were vacuous — F4 named no anchor, no target, no case;
+v2 writes the manifest entry out and warns that `:723` parses only `[FAIL] ` lines, so an unmatched
+case name reports zero red cases rather than a mismatch. ③ Call sites are **8**, not 9.
+
+**Confirmed by both:** the 🟠→🟡 downgrade (no early return yields exit 0 or `OK`), and option (c)'s
+refutation (`ok=False` also at `:773`/`:779`). Codex ran F3: `OK — … 7 file(s), 162 mutation(s), 0
+survivor(s)`, exit 0.
+
+⚠ **The wrapper's "THE AGENT WROTE BEHIND THE WRAPPER" warning was a FALSE POSITIVE** — it names
+files the *coordinator* wrote while the two halves ran in parallel. Verified by `git status` and by
+the Claude half still holding its own text. A cry-wolf risk on the detector that exists to catch a
+real overwrite; noted in the Codex review doc, not filed.
+
+## 2026-09-03
+**The first code of this branch — 28 commits in.** Everything before today was a spec, a plan, an
+architecture review and twenty-one review documents. This is the first change to a script.
+
+The tool that mutation-tests this repo's own guards could print a clean-looking summary on runs where
+it measured nothing. The worst version wasn't a row of zeros — it was **"161 of 162 mutations, 0
+survivors"**, which reads as coverage confirmed while one declared check silently never ran.
+
+Three attempts at this failed, each caught by both reviewers, because each keyed on *where the code
+stopped* rather than *whether the number could be trusted*. The fix stops asking about position and
+asks arithmetic instead: **did every declared check actually run, and were the before-and-after
+sanity runs both clean?** A skipped check now shows up as a count shortfall no matter where it
+happened — including in two skip paths nobody had enumerated.
+
+**It caught its own author on the very first run.** Editing the code moved a line that one of the
+existing checks was anchored to, so that check silently stopped applying. The old tool would have
+printed 161-of-162 and looked like an ordinary failure; the new one refused to give a verdict and
+said exactly how many were missing. Then the replacement anchor turned out to match *two* places in
+the file — caught before it shipped by checking, not by reading.
+
+Six situations were built and run, one per way the tool can fail. All six behave. A clean run's
+output is unchanged, byte for byte.
+
+<!--tech-->
+`scripts/check-plan-code.py` — first `scripts/` change on `fix/guard-inventory-population`.
+
+`ev["trustworthy"]` defaults **False** and is earned, never assumed: set at `:648` to
+`len(m_muts) == len(muts)`, cleared at the after-control. The `--mutate` printer emits **no tally at
+all** when it is False — including the **file count**, which on a control-failure run reports the
+*control* runs and asserts work that measured nothing.
+
+**Why arithmetic, not position.** `run_mutations` skips without appending at three places — unknown
+target file `:685`, anchor not found `:711`, empty `expect` `:763`. Only the middle one had been
+enumerated; the count comparison covers all three and any fourth added later. Three prior attempts
+keyed on `copytree`, on `run_mutations` returning, and on which return was taken; each was true while
+the property was false.
+
+**Six falsifiers, all executed.** S0 dup anchors `:586`, S1 count drift `:626`, S2 control red before
+`:646`, S3 clean, S4 after-control red `:663`, S5 mutation skipped `:663`. S0/S1/S2/S4/S5 →
+`NOT MEASURED … Treat this as NOT CHECKED`, exit 1. S3 → `OK — delivered scripts mutated: 7 file(s),
+163 mutation(s), 0 survivor(s)`, exit 0.
+
+**S4 was wrong on first run and the falsifier found it:** the message read *"produced no coverage
+verdict (162 of 162 declared mutation(s) produced a verdict)"*. The parenthetical now appears only
+when a shortfall is actually the reason.
+
+Two named cases added (**160/160**), one mutation added (**163/0**), `EXPECTED_MUTATIONS`
+`check-plan-code.py` 21→22 and the deliberate sum literal 162→163, docstring 158→160 — that last one
+caught by `count_drift`. Nine gates green.
+
+## 2026-09-03
+You asked whether the code had been dual-reviewed. It had not — three rounds had reviewed the
+*document*, and the code had zero. Running that review found a real fault in the fix.
+
+The change stops the tool reporting coverage it didn't measure. **It had the same fault inside it.**
+When a check *times out*, the tool records it as a result rather than as a non-result — so a
+two-minute hang was being counted as "one check ran, one survivor found", and the new safeguard let
+it through because the arithmetic balanced.
+
+I had reviewed my own code and called it clean. The outside reviewer found this in one pass, and it
+had already been found once before at the same line — there is a comment there saying so, which my
+review walked straight past.
+
+**What that says about the process:** an author reviewing their own work is the weakest check
+available. The parts of my review that survived were the ones stated as claims someone could
+contradict; the part that failed was a characterisation nobody could test.
+
+Fixed, and the fix now has its own test and its own deliberate-sabotage check.
+
+<!--tech-->
+**Codex Blocking, reproduced and confirmed:** `check-plan-code.py:751-757` — `rc == 2` is
+`run_suite`'s CANNOT RUN. It appends to **both** `ev_muts` and `ev_survivors`, so
+`len(m_muts) == len(muts)` balanced, `trustworthy` stayed True, and the printer emitted
+`FAILED — … 1 mutation(s), 1 survivor(s)` over a timeout.
+
+**Why the Claude half missed it:** it enumerated the append sites with `ast` **for cardinality**
+(correct, and that claim still stands) and then asserted what the appends **MEAN** without reading
+the branch above one of them. The comment at `:746-750` records the identical defect being found in
+round 5 and the review walked past it.
+
+**Fix:** entries carry `"measured"` — False on the cannot-run append, True on the normal one:
+```python
+ev["trustworthy"] = (len(m_muts) == len(muts)
+                     and all(m.get("measured") is True for m in m_muts))
+```
+`.get("measured") is True` **fails closed**: a future append site that forgets the key yields `None`,
+so the run is untrusted. Chosen over `m["measured"]` (crashes the harness) and `.get(..., True)`
+(defaults to trusted — the shape being fixed).
+
+**Verified against the reviewer's own scenario**, rebuilt and run in-process with `run_suite` stubbed
+to time out the mutated run only: `NOT MEASURED … Treat this as NOT CHECKED.`, exit 1.
+
+Two cases added (**162/162**), one mutation added (**164 mutations, 0 survivors**),
+`EXPECTED_MUTATIONS` 22→23, sum 163→164, docstring 160→162 — the last caught by `count_drift`, its
+third catch today. Six gates green. Round 1 of the CODE review filed, both halves;
+**NOT CONVERGED → folded → round 2 owed.**
+
+## 2026-09-03
+Second review of the code, and the outside reviewer was right about something I had rated as minor.
+
+We had both spotted the same thing — the tool has a *second* place that reports results, and it
+hadn't been fixed. I called it minor because I reasoned about it from the code. The outside reviewer
+**ran** it, and found it was worse than a wrong count: the detailed report was printing a check that
+timed out as **"SURVIVED"** — i.e. claiming the safeguard had been exercised and lost, when it had
+never run at all.
+
+**The lesson is about severity, not about the bug.** A severity assigned to something you haven't run
+is a guess with a number on it. I had even written "not checked" next to it.
+
+Fixed by making both reporters share one rule instead of two copies. And the harness caught me
+mid-fix: copying the rule made a sabotage-check ambiguous and the whole run refused to give a verdict
+— which is precisely the behaviour this change added.
+
+<!--tech-->
+**Codex Blocking (r2), reproduced.** `check()` — the second producer of the evidence dict — had no
+`trustworthy` concept, so `main([plan])` printed `1 file(s), 1 mutation(s), 1 survivor(s)` and
+`--evidence` printed `SURVIVED timeout mutation`. Pre-existing (`da5cd27e`, PR #176), out of CI, but
+the same class the change exists to remove.
+
+**Claude half rated it Low and had explicitly labelled the end-to-end run NOT CHECKED.** The gap was
+`evidence()` — a different function from the printer I reasoned about — rendering `SURVIVED`.
+
+**Fix:** `check()` gains the same default-deny flag; `evidence()` renders `NOT RUN` for
+`measured is not True`; the plan-mode printer gates identically, with `declared is None` as the
+escape for assemble/compare-only runs.
+
+⚠ **The fix's duplication was caught by the harness.** Copying the predicate made a mutation anchor
+match twice → `anchor matches 2 times … Tighten it`, **164 of 165**, exit 1. Correct fix was removing
+the duplicate, not tightening the anchor: `verdicts_are_trustworthy(m_muts, declared)`, one function
+two callers — `check-vocabulary-collisions.py`'s subject exactly.
+
+After: `--self-test` **164/164**; `--mutate .` **165 mutations, 0 survivors, exit 0**; both Codex
+observations reversed. Seven gates green. **Round 2 filed both halves, NOT CONVERGED, folded.
+Round 3 owed.**
+
+## 2026-09-03
+The tool that checks whether our safety-net tests actually work had been quietly reporting
+"everything passed" in situations where it had measured nothing at all. Three separate versions of
+that report were wrong in three different ways, and the third round of review found the most
+serious one: if the test suite was **already failing before any check began**, the tool would still
+announce that every check had passed. A change that altered nothing but a comment could be recorded
+as "caught".
+
+The deeper problem was subtler and worth saying plainly. The previous round had pulled the shared
+rule out into a single function so two places could not disagree — a good instinct. But the rule has
+three parts, and the extracted function could only see two of them. **A shared function that holds
+part of a rule is more dangerous than two copies, because it looks like the whole rule.** The part it
+dropped was the one that stops a broken environment being mistaken for a working test.
+
+Separately: the fix from the previous round could be deleted four different ways without any test
+noticing. It has now been given the missing tests, so a future edit that quietly removes it turns the
+build red instead of passing.
+
+One of the two automated reviewers read all of this and reported "no defects found". Everything it
+checked was true; it checked the parts that had already been fixed and not the part that had been
+changed. That disagreement is recorded in the review file rather than smoothed over, because a clean
+verdict from one reviewer has been wrong here before.
+<!--tech-->
+Code review r3 of the mutation-drift-report contract, both halves, folded.
+`scripts/check-plan-code.py` + `scripts/mutations/check-plan-code.json`.
+
+- **B1 (Blocking)** — `check()` asserted `trustworthy: True` over a RED control.
+  `verdicts_are_trustworthy` now takes `controls_green` and holds all three clauses; both producers
+  compute it once, after both controls.
+- **B2 (Blocking)** — the r2 fix had NO falsifier: four inversions each left `--self-test` at
+  164/164. Closed with 8 mutations + 13 cases.
+- **B4 (High)** — `evidence()` read neither `declared` nor `trustworthy`; its header asserted
+  "declared and run" over `NOT RUN` entries and over the after-control path. Now gated, and the
+  refusal sentence is ONE renderer (`not_measured_line`) with THREE callers — the third copy was
+  refused by the mutation pre-flight, which caught the duplicate anchor.
+- **B5 (High)** — the cardinality conjunct had no red case. **B6 (Low)** — the docstring credited
+  `is True` with fail-closed-on-missing-key; `.get()` already does that. Corrected + cased.
+- **TWO mutations were orphaned by this round's own refactor** and the pre-flight refused to write
+  the manifest until both were retargeted. Third occurrence of anchors-bind-by-text.
+- Counts: self-test 164 → **177**; this file's mutations 24 → **32**; `EXPECTED_MUTATIONS` sum
+  165 → **173**. `count_drift` caught the docstring for the fifth time this slice.
+
+⚠ The Codex half returned **CONVERGED** over 2 Blocking + 2 High. Adjudication is written into
+`docs/reviews/code-mutation-drift-report-contract-r3-codex.md`.
+
+⚠ This run also **overwrote a committed verdict file** — `--out` was named `r3-codex.md` and the
+wrapper derives the verdict path from that stem, colliding with the *spec* round-3 verdict. Restored
+from `HEAD`; re-saved as `codex-code-r3.verdict.json`. Backlog #68 closed the wrapper's path
+inference but not the collision channel: verdict names are a namespace with no allocator.
