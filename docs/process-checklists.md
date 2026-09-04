@@ -402,3 +402,54 @@ by the *reader*, which is why nothing surfaces it and why it needs to be a habit
 principle (*separate the label from the identity in any document that other files cite*). Its
 `files` column names only the roadmap, so doing it as written would not reach the two collisions
 above. Widen the scope there rather than filing a second row.
+
+---
+
+## Presenting a DECISION to the human (added 2026-09-04)
+
+**Read when:** you are about to ask the human to choose. Not when you are discussing a design —
+prose is better there — and not when one option is obviously superior, where you should just decide.
+
+The point of this format is that the human can **review the rationale and the trade-offs**, not just
+pick a label. A menu of bare labels moves the decision to them while keeping the reasoning with you,
+which is the worst split of the two.
+
+### The format
+
+Every option gets, in this order:
+
+1. **A letter** — `A —`, `B —`, `C —`. So the choice can be referred to later ("we took B") and
+   discussed without re-quoting the whole label.
+2. **A short label** — what the option *is*.
+3. **The rationale** — why someone would pick it.
+4. **The trade-off** — what it costs, or what it gives up. An option with no stated cost is either
+   obviously correct (so do not ask) or under-analysed (so analyse it).
+5. **A recommendation on exactly one option**, marked `(Recommended)`, with the reason in its body.
+   Withholding a recommendation is not neutrality — it is handing over an unfinished analysis.
+
+Plus, always:
+
+* **The last option is `D — I have a question about these`.** Without it, the only way to say *"these
+  options look wrong"* is to fight the form.
+* **State in the question text what the options actually differ on** — "A/B differ in whether X goes
+  live now". That names the axis, which is the thing being chosen.
+
+### ⛔ The check that this format does not do for you
+
+**Every option must produce DIFFERENT WORK.** Verify before presenting.
+
+MEASURED 2026-09-04: a four-option menu about merging two PRs shipped with A and D as the *same
+action* — "merge both in order" and "merge both, review after". The ordering in A was a mechanical
+constraint (the second PR was stacked on the first, so it *had* to follow), not a choice at all. The
+human's reply was *"What is the difference between first and last choices?"* — the only way they
+could raise it, because the menu had no question-shaped exit.
+
+**A menu whose entries collapse is worse than prose**, because it asserts a distinction that is not
+there and invites a decision that does not exist.
+
+### When NOT to use this
+
+* **During design** — use prose. Options force a fork before the shape is clear.
+* **When one option is obviously superior** — decide, say what you decided and why, and move on.
+* **For a mechanical constraint** — an ordering forced by the code is not a decision. Say it is
+  forced.

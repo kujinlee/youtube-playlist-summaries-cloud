@@ -159,6 +159,45 @@ jobs:
       - name: Plan task order
         run: python3 scripts/check-plan-task-order.py
 
+      # ⚠ TWO MORE GUARDS CI COULD NOT SEE — Phase 6 architecture review #7, finding 4.
+      # Their only automated caller was scripts/check-schema-gates.sh (gates 3/15 and 5/15),
+      # itself referenced zero times here.
+      #
+      # ⟳ CORRECTED 2026-09-04, BY THIS WORKFLOW GOING RED. The first version of this block ran
+      # the guards' BARE ENTRY POINTS and claimed "neither needs a database". That claim was
+      # FALSE and the claim's own evidence was taken on a machine with a Supabase container
+      # running. Both import `read_catalog` from m4_base_db, which shells out to the
+      # `supabase_db_*` container; with no container it exits 2 CANNOT RUN, which is exactly
+      # what happened here:
+      #     CANNOT RUN — could not read the catalog from 'postgres'. TREAT THIS AS NOT RUN.
+      #     Error response from daemon: No such container: supabase_db_...
+      #
+      # This repo already records the opposite half of this mistake — three ratchets went eight
+      # days untestable because their ENTRY POINT needed docker and that was read as the LOGIC
+      # needing a DB. This was the mirror: the logic is genuinely pure
+      # (check-vocabulary-collisions.py:125 "PURE — catalog rows in ... No database"), and that
+      # was read as the entry point being pure too.
+      #
+      # So CI runs the SELF-TESTS, which exercise the pure rules and need nothing. The full
+      # catalog-reading run stays in check-schema-gates.sh where a database exists. This buys
+      # real coverage of the RULES — which was the actual gap — and does not pretend to cover
+      # the fetch.
+      - name: check-guard-coverage self-test (rules only; the full run needs a live catalog)
+        run: python3 scripts/check-guard-coverage.py --self-test
+
+      - name: check-vocabulary-collisions self-test (rules only; full run needs a live catalog)
+        run: python3 scripts/check-vocabulary-collisions.py --self-test
+
+      # The warn-only banner detector (task #224 residue). Its --self-test runs here;
+      # the DETECTOR itself is a Stop hook and has no CI role by design — it observes a
+      # session, which CI does not have. Stated so nobody reads this line as coverage of
+      # the hook's live behaviour.
+      - name: check-banner-armed self-test
+        run: python3 scripts/check-banner-armed.py --self-test
+
+      - name: begin-plan self-test
+        run: python3 scripts/begin-plan.py --self-test
+
       # Backlog #79. The two existing contrast guards each own ONE stylesheet; the page the reader
       # opens is composed from three files, so a token supplied by a different file is invisible to
       # both. This one measures coverage rather than ratio — whether the light palette declares

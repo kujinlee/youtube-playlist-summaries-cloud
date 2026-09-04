@@ -752,3 +752,52 @@ route reports on the route.
 
 **Portable in full.** Nothing here depends on the framework, the page, or the toolchain — only on a
 DOM and an agent that can execute one.
+
+---
+
+## 13. An option list must carry its own rationale and trade-off — and every option must produce different work
+
+**Measured 2026-09-04.** An agent presented a four-option choice about merging two pull requests.
+Options **A** ("merge both, in order") and **D** ("merge both, review after") were the *same action*.
+The ordering in A was not a choice at all: the second PR was stacked on the first, so it was forced
+by the dependency. The human's reply was:
+
+> *"What is the difference between first and last choices?"*
+
+They had no other way to say it. The menu offered four decisions and no way to ask a question, so a
+request for clarification had to arrive disguised as a rejected choice.
+
+### Why this is not a formatting nit
+
+A bare-label menu **splits the decision from its reasoning**: the human gets the choice, the agent
+keeps the analysis. That is the worst of the two arrangements — the person accountable for the
+outcome is the one without the trade-offs in front of them. It also hides under-analysis: an option
+with no stated cost is either obviously right (so it should not have been asked) or not yet thought
+through (so it should not have been offered).
+
+### The rule
+
+Every option carries, in order: **a letter**, a short label, the **rationale**, and the
+**trade-off** — what it costs or gives up. Exactly one is marked *Recommended*, with its reason.
+Withholding a recommendation is not neutrality; it is handing over an unfinished analysis.
+
+Two structural additions:
+
+* **The last option is always "I have a question about these."** A decision form with no
+  question-shaped exit converts every clarification into a fight with the form.
+* **Name the axis in the question text** — *"A/B differ in whether X goes live now"* — because the
+  axis is the thing actually being chosen.
+
+### ⛔ The check the format cannot do for you
+
+**Verify that each option produces different work before presenting.** A menu whose entries collapse
+is worse than prose: it asserts a distinction that does not exist and invites a decision that is not
+real. This is the same failure as [§3](#3-a-gate-states-the-observation-that-would-make-it-fail) one
+level up — there, a gate that cannot fail is a decision wearing a checkbox; here, an option that
+duplicates another is a choice wearing a menu.
+
+### When not to use it
+
+During **design**, use prose — options force a fork before the shape is clear. When one option is
+obviously superior, **decide** and say why. And when something is a mechanical constraint rather than
+a choice, say it is forced instead of dressing it as an option.
