@@ -85,7 +85,8 @@ POPULATION: frozenset[str] = frozenset({
                                      # ratchet contract's population never sees it — this is the
                                      # only outside observer of its declared count.
     "check-anchors.py",
-    "check-banner-armed.py",         # ⟳ 2026-09-04, task #224 residue (warn-only detector)
+    "check-banner-armed.py",
+    "check-ci-watched.py",           # ⟳ 2026-09-04: CI ran unwatched on 2 of 3 pushes         # ⟳ 2026-09-04, task #224 residue (warn-only detector)
     "check-plan-code.py",
     "codex-review.py",              # ⟳ 2026-09-04, task #222: docs/plugins.md claimed 35
                                     # while the suite ran 51. Now declared AND externally observed.
