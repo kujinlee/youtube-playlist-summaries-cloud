@@ -81,6 +81,9 @@ SCRIPTS = ROOT / "scripts"
 # separately verified against the real suites and were all ACCURATE — including the two that print
 # no total at all, whose case lines were counted by hand (10 and 11).
 POPULATION: frozenset[str] = frozenset({
+    "begin-plan.py",                 # ⟳ 2026-09-04, task #224. Not a `check-*` guard, so the
+                                     # ratchet contract's population never sees it — this is the
+                                     # only outside observer of its declared count.
     "check-anchors.py",
     "check-plan-code.py",
     "check-plan-task-order.py",
@@ -192,7 +195,7 @@ def printed_total(out: str) -> int | None:
     wrong on its OWN suite: the case labels here quote example summaries (`` `12/12 … passed` ``),
     which match the pattern, so it read 12 while the suite printed 13. A guard whose test data
     looks like its input is exactly where a first-match parser breaks — and only putting this
-    script in POPULATION surfaced it. Summary lines are last by convention in all nine members.
+    script in POPULATION surfaced it. Summary lines are last by convention in every member.
 
     ⚠ STATED LIMIT: a script printing a SECOND summary after the main one — `check-dashboard-entry`
     ends with `6/6 cannot-run cases passed` — would have that trailing number read as its total.

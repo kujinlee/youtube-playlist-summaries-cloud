@@ -3178,3 +3178,60 @@ Backlog **#91** filed at the user's instruction (Phase 6 #7, finding 1). Spec v1
   pasted block's grammar part of the interface; the ~10 hand-built `ev` dicts in the suite that
   construct invalid states on purpose.
 - §7 states what this does NOT fix: it stops bad *consumption*, not bad *production* of a clause.
+
+## 2026-09-04 [needs-you]
+The guard that was supposed to stop me walking away mid-job has never once fired. It now can.
+
+Back in August a check was built for one specific failure: a turn ends on a summary whose last
+sentence names the next step, and then nothing happens. It has occurred four times, most recently
+on 2026-09-03, when a turn closed with "I'll take steps 1-4 without checking back" and nine hours
+passed with a merge sitting ready.
+
+The check reads a small file that says which plan is being worked and how many of its steps are
+still open. That file has never been written — not once since the check shipped — so the check has
+been switched off in practice while looking, in every listing, like it was on. There is now one
+command that writes it, and the same command prints the "STEP 3 of 6" banner you already expect to
+see before each step. So arming the guard and announcing the step are the same keystroke.
+
+I proved it rather than assuming it: with nothing armed the session was allowed to end, with two
+steps open it was refused, and once both were ticked it was allowed again. Same hook, unmodified,
+three runs.
+
+**Waiting on you — one decision.** What I built removes the *excuse* for not arming the guard; it
+does not remove the *possibility*. I could still type that banner by hand and leave the guard
+asleep, and you would see no difference. Closing that requires a second, more intrusive piece: a
+check that notices a turn announced "step 3 of 6" while nothing was armed, and refuses to end the
+turn. That is a real behaviour change with a real false-alarm risk, so I have not built it. Say the
+word if you want it, and I will; say no and this stands as-is, with the gap written down in the
+code rather than hidden.
+<!--tech-->
+`scripts/begin-plan.py` (new, 33 self-test cases) on branch `task-224-begin-plan`. Task #224 — my
+own to-do note, not a GitHub issue.
+
+- **What was dormant:** `scripts/check-plan-progress.py` (17 cases) reads `.claude/executing-plan`,
+  which nothing ever wrote. `.claude/hooks/block-idle-stop.sh` has been wired at
+  `.claude/settings.json:82` the whole time.
+- **Measured, not argued:** unarmed `rc=0` (control run first) → 2 unticked steps `rc=2` → all
+  ticked `rc=0` and the sentinel self-clears. `--pause "<why>"` also releases it; a bare `--pause`
+  with no reason is refused, because an unexplained pause and an abandoned plan are
+  indistinguishable to whoever reads the file next.
+- **Mutation-tested on a temp copy:** deleting the `_arm(plan_rel)` call in `cmd_begin` turns the
+  suite red **via the two cases that name it**. Before those cases existed all 29 were pure-function
+  tests, so that deletion would have stayed green — the same "the function is covered, the CALL that
+  makes it load-bearing is not" shape `check-plan-code` round 6 recorded.
+- **Count drift caught itself:** the docstring's hand-written "26 cases" failed against the 28 that
+  ran, on the first execution. Now pinned in `check-selftest-counts.POPULATION` (9 → 10), which
+  refused the file until it was pinned — the two-way ratchet doing its job in both directions.
+- **Plans land in `.claude/plans/` (gitignored), not `docs/superpowers/plans/`:** that directory is
+  `check-anchors.py:121`'s population and requires a Goal + Anchor header on every dated file. A
+  session to-do list is per-machine execution state, like the two sentinels beside it.
+- **One rule, one owner:** `count_steps` / `next_pending_task` / `parse_sentinel` are imported from
+  `check-plan-progress.py` and asserted present at import, never re-implemented; `count_drift` is
+  borrowed from `check-plan-code.py`. The banner and the blocking guard count the same boxes by
+  construction.
+- **Gates green:** `check-selftest-counts` (10/10), `check-ratchet-contract` (26 guards),
+  `check-docs`, `check-anchors`, and `begin-plan --self-test` 33/33. `begin-plan.py` is not a
+  `check-*.py`, so the ratchet contract's population never sees it — `check-selftest-counts` is its
+  only outside observer, which is why pinning it mattered.
+- ⚠ **Stated limit, in the module docstring:** the banner↔arming coupling is conventional, not
+  mechanical. Not claimed as covered.
