@@ -70,8 +70,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            if rc != 0:\n                report.append(f\"CANNOT RUN \u2014 control run of {name} exited {rc} BEFORE any \"",
-        "            if rc != 0 and False:\n                report.append(f\"CANNOT RUN \u2014 control run of {name} exited {rc} BEFORE any \""
+        "            if not control_is_green(rc, out):\n                report.append(f\"CANNOT RUN \u2014 control run of ",
+        "            if False:\n                report.append(f\"CANNOT RUN \u2014 control run of "
       ]
     ],
     "expect": "a RED control is refused, not reported as catches"
@@ -81,8 +81,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            rc, out = run_suite(d, name)\n            if rc != 0:\n                ok = False\n",
-        "            rc, out = run_suite(d, name)\n            if rc != 0 and False:\n                ok = False\n"
+        "            if not control_is_green(rc, out):\n                ok = False\n                # The tree changed underneath",
+        "            if False:\n                ok = False\n                # The tree changed underneath"
       ]
     ],
     "expect": "a tree that goes bad DURING the sequence invalidates the run"
@@ -255,17 +255,6 @@
     "expect": "a TIMED-OUT mutation is counted but is NOT a verdict"
   },
   {
-    "name": "the evidence block calls a cannot-run SURVIVED again",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "        verdict = (\"caught  \" if m[\"caught\"]\n                   else \"SURVIVED\" if m.get(\"measured\") is True else \"NOT RUN \")",
-        "        verdict = \"caught  \" if m[\"caught\"] else \"SURVIVED\""
-      ]
-    ],
-    "expect": "a cannot-run renders as NOT RUN, never as SURVIVED"
-  },
-  {
     "name": "the shared predicate stops holding the CONTROL clause (r3 B1)",
     "file": "scripts/check-plan-code.py",
     "edits": [
@@ -336,8 +325,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    if ev.get(\"declared\") is not None and not ev.get(\"trustworthy\"):",
-        "    if False:"
+        "    untrustworthy = ev.get(\"declared\") is not None and not ev.get(\"trustworthy\")",
+        "    untrustworthy = False"
       ]
     ],
     "expect": "the evidence block refuses a tally over an untrustworthy run"
@@ -352,5 +341,49 @@
       ]
     ],
     "expect": "...and a SHORTFALL names how many of how many produced a verdict"
+  },
+  {
+    "name": "the --mutate printer stops gating on trustworthiness (r4 B1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if ev[\"trustworthy\"]:",
+        "        if True:"
+      ]
+    ],
+    "expect": "--mutate mode refuses to print a tally it did not earn"
+  },
+  {
+    "name": "a control is called green on its EXIT CODE alone (r4 M1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return rc == 0 and \"passed\" in out",
+        "    return rc == 0"
+      ]
+    ],
+    "expect": "a SILENTLY-EXITING control is not green, so the run is not trustworthy"
+  },
+  {
+    "name": "the evidence body renders per-entry verdicts over an untrustworthy run (r4 H1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        verdict = (\"NOT RUN \" if untrustworthy\n",
+        "        verdict = (\"NOT RUN \" if False\n"
+      ]
+    ],
+    "expect": "...so every entry renders NOT RUN, whatever its own flag says"
+  },
+  {
+    "name": "the refusal header regains its `caught` figure (r4 H1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        out.append(f\"  mutation entries recorded: {len(ev['mutations'])}\")",
+        "        out.append(f\"  mutation entries recorded: {len(ev['mutations'])}, caught {caught}\")"
+      ]
+    ],
+    "expect": "...and the word `caught` appears NOWHERE under that refusal"
   }
 ]
