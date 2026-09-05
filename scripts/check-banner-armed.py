@@ -63,7 +63,7 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 55 cases
+    python3 scripts/check-banner-armed.py --self-test  # 61 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -142,10 +142,28 @@ _EDIT_TOOLS = ("Edit", "Write", "NotebookEdit")
 def edited_paths_of(records: list[dict]) -> list[str]:
     """Every file path an editing tool touched in this window.
 
+    ⚠ AN EDIT THAT FAILED IS NOT WORK. A `tool_use` is an ATTEMPT; the paired `tool_result` says
+    whether it landed. Measured over 40 transcripts: 238 edit tool_uses and 22 error results — a
+    refused Edit ("Found 2 matches...") would otherwise read as a repo change and fire the warning
+    on a turn that changed nothing, which is the cry-wolf failure this guard must not ship. An
+    edit with NO paired result is COUNTED: at stop time results exist, so an unpaired one is an
+    in-flight edit rather than a refused one.
+
     `notebook_path` is UNVERIFIED — NotebookEdit appeared 0 times across the measured corpus.
     `MultiEdit` is absent because it does not exist in this runtime (measured x0 by three
     independent reviewers).
     """
+    failed: set[str] = set()
+    for rec in records:
+        content = (rec.get("message") or {}).get("content")
+        if not isinstance(content, list):
+            continue
+        for b in content:
+            if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("is_error"):
+                tid = b.get("tool_use_id")
+                if isinstance(tid, str):
+                    failed.add(tid)
+
     out: list[str] = []
     for rec in records:
         if rec.get("type") != "assistant":
@@ -158,6 +176,8 @@ def edited_paths_of(records: list[dict]) -> list[str]:
                 continue
             if b.get("name") not in _EDIT_TOOLS:
                 continue
+            if b.get("id") in failed:
+                continue          # the edit was REFUSED — no work happened
             inp = b.get("input") or {}
             path = inp.get("file_path") or inp.get("notebook_path")
             if isinstance(path, str) and path:
@@ -355,6 +375,8 @@ def _edit_inside_repo(paths: list[str], root: Path) -> bool:
         parts = resolved.relative_to(root).parts
         if not parts or parts[0] == ".git":
             continue
+        if resolved.is_dir():
+            continue          # a directory is not a file this turn edited
         return True
     return False
 
@@ -624,6 +646,34 @@ def _self_test() -> int:
          _obs in _hook and _blk in _hook and _hook.index(_obs) < _hook.index(_blk))
     case("F6b the hook uses REPO_ROOT — $ROOT is empty and would block every stop",
          "$ROOT/scripts" not in _hook)
+
+
+    # ── an ATTEMPTED edit is not an edit (code review r1) ──────────────────────────────────
+    def edit_id(path: str, tid: str) -> str:
+        return json.dumps({"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": tid, "name": "Edit", "input": {"file_path": path}}]}})
+
+    def result(tid: str, err: bool) -> str:
+        return json.dumps({"type": "user", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": tid, "is_error": err, "content": "x"}]}})
+
+    case("a FAILED Edit does not count as work — 22 error results in 40 transcripts",
+         edited_paths_of(records_since_last_user(
+             [user("go"), edit_id("/a/b.py", "t1"), result("t1", True)]) or []) == [])
+    case("...but a SUCCEEDED Edit does",
+         edited_paths_of(records_since_last_user(
+             [user("go"), edit_id("/a/b.py", "t1"), result("t1", False)]) or []) == ["/a/b.py"])
+    case("...and an UNPAIRED Edit counts — at stop time that is in-flight, not refused",
+         edited_paths_of(records_since_last_user(
+             [user("go"), edit_id("/a/b.py", "t1")]) or []) == ["/a/b.py"])
+    case("...and one failed edit does not suppress a different successful one",
+         edited_paths_of(records_since_last_user(
+             [user("go"), edit_id("/a/bad.py", "t1"), edit_id("/a/ok.py", "t2"),
+              result("t1", True), result("t2", False)]) or []) == ["/a/ok.py"])
+    case("a DIRECTORY inside the repo is not a file this turn edited",
+         _edit_inside_repo([str(ROOT / "scripts")], ROOT) is False)
+    case("...while a real file in that directory is",
+         _edit_inside_repo([str(ROOT / "scripts" / "check-banner-armed.py")], ROOT) is True)
 
     passed = sum(1 for _, ok in cases if ok)
     print(f"\n{passed}/{len(cases)} self-test cases passed")
