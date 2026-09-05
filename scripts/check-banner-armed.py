@@ -63,7 +63,7 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 61 cases
+    python3 scripts/check-banner-armed.py --self-test  # 65 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -122,10 +122,34 @@ def records_since_last_user(lines: list[str]) -> list[dict] | None:
     for i, rec in enumerate(records):
         if rec.get("type") != "user":
             continue
-        if _is_tool_result(rec) or rec.get("isMeta") is True:
+        if _is_tool_result(rec):
+            continue
+        if rec.get("isMeta") is True and not _meta_carries_a_message(rec):
             continue
         start = i + 1
     return records[start:]
+
+
+_META_IS_REALLY_A_MESSAGE = (
+    "The user sent a new message while you were working",
+    "Another Claude session sent a message",
+    "<local-command-caveat>",
+)
+
+
+def _meta_carries_a_message(rec: dict) -> bool:
+    """PURE. True when an `isMeta` record is a real new instruction, not an injection.
+
+    ⚠ `isMeta` does NOT mean "not the human typing" — measured over 700 transcripts, of the 405
+    boundaries the isMeta rule removes, ~100 carry a genuine message: 30 relay the human's own text
+    and 67 are a slash command they typed. Treating those as non-boundaries widens the window across
+    a real turn, and the error direction is QUIETING in both branches.
+    """
+    content = (rec.get("message") or {}).get("content")
+    if isinstance(content, list):
+        content = " ".join(b.get("text", "") for b in content
+                           if isinstance(b, dict) and b.get("type") == "text")
+    return isinstance(content, str) and content.lstrip().startswith(_META_IS_REALLY_A_MESSAGE)
 
 
 def texts_of(records: list[dict]) -> list[str]:
@@ -360,7 +384,7 @@ def _plan_steps():
 
 
 def _edit_inside_repo(paths: list[str], root: Path) -> bool:
-    """PURE. True iff any path is a FILE inside `root` that counts as plan work.
+    """True iff any path is a FILE inside `root` that counts as plan work.
 
     `is_relative_to`, never str.startswith: a sibling checkout `<root>-old` prefix-matches.
     Relative paths are REFUSED — the tool inputs record file_path but never the cwd it was
@@ -415,17 +439,16 @@ def run_decide(payload: str) -> int:
         else:
             unticked = 0 if steps is _UNSET or steps is None else steps[1] - steps[0]
             reason, detail = "unbannered", f"{unticked} unticked"
-        if True:
-            when = _dt.datetime.now().astimezone().replace(microsecond=0).isoformat()
-            try:
-                WARN_LOG.parent.mkdir(parents=True, exist_ok=True)
-                with WARN_LOG.open("a") as fh:
-                    fh.write(log_line(reason, detail, when, str(data.get("session_id", ""))))
-            except OSError as e:
-                # NOT swallowed: the log IS the justification for warn-only mode, so losing it is
-                # part of the warning rather than a detail. Still non-blocking, still exit WARN.
-                message += f"\n\n   ⚠ AND THE LOG COULD NOT BE WRITTEN ({e}) — the false-alarm " \
-                           f"rate is not being recorded."
+        when = _dt.datetime.now().astimezone().replace(microsecond=0).isoformat()
+        try:
+            WARN_LOG.parent.mkdir(parents=True, exist_ok=True)
+            with WARN_LOG.open("a") as fh:
+                fh.write(log_line(reason, detail, when, str(data.get("session_id", ""))))
+        except OSError as e:
+            # NOT swallowed: the log IS the justification for warn-only mode, so losing it is
+            # part of the warning rather than a detail. Still non-blocking, still exit WARN.
+            message += f"\n\n   ⚠ AND THE LOG COULD NOT BE WRITTEN ({e}) — the false-alarm " \
+                       f"rate is not being recorded."
 
     if message:
         print(message, file=sys.stderr)
@@ -646,6 +669,12 @@ def _self_test() -> int:
          _obs in _hook and _blk in _hook and _hook.index(_obs) < _hook.index(_blk))
     case("F6b the hook uses REPO_ROOT — $ROOT is empty and would block every stop",
          "$ROOT/scripts" not in _hook)
+    # F6c — the guard being INVOKED is not the same as its result being READ. Deleting BANNER_RC
+    # from the exit arithmetic leaves an unblocked stop at exit 0, which discards the warning:
+    # the guard would run, log, report success, and reach nobody. This slice's own failure, one
+    # layer out. Structural, like F6.
+    case("F6c BANNER_RC reaches the hook's exit arithmetic, not just the invocation",
+         '"$BANNER_RC" != "0"' in _hook)
 
 
     # ── an ATTEMPTED edit is not an edit (code review r1) ──────────────────────────────────
@@ -674,6 +703,27 @@ def _self_test() -> int:
          _edit_inside_repo([str(ROOT / "scripts")], ROOT) is False)
     case("...while a real file in that directory is",
          _edit_inside_repo([str(ROOT / "scripts" / "check-banner-armed.py")], ROOT) is True)
+
+
+    # ── isMeta is not a synonym for "not the human" (code review r1, M4) ───────────────────
+    def meta_msg(text: str) -> str:
+        return json.dumps({"type": "user", "isMeta": True, "message": {"content": text}})
+
+    case("an isMeta record RELAYING the human IS a boundary — 30 such in the corpus",
+         highest_banner(texts_of(records_since_last_user(
+             [user("go"), asst(B.format(2, 4)),
+              meta_msg("The user sent a new message while you were working: do X"),
+              asst("new turn")]) or [])) is None)
+    case("...as is a slash command the human typed — 67 such in the corpus",
+         highest_banner(texts_of(records_since_last_user(
+             [user("go"), asst(B.format(2, 4)),
+              meta_msg("<local-command-caveat>Caveat: ...</local-command-caveat>"),
+              asst("new turn")]) or [])) is None)
+    case("...but a system-reminder injection is still NOT a boundary",
+         highest_banner(texts_of(records_since_last_user(
+             [user("go"), asst(B.format(2, 4)),
+              meta_msg("<system-reminder>background context</system-reminder>"),
+              asst("kept working")]) or [])) == (2, 4))
 
     passed = sum(1 for _, ok in cases if ok)
     print(f"\n{passed}/{len(cases)} self-test cases passed")
