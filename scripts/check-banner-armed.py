@@ -48,6 +48,9 @@ WHAT IT CANNOT SEE, stated rather than hidden:
   * work done entirely through Bash — a script that rewrites a file, a git operation. Widening to
     any mutating tool was rejected: a turn running `gh pr view` to answer a question would warn.
   * work in a git WORKTREE, which sits outside ROOT and so reads as outside the repo.
+  * a SYMLINK inside the repo pointing outside it. resolve() follows the link before
+    is_relative_to, so the edit reads as outside. (The converse — a link from outside INTO the
+    repo — reads as inside.) Same silent-under-fire class as the two entries around it.
   * macOS CASE-INSENSITIVITY. Measured: Path.resolve() does not canonicalise case on darwin, so a
     file_path recorded with different case fails is_relative_to(ROOT) and the edit is silently
     unseen. Low probability, but it under-fires QUIETLY, which is the dangerous direction.
@@ -63,7 +66,7 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 65 cases
+    python3 scripts/check-banner-armed.py --self-test  # 75 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -210,7 +213,11 @@ def edited_paths_of(records: list[dict]) -> list[str]:
 
 
 def assistant_texts_since_last_user(lines: list[str]) -> list[str] | None:
-    """Back-compat wrapper: the text half of the window. Existing callers unchanged."""
+    """The text half of the window. Kept because the self-test exercises it directly.
+
+    ⚠ NOT "unchanged": the isMeta rule in records_since_last_user changes what this returns for a
+    window containing a meta boundary. It is the same function of a different window.
+    """
     records = records_since_last_user(lines)
     return None if records is None else texts_of(records)
 
@@ -261,8 +268,10 @@ def decide(texts: list[str] | None, armed: bool,
     if armed and steps is None:
         return CANNOT_RUN, (
             "CANNOT RUN: .claude/executing-plan names a plan this check could not measure — "
-            "missing, unreadable, or containing zero `- [ ]` step checkboxes. TREAT THIS AS "
-            "NOT RUN — do not read the absence of a warning as 'a banner was not owed'.")
+            "missing, unreadable, or containing zero `- [ ]` step checkboxes — or "
+            "`scripts/check-plan-progress.py`, whose checkbox rule this borrows, could not be "
+            "imported. TREAT THIS AS NOT RUN — do not read the absence of a warning as 'a banner "
+            "was not owed'.")
 
     banner = highest_banner(texts)
     if banner is None:
@@ -405,11 +414,20 @@ def _edit_inside_repo(paths: list[str], root: Path) -> bool:
     return False
 
 
-def _armed() -> bool:
+def _armed():
+    """True / False, or None when the sentinel EXISTS but cannot be read.
+
+    ⚠ FileNotFoundError is the normal "nothing armed" case and is False. Anything else — a
+    permission error, undecodable bytes — means this check cannot reach what it measures, and the
+    module docstring promises that is never a quiet pass. None is that third state; run_decide
+    maps it to CANNOT RUN.
+    """
     try:
         return _armed_from_text(SENTINEL.read_text())
-    except OSError:
+    except FileNotFoundError:
         return False
+    except (OSError, UnicodeDecodeError):
+        return None
 
 
 def run_decide(payload: str) -> int:
@@ -428,6 +446,10 @@ def run_decide(payload: str) -> int:
     texts = None if records is None else texts_of(records)
 
     armed = _armed()
+    if armed is None:
+        print("CANNOT RUN: .claude/executing-plan exists but could not be read, so this check "
+              "cannot tell whether a banner was owed. TREAT THIS AS NOT RUN.", file=sys.stderr)
+        return CANNOT_RUN
     steps = _plan_steps() if armed else _UNSET      # local: the log block below reads it
     edited = _edit_inside_repo(edited_paths_of(records or []), ROOT)
     code, message = decide(texts, armed, steps=steps, edited=edited)
@@ -597,8 +619,8 @@ def _self_test() -> int:
     S = (1, 4)
     case("F1 armed + work left + an edit + NO banner WARNS — the direction that failed",
          decide([], armed=True, steps=S, edited=True)[0] == WARN)
-    case("...and the message does NOT claim nothing is blocked",
-         "Nothing is blocked" not in decide([], armed=True, steps=S, edited=True)[1])
+    case("...and the message hedges about blocking rather than denying it",
+         "If this stop is being blocked" in decide([], armed=True, steps=S, edited=True)[1])
     case("...and it names the plan-without-banner direction",
          "PLAN WITHOUT A BANNER" in decide([], armed=True, steps=S, edited=True)[1])
     case("R1 armed + work left + NO edit -> quiet (catches `edited` hardcoded true)",
@@ -625,6 +647,25 @@ def _self_test() -> int:
     case("...but .github IS ordinary work, not a .git write",
          _edit_inside_repo(["/repo/.github/workflows/ci.yml"], _r) is True)
     case("an ordinary repo file counts", _edit_inside_repo(["/repo/scripts/x.py"], _r) is True)
+
+    # M1 — the None state needs a real unreadable file; asserting on _armed_from_text would
+    # test the parser, not the failure mode. (First draft of this case did exactly that.)
+    import tempfile as _tf1
+    with _tf1.TemporaryDirectory() as _d1:
+        _bad = Path(_d1) / "executing-plan"
+        _bad.write_bytes(b"plan: x.md\n\xff\xfe not utf-8 \xff\n")
+        _sv = SENTINEL
+        globals()["SENTINEL"] = _bad
+        try:
+            case("M1 a sentinel that EXISTS but cannot be read is None, not a quiet False",
+                 _armed() is None)
+            globals()["SENTINEL"] = Path(_d1) / "does-not-exist"
+            case("...while a missing sentinel is the ordinary unarmed case, False",
+                 _armed() is False)
+        finally:
+            globals()["SENTINEL"] = _sv
+    case("M2 the blindness message names the import cause it can actually have",
+         "could not be imported" in decide([], armed=True, steps=None)[1])
 
     # ── F4: the SIDE-EFFECT test. Round 1's H1 was that no test executed run_decide. ───────
     # ⚠ BOTH fixture repairs are required and neither works alone (measured, round 2):
@@ -659,6 +700,45 @@ def _self_test() -> int:
             case("F4 run_decide WARNS on the new class AND appends a line — the side effect",
                  _rc == WARN and _log.exists()
                  and _log.read_text().rstrip("\n").endswith("\tunbannered\t3 unticked"))
+
+            # H1 — the total==0 -> CANNOT RUN mapping, which two review rounds established and
+            # which no test previously exercised: the old case never parsed a plan at all.
+            (_fx / "plans" / "p.md").write_text("just prose, no checkboxes at all\n")
+            _before = _log.read_text()
+            _rc0 = run_decide(json.dumps({"transcript_path": str(_tr), "session_id": "s"}))
+            case("H1 a plan with ZERO checkboxes is CANNOT RUN through run_decide, not quiet",
+                 _rc0 == CANNOT_RUN)
+            case("...and nothing is logged for a run that could not measure",
+                 _log.read_text() == _before)
+            (_fx / "plans" / "p.md").write_text("- [x] one\n- [ ] two\n- [ ] three\n- [ ] four\n")
+
+            # M5 — spec R3 at the WIRING, not just the predicate: `edited` hardcoded True in
+            # run_decide would pass the old predicate-level case and fail this one.
+            _tr2 = _fx / "outside.jsonl"
+            _tr2.write_text("\n".join([
+                json.dumps({"type": "user", "message": {"content": "go"}}),
+                json.dumps({"type": "assistant", "message": {"content": [
+                    {"type": "tool_use", "id": "z1", "name": "Edit",
+                     "input": {"file_path": "/tmp/scratch/not-in-repo.md"}}]}}),
+            ]))
+            _before = _log.read_text()
+            _rcO = run_decide(json.dumps({"transcript_path": str(_tr2), "session_id": "s"}))
+            case("M5 an edit OUTSIDE the repo stays QUIET through run_decide, and logs nothing",
+                 _rcO == QUIET and _log.read_text() == _before)
+
+            # H3 — the UNARMED class, the guard's only previously-shipped behaviour, had no
+            # execution coverage at all. Three log mutations survived because of it.
+            (_fx / ".claude" / "executing-plan").unlink()
+            _tr3 = _fx / "unarmed.jsonl"
+            _tr3.write_text("\n".join([
+                json.dumps({"type": "user", "message": {"content": "go"}}),
+                json.dumps({"type": "assistant", "message": {"content": [
+                    {"type": "text", "text": "## ▶ STEP 2 of 5 — doing a thing"}]}}),
+            ]))
+            _rcU = run_decide(json.dumps({"transcript_path": str(_tr3), "session_id": "s"}))
+            case("H3 the UNARMED class still warns AND logs its own reason and detail",
+                 _rcU == WARN
+                 and _log.read_text().rstrip("\n").endswith("\tunarmed\tSTEP 2 of 5"))
         finally:
             globals()["ROOT"], globals()["SENTINEL"], globals()["WARN_LOG"] = _saved
 
@@ -699,6 +779,20 @@ def _self_test() -> int:
          edited_paths_of(records_since_last_user(
              [user("go"), edit_id("/a/bad.py", "t1"), edit_id("/a/ok.py", "t2"),
               result("t1", True), result("t2", False)]) or []) == ["/a/ok.py"])
+    def use(path: str, tid: str, name: str) -> str:
+        return json.dumps({"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": tid, "name": name, "input": {"file_path": path}}]}})
+
+    case("M3 a Write counts too — deleting it from _EDIT_TOOLS narrows detection silently",
+         edited_paths_of(records_since_last_user(
+             [user("go"), use("/a/w.py", "w1", "Write")]) or []) == ["/a/w.py"])
+    case("...and a NotebookEdit counts",
+         edited_paths_of(records_since_last_user(
+             [user("go"), use("/a/n.ipynb", "n1", "NotebookEdit")]) or []) == ["/a/n.ipynb"])
+    case("...but an unrelated tool still does not",
+         edited_paths_of(records_since_last_user(
+             [user("go"), use("/a/r.py", "r1", "Read")]) or []) == [])
+
     case("a DIRECTORY inside the repo is not a file this turn edited",
          _edit_inside_repo([str(ROOT / "scripts")], ROOT) is False)
     case("...while a real file in that directory is",

@@ -33,9 +33,6 @@ except Exception:
 ARGS=(--decide)
 [[ "$STOP_HOOK_ACTIVE" == "1" ]] && ARGS+=(--stop-hook-active)
 
-# A hook that cannot run must not silently allow the stop it exists to question — but it also must
-# not wedge the session on a broken interpreter. Blocking ONCE with a loud message is the middle
-# ground: visible, and cleared by the anti-nag guard on the next attempt.
 # ── Observer, deliberately AHEAD of the blocking check ───────────────────────────────────────
 # It must run in the very state that check REFUSES: armed with unticked steps. Ordering is free
 # because it cannot block — and it is REQUIRED, because check-plan-progress.run_decide UNLINKS
@@ -51,6 +48,11 @@ ARGS=(--decide)
 printf '%s' "$INPUT" | python3 "$REPO_ROOT/scripts/check-banner-armed.py" --decide
 BANNER_RC=$?
 
+# ⚠ THIS COMMENT DESCRIBES THE BLOCKING CHECK BELOW, not the observer above. The 2026-09-05
+# reorder moved the observer in between and orphaned it; re-attached deliberately.
+# A hook that cannot run must not silently allow the stop it exists to question — but it also must
+# not wedge the session on a broken interpreter. Blocking ONCE with a loud message is the middle
+# ground: visible, and cleared by the anti-nag guard on the next attempt.
 if ! python3 "$REPO_ROOT/scripts/check-plan-progress.py" "${ARGS[@]}"; then
     exit 2
 fi
