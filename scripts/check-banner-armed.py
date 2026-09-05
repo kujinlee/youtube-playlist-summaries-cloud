@@ -32,11 +32,33 @@ finishes all five emits `STEP 5 of 5` as its highest banner, so i == N and nothi
 remains is exactly "announced a multi-step job, stopped partway" — the failure measured four times
 (backlog #44, #53, 2026-09-03).
 
+It also answers the INVERSE — a plan armed, work done in the repo, and NO banner emitted at all.
+That is the direction that actually failed on 2026-09-04, when begin-plan.py printed banners to the
+stdout of a Bash call, which is shown to the assistant and not reliably to the human.
+
+WHO READS A WARNING depends on the exit code, and both readers are intended: on a BLOCKED stop the
+hook exits 2 and Claude reads it (the actor, when the next banner is due); on an unblocked stop it
+exits 1 and the human reads it (the auditor). See .claude/hooks/block-idle-stop.sh.
+
 WHAT IT CANNOT SEE, stated rather than hidden:
-  * a multi-step job never announced at all. Smaller class than what bit us — the five steps WERE
-    announced every time — but real. This is not full coverage and must not be described as such.
+  * SUBAGENT edits. Measured: 0 `isSidechain:true` records across 508 transcripts for this project —
+    subagent work lives in its own session file, so a coordinator turn that dispatches five
+    reviewers reads as edited=False. `subagent-driven-development` is the Phase 3 DEFAULT here, so
+    this is the normal mode, not an edge case.
+  * work done entirely through Bash — a script that rewrites a file, a git operation. Widening to
+    any mutating tool was rejected: a turn running `gh pr view` to answer a question would warn.
+  * work in a git WORKTREE, which sits outside ROOT and so reads as outside the repo.
+  * a SYMLINK inside the repo pointing outside it. resolve() follows the link before
+    is_relative_to, so the edit reads as outside. (The converse — a link from outside INTO the
+    repo — reads as inside.) Same silent-under-fire class as the two entries around it.
+  * macOS CASE-INSENSITIVITY. Measured: Path.resolve() does not canonicalise case on darwin, so a
+    file_path recorded with different case fails is_relative_to(ROOT) and the edit is silently
+    unseen. Low probability, but it under-fires QUIETLY, which is the dangerous direction.
   * whether the work was genuinely finished. `i < N` with the job actually complete is a real false
     alarm; that is why this warns rather than blocks, and why it logs.
+  * whether the banner was any GOOD. The predicate is presence, not quality.
+  * the hook's RUNTIME behaviour. The reachability case is STRUCTURAL — it reads the hook as text
+    and proves order in the file, nothing more.
 
 FAILS CLOSED ON ITS OWN BLINDNESS. No transcript, an unreadable one, or zero assistant text parsed
 -> exit 2 with CANNOT RUN. A check that cannot reach what it measures is never a pass (CLAUDE.md),
@@ -44,13 +66,14 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 25 cases
+    python3 scripts/check-banner-armed.py --self-test  # 75 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
 """
 from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import importlib.util
 import json
 import re
 import sys
@@ -62,6 +85,8 @@ WARN_LOG = ROOT / ".claude/banner-warnings.log"
 
 QUIET, WARN, CANNOT_RUN = 0, 1, 2
 
+_UNSET = object()   # `steps` was not consulted. Distinct from None = "unreadable".
+
 # The banner CLAUDE.md mandates: `## ▶ STEP 3 of 6 — title`. The separator between the numbers is
 # matched loosely (`of`), but the `## ▶ STEP` opener is not — a looser opener would match prose
 # ABOUT the convention, and this file, the skill docs and the dashboard all discuss it.
@@ -70,12 +95,19 @@ BANNER_RE = re.compile(r"^##\s*▶\s*STEP\s+(\d+)\s+of\s+(\d+)\b", re.M)
 
 # ── Pure core ─────────────────────────────────────────────────────────────────────────────────
 
-def assistant_texts_since_last_user(lines: list[str]) -> list[str] | None:
-    """Assistant text emitted after the most recent real user message. None if unparseable.
+def records_since_last_user(lines: list[str]) -> list[dict] | None:
+    """Records emitted after the most recent REAL user message. None if unparseable.
 
-    A tool RESULT arrives as a `user`-typed record, so keying on `type == "user"` alone would cut
-    the window at the last tool call and hide every banner before it. Records whose content is a
-    tool result are therefore not treated as turn boundaries.
+    Two kinds of `user` record are not the human typing, and treating them as turn boundaries
+    truncates the window:
+      * a tool RESULT — without this, the window is cut at the last tool call.
+      * an `isMeta` record — a skill injection, or THIS HOOK's own block feedback. Measured
+        2026-09-04: the block message sat 72 records after the `STEP 2 of 4` banner for the step
+        still in progress, so the banner fell out of window by construction.
+
+    `promptSource` is deliberately NOT part of this rule. Measured over 30 transcripts: skipping
+    it too collapses 142 windows to 70, and 52 of the 72 removed boundaries begin a GENUINELY NEW
+    turn. A window that never resets is as wrong as one that resets too often.
     """
     records = []
     for raw in lines:
@@ -95,13 +127,99 @@ def assistant_texts_since_last_user(lines: list[str]) -> list[str] | None:
             continue
         if _is_tool_result(rec):
             continue
+        if rec.get("isMeta") is True and not _meta_carries_a_message(rec):
+            continue
         start = i + 1
+    return records[start:]
 
+
+_META_IS_REALLY_A_MESSAGE = (
+    "The user sent a new message while you were working",
+    "Another Claude session sent a message",
+    "<local-command-caveat>",
+)
+
+
+def _meta_carries_a_message(rec: dict) -> bool:
+    """PURE. True when an `isMeta` record is a real new instruction, not an injection.
+
+    ⚠ `isMeta` does NOT mean "not the human typing" — measured over 700 transcripts, of the 405
+    boundaries the isMeta rule removes, ~100 carry a genuine message: 30 relay the human's own text
+    and 67 are a slash command they typed. Treating those as non-boundaries widens the window across
+    a real turn, and the error direction is QUIETING in both branches.
+    """
+    content = (rec.get("message") or {}).get("content")
+    if isinstance(content, list):
+        content = " ".join(b.get("text", "") for b in content
+                           if isinstance(b, dict) and b.get("type") == "text")
+    return isinstance(content, str) and content.lstrip().startswith(_META_IS_REALLY_A_MESSAGE)
+
+
+def texts_of(records: list[dict]) -> list[str]:
     out: list[str] = []
-    for rec in records[start:]:
+    for rec in records:
         if rec.get("type") == "assistant":
             out.extend(_text_blocks(rec))
     return out
+
+
+_EDIT_TOOLS = ("Edit", "Write", "NotebookEdit")
+
+
+def edited_paths_of(records: list[dict]) -> list[str]:
+    """Every file path an editing tool touched in this window.
+
+    ⚠ AN EDIT THAT FAILED IS NOT WORK. A `tool_use` is an ATTEMPT; the paired `tool_result` says
+    whether it landed. Measured over 40 transcripts: 238 edit tool_uses and 22 error results — a
+    refused Edit ("Found 2 matches...") would otherwise read as a repo change and fire the warning
+    on a turn that changed nothing, which is the cry-wolf failure this guard must not ship. An
+    edit with NO paired result is COUNTED: at stop time results exist, so an unpaired one is an
+    in-flight edit rather than a refused one.
+
+    `notebook_path` is UNVERIFIED — NotebookEdit appeared 0 times across the measured corpus.
+    `MultiEdit` is absent because it does not exist in this runtime (measured x0 by three
+    independent reviewers).
+    """
+    failed: set[str] = set()
+    for rec in records:
+        content = (rec.get("message") or {}).get("content")
+        if not isinstance(content, list):
+            continue
+        for b in content:
+            if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("is_error"):
+                tid = b.get("tool_use_id")
+                if isinstance(tid, str):
+                    failed.add(tid)
+
+    out: list[str] = []
+    for rec in records:
+        if rec.get("type") != "assistant":
+            continue
+        content = (rec.get("message") or {}).get("content")
+        if not isinstance(content, list):
+            continue
+        for b in content:
+            if not isinstance(b, dict) or b.get("type") != "tool_use":
+                continue
+            if b.get("name") not in _EDIT_TOOLS:
+                continue
+            if b.get("id") in failed:
+                continue          # the edit was REFUSED — no work happened
+            inp = b.get("input") or {}
+            path = inp.get("file_path") or inp.get("notebook_path")
+            if isinstance(path, str) and path:
+                out.append(path)
+    return out
+
+
+def assistant_texts_since_last_user(lines: list[str]) -> list[str] | None:
+    """The text half of the window. Kept because the self-test exercises it directly.
+
+    ⚠ NOT "unchanged": the isMeta rule in records_since_last_user changes what this returns for a
+    window containing a meta boundary. It is the same function of a different window.
+    """
+    records = records_since_last_user(lines)
+    return None if records is None else texts_of(records)
 
 
 def _is_tool_result(rec: dict) -> bool:
@@ -136,7 +254,8 @@ def highest_banner(texts: list[str]) -> tuple[int, int] | None:
     return best
 
 
-def decide(texts: list[str] | None, armed: bool) -> tuple[int, str]:
+def decide(texts: list[str] | None, armed: bool,
+           steps=_UNSET, edited: bool = False) -> tuple[int, str]:
     """-> (exit_code, message). Pure: every input is passed in."""
     if texts is None:
         return CANNOT_RUN, (
@@ -144,8 +263,33 @@ def decide(texts: list[str] | None, armed: bool) -> tuple[int, str]:
             "not look for a step banner. TREAT THIS AS NOT RUN — do not read the absence of a "
             "warning as 'nothing was announced'.")
 
+    # Blindness is a property of the sentinel and the plan file, NOT of whether the assistant
+    # happened to type a heading — so it is answered before the banner is even looked at.
+    if armed and steps is None:
+        return CANNOT_RUN, (
+            "CANNOT RUN: .claude/executing-plan names a plan this check could not measure — "
+            "missing, unreadable, or containing zero `- [ ]` step checkboxes — or "
+            "`scripts/check-plan-progress.py`, whose checkbox rule this borrows, could not be "
+            "imported. TREAT THIS AS NOT RUN — do not read the absence of a warning as 'a banner "
+            "was not owed'.")
+
     banner = highest_banner(texts)
     if banner is None:
+        unticked = 0 if steps is _UNSET or steps is None else steps[1] - steps[0]
+        if armed and unticked > 0 and edited:
+            return WARN, (
+                f"⚠ PLAN WITHOUT A BANNER — this turn edited a file in the repo with "
+                f"{unticked} step(s) still unticked, and emitted no `## ▶ STEP i of N`.\n"
+                "\n"
+                "   The banner is the affordance: a reader who was away cannot tell what you\n"
+                "   are doing from a wall of tool calls. begin-plan.py prints one to the STDOUT\n"
+                "   of a Bash call, which is shown to you and NOT reliably to the human — so\n"
+                "   printing it there is not emitting it. It must be in your own visible text.\n"
+                "\n"
+                "   If this stop is being blocked, you are reading this mid-plan: emit the\n"
+                "   banner for the step you are on before continuing. If the plan is genuinely\n"
+                "   waiting on in-flight work, `begin-plan.py --pause <why>` stands it down.\n"
+                f"   Logged to {WARN_LOG.relative_to(ROOT)}.")
         return QUIET, ""
 
     step, total = banner
@@ -158,7 +302,8 @@ def decide(texts: list[str] | None, armed: bool) -> tuple[int, str]:
         f"⚠ BANNER WITHOUT A PLAN — this turn announced `STEP {step} of {total}` and is ending "
         f"with {total - step} step(s) unannounced, while .claude/executing-plan names nothing.\n"
         "\n"
-        "   Nothing is blocked. This is the WARN-ONLY half of task #224: the Stop guard\n"
+        "   This does not block your stop by itself. Another check may be blocking it.\n"
+        "   This is the WARN-ONLY half of task #224: the Stop guard\n"
         "   (check-plan-progress.py) can only refuse a premature stop if a plan was armed, and\n"
         "   arming it is one command:\n"
         "\n"
@@ -170,22 +315,119 @@ def decide(texts: list[str] | None, armed: bool) -> tuple[int, str]:
         "   ever become blocking.")
 
 
-def log_line(step: int, total: int, when: str, session: str) -> str:
-    """One appended record. Tab-separated so the log stays greppable and countable."""
-    return f"{when}\t{session or '-'}\tSTEP {step} of {total}\tunarmed\n"
+def log_line(reason: str, detail: str, when: str, session: str) -> str:
+    """One appended record. Tab-separated so the log stays greppable and countable.
+
+    `reason` discriminates the two warning classes. The banner-less class has NO banner by
+    construction, so the previous shape — (step, total), written only when a banner existed —
+    could never record it, and a class the log cannot express reads as never having fired.
+
+    Nothing parses this file (searched 2026-09-04: only this module, its self-test, a comment in
+    block-idle-stop.sh, and prose in docs/dashboard-entries.md).
+    """
+    return f"{when}\t{session or '-'}\t{reason}\t{detail}\n"
 
 
 # ── I/O shell ─────────────────────────────────────────────────────────────────────────────────
 
-def _armed() -> bool:
-    try:
-        text = SENTINEL.read_text()
-    except OSError:
-        return False
+def _armed_from_text(text: str) -> bool:
+    """PURE. True iff the sentinel names a plan AND has not been stood down.
+
+    `paused:` is honoured because check-plan-progress.decide() honours it — the two must agree
+    about what "armed" means, or this guard's principal firing state becomes the one documented
+    escape (begin-plan.py --pause, for being legitimately blocked on in-flight work).
+
+    ⚠ THE `":" not in line` SKIP IS LOAD-BEARING, and it is the SECOND parser problem, not a
+    style choice. check-plan-progress.parse_sentinel skips any line without a colon. Without this
+    line, `**paused**` (no colon) reads as key "**paused**" here and as nothing there — this guard
+    would stand down while the blocking guard still blocks, suppressing the very warning that
+    would explain the block. Measured 2026-09-04; the trigger is a hand-edited sentinel, which is
+    what check-plan-progress's own block message tells the human to write.
+    """
+    named = False
     for line in text.splitlines():
-        if line.split(":", 1)[0].strip() == "plan" and line.split(":", 1)[-1].strip():
-            return True
+        if ":" not in line:
+            continue
+        key = line.split(":", 1)[0].strip()
+        if key == "paused":
+            return False
+        if key == "plan" and line.split(":", 1)[-1].strip():
+            named = True
+    return named
+
+
+def _load_plan_progress():
+    """Import check-plan-progress.py BY PATH — the hyphen makes it un-importable by name."""
+    spec = importlib.util.spec_from_file_location(
+        "_plan_progress", ROOT / "scripts" / "check-plan-progress.py")
+    if spec is None or spec.loader is None:
+        raise ImportError("cannot load scripts/check-plan-progress.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    for n in ("count_steps", "parse_sentinel"):
+        if not hasattr(mod, n):
+            raise ImportError(
+                f"scripts/check-plan-progress.py no longer defines {n} — this guard borrows the "
+                f"checkbox rule rather than copying it.")
+    return mod
+
+
+def _plan_steps():
+    """-> (done, total), or None if the plan cannot be measured. Never raises `Exception`.
+
+    None covers BOTH "no readable plan file" and "zero checkboxes parsed" — the owning guard
+    treats zero checkboxes as CANNOT RUN, not as "finished", and this guard must agree.
+
+    `except Exception` deliberately: exec_module runs arbitrary module-level code. Measured — one
+    undefined name at module scope in the borrowed file escaped a narrow list as a traceback and
+    exit 1, indistinguishable at the hook from a genuine warning.
+    """
+    try:
+        mod = _load_plan_progress()
+        fields = mod.parse_sentinel(SENTINEL.read_text())
+        plan = (ROOT / fields["plan"]).resolve()
+        done, total = mod.count_steps(plan.read_text())
+        return None if total == 0 else (done, total)
+    except Exception:
+        return None
+
+
+def _edit_inside_repo(paths: list[str], root: Path) -> bool:
+    """True iff any path is a FILE inside `root` that counts as plan work.
+
+    `is_relative_to`, never str.startswith: a sibling checkout `<root>-old` prefix-matches.
+    Relative paths are REFUSED — the tool inputs record file_path but never the cwd it was
+    relative to. `parts` must be NON-EMPTY, or `root` itself passes the `.git` test vacuously.
+    """
+    for candidate in (Path(p) for p in paths):
+        if not candidate.is_absolute():
+            continue
+        resolved = candidate.resolve()
+        if not resolved.is_relative_to(root):
+            continue
+        parts = resolved.relative_to(root).parts
+        if not parts or parts[0] == ".git":
+            continue
+        if resolved.is_dir():
+            continue          # a directory is not a file this turn edited
+        return True
     return False
+
+
+def _armed():
+    """True / False, or None when the sentinel EXISTS but cannot be read.
+
+    ⚠ FileNotFoundError is the normal "nothing armed" case and is False. Anything else — a
+    permission error, undecodable bytes — means this check cannot reach what it measures, and the
+    module docstring promises that is never a quiet pass. None is that third state; run_decide
+    maps it to CANNOT RUN.
+    """
+    try:
+        return _armed_from_text(SENTINEL.read_text())
+    except FileNotFoundError:
+        return False
+    except (OSError, UnicodeDecodeError):
+        return None
 
 
 def run_decide(payload: str) -> int:
@@ -194,29 +436,41 @@ def run_decide(payload: str) -> int:
     except (ValueError, TypeError):
         data = {}
 
-    texts: list[str] | None = None
+    records: list[dict] | None = None
     path = data.get("transcript_path")
     if isinstance(path, str) and path:
         try:
-            texts = assistant_texts_since_last_user(Path(path).read_text().splitlines())
+            records = records_since_last_user(Path(path).read_text().splitlines())
         except OSError:
-            texts = None
+            records = None
+    texts = None if records is None else texts_of(records)
 
-    code, message = decide(texts, _armed())
+    armed = _armed()
+    if armed is None:
+        print("CANNOT RUN: .claude/executing-plan exists but could not be read, so this check "
+              "cannot tell whether a banner was owed. TREAT THIS AS NOT RUN.", file=sys.stderr)
+        return CANNOT_RUN
+    steps = _plan_steps() if armed else _UNSET      # local: the log block below reads it
+    edited = _edit_inside_repo(edited_paths_of(records or []), ROOT)
+    code, message = decide(texts, armed, steps=steps, edited=edited)
 
     if code == WARN:
         banner = highest_banner(texts or [])
         if banner:
-            when = _dt.datetime.now().astimezone().replace(microsecond=0).isoformat()
-            try:
-                WARN_LOG.parent.mkdir(parents=True, exist_ok=True)
-                with WARN_LOG.open("a") as fh:
-                    fh.write(log_line(banner[0], banner[1], when, str(data.get("session_id", ""))))
-            except OSError as e:
-                # NOT swallowed: the log IS the justification for warn-only mode, so losing it is
-                # part of the warning rather than a detail. Still non-blocking, still exit WARN.
-                message += f"\n\n   ⚠ AND THE LOG COULD NOT BE WRITTEN ({e}) — the false-alarm " \
-                           f"rate is not being recorded."
+            reason, detail = "unarmed", f"STEP {banner[0]} of {banner[1]}"
+        else:
+            unticked = 0 if steps is _UNSET or steps is None else steps[1] - steps[0]
+            reason, detail = "unbannered", f"{unticked} unticked"
+        when = _dt.datetime.now().astimezone().replace(microsecond=0).isoformat()
+        try:
+            WARN_LOG.parent.mkdir(parents=True, exist_ok=True)
+            with WARN_LOG.open("a") as fh:
+                fh.write(log_line(reason, detail, when, str(data.get("session_id", ""))))
+        except OSError as e:
+            # NOT swallowed: the log IS the justification for warn-only mode, so losing it is
+            # part of the warning rather than a detail. Still non-blocking, still exit WARN.
+            message += f"\n\n   ⚠ AND THE LOG COULD NOT BE WRITTEN ({e}) — the false-alarm " \
+                       f"rate is not being recorded."
 
     if message:
         print(message, file=sys.stderr)
@@ -252,8 +506,8 @@ def _self_test() -> int:
          "3 step(s) unannounced" in decide([B.format(2, 5)], armed=False)[1])
     case("...and it names the one command that fixes it",
          "begin-plan.py" in decide([B.format(2, 5)], armed=False)[1])
-    case("...and it says plainly that nothing is blocked",
-         "Nothing is blocked" in decide([B.format(2, 5)], armed=False)[1])
+    case("...and it does not claim nothing is blocked — another check may be blocking",
+         "does not block your stop by itself" in decide([B.format(2, 5)], armed=False)[1])
     case("the SAME turn, armed -> quiet",
          decide([B.format(2, 5)], armed=True)[0] == QUIET)
     case("a FINISHED job (i == N) -> quiet even unarmed — the main false alarm, handled",
@@ -308,9 +562,262 @@ def _self_test() -> int:
          decide([], armed=False)[0] == QUIET)
 
     # ── the log ────────────────────────────────────────────────────────────────────────────
-    case("the log line is tab-separated and states the banner and the state",
-         log_line(2, 5, "2026-09-04T07:00:00-07:00", "sess").split("\t")[2:]
-         == ["STEP 2 of 5", "unarmed\n"])
+    case("the log line is tab-separated and states the state and the detail",
+         log_line("unarmed", "STEP 2 of 5", "2026-09-04T07:00:00-07:00", "sess").split("\t")[1:]
+         == ["sess", "unarmed", "STEP 2 of 5\n"])
+
+
+    # ── the window: isMeta is not a boundary, a task notification is ───────────────────────
+    def meta(text: str) -> str:
+        return json.dumps({"type": "user", "isMeta": True, "message": {"content": text}})
+
+    def notif(text: str) -> str:
+        return json.dumps({"type": "user", "promptSource": "system",
+                           "message": {"content": text}})
+
+    def edit(path: str) -> str:
+        return json.dumps({"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "name": "Edit", "input": {"file_path": path}}]}})
+
+    case("F5 an isMeta record is NOT a turn boundary — the banner stays in window",
+         highest_banner(texts_of(records_since_last_user(
+             [user("go"), asst(B.format(2, 4)), meta("Stop hook feedback: DO NOT STOP"),
+              asst("kept working")]) or [])) == (2, 4))
+    case("R6 a task notification IS a turn boundary — 52 of 72 such records begin a real turn",
+         highest_banner(texts_of(records_since_last_user(
+             [user("go"), asst(B.format(2, 4)), notif("<task-notification/>"),
+              asst("new turn")]) or [])) is None)
+    case("edited_paths_of finds an Edit's file_path in the window",
+         edited_paths_of(records_since_last_user([user("go"), edit("/a/b.py")]) or [])
+         == ["/a/b.py"])
+    case("edited_paths_of ignores a non-editing tool",
+         edited_paths_of([{"type": "assistant", "message": {"content": [
+             {"type": "tool_use", "name": "Bash", "input": {"command": "ls"}}]}}]) == [])
+
+    # ── armed means "currently obligates a banner" ─────────────────────────────────────────
+    case("R5 a paused sentinel is NOT armed — pause is the in-flight-work escape",
+         _armed_from_text("plan: x.md\narmed: t\npaused: waiting on CI\n") is False)
+    case("...but a plain armed sentinel still is",
+         _armed_from_text("plan: x.md\narmed: t\n") is True)
+    case("...and a sentinel with no plan value is not armed", _armed_from_text("armed: t\n") is False)
+    case("a colon-less `paused` line is SKIPPED, so this parser agrees with parse_sentinel",
+         _armed_from_text("plan: x.md\npaused\n") is True)
+
+    # ── blindness, answered before the banner ──────────────────────────────────────────────
+    case("F2 armed + unreadable plan + a banner present is still CANNOT RUN",
+         decide([B.format(2, 5)], armed=True, steps=None)[0] == CANNOT_RUN)
+    case("F3 armed + a plan parsing to zero checkboxes is CANNOT RUN, never quiet",
+         decide([], armed=True, steps=None)[0] == CANNOT_RUN)
+    case("...and it says TREAT THIS AS NOT RUN",
+         "TREAT THIS AS NOT RUN" in decide([], armed=True, steps=None)[1])
+    case("a PAUSED plan with an unreadable file is quiet, not CANNOT RUN — stood down",
+         decide([], armed=False, steps=None)[0] == QUIET)
+    case("the default _UNSET means 'not consulted' and changes nothing",
+         decide([B.format(2, 5)], armed=True)[0] == QUIET)
+
+    # ── the branch that was the point ──────────────────────────────────────────────────────
+    S = (1, 4)
+    case("F1 armed + work left + an edit + NO banner WARNS — the direction that failed",
+         decide([], armed=True, steps=S, edited=True)[0] == WARN)
+    case("...and the message hedges about blocking rather than denying it",
+         "If this stop is being blocked" in decide([], armed=True, steps=S, edited=True)[1])
+    case("...and it names the plan-without-banner direction",
+         "PLAN WITHOUT A BANNER" in decide([], armed=True, steps=S, edited=True)[1])
+    case("R1 armed + work left + NO edit -> quiet (catches `edited` hardcoded true)",
+         decide([], armed=True, steps=S, edited=False)[0] == QUIET)
+    case("R2 not armed + an edit -> quiet (catches dropping the armed term)",
+         decide([], armed=False, steps=S, edited=True)[0] == QUIET)
+    case("R4 a banner IS present -> the existing branches decide (catches a reorder)",
+         decide([B.format(2, 4)], armed=True, steps=S, edited=True)[0] == QUIET)
+    case("a finished plan (0 unticked) + an edit -> quiet",
+         decide([], armed=True, steps=(4, 4), edited=True)[0] == QUIET)
+
+    _r = Path("/repo")
+    case("R3 an edit outside the repo does not count (the scratchpad case)",
+         _edit_inside_repo(["/tmp/scratch/x.md"], _r) is False)
+    # ⚠ the root MUST be Path.cwd() here. Against an arbitrary root a relative path resolves
+    # outside it anyway, so the case passes with OR without the fix — measured vacuous.
+    case("a relative path is REFUSED — nothing records the cwd it was relative to",
+         _edit_inside_repo(["docs/x.md"], Path.cwd()) is False)
+    case("a sibling checkout does not prefix-match (/repo-old is not inside /repo)",
+         _edit_inside_repo(["/repo-old/x.md"], _r) is False)
+    case("a .git write is not plan work", _edit_inside_repo(["/repo/.git/HEAD"], _r) is False)
+    case("the repo ROOT ITSELF is not a file inside the repo (parts is empty)",
+         _edit_inside_repo(["/repo"], _r) is False)
+    case("...but .github IS ordinary work, not a .git write",
+         _edit_inside_repo(["/repo/.github/workflows/ci.yml"], _r) is True)
+    case("an ordinary repo file counts", _edit_inside_repo(["/repo/scripts/x.py"], _r) is True)
+
+    # M1 — the None state needs a real unreadable file; asserting on _armed_from_text would
+    # test the parser, not the failure mode. (First draft of this case did exactly that.)
+    import tempfile as _tf1
+    with _tf1.TemporaryDirectory() as _d1:
+        _bad = Path(_d1) / "executing-plan"
+        _bad.write_bytes(b"plan: x.md\n\xff\xfe not utf-8 \xff\n")
+        _sv = SENTINEL
+        globals()["SENTINEL"] = _bad
+        try:
+            case("M1 a sentinel that EXISTS but cannot be read is None, not a quiet False",
+                 _armed() is None)
+            globals()["SENTINEL"] = Path(_d1) / "does-not-exist"
+            case("...while a missing sentinel is the ordinary unarmed case, False",
+                 _armed() is False)
+        finally:
+            globals()["SENTINEL"] = _sv
+    case("M2 the blindness message names the import cause it can actually have",
+         "could not be imported" in decide([], armed=True, steps=None)[1])
+
+    # ── F4: the SIDE-EFFECT test. Round 1's H1 was that no test executed run_decide. ───────
+    # ⚠ BOTH fixture repairs are required and neither works alone (measured, round 2):
+    #   (i)  Path(_d).resolve() — on darwin /var is a symlink to /private/var, so an unresolved
+    #        root makes every edited path fail is_relative_to and `edited` is False -> QUIET.
+    #   (ii) a real scripts/check-plan-progress.py — _load_plan_progress resolves it under the
+    #        PATCHED ROOT; without it exec_module raises, _plan_steps returns None, and the
+    #        CANNOT_RUN hoist fires before the WARN branch.
+    import shutil as _sh, tempfile as _tf
+    with _tf.TemporaryDirectory() as _d:
+        _fx = Path(_d).resolve()
+        (_fx / ".claude").mkdir()
+        (_fx / "plans").mkdir()
+        (_fx / "scripts").mkdir()
+        _sh.copy(ROOT / "scripts" / "check-plan-progress.py", _fx / "scripts")
+        (_fx / "plans" / "p.md").write_text("- [x] one\n- [ ] two\n- [ ] three\n- [ ] four\n")
+        (_fx / ".claude" / "executing-plan").write_text("plan: plans/p.md\narmed: t\n")
+        _tr = _fx / "t.jsonl"
+        _tr.write_text("\n".join([
+            json.dumps({"type": "user", "message": {"content": "go"}}),
+            json.dumps({"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "name": "Edit",
+                 "input": {"file_path": str(_fx / "scripts" / "x.py")}}]}}),
+        ]))
+        _saved = (ROOT, SENTINEL, WARN_LOG)
+        globals()["ROOT"] = _fx
+        globals()["SENTINEL"] = _fx / ".claude/executing-plan"
+        globals()["WARN_LOG"] = _fx / ".claude/banner-warnings.log"
+        try:
+            _rc = run_decide(json.dumps({"transcript_path": str(_tr), "session_id": "s"}))
+            _log = _fx / ".claude/banner-warnings.log"
+            case("F4 run_decide WARNS on the new class AND appends a line — the side effect",
+                 _rc == WARN and _log.exists()
+                 and _log.read_text().rstrip("\n").endswith("\tunbannered\t3 unticked"))
+
+            # H1 — the total==0 -> CANNOT RUN mapping, which two review rounds established and
+            # which no test previously exercised: the old case never parsed a plan at all.
+            (_fx / "plans" / "p.md").write_text("just prose, no checkboxes at all\n")
+            _before = _log.read_text()
+            _rc0 = run_decide(json.dumps({"transcript_path": str(_tr), "session_id": "s"}))
+            case("H1 a plan with ZERO checkboxes is CANNOT RUN through run_decide, not quiet",
+                 _rc0 == CANNOT_RUN)
+            case("...and nothing is logged for a run that could not measure",
+                 _log.read_text() == _before)
+            (_fx / "plans" / "p.md").write_text("- [x] one\n- [ ] two\n- [ ] three\n- [ ] four\n")
+
+            # M5 — spec R3 at the WIRING, not just the predicate: `edited` hardcoded True in
+            # run_decide would pass the old predicate-level case and fail this one.
+            _tr2 = _fx / "outside.jsonl"
+            _tr2.write_text("\n".join([
+                json.dumps({"type": "user", "message": {"content": "go"}}),
+                json.dumps({"type": "assistant", "message": {"content": [
+                    {"type": "tool_use", "id": "z1", "name": "Edit",
+                     "input": {"file_path": "/tmp/scratch/not-in-repo.md"}}]}}),
+            ]))
+            _before = _log.read_text()
+            _rcO = run_decide(json.dumps({"transcript_path": str(_tr2), "session_id": "s"}))
+            case("M5 an edit OUTSIDE the repo stays QUIET through run_decide, and logs nothing",
+                 _rcO == QUIET and _log.read_text() == _before)
+
+            # H3 — the UNARMED class, the guard's only previously-shipped behaviour, had no
+            # execution coverage at all. Three log mutations survived because of it.
+            (_fx / ".claude" / "executing-plan").unlink()
+            _tr3 = _fx / "unarmed.jsonl"
+            _tr3.write_text("\n".join([
+                json.dumps({"type": "user", "message": {"content": "go"}}),
+                json.dumps({"type": "assistant", "message": {"content": [
+                    {"type": "text", "text": "## ▶ STEP 2 of 5 — doing a thing"}]}}),
+            ]))
+            _rcU = run_decide(json.dumps({"transcript_path": str(_tr3), "session_id": "s"}))
+            case("H3 the UNARMED class still warns AND logs its own reason and detail",
+                 _rcU == WARN
+                 and _log.read_text().rstrip("\n").endswith("\tunarmed\tSTEP 2 of 5"))
+        finally:
+            globals()["ROOT"], globals()["SENTINEL"], globals()["WARN_LOG"] = _saved
+
+    # ── F6: reachability. STRUCTURAL, not an execution test — see the plan. ────────────────
+    _hook = (ROOT / ".claude/hooks/block-idle-stop.sh").read_text()
+    _obs, _blk = "check-banner-armed.py", 'check-plan-progress.py" "${ARGS[@]}"'
+    case("F6 the banner guard is invoked BEFORE the blocking check that can exit early",
+         _obs in _hook and _blk in _hook and _hook.index(_obs) < _hook.index(_blk))
+    case("F6b the hook uses REPO_ROOT — $ROOT is empty and would block every stop",
+         "$ROOT/scripts" not in _hook)
+    # F6c — the guard being INVOKED is not the same as its result being READ. Deleting BANNER_RC
+    # from the exit arithmetic leaves an unblocked stop at exit 0, which discards the warning:
+    # the guard would run, log, report success, and reach nobody. This slice's own failure, one
+    # layer out. Structural, like F6.
+    case("F6c BANNER_RC reaches the hook's exit arithmetic, not just the invocation",
+         '"$BANNER_RC" != "0"' in _hook)
+
+
+    # ── an ATTEMPTED edit is not an edit (code review r1) ──────────────────────────────────
+    def edit_id(path: str, tid: str) -> str:
+        return json.dumps({"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": tid, "name": "Edit", "input": {"file_path": path}}]}})
+
+    def result(tid: str, err: bool) -> str:
+        return json.dumps({"type": "user", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": tid, "is_error": err, "content": "x"}]}})
+
+    case("a FAILED Edit does not count as work — 22 error results in 40 transcripts",
+         edited_paths_of(records_since_last_user(
+             [user("go"), edit_id("/a/b.py", "t1"), result("t1", True)]) or []) == [])
+    case("...but a SUCCEEDED Edit does",
+         edited_paths_of(records_since_last_user(
+             [user("go"), edit_id("/a/b.py", "t1"), result("t1", False)]) or []) == ["/a/b.py"])
+    case("...and an UNPAIRED Edit counts — at stop time that is in-flight, not refused",
+         edited_paths_of(records_since_last_user(
+             [user("go"), edit_id("/a/b.py", "t1")]) or []) == ["/a/b.py"])
+    case("...and one failed edit does not suppress a different successful one",
+         edited_paths_of(records_since_last_user(
+             [user("go"), edit_id("/a/bad.py", "t1"), edit_id("/a/ok.py", "t2"),
+              result("t1", True), result("t2", False)]) or []) == ["/a/ok.py"])
+    def use(path: str, tid: str, name: str) -> str:
+        return json.dumps({"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": tid, "name": name, "input": {"file_path": path}}]}})
+
+    case("M3 a Write counts too — deleting it from _EDIT_TOOLS narrows detection silently",
+         edited_paths_of(records_since_last_user(
+             [user("go"), use("/a/w.py", "w1", "Write")]) or []) == ["/a/w.py"])
+    case("...and a NotebookEdit counts",
+         edited_paths_of(records_since_last_user(
+             [user("go"), use("/a/n.ipynb", "n1", "NotebookEdit")]) or []) == ["/a/n.ipynb"])
+    case("...but an unrelated tool still does not",
+         edited_paths_of(records_since_last_user(
+             [user("go"), use("/a/r.py", "r1", "Read")]) or []) == [])
+
+    case("a DIRECTORY inside the repo is not a file this turn edited",
+         _edit_inside_repo([str(ROOT / "scripts")], ROOT) is False)
+    case("...while a real file in that directory is",
+         _edit_inside_repo([str(ROOT / "scripts" / "check-banner-armed.py")], ROOT) is True)
+
+
+    # ── isMeta is not a synonym for "not the human" (code review r1, M4) ───────────────────
+    def meta_msg(text: str) -> str:
+        return json.dumps({"type": "user", "isMeta": True, "message": {"content": text}})
+
+    case("an isMeta record RELAYING the human IS a boundary — 30 such in the corpus",
+         highest_banner(texts_of(records_since_last_user(
+             [user("go"), asst(B.format(2, 4)),
+              meta_msg("The user sent a new message while you were working: do X"),
+              asst("new turn")]) or [])) is None)
+    case("...as is a slash command the human typed — 67 such in the corpus",
+         highest_banner(texts_of(records_since_last_user(
+             [user("go"), asst(B.format(2, 4)),
+              meta_msg("<local-command-caveat>Caveat: ...</local-command-caveat>"),
+              asst("new turn")]) or [])) is None)
+    case("...but a system-reminder injection is still NOT a boundary",
+         highest_banner(texts_of(records_since_last_user(
+             [user("go"), asst(B.format(2, 4)),
+              meta_msg("<system-reminder>background context</system-reminder>"),
+              asst("kept working")]) or [])) == (2, 4))
 
     passed = sum(1 for _, ok in cases if ok)
     print(f"\n{passed}/{len(cases)} self-test cases passed")

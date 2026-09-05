@@ -33,6 +33,23 @@ except Exception:
 ARGS=(--decide)
 [[ "$STOP_HOOK_ACTIVE" == "1" ]] && ARGS+=(--stop-hook-active)
 
+# ── Observer, deliberately AHEAD of the blocking check ───────────────────────────────────────
+# It must run in the very state that check REFUSES: armed with unticked steps. Ordering is free
+# because it cannot block — and it is REQUIRED, because check-plan-progress.run_decide UNLINKS
+# .claude/executing-plan when the last step is ticked, so running after it reads a deleted
+# sentinel.
+#
+# WHO READS THIS depends on the exit code, and all three states are intended:
+#   * a blocked stop exits 2 and CLAUDE reads it — the actor, when the next banner is due;
+#   * an ordinary unblocked stop exits 1 and the HUMAN reads it — the auditor, when there is
+#     nothing left to correct;
+#   * or it exits 1 because the ANTI-NAG let a no-progress stop through, in which case the human
+#     sees a message addressed to the assistant. The message hedges for exactly that reason.
+printf '%s' "$INPUT" | python3 "$REPO_ROOT/scripts/check-banner-armed.py" --decide
+BANNER_RC=$?
+
+# ⚠ THIS COMMENT DESCRIBES THE BLOCKING CHECK BELOW, not the observer above. The 2026-09-05
+# reorder moved the observer in between and orphaned it; re-attached deliberately.
 # A hook that cannot run must not silently allow the stop it exists to question — but it also must
 # not wedge the session on a broken interpreter. Blocking ONCE with a loud message is the middle
 # ground: visible, and cleared by the anti-nag guard on the next attempt.
@@ -40,21 +57,6 @@ if ! python3 "$REPO_ROOT/scripts/check-plan-progress.py" "${ARGS[@]}"; then
     exit 2
 fi
 
-# ── Second question, added 2026-09-04 (task #224 residue) ────────────────────────────────────
-# The check above can only refuse a premature stop while a plan is ARMED. Nothing armed means it
-# says nothing — which is indistinguishable, from here, from "there was no plan". So ask the other
-# question: did this turn ANNOUNCE a multi-step job (`## ▶ STEP i of N`, i < N) with nothing armed?
-#
-# WARN-ONLY BY DECISION (user, 2026-09-04). Exit 1 is Claude Code's non-blocking error: stderr is
-# shown to the user, the stop proceeds. Exit 2 would block, and is deliberately NOT used here.
-# Every firing is appended to .claude/banner-warnings.log so the false-alarm rate is a number
-# before anyone decides whether this should ever block.
-#
-# The payload is re-fed on stdin because the read above consumed it.
-printf '%s' "$INPUT" | python3 "$REPO_ROOT/scripts/check-banner-armed.py" --decide
-BANNER_RC=$?
-# 0 = quiet. 1 = warn. 2 = CANNOT RUN (it could not read the transcript) — surfaced, not silent,
-# but still never blocking: a broken detector must not be able to wedge a turn it only observes.
 # ── Third question, added 2026-09-04 (user-reported) ────────────────────────────────────────
 # A background watcher that polls CI already existed and worked — it caught a red this session.
 # It was armed for ONE of three pushes, and after the other two the user had to ask whether CI had
