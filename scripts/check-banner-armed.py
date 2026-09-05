@@ -10,9 +10,14 @@ guard stays asleep. The coupling is conventional, not mechanical.
 
 This is the mechanical half, and it runs WARN-ONLY by default at the user's instruction — it
 reports, it never blocks. Warn-only is a real risk in this repo (a warning nobody must act on has
-failed here before), so the mitigation is that every firing is APPENDED TO A LOG. The question
-"does it false-alarm?" then has a number rather than an impression, and the decision to promote it
-to blocking can be made from data.
+failed here before), so the mitigation is that every firing is APPENDED TO A LOG.
+
+⚠ THE LOG DOES NOT YET ANSWER "does it false-alarm?", AND THAT WAS THE POINT OF HAVING IT
+(backlog #96, 2026-09-05). It records true partway-stops and the closing-banner artifacts below in
+the same shape, with nothing distinguishing them, so counting its lines yields a rate that is
+partly manufactured by the reader. It becomes evidence once #96 is fixed, and not before. It was
+re-baselined on 2026-09-05 rather than carried forward, because the pre-#96 entries cannot be
+retro-classified.
 
 THE DISCRIMINATOR, AND WHY IT IS NOT BACKLOG #48's
 ---------------------------------------------------
@@ -27,10 +32,20 @@ THE RULE, stated so its false alarms are predictable:
     warn  <=>  the HIGHEST banner in this turn is `STEP i of N` with i < N,  AND
                `.claude/executing-plan` names no plan.
 
-Taking the HIGHEST is what makes the common case quiet. A turn that announces five steps and
-finishes all five emits `STEP 5 of 5` as its highest banner, so i == N and nothing fires. What
-remains is exactly "announced a multi-step job, stopped partway" — the failure measured four times
-(backlog #44, #53, 2026-09-03).
+Taking the HIGHEST was MEANT to make the common case quiet: a turn that announces five steps and
+finishes all five emits `STEP 5 of 5`, so i == N and nothing fires, leaving exactly "announced a
+multi-step job, stopped partway" — the failure measured four times (backlog #44, #53, 2026-09-03).
+
+⚠ THAT MITIGATION DOES NOT WORK, AND SAYING SO IS THE WHOLE POINT OF THIS PARAGRAPH (backlog #96,
+documented 2026-09-05, deliberately not fixed). The banner that CLOSES a sequence normally sits in
+the turn's FINAL assistant message, which is not readable when the Stop hook runs — see WHAT IT
+CANNOT SEE. So `i < N` is true far more often than "stopped partway" is, and this guard over-fires
+from a design flaw rather than by choice.
+
+It still fires CORRECTLY when a turn genuinely stops partway — measured 2026-09-04 16:22 and
+2026-09-05 15:43, where no closing banner exists anywhere in the transcript. Both outcomes land in
+the same log and CANNOT be told apart after the fact, which is why the log was RE-BASELINED when
+this was written down rather than carried forward as if it were a false-alarm rate.
 
 It also answers the INVERSE — a plan armed, work done in the repo, and NO banner emitted at all.
 That is the direction that actually failed on 2026-09-04, when begin-plan.py printed banners to the
@@ -41,6 +56,21 @@ hook exits 2 and Claude reads it (the actor, when the next banner is due); on an
 exits 1 and the human reads it (the auditor). See .claude/hooks/block-idle-stop.sh.
 
 WHAT IT CANNOT SEE, stated rather than hidden:
+  * ⚠ THE BANNER THAT CLOSES ITS OWN TURN — the largest known source of false warnings, and the
+    reason the paragraph above retracts this guard's own precision claim. `run_decide` reads
+    `data["transcript_path"]` for the IN-FLIGHT turn, whose final assistant message is not flushed
+    when Stop hooks run. MEASURED TWICE BY TIMESTAMP: session `f3ab79ef` emitted `STEP 3 of 3` at
+    22:33:49 and the hook logged `STEP 2 of 3` in the same second; session `2ace2045` has
+    `## ▶ STEP 6 of 6` timestamped 0.172s BEFORE the hook fired, and the hook logged `STEP 5 of 6`
+    — so record order in the JSONL is message sequence, NOT read-time visibility.
+    The `unbannered` class gains a false-positive mode from this (a turn whose only banner was its
+    last message reads as zero banners) but keeps its true positives: a turn that emitted NO banner
+    has nothing to miss, flushed or not.
+    ⚠ THE FIX IS KNOWN AND DELIBERATELY NOT TAKEN HERE (backlog #96): judge the PREVIOUS completed
+    turn, whose text is durably on disk. It is not a patch — `_armed()` and `_plan_steps()` sample
+    the sentinel at decide time while the banners would come from the prior turn, so judging one
+    against the other needs per-turn state this guard does not have. That is a spec, and this slice
+    has already spent ten review rounds.
   * SUBAGENT edits. Measured: 0 `isSidechain:true` records across 508 transcripts for this project —
     subagent work lives in its own session file, so a coordinator turn that dispatches five
     reviewers reads as edited=False. `subagent-driven-development` is the Phase 3 DEFAULT here, so
@@ -66,7 +96,7 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 77 cases
+    python3 scripts/check-banner-armed.py --self-test  # 78 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -299,8 +329,14 @@ def decide(texts: list[str] | None, armed: bool,
         return QUIET, ""
 
     return WARN, (
-        f"⚠ BANNER WITHOUT A PLAN — this turn announced `STEP {step} of {total}` and is ending "
-        f"with {total - step} step(s) unannounced, while .claude/executing-plan names nothing.\n"
+        f"⚠ BANNER WITHOUT A PLAN — this turn's HIGHEST VISIBLE banner is `STEP {step} of "
+        f"{total}`, and .claude/executing-plan names nothing.\n"
+        "\n"
+        "   ⚠ THAT NUMBER MAY BE LOW, AND THIS CHECK CANNOT TELL. It cannot see the banner that\n"
+        "   CLOSES a turn — it reads a transcript that is still being written (backlog #96) — so\n"
+        f"   a job that announced and finished all {total} steps can look partway-done here.\n"
+        "   Do NOT read this as proof that work was left unannounced. Read it only as: a\n"
+        "   multi-step job ran with no plan armed.\n"
         "\n"
         "   This does not block your stop by itself. Another check may be blocking it.\n"
         "   This is the WARN-ONLY half of task #224: the Stop guard\n"
@@ -311,8 +347,9 @@ def decide(texts: list[str] | None, armed: bool,
         f"     scripts/begin-plan.py --plan <existing-plan.md>      # or arm on a real plan\n"
         "\n"
         "   If the job really is finished, this is a false alarm and it has been logged as one —\n"
-        f"   see {WARN_LOG.relative_to(ROOT)}. That log is the evidence for whether this should\n"
-        "   ever become blocking.")
+        f"   see {WARN_LOG.relative_to(ROOT)}. ⚠ That log MIXES real partway-stops with backlog\n"
+        "   #96 artifacts and the two cannot be told apart after the fact, so it is NOT yet a\n"
+        "   false-alarm rate. It was re-baselined 2026-09-05 for exactly that reason.")
 
 
 def log_line(reason: str, detail: str, when: str, session: str) -> str:
@@ -522,8 +559,19 @@ def _self_test() -> int:
     # ── the rule ───────────────────────────────────────────────────────────────────────────
     case("a partway banner with nothing armed WARNS",
          decide([B.format(2, 5)], armed=False)[0] == WARN)
-    case("...and the message says how many steps are left",
-         "3 step(s) unannounced" in decide([B.format(2, 5)], armed=False)[1])
+    # ⚠ THE MESSAGE USED TO SAY "3 step(s) unannounced" AND THAT WAS A CLAIM IT COULD NOT MAKE
+    # (backlog #96, option B, 2026-09-05). The closing banner is invisible to this check, so the
+    # arithmetic `total - step` describes what was VISIBLE, not what was left undone — mine said
+    # "1 step(s) unannounced" on a turn where zero were.
+    # ⚠ THE ABSENCE ASSERTION BELOW IS NOT VACUOUS: that exact phrase was in the delivered message
+    # until this commit, so the case goes red if the arithmetic is ever put back. (The recorded
+    # trap is an absence assertion against a phrase the message NEVER contained; this is the
+    # other kind.)
+    case("...and it does NOT assert how many steps are left — it cannot know that",
+         "step(s) unannounced" not in decide([B.format(2, 5)], armed=False)[1])
+    case("...and it says so out loud, naming the reason rather than hedging vaguely",
+         "MAY BE LOW" in decide([B.format(2, 5)], armed=False)[1]
+         and "CLOSES a turn" in decide([B.format(2, 5)], armed=False)[1])
     case("...and it names the one command that fixes it",
          "begin-plan.py" in decide([B.format(2, 5)], armed=False)[1])
     case("...and it does not claim nothing is blocked — another check may be blocking",

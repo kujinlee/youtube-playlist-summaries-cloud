@@ -2,9 +2,18 @@
 # Stop hook — fires when the session is about to end its turn.
 #
 # Refuses the stop while a plan named by `.claude/executing-plan` still has unticked steps, so a
-# mid-plan status summary cannot become a silent halt. All of the reasoning, the fail-closed rules
-# and the anti-nag guard live in scripts/check-plan-progress.py; this wrapper only translates
-# Claude Code's stdin JSON into that script's flags.
+# mid-plan status summary cannot become a silent halt. The blocking rules, the fail-closed
+# behaviour and the anti-nag guard live in scripts/check-plan-progress.py.
+#
+# ⟳ CORRECTED 2026-09-05 (code review r2, Low). This header used to say the wrapper "only
+# translates Claude Code's stdin JSON into that script's flags", and that all of the reasoning
+# lived in the blocking script. Both were false, and had been since the observers were added:
+#   * it invokes THREE scripts — check-banner-armed.py (:48), check-plan-progress.py (:56),
+#     check-ci-watched.py (:67) — not one;
+#   * the exit-code collapsing rule at the bottom of this file lives ONLY here and has no other
+#     home. That is reasoning, not translation.
+# Same shape as the r1 finding "Existing callers unchanged" describing an empty set: the sweep
+# that fixed the Python file's stale claims stopped at the Python file.
 #
 # ⟳ 2026-09-04, architecture review #5 finding E — CLOSED. This line used to state the script's
 # self-test case count. It said 18 while the suite ran 17, and nothing could catch that, because a
@@ -12,7 +21,12 @@
 # externally: check-plan-progress.py is pinned in check-selftest-counts.POPULATION. Do not restate
 # the number here — a second copy is what drifted, and citing the source is the whole fix.
 #
-# Contract: exit 2 blocks the stop and feeds stderr back to Claude; exit 0 allows it.
+# Contract, all THREE codes this wrapper can produce:
+#   exit 2 — blocks the stop and feeds stderr back to Claude. Only the blocking check causes this.
+#   exit 1 — allows the stop, shows stderr, does not block. Produced by EITHER observer warning or
+#            reporting CANNOT RUN. This is the path the banner/CI observers added, and the header
+#            omitted it entirely until 2026-09-05 (code review r2, Low).
+#   exit 0 — allows the stop silently.
 #
 # stop_hook_active tells us this turn is ALREADY a continuation caused by this hook. It is passed
 # through rather than obeyed: the script blocks again only if the unticked count FELL since the last
@@ -50,9 +64,21 @@ BANNER_RC=$?
 
 # ⚠ THIS COMMENT DESCRIBES THE BLOCKING CHECK BELOW, not the observer above. The 2026-09-05
 # reorder moved the observer in between and orphaned it; re-attached deliberately.
+#
 # A hook that cannot run must not silently allow the stop it exists to question — but it also must
-# not wedge the session on a broken interpreter. Blocking ONCE with a loud message is the middle
-# ground: visible, and cleared by the anti-nag guard on the next attempt.
+# not wedge the session on a broken interpreter. So a CANNOT-RUN blocks, loudly.
+#
+# ⟳ CORRECTED 2026-09-05 (code review r2, Low). This used to end "cleared by the anti-nag guard on
+# the next attempt", and that is FALSE for both paths that reach this `exit 2`:
+#   * a broken interpreter — decide() never runs, so the anti-nag never runs, and every subsequent
+#     stop blocks identically. "Blocking ONCE" is not what happens;
+#   * check-plan-progress's own CANNOT-RUN blocks (`:105` plan file missing, `:113` zero checkboxes)
+#     `return BLOCK, ..., None` BEFORE reaching the anti-nag at `:130`. That None means `:183`
+#     (`elif unticked is not None`) never writes STATE, so `prev_unticked` stays None and the
+#     anti-nag's own precondition is unsatisfiable by construction.
+# NOT a wedge, though — the real escape is printed by the block itself at `:109`: *"Fix the path or
+# delete .claude/executing-plan"*. The code was right; the comment named the wrong mechanism for it.
+# The r1 fold checked WHERE this comment sat and never re-read WHAT it claimed.
 if ! python3 "$REPO_ROOT/scripts/check-plan-progress.py" "${ARGS[@]}"; then
     exit 2
 fi
