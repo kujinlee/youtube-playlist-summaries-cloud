@@ -14,7 +14,38 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-04-banner-guard-inverse-design.md` (v3, approved).
 
-**v2, 2026-09-04** — folds the Post-Plan Gate (both halves NOT CONVERGED: 5 Blocking, 4 High, 6 Medium). Reviews: `docs/reviews/{claude,coordinator}/plan-banner-guard-inverse-r1-*.md`. **v1 would have crashed on its first real firing.** See *What round 1 found* below.
+**v3, 2026-09-05 — IMPLEMENTED AND VERIFIED. The DELIVERED CODE is authoritative, not this file.**
+
+⚠ **THE METHOD CHANGED, and that is what v3 is.** v1 and v2 were hand-written into Markdown and could
+not be executed. Four review rounds found four broken instruments; v2's own fixes were two more. v3
+was produced the other way round — every task applied to a scratch copy of the real files, RUN, and
+mutation-swept, *then* brought back here.
+
+**What that caught that four rounds of care did not:** two more vacuous tests, both mine, both copied
+from a reviewer's *illustrative example* into an *assertion* without checking the example
+discriminates. `_armed_from_text("…**paused**")` returns `True` with or without the fix — the key is
+`**paused**`, never `paused`. `_edit_inside_repo(["docs/x.md"], Path("/repo"))` returns `False` either
+way, because a relative path resolves against the cwd, not `/repo`. The discriminating inputs are a
+**bare `paused` line** and **`Path.cwd()` as the root**. Both measured.
+
+**Verification record — executed, not predicted:**
+
+| check | result |
+|---|---|
+| self-test | **55/55**; the declared count at `:47` set to 55 by reading the output, never by adding |
+| hook | `bash -n` clean; `BANNER_RC` set at `:52`, consumed at `:71` |
+| mutation sweep | **11/11 killed via the case each names** — WARN branch, CANNOT_RUN hoist, isMeta skip, colon-skip, empty-parts guard, `edited` term, `armed` term, log gate, paused clause, relative-path refusal, observer position |
+| control after restore | 55/55 |
+
+⚠ **The task bodies below are the historical route, not the delivered text.** They are kept for the
+reasoning; where they differ from `scripts/check-banner-armed.py`, **the file wins**. Two things exist
+only in the delivered code because they postdate v2: the `":" not in line` skip in `_armed_from_text`
+(round 2's M2 — without it this guard stands down on a hand-written colon-less `paused` while the
+blocking guard still blocks) and its self-test case. **This document deliberately stops carrying a
+second copy of the code** — a second copy is what drifts, which is the defect its own Global
+Constraints warn about.
+
+v2 folded the Post-Plan Gate (both halves NOT CONVERGED: 5 Blocking, 4 High, 6 Medium). Reviews: `docs/reviews/{claude,coordinator}/plan-banner-guard-inverse-r1-*.md`. **v1 would have crashed on its first real firing.** See *What round 1 found* below.
 
 ## Global Constraints
 
@@ -447,7 +478,7 @@ git commit -m "Borrow the plan DECISION, not just its counter, and answer blindn
     case("R3 an edit outside the repo does not count (the scratchpad case)",
          _edit_inside_repo(["/tmp/scratch/x.md"], root) is False)
     case("a relative path is REFUSED — nothing records the cwd it was relative to",
-         _edit_inside_repo(["docs/x.md"], root) is False)
+         _edit_inside_repo(["docs/x.md"], Path.cwd()) is False)   # ⚠ cwd, NOT an arbitrary root
     case("a sibling checkout does not prefix-match (/repo-old is not inside /repo)",
          _edit_inside_repo(["/repo-old/x.md"], root) is False)
     case("a .git write is not plan work",
@@ -570,7 +601,8 @@ Replace the existing log case at `:311-313`, and add the real F4:
     # that could have caught round 1's B1 (a NameError in run_decide that no pure test could see).
     import tempfile as _tf
     with _tf.TemporaryDirectory() as _d:
-        _root = Path(_d)
+        _root = Path(_d).resolve()   # ⚠ darwin: /var is a symlink to /private/var, and an
+                                     #   unresolved root makes every edited path read outside
         (_root / ".claude").mkdir()
         (_root / "plans").mkdir()
         (_root / "plans" / "p.md").write_text("- [x] one\n- [ ] two\n- [ ] three\n- [ ] four\n")
@@ -674,8 +706,12 @@ git commit -m "The log learns a second class, and F4 finally executes the path i
     # hook being unreadable, python3 being absent, or stdin not arriving.
     hook = (ROOT / ".claude/hooks/block-idle-stop.sh").read_text()
     case("F6 the banner guard is invoked BEFORE the blocking check that can exit early",
-         hook.index("check-banner-armed.py")
-         < hook.index('check-plan-progress.py "${ARGS[@]}"'))
+         _obs in hook and _blk in hook and hook.index(_obs) < hook.index(_blk))
+    # ⚠ TWO defects fixed here after round 2 measured them:
+    #   (a) the anchor is `check-plan-progress.py" "${ARGS[@]}"` — the path is QUOTED, so a `"`
+    #       sits between `.py` and the space. The form above occurs ZERO times and index() raised
+    #       ValueError, crashing the suite before AND after the Task 6 edit.
+    #   (b) `in` before `index`, or a removed invocation crashes instead of failing.
     case("F6b the hook uses REPO_ROOT — $ROOT is empty and would block every stop",
          "$ROOT/scripts" not in hook)
 ```
