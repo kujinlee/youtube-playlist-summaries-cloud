@@ -68,8 +68,13 @@ printf '%s' "$INPUT" | python3 "$REPO_ROOT/scripts/check-ci-watched.py" --decide
 CI_RC=$?
 
 # Any non-zero from EITHER observer surfaces as exit 1 — Claude Code's non-blocking error, which
-# shows stderr to the human and lets the stop proceed. Neither may return 2: a detector that only
-# observes must not be able to wedge a turn it has no stake in.
+# shows stderr to the human and lets the stop proceed.
+#
+# ⚠ BOTH observers CAN return 2 — it is their CANNOT-RUN code (check-banner-armed.py:70,
+# check-ci-watched.py:43), and they return it by design when they cannot reach what they measure.
+# What this arithmetic guarantees is that the HOOK never surfaces a 2 on their behalf: a detector
+# that only observes must not be able to wedge a turn it has no stake in. An earlier version of
+# this comment said "neither may return 2", which was false about both scripts (code review r2).
 if [[ "$BANNER_RC" != "0" || "$CI_RC" != "0" ]]; then
     exit 1
 fi

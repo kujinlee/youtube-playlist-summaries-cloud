@@ -66,7 +66,7 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 75 cases
+    python3 scripts/check-banner-armed.py --self-test  # 77 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -486,6 +486,26 @@ def _self_test() -> int:
         cases.append((name, ok))
         print(f"  {'PASS' if ok else 'FAIL'}  {name}")
 
+    def safe(predicate) -> bool:
+        """Evaluate a predicate so a RAISE is a FAILED CASE, not an aborted run.
+
+        ⚠ WITHOUT THIS, A KILL AND A CRASH ARE INDISTINGUISHABLE — and the crash is WORSE, because
+        it also hides every case after it. MEASURED (code review r2): narrowing `_armed`'s
+        `except (OSError, UnicodeDecodeError)` to `except UnicodeDecodeError` lets a PermissionError
+        escape through `case(...)`, so the run aborts with ZERO `FAIL` lines printed and no
+        `N/N cases passed` summary. A mutation harness grepping for `FAIL` reads that as "no case
+        caught it". The same revert against the M1 fixture executes only 52 of 78 cases, silently
+        dropping F6/F6b/F6c and every edited_paths_of case.
+
+        This is the recorded *a report format is a CONTRACT* shape: "the guard did not fire" and
+        "nothing could see it fire" produce the same output. Pass any predicate that can raise.
+        """
+        try:
+            return bool(predicate())
+        except Exception as exc:                      # noqa: BLE001 — a raise IS the failure here
+            print(f"        (raised {type(exc).__name__}: {exc})")
+            return False
+
     def asst(text: str) -> str:
         return json.dumps({"type": "assistant",
                            "message": {"content": [{"type": "text", "text": text}]}})
@@ -658,10 +678,29 @@ def _self_test() -> int:
         globals()["SENTINEL"] = _bad
         try:
             case("M1 a sentinel that EXISTS but cannot be read is None, not a quiet False",
-                 _armed() is None)
+                 safe(lambda: _armed() is None))
             globals()["SENTINEL"] = Path(_d1) / "does-not-exist"
             case("...while a missing sentinel is the ordinary unarmed case, False",
-                 _armed() is False)
+                 safe(lambda: _armed() is False))
+
+            # The OSError ARM (code review r2, Medium). _armed's docstring names TWO causes —
+            # "a permission error, undecodable bytes" — and only the second had a case. Narrowing
+            # `except (OSError, UnicodeDecodeError)` to `except UnicodeDecodeError` left the suite
+            # at 75/75, and a chmod-000 sentinel then escapes as an uncaught PermissionError. That
+            # traceback exits 1, which is WARN in this module's own table (:70), and the hook reads
+            # only `!= "0"` — so a CRASHED guard and a genuine warning are the same event at the
+            # hook. That is the exact failure _plan_steps records as measured and defends against
+            # (:381-383); this sibling had the same defence held by nothing.
+            # ⚠ SKIPPED AS ROOT, which can read a 000 file — the case would go vacuous, not red.
+            import os as _os
+            _perm = Path(_d1) / "no-read"
+            _perm.write_text("plan: x.md\narmed: t\n")
+            _os.chmod(_perm, 0o000)
+            globals()["SENTINEL"] = _perm
+            if _os.geteuid() != 0:
+                case("...and a PERMISSION-DENIED sentinel is None too, not an uncaught traceback",
+                     safe(lambda: _armed() is None))
+            _os.chmod(_perm, 0o600)
         finally:
             globals()["SENTINEL"] = _sv
     case("M2 the blindness message names the import cause it can actually have",
@@ -726,6 +765,24 @@ def _self_test() -> int:
             case("M5 an edit OUTSIDE the repo stays QUIET through run_decide, and logs nothing",
                  _rcO == QUIET and _log.read_text() == _before)
 
+            # Cx-M2 (code review r2) — the FOLD'S OWN M1 FIX had no wiring test. The case below
+            # in the tempdir block asserts `_armed() is None`: the PREDICATE. Nothing proved
+            # run_decide MAPS that None to CANNOT RUN. MEASURED: mutating `if armed is None:` to
+            # `if False:` at the run_decide guard left the suite at 75/75 — the fix was delivered
+            # naked. This is the SAME shape as M5 directly above ("predicate, not wiring"), which
+            # the fold fixed for `edited` and reintroduced for `armed` in the same commit.
+            #
+            # ⚠ WHY THIS DISCRIMINATES: with the early return deleted, None is falsy, so
+            # `steps` becomes _UNSET, decide()'s `armed and ...` guard is false, and the result
+            # is QUIET — not CANNOT_RUN. Asserting CANNOT_RUN is therefore not the codebase's
+            # default answer for this input, which is the property a case needs to be worth having.
+            (_fx / ".claude" / "executing-plan").write_bytes(
+                b"plan: plans/p.md\n\xff\xfe not utf-8 \xff\n")
+            _rcB = run_decide(json.dumps({"transcript_path": str(_tr), "session_id": "s"}))
+            case("Cx-M2 an UNREADABLE sentinel is CANNOT RUN through run_decide, not a quiet False",
+                 _rcB == CANNOT_RUN)
+            (_fx / ".claude" / "executing-plan").write_text("plan: plans/p.md\narmed: t\n")
+
             # H3 — the UNARMED class, the guard's only previously-shipped behaviour, had no
             # execution coverage at all. Three log mutations survived because of it.
             (_fx / ".claude" / "executing-plan").unlink()
@@ -744,7 +801,15 @@ def _self_test() -> int:
 
     # ── F6: reachability. STRUCTURAL, not an execution test — see the plan. ────────────────
     _hook = (ROOT / ".claude/hooks/block-idle-stop.sh").read_text()
-    _obs, _blk = "check-banner-armed.py", 'check-plan-progress.py" "${ARGS[@]}"'
+    # ⚠ _obs PINS THE INVOCATION, NOT THE FILENAME (code review r2, Medium). A bare
+    # "check-banner-armed.py" is matched by str.index at its FIRST occurrence ANYWHERE — comments
+    # included — and L3 put a five-line comment about the observer directly above the blocking
+    # check. Naming the file in that comment is the natural next edit and it silently disarms this
+    # case: MEASURED, the observer restored to its pre-slice position below the blocking check,
+    # plus that one reworded clause, gave PASS/PASS/PASS at 75/75 with the hook in the broken
+    # order. Anchors bind by TEXT, so improving the prose breaks the guard and the suite stays
+    # green — the recorded shape. No comment plausibly contains the `" --decide` suffix.
+    _obs, _blk = 'check-banner-armed.py" --decide', 'check-plan-progress.py" "${ARGS[@]}"'
     case("F6 the banner guard is invoked BEFORE the blocking check that can exit early",
          _obs in _hook and _blk in _hook and _hook.index(_obs) < _hook.index(_blk))
     case("F6b the hook uses REPO_ROOT — $ROOT is empty and would block every stop",
@@ -786,9 +851,19 @@ def _self_test() -> int:
     case("M3 a Write counts too — deleting it from _EDIT_TOOLS narrows detection silently",
          edited_paths_of(records_since_last_user(
              [user("go"), use("/a/w.py", "w1", "Write")]) or []) == ["/a/w.py"])
-    case("...and a NotebookEdit counts",
+    # ⚠ THE INPUT KEY IS `notebook_path`, NOT `file_path` (code review r2, Low). The first draft
+    # of this case used use(), which always emits file_path — so it exercised _EDIT_TOOLS
+    # membership and never the `or inp.get("notebook_path")` fallback at :209, which is the ONLY
+    # branch NotebookEdit actually takes in the real runtime. Deleting that fallback left the
+    # suite at 75/75. The tested shape was the one that never occurs.
+    def use_nb(path: str, tid: str) -> str:
+        return json.dumps({"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": tid, "name": "NotebookEdit",
+             "input": {"notebook_path": path}}]}})
+
+    case("...and a NotebookEdit counts, via the notebook_path key it actually sends",
          edited_paths_of(records_since_last_user(
-             [user("go"), use("/a/n.ipynb", "n1", "NotebookEdit")]) or []) == ["/a/n.ipynb"])
+             [user("go"), use_nb("/a/n.ipynb", "n1")]) or []) == ["/a/n.ipynb"])
     case("...but an unrelated tool still does not",
          edited_paths_of(records_since_last_user(
              [user("go"), use("/a/r.py", "r1", "Read")]) or []) == [])
