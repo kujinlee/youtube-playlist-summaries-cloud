@@ -100,7 +100,7 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 91 cases
+    python3 scripts/check-banner-armed.py --self-test  # 93 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -611,6 +611,29 @@ def sample_for(journal: dict | None, turn_uuid: str | None):
     return None
 
 
+def _late_flush(journal: dict | None, turn_uuid: str | None, seen_now: int):
+    """PURE. -> (len_at_its_own_stop, len_now) when the judged turn GREW since its stop, else None.
+
+    This is the runtime half of falsifier F11, and it exists because the corpus form could not
+    fail. A recorded transcript shows final file state; it can never show what was READABLE when a
+    hook ran. Comparing the count this turn had at its OWN stop against the count one stop later is
+    the only way to observe a late flush from inside the guard.
+
+    Growth is the only direction worth reporting: a shrinking window would mean the file was
+    rewritten, which is a different defect and not this one.
+    """
+    if not journal or not turn_uuid:
+        return None
+    for uuid_key, len_key in (("sampled_turn_uuid", "sampled_turn_len"),
+                              ("prev_turn_uuid", "prev_turn_len")):
+        if journal.get(uuid_key) == turn_uuid:
+            before = journal.get(len_key)
+            if isinstance(before, int) and seen_now > before:
+                return before, seen_now
+            return None
+    return None
+
+
 def _read_journal(session_id: str) -> dict | None:
     """None when there is nothing readable — a first Stop, or an unreadable file.
 
@@ -720,6 +743,16 @@ def run_decide(payload: str) -> int:
                     edited = _edit_inside_repo(edited_paths_of(judged.body), ROOT)
                     code, message = decide(texts, armed_then, steps=steps_then, edited=edited)
                     steps = steps_then           # the log block below reads it
+                    late = _late_flush(already, judged_uuid, len(judged.body))
+                    if late:
+                        message = (message + "\n\n   " if message else "") + (
+                            f"⚠ LATE FLUSH OBSERVED: when this turn's own stop hook ran it held "
+                            f"{late[0]} record(s); one stop later it holds {late[1]}. "
+                            f"{late[1] - late[0]} arrived after the hook had already read the file. "
+                            "That is the backlog #96 race, measured directly — judging one turn "
+                            "back gave enough margin here, but the margin is not unbounded.")
+                        if code == QUIET:
+                            code = WARN
 
     # ── 4. WRITE the journal — unconditional, and it outranks the verdict ─────────────────────
     # A CANNOT RUN *about this turn* must still leave a usable sample for the next one, or one
@@ -729,6 +762,13 @@ def run_decide(payload: str) -> int:
     live_uuid = None if live.opener is None else live.opener.get("uuid")
     record = {
         "sampled_turn_uuid": live_uuid,
+        # ⛔ F11's ONLY POSSIBLE FALSIFIER. How many records this turn had WHEN ITS OWN STOP RAN.
+        # One stop later the same turn is re-read; if it is now LONGER, records arrived after the
+        # hook looked — a late flush, measured rather than argued. The spec's earlier F11 compared
+        # transcript ORDER instead and passed 1828/1828 because `windows()` splits on order, so it
+        # restated the splitter. Flush timing is not a property of a finished file: only an
+        # observation taken at hook time can see it, and this is that observation.
+        "sampled_turn_len": len(live.body),
         "armed": armed_now,
         "steps": _steps_to_json(steps_now),
         "prev_turn_uuid": (already or {}).get("sampled_turn_uuid"),
@@ -742,6 +782,9 @@ def run_decide(payload: str) -> int:
         record["prev_turn_uuid"] = (already or {}).get("prev_turn_uuid")
         record["prev_armed"] = (already or {}).get("prev_armed")
         record["prev_steps"] = (already or {}).get("prev_steps")
+        record["prev_turn_len"] = (already or {}).get("prev_turn_len")
+    else:
+        record["prev_turn_len"] = (already or {}).get("sampled_turn_len")
     if not _write_journal(session_id, record):
         extra = ("CANNOT RUN: the per-turn record could not be written to "
                  f"{JOURNAL_DIR.relative_to(ROOT)}, so the NEXT stop will have no sample for this "
@@ -1151,6 +1194,34 @@ def _self_test() -> int:
             case("F10 a second session's stop does NOT cost the first its sample",
                  run_decide(json.dumps({"transcript_path": str(_trA),
                                         "session_id": "sA"})) == WARN)
+
+            # ── F11: the LATE FLUSH, observed rather than argued ──────────────────────────────
+            # ⛔ THE OLD F11 COULD NOT FAIL. It asserted the judged window's last record precedes
+            # the live window's first — true BY CONSTRUCTION, because windows() splits on record
+            # order. Measured over the corpus: 1828 windows, 0 violations, and it would have
+            # reported 0 violations against a completely broken guard. What follows is the only
+            # form that can fail: the count this turn had at ITS OWN stop, versus one stop later.
+            (_fx / ".claude" / "executing-plan").unlink()
+
+            def _flush_scenario(session: str, grow: bool) -> int:
+                for _s in JOURNAL_DIR.glob("*.json"):
+                    _s.unlink()
+                trf = _fx / f"flush-{session}.jsonl"
+                partial = _turn("f1", [{"type": "text", "text": "## ▶ STEP 2 of 3 — mid"}])
+                closing = json.dumps({"type": "assistant", "message": {"content": [
+                    {"type": "text", "text": "## ▶ STEP 3 of 3 — done"}]}})
+                # its own stop sees the turn WITHOUT its closing message when `grow` is set
+                trf.write_text("\n".join(partial if grow else partial + [closing]))
+                run_decide(json.dumps({"transcript_path": str(trf), "session_id": session}))
+                trf.write_text("\n".join(partial + [closing]
+                                         + _turn("f2", [{"type": "text", "text": "x"}])))
+                return run_decide(json.dumps({"transcript_path": str(trf), "session_id": session}))
+
+            case("F11 a judged turn that GREW after its own stop is reported as a late flush",
+                 safe(lambda: _flush_scenario("fl-grow", grow=True) == WARN))
+            case("...and a turn that did NOT grow stays QUIET — the check is not vacuous",
+                 safe(lambda: _flush_scenario("fl-same", grow=False) == QUIET))
+            (_fx / ".claude" / "executing-plan").write_text("plan: plans/p.md\narmed: t\n")
 
             # Cx-M2 (code review r2) — the FOLD'S OWN M1 FIX had no wiring test. The case below
             # in the tempdir block asserts `_armed() is None`: the PREDICATE. Nothing proved
