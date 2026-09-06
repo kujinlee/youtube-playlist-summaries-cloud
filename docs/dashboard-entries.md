@@ -3612,3 +3612,46 @@ block registers as zero; and run WITHOUT `--base`, against an uncommitted tree, 
 vacuously — CI runs it as `--base origin/$GITHUB_BASE_REF --pr-body-file`, which is the invocation
 to reproduce locally before believing a green. Dashboard page regenerated (derived, ADR-0010; writes
 to `~/explainers/`), not committed.
+
+## 2026-09-05
+Two small hardening changes, and the second one is a change of method rather than a fix.
+
+Your bookmark could have shown you the wrong page. The tool that builds a briefing writes two files
+side by side — the finished page, and the raw body it was built from — with the same date and, as it
+turns out, the same timestamp. The "show me the latest" link picks the newest, and on a tie it was a
+coin flip. Half the time you would have got the raw body: it renders, it looks fine, and it has no
+box to answer in. Fixed, and the test for it deliberately uses a tie, because that is the only
+setting where the test can tell right from wrong.
+
+The second is the one worth your attention. Yesterday's slice shipped about ten tests that passed
+whether or not the bug they were written to catch was present. Six rounds of careful reading found
+four of them. Breaking each fix on purpose and watching a named test go red found the rest in
+minutes. So there is now a rule: a guard must carry a file describing how to break it, or say in
+writing why it does not need one. Twenty-three guards currently do not have one — that number is
+recorded, and the check fails if it goes UP, and also if it goes DOWN without the number being
+corrected in the same change. Paying the debt down is a separate job, not this one.
+
+**And this pull request failed CI on the same gate as the last one**, for the same reason, an hour
+apart: a change that touches tracked files has to add an entry here, and I edited without adding.
+Knowing why something failed is evidently not the same as applying it the next time — which is the
+argument for the rule above, made at my own expense.
+
+**Waiting on you:** one decision. I recommended a push gate for feature branches; the premise was
+wrong, because the mechanism already exists and is better than what I proposed. The remaining gap is
+real but its fix would make every routine push need a special prefix, and a warning everyone learns
+to type past is worse than none. Your call, and I have not guessed at it.
+<!--tech-->
+`scripts/explainer-serve.py`: `explainers()` now excludes `*.fragment.html`, so `/latest` and the
+index skip composer inputs; `resolve_page` is untouched, so a fragment is still servable by direct
+path. REPRODUCED before the fix on an mtime tie: `/latest -> /2026-09-05-brief-x.fragment.html`.
+88/88 (declared count 84 → 88, caught by `check-selftest-counts`); mutation reverting the exclusion
+kills the two cases that name it, measured as a delta because a temp-copy control cannot run the
+repo-reading case.
+`scripts/check-ratchet-contract.py`: new R4 — a `scripts/mutations/<name>.json` or a written
+`NO-MUTATIONS: <why>`, mirroring NO-CALLER. Wired inside `evaluate()` with its own wiring case, and
+`manifest_stems` is a REQUIRED parameter so a caller cannot get the vacuous everything-has-one
+answer. `MANIFEST_BASELINE = 23`, an EXACT match not a ceiling, counted separately from R1/R2/R3.
+⚠ The baseline came from the delivered tool: a throwaway measuring script said 24, disagreeing by
+one because it re-implemented the population — *a second implementation of one rule DRIFTS*.
+Falsified in a clean full worktree, both directions: new guard → "debt GREW — 24 vs 23"; one paid
+down → "debt SHRANK — 22 vs 23". 22/22.
