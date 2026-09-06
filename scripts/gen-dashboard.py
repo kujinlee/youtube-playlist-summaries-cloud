@@ -31,7 +31,6 @@ STORE_DEFAULT = ROOT / "docs" / "dashboard-entries.md"
 # here fails SILENTLY — no PR would ever match, and `no_entry_prs` would quietly
 # go back to trusting the body alone, which is the defect it was fixed for.
 ENTRY_STORE = STORE_DEFAULT.relative_to(ROOT).as_posix()
-TECH_MARKER = "<!--tech-->"
 
 
 # ── The prose ramp ───────────────────────────────────────────────────────────
@@ -91,84 +90,13 @@ def _contrast(a: str, b: str) -> float:
     return (hi + 0.05) / (lo + 0.05)
 
 
-SENTENCE_END = re.compile(r'(?<=[.!?])\s+')
 # Below this, a "sentence" is a fragment ("Fixed.", "Done.") that says nothing on
 # its own, so it is joined to the next. ⚠ Set by measurement, not taste: at 25
 # this swallowed "The page is ready." — a perfectly good headline — and the case
 # below caught it. Raising it silently re-breaks that.
-TITLE_FLOOR = 12
 
 
-ABBREVIATIONS = {"dr", "mr", "mrs", "ms", "prof", "st", "vs", "etc", "approx",
-                 "fig", "no", "inc", "ltd", "jan", "feb", "mar", "apr", "jun",
-                 "jul", "aug", "sep", "sept", "oct", "nov", "dec"}
 
-
-def _ends_in_abbreviation(text: str) -> bool:
-    """Is this "sentence" actually stopping mid-thought at an abbreviation?
-
-    ⚠ Review REPRODUCED: "Met with Dr. Smith about the release." produced the
-    headline "Met with Dr." — and because the fold DROPS the headline, the lede
-    then opened with the orphaned word "Smith". Splitting on `[.!?]\\s` treats
-    every full stop as a sentence end, and `TITLE_FLOOR` did not save it because
-    "Met with Dr." is exactly 12 characters.
-
-    A trailing token that is short, or that contains an internal dot ("e.g."),
-    is an abbreviation rather than a sentence end. Conservative by design: a
-    false positive merely makes the headline one sentence longer, while a false
-    negative cuts a word off the front of the reader's prose.
-    """
-    last = text.rstrip()[:-1].rsplit(" ", 1)[-1] if text.rstrip().endswith((".", "!", "?")) else ""
-    if not last:
-        return False
-    return "." in last or last.lower().strip(".") in ABBREVIATIONS
-
-
-def _first_sentence(text: str) -> str:
-    """The headline for an entry: its first SENTENCE, not its first LINE.
-
-    It was `the first non-blank line`, which is a physical artefact of where the
-    author's editor wrapped — so a heading read "...It is one page at" and
-    stopped. A sentence is a unit of meaning; a line is a unit of typing.
-
-    Short leading fragments ("Decided:", "Fixed.") are joined onto the next
-    sentence rather than standing alone as the whole headline.
-
-    ⟳ 2026-08-31: NOT TRUNCATED, and that is the point. There was a `cap`
-    (TITLE_CAP = 110) plus a repair, `_close_orphan_markup`, for the `**bold**`
-    spans the cut orphaned. Both are gone. MEASURED on the live page: the cap cut
-    the title while `_prose` dropped the whole first sentence, so the words
-    between the cut and the full stop were displayed NOWHERE. Clipping is now CSS
-    (`text-overflow: ellipsis`), which keeps the text in the DOM where
-    find-in-page and an opened card can both reach it. The orphan repair existed
-    only to heal a wound the cap inflicted; removing the cut removed the class.
-    """
-    text = " ".join(text.split())
-    if not text:
-        return ""
-    out = ""
-    for part in SENTENCE_END.split(text):
-        out = f"{out} {part}".strip() if out else part
-        if len(out) >= TITLE_FLOOR and not _ends_in_abbreviation(out):
-            break
-    return out
-
-
-# ── inline markup is NOT implemented here any more. Backlog #71. ───────────────────────────────
-#
-# What stood between here and `_prose`: `INLINE_URL`, `ENTITY_TAIL`, `_trim_url_tail`, `_inline`
-# and `_inline_scan` — about 100 lines, and the best inline renderer in this repo. It was rewritten
-# as ONE left-to-right scan in PR #178 over four review rounds, precisely because stacked `re.sub`
-# passes are blind to each other's output.
-#
-# ⚠ THAT FIX WAS UNREACHABLE FROM THE OTHER THREE GENERATORS, and all three still had the defect it
-# cured. Measured 2026-08-30 on the rendered backlog page: 6 crossed tag spans and 10 cases of
-# markup emitted inside a code span, including this repo's own `select count(*) filter (…)`
-# arriving as `select count(<em>) filter …`. The renderer was never the problem; having no seam to
-# reach it through was.
-#
-# It now lives in `scripts/page_markup.py`, widened to the union of what the four supported, and
-# the mutations that guarded it moved with it — so they defend four pages instead of one.
 _inline = page_markup.render_inline
 
 
@@ -404,6 +332,13 @@ def _gate_module():
 
 _GATE = _gate_module()          # the GRAMMAR is required to parse at all
 header_error = _GATE.header_error
+parse_entries = _GATE.parse_entries      # relocated 2026-09-06, backlog #82 — one grammar
+_first_sentence = _GATE._first_sentence  # moved WITH the parser; see the gate's banner
+TECH_MARKER = _GATE.TECH_MARKER          # the entry model's constants moved with it
+SENTENCE_END = _GATE.SENTENCE_END
+TITLE_FLOOR = _GATE.TITLE_FLOOR
+_ends_in_abbreviation = _GATE._ends_in_abbreviation
+ABBREVIATIONS = _GATE.ABBREVIATIONS
 FLAG = _GATE.FLAG
 HEADER = _GATE.HEADER
 # ⟳ 2026-09-01. This was a LOCAL `re.compile(r"^##\s*\S")` — the one piece of the
@@ -465,145 +400,6 @@ def _decision_reader():
     into an import-time AttributeError, and then there is no page left to degrade.
     """
     return getattr(_GATE, "decisions"), getattr(_GATE, "decision_errors")
-
-def parse_entries(text: str) -> list[dict]:
-    """Split on column-0 '##' only. A malformed block is RETURNED with an
-    error, never dropped — the page must show it in place (spec §6.2).
-
-    `resolves` is a LIST: spec §6.2 says flags are "zero or more", and a
-    second [resolved:] used to overwrite the first silently, clearing one item
-    and leaving the other open forever with error=None.
-
-    ⟳ 2026-09-01, backlog #84: "column-0 '##'" was not the whole rule and the spec
-    always said so. §6.2's `##`-inside-detail row reads "indent OR FENCE it to
-    include one literally". The indent half worked by accident — `BLOCK` is
-    `^`-anchored, so an indented line never matched — and the FENCE half had no
-    implementation at all. MEASURED before the fix, on this parser:
-
-        "## 2026-08-28\\nTitle.\\n```\\n## 2026-08-29\\nfenced\\n```\\nTail prose.\\n"
-        -> 2 entries, ids ['2026-08-28/1', '2026-08-29/1'], errors 0, tail LOST
-
-    Note `errors 0`. The phantom is not a visible "could not parse" card — it is a
-    fully VALID entry that renders like any other, holding a real id. Ids are
-    positional and a standing `[resolved: <id>]` binds by id, so one fenced example
-    renumbers every later entry that day and can rebind a resolution to the wrong
-    item. Silent, on the section whose whole job is telling the reader what needs
-    them.
-
-    ⛔ THE FIX ADDS A CONSUMER, NOT AN IMPLEMENTATION. The obvious repair — track
-    fence state right here — would have been the THIRD hand-written fence scanner in
-    this feature: `check-dashboard-entry.py` already carries one in
-    `exemption_reason` and one in `_inert_lines`, and those two have already drifted
-    once (see the `startswith` comment beside `_inert_lines`). PR #205 merged hours
-    earlier for exactly this shape, one seam over. So the parser asks the gate what a
-    Markdown reader treats as literal, and holds no opinion of its own.
-
-    ⚠ IT ASKS FOR FENCES, NOT FOR "INERT". The first cut of this fix reused the
-    gate's `_inert_lines`, which is the cheaper reuse and looked equivalent — a probe
-    over blockquote, indent and fence shapes showed the only line it newly suppressed
-    was the fenced header. That probe had NO HTML COMMENT in it. Run against the real
-    store, `_inert_lines` DELETED entry 2026-09-01/16: an earlier entry mentions
-    `<!--` in prose while explaining this very machinery, `_inert_lines` treats an
-    unclosed `<!--` as a comment running to end-of-input, and every entry after it
-    vanished (47 -> 46). Over-approximating fails SAFE for "is there an ask here?"
-    and DANGEROUS for "does a block start here?". A measurement is only as good as
-    its corpus.
-    """
-    blocks: list[list[str]] = []
-    fenced = _FENCED_LINES(text)
-    for i, line in enumerate(text.split("\n")):
-        if BLOCK.match(line) and i not in fenced:
-            blocks.append([line])
-        elif blocks:
-            blocks[-1].append(line)
-    out: list[dict] = []
-    seen: dict[str, int] = {}
-    for b in blocks:
-        entry = {"raw": "\n".join(b), "error": None, "needs_you": False,
-                 "heads_up": False, "resolves": [],
-                 "date": None, "ordinal": 0, "id": None, "would_be_id": None,
-                 "title": "", "plain": "", "tech": None}
-        err = header_error(b[0])
-        m = HEADER.match(b[0])
-        if m is not None and _GATE.valid_date(m.group(1)):
-            # The ordinal is claimed as soon as the DATE is known good — BEFORE
-            # the flag check — so repairing a typo'd flag does not renumber the
-            # entries after it and silently rebind a standing [resolved:].
-            date = m.group(1)
-            seen[date] = seen.get(date, 0) + 1
-            entry["date"], entry["ordinal"] = date, seen[date]
-            entry["id"] = f"{date}/{seen[date]}"
-            for f in FLAG.findall(m.group(2)):
-                # The `else` here used to assume every non-`needs-you` flag
-                # contains a colon — true only by accident of FLAG's current
-                # alternation, in a file whose header says it OWNS the grammar
-                # and invites you to extend it there. Measured: adding one
-                # alternative to FLAG left the gate's suite fully green and made
-                # `f.split(":", 1)[1]` raise IndexError on EVERY render, so the
-                # page stopped existing rather than degrading one entry. The
-                # generator imported the grammar's symbols but not its meaning.
-                if f == "needs-you":
-                    entry["needs_you"] = True
-                elif f == "heads-up":
-                    # ⚠ Added WITH the FLAG alternative in check-dashboard-entry.py,
-                    # never after it. The comment above records the measured cost of
-                    # doing otherwise: the gate's suite stayed fully green while
-                    # `f.split(":", 1)[1]` raised IndexError on EVERY render.
-                    entry["heads_up"] = True
-                elif f.startswith("resolved:"):
-                    entry["resolves"].append(f.split(":", 1)[1].strip())
-                else:
-                    entry["error"] = f"unrecognised flag [{f}]"
-        elif m is not None:
-            # A block whose DATE is malformed never gets an id, so pass 2 could
-            # not distinguish "no such entry" from "that entry exists and is
-            # unparseable" — and sent the author hunting for a typo that was not
-            # there. A bad date is the CANONICAL malformed entry (§6.2's own
-            # example, and the one control D exercises), so it was precisely the
-            # case the earlier three-way fix did not reach.
-            raw_date = m.group(1)
-            seen[raw_date] = seen.get(raw_date, 0) + 1
-            entry["would_be_id"] = f"{raw_date}/{seen[raw_date]}"
-        if err:
-            entry["error"] = err
-            out.append(entry)
-            continue
-        body = b[1:]
-        cut = next((i for i, l in enumerate(body) if l.strip() == TECH_MARKER), None)
-        plain_lines = body if cut is None else body[:cut]
-        entry["tech"] = None if cut is None else "\n".join(body[cut + 1:]).strip()
-        # The FIRST PARAGRAPH, reduced to its first sentence — not the first
-        # physical line. The blank-line test below is unchanged: an entry whose
-        # first line is blank still has no title and is still an error.
-        _first_para: list[str] = []
-        for _l in plain_lines:
-            if _l.strip():
-                _first_para.append(_l.strip())
-            elif _first_para:
-                break
-        entry["title"] = _first_sentence(" ".join(_first_para))
-        entry["plain"] = "\n".join(plain_lines).strip()
-        if not entry["title"]:
-            entry["error"] = "no title line — the first line after the header is blank"
-        out.append(entry)
-
-    # PASS 2 — every [resolved:] must name an entry that exists.
-    ids = {e["id"] for e in out if e["id"] and not e["error"]}
-    for e in out:
-        if e["error"]:
-            continue
-        for r in e["resolves"]:
-            if r in ids:
-                continue
-            if not r:
-                e["error"] = "[resolved:] with no entry id after it"
-            elif any(o["id"] == r or o["would_be_id"] == r for o in out):
-                e["error"] = (f"[resolved: {r}] names an entry that could not be "
-                              f"parsed — fix that entry first")
-            else:
-                e["error"] = f"[resolved: {r}] names no entry in this file"
-            break
-    return out
 
 def _pos(e: dict) -> tuple:
     return (e["date"] or "", e["ordinal"])
