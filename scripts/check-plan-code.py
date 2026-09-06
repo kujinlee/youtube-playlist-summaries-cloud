@@ -551,7 +551,13 @@ EXPECTED_MUTATIONS = {
     # paid down here because the slice rewrote its decision path. MANIFEST_BASELINE in
     # check-ratchet-contract.py drops 23 -> 22 in the SAME commit, which R4 requires as an
     # EXACT match: paying a debt down fails the gate until the constant follows.
-    "scripts/check-banner-armed.py": 7,
+    # ⟳ 2026-09-06, backlog #97: 7 -> 8. The new entry guards the OBSERVATION LINE'S CONTENT,
+    # not whether a line appeared. Found by the Codex half of code review r1: `flush_line`
+    # rewritten to a constant string passed 94/94, because the F11 cases counted lines and never
+    # read one. The counts ARE the evidence, so a line that has lost them records that something
+    # happened while destroying what was measured — the recorded *a guard's own output is a
+    # CONTRACT* shape, one layer in from the log-format defect this whole slice is about.
+    "scripts/check-banner-armed.py": 8,
     "scripts/gen-dashboard.py": 73,
     "scripts/page_markup.py": 14,
     # ⟳ 2026-09-01, backlog #78: 18 -> 23. The entry gate now answers TWO questions
@@ -2498,7 +2504,9 @@ def _self_test() -> int:
     # ⟳ 179 -> 186, backlog #96: check-banner-armed joins with 7. The population pin above
     # and this total are SEPARATE on purpose — a per-file count that moved without the
     # total makes the control refuse to run instead of silently re-baselining.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 186)
+    # ⟳ 186 -> 187, backlog #97: ONE entry, guarding the observation line's CONTENT after
+    # code review r1 found the F11 cases counted lines without ever reading one.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 187)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so

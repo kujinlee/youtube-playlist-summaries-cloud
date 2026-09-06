@@ -100,6 +100,10 @@ playwright/.auth/
 # exists so the decision to promote that check from warning to blocking rests on a COUNT rather
 # than an impression.
 .claude/banner-warnings*.log
+# F11 observations from the same guard (backlog #97). A SEPARATE file on purpose: the late flush
+# is the ordinary case, so recording it in the warn log above would destroy `wc -l` as a count of
+# warnings — which is that log's whole job. The glob above deliberately does not match this name.
+.claude/banner-flush-observations.log
 
 # Which commit a CI watcher is armed for (scripts/check-ci-watched.py). SHA-scoped on purpose:
 # a new push moves HEAD, the sentinel stops matching, and the check warns again. "Armed once,
