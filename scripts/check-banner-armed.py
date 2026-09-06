@@ -100,14 +100,16 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 93 cases
+    python3 scripts/check-banner-armed.py --self-test  # 96 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
 """
 from __future__ import annotations
 
 import argparse
+import contextlib          # self-test only: F97b captures stderr to prove the flush note rides
 import datetime as _dt
 import importlib.util
+import io                  # self-test only: see `contextlib` above
 import json
 import re
 import sys
@@ -117,6 +119,12 @@ from typing import NamedTuple
 ROOT = Path(__file__).resolve().parent.parent
 SENTINEL = ROOT / ".claude/executing-plan"
 WARN_LOG = ROOT / ".claude/banner-warnings.log"
+# ⛔ A SEPARATE FILE, AND THAT IS THE POINT (backlog #97). The late flush is an OBSERVATION, not a
+# warning: it fires on the ordinary case, whereas WARN_LOG's stated job (`:451-454`) is to be the
+# false-alarm rate of the WARNING. Mixing them puts a line in WARN_LOG under a class that did not
+# fire — which is #97's own second defect — and destroys `wc -l` as a warning count. The existing
+# `.gitignore` glob `.claude/banner-warnings*.log` deliberately does NOT match this name.
+FLUSH_LOG = ROOT / ".claude/banner-flush-observations.log"
 
 QUIET, WARN, CANNOT_RUN = 0, 1, 2
 
@@ -467,6 +475,16 @@ def log_line(reason: str, detail: str, when: str, session: str) -> str:
     return f"{when}\t{session or '-'}\t{reason}\t{detail}\n"
 
 
+def flush_line(before: int, after: int, when: str, session: str) -> str:
+    """One appended observation. Same tab-separated grammar as `log_line`, a DIFFERENT file.
+
+    It carries counts rather than a `reason` because there is only one thing it can record — which
+    is precisely why it must not live in the warn log, where `reason` is what tells two classes
+    apart and a third value would make that column mean two different kinds of thing.
+    """
+    return f"{when}\t{session or '-'}\t{before}\t{after}\n"
+
+
 # ── I/O shell ─────────────────────────────────────────────────────────────────────────────────
 
 def _armed_from_text(text: str) -> bool:
@@ -619,13 +637,27 @@ def _late_flush(journal: dict | None, turn_uuid: str | None, seen_now: int):
     hook ran. Comparing the count this turn had at its OWN stop against the count one stop later is
     the only way to observe a late flush from inside the guard.
 
+    ⛔ THE COUNT IS OF ASSISTANT TEXT, NOT OF RECORDS (backlog #97). The shipped form counted every
+    record, so a tool result landing after the Stop read as a late flush even when the closing
+    banner had been plainly visible — ten consecutive false observations, one per turn. What is
+    counted now is `len(texts_of(window))`: not a proxy for the durability question but the LITERAL
+    list `decide()` consumes, so growth in it means the verdict's own input was incomplete at the
+    turn's own stop, and growth outside it cannot change any verdict this guard reaches.
+
+    ⚠ THE CALLER MUST NOT WARN ON THE RESULT. A late flush is backlog #96's own mechanism, i.e. the
+    normal case; escalating it is what #97 exists to undo.
+
     Growth is the only direction worth reporting: a shrinking window would mean the file was
     rewritten, which is a different defect and not this one.
     """
     if not journal or not turn_uuid:
         return None
-    for uuid_key, len_key in (("sampled_turn_uuid", "sampled_turn_len"),
-                              ("prev_turn_uuid", "prev_turn_len")):
+    # ⚠ THE KEYS ARE RENAMED, NOT REUSED, and the one turn of blindness is deliberate. A journal
+    # written by the shipped code holds `sampled_turn_len` — an ALL-RECORDS count. Reusing the name
+    # would compare that against a text count and under-report silently and forever; the rename
+    # makes the stale record simply invisible, which yields silence rather than a fabrication.
+    for uuid_key, len_key in (("sampled_turn_uuid", "sampled_text_len"),
+                              ("prev_turn_uuid", "prev_text_len")):
         if journal.get(uuid_key) == turn_uuid:
             before = journal.get(len_key)
             if isinstance(before, int) and seen_now > before:
@@ -669,6 +701,24 @@ def _write_journal(session_id: str, record: dict) -> bool:
             tmp.unlink(missing_ok=True)
         except OSError:
             pass
+        return False
+
+
+def _log_flush(session: str, late: tuple) -> bool:
+    """Append one F11 observation. -> True on success, False on any failure (never raises).
+
+    ⚠ RETURNS the failure rather than reporting it, because the caller is the only place that knows
+    whether a verdict is already being printed. Silence here would be a fail-open handler, which
+    `check-ratchet-contract.py` refuses in a guard — and rightly, since the whole point of this
+    record is that the durability question is answered by observation rather than by argument.
+    """
+    when = _dt.datetime.now().astimezone().replace(microsecond=0).isoformat()
+    try:
+        FLUSH_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with FLUSH_LOG.open("a") as fh:
+            fh.write(flush_line(late[0], late[1], when, session))
+        return True
+    except OSError:
         return False
 
 
@@ -743,16 +793,39 @@ def run_decide(payload: str) -> int:
                     edited = _edit_inside_repo(edited_paths_of(judged.body), ROOT)
                     code, message = decide(texts, armed_then, steps=steps_then, edited=edited)
                     steps = steps_then           # the log block below reads it
-                    late = _late_flush(already, judged_uuid, len(judged.body))
+                    # ⛔ NOTE WHAT IS *NOT* HERE: the QUIET -> WARN promotion this shipped with
+                    # (backlog #97). A late flush is backlog #96's own mechanism — the NORMAL case
+                    # — so escalating it warned on ten consecutive turns, which is the cry-wolf
+                    # failure #95 and #96 existed to remove. The observation is RECORDED and never
+                    # changes the verdict.
+                    late = _late_flush(already, judged_uuid, len(texts))
                     if late:
-                        message = (message + "\n\n   " if message else "") + (
-                            f"⚠ LATE FLUSH OBSERVED: when this turn's own stop hook ran it held "
-                            f"{late[0]} record(s); one stop later it holds {late[1]}. "
-                            f"{late[1] - late[0]} arrived after the hook had already read the file. "
-                            "That is the backlog #96 race, measured directly — judging one turn "
-                            "back gave enough margin here, but the margin is not unbounded.")
-                        if code == QUIET:
-                            code = WARN
+                        if not _log_flush(str(data.get("session_id", "")), late):
+                            # ⚠ NOT SWALLOWED, AND NOT MERELY PRINTED. The hook allows a QUIET stop
+                            # SILENTLY (block-idle-stop.sh:29), so stderr on a QUIET turn reaches
+                            # nobody — the same "emitted, reaching nobody" defect as printing a
+                            # banner to Bash stdout. Losing the record is the F11 instrument failing
+                            # to run, so it is reported as CANNOT RUN, which does surface. The
+                            # message says plainly that the VERDICT was sound.
+                            extra = (
+                                "CANNOT RUN: the late-flush observation could not be written to "
+                                f"{FLUSH_LOG.name}, so falsifier F11's evidence for THIS turn is "
+                                "lost. ⚠ The banner verdict itself ran and was sound — it is the "
+                                "durability record that is missing. TREAT F11 AS NOT MEASURED "
+                                "HERE, not the banner check.")
+                            message = f"{message}\n\n   {extra}" if message else extra
+                            code = CANNOT_RUN
+                        elif code != QUIET:
+                            # Only rides along with a warning that was going to be shown anyway.
+                            # Appending it to an otherwise-silent turn would move the cry-wolf into
+                            # another channel rather than removing it.
+                            message = (message + "\n\n   " if message else "") + (
+                                f"⚠ LATE FLUSH OBSERVED: when this turn's own stop hook ran, the "
+                                f"assistant text this verdict reads held {late[0]} block(s); one "
+                                f"stop later it holds {late[1]}. {late[1] - late[0]} arrived after "
+                                "the hook had already read the file. That is the backlog #96 race, "
+                                "measured directly — judging one turn back gave enough margin "
+                                "here, but the margin is not unbounded.")
 
     # ── 4. WRITE the journal — unconditional, and it outranks the verdict ─────────────────────
     # A CANNOT RUN *about this turn* must still leave a usable sample for the next one, or one
@@ -762,13 +835,17 @@ def run_decide(payload: str) -> int:
     live_uuid = None if live.opener is None else live.opener.get("uuid")
     record = {
         "sampled_turn_uuid": live_uuid,
-        # ⛔ F11's ONLY POSSIBLE FALSIFIER. How many records this turn had WHEN ITS OWN STOP RAN.
-        # One stop later the same turn is re-read; if it is now LONGER, records arrived after the
+        # ⛔ F11's ONLY POSSIBLE FALSIFIER. How much ASSISTANT TEXT this turn had WHEN ITS OWN STOP
+        # RAN. One stop later the same turn is re-read; if it is now LONGER, text arrived after the
         # hook looked — a late flush, measured rather than argued. The spec's earlier F11 compared
         # transcript ORDER instead and passed 1828/1828 because `windows()` splits on order, so it
         # restated the splitter. Flush timing is not a property of a finished file: only an
         # observation taken at hook time can see it, and this is that observation.
-        "sampled_turn_len": len(live.body),
+        #
+        # ⚠ `texts_of`, NOT `len(live.body)` (backlog #97). Counting every record made a trailing
+        # tool result look like a late flush; this counts the exact list `decide()` consumes at
+        # `:742`, so growth here means the VERDICT'S OWN INPUT was incomplete at the turn's stop.
+        "sampled_text_len": len(texts_of(live.body)),
         "armed": armed_now,
         "steps": _steps_to_json(steps_now),
         "prev_turn_uuid": (already or {}).get("sampled_turn_uuid"),
@@ -782,9 +859,9 @@ def run_decide(payload: str) -> int:
         record["prev_turn_uuid"] = (already or {}).get("prev_turn_uuid")
         record["prev_armed"] = (already or {}).get("prev_armed")
         record["prev_steps"] = (already or {}).get("prev_steps")
-        record["prev_turn_len"] = (already or {}).get("prev_turn_len")
+        record["prev_text_len"] = (already or {}).get("prev_text_len")
     else:
-        record["prev_turn_len"] = (already or {}).get("sampled_turn_len")
+        record["prev_text_len"] = (already or {}).get("sampled_text_len")
     if not _write_journal(session_id, record):
         extra = ("CANNOT RUN: the per-turn record could not be written to "
                  f"{JOURNAL_DIR.relative_to(ROOT)}, so the NEXT stop will have no sample for this "
@@ -1136,10 +1213,16 @@ def _self_test() -> int:
             path.write_text("\n".join(subject + _turn("later", [{"type": "text", "text": "x"}])))
             return run_decide(json.dumps({"transcript_path": str(path), "session_id": session}))
 
-        _saved = (ROOT, SENTINEL, WARN_LOG, JOURNAL_DIR)
+        # ⛔ FLUSH_LOG IS REDIRECTED TOO, AND FORGETTING IT WOULD BE SILENT. Every self-test run
+        # observes late flushes by construction (the fixtures rewrite the transcript between
+        # stops), so an un-redirected constant would append to the reader's REAL observation log
+        # on every suite run — including every mutation run — and quietly manufacture the very
+        # evidence F11 is supposed to gather. Same class as the HOME-redirect finding.
+        _saved = (ROOT, SENTINEL, WARN_LOG, FLUSH_LOG, JOURNAL_DIR)
         globals()["ROOT"] = _fx
         globals()["SENTINEL"] = _fx / ".claude/executing-plan"
         globals()["WARN_LOG"] = _fx / ".claude/banner-warnings.log"
+        globals()["FLUSH_LOG"] = _fx / ".claude/banner-flush-observations.log"
         globals()["JOURNAL_DIR"] = _fx / ".claude/banner-turn-state"
         try:
             _subject = _turn("t1", [_edit_block(str(_fx / "scripts" / "x.py"))])
@@ -1252,26 +1335,88 @@ def _self_test() -> int:
             # order. Measured over the corpus: 1828 windows, 0 violations, and it would have
             # reported 0 violations against a completely broken guard. What follows is the only
             # form that can fail: the count this turn had at ITS OWN stop, versus one stop later.
+            # ⛔ AND THE EXIT CODE IS NO LONGER WHAT F11 READS (backlog #97). The shipped form
+            # asserted `grow=True -> WARN` against `grow=False -> QUIET`. Dropping the escalation
+            # makes BOTH sides QUIET, so that pair would assert nothing — F11 vacuous for the THIRD
+            # time, after being a tautology in spec v2 and v3. Note the recurring shape: each time,
+            # the assertion had re-anchored onto something that could not vary. It now reads the
+            # OBSERVATION RECORD, which is the only thing the fix leaves varying.
             (_fx / ".claude" / "executing-plan").unlink()
+            _flush = _fx / ".claude/banner-flush-observations.log"
 
-            def _flush_scenario(session: str, grow: bool) -> int:
+            def _flushtext() -> str:
+                """The observation log's contents, or "" when it does not exist yet.
+
+                ⛔ SAME TRAP AS `_logtext`: a mutation that stops the guard recording also stops
+                the file being created, so a bare read would raise FileNotFoundError and abort the
+                whole suite — killed by a crash, naming no guard.
+                """
+                return _flush.read_text() if _flush.exists() else ""
+
+            def _flush_scenario(session: str, grow: str) -> tuple:
+                """-> (exit code, observation lines added, warn lines added).
+
+                `grow` selects WHAT arrives after the turn's own stop:
+                  'text'  — a closing assistant banner (a real late flush)
+                  'none'  — nothing (the control: the check must not fire unconditionally)
+                  'tool'  — only a tool RESULT, which is a `user` record and so lands inside the
+                            same window without being a boundary. This is the live false positive:
+                            record count grows, assistant text does not.
+                  'plain' — closing assistant text with NO banner at all. This is the exact shape
+                            of the ten `unbannered / 0 unticked` lines measured on master.
+                """
                 for _s in JOURNAL_DIR.glob("*.json"):
                     _s.unlink()
+                before_obs = len(_flushtext().splitlines())
+                before_warn = len(_logtext().splitlines())
                 trf = _fx / f"flush-{session}.jsonl"
-                partial = _turn("f1", [{"type": "text", "text": "## ▶ STEP 2 of 3 — mid"}])
+                lead = ("just prose" if grow == "plain" else "## ▶ STEP 2 of 3 — mid")
+                # ⚠ Only 'text' closes the sequence. 'warnable' grows by text that carries NO
+                # banner, so the highest banner stays 2 of 3 and decide() still warns — which is
+                # the whole point of that case: a real warning and an observation at once.
+                tail = ("more prose" if grow in ("plain", "warnable")
+                        else "## ▶ STEP 3 of 3 — done")
+                partial = _turn("f1", [{"type": "text", "text": lead}])
                 closing = json.dumps({"type": "assistant", "message": {"content": [
-                    {"type": "text", "text": "## ▶ STEP 3 of 3 — done"}]}})
-                # its own stop sees the turn WITHOUT its closing message when `grow` is set
-                trf.write_text("\n".join(partial if grow else partial + [closing]))
+                    {"type": "text", "text": tail}]}})
+                tool_result = json.dumps({"type": "user", "message": {"content": [
+                    {"type": "tool_result", "tool_use_id": "tr1", "content": "ok"}]}})
+                # What its OWN stop saw: everything except whatever is due to arrive late.
+                seeded = (partial if grow in ("text", "plain", "warnable")
+                          else partial + [closing])
+                trf.write_text("\n".join(seeded))
                 run_decide(json.dumps({"transcript_path": str(trf), "session_id": session}))
-                trf.write_text("\n".join(partial + [closing]
-                                         + _turn("f2", [{"type": "text", "text": "x"}])))
-                return run_decide(json.dumps({"transcript_path": str(trf), "session_id": session}))
+                grown = partial + [closing] + ([tool_result] if grow == "tool" else [])
+                trf.write_text("\n".join(grown + _turn("f2", [{"type": "text", "text": "x"}])))
+                rc = run_decide(json.dumps({"transcript_path": str(trf), "session_id": session}))
+                return (rc,
+                        len(_flushtext().splitlines()) - before_obs,
+                        len(_logtext().splitlines()) - before_warn)
 
-            case("F11 a judged turn that GREW after its own stop is reported as a late flush",
-                 safe(lambda: _flush_scenario("fl-grow", grow=True) == WARN))
-            case("...and a turn that did NOT grow stays QUIET — the check is not vacuous",
-                 safe(lambda: _flush_scenario("fl-same", grow=False) == QUIET))
+            case("F11a a judged turn whose ASSISTANT TEXT grew records ONE observation, "
+                 "stays QUIET, and warns NOT AT ALL",
+                 safe(lambda: _flush_scenario("fl-text", "text") == (QUIET, 1, 0)))
+            case("F11b a turn that did NOT grow records nothing — the check is not vacuous",
+                 safe(lambda: _flush_scenario("fl-none", "none") == (QUIET, 0, 0)))
+            case("F11c growth by a TOOL RESULT alone records nothing — the live false positive",
+                 safe(lambda: _flush_scenario("fl-tool", "tool") == (QUIET, 0, 0)))
+            case("F97a an unarmed BANNERLESS turn whose text grew adds NO warn-log line — "
+                 "the ten measured `unbannered / 0 unticked` lines cannot recur",
+                 safe(lambda: _flush_scenario("fl-plain", "plain") == (QUIET, 1, 0)))
+
+            # F97b — a REAL warning and a late flush in the same turn. The warning must keep its
+            # own true reason, and the flush note must ride along in the message rather than
+            # replacing or renaming it. `grow='text'` leaves the highest banner at 2 of 3 only
+            # because the late record IS the closing banner; here the late text carries no banner,
+            # so decide() still sees an incomplete sequence with nothing armed.
+            _errbuf = io.StringIO()
+            with contextlib.redirect_stderr(_errbuf):
+                _rcF = _flush_scenario("fl-warn", "warnable")
+            case("F97b a real warning and a late flush coexist: the warning keeps its own reason "
+                 "and the flush note rides along in the message",
+                 _rcF[0] == WARN and _rcF[1] == 1 and _rcF[2] == 1
+                 and _logtext().rstrip("\n").endswith("\tunarmed\tSTEP 2 of 3")
+                 and "LATE FLUSH OBSERVED" in _errbuf.getvalue())
             (_fx / ".claude" / "executing-plan").write_text("plan: plans/p.md\narmed: t\n")
 
             # Cx-M2 (code review r2) — the FOLD'S OWN M1 FIX had no wiring test. The case below
@@ -1308,8 +1453,8 @@ def _self_test() -> int:
                  _rcU == WARN
                  and _logtext().rstrip("\n").endswith("\tunarmed\tSTEP 2 of 5"))
         finally:
-            (globals()["ROOT"], globals()["SENTINEL"],
-             globals()["WARN_LOG"], globals()["JOURNAL_DIR"]) = _saved
+            (globals()["ROOT"], globals()["SENTINEL"], globals()["WARN_LOG"],
+             globals()["FLUSH_LOG"], globals()["JOURNAL_DIR"]) = _saved
 
     # ── F6: reachability. STRUCTURAL, not an execution test — see the plan. ────────────────
     # ⛔ THIS CASE'S SUBJECT IS THE REPO, NOT THIS SCRIPT, AND THAT BROKE THE MUTATION HARNESS
