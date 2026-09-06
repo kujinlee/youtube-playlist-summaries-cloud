@@ -137,42 +137,6 @@
     ]
   },
   {
-    "name": "second [resolved:] dropped",
-    "file": "scripts/gen-dashboard.py",
-    "edits": [
-      [
-        "entry[\"resolves\"].append(f.split(\":\", 1)[1].strip())",
-        "entry[\"resolves\"] = [f.split(\":\", 1)[1].strip()]"
-      ]
-    ],
-    "expect": [
-      "two [resolved:] flags are both kept",
-      "two [resolved:] flags clear BOTH items"
-    ]
-  },
-  {
-    "name": "pass 2 deleted",
-    "file": "scripts/gen-dashboard.py",
-    "edits": [
-      [
-        "        for r in e[\"resolves\"]:\n            if r in ids:",
-        "        for r in []:\n            if r in ids:"
-      ]
-    ],
-    "expect": "resolve of an unknown id is an error"
-  },
-  {
-    "name": "ordinal instability restored",
-    "file": "scripts/gen-dashboard.py",
-    "edits": [
-      [
-        "        if m is not None and _GATE.valid_date(m.group(1)):",
-        "        if m is not None and _GATE.valid_date(m.group(1)) and not err:"
-      ]
-    ],
-    "expect": "a malformed block still consumes its ordinal"
-  },
-  {
     "name": "chart drawn newest-leftmost",
     "file": "scripts/gen-dashboard.py",
     "edits": [
@@ -312,34 +276,6 @@
       ]
     ],
     "expect": "...and \u00a79's alarm is not fired off a store nobody could read"
-  },
-  {
-    "name": "the page imports the grammar's SYMBOLS but not its MEANING \u2014 a new flag crashes every render",
-    "file": "scripts/gen-dashboard.py",
-    "edits": [
-      [
-        "                elif f.startswith(\"resolved:\"):\n                    entry[\"resolves\"].append(f.split(\":\", 1)[1].strip())\n                else:\n                    entry[\"error\"] = f\"unrecognised flag [{f}]\"",
-        "                else:\n                    entry[\"resolves\"].append(f.split(\":\", 1)[1].strip())"
-      ]
-    ],
-    "expect": [
-      "an unrecognised flag is an ERROR, not a crash",
-      "...and the entry degrades with the flag-loop's own diagnostic"
-    ]
-  },
-  {
-    "name": "the unknown flag is swallowed instead of degrading the entry \u2014 the GRACEFUL half of C1's fix",
-    "file": "scripts/gen-dashboard.py",
-    "edits": [
-      [
-        "                else:\n                    entry[\"error\"] = f\"unrecognised flag [{f}]\"",
-        "                else:\n                    pass"
-      ]
-    ],
-    "expect": [
-      "an unrecognised flag is an ERROR, not a crash",
-      "...and the entry degrades with the flag-loop's own diagnostic"
-    ]
   },
   {
     "name": "main: a compose that wrote NO page reports success",
@@ -682,17 +618,6 @@
     "expect": "F2: the date appears ONCE in what the reader sees"
   },
   {
-    "name": "the title is capped again, so its tail vanishes",
-    "file": "scripts/gen-dashboard.py",
-    "edits": [
-      [
-        "_ends_in_abbreviation(out):\n            break\n    return out",
-        "_ends_in_abbreviation(out):\n            break\n    return out[:110] + \"\\u2026\" if len(out) > 110 else out"
-      ]
-    ],
-    "expect": "a long first sentence reaches the reader WHOLE"
-  },
-  {
     "name": "the row stops being a heading, losing every per-entry stop",
     "file": "scripts/gen-dashboard.py",
     "edits": [
@@ -799,52 +724,6 @@
       ]
     ],
     "expect": "no_entry_prs: a PR that WROTE an entry is NOT an exemption"
-  },
-  {
-    "name": "the page takes back its own block-start rule",
-    "file": "scripts/gen-dashboard.py",
-    "_note": "NEW 2026-09-01, and it covers the thing that actually broke. The defect was never a wrong regex \u2014 it was TWO regexes, and no mutation existed on either: scanning the manifest while repairing the orphaned ENTRY_ISH anchor found that this file's BLOCK had ZERO coverage for its whole life. This mutation restores the DUPLICATE rather than corrupting the shared rule, so it fails exactly the way the original defect did \u2014 the gate stays correct and only the page diverges, which is precisely why no gate-side case can catch it. \u26a0 EXACT case names, not substrings (check-plan-code.py:730-735, a round-6 hardening): the first draft wrote `and the prose after it is not lost` and dropped the leading ellipsis the case actually carries, resolving to 0 red cases. Caught by the Codex half running `--mutate .`.",
-    "edits": [
-      [
-        "BLOCK = _GATE.BLOCK",
-        "BLOCK = re.compile(r\"^##\\s*\\S\")"
-      ]
-    ],
-    "expect": [
-      "a level-3 heading does not split the entry",
-      "...and the prose after it is not lost",
-      "...and nothing is marked unparseable"
-    ]
-  },
-  {
-    "name": "the parser stops asking which lines are fenced",
-    "file": "scripts/gen-dashboard.py",
-    "_note": "backlog #84, THE defect. Restores the fence-blind split, which minted a fully VALID phantom entry holding a real id \u2014 no error, renders like any other card. Ids are positional and `[resolved: <id>]` binds by id.",
-    "edits": [
-      [
-        "        if BLOCK.match(line) and i not in fenced:",
-        "        if BLOCK.match(line):"
-      ]
-    ],
-    "expect": [
-      "a fenced header does not split the entry",
-      "...and mints no phantom id"
-    ]
-  },
-  {
-    "name": "the parser asks for INERT lines instead of fenced ones",
-    "file": "scripts/gen-dashboard.py",
-    "_note": "backlog #84, and this is the OVER-rejection half \u2014 the first cut of the fix, which looked equivalent and DELETED entry 2026-09-01/16 from the live store. `_inert_lines` treats an unclosed `<!--` as running to end-of-input; one entry mentioning the marker in prose erased every entry after it. A mutation only on the under-rejection half would let this ship again.",
-    "edits": [
-      [
-        "    fenced = _FENCED_LINES(text)",
-        "    fenced = _GATE._inert_lines(text)"
-      ]
-    ],
-    "expect": [
-      "prose mentioning <!-- does not swallow the NEXT entry",
-      "...and both keep their ids"
-    ]
   },
   {
     "name": "the settled class stops being emitted (backlog #83B)",

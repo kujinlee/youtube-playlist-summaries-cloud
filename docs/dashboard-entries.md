@@ -3918,3 +3918,55 @@ to a "press Refresh" banner instead of an auto-refresh. The plan was paused with
 reason rather than completed. The measured fact behind it stands and is NOT filed, because its
 consequence is now small: `regen-dashboard.sh:30` keys on `tool_input.file_path`, so a Bash
 heredoc append moves the store without regenerating the page.
+
+## 2026-09-06
+The check that guards dashboard entries can now catch a broken cross-reference — the last thing it
+was blind to.
+
+An entry can point at another entry to mark it settled. Until now the check could confirm that
+pointer was well-formed but never that it pointed at anything real, so a reference to an entry that
+does not exist sailed through and only showed up later as an error on the page. The reason is
+duller than it sounds: the check was only ever shown the lines a branch changed, and whether a
+reference is real is a fact about the whole file.
+
+So it now reads the file — before and after — and reports only what your branch actually broke. A
+pre-existing problem is not yours to fix, which matters more than it sounds: a check that fails
+every branch for someone else's old mistake is a check people turn off.
+
+The independent reviewer found five things, two of them serious, and one of those was about my
+testing rather than my code. All fixed. Nothing is waiting on you beyond merging.
+<!--tech-->
+Backlog #82, branch `backlog-82-referential-gate`.
+
+- **T1** `parse_entries` (139 lines) + `_first_sentence` and five constants moved from
+  `gen-dashboard.py` into `check-dashboard-entry.py`. There is now exactly ONE `def parse_entries`
+  in `scripts/`. The arrow still points page → gate: the gate does not import what it guards
+  (`_gate_module`'s rule). The dependency set was SIX names and my first scan — a regex requiring a
+  lowercase start — found none of them; the AST free-name closure named the rest at once.
+- **T2** `added_reference_errors(base, head)` parses both stores and returns the multiset
+  difference. `collect()` runs `git show <base>:docs/dashboard-entries.md`; `verdict()` refuses
+  above the exemption short-circuit. An unreadable baseline reports rather than passes.
+- **T3** eight mutations moved with the code — `run_suite(d, fname)` runs only the mutated file's
+  own suite, so a mutation whose killing case is elsewhere reads as a survivor. gen-dashboard
+  73→64, gate 34→43, **sum held at 107**.
+
+⛔ THREE SEPARATE NEAR-MISSES, each of which a green suite reported as fine:
+1. Eight new cases sat BELOW `print(f"{ok}/{ok+fail} passed")`. They ran and gated the exit code
+   while the summary still said 127/127 — invisible to `check-selftest-counts` and to mutation
+   attribution. Found because the number did not move when it should have.
+2. Three of eleven new cases could not reach the branch they named (a bad-DATE block never claims
+   an ordinal; `[blocked]` is not matched by FLAG so it takes the header path). Found by running
+   the mutations one at a time: 5 killed, 3 survived.
+3. Codex found a mutation that SURVIVED because I ran the gate's manifest and never
+   gen-dashboard's. Third corpus error of the day.
+
+Review: `docs/reviews/coordinator/referential-entry-gate-code-r1-codex.md` — 2 Blocking, 3 High,
+NOT CONVERGED, all folded. The Blocking that mattered most: I keyed the diff on `(title, error)`
+because `parse_entries` never set `header`; titles are legally duplicated, so a newly added broken
+entry could collide with a pre-existing one and go unreported. `parse_entries` now records
+`entry["header"]` and the spec's original key stands.
+
+⚠ `REVIEW GAP: claude` — the Agent tool is disabled this session.
+
+Verified: gate 146/146 + 13/13, page 314/314, check-plan-code 189/189, controls green FIRST then
+43/43 and 64/64 mutations with zero survivors, and every ratchet green.

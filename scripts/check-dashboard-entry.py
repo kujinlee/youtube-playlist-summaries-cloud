@@ -483,6 +483,278 @@ def _is_exempt(path: str) -> bool:
 ENTRY_ISH = re.compile(r"^\+" + BLOCK.pattern.removeprefix("^"))
 
 
+
+# ── the entry MODEL, relocated from gen-dashboard.py (backlog #82) ──────────────────────────
+#
+# ⛔ IT LIVES HERE BECAUSE A REFERENCE IS A PROPERTY OF THE WHOLE STORE. `header_error` judges
+# one header line and can never decide whether `[resolved: 2026-09-01/99]` NAMES anything;
+# `added_entry_problems` only ever sees a PATCH. Measured 2026-09-01: three `[resolved: …]`
+# shapes returned `header_error -> None` while the page set "names no entry in this file".
+#
+# ⛔ AND THE OBVIOUS FIX WAS FORBIDDEN. Having the gate import `gen-dashboard.parse_entries`
+# inverts `_gate_module`'s written rule — *a GATE must not import the thing it guards*. A lazy
+# import works technically, which is exactly why the rule is honoured deliberately here rather
+# than discovered later. The arrow still points page -> gate; the page imports these back.
+#
+# ⚠ `_first_sentence` TRAVELS WITH THE PARSER and that is not scope creep: it has two callers
+# doing different jobs — setting an entry's title, and re-deriving the headline while rendering
+# — and the render's own comment says it works by RE-APPLYING this function rather than by
+# prefix-matching. A second copy would break the identity that comment depends on.
+
+TECH_MARKER = "<!--tech-->"
+SENTENCE_END = re.compile(r'(?<=[.!?])\s+')
+TITLE_FLOOR = 12
+ABBREVIATIONS = {"dr", "mr", "mrs", "ms", "prof", "st", "vs", "etc", "approx",
+                 "fig", "no", "inc", "ltd", "jan", "feb", "mar", "apr", "jun",
+                 "jul", "aug", "sep", "sept", "oct", "nov", "dec"}
+
+def _ends_in_abbreviation(text: str) -> bool:
+    """Is this "sentence" actually stopping mid-thought at an abbreviation?
+
+    ⚠ Review REPRODUCED: "Met with Dr. Smith about the release." produced the
+    headline "Met with Dr." — and because the fold DROPS the headline, the lede
+    then opened with the orphaned word "Smith". Splitting on `[.!?]\\s` treats
+    every full stop as a sentence end, and `TITLE_FLOOR` did not save it because
+    "Met with Dr." is exactly 12 characters.
+
+    A trailing token that is short, or that contains an internal dot ("e.g."),
+    is an abbreviation rather than a sentence end. Conservative by design: a
+    false positive merely makes the headline one sentence longer, while a false
+    negative cuts a word off the front of the reader's prose.
+    """
+    last = text.rstrip()[:-1].rsplit(" ", 1)[-1] if text.rstrip().endswith((".", "!", "?")) else ""
+    if not last:
+        return False
+    return "." in last or last.lower().strip(".") in ABBREVIATIONS
+
+
+# ── inline markup is NOT implemented here any more. Backlog #71. ───────────────────────────────
+#
+# What stood between here and `_prose`: `INLINE_URL`, `ENTITY_TAIL`, `_trim_url_tail`, `_inline`
+# and `_inline_scan` — about 100 lines, and the best inline renderer in this repo. It was rewritten
+# as ONE left-to-right scan in PR #178 over four review rounds, precisely because stacked `re.sub`
+# passes are blind to each other's output.
+#
+# ⚠ THAT FIX WAS UNREACHABLE FROM THE OTHER THREE GENERATORS, and all three still had the defect it
+# cured. Measured 2026-08-30 on the rendered backlog page: 6 crossed tag spans and 10 cases of
+# markup emitted inside a code span, including this repo's own `select count(*) filter (…)`
+# arriving as `select count(<em>) filter …`. The renderer was never the problem; having no seam to
+# reach it through was.
+#
+# It now lives in `scripts/page_markup.py`, widened to the union of what the four supported, and
+# the mutations that guarded it moved with it — so they defend four pages instead of one.
+
+def _first_sentence(text: str) -> str:
+    """The headline for an entry: its first SENTENCE, not its first LINE.
+
+    It was `the first non-blank line`, which is a physical artefact of where the
+    author's editor wrapped — so a heading read "...It is one page at" and
+    stopped. A sentence is a unit of meaning; a line is a unit of typing.
+
+    Short leading fragments ("Decided:", "Fixed.") are joined onto the next
+    sentence rather than standing alone as the whole headline.
+
+    ⟳ 2026-08-31: NOT TRUNCATED, and that is the point. There was a `cap`
+    (TITLE_CAP = 110) plus a repair, `_close_orphan_markup`, for the `**bold**`
+    spans the cut orphaned. Both are gone. MEASURED on the live page: the cap cut
+    the title while `_prose` dropped the whole first sentence, so the words
+    between the cut and the full stop were displayed NOWHERE. Clipping is now CSS
+    (`text-overflow: ellipsis`), which keeps the text in the DOM where
+    find-in-page and an opened card can both reach it. The orphan repair existed
+    only to heal a wound the cap inflicted; removing the cut removed the class.
+    """
+    text = " ".join(text.split())
+    if not text:
+        return ""
+    out = ""
+    for part in SENTENCE_END.split(text):
+        out = f"{out} {part}".strip() if out else part
+        if len(out) >= TITLE_FLOOR and not _ends_in_abbreviation(out):
+            break
+    return out
+
+
+
+def parse_entries(text: str) -> list[dict]:
+    """Split on column-0 '##' only. A malformed block is RETURNED with an
+    error, never dropped — the page must show it in place (spec §6.2).
+
+    `resolves` is a LIST: spec §6.2 says flags are "zero or more", and a
+    second [resolved:] used to overwrite the first silently, clearing one item
+    and leaving the other open forever with error=None.
+
+    ⟳ 2026-09-01, backlog #84: "column-0 '##'" was not the whole rule and the spec
+    always said so. §6.2's `##`-inside-detail row reads "indent OR FENCE it to
+    include one literally". The indent half worked by accident — `BLOCK` is
+    `^`-anchored, so an indented line never matched — and the FENCE half had no
+    implementation at all. MEASURED before the fix, on this parser:
+
+        "## 2026-08-28\\nTitle.\\n```\\n## 2026-08-29\\nfenced\\n```\\nTail prose.\\n"
+        -> 2 entries, ids ['2026-08-28/1', '2026-08-29/1'], errors 0, tail LOST
+
+    Note `errors 0`. The phantom is not a visible "could not parse" card — it is a
+    fully VALID entry that renders like any other, holding a real id. Ids are
+    positional and a standing `[resolved: <id>]` binds by id, so one fenced example
+    renumbers every later entry that day and can rebind a resolution to the wrong
+    item. Silent, on the section whose whole job is telling the reader what needs
+    them.
+
+    ⛔ THE FIX ADDS A CONSUMER, NOT AN IMPLEMENTATION. The obvious repair — track
+    fence state right here — would have been the THIRD hand-written fence scanner in
+    this feature: `check-dashboard-entry.py` already carries one in
+    `exemption_reason` and one in `_inert_lines`, and those two have already drifted
+    once (see the `startswith` comment beside `_inert_lines`). PR #205 merged hours
+    earlier for exactly this shape, one seam over. So the parser asks the gate what a
+    Markdown reader treats as literal, and holds no opinion of its own.
+
+    ⚠ IT ASKS FOR FENCES, NOT FOR "INERT". The first cut of this fix reused the
+    gate's `_inert_lines`, which is the cheaper reuse and looked equivalent — a probe
+    over blockquote, indent and fence shapes showed the only line it newly suppressed
+    was the fenced header. That probe had NO HTML COMMENT in it. Run against the real
+    store, `_inert_lines` DELETED entry 2026-09-01/16: an earlier entry mentions
+    `<!--` in prose while explaining this very machinery, `_inert_lines` treats an
+    unclosed `<!--` as a comment running to end-of-input, and every entry after it
+    vanished (47 -> 46). Over-approximating fails SAFE for "is there an ask here?"
+    and DANGEROUS for "does a block start here?". A measurement is only as good as
+    its corpus.
+    """
+    blocks: list[list[str]] = []
+    fenced = fenced_lines(text)
+    for i, line in enumerate(text.split("\n")):
+        if BLOCK.match(line) and i not in fenced:
+            blocks.append([line])
+        elif blocks:
+            blocks[-1].append(line)
+    out: list[dict] = []
+    seen: dict[str, int] = {}
+    for b in blocks:
+        entry = {"raw": "\n".join(b), "error": None, "needs_you": False,
+                 "heads_up": False, "resolves": [],
+                 "date": None, "ordinal": 0, "id": None, "would_be_id": None,
+                 "title": "", "plain": "", "tech": None}
+        err = header_error(b[0])
+        # ⛔ THE RAW HEADER LINE, recorded for `added_reference_errors` (code review r1,
+        # Blocking + High). It is what an error is ABOUT, and it is stable under the
+        # positional renumbering that appending an entry causes — which neither the id nor
+        # the body-derived title is.
+        entry["header"] = b[0]
+        m = HEADER.match(b[0])
+        if m is not None and valid_date(m.group(1)):
+            # The ordinal is claimed as soon as the DATE is known good — BEFORE
+            # the flag check — so repairing a typo'd flag does not renumber the
+            # entries after it and silently rebind a standing [resolved:].
+            date = m.group(1)
+            seen[date] = seen.get(date, 0) + 1
+            entry["date"], entry["ordinal"] = date, seen[date]
+            entry["id"] = f"{date}/{seen[date]}"
+            for f in FLAG.findall(m.group(2)):
+                # The `else` here used to assume every non-`needs-you` flag
+                # contains a colon — true only by accident of FLAG's current
+                # alternation, in a file whose header says it OWNS the grammar
+                # and invites you to extend it there. Measured: adding one
+                # alternative to FLAG left the gate's suite fully green and made
+                # `f.split(":", 1)[1]` raise IndexError on EVERY render, so the
+                # page stopped existing rather than degrading one entry. The
+                # generator imported the grammar's symbols but not its meaning.
+                if f == "needs-you":
+                    entry["needs_you"] = True
+                elif f == "heads-up":
+                    # ⚠ Added WITH the FLAG alternative in check-dashboard-entry.py,
+                    # never after it. The comment above records the measured cost of
+                    # doing otherwise: the gate's suite stayed fully green while
+                    # `f.split(":", 1)[1]` raised IndexError on EVERY render.
+                    entry["heads_up"] = True
+                elif f.startswith("resolved:"):
+                    entry["resolves"].append(f.split(":", 1)[1].strip())
+                else:
+                    entry["error"] = f"unrecognised flag [{f}]"
+        elif m is not None:
+            # A block whose DATE is malformed never gets an id, so pass 2 could
+            # not distinguish "no such entry" from "that entry exists and is
+            # unparseable" — and sent the author hunting for a typo that was not
+            # there. A bad date is the CANONICAL malformed entry (§6.2's own
+            # example, and the one control D exercises), so it was precisely the
+            # case the earlier three-way fix did not reach.
+            raw_date = m.group(1)
+            seen[raw_date] = seen.get(raw_date, 0) + 1
+            entry["would_be_id"] = f"{raw_date}/{seen[raw_date]}"
+        if err:
+            entry["error"] = err
+            out.append(entry)
+            continue
+        body = b[1:]
+        cut = next((i for i, l in enumerate(body) if l.strip() == TECH_MARKER), None)
+        plain_lines = body if cut is None else body[:cut]
+        entry["tech"] = None if cut is None else "\n".join(body[cut + 1:]).strip()
+        # The FIRST PARAGRAPH, reduced to its first sentence — not the first
+        # physical line. The blank-line test below is unchanged: an entry whose
+        # first line is blank still has no title and is still an error.
+        _first_para: list[str] = []
+        for _l in plain_lines:
+            if _l.strip():
+                _first_para.append(_l.strip())
+            elif _first_para:
+                break
+        entry["title"] = _first_sentence(" ".join(_first_para))
+        entry["plain"] = "\n".join(plain_lines).strip()
+        if not entry["title"]:
+            entry["error"] = "no title line — the first line after the header is blank"
+        out.append(entry)
+
+    # PASS 2 — every [resolved:] must name an entry that exists.
+    ids = {e["id"] for e in out if e["id"] and not e["error"]}
+    for e in out:
+        if e["error"]:
+            continue
+        for r in e["resolves"]:
+            if r in ids:
+                continue
+            if not r:
+                e["error"] = "[resolved:] with no entry id after it"
+            elif any(o["id"] == r or o["would_be_id"] == r for o in out):
+                e["error"] = (f"[resolved: {r}] names an entry that could not be "
+                              f"parsed — fix that entry first")
+            else:
+                e["error"] = f"[resolved: {r}] names no entry in this file"
+            break
+    return out
+
+
+def added_reference_errors(base_text: str, head_text: str) -> list[str]:
+    """PURE. Entry errors present in HEAD's store that are NOT already in BASE's.
+
+    ⛔ THIS IS WHY THE PARSER HAD TO MOVE (backlog #82). Whether `[resolved: 2026-09-01/99]`
+    names a real entry is a property of the WHOLE STORE; `added_entry_problems` only ever sees a
+    PATCH, so no tightening of `FLAG` could ever reach it. Measured 2026-09-01: three
+    `[resolved: …]` shapes returned `header_error -> None` while the page said "names no entry".
+
+    ⛔ AND IT REPORTS ONLY WHAT THE BRANCH ADDED. Reporting every error in HEAD would make one
+    pre-existing broken entry fail every future branch, including branches that never touch the
+    store — the gate everyone learns to override. `#56` records that verdict from measurement
+    ("do NOT rebuild the reconciliation as a gate: it fires on every docs-only commit and gets
+    disabled"), and `#98` now cites it.
+
+    ⚠ THE KEY IS (header line, error), NOT THE ENTRY ID, and that is the trap here.
+    Ids are POSITIONAL — `YYYY-MM-DD/N` counts entries sharing a date in FILE ORDER — so
+    appending one entry renumbers every later one that day. Keyed by id, a pre-existing error
+    would read as NEW the moment anything shifted it: a false positive on the most ordinary
+    action there is, which is exactly how a gate gets switched off. The title is content-derived
+    and does not move. (`header` would be better still and is NOT available: `parse_entries`
+    never sets it, and adding it would change the page's data shape for a gate-only need.)
+
+    A COUNTER, not a set: two entries can carry the same bad reference, and a branch adding a
+    SECOND one has added something. Multiset difference sees that; set difference would not.
+    """
+    from collections import Counter
+
+    def errors_in(text: str) -> "Counter":
+        return Counter((e.get("header") or "", e["error"])
+                       for e in parse_entries(text) if e.get("error"))
+
+    fresh = errors_in(head_text) - errors_in(base_text)
+    return [msg for (_title, msg), n in sorted(fresh.items()) for _ in range(n)]
+
+
 def added_entry_problems(patch: str) -> list[str]:
     """Every added line ATTEMPTING an entry header that is malformed (backlog #78).
 
@@ -517,7 +789,8 @@ def added_entry_problems(patch: str) -> list[str]:
 
 
 def verdict(changed: list[str], added_entry: bool, pr_body: str,
-            entry_problems: list[str] | tuple = ()) -> tuple[int, str]:
+            entry_problems: list[str] | tuple = (),
+            ref_problems: list[str] | tuple = ()) -> tuple[int, str]:
     # ⚠ ABOVE the exemption short-circuit, and that ORDER is the fix. Every branch
     # below answers "does this branch owe an entry?"; this one answers "is what it
     # added well-formed?". Putting it second would re-create the hole, because the
@@ -526,6 +799,12 @@ def verdict(changed: list[str], added_entry: bool, pr_body: str,
         return 1, ("the entry this branch adds is malformed, so the page would render "
                    "it under 'Could not parse this entry' — "
                    + "; ".join(entry_problems))
+    # ⚠ ALSO above the short-circuit, and for the same reason: this answers "is what the branch
+    # added sound?", not "does the branch owe an entry?". Referential, so it needed the whole
+    # store — backlog #82.
+    if ref_problems:
+        return 1, ("this branch adds a reference that names nothing in the store — "
+                   + "; ".join(ref_problems))
     real = [p for p in changed if not _is_exempt(p)]
     if not real:
         return 0, "no tracked files changed outside the exempt paths"
@@ -877,10 +1156,92 @@ def _self_test() -> int:
     case("header_error names the space", "space" in (header_error("##2026-08-28") or ""), True)
     case("header_error is None on a good header", header_error("## 2026-08-28 [needs-you]"), None)
 
+
+    # ── backlog #82: the REFERENTIAL half, which needed the whole store ────────────────────
+    _BASE = ("## 2026-08-28\nTarget entry.\n"
+             "## 2026-08-30 [resolved: nonsense]\nA pre-existing broken reference.\n")
+    case("F1 a NEWLY added dangling reference is reported",
+         added_reference_errors(_BASE, _BASE + "## 2026-08-31 [resolved: 2026-09-01/99]\nNew.\n"),
+         ["[resolved: 2026-09-01/99] names no entry in this file"])
+    case("F1b ...and so is the `nonsense` shape, which header_error returns None for",
+         (header_error("## 2026-08-30 [resolved: nonsense]"),
+          bool(added_reference_errors("", "## 2026-08-30 [resolved: nonsense]\nX.\n"))),
+         (None, True))
+    case("F2 an error present in BOTH base and head is NOT this branch's",
+         added_reference_errors(_BASE, _BASE), [])
+    # ⛔ THE CASE THE OBVIOUS IMPLEMENTATION FAILS. Appending an entry that shares a date
+    # RENUMBERS every later id that day, so an id-keyed diff would call the pre-existing
+    # error new. That false positive on the most ordinary action is how a gate gets disabled.
+    case("F3 a valid append that RENUMBERS later ids reports nothing",
+         added_reference_errors(_BASE, _BASE + "## 2026-08-28\nValid, and it renumbers.\n"),
+         [])
+    case("F7 a reference that NAMES a real entry is accepted",
+         added_reference_errors("", "## 2026-08-28\nTarget.\n"
+                                    "## 2026-08-29 [resolved: 2026-08-28/1]\nGood.\n"), [])
+    # A COUNTER, not a set: a second copy of the same bad reference IS something added.
+    case("...and a SECOND identical bad reference is still an addition",
+         len(added_reference_errors(_BASE, _BASE + "## 2026-09-02 [resolved: nonsense]\nAgain.\n")),
+         1)
+    # WIRING, not just the predicate — the r2 lesson: a correct rule that nothing calls.
+    case("verdict REFUSES on a referential problem, above the exemption short-circuit",
+         verdict(["docs/dashboard-entries.md"], True, "", (), ["names no entry"])[0], 1)
+    case("...and is quiet when there is none", verdict([], False, "", (), [])[0], 0)
+
+
+    # ── the relocated parser's own behaviours (backlog #82) ────────────────────────────────
+    # ⛔ THESE EXIST BECAUSE THE MUTATION HARNESS RUNS ONLY THE MUTATED FILE'S SUITE
+    # (`check-plan-code.py:852`, `run_suite(d, fname)`). `parse_entries` moved here, so the
+    # eight mutations that guard it moved with it — and a mutation whose killing case sits in
+    # ANOTHER file's suite reads as a survivor. gen-dashboard keeps its own copies as
+    # CONSUMER coverage: the page asserting the imported function still behaves is a
+    # different question from the owner asserting its own rules.
+    _R2 = parse_entries("## 2026-08-26\nOne.\n## 2026-08-27\nTwo.\n"
+                        "## 2026-08-28 [resolved: 2026-08-26/1] [resolved: 2026-08-27/1]\nBoth.\n")
+    case("two [resolved:] flags are both kept", len(_R2[2]["resolves"]), 2)
+    case("resolve of an unknown id is an error",
+         "names no entry" in (parse_entries("## 2026-08-29 [resolved: 1999-01-01/9]\nX.\n")[0]["error"] or ""),
+         True)
+    # ⛔ THE ORDINAL IS CLAIMED WHEN THE DATE IS GOOD, BEFORE the flag check — so repairing a
+    # typo'd flag must not renumber the entries after it and silently rebind a standing
+    # [resolved:]. A bad-DATE block is the wrong fixture: it never claims an ordinal at all.
+    _ORD = parse_entries("## 2026-08-28 [needs-yo]\nTypo'd flag.\n## 2026-08-28\nReal one.\n")
+    case("a malformed block still consumes its ordinal",
+         [e["id"] for e in _ORD], ["2026-08-28/1", "2026-08-28/2"])
+    # ⚠ FLAG IS WIDENED ON PURPOSE. The else-branch below is unreachable while FLAG matches
+    # exactly the three flags the if/elif chain handles — so a case using a plain `[blocked]`
+    # tests the HEADER's unrecognised-text path instead and cannot kill the flag-loop
+    # mutations. This simulates the real hazard: the gate learns a new flag and the loop does
+    # not. The case above asserts the widening is real, so it cannot pass for the wrong reason.
+    _wide = re.compile(r"\[(needs-you|heads-up|blocked|resolved:\s*[^\]]*)\]")
+    case("the unknown-flag fixture really extends the gate's own pattern",
+         (_wide.pattern != FLAG.pattern, _wide.findall("[blocked]")), (True, ["blocked"]))
+    _real_flag = globals()["FLAG"]
+    globals()["FLAG"] = _wide
+    try:
+        _UNK = parse_entries("## 2026-08-29 [blocked]\nA thing.\n")
+    except Exception as exc:                 # the defect: an unknown flag would crash the page
+        _UNK = [{"error": f"RAISED {type(exc).__name__}"}]
+    finally:
+        globals()["FLAG"] = _real_flag
+    case("an unrecognised flag is an ERROR, not a crash", bool(_UNK[0]["error"]), True)
+    case("...and says WHICH text it could not recognise",
+         "unrecognised flag" in (_UNK[0]["error"] or ""), True)
+    _LONG = ("A first sentence deliberately far longer than any truncation cap this parser has "
+             "ever applied to a headline, so a reinstated cap would visibly cut its tail off.")
+    case("a long first sentence reaches the reader WHOLE",
+         parse_entries(f"## 2026-08-28\n{_LONG}\nMore.\n")[0]["title"], _LONG)
+    _FEN = parse_entries("## 2026-08-28\nTitle.\n```\n## 2026-08-29\nfenced\n```\nAfter.\n")
+    case("a fenced header does not split the entry", len(_FEN), 1)
+    case("...and mints no phantom id", [e["id"] for e in _FEN], ["2026-08-28/1"])
+    _INERT = parse_entries("## 2026-08-28\nI mention `<!--` in prose.\n## 2026-08-29\nB.\n")
+    case("prose mentioning <!-- does not swallow the NEXT entry", len(_INERT), 2)
+    case("...and both keep their ids", [e["id"] for e in _INERT],
+         ["2026-08-28/1", "2026-08-29/1"])
+
     print(f"\n{ok}/{ok+fail} passed")
     return 1 if fail else 0
 
-def collect(base: str) -> tuple[list[str], bool, str | None, list[str]]:
+def collect(base: str) -> tuple[list[str], bool, str | None, list[str], list[str]]:
     try:
         names = subprocess.run(["git", "diff", "--name-only", f"{base}...HEAD"],
                                cwd=ROOT, capture_output=True, text=True, timeout=20)
@@ -888,9 +1249,9 @@ def collect(base: str) -> tuple[list[str], bool, str | None, list[str]]:
                                 "--", "docs/dashboard-entries.md"],
                                cwd=ROOT, capture_output=True, text=True, timeout=20)
     except (OSError, subprocess.SubprocessError) as exc:
-        return [], False, f"could not run git: {exc}", []
+        return [], False, f"could not run git: {exc}", [], []
     if names.returncode != 0:
-        return [], False, f"git diff exited {names.returncode}: {names.stderr.strip()[:200]}", []
+        return [], False, f"git diff exited {names.returncode}: {names.stderr.strip()[:200]}", [], []
     changed = [l for l in names.stdout.split("\n") if l.strip()]
     added = any(_added_entry_line(l) for l in patch.stdout.split("\n"))
     # ⚠ The SAME `-U0` patch already fetched. Measured on 7183111: an appended entry
@@ -898,7 +1259,23 @@ def collect(base: str) -> tuple[list[str], bool, str | None, list[str]]:
     # question needs no second revision and no working-tree read. (Author and both
     # reviewers once agreed `-U0` omits the body; one `git diff` refuted all three.)
     problems = added_entry_problems(patch.stdout)
-    return changed, added, None, problems
+    # ── the referential half needs the STORE, not the patch (backlog #82) ──────────────────
+    store = ROOT / "docs/dashboard-entries.md"
+    head_text = store.read_text(encoding="utf-8") if store.exists() else ""
+    try:
+        shown = subprocess.run(["git", "show", f"{base}:docs/dashboard-entries.md"],
+                               cwd=ROOT, capture_output=True, text=True, timeout=20)
+        base_text, base_ok = shown.stdout, shown.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        base_text, base_ok = "", False
+    refs = added_reference_errors(base_text, head_text)
+    if not base_ok and refs:
+        # ⚠ NOT SILENCE. A first commit, a shallow clone or a rename makes the baseline
+        # unreadable; treating that as "nothing added" would let a broken reference through on
+        # exactly the runs where the check cannot see. Say so, and report what HEAD holds.
+        refs = [f"(baseline {base}:docs/dashboard-entries.md unreadable — "
+                f"reporting every error in HEAD) {r}" for r in refs]
+    return changed, added, None, problems, refs
 
 
 def _impure_self_test() -> int:
@@ -941,7 +1318,7 @@ def _impure_self_test() -> int:
     def _boom(*a, **k):
         raise OSError("git is not installed")
 
-    ch, ad, err, pr = _with_run(_boom, lambda: collect("master"))
+    ch, ad, err, pr, rf = _with_run(_boom, lambda: collect("master"))
     case("collect: a missing git is a could-not-tell, not 'nothing changed'",
          (ch, ad, bool(err)), ([], False, True))
     # ⚠ The 4th element on the CANNOT-RUN paths. An empty list here is not a
@@ -960,14 +1337,18 @@ def _impure_self_test() -> int:
         _cwds.append(k.get("cwd"))
         return _R(0, "", "")
     _with_run(_spy, lambda: collect("master"))
+    # ⟳ 2 -> 3 calls, backlog #82: `collect` now also runs `git show <base>:…` for the
+    # referential half. The COUNT is pinned deliberately — this case guards that every git
+    # call is scoped to THIS repo, so a new call that forgot `cwd=ROOT` must fail here rather
+    # than be absorbed by a length-agnostic assertion.
     case("collect: asks about THIS repo, not the caller's cwd — on EVERY call",
-         (_cwds, len(_cwds)), ([ROOT, ROOT], 2))
-    ch, ad, err, pr = _with_run(lambda *a, **k: _R(128, "", "fatal: no merge base"),
+         (_cwds, len(_cwds)), ([ROOT, ROOT, ROOT], 3))
+    ch, ad, err, pr, rf = _with_run(lambda *a, **k: _R(128, "", "fatal: no merge base"),
                             lambda: collect("master"))
     case("collect: a non-zero git exit is a could-not-tell, not 'nothing changed'",
          (ch, ad, bool(err)), ([], False, True))
     case("...and that path reports no entry problems either", pr, [])
-    ch, ad, err, pr = _with_run(lambda *a, **k: _R(0, "lib/x.ts\n", ""),
+    ch, ad, err, pr, rf = _with_run(lambda *a, **k: _R(0, "lib/x.ts\n", ""),
                             lambda: collect("master"))
     # ⟲ `ad` is asserted, not just ch/err. Branch review of backlog #70 mutated
     # `added = any(...)` to `added = True` and it SURVIVED the whole manifest: this
@@ -987,7 +1368,7 @@ def _impure_self_test() -> int:
         if "-U0" in argv:
             return _R(0, "@@ -1 +1,2 @@\n+## 2026-02-30 [needs-you]\n+body\n", "")
         return _R(0, "docs/dashboard-entries.md\n", "")
-    ch, ad, err, pr = _with_run(_entry_patch, lambda: collect("master"))
+    ch, ad, err, pr, rf = _with_run(_entry_patch, lambda: collect("master"))
     case("collect: a malformed ADDED header reaches the caller as a problem",
          (len(pr), ad, err), (1, False, None))
     case("...and an entry-only branch is then REFUSED, not exempted",
@@ -998,7 +1379,10 @@ def _impure_self_test() -> int:
     import contextlib as _cl, io as _io
     g = globals()
     real_collect = g["collect"]
-    g["collect"] = lambda base: ([], False, "could not run git: boom", [])
+    # ⚠ FIVE values since backlog #82. A stub that drifts from the real signature tests a
+    # contract nobody has — here it crashed loudly, which is the good failure; a stub returning
+    # the RIGHT arity with the wrong meaning would not have.
+    g["collect"] = lambda base: ([], False, "could not run git: boom", [], [])
     try:
         with _cl.redirect_stdout(_io.StringIO()) as buf:
             rc = main(["--base", "master"])
@@ -1013,7 +1397,7 @@ def _impure_self_test() -> int:
     # `verdict` directly. This is the only case that fails if the argument is
     # not passed through, so it is the one that makes the wiring load-bearing.
     g["collect"] = lambda base: (["docs/dashboard-entries.md"], False, None,
-                                 ["'## 2026-02-30' — not a real calendar date"])
+                                 ["'## 2026-02-30' — not a real calendar date"], [])
     try:
         with _cl.redirect_stdout(_io.StringIO()) as buf2:
             rc2 = main(["--base", "master"])
@@ -1039,7 +1423,7 @@ def main(argv: list[str]) -> int:
         # cannot-run cases whenever the pure suite is already red.
         pure, impure = _self_test(), _impure_self_test()
         return 1 if (pure or impure) else 0
-    changed, added, err, entry_problems = collect(a.base)
+    changed, added, err, entry_problems, ref_problems = collect(a.base)
     if err:
         print(f"CANNOT RUN — {err}\nTreat this as NOT CHECKED.")
         return 2
@@ -1048,7 +1432,7 @@ def main(argv: list[str]) -> int:
         import pathlib
         p = pathlib.Path(a.pr_body_file)
         body = p.read_text(encoding="utf-8") if p.exists() else ""
-    code, reason = verdict(changed, added, body, entry_problems)
+    code, reason = verdict(changed, added, body, entry_problems, ref_problems)
     print(("ok — " if code == 0 else "REFUSED — ") + reason)
     return code
 

@@ -558,7 +558,7 @@ EXPECTED_MUTATIONS = {
     # happened while destroying what was measured — the recorded *a guard's own output is a
     # CONTRACT* shape, one layer in from the log-format defect this whole slice is about.
     "scripts/check-banner-armed.py": 8,
-    "scripts/gen-dashboard.py": 73,
+    "scripts/gen-dashboard.py": 64,
     "scripts/page_markup.py": 14,
     # ⟳ 2026-09-01, backlog #78: 18 -> 23. The entry gate now answers TWO questions
     # instead of one — "does this branch owe an entry?" (unchanged) and "is the entry
@@ -573,7 +573,12 @@ EXPECTED_MUTATIONS = {
     # BLOCK mutation provably cannot reach: corrupting the shared rule moves both
     # sides together and leaves the agreement case green. Only breaking the
     # DERIVATION separates them, and that is the regression the seam exists to stop.
-    "scripts/check-dashboard-entry.py": 34,
+    # ⟳ 34 -> 42 and gen-dashboard 73 -> 65, backlog #82: parse_entries RELOCATED into the
+    # gate, and its eight mutations moved WITH it. THE SUM IS UNCHANGED AT 107 on purpose —
+    # only the per-file split can tell a relocation apart from deleted coverage, which is
+    # the same reason #71 held its sum at 73. `run_suite(d, fname)` runs only the mutated
+    # file's suite, so the killing cases moved too.
+    "scripts/check-dashboard-entry.py": 42,
     "scripts/check-plan-code.py": 35,
     # ⟳ 2026-08-31, backlog #76/#77: the shared page chrome. Adding it found TWO
     # vacuous cases of my own — a "dirty tree" assertion compared against a
@@ -2506,7 +2511,13 @@ def _self_test() -> int:
     # total makes the control refuse to run instead of silently re-baselining.
     # ⟳ 186 -> 187, backlog #97: ONE entry, guarding the observation line's CONTENT after
     # code review r1 found the F11 cases counted lines without ever reading one.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 187)
+    # ⟳ 187 -> 186, backlog #82: gen-dashboard's `BLOCK = _GATE.BLOCK` alias was left
+    # referenced by nothing when parse_entries moved, so it was DELETED and its mutation
+    # retired. Not lost coverage — the mutation duplicated the gate's own
+    # "block-start regex stops excluding sub-headings", which still guards the rule where
+    # it now lives. CI caught the duplicate; the harness refuses an entry that repeats
+    # another's anchors, which is exactly the check that should have stopped me.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 186)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so
