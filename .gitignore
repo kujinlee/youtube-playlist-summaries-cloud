@@ -99,7 +99,7 @@ playwright/.auth/
 # announced `## ▶ STEP i of N` with nothing armed. Per-machine evidence, not a shared record: it
 # exists so the decision to promote that check from warning to blocking rests on a COUNT rather
 # than an impression.
-.claude/banner-warnings.log
+.claude/banner-warnings*.log
 
 # Which commit a CI watcher is armed for (scripts/check-ci-watched.py). SHA-scoped on purpose:
 # a new push moves HEAD, the sentinel stops matching, and the check warns again. "Armed once,

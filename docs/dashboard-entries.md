@@ -3494,3 +3494,41 @@ PR #223.
 
 Suites: brief-compose 44/44 (was 40). Not run locally: schema gates (need Postgres), `--mutate .`
 (CI runs it; `brief-compose.py` carries no manifest).
+
+## 2026-09-05
+The harness can now notice when I stop announcing my work, which is the one thing it could not
+notice before — and which you, not it, had to spot.
+
+There is a Stop-hook check that warns when I announce "step 2 of 6" and then wander off without a
+plan armed. It was blind in the other direction: a plan armed, work being done, and no announcement
+at all. That is the direction that actually failed last session, because the tool that prints the
+banner prints it into a command's output — which I see and you do not. The banner existed every
+time and reached nobody.
+
+Two things worth knowing about how this went. First, the check that was supposed to catch it could
+not run at all in the state it was written for: a sibling guard refuses the stop first, and the
+script exits before ever reaching it. Fixing that also revealed the same thing had been quietly
+happening to the CI watcher added the day before — it too was skipped whenever a plan was mid-flight.
+Only one of the two was moved; moving both would buy a network call on every blocked stop.
+
+Second, and more usefully: four review rounds all found the same class of problem, which was that
+the tests I had written did not test what they claimed. They were written into a plan document,
+which cannot be run. The fix was to build the whole change in a throwaway copy of the repo and run
+it first — which immediately caught two more broken tests that four rounds of careful reading had
+not. The change now ships with 55 self-tests and a sweep that breaks each fix in turn and confirms a
+named test goes red for it.
+
+**Waiting on you:** merging. Nothing else needs a decision.
+<!--tech-->
+Backlog #95, branch `backlog-95-banner-guard`. `scripts/check-banner-armed.py` gains the
+plan-without-banner branch: `armed AND unticked > 0 AND edited AND zero banners`. `_armed()` now
+honours `paused:` as `check-plan-progress` does; `count_steps`/`parse_sentinel` are borrowed by path
+import rather than re-implemented, with `total == 0` mapped to CANNOT RUN; the transcript window
+stops treating `isMeta` records as turn boundaries (but keeps task notifications as boundaries —
+measured: 52 of 72 such records begin a genuinely new turn); `log_line` gains a reason column so the
+banner-less class can be recorded at all. `.claude/hooks/block-idle-stop.sh` runs the observer ahead
+of `check-plan-progress.py`, which also matters because that script unlinks the sentinel as a side
+effect. 55/55 self-tests, 11/11 mutations killed via the case each names, `bash -n` clean.
+Spec+plan: `docs/superpowers/{specs,plans}/2026-09-04-banner-guard-inverse*`; eight review files
+under `docs/reviews/{claude,coordinator}/`. ⚠ `check-ci-watched.py` is deliberately still unreachable
+on blocked stops — moving it would add a `gh pr view` call (25s timeout) per blocked mid-plan stop.
