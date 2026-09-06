@@ -347,7 +347,11 @@ HEADER = _GATE.HEADER
 # not, so a level-3 heading in a body split the entry and truncated it. Required,
 # not `getattr`-optional: without a block-start rule there is nothing to parse,
 # which is the same posture `header_error`/`HEADER`/`FLAG` take one line up.
-BLOCK = _GATE.BLOCK
+# ⟳ `BLOCK = _GATE.BLOCK` DELETED, backlog #82. Its only consumer was `parse_entries`, which
+# moved to the gate; the alias was left referenced by nothing. Its mutation went with it — and
+# turned out to DUPLICATE the gate's own `block-start regex stops excluding sub-headings`, so
+# the behaviour is still covered where the rule now lives. The sum drops 107 -> 106 because the
+# SUBJECT disappeared, not because coverage did.
 # ⛔ REQUIRED, unlike the ask block's OPTIONAL `_inert_lines` binding below. Losing
 # that one costs a section rendered as plain prose; losing this one costs the parser
 # the ability to tell a fenced example from an entry header, which does not degrade

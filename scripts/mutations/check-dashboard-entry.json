@@ -541,19 +541,5 @@
       "prose mentioning <!-- does not swallow the NEXT entry",
       "...and both keep their ids"
     ]
-  },
-  {
-    "name": "the gate loosens its own block-start rule, so a sub-heading starts an entry (relocated with parse_entries, backlog #82)",
-    "file": "scripts/check-dashboard-entry.py",
-    "_note": "NEW 2026-09-01, and it covers the thing that actually broke. The defect was never a wrong regex \u2014 it was TWO regexes, and no mutation existed on either: scanning the manifest while repairing the orphaned ENTRY_ISH anchor found that this file's BLOCK had ZERO coverage for its whole life. This mutation restores the DUPLICATE rather than corrupting the shared rule, so it fails exactly the way the original defect did \u2014 the gate stays correct and only the page diverges, which is precisely why no gate-side case can catch it. \u26a0 EXACT case names, not substrings (check-plan-code.py:730-735, a round-6 hardening): the first draft wrote `and the prose after it is not lost` and dropped the leading ellipsis the case actually carries, resolving to 0 red cases. Caught by the Codex half running `--mutate .`.",
-    "edits": [
-      [
-        "BLOCK = re.compile(r\"^##(?!#)\\s*\\S\")",
-        "BLOCK = re.compile(r\"^##\\s*\\S\")"
-      ]
-    ],
-    "expect": [
-      "the block-start rule excludes a sub-heading"
-    ]
   }
 ]
