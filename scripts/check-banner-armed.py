@@ -96,7 +96,7 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 78 cases
+    python3 scripts/check-banner-armed.py --self-test  # 86 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -108,6 +108,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parent.parent
 SENTINEL = ROOT / ".claude/executing-plan"
@@ -125,8 +126,25 @@ BANNER_RE = re.compile(r"^##\s*▶\s*STEP\s+(\d+)\s+of\s+(\d+)\b", re.M)
 
 # ── Pure core ─────────────────────────────────────────────────────────────────────────────────
 
-def records_since_last_user(lines: list[str]) -> list[dict] | None:
-    """Records emitted after the most recent REAL user message. None if unparseable.
+class TurnWindow(NamedTuple):
+    """One turn: the real-user record that OPENED it, and everything emitted after it.
+
+    ⚠ THE OPENER IS SEPARATE FROM THE BODY, AND CARRYING IT IS NOT COSMETIC. `records_since_last_user`
+    has always excluded the boundary record (`start = i + 1`), and the body must keep excluding it or
+    every existing caller changes meaning. But three things need the opener's identity:
+      * the journal key — the turn a sentinel sample describes (spec §3.4);
+      * the log line — which turn a verdict is about, now that it is not the live one (§6);
+      * falsifier F3 — that the selector names the same turn regardless of the live window's extent.
+    A flat `list[dict]` can serve the body or the identity, never both. This pair serves both.
+
+    `opener` is None only for the degenerate no-boundary window (see `windows`).
+    """
+    opener: dict | None
+    body: list[dict]
+
+
+def _is_turn_boundary(rec: dict) -> bool:
+    """PURE. True iff this record is a REAL user message that starts a new turn.
 
     Two kinds of `user` record are not the human typing, and treating them as turn boundaries
     truncates the window:
@@ -138,7 +156,20 @@ def records_since_last_user(lines: list[str]) -> list[dict] | None:
     `promptSource` is deliberately NOT part of this rule. Measured over 30 transcripts: skipping
     it too collapses 142 windows to 70, and 52 of the 72 removed boundaries begin a GENUINELY NEW
     turn. A window that never resets is as wrong as one that resets too often.
+
+    ⚠ THIS IS THE ONE PLACE THE RULE LIVES. `windows` and `records_since_last_user` both call it;
+    neither restates it. A second implementation of one rule drifts — recorded, and paid for here.
     """
+    if rec.get("type") != "user":
+        return False
+    if _is_tool_result(rec):
+        return False
+    if rec.get("isMeta") is True and not _meta_carries_a_message(rec):
+        return False
+    return True
+
+
+def _parse_records(lines: list[str]) -> list[dict]:
     records = []
     for raw in lines:
         raw = raw.strip()
@@ -148,19 +179,86 @@ def records_since_last_user(lines: list[str]) -> list[dict] | None:
             records.append(json.loads(raw))
         except (ValueError, TypeError):
             continue
+    return records
+
+
+def windows(records: list[dict]) -> list[TurnWindow]:
+    """PURE. Split records into per-turn windows on the SAME boundary rule as before.
+
+    ⚠ THE DEGENERATE CASE IS LOAD-BEARING, and an earlier draft of the spec asserted it away.
+    With NO real-user boundary at all, the previous code returned EVERY record (`start` stayed 0).
+    A naive split would return `[]`, and `[-1]` would then raise IndexError *inside a Stop hook* —
+    turning a warn-only observer into a traceback. Reachable: a transcript whose only `user` records
+    are tool results and injected `isMeta` records has no boundary, and both exclusions are real.
+    So: one window, `opener=None`, body = everything. That preserves the old semantics exactly.
+    """
+    bounds = [i for i, rec in enumerate(records) if _is_turn_boundary(rec)]
+    if not bounds:
+        return [TurnWindow(None, list(records))]
+    out: list[TurnWindow] = []
+    for n, b in enumerate(bounds):
+        end = bounds[n + 1] if n + 1 < len(bounds) else len(records)
+        out.append(TurnWindow(records[b], records[b + 1:end]))
+    return out
+
+
+def is_judgable(window: TurnWindow) -> bool:
+    """PURE. True iff this window represents a turn the assistant actually took.
+
+    ⛔ THE PREDICATE IS "CONTAINS AN ASSISTANT RECORD", NOT "AN ASSISTANT TEXT BLOCK", and both
+    review halves rejected the text-block form independently. A turn can make only tool calls and
+    emit no text — an Edit, its result, stop. Under the text-block form that window reads as empty,
+    and TWO things break at once:
+      * it is SKIPPED, so the plan-without-a-banner class becomes structurally unreachable for
+        exactly the turns it targets — that window has edits, unticked steps and no banner, which
+        is precisely `decide`'s `:309` branch;
+      * it desynchronises the journal, which is keyed at every Stop — and a Stop fires for any
+        assistant activity, text or not.
+    "A turn happened" must mean one thing. An assistant record is what a Stop hook fires for, so
+    that is the definition both the selector and the journal use.
+
+    Slash-command shells still drop out: `/foo` and its `<local-command-stdout>` reply are two
+    consecutive boundaries, so the window between them holds ZERO records — excluded for having no
+    assistant activity, not for having no text.
+    """
+    return any(rec.get("type") == "assistant" for rec in window.body)
+
+
+def judged_window(wins: list[TurnWindow]) -> TurnWindow | None:
+    """PURE. The turn to judge: the last judgable window that is NOT the live one.
+
+    ⚠ NOT "step back N from the end". The spec's earlier phrasing — *the last judgable window
+    before the live one* — invites an ordinal step-back from a window whose extent is still moving
+    while the turn is in flight, and that silently selects T-2 instead of T-1. The live window is
+    the last one, whatever it currently contains; excluding it wholesale makes the answer
+    independent of how much of it has been written (falsifier F3).
+
+    None means NO SUBJECT — the first judgable turn of a session, or a transcript with only one
+    window. That is QUIET, and must never be conflated with CANNOT RUN.
+    """
+    for window in reversed(wins[:-1]):
+        if is_judgable(window):
+            return window
+    return None
+
+
+def records_since_last_user(lines: list[str]) -> list[dict] | None:
+    """Records emitted after the most recent REAL user message. None if unparseable.
+
+    ⚠ NOW DELEGATES to `windows`, so the boundary rule has exactly one implementation.
+
+    ⛔ AND THAT IS WHY THE SPEC'S F6 CANNOT BE A STANDING SELF-TEST CASE. F6 says this function
+    still equals `windows(records)[-1].body`. After this refactor it is that expression, so a case
+    asserting the equality compares the code to itself and can never fail — the same tautology
+    F11 turned out to be (measured: 1828 windows, 0 violations, true by construction).
+    F6 is therefore a ONE-TIME MIGRATION CHECK, run against the PRE-refactor implementation over
+    the transcript corpus, and recorded in the commit. What stands here instead are cases asserting
+    the specific documented behaviours: each exclusion, and the degenerate no-boundary window.
+    """
+    records = _parse_records(lines)
     if not records:
         return None
-
-    start = 0
-    for i, rec in enumerate(records):
-        if rec.get("type") != "user":
-            continue
-        if _is_tool_result(rec):
-            continue
-        if rec.get("isMeta") is True and not _meta_carries_a_message(rec):
-            continue
-        start = i + 1
-    return records[start:]
+    return windows(records)[-1].body
 
 
 _META_IS_REALLY_A_MESSAGE = (
@@ -941,6 +1039,63 @@ def _self_test() -> int:
              [user("go"), asst(B.format(2, 4)),
               meta_msg("<system-reminder>background context</system-reminder>"),
               asst("kept working")]) or [])) == (2, 4))
+
+    # ── window selection (backlog #96) ────────────────────────────────────────────────────
+    # ⛔ THE SPEC'S F6 IS DELIBERATELY ABSENT HERE. It says records_since_last_user still equals
+    # windows(...)[-1].body — which, after the refactor, is that function's DEFINITION, so a case
+    # asserting it compares the code to itself and can never fail. That is the tautology F11 turned
+    # out to be (measured: 1828 windows, 0 violations, true by construction). F6 was instead run ONCE
+    # as a migration check against the PRE-refactor implementation over the whole corpus:
+    # 526 transcripts, 526 identical, 0 different. What stands below is each documented BEHAVIOUR.
+    def rec(line: str) -> dict:
+        return json.loads(line)
+
+    def asst_toolonly(path: str) -> str:
+        """An assistant turn that edits a file and emits NO text — the F8 case."""
+        return json.dumps({"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": "t1", "name": "Edit", "input": {"file_path": path}}]}})
+
+    def uuser(text: str, uid: str) -> str:
+        return json.dumps({"type": "user", "uuid": uid, "message": {"content": text}})
+
+    case("windows() carries the OPENER, and the body still excludes it",
+         safe(lambda: (lambda ws: ws[-1].opener["uuid"] == "u2" and
+                       [r.get("type") for r in ws[-1].body] == ["assistant"])(
+             windows([rec(uuser("first", "u1")), rec(asst("a")),
+                      rec(uuser("second", "u2")), rec(asst("b"))]))))
+
+    case("windows() on a transcript with NO real-user boundary returns ONE window, opener=None",
+         safe(lambda: (lambda ws: len(ws) == 1 and ws[0].opener is None and len(ws[0].body) == 2)(
+             windows([rec(asst("a")), rec(tool_result())]))))
+
+    case("F8 — a turn with only tool calls and NO assistant text IS judgable",
+         safe(lambda: is_judgable(TurnWindow(None, [rec(asst_toolonly("/tmp/x.py"))]))))
+
+    case("...but a slash-command shell window, holding ZERO records, is NOT judgable",
+         safe(lambda: not is_judgable(TurnWindow(rec(uuser("/goal x", "u1")), []))))
+
+    case("F3 — the empty slash-command window is skipped and the SUBSTANTIVE turn is judged",
+         safe(lambda: judged_window(windows([
+             rec(uuser("real work", "u1")), rec(asst(B.format(3, 3))),
+             rec(uuser("/goal fix", "u2")),                  # opens an EMPTY window
+             rec(uuser("<local-command-stdout>ok</local-command-stdout>", "u3")),
+             rec(asst("live turn")),
+         ])).opener["uuid"] == "u1"))
+
+    case("F3 — the judged turn does NOT move when more records arrive in the LIVE window",
+         safe(lambda: (lambda base, grown: judged_window(windows(base)).opener["uuid"]
+                       == judged_window(windows(grown)).opener["uuid"])(
+             [rec(uuser("work", "u1")), rec(asst(B.format(2, 4))),
+              rec(uuser("next", "u2")), rec(asst("live"))],
+             [rec(uuser("work", "u1")), rec(asst(B.format(2, 4))),
+              rec(uuser("next", "u2")), rec(asst("live")), rec(asst("more")), rec(tool_result())])))
+
+    case("F5 — one window only means NO SUBJECT (None), never a raise",
+         safe(lambda: judged_window(windows([rec(uuser("only turn", "u1")), rec(asst("x"))]))
+              is None))
+
+    case("the degenerate no-boundary transcript yields no subject, and does NOT raise",
+         safe(lambda: judged_window(windows([rec(asst("a"))])) is None))
 
     passed = sum(1 for _, ok in cases if ok)
     print(f"\n{passed}/{len(cases)} self-test cases passed")
