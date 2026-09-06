@@ -3655,3 +3655,36 @@ answer. `MANIFEST_BASELINE = 23`, an EXACT match not a ceiling, counted separate
 one because it re-implemented the population — *a second implementation of one rule DRIFTS*.
 Falsified in a clean full worktree, both directions: new guard → "debt GREW — 24 vs 23"; one paid
 down → "debt SHRANK — 22 vs 23". 22/22.
+
+## 2026-09-05
+The push guard now refuses the two pushes that can never be routine, and that is the whole of it.
+
+You chose the narrow option, and it was the right one. A background agent had armed an automatic
+push earlier today; the obvious repair — make every push to any branch require a special prefix —
+would have closed that, and would also have made the prefix a reflex within a day. A warning
+everyone learns to type past protects nothing. So instead the line is drawn at the two forms nobody
+uses by accident: the force-push that destroys history, and the flag that skips checks. Everything
+else pushes exactly as before, with no new friction.
+
+One deliberate exception, which is the part worth stating: the SAFE form of force-push is still
+allowed. Denying it would have pushed anyone in a hurry toward the dangerous one — a guard that
+makes the bad option the convenient one.
+
+The guard had never had a test of any kind in the five weeks it has existed. It has nine now, and
+each one was checked by breaking the guard on purpose and confirming that named test goes red.
+**Nothing is waiting on you.**
+<!--tech-->
+`.claude/hooks/block-default-branch-push.sh` gains RULE 2, checked BEFORE the branch rule so a
+`--force origin master` reports the irreversible half. Denies `(^|[[:space:]])(--force|-f)([[:space:]=]|$)`
+and the same shape for `--no-verify`; escape `ALLOW_DANGEROUS_PUSH=1`, SEPARATE from
+`ALLOW_DEFAULT_BRANCH_PUSH=1` so neither intent grants the other. ⚠ `--force-with-lease` CONTAINS
+`--force`, so the word boundary is load-bearing — a substring test inverts the stated rule, and the
+⭐ case exists for exactly that. Flags are matched against the ISOLATED push invocation, not `$cmd`,
+reusing the multi-line defect fix already recorded below the branch rule.
+First `--self-test` this hook has ever had: 9 cases driving the real stdin JSON contract through the
+delivered script (not a re-implementation — one drifted from its tool by one earlier today).
+4/4 mutations killed via the case each names: dropping the `--force` word boundary → the
+force-with-lease case; removing `--no-verify` → its own; sharing one escape flag → the
+two-intents case; `push_only="$cmd"` → the commit-message case. Filename NOT renamed: cited by
+`.claude/settings.json`, three live docs and five merged review documents, and rewriting a
+historical record to keep it true is not keeping a record.
