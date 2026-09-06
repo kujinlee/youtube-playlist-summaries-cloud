@@ -3816,3 +3816,58 @@ CANNOT RUN into a false accusation.
 93/93 self-test (78 → 93); 7-mutation manifest added, so R4 debt 23 → 22 with MANIFEST_BASELINE
 lowered in the same commit. F6 ran once as a migration check — 526 transcripts, 526 identical —
 because after the refactor it too would have been a tautology.
+
+## 2026-09-06
+The check that shipped this morning was warning on almost every turn, and it has been quietened
+without being thrown away.
+
+It was watching for something real — and it found it. The question the previous slice could not
+answer was whether a turn's text is reliably on disk by the time the next one ends. It is not
+always, and that is now proven by observation rather than argued. But the check treated every
+occurrence as an alarm, when in fact it is the ordinary case, so it cried wolf ten turns running.
+
+Two things were wrong, and only one of them was obvious. The alarm is the visible half. The quieter
+half is that each false alarm was being filed in the log under the name of a completely different
+problem — so the record that is supposed to tell us whether this check is worth trusting was being
+filled with entries describing something that never happened. That log is the evidence for a
+decision we have not made yet, and this is the second time it has been polluted.
+
+The measurement stays, moved to its own file where counting it means something. Nothing is waiting
+on you beyond merging.
+<!--tech-->
+Backlog #97, branch `backlog-97-late-flush`. Three changes to `scripts/check-banner-armed.py`:
+
+(a) The `QUIET -> WARN` promotion at `:754-755` is deleted. The note now rides along only with a
+warning that would have printed anyway.
+
+(b) The observation moves to `.claude/banner-flush-observations.log` (gitignored, new). A third
+`reason` value in `banner-warnings.log` was rejected: that file's stated job (`:451-454`) is to be
+the false-alarm rate OF THE WARNING, so a non-warning line in it is the same category error as the
+defect being fixed. Nothing parses either file — re-verified by grep, and two prior review rounds
+concluded the same independently.
+
+(c) The predicate is `len(texts_of(window))`, not `len(window.body)`. That is not a proxy for the
+durability question: it is the literal list `decide()` consumes at `:742`. Journal keys renamed
+`sampled_turn_len` -> `sampled_text_len` (and `prev_*`), so a record written by the shipped code is
+invisible to the new comparison — one turn of blindness, taken deliberately, because reusing the
+names would compare an all-records count against a text count and under-report forever.
+
+HOW THE DIAGNOSIS WAS MADE, since it is not obvious from the symptom: 9 of the 10 log lines read
+`unbannered` + `0 unticked`, which `decide()` cannot emit — its banner-less WARN (`:411`) requires
+`unticked > 0`, and the log derives that field (`:813-814`) from the same `steps` object `decide()`
+was handed. The 10th read `STEP 7 of 7`, and `:428-429` returns QUIET on `step >= total` before
+`armed` is read. Both shapes were therefore unreachable except through the escalation.
+
+⛔ F11 RE-ANCHORED. Its cases discriminated on the exit code (`grow=True -> WARN`); with the
+escalation gone both sides are QUIET and the pair would assert nothing — vacuous for the THIRD
+time, after being a tautology in spec v2 and v3. It now reads the observation record. The manifest
+mutation "the late-flush comparison is inverted" names F11a and dies through it.
+
+96/96 self-test (93 -> 96; five cases replace two). Mutation verified on a throwaway copy with the
+control proved green FIRST: control 94/94, mutant 91/94 with F11a dead. 94-vs-96 is the known
+scripts-only delta for the two cases reading `.claude/hooks/`. selftest-counts, ratchet-contract
+(22, at baseline), guard-coverage 16/16, check-docs, review-rounds all green.
+
+Warn log re-baselined again: 16 lines archived to `.claude/banner-warnings-archived-2026-09-06.log`,
+10 of them escalation artifacts that cannot be separated from real warnings retrospectively. Also
+corrected backlog row 96's merge tick, which named a deleted branch instead of PR #229.
