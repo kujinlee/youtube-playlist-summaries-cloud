@@ -84,6 +84,25 @@ project has paid for repeatedly.
 
 ---
 
+## 3.3 Code review r1 fold — the key was wrong, and my verification had a hole
+
+`docs/reviews/coordinator/referential-entry-gate-code-r1-codex.md`. 2 Blocking, 3 High, all folded.
+
+**§3.1 said `(header line, error)` and I built `(title, error)`,** because `parse_entries` never
+set `header`. The reviewer broke it both ways with concrete inputs: two entries sharing a title AND
+a dangling reference collide, so a **newly added** broken entry goes unreported (Blocking); and
+editing a pre-existing broken entry's body changes its key, reporting an **old** error as new
+(High). `parse_entries` now records `entry["header"]` and the spec's original key stands.
+
+⛔ **AND ONE FINDING WAS ABOUT THE VERIFICATION, NOT THE CODE.** A `gen-dashboard` mutation
+(`BLOCK = _GATE.BLOCK`) **survived**: the relocation left that alias referenced by nothing, so
+mutating it changes nothing. I never saw it because I ran the gate's manifest and not
+gen-dashboard's — *a measurement is only as good as its CORPUS*, the third instance today. The
+mutation moved onto the gate's real `BLOCK` definition; both manifests now run together, controls
+first: **43/43 and 64/64, zero survivors**, sum still 107.
+
+---
+
 ## 4. Falsifiers
 
 | # | Fails if |

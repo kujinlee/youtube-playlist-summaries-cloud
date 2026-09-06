@@ -633,6 +633,11 @@ def parse_entries(text: str) -> list[dict]:
                  "date": None, "ordinal": 0, "id": None, "would_be_id": None,
                  "title": "", "plain": "", "tech": None}
         err = header_error(b[0])
+        # ⛔ THE RAW HEADER LINE, recorded for `added_reference_errors` (code review r1,
+        # Blocking + High). It is what an error is ABOUT, and it is stable under the
+        # positional renumbering that appending an entry causes — which neither the id nor
+        # the body-derived title is.
+        entry["header"] = b[0]
         m = HEADER.match(b[0])
         if m is not None and valid_date(m.group(1)):
             # The ordinal is claimed as soon as the DATE is known good — BEFORE
@@ -729,7 +734,7 @@ def added_reference_errors(base_text: str, head_text: str) -> list[str]:
     ("do NOT rebuild the reconciliation as a gate: it fires on every docs-only commit and gets
     disabled"), and `#98` now cites it.
 
-    ⚠ THE KEY IS (title, error), NOT THE ENTRY ID, and that is the trap in this function.
+    ⚠ THE KEY IS (header line, error), NOT THE ENTRY ID, and that is the trap here.
     Ids are POSITIONAL — `YYYY-MM-DD/N` counts entries sharing a date in FILE ORDER — so
     appending one entry renumbers every later one that day. Keyed by id, a pre-existing error
     would read as NEW the moment anything shifted it: a false positive on the most ordinary
@@ -743,7 +748,7 @@ def added_reference_errors(base_text: str, head_text: str) -> list[str]:
     from collections import Counter
 
     def errors_in(text: str) -> "Counter":
-        return Counter((e.get("title") or "", e["error"])
+        return Counter((e.get("header") or "", e["error"])
                        for e in parse_entries(text) if e.get("error"))
 
     fresh = errors_in(head_text) - errors_in(base_text)

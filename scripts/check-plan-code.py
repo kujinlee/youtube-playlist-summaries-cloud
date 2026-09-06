@@ -558,7 +558,7 @@ EXPECTED_MUTATIONS = {
     # happened while destroying what was measured — the recorded *a guard's own output is a
     # CONTRACT* shape, one layer in from the log-format defect this whole slice is about.
     "scripts/check-banner-armed.py": 8,
-    "scripts/gen-dashboard.py": 65,
+    "scripts/gen-dashboard.py": 64,
     "scripts/page_markup.py": 14,
     # ⟳ 2026-09-01, backlog #78: 18 -> 23. The entry gate now answers TWO questions
     # instead of one — "does this branch owe an entry?" (unchanged) and "is the entry
@@ -578,7 +578,7 @@ EXPECTED_MUTATIONS = {
     # only the per-file split can tell a relocation apart from deleted coverage, which is
     # the same reason #71 held its sum at 73. `run_suite(d, fname)` runs only the mutated
     # file's suite, so the killing cases moved too.
-    "scripts/check-dashboard-entry.py": 42,
+    "scripts/check-dashboard-entry.py": 43,
     "scripts/check-plan-code.py": 35,
     # ⟳ 2026-08-31, backlog #76/#77: the shared page chrome. Adding it found TWO
     # vacuous cases of my own — a "dirty tree" assertion compared against a
