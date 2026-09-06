@@ -3731,3 +3731,40 @@ interesting part: it lands only on turns that under-announce, which is the guard
 
 The v1 falsifier list promised behaviour; v2 turns each Blocking into F8–F11, and adds F11 for the
 durability assumption that was argued but never measured.
+
+## 2026-09-05
+Correction to the entry above, same day: the design changed after it was written.
+
+That entry said the fix would carry a small saved note between turns, so the check could remember
+what it saw. It no longer does. The reviewer pointed out that the reason we had ruled out the
+simpler approach was itself wrong, and once that was corrected the simple version turned out to
+dissolve all three of the serious problems the review had found — they were all consequences of
+saving that note.
+
+So the check will now do its work when you send your next message, rather than when a turn ends.
+Nothing is saved between turns at all.
+
+It is not free. There is one situation where the simpler version gets the wrong answer: a job that
+finished its plan but stopped announcing before the last step. **We cannot measure how often that
+happens** — it depends on information that was never recorded — so the check keeps saying out loud
+that its number may be wrong, and there is now a test whose job is to make that blind spot show up
+rather than hide.
+<!--tech-->
+Spec v3. §3.1 `UserPromptSubmit` chosen; the per-session journal of v2 is §3.3, rejected on cost
+rather than correctness — its sample point is provably right, and `block-idle-stop.sh:62` already
+runs ahead of `check-plan-progress.py:180-182`'s unlink for exactly that reason.
+
+⚠ The v3 blind spot: a false `unarmed` needs the plan to have finished that turn AND the highest
+banner to be below its total. 26 of 50 bannered turns ended below total, but that is an upper bound
+so loose it is nearly uninformative — turns that ended low with no plan ever armed are the warning
+firing CORRECTLY, and sentinel state leaves no trace in a transcript, so the two cannot be separated.
+Rate unknown and unknowable from this corpus; §3.2 says so instead of quoting the available number.
+
+Round 1's three Blockings are DISSOLVED, not fixed. F9/F10 are kept as absence-falsifiers so
+cross-turn state cannot quietly return; F12 asserts the blind spot is real and hedged. F11 matters
+more now, not less — the durability margin is the gap between a turn ending and the next prompt,
+not a whole turn, and it is still unmeasured.
+
+⚠ Round 1 reviewed the journal. Round 2 reviews a mechanism no reviewer has seen.
+The guard also leaves `block-idle-stop.sh` and needs a `UserPromptSubmit` registration in
+`.claude/settings.json`, which has no such entry today.
