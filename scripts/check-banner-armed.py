@@ -12,12 +12,13 @@ This is the mechanical half, and it runs WARN-ONLY by default at the user's inst
 reports, it never blocks. Warn-only is a real risk in this repo (a warning nobody must act on has
 failed here before), so the mitigation is that every firing is APPENDED TO A LOG.
 
-⚠ THE LOG DOES NOT YET ANSWER "does it false-alarm?", AND THAT WAS THE POINT OF HAVING IT
-(backlog #96, 2026-09-05). It records true partway-stops and the closing-banner artifacts below in
-the same shape, with nothing distinguishing them, so counting its lines yields a rate that is
-partly manufactured by the reader. It becomes evidence once #96 is fixed, and not before. It was
-re-baselined on 2026-09-05 rather than carried forward, because the pre-#96 entries cannot be
-retro-classified.
+⚠ THE LOG COULD NOT ANSWER "does it false-alarm?" UNTIL backlog #96 WAS FIXED, and it is the
+reason the fix mattered. It recorded true partway-stops and closing-banner artifacts in the same
+shape, so counting its lines yielded a rate partly manufactured by the reader. #96 is now fixed —
+this guard judges the PREVIOUS completed turn — so entries written from here ARE evidence.
+⚠ The log was re-baselined on 2026-09-05 for the earlier partial fix and AGAIN when #96 landed:
+entries produced by a reader that could not see closing banners cannot be compared with entries
+from one that can, and mixing them rebuilds the defect the row describes.
 
 THE DISCRIMINATOR, AND WHY IT IS NOT BACKLOG #48's
 ---------------------------------------------------
@@ -36,16 +37,18 @@ Taking the HIGHEST was MEANT to make the common case quiet: a turn that announce
 finishes all five emits `STEP 5 of 5`, so i == N and nothing fires, leaving exactly "announced a
 multi-step job, stopped partway" — the failure measured four times (backlog #44, #53, 2026-09-03).
 
-⚠ THAT MITIGATION DOES NOT WORK, AND SAYING SO IS THE WHOLE POINT OF THIS PARAGRAPH (backlog #96,
-documented 2026-09-05, deliberately not fixed). The banner that CLOSES a sequence normally sits in
-the turn's FINAL assistant message, which is not readable when the Stop hook runs — see WHAT IT
-CANNOT SEE. So `i < N` is true far more often than "stopped partway" is, and this guard over-fires
-from a design flaw rather than by choice.
+⚠ THAT MITIGATION DID NOT WORK UNTIL backlog #96 WAS FIXED, and the history is kept because it
+explains the shape of the code. The banner that CLOSES a sequence normally sits in the turn's FINAL
+assistant message, which is NOT readable while that turn is still being written. So `i < N` was true
+far more often than "stopped partway" was.
 
-It still fires CORRECTLY when a turn genuinely stops partway — measured 2026-09-04 16:22 and
-2026-09-05 15:43, where no closing banner exists anywhere in the transcript. Both outcomes land in
-the same log and CANNOT be told apart after the fact, which is why the log was RE-BASELINED when
-this was written down rather than carried forward as if it were a false-alarm rate.
+MEASURED over 524 transcripts / 2104 completed turns: only 48 turns ever used a banner, and of
+those, 9 hid their closing banner from a live reader while 8 had that invisibility CHANGE the
+verdict — about one bannered turn in six. The race also ran the OTHER way: session 2ace2045 shows a
+turn the live reader let through QUIET that was owed a warning.
+
+THE FIX (backlog #96): this guard now judges the PREVIOUS completed turn, whose final message is
+durably on disk, using the sentinel sample taken at THAT turn's own Stop. See THE JOURNAL below.
 
 It also answers the INVERSE — a plan armed, work done in the repo, and NO banner emitted at all.
 That is the direction that actually failed on 2026-09-04, when begin-plan.py printed banners to the
@@ -56,21 +59,22 @@ hook exits 2 and Claude reads it (the actor, when the next banner is due); on an
 exits 1 and the human reads it (the auditor). See .claude/hooks/block-idle-stop.sh.
 
 WHAT IT CANNOT SEE, stated rather than hidden:
-  * ⚠ THE BANNER THAT CLOSES ITS OWN TURN — the largest known source of false warnings, and the
-    reason the paragraph above retracts this guard's own precision claim. `run_decide` reads
-    `data["transcript_path"]` for the IN-FLIGHT turn, whose final assistant message is not flushed
-    when Stop hooks run. MEASURED TWICE BY TIMESTAMP: session `f3ab79ef` emitted `STEP 3 of 3` at
-    22:33:49 and the hook logged `STEP 2 of 3` in the same second; session `2ace2045` has
-    `## ▶ STEP 6 of 6` timestamped 0.172s BEFORE the hook fired, and the hook logged `STEP 5 of 6`
-    — so record order in the JSONL is message sequence, NOT read-time visibility.
-    The `unbannered` class gains a false-positive mode from this (a turn whose only banner was its
-    last message reads as zero banners) but keeps its true positives: a turn that emitted NO banner
-    has nothing to miss, flushed or not.
-    ⚠ THE FIX IS KNOWN AND DELIBERATELY NOT TAKEN HERE (backlog #96): judge the PREVIOUS completed
-    turn, whose text is durably on disk. It is not a patch — `_armed()` and `_plan_steps()` sample
-    the sentinel at decide time while the banners would come from the prior turn, so judging one
-    against the other needs per-turn state this guard does not have. That is a spec, and this slice
-    has already spent ten review rounds.
+  * ✅ THE BANNER THAT CLOSES ITS OWN TURN — FIXED (backlog #96). Kept here because the evidence
+    explains the design. `run_decide` used to read the transcript of the IN-FLIGHT turn, whose final
+    assistant message is not flushed when Stop hooks run. MEASURED TWICE BY TIMESTAMP: session
+    `f3ab79ef` emitted `STEP 3 of 3` at 22:33:49 and the hook logged `STEP 2 of 3` in the same
+    second; session `2ace2045` has `## ▶ STEP 6 of 6` timestamped 0.172s BEFORE the hook fired, and
+    the hook logged `STEP 5 of 6` — so record order in the JSONL is message sequence, NOT read-time
+    visibility. It now judges the PREVIOUS completed turn instead.
+  * ⚠ A SESSION'S FINAL TURN, which is structural and permanent: a turn is only observable once it
+    is finished, so the last one is never judged. Accepted when #96 was specified.
+  * ⚠ ONE TURN OF LATENCY. The `unbannered` nudge used to arrive mid-plan, where the assistant could
+    act on it, and now arrives a turn later. The mitigation is that the BLOCKING guard,
+    `scripts/check-plan-progress.py`, is untouched and still fires live — only the advisory moved.
+  * ⚠ DURABILITY IS STILL AN ARGUMENT, NOT A PROOF. Judging one turn back gives a full turn of
+    margin instead of none, which is strictly better, but nothing here establishes that the prior
+    turn is ALWAYS flushed by the next Stop. A corpus cannot settle it — a recorded transcript shows
+    final file state, never what was readable at hook time. Spec falsifier F11.
   * SUBAGENT edits. Measured: 0 `isSidechain:true` records across 508 transcripts for this project —
     subagent work lives in its own session file, so a coordinator turn that dispatches five
     reviewers reads as edited=False. `subagent-driven-development` is the Phase 3 DEFAULT here, so
@@ -96,7 +100,7 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 86 cases
+    python3 scripts/check-banner-armed.py --self-test  # 91 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -565,29 +569,198 @@ def _armed():
         return None
 
 
+JOURNAL_DIR = ROOT / ".claude/banner-turn-state"
+
+
+def _steps_to_json(steps):
+    """`_UNSET` and None both store as null — the pair (armed, steps) recovers the distinction."""
+    if steps is _UNSET or steps is None:
+        return None
+    return [steps[0], steps[1]]
+
+
+def _steps_from_json(armed, raw):
+    """Inverse of `_steps_to_json`, and the asymmetry is deliberate.
+
+    `steps` is consulted ONLY when armed (`run_decide` sets `_UNSET` otherwise), so a null under
+    `armed=False` means "never consulted" (`_UNSET`) while a null under `armed=True` means
+    "unmeasurable" (None) — which `decide` turns into CANNOT RUN at `:298`. Collapsing them would
+    convert an unreadable plan into a quiet pass.
+    """
+    if not armed:
+        return _UNSET
+    return None if raw is None else (raw[0], raw[1])
+
+
+def sample_for(journal: dict | None, turn_uuid: str | None):
+    """PURE. -> (armed, steps) sampled at `turn_uuid`'s own Stop, or None if we hold no sample.
+
+    Checks BOTH slots. The `prev_*` pair exists because a blocked stop re-fires this hook inside
+    the SAME turn: the first Stop of turn T judges T-1 and rewrites the current slot with T, and a
+    continuation Stop still needs T-1. With one slot the guard reports CANNOT RUN against a subject
+    it held moments earlier — on a path check-plan-progress is DESIGNED to take.
+    """
+    if not journal or not turn_uuid:
+        return None
+    if journal.get("sampled_turn_uuid") == turn_uuid:
+        armed = journal.get("armed")
+        return armed, _steps_from_json(armed, journal.get("steps"))
+    if journal.get("prev_turn_uuid") == turn_uuid:
+        armed = journal.get("prev_armed")
+        return armed, _steps_from_json(armed, journal.get("prev_steps"))
+    return None
+
+
+def _read_journal(session_id: str) -> dict | None:
+    """None when there is nothing readable — a first Stop, or an unreadable file.
+
+    ⚠ Those two are NOT the same, and the caller separates them: no prior turn at all is QUIET
+    (no subject), while a prior turn with no matching sample is CANNOT RUN.
+    """
+    try:
+        data = json.loads((JOURNAL_DIR / f"{session_id}.json").read_text())
+    except (OSError, ValueError, TypeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _write_journal(session_id: str, record: dict) -> bool:
+    """Atomic replace. -> True on success, False on any failure (never raises).
+
+    ⚠ PER SESSION, and that is a Blocking finding from review round 1, not a nicety. One shared
+    path is written by every session in the working copy — this project runs concurrent sessions
+    routinely — so session B's Stop clobbers session A's sample and BOTH then report CANNOT RUN for
+    as long as they overlap. A file per session also needs no read-modify-write, so two sessions
+    cannot lose each other's records to a torn update.
+    """
+    if not session_id:
+        return False
+    tmp = JOURNAL_DIR / f".{session_id}.tmp"
+    try:
+        JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps(record, indent=2, sort_keys=True))
+        tmp.replace(JOURNAL_DIR / f"{session_id}.json")
+        return True
+    except (OSError, TypeError, ValueError):
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
+
+
 def run_decide(payload: str) -> int:
     try:
         data = json.loads(payload) if payload.strip() else {}
     except (ValueError, TypeError):
         data = {}
 
-    records: list[dict] | None = None
+    session_id = str(data.get("session_id", "") or "")
+
+    # ── 1. select the judged turn ─────────────────────────────────────────────────────────────
+    all_records: list[dict] | None = None
     path = data.get("transcript_path")
     if isinstance(path, str) and path:
         try:
-            records = records_since_last_user(Path(path).read_text().splitlines())
+            all_records = _parse_records(Path(path).read_text().splitlines())
         except OSError:
-            records = None
-    texts = None if records is None else texts_of(records)
+            all_records = None
 
-    armed = _armed()
-    if armed is None:
-        print("CANNOT RUN: .claude/executing-plan exists but could not be read, so this check "
-              "cannot tell whether a banner was owed. TREAT THIS AS NOT RUN.", file=sys.stderr)
+    if not all_records:
+        print("CANNOT RUN: the stop-hook payload named no readable transcript, so this check could "
+              "not look for a step banner. TREAT THIS AS NOT RUN — do not read the absence of a "
+              "warning as 'nothing was announced'.", file=sys.stderr)
         return CANNOT_RUN
-    steps = _plan_steps() if armed else _UNSET      # local: the log block below reads it
-    edited = _edit_inside_repo(edited_paths_of(records or []), ROOT)
-    code, message = decide(texts, armed, steps=steps, edited=edited)
+
+    wins = windows(all_records)
+    live = wins[-1]
+    judged = judged_window(wins)
+
+    # ── 2. sample the sentinel for the LIVE turn ──────────────────────────────────────────────
+    # ⚠ THIS IS THE SAMPLE POINT THE FIX DEPENDS ON, AND IT WAS ALREADY CORRECT.
+    # block-idle-stop.sh runs this guard AHEAD of check-plan-progress precisely because that
+    # script UNLINKS the sentinel when the last step is ticked. So `armed_now` describes the turn
+    # ENDING NOW. Until backlog #96 it was used to judge that same turn and then thrown away; it is
+    # now kept for one turn, which is the entire fix.
+    armed_now = _armed()
+    steps_now = _plan_steps() if armed_now else _UNSET
+
+    # ── 3. judge the PRIOR turn, using the sample taken at ITS stop ───────────────────────────
+    already = _read_journal(session_id)
+    judged_uuid = None if judged is None or judged.opener is None else judged.opener.get("uuid")
+    code, message = QUIET, ""
+    steps = _UNSET                 # bound before the log block below can read it
+    if judged is not None:
+        if already and already.get("last_judged_uuid") == judged_uuid and judged_uuid:
+            code, message = QUIET, ""        # exactly one verdict per turn (§3.4b)
+        else:
+            sample = sample_for(already, judged_uuid)
+            if sample is None:
+                code, message = CANNOT_RUN, (
+                    "CANNOT RUN: this check judges the PREVIOUS completed turn, and it holds no "
+                    f"record of what .claude/executing-plan said when that turn ended "
+                    f"({JOURNAL_DIR.relative_to(ROOT)}). Judging it against any other turn's sample "
+                    "would be a guess. TREAT THIS AS NOT RUN — do not read the absence of a warning "
+                    "as 'a banner was not owed'.")
+            else:
+                armed_then, steps_then = sample
+                if armed_then is None:
+                    # ⛔ `null` MEANS "THE SENTINEL WAS UNREADABLE WHEN THAT TURN ENDED", NOT
+                    # "no plan was armed" — and None is FALSY, so passing it to decide() would make
+                    # a turn we could not measure look like a turn with nothing armed, and WARN at
+                    # `:331` about a plan that may well have existed. `_armed()` maps the same state
+                    # to CANNOT RUN at `:486`; the journalled form must mean the same thing one turn
+                    # later, or the round trip through JSON silently changes a verdict.
+                    code, message = CANNOT_RUN, (
+                        "CANNOT RUN: when the turn now being judged ended, .claude/executing-plan "
+                        "existed but could not be read, so this check cannot tell whether a banner "
+                        "was owed. TREAT THIS AS NOT RUN.")
+                else:
+                    texts = texts_of(judged.body)
+                    edited = _edit_inside_repo(edited_paths_of(judged.body), ROOT)
+                    code, message = decide(texts, armed_then, steps=steps_then, edited=edited)
+                    steps = steps_then           # the log block below reads it
+
+    # ── 4. WRITE the journal — unconditional, and it outranks the verdict ─────────────────────
+    # A CANNOT RUN *about this turn* must still leave a usable sample for the next one, or one
+    # transient fault becomes two dead turns with no path back (review r1, High). And on the first
+    # judgable Stop of a session both "no subject" and a failed write are true at once — if QUIET
+    # returned first, a failed write would become a QUIET PASS (review r1, Medium).
+    live_uuid = None if live.opener is None else live.opener.get("uuid")
+    record = {
+        "sampled_turn_uuid": live_uuid,
+        "armed": armed_now,
+        "steps": _steps_to_json(steps_now),
+        "prev_turn_uuid": (already or {}).get("sampled_turn_uuid"),
+        "prev_armed": (already or {}).get("armed"),
+        "prev_steps": (already or {}).get("steps"),
+        "last_judged_uuid": judged_uuid or (already or {}).get("last_judged_uuid"),
+    }
+    if live_uuid == (already or {}).get("sampled_turn_uuid"):
+        # A CONTINUATION stop inside the same turn: keep the older sample rather than shifting the
+        # window, or the turn we still owe a verdict falls out of both slots.
+        record["prev_turn_uuid"] = (already or {}).get("prev_turn_uuid")
+        record["prev_armed"] = (already or {}).get("prev_armed")
+        record["prev_steps"] = (already or {}).get("prev_steps")
+    if not _write_journal(session_id, record):
+        extra = ("CANNOT RUN: the per-turn record could not be written to "
+                 f"{JOURNAL_DIR.relative_to(ROOT)}, so the NEXT stop will have no sample for this "
+                 "turn and cannot judge it. TREAT THAT TURN AS NOT CHECKED.")
+        message = f"{message}\n\n   {extra}" if message else extra
+        code = CANNOT_RUN
+
+    if code == CANNOT_RUN:
+        if message:
+            print(message, file=sys.stderr)
+        return CANNOT_RUN
+
+    if armed_now is None and code == QUIET and judged is None:
+        # Nothing judged AND the sentinel is unreadable: say so rather than pass quietly.
+        print("CANNOT RUN: .claude/executing-plan exists but could not be read, so the sample "
+              "stored for this turn is unusable. TREAT THIS AS NOT RUN.", file=sys.stderr)
+        return CANNOT_RUN
+
+    texts = texts_of(judged.body) if judged is not None else []
 
     if code == WARN:
         banner = highest_banner(texts or [])
@@ -868,29 +1041,73 @@ def _self_test() -> int:
         _sh.copy(ROOT / "scripts" / "check-plan-progress.py", _fx / "scripts")
         (_fx / "plans" / "p.md").write_text("- [x] one\n- [ ] two\n- [ ] three\n- [ ] four\n")
         (_fx / ".claude" / "executing-plan").write_text("plan: plans/p.md\narmed: t\n")
+        # ⚠ EVERY END-TO-END CASE BELOW NOW NEEDS TWO TURNS (backlog #96). The guard judges the
+        # PREVIOUS completed turn against the sentinel sample taken at THAT turn's own Stop, so a
+        # one-turn fixture has no subject and exercises nothing. `_drive` seeds the journal with
+        # turn 1 live, then re-runs with turn 2 open so turn 1 becomes the judged turn — which is
+        # exactly the sequence a real session produces.
         _tr = _fx / "t.jsonl"
-        _tr.write_text("\n".join([
-            json.dumps({"type": "user", "message": {"content": "go"}}),
-            json.dumps({"type": "assistant", "message": {"content": [
-                {"type": "tool_use", "name": "Edit",
-                 "input": {"file_path": str(_fx / "scripts" / "x.py")}}]}}),
-        ]))
-        _saved = (ROOT, SENTINEL, WARN_LOG)
+        _log = _fx / ".claude/banner-warnings.log"
+
+        def _turn(uid: str, blocks: list) -> list:
+            return [json.dumps({"type": "user", "uuid": uid, "message": {"content": "go"}}),
+                    json.dumps({"type": "assistant", "message": {"content": blocks}})]
+
+        def _edit_block(path: str) -> dict:
+            return {"type": "tool_use", "id": "e1", "name": "Edit", "input": {"file_path": path}}
+
+        def _drive(path: Path, subject: list, session: str = "s") -> int:
+            """Seed the journal with `subject` live, then judge it once a later turn opens."""
+            for stale in JOURNAL_DIR.glob("*.json"):
+                stale.unlink()
+            path.write_text("\n".join(subject))
+            run_decide(json.dumps({"transcript_path": str(path), "session_id": session}))
+            path.write_text("\n".join(subject + _turn("later", [{"type": "text", "text": "x"}])))
+            return run_decide(json.dumps({"transcript_path": str(path), "session_id": session}))
+
+        _saved = (ROOT, SENTINEL, WARN_LOG, JOURNAL_DIR)
         globals()["ROOT"] = _fx
         globals()["SENTINEL"] = _fx / ".claude/executing-plan"
         globals()["WARN_LOG"] = _fx / ".claude/banner-warnings.log"
+        globals()["JOURNAL_DIR"] = _fx / ".claude/banner-turn-state"
         try:
-            _rc = run_decide(json.dumps({"transcript_path": str(_tr), "session_id": "s"}))
-            _log = _fx / ".claude/banner-warnings.log"
+            _subject = _turn("t1", [_edit_block(str(_fx / "scripts" / "x.py"))])
+
+            # THE SEED RUN ITSELF IS A CASE: the first judgable turn has no subject, and that is
+            # QUIET (not CANNOT RUN) — but it must still leave a sample, or the next stop is blind.
+            for _s in (_fx / ".claude/banner-turn-state").glob("*.json"):
+                _s.unlink()
+            _tr.write_text("\n".join(_subject))
+            _rcSeed = run_decide(json.dumps({"transcript_path": str(_tr), "session_id": "s"}))
+            case("the FIRST judgable turn is QUIET (no subject) and still stores a sample",
+                 _rcSeed == QUIET
+                 and (_fx / ".claude/banner-turn-state" / "s.json").exists())
+
+            _rc = _drive(_tr, _subject)
             case("F4 run_decide WARNS on the new class AND appends a line — the side effect",
                  _rc == WARN and _log.exists()
                  and _log.read_text().rstrip("\n").endswith("\tunbannered\t3 unticked"))
 
-            # H1 — the total==0 -> CANNOT RUN mapping, which two review rounds established and
-            # which no test previously exercised: the old case never parsed a plan at all.
+            # ⛔ THE BACKLOG #96 CASE ITSELF. A turn whose ONLY banner is its closing `n of n` was
+            # warned about before this change, because the live reader could not see that message.
+            # Judged one turn later it is QUIET. This is the falsifier the row named.
+            (_fx / ".claude" / "executing-plan").unlink()
+            _closing = _turn("c1", [{"type": "text", "text": "## ▶ STEP 3 of 3 — done"}])
+            _before = _log.read_text() if _log.exists() else ""
+            _rcC = _drive(_fx / "closing.jsonl", _closing)
+            case("F1 a turn ending `STEP n of n` with nothing armed is QUIET, and logs nothing",
+                 _rcC == QUIET and (_log.read_text() if _log.exists() else "") == _before)
+            case("F2 ...while a turn whose highest banner is BELOW its total still WARNS",
+                 _drive(_fx / "partway.jsonl",
+                        _turn("p1", [{"type": "text", "text": "## ▶ STEP 2 of 5 — mid"}])) == WARN)
+            (_fx / ".claude" / "executing-plan").write_text("plan: plans/p.md\narmed: t\n")
+
+            # H1 — the total==0 -> CANNOT RUN mapping. ⚠ The plan must be broken BEFORE the seed
+            # run: the verdict is computed from the sample taken at the judged turn's own stop, so
+            # breaking it afterwards would change nothing and the case would pass vacuously.
             (_fx / "plans" / "p.md").write_text("just prose, no checkboxes at all\n")
             _before = _log.read_text()
-            _rc0 = run_decide(json.dumps({"transcript_path": str(_tr), "session_id": "s"}))
+            _rc0 = _drive(_tr, _subject)
             case("H1 a plan with ZERO checkboxes is CANNOT RUN through run_decide, not quiet",
                  _rc0 == CANNOT_RUN)
             case("...and nothing is logged for a run that could not measure",
@@ -899,17 +1116,41 @@ def _self_test() -> int:
 
             # M5 — spec R3 at the WIRING, not just the predicate: `edited` hardcoded True in
             # run_decide would pass the old predicate-level case and fail this one.
-            _tr2 = _fx / "outside.jsonl"
-            _tr2.write_text("\n".join([
-                json.dumps({"type": "user", "message": {"content": "go"}}),
-                json.dumps({"type": "assistant", "message": {"content": [
-                    {"type": "tool_use", "id": "z1", "name": "Edit",
-                     "input": {"file_path": "/tmp/scratch/not-in-repo.md"}}]}}),
-            ]))
             _before = _log.read_text()
-            _rcO = run_decide(json.dumps({"transcript_path": str(_tr2), "session_id": "s"}))
+            _rcO = _drive(_fx / "outside.jsonl",
+                          _turn("o1", [_edit_block("/tmp/scratch/not-in-repo.md")]))
             case("M5 an edit OUTSIDE the repo stays QUIET through run_decide, and logs nothing",
                  _rcO == QUIET and _log.read_text() == _before)
+
+            # F9 — a BLOCKED stop re-fires this hook inside the same turn. The judged turn must get
+            # exactly ONE verdict, and must not fall out of both journal slots (review r1 Blocking).
+            for _s in (_fx / ".claude/banner-turn-state").glob("*.json"):
+                _s.unlink()
+            _tr9 = _fx / "blocked.jsonl"
+            _tr9.write_text("\n".join(_subject))
+            run_decide(json.dumps({"transcript_path": str(_tr9), "session_id": "s9"}))
+            _tr9.write_text("\n".join(_subject + _turn("live9", [{"type": "text", "text": "a"}])))
+            _first = run_decide(json.dumps({"transcript_path": str(_tr9), "session_id": "s9"}))
+            _logged_once = _log.read_text()
+            _tr9.write_text("\n".join(_subject + _turn("live9", [{"type": "text", "text": "a"}])
+                                      + [json.dumps({"type": "assistant", "message": {
+                                          "content": [{"type": "text", "text": "continued"}]}})]))
+            _second = run_decide(json.dumps({"transcript_path": str(_tr9), "session_id": "s9"}))
+            case("F9 a continuation stop issues NO second verdict for a turn already judged",
+                 _first == WARN and _second == QUIET and _log.read_text() == _logged_once)
+
+            # F10 — two sessions in one working copy must not clobber each other's samples.
+            for _s in (_fx / ".claude/banner-turn-state").glob("*.json"):
+                _s.unlink()
+            _trA, _trB = _fx / "a.jsonl", _fx / "b.jsonl"
+            _trA.write_text("\n".join(_subject))
+            _trB.write_text("\n".join(_subject))
+            run_decide(json.dumps({"transcript_path": str(_trA), "session_id": "sA"}))
+            run_decide(json.dumps({"transcript_path": str(_trB), "session_id": "sB"}))
+            _trA.write_text("\n".join(_subject + _turn("lA", [{"type": "text", "text": "x"}])))
+            case("F10 a second session's stop does NOT cost the first its sample",
+                 run_decide(json.dumps({"transcript_path": str(_trA),
+                                        "session_id": "sA"})) == WARN)
 
             # Cx-M2 (code review r2) — the FOLD'S OWN M1 FIX had no wiring test. The case below
             # in the tempdir block asserts `_armed() is None`: the PREDICATE. Nothing proved
@@ -922,9 +1163,15 @@ def _self_test() -> int:
             # `steps` becomes _UNSET, decide()'s `armed and ...` guard is false, and the result
             # is QUIET — not CANNOT_RUN. Asserting CANNOT_RUN is therefore not the codebase's
             # default answer for this input, which is the property a case needs to be worth having.
+            # ⚠ THE SENTINEL MUST BE UNREADABLE AT THE **SEED** RUN, not at the judging run — the
+            # verdict comes from the sample taken when the judged turn ended. Breaking it afterwards
+            # would leave the stored sample intact and the case would pass for the wrong reason.
+            # This also exercises the journalled `armed: null` round trip: null means "unreadable
+            # then", NOT "nothing armed", and None is falsy, so a naive read would WARN about a plan
+            # that may have existed instead of reporting CANNOT RUN.
             (_fx / ".claude" / "executing-plan").write_bytes(
                 b"plan: plans/p.md\n\xff\xfe not utf-8 \xff\n")
-            _rcB = run_decide(json.dumps({"transcript_path": str(_tr), "session_id": "s"}))
+            _rcB = _drive(_fx / "unreadable.jsonl", _subject)
             case("Cx-M2 an UNREADABLE sentinel is CANNOT RUN through run_decide, not a quiet False",
                  _rcB == CANNOT_RUN)
             (_fx / ".claude" / "executing-plan").write_text("plan: plans/p.md\narmed: t\n")
@@ -932,18 +1179,15 @@ def _self_test() -> int:
             # H3 — the UNARMED class, the guard's only previously-shipped behaviour, had no
             # execution coverage at all. Three log mutations survived because of it.
             (_fx / ".claude" / "executing-plan").unlink()
-            _tr3 = _fx / "unarmed.jsonl"
-            _tr3.write_text("\n".join([
-                json.dumps({"type": "user", "message": {"content": "go"}}),
-                json.dumps({"type": "assistant", "message": {"content": [
-                    {"type": "text", "text": "## ▶ STEP 2 of 5 — doing a thing"}]}}),
-            ]))
-            _rcU = run_decide(json.dumps({"transcript_path": str(_tr3), "session_id": "s"}))
+            _rcU = _drive(_fx / "unarmed.jsonl",
+                          _turn("u1", [{"type": "text",
+                                        "text": "## ▶ STEP 2 of 5 — doing a thing"}]))
             case("H3 the UNARMED class still warns AND logs its own reason and detail",
                  _rcU == WARN
                  and _log.read_text().rstrip("\n").endswith("\tunarmed\tSTEP 2 of 5"))
         finally:
-            globals()["ROOT"], globals()["SENTINEL"], globals()["WARN_LOG"] = _saved
+            (globals()["ROOT"], globals()["SENTINEL"],
+             globals()["WARN_LOG"], globals()["JOURNAL_DIR"]) = _saved
 
     # ── F6: reachability. STRUCTURAL, not an execution test — see the plan. ────────────────
     _hook = (ROOT / ".claude/hooks/block-idle-stop.sh").read_text()

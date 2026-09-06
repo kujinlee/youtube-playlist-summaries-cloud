@@ -1,0 +1,12 @@
+{
+  "armed": true,
+  "last_judged_uuid": null,
+  "prev_armed": null,
+  "prev_steps": null,
+  "prev_turn_uuid": null,
+  "sampled_turn_uuid": null,
+  "steps": [
+    1,
+    4
+  ]
+}
