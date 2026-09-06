@@ -4,7 +4,7 @@
 > **Goal:** A person who was away can see the current state, what changed, and what needs them —
 > without reading the chat transcript.
 
-**Backlog #96.** **v3, 2026-09-05.** The structural half of #96, deferred out of PR #225 when
+**Backlog #96.** **v3.1, 2026-09-05 — BLOCKED, see the box below.** The structural half of #96, deferred out of PR #225 when
 option B (retract the guard's precision claim in prose) shipped instead — the half the row calls
 *"a spec, not a patch"*. v2 folded round 1 (both halves **NOT CONVERGED**: 3 Blocking, 3 High,
 2 Medium, 2 Low). Round files:
@@ -21,6 +21,48 @@ drops them. **The user chose the simpler mechanism with the residual blind spot 
 
 ⚠ **Round 1 was reviewed against the JOURNAL design.** Its three Blockings are dissolved rather than
 fixed, so round 2 reviews a mechanism no reviewer has yet seen.
+
+⛔ **v3.1 — THE MECHANISM IS BLOCKED PENDING A DECISION. Round 2 refuted §3.1's central premise.**
+Both halves NOT CONVERGED: 3 Blocking, 3 High, 1 Medium, 3 Low. Round files:
+`docs/reviews/{claude,coordinator}/banner-guard-prior-turn-r2-*.md`. **Do not implement §3 as written.**
+
+**What round 2 established, and it inverts the v2→v3 decision:**
+
+1. **The sentinel race was never dissolved — it MOVED** (Codex, Blocking). §3.1 claims that at
+   `UserPromptSubmit` the sentinel is "exactly as that turn left it". False.
+   `.claude/executing-plan` is a **workspace-global mutable file**. Between turn T-1 ending and the
+   next prompt it can be changed by the human (`--tick`, `--pause`, `rm`), by another session in the
+   same working copy, or by another session's Stop hook. v3 deleted the journal file's race and
+   inherited the sentinel's.
+2. ⛔ **AND UNLIKE THE JOURNAL'S RACE, THIS ONE CANNOT BE FIXED WITHIN v3.** The journal's race was
+   about *storage* and a per-session file repaired it. This one is about *time*: by the moment
+   `UserPromptSubmit` reads the sentinel, the prior turn's armed state is **gone**. Recovering it
+   requires sampling at the Stop of T-1 — which is §3.3, the design v3 rejected.
+3. **The failure is a SILENT MISS, not a false alarm** (Codex, High — and it **corrects** the Claude
+   half's H2, which walked only the plan-finished sub-case and wrongly concluded the class was safe).
+   Verified: `steps = _plan_steps() if armed else _UNSET` (`:490`), so `armed=False` ⇒ `steps=_UNSET`
+   ⇒ `unticked = 0` ⇒ the `armed and unticked > 0 and edited` guard at `:309` cannot fire. A turn
+   that **was** armed, edited files, left steps unticked and emitted no banner returns **QUIET** if the
+   sentinel vanished. That is the plan-without-a-banner class — the case backlog #95 exists for —
+   missed in silence.
+4. **F11 cannot fail** (both halves). Measured: 1828 judgable windows, 0 violations, and it is true by
+   construction because `windows()` splits on file order. It asserts the splitter, not the flush.
+5. **The "unmeasurable" claim in §3.2 is too strong** (Codex, High). Measured: **20** transcripts
+   reference `begin-plan.py`, **63** reference `executing-plan`, **8** contain `--tick`. Plan
+   lifecycle signals *are* recorded. A lower bound is derivable; §3.2 must say "not fully measurable"
+   and mine the signals before quoting only a loose upper bound.
+6. **Exit 1 on `UserPromptSubmit` shows only the FIRST stderr line** (Codex, Medium), so the
+   multi-line CANNOT-RUN and hedging text — the part carrying the caveats — would not reach anyone.
+   The advisory channel is degraded by the move, not merely relocated.
+
+**Where that leaves the two designs, stated for the decision rather than assumed:**
+
+| | §3.3 journal at Stop | §3.1 `UserPromptSubmit` |
+|---|---|---|
+| samples `armed` at the correct instant | ✅ | ❌ — reads it later, when it may have changed |
+| concurrency defect | real, and **repairable** (per-session file) | real, and **not repairable without state** |
+| failure mode | false CANNOT RUN (noisy, visible) | **silent miss of its own class** |
+| machinery | 4 fields of per-session state | none |
 
 ⚠ **Header order is load-bearing** — `check-anchors.py:61` sets `HEAD_LINES = 10`.
 
