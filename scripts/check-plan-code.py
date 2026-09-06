@@ -547,6 +547,11 @@ EXPECTED_MUTATIONS = {
     # behaviour: the settled class, the settled CSS, the resolver back-reference. Each
     # names the case it must go red through, so a mutation caught by a SIBLING case
     # cannot be credited — the round-5 M1 defect where `expect` matched 7 case names.
+    # ⟳ 2026-09-06, backlog #96: this guard joins the manifest — one of the 23 R4 debts,
+    # paid down here because the slice rewrote its decision path. MANIFEST_BASELINE in
+    # check-ratchet-contract.py drops 23 -> 22 in the SAME commit, which R4 requires as an
+    # EXACT match: paying a debt down fails the gate until the constant follows.
+    "scripts/check-banner-armed.py": 7,
     "scripts/gen-dashboard.py": 73,
     "scripts/page_markup.py": 14,
     # ⟳ 2026-09-01, backlog #78: 18 -> 23. The entry gate now answers TWO questions
@@ -2414,7 +2419,8 @@ def _self_test() -> int:
     finally:
         EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved)
     case("the declared counts name every manifest that ships",
-         sorted(EXPECTED_MUTATIONS), ["scripts/check-dashboard-entry.py",
+         sorted(EXPECTED_MUTATIONS), ["scripts/check-banner-armed.py",
+                                      "scripts/check-dashboard-entry.py",
                                       "scripts/check-plan-code.py",
                                       "scripts/check-selftest-counts.py",
                                       "scripts/check-theme-token-coverage.py",
@@ -2489,7 +2495,10 @@ def _self_test() -> int:
     # ⟳ 176 -> 179, comprehensibility slice A. A SECOND, independent statement of the
     # total, and that is the point: moving a per-file count without it makes the control
     # refuse to run rather than silently re-baseline.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 179)
+    # ⟳ 179 -> 186, backlog #96: check-banner-armed joins with 7. The population pin above
+    # and this total are SEPARATE on purpose — a per-file count that moved without the
+    # total makes the control refuse to run instead of silently re-baselining.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 186)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so

@@ -3688,3 +3688,131 @@ force-with-lease case; removing `--no-verify` → its own; sharing one escape fl
 two-intents case; `push_only="$cmd"` → the commit-message case. Filename NOT renamed: cited by
 `.claude/settings.json`, three live docs and five merged review documents, and rewriting a
 historical record to keep it true is not keeping a record.
+
+## 2026-09-05
+The check that nags about missing step-headings has been reading a half-written page, and we now
+have a design for fixing it properly.
+
+The problem: that check runs at the moment a turn ends, and reads the record of the turn — but the
+last thing written in a turn is not on disk yet when it looks. So the closing heading, the one that
+says the work finished, is invisible to it. It then complains that a finished job stopped partway.
+
+Measuring it across every session ever recorded here — 524 of them — gives the honest size. Only 48
+turns ever used these headings at all, and of those, **9 hid their closing heading and 8 got the
+wrong answer because of it**. Roughly one in six of the turns it can actually judge.
+
+Two things turned up that were not previously known. The check can also go wrong in the *other*
+direction — staying silent when it should have complained — which the recorded description of this
+bug says it cannot. And the obvious simple fix turns out to be quietly wrong: it would be blind on
+exactly the turns that under-announce, which are the ones the check exists to catch.
+
+Nothing is fixed yet. This is the written design and its first review round, which both reviewers
+failed — three serious problems, all now folded in. The code comes next.
+<!--tech-->
+Spec `docs/superpowers/specs/2026-09-05-banner-guard-prior-turn-design.md` (v2), the structural half
+of backlog #96, deferred out of PR #225. Anchor `status-visibility`.
+
+Design: judge the PREVIOUS completed turn, whose text is durably on disk. `decide()` is unchanged —
+its inputs change era, not its rules. `armed`/`steps` cannot be re-sampled at judgement time, so they
+travel in a per-session journal written at each Stop; `block-idle-stop.sh:62` already runs this guard
+ahead of the blocking check precisely so it samples the sentinel before `check-plan-progress.py:180-182`
+unlinks it, so the sample point was already right and was simply being discarded.
+
+Round 1, both halves NOT CONVERGED (`docs/reviews/{claude,coordinator}/banner-guard-prior-turn-r1-*.md`).
+Three Blockings, all folded: one shared journal file breaks under concurrent sessions in one working
+copy; "non-empty window" defined as *has assistant text* would have made the plan-without-a-banner
+class structurally unreachable for tool-only turns; and a blocked stop re-firing within one turn
+overwrites the still-needed sample and reports CANNOT RUN against a subject it just had.
+
+⚠ The Codex half refuted v1's rejection of the `UserPromptSubmit` alternative and was right —
+`:326-327` returns QUIET before `armed` is consulted, so "every turn that finished a plan warns
+wrongly" was false. The rejection now rests on the narrow true case, and the residue is the
+interesting part: it lands only on turns that under-announce, which is the guard's own subject.
+
+The v1 falsifier list promised behaviour; v2 turns each Blocking into F8–F11, and adds F11 for the
+durability assumption that was argued but never measured.
+
+## 2026-09-05
+Correction to the entry above, same day: the design changed after it was written.
+
+That entry said the fix would carry a small saved note between turns, so the check could remember
+what it saw. It no longer does. The reviewer pointed out that the reason we had ruled out the
+simpler approach was itself wrong, and once that was corrected the simple version turned out to
+dissolve all three of the serious problems the review had found — they were all consequences of
+saving that note.
+
+So the check will now do its work when you send your next message, rather than when a turn ends.
+Nothing is saved between turns at all.
+
+It is not free. There is one situation where the simpler version gets the wrong answer: a job that
+finished its plan but stopped announcing before the last step. **We cannot measure how often that
+happens** — it depends on information that was never recorded — so the check keeps saying out loud
+that its number may be wrong, and there is now a test whose job is to make that blind spot show up
+rather than hide.
+<!--tech-->
+Spec v3. §3.1 `UserPromptSubmit` chosen; the per-session journal of v2 is §3.3, rejected on cost
+rather than correctness — its sample point is provably right, and `block-idle-stop.sh:62` already
+runs ahead of `check-plan-progress.py:180-182`'s unlink for exactly that reason.
+
+⚠ The v3 blind spot: a false `unarmed` needs the plan to have finished that turn AND the highest
+banner to be below its total. 26 of 50 bannered turns ended below total, but that is an upper bound
+so loose it is nearly uninformative — turns that ended low with no plan ever armed are the warning
+firing CORRECTLY, and sentinel state leaves no trace in a transcript, so the two cannot be separated.
+Rate unknown and unknowable from this corpus; §3.2 says so instead of quoting the available number.
+
+Round 1's three Blockings are DISSOLVED, not fixed. F9/F10 are kept as absence-falsifiers so
+cross-turn state cannot quietly return; F12 asserts the blind spot is real and hedged. F11 matters
+more now, not less — the durability margin is the gap between a turn ending and the next prompt,
+not a whole turn, and it is still unmeasured.
+
+⚠ Round 1 reviewed the journal. Round 2 reviews a mechanism no reviewer has seen.
+The guard also leaves `block-idle-stop.sh` and needs a `UserPromptSubmit` registration in
+`.claude/settings.json`, which has no such entry today.
+
+## 2026-09-06
+The check that nags about missing step-headings has been fixed. It now waits until a turn is
+finished before judging it.
+
+The problem was that it looked at the record of a turn while that turn was still being written, so
+the last thing said — usually the heading announcing the final step — was invisible to it. It then
+complained that a finished job had stopped partway. Measured across every session recorded here:
+of the 48 turns that ever used these headings, 9 hid their closing one and **8 got the wrong answer
+because of it**. About one in six.
+
+It also went wrong in the other direction, staying silent when it should have spoken. The recorded
+description of this bug said it only ever over-complained; that was incomplete, and is corrected.
+
+Two things are worth knowing about how this was checked, because both were nearly missed:
+
+The test that was supposed to prove the fix **could not fail**. It compared the order of records in
+a file, which is fixed by how the file is split — so it would have reported success against a
+completely broken check. It has been replaced by something that actually watches for the problem
+while running, and reports it when it happens.
+
+And the first attempt to prove the bug even existed showed no difference between old and new. That
+was the test setup being wrong, not the bug being absent. Reproducing it properly needed the old
+check to see the turn exactly as it looked at the moment it ran.
+<!--tech-->
+Backlog #96 structural half. `scripts/check-banner-armed.py` now judges the PREVIOUS completed
+turn, using the sentinel sample taken at THAT turn's own stop, carried in a per-session journal at
+`.claude/banner-turn-state/<session_id>.json`.
+
+The sample point was already correct — `block-idle-stop.sh:62` runs this guard ahead of
+`check-plan-progress.py:180-182`'s unlink precisely so it sees the sentinel before deletion. The
+observation was simply discarded; it is now kept for one turn. The guard does NOT move hooks.
+
+Round 1 and round 2 both NOT CONVERGED on both halves. v3 briefly switched to `UserPromptSubmit`
+(no state at all) and was reverted: that mechanism reads the sentinel AFTER the turn it describes,
+so its race is about TIME and cannot be repaired without the state it exists to avoid — and its
+failure mode is a SILENT MISS of the plan-without-a-banner class, versus a noisy CANNOT RUN.
+Recorded as spec §3.2, rejected, with the reasoning.
+
+Journal carries prev_* (a blocked stop re-fires the hook inside one turn), last_judged_uuid
+(exactly one verdict per turn), and sampled_turn_len — the F11 replacement, which compares how many
+records a turn held at its own stop against one stop later, so a late flush is observed rather than
+argued. ⚠ Pyright, not a test, caught that a journalled `armed: null` is falsy and would have turned
+CANNOT RUN into a false accusation.
+
+93/93 self-test (78 → 93); 7-mutation manifest added, so R4 debt 23 → 22 with MANIFEST_BASELINE
+lowered in the same commit. F6 ran once as a migration check — 526 transcripts, 526 identical —
+because after the refactor it too would have been a tautology.

@@ -1,0 +1,97 @@
+[
+  {
+    "name": "is_judgable reverts to the TEXT-BLOCK predicate both reviewers rejected",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    return any(rec.get(\"type\") == \"assistant\" for rec in window.body)",
+        "    return bool(texts_of(window.body))"
+      ]
+    ],
+    "expect": [
+      "F8 — a turn with only tool calls and NO assistant text IS judgable"
+    ]
+  },
+  {
+    "name": "judged_window stops excluding the LIVE window and judges the turn in flight",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    for window in reversed(wins[:-1]):",
+        "    for window in reversed(wins):"
+      ]
+    ],
+    "expect": [
+      "F3 — the empty slash-command window is skipped and the SUBSTANTIVE turn is judged"
+    ]
+  },
+  {
+    "name": "windows() returns [] on a transcript with no boundary, losing the old all-records semantics",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    if not bounds:\n        return [TurnWindow(None, list(records))]",
+        "    if not bounds:\n        return []"
+      ]
+    ],
+    "expect": [
+      "windows() on a transcript with NO real-user boundary returns ONE window, opener=None"
+    ]
+  },
+  {
+    "name": "the journal becomes ONE shared file again, so concurrent sessions clobber each other",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        data = json.loads((JOURNAL_DIR / f\"{session_id}.json\").read_text())",
+        "        data = json.loads((JOURNAL_DIR / \"state.json\").read_text())"
+      ],
+      [
+        "        tmp.replace(JOURNAL_DIR / f\"{session_id}.json\")",
+        "        tmp.replace(JOURNAL_DIR / \"state.json\")"
+      ]
+    ],
+    "expect": [
+      "F10 a second session's stop does NOT cost the first its sample"
+    ]
+  },
+  {
+    "name": "a journalled `armed: null` is treated as 'nothing armed' instead of CANNOT RUN",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "                if armed_then is None:",
+        "                if False:"
+      ]
+    ],
+    "expect": [
+      "Cx-M2 an UNREADABLE sentinel is CANNOT RUN through run_decide, not a quiet False"
+    ]
+  },
+  {
+    "name": "the exactly-once gate is dropped, so a blocked stop re-judges the same turn",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        if already and already.get(\"last_judged_uuid\") == judged_uuid and judged_uuid:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "F9 a continuation stop issues NO second verdict for a turn already judged"
+    ]
+  },
+  {
+    "name": "the late-flush comparison is inverted, so growth after a turn's own stop is unseen",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "            if isinstance(before, int) and seen_now > before:",
+        "            if isinstance(before, int) and seen_now < before:"
+      ]
+    ],
+    "expect": [
+      "F11 a judged turn that GREW after its own stop is reported as a late flush"
+    ]
+  }
+]

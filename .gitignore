@@ -115,3 +115,8 @@ playwright/.auth/
 # the repo root. This is a backstop, not the fix — the fix is that instruments
 # pin their cwd.
 /*.html
+
+# Per-session state written by scripts/check-banner-armed.py at every Stop (backlog #96).
+# SESSION-LOCAL, never source: it churns on every stop, would conflict between branches,
+# and carries session ids. It was tracked for exactly one commit by a `git add -A`.
+.claude/banner-turn-state/
