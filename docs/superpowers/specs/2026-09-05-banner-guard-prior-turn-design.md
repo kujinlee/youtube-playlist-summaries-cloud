@@ -4,65 +4,28 @@
 > **Goal:** A person who was away can see the current state, what changed, and what needs them —
 > without reading the chat transcript.
 
-**Backlog #96.** **v3.1, 2026-09-05 — BLOCKED, see the box below.** The structural half of #96, deferred out of PR #225 when
+**Backlog #96.** **v4, 2026-09-06.** The structural half of #96, deferred out of PR #225 when
 option B (retract the guard's precision claim in prose) shipped instead — the half the row calls
-*"a spec, not a patch"*. v2 folded round 1 (both halves **NOT CONVERGED**: 3 Blocking, 3 High,
-2 Medium, 2 Low). Round files:
-`docs/reviews/{claude,coordinator}/banner-guard-prior-turn-r1-*.md`.
+*"a spec, not a patch"*.
 
-⛔ **v3 CHANGES THE MECHANISM, ON THE USER'S DECISION.** v1 and v2 judged the prior turn at **Stop**,
-carrying `armed`/`steps` in a journal. v3 judges at **`UserPromptSubmit`**, carrying nothing.
+**DECIDED 2026-09-06 by the user: the per-session journal at Stop (§3.1).** v3 had switched to
+`UserPromptSubmit`; round 2 refuted that mechanism's premise and the user reverted. Both rounds, both
+halves, NOT CONVERGED. Round files: `docs/reviews/{claude,coordinator}/banner-guard-prior-turn-r{1,2}-*.md`.
 
-The chain that got here is worth keeping, because each step was a correction of the last: v1 rejected
-`UserPromptSubmit` on a claim that was **false**; the Codex half refuted it by reading `decide()`;
-that left the rejection resting on a narrow case whose **rate cannot be measured from transcripts at
-all** (§3.2); and all three of round 1's Blockings were consequences of the journal, so dropping it
-drops them. **The user chose the simpler mechanism with the residual blind spot stated (§3.2).**
+**The decision rests on one asymmetry, and it is worth stating once rather than re-deriving:**
+`UserPromptSubmit` reads the sentinel *after* the turn it describes, and by then the state is gone —
+so its race is about **time** and cannot be repaired without the very state it exists to avoid. The
+journal's race is about **storage**, and a per-session file repairs it. Their failure modes differ in
+the same direction: a **silent miss** of this guard's own class, versus a **noisy CANNOT RUN**.
 
-⚠ **Round 1 was reviewed against the JOURNAL design.** Its three Blockings are dissolved rather than
-fixed, so round 2 reviews a mechanism no reviewer has yet seen.
+⚠ **v4 IS NOT A REVERT TO v2.** v2 never saw round 2. Two round-2 findings apply to the journal design
+as well and are folded here: the window-selection Blocking (§3.5) and the **unfalsifiable F11** (§7),
+which was measured to pass unconditionally — 1828 windows, 0 violations, true by construction.
 
-⛔ **v3.1 — THE MECHANISM IS BLOCKED PENDING A DECISION. Round 2 refuted §3.1's central premise.**
-Both halves NOT CONVERGED: 3 Blocking, 3 High, 1 Medium, 3 Low. Round files:
-`docs/reviews/{claude,coordinator}/banner-guard-prior-turn-r2-*.md`. **Do not implement §3 as written.**
-
-**What round 2 established, and it inverts the v2→v3 decision:**
-
-1. **The sentinel race was never dissolved — it MOVED** (Codex, Blocking). §3.1 claims that at
-   `UserPromptSubmit` the sentinel is "exactly as that turn left it". False.
-   `.claude/executing-plan` is a **workspace-global mutable file**. Between turn T-1 ending and the
-   next prompt it can be changed by the human (`--tick`, `--pause`, `rm`), by another session in the
-   same working copy, or by another session's Stop hook. v3 deleted the journal file's race and
-   inherited the sentinel's.
-2. ⛔ **AND UNLIKE THE JOURNAL'S RACE, THIS ONE CANNOT BE FIXED WITHIN v3.** The journal's race was
-   about *storage* and a per-session file repaired it. This one is about *time*: by the moment
-   `UserPromptSubmit` reads the sentinel, the prior turn's armed state is **gone**. Recovering it
-   requires sampling at the Stop of T-1 — which is §3.3, the design v3 rejected.
-3. **The failure is a SILENT MISS, not a false alarm** (Codex, High — and it **corrects** the Claude
-   half's H2, which walked only the plan-finished sub-case and wrongly concluded the class was safe).
-   Verified: `steps = _plan_steps() if armed else _UNSET` (`:490`), so `armed=False` ⇒ `steps=_UNSET`
-   ⇒ `unticked = 0` ⇒ the `armed and unticked > 0 and edited` guard at `:309` cannot fire. A turn
-   that **was** armed, edited files, left steps unticked and emitted no banner returns **QUIET** if the
-   sentinel vanished. That is the plan-without-a-banner class — the case backlog #95 exists for —
-   missed in silence.
-4. **F11 cannot fail** (both halves). Measured: 1828 judgable windows, 0 violations, and it is true by
-   construction because `windows()` splits on file order. It asserts the splitter, not the flush.
-5. **The "unmeasurable" claim in §3.2 is too strong** (Codex, High). Measured: **20** transcripts
-   reference `begin-plan.py`, **63** reference `executing-plan`, **8** contain `--tick`. Plan
-   lifecycle signals *are* recorded. A lower bound is derivable; §3.2 must say "not fully measurable"
-   and mine the signals before quoting only a loose upper bound.
-6. **Exit 1 on `UserPromptSubmit` shows only the FIRST stderr line** (Codex, Medium), so the
-   multi-line CANNOT-RUN and hedging text — the part carrying the caveats — would not reach anyone.
-   The advisory channel is degraded by the move, not merely relocated.
-
-**Where that leaves the two designs, stated for the decision rather than assumed:**
-
-| | §3.3 journal at Stop | §3.1 `UserPromptSubmit` |
-|---|---|---|
-| samples `armed` at the correct instant | ✅ | ❌ — reads it later, when it may have changed |
-| concurrency defect | real, and **repairable** (per-session file) | real, and **not repairable without state** |
-| failure mode | false CANNOT RUN (noisy, visible) | **silent miss of its own class** |
-| machinery | 4 fields of per-session state | none |
+⚠ **Two claims made in earlier versions were WRONG and are corrected, not quietly dropped**, because
+this spec's own §1.2 is about not doing that. v1 said `UserPromptSubmit` would misfire on *every* turn
+that finished a plan — false (`:326-327` returns QUIET before `armed` is read). v3's review then said
+the `unbannered` branch was safe under a missing sentinel — also false (§3.2).
 
 ⚠ **Header order is load-bearing** — `check-anchors.py:61` sets `HEAD_LINES = 10`.
 
@@ -227,137 +190,149 @@ is QUIET. That is categorically different from *cannot reach the subject*; §5 k
 
 ---
 
-## 3. Where the judgement happens — decided: `UserPromptSubmit`
+## 3. Where the judgement happens — decided: at Stop, with a per-session journal
 
 `decide()` is pure and takes four inputs. After this change `texts` and `edited` come from the
-**prior** turn, so `armed` and `steps` must describe that turn too. Everything below is about how to
-make all four inputs come from the same era.
+**prior** turn, so `armed` and `steps` must describe that turn too. Everything below is about making
+all four inputs come from the same era.
 
-### 3.1 ✅ CHOSEN — judge at `UserPromptSubmit`, carrying NO state
+### 3.1 ✅ CHOSEN — sample at the Stop of turn T, judge turn T at the Stop of T+1
 
-When the next user prompt arrives, **no turn is in flight**. The prior turn is finished and flushed,
-and `.claude/executing-plan` sits exactly as that turn left it. So `_armed()` and `_plan_steps()`,
-called there, describe the turn being judged **without any journal, key, or persisted sample**.
+**The sample point already exists and is already correct.** `block-idle-stop.sh:62` runs this guard
+**ahead of** the blocking check, and the file says why:
 
-The per-turn-state question is not solved. It is **dissolved** — there is no second era to reconcile.
+> *"it is REQUIRED, because check-plan-progress.run_decide UNLINKS `.claude/executing-plan` when the
+> last step is ticked, so running after it reads a deleted sentinel."*
+
+So at the Stop of turn T this guard observes the sentinel exactly as turn T left it. **The defect is
+that the observation is discarded.** It is kept for one turn, and nothing else about the sampling
+changes.
 
 ```
-UserPromptSubmit for turn T
-  -> windows(transcript)                       ; T-1 is complete on disk
-  -> judged = last judgable window             ; §2.2
-  -> armed/steps read NOW = state at end of T-1
-  -> decide(texts, armed, steps, edited)
+Stop of turn T
+  1. windows(transcript)            ; select the judged turn (§2.2)
+  2. read journal                   ; armed/steps sampled at the judged turn's own Stop
+  3. judge                          ; decide(texts, armed, steps, edited) — all four from turn T-1
+  4. write journal for turn T       ; unconditional, before any early return (§5.0)
 ```
 
-**What this removes, and it is the whole reason for the switch.** Round 1 raised three Blockings
-against the alternative (§3.3). Every one of them is a consequence of carrying state across turns,
-and none of them exists here:
+**The guard does NOT move.** It stays in `block-idle-stop.sh`, keeps its position ahead of the
+blocking check, and keeps the exit-code contract that file already documents. No new hook event, no
+`.claude/settings.json` change, no new wrapper.
 
-| round-1 Blocking | under `UserPromptSubmit` |
+### 3.2 ❌ REJECTED — `UserPromptSubmit`, carrying no state
+
+Chosen in v3 and reverted in v4 **on the user's decision**, after round 2 refuted its premise. It is
+recorded in full because it was live for a version and its appeal is genuine: it needs no state, and
+it dissolves every concurrency problem the journal has.
+
+**⛔ Its premise is false** (r2 Codex, Blocking). v3 claimed that at `UserPromptSubmit` the sentinel is
+*"exactly as that turn left it"*. `.claude/executing-plan` is a **workspace-global mutable file**.
+Between turn T-1 ending and the next prompt it can be changed by the human (`--tick`, `--pause`,
+`rm`), by another session in the same working copy, or by another session's Stop hook. v3 deleted the
+journal file's race and inherited the sentinel's.
+
+**⛔ And the two races are NOT equivalent — this is what decided it.** The journal's race is about
+**storage**, and a per-session file repairs it (§3.4a). This one is about **time**: by the moment
+`UserPromptSubmit` reads the sentinel, the prior turn's armed state is *gone*. Recovering it requires
+sampling at the Stop of T-1 — which is §3.1. **`UserPromptSubmit` cannot be repaired within
+`UserPromptSubmit`.**
+
+**⛔ Its failure mode is a SILENT MISS of this guard's own class** (r2 Codex, High). Verified:
+
+```python
+steps = _plan_steps() if armed else _UNSET     # :490
+...
+unticked = 0 if steps is _UNSET or steps is None else steps[1] - steps[0]
+if armed and unticked > 0 and edited:          # :309 — cannot fire when armed is False
+```
+
+`armed=False` forces `steps=_UNSET`, hence `unticked=0`, hence the branch is unreachable. A turn that
+**was** armed, edited files, left steps unticked and emitted no banner returns **QUIET** whenever the
+sentinel vanished — paused, deleted, finished, or cleared by another session. That is the
+plan-without-a-banner class, the case backlog #95 exists for, missed in silence. The journal's failure
+mode is a **noisy CANNOT RUN**, which is strictly preferable: this project's rule is that a check
+which cannot reach its subject must say so.
+
+⚠ **A correction that belongs here, because the record should show how the reasoning moved.** v3's
+§3.2 argued the residue was narrow but landed on turns that under-announce. The r2 Claude half then
+walked the `unbannered` branch and concluded the class was *safe* — **that was wrong**, and the Codex
+half found the paused/deleted/other-session cases it had missed. The blind spot is larger than v3
+described, not smaller.
+
+**Also lost in the move, and it is not cosmetic** (r2 Codex, Medium): a `UserPromptSubmit` hook exiting
+non-zero surfaces only the **first stderr line**. Every warning this guard emits is multi-line, and the
+lines after the first carry the hedging and the CANNOT-RUN instruction. The advisory channel is
+degraded by the move, not merely relocated.
+
+### 3.3 ❌ REJECTED — judge prior-turn text against the CURRENT sentinel at Stop
+
+A plan armed during T-1 and cleared during T reads as "never armed". Same defect as §3.2 and
+**unbounded** — at Stop the closing banner is invisible too, so it fires whenever a plan ends. Strictly
+worse than both alternatives above.
+
+### 3.4 The journal
+
+One JSON object **per session** at `.claude/banner-turn-state/<session_id>.json`, rewritten at every
+Stop.
+
+**(a) PER SESSION, not one shared file** (r1, Blocking — both halves). A single fixed path is shared by
+every session in the working copy, and this project runs concurrent sessions routinely:
+
+```
+session A, Stop of A1  -> writes {uA}
+session B, Stop of B1  -> writes {uB}        ← clobbers A's record
+session A, Stop of A2  -> judged turn is A1; stored key is uB -> MISMATCH -> CANNOT RUN
+```
+
+Both sessions then report CANNOT RUN for as long as they overlap. `run_decide` already reads
+`data.get("session_id")` for `log_line` (`:505`), so the identifier is in hand. A file per session
+needs no read-modify-write, so two sessions cannot lose each other's records to a torn update. Written
+via temp file + `os.replace`. Stale files are prunable and harmless.
+
+**(b) TWO KEYED SAMPLES, not one** (r1 Codex, Blocking). A blocked stop re-fires the hook **inside the
+same turn** — `check-plan-progress` returns BLOCK, the assistant continues, and stops again. The hook's
+own feedback is `isMeta` and not a boundary, so the live turn is unchanged. With one record the
+still-needed sample is already overwritten:
+
+```
+Stop of T-1     -> journal {u1}
+turn T opens (u2); first Stop of T -> judges u1 ✓, overwrites journal with {u2}
+BLOCKED; assistant continues
+continuation Stop of T -> judged turn is STILL u1; journal says u2 -> CANNOT RUN
+```
+
+**Fields:**
+
+| field | meaning |
 |---|---|
-| one shared journal file breaks under concurrent sessions | **gone** — no file |
-| a blocked stop re-fires and clobbers the still-needed sample | **gone** — not a Stop hook |
-| a failed journal write must outrank "no subject" | **gone** — nothing is written |
+| `sampled_turn_uuid` | `opener.uuid` of the turn this sample describes (the live turn at write time) |
+| `armed` | `_armed()` at that turn's Stop — `true`, `false`, or `null` (unreadable) |
+| `steps` | `[done, total]`, or `null` when the plan could not be measured |
+| `prev_turn_uuid`, `prev_armed`, `prev_steps` | the previous sample, retained so a continuation Stop still finds its subject |
+| `last_judged_uuid` | the turn a verdict was last issued for — judged once, never twice |
 
-### 3.2 ⚠ THE KNOWN BLIND SPOT — stated, bounded as far as it can be, and NOT measurable here
+`last_judged_uuid` makes "exactly one verdict per turn" assertable rather than accidental, so a blocked
+stop cannot inflate `.claude/banner-warnings.log` — the evidence base §6 exists to make trustworthy.
 
-`check-plan-progress.py:180-182` unlinks the sentinel when the last step is ticked:
+### 3.5 ⛔ Selecting the judged turn — the round-2 Blocking that applies HERE TOO
 
-```python
-if unticked == 0:
-    SENTINEL.unlink(missing_ok=True)
-    STATE.unlink(missing_ok=True)
-```
+r2 Claude raised this against `UserPromptSubmit`, but it is **not** specific to that mechanism and
+must not be dropped with it.
 
-So a plan that **finished during turn T-1** leaves no sentinel for `UserPromptSubmit` to read, and
-`armed` comes back `False` for a turn that was armed.
+§2.2 phrases the rule as *"the last judgable window **before the live one**"*. That clause invites an
+implementation to locate the live window and step back from it — and the live window is exactly the
+thing whose extent is uncertain while a turn is in progress.
 
-**That is harmless in the common case, and v1 of this spec got that wrong.** `decide()` returns early:
+**The rule is simply: the last window that is judgable AND is not the one currently being written.**
+At a Stop, the live turn is the one containing the records emitted since the last real-user boundary,
+so the judged turn is **the last judgable window excluding it**. Stated as an ordinal step-back from a
+window whose boundaries are still moving, the same rule silently selects T-2 instead of T-1 whenever
+the live window's extent is misjudged — and produces a verdict attributed to the wrong turn, with no
+error.
 
-```python
-step, total = banner
-if step >= total:
-    return QUIET, ""        # :326-327 — BEFORE `armed` is consulted
-```
-
-A turn that finished its plan **and announced its last step** is QUIET whatever the sentinel says —
-and prior-turn judging is precisely what makes that closing banner visible. v1 claimed *"every turn
-that finished a plan would warn wrongly"*; that was false, and the Codex half refuted it by reading
-the code.
-
-**The residue, stated exactly.** A false `unarmed` warning needs **both**:
-
-1. the plan finished during that turn (`unticked == 0`, so the sentinel is gone), **and**
-2. the highest banner visible in that turn is **below** its total.
-
-⛔ **HOW BIG IS IT? THIS CORPUS CANNOT SAY, AND THE OBVIOUS NUMBER IS MISLEADING.** Measured
-2026-09-05: of **50** bannered completed turns, **26 ended below their total**. That is *not* the
-error rate — it is an upper bound so loose it is nearly uninformative, because condition 1 is
-invisible to a transcript. Sentinel state is a file, and files leave no trace in the JSONL. A turn
-that ended below its total with **no plan ever armed** is the `unarmed` warning firing **correctly**,
-which is this guard's entire purpose; those turns are inside the 26 and are indistinguishable from the
-defective ones without sentinel history nobody kept.
-
-**So the honest statement is: the blind spot is real, its rate is unknown, and it cannot be
-established from recorded transcripts.** Anything narrower would be the recorded shape *a measurement
-is only as good as its CORPUS* — a number quoted because it was available rather than because it
-answers the question.
-
-**Consequences that follow from not knowing:**
-
-* the `unarmed` warning **must keep hedging**. `:335-339` already tells the reader the number may be
-  low; that paragraph is rewritten, not deleted, and now names *this* limitation instead of the flush
-  race;
-* the promote-to-blocking decision (§8) stays out of scope, and the log alone cannot settle it;
-* **F12** asserts the shape directly, so the blind spot is a tested boundary rather than a caveat.
-
-⚠ **Where the residue lands is the uncomfortable part, and it is recorded rather than smoothed
-over.** Condition 2 says the turn *under-announced* — it ticked its last step without announcing it.
-Turns that under-announce are the population this guard exists to police, so the blind spot
-correlates with the subject rather than falling somewhere harmless. **This was the argument for the
-rejected alternative (§3.3), and it was not defeated by evidence — the user chose simplicity and a
-smaller failure surface over it, knowing this.** If the warning is ever promoted toward blocking,
-this paragraph is the first thing to re-open.
-
-### 3.3 ❌ REJECTED — judge at Stop, carrying a per-session journal
-
-The alternative this spec carried through v2. At each Stop the guard writes `{turn_uuid, armed,
-steps}` and judges the previous turn against the record written last time. Its appeal is real and
-should not be understated: `block-idle-stop.sh:62` already runs this guard **ahead of** the blocking
-check, precisely so it samples the sentinel *before* the unlink — so the sample point is already
-correct, and §3.2's blind spot does not exist.
-
-**Rejected on cost, not correctness.** Round 1 found three Blockings in it (§3.1's table), all
-arising from the persisted state itself, and each fix adds machinery: per-session files with atomic
-replacement, a `prev_*` pair so a blocked stop does not lose its subject, `last_judged_uuid` for
-exactly-once, and a write-ordering rule so a failed write outranks "no subject". That is a
-distributed-state protocol inside a warn-only advisory.
-
-**DECIDED 2026-09-05 by the user, with §3.2's trade explicit.** The simpler mechanism, and a stated
-blind spot, in preference to a correct sample point defended by four pieces of state.
-
-### 3.4 ❌ REJECTED — judge prior-turn text against the CURRENT sentinel at Stop
-
-A plan armed during T-1 and cleared during T reads as "never armed". Same false positive as §3.2 but
-**unbounded** — it fires whenever a plan ends, announced or not, because at Stop the closing banner is
-also invisible. Strictly worse than both alternatives above.
-
-### 3.5 The caller moves, and the exit-code contract changes with it
-
-The guard leaves `block-idle-stop.sh` and gains its own `UserPromptSubmit` hook. Three consequences,
-none of them cosmetic:
-
-1. **`block-idle-stop.sh` loses its first observer.** Its `BANNER_RC` capture at `:62` and the
-   `|| "$CI_RC" != "0"` arithmetic at the foot both change. The file's header documents three exit
-   codes and *why the observer runs first* — that paragraph describes a guard that will no longer be
-   there, and stale reasoning left in place is what this project keeps paying for. It is rewritten in
-   the same commit.
-2. **A `UserPromptSubmit` hook must not block the prompt.** Exit 2 there suppresses the user's turn.
-   The wrapper exits **0 or 1 only**, and maps the guard's CANNOT-RUN `2` to `1` — the same
-   "an observer may never wedge a turn it has no stake in" rule `block-idle-stop.sh:99-104` states,
-   carried across deliberately rather than re-derived.
-3. **`.claude/settings.json` gains a `UserPromptSubmit` entry.** There is none today — verified
-   2026-09-05 across project, local and global settings.
+**Falsifier F3 covers it**, and is strengthened: the selector must return the same turn whether or not
+trailing records have arrived in the live window.
 
 ---
 
@@ -367,16 +342,13 @@ Both warning classes judge the **same** window under one rule. Splitting them �
 `unarmed`, live for `unbannered` — would be two mechanisms for one concern, which
 `scripts/check-vocabulary-collisions.py` exists to discourage.
 
-| judged turn | sentinel read now | verdict |
+| judged turn | journal | verdict |
 |---|---|---|
-| none (first substantive turn) | — | **QUIET** — no subject |
-| present | readable | run `decide()` with `armed`/`steps` read at prompt time and the prior turn's `texts`/`edited` |
-| present | `_armed()` returns `None` | **CANNOT RUN** — unchanged meaning from `:486-489` |
-| present | armed, plan unmeasurable | **CANNOT RUN** — unchanged meaning from `:298-304` |
-
-All four inputs now describe the same era **without any reconciliation step**, which is the whole
-benefit of §3.1: `texts`/`edited` come from a finished window, and `armed`/`steps` from a sentinel no
-in-flight turn is touching.
+| none (first judgable turn of a session) | — | **QUIET** — no subject |
+| present | a sample matches it (`sampled_turn_uuid` or `prev_turn_uuid`) | run `decide()` with the journalled `armed`/`steps` and the judged turn's `texts`/`edited` |
+| present | already in `last_judged_uuid` | **QUIET** — judged once, never twice (§3.4b) |
+| present | no matching sample | **CANNOT RUN** (§5) |
+| present | matching sample, `armed` is `null` | **CANNOT RUN** — unchanged meaning from `:486-489` |
 
 `decide()` itself is **not modified**. Its inputs change era; its rules do not.
 
@@ -389,38 +361,66 @@ the advisory moves.
 
 ## 5. Cannot-run is a failure, never a quiet pass
 
-Choosing `UserPromptSubmit` (§3.1) deletes most of what this section had to arbitrate in v2: with no
-persisted state there is no key to mismatch, no write to fail, and no precedence question between
-"no subject" and a failed write. What remains is the existing taxonomy, applied one turn back.
-
 | state | code | why |
 |---|---|---|
-| no judgable prior window (first substantive turn of a session) | QUIET | there is genuinely nothing to judge — *no subject*, not *cannot reach* |
-| `_armed()` returns `None` (sentinel exists, unreadable) | **CANNOT RUN** | unchanged from `:486-489` — the check cannot reach what it measures |
-| `armed` is true and `_plan_steps()` is `None` | **CANNOT RUN** | unchanged from `:298-304` |
-| transcript unreadable or unparseable | **CANNOT RUN** | unchanged from `:291-294` |
+| no judgable prior window (first judgable turn of a session) | QUIET | *no subject*, not *cannot reach* |
+| prior turn exists, no journal sample keyed to it | **CANNOT RUN** | its sentinel was never sampled; judging it against another turn's sample is a guess |
+| journal unreadable, or unwritable (§5.0b) | **CANNOT RUN** | the check cannot reach what it measures |
+| `_armed()` returns `None` | **CANNOT RUN** | unchanged from `:486-489` |
+| armed, and `_plan_steps()` is `None` | **CANNOT RUN** | unchanged from `:298-304` |
+| transcript unreadable | **CANNOT RUN** | unchanged from `:291-294` |
 
-The message must say **TREAT THIS AS NOT RUN**, matching the CANNOT-RUN messages the module already
-emits.
+The message must say **TREAT THIS AS NOT RUN**, matching the messages the module already emits, and
+must name the journal path.
 
-⚠ **"No subject" and "cannot reach the subject" must not collapse into each other**, and the first
-row is the one at risk: a bug in window selection that returns nothing would present as QUIET and be
-indistinguishable from a genuinely first turn. **F5** and **F3** exist to hold those apart — F3 asserts
-that a real prior turn *is* found when an empty slash-command window sits in front of it, which is the
-only way the "nothing to judge" branch gets exercised against a case where something *should* have
-been judged.
+⚠ **"No subject" and "cannot reach the subject" must not collapse.** A window-selection bug returning
+nothing would present as QUIET, indistinguishable from a genuinely first turn. F3 and F5 hold them
+apart: F3 asserts a real prior turn *is* found when an empty slash-command window sits in front of it,
+which is the only way the "nothing to judge" branch is exercised against a case where something
+should have been judged.
 
-### 5.1 What the v2 journal design forced here, and why it is gone
+### 5.0 Order of operations, and two precedence rules
 
-Recorded because the deletion is the point, not an omission. v2 had to arbitrate a genuine conflict
-between two precedents in the module — the warn-log write failure at `run_decide:506-510`, which is
-**not** swallowed but keeps its `WARN` because losing the log costs only evidence; and `_armed()`
-returning `None` at `:486-489`, which is CANNOT RUN because the guard cannot reach its subject. A
-journal write failure sat between them, and v2 decided it ranked with the second.
+**(a) The journal write is UNCONDITIONAL and precedes every early return** (r1 Claude, High). Today
+the guard returns before doing anything else when the sentinel is unreadable:
 
-**None of that arises now.** There is no journal, so there is no third precedent to place, no
-ordering rule to state, and no failure mode to add. The two existing precedents keep their existing
-meanings, untouched by this change.
+```python
+armed = _armed()
+if armed is None:
+    print("CANNOT RUN: …", file=sys.stderr)
+    return CANNOT_RUN                      # :486-489
+```
+
+A write after that point loses the record for the turn, so the *next* Stop finds no matching sample
+and reports CANNOT RUN too — one transient fault becomes two dead turns with no path back. A CANNOT
+RUN *about this turn* must still leave a usable sample for the next one, which is why `armed: null`
+is a legal journalled value.
+
+**(b) A failed write outranks "no subject"** (r1 Codex, Medium). On the first judgable Stop of a
+session both hold at once: nothing to judge, *and* the journal must still be written. If "no subject
+→ QUIET" returns first, a failed write becomes a **quiet pass**.
+
+```
+1. compute windows; select the judged turn          (may be: none)
+2. sample armed / steps for the LIVE turn
+3. judge, if there is a subject and a matching sample
+4. WRITE the journal                                -> failure here overrides the verdict
+5. return: write failed ? CANNOT RUN : verdict
+```
+
+### 5.1 Which precedent a failed journal write follows, since two disagree
+
+The module holds two, pointing opposite ways: the warn-log write at `run_decide:506-510` is **not**
+swallowed but keeps its `WARN`, because losing the log costs only *evidence*; `_armed()` returning
+`None` at `:486-489` is CANNOT RUN, because the guard cannot reach its subject.
+
+**DECIDED: a failed journal write is CANNOT RUN** — the second row. The journal is not evidence, it is
+the next turn's only input, so losing it silently degrades the guard permanently and invisibly. The
+verdict already reached is still printed; CANNOT RUN replaces the exit code, not the message. Both are
+non-blocking at the hook (`block-idle-stop.sh:99-104` maps any observer non-zero to exit 1), so this
+costs noise, never a wedged session.
+
+---
 
 ---
 
@@ -462,33 +462,36 @@ and the eighth is the bidirectional case of §1.3.
 |---|---|---|
 | F1 | a turn ending `## ▶ STEP n of n` with nothing armed is **QUIET** | it WARNs with `STEP n-1 of n` |
 | F2 | the `2ace2045` sequence `(1,3)…(4,5)` **WARNs** | it is QUIET — the silenced-warning direction |
-| F3 | an empty slash-command window is **skipped**, and the substantive turn before it is judged | the empty window is judged, or the substantive one is never judged |
-| F4 | the guard **never blocks a prompt** — the wrapper exits 0 or 1, mapping the guard's CANNOT-RUN `2` to `1` | an observer can suppress the user's turn |
-| F5 | the first substantive turn of a session is **QUIET**, not CANNOT RUN | absence of a prior turn is reported as a failure |
+| F3 | an empty slash-command window is skipped and the substantive turn before it is judged — **and the selector returns the same turn whether or not trailing records have arrived in the live window** | the empty window is judged, the substantive one is never judged, or the answer moves with the live window's extent (§3.5) |
+| F4 | a journal sample that does not match the judged turn yields **CANNOT RUN** | it judges anyway, or stays quiet |
+| F5 | the first judgable turn of a session is **QUIET**, not CANNOT RUN — **provided the write succeeded** | absence of a prior turn is reported as a failure, or a failed write is masked by it |
 | F6 | `windows(records)[-1].body` equals today's `records_since_last_user(lines)` on every transcript in the corpus, **including one with no real-user boundary at all** | the generalisation changed the live window, or raises on the degenerate case |
-| F7 | removing the guard from `block-idle-stop.sh` leaves that hook's remaining exit-code arithmetic correct, and its header describing only guards it still runs | the caller keeps stale reasoning about a guard that moved |
-| **F8** | a turn making **only tool calls** (no assistant text) is judged, not skipped — and its `unbannered` warning fires when it edited with unticked steps | the text-block predicate survives anywhere |
-| **F9** | a **blocked** stop, which re-fires the Stop hook within one turn, changes **nothing** about this guard | the guard is still wired to Stop |
-| **F10** | two concurrent sessions in one working copy each judge their own prior turn, with no shared file between them | any cross-session state was reintroduced |
-| **F11** | for every completed window in the corpus, the judged window's last record precedes the live window's first | the durability assumption is asserted rather than measured |
-| **F12** | ⚠ **the blind spot is a TESTED boundary:** a prior turn whose plan finished that turn and whose highest banner is below its total **does** produce the known-wrong `unarmed` warning — and the message hedges, naming this limitation | the blind spot is silently absent (so the model is wrong) or the message asserts a certainty it lacks |
+| F7 | an unwritable journal produces CANNOT RUN, never silence | the write failure is swallowed |
+| F8 | a turn making **only tool calls** (no assistant text) is judged, not skipped — and its `unbannered` warning fires when it edited with unticked steps | the text-block predicate survives anywhere |
+| F9 | a **blocked** stop re-firing within one turn issues **exactly one** verdict for the judged turn, and never CANNOT RUN | the single-sample journal survives; `last_judged_uuid` is not consulted |
+| F10 | two sessions stopping alternately in one working copy each judge their own prior turn | journal state is shared across sessions |
+| **F11** | ⛔ **at hook time, the judged window's final assistant record is present** — recorded per run and compared against the same window on a later run; a discrepancy means a late flush and the guard says so | the check is a transcript-ORDER assertion (see below), or a late flush passes unnoticed |
 
 F6 is the regression falsifier: this change must not alter what the boundary rule means.
+F4/F7/F9/F10 are round 1's three Blockings plus the write-failure rule, each a falsifier rather than a
+promise.
 
-⚠ **F9 and F10 now assert ABSENCES, and that is deliberate.** They were round 1's Blockings against
-the journal. Dissolving a defect is cheap to claim and easy to un-dissolve later, so each is kept as a
-falsifier that fails the moment cross-turn state comes back.
+⛔ **F11 WAS A TAUTOLOGY IN v2 AND v3, AND BOTH REVIEW HALVES MISSED IT UNTIL IT WAS RUN.** It read:
+*"for every completed window in the corpus, the judged window's last record precedes the live window's
+first"*. **Measured: 1828 judgable windows, 0 violations** — and zero is the dangerous shape here,
+because `windows()` **splits on record order**, so the assertion restates the splitter's definition.
+It is true of any corpus and any flush behaviour, including one where the guard is completely broken.
 
-⚠ **F11 exists because the design's central assumption was never measured, only argued** (r1 Claude,
-"what I could not check"). §1.1's two observations are hook-time evidence about the *live* turn;
-nothing yet establishes that the prior turn is always durable when the next prompt arrives. Under
-`UserPromptSubmit` this matters **more** than it did under the journal design — the margin is the gap
-between a turn ending and the next prompt, which can be short, rather than a whole turn. F11 must be
-measured before implementation is called done, not asserted.
+**The design's central assumption was therefore guarded by a check that passes unconditionally.**
+Recorded rule: *state the observation that would make it FAIL — if none can be named, it is not a
+gate.* Flush timing is not a property of a finished transcript at all, so **no corpus assertion can
+ever be this falsifier**; only an observation taken at hook time can, which is what F11 now is.
 
-⚠ **F12 is the one this spec would most like to be wrong about.** If it cannot be made to fire, the
-model of §3.2 is incorrect and the blind spot is something other than described — which would be good
-news, and must be investigated rather than quietly enjoyed.
+⚠ **This durability question is the one thing in the spec still resting on argument.** §1.1's two
+observations are hook-time evidence about the *live* turn; nothing establishes that the prior turn is
+always durable one Stop later. The journal design gives a full turn of margin — strictly more than
+today's zero — but that is a comparison, not a proof, and F11 must actually run before this is called
+done.
 
 ---
 
@@ -510,12 +513,11 @@ news, and must be investigated rather than quietly enjoyed.
 fail-open handler, and a caller. This guard has all three and keeps them. In addition:
 
 * new self-test cases for **F1–F12**, with the §7 fixtures recorded as data;
-* ⚠ **the CALLER CHANGES, and `check-ratchet-contract.py` checks that a guard has one.** The guard
-  moves out of `.claude/hooks/block-idle-stop.sh` into a new `UserPromptSubmit` wrapper, registered in
-  `.claude/settings.json` — which has **no** `UserPromptSubmit` entry today (verified 2026-09-05
-  across project, local and global settings). Ship the registration in the same commit as the move, or
-  the guard is on disk with nothing running it, which is precisely the state that ratchet exists to
-  refuse and which it caught three times on 2026-08-30;
+* ⚠ **the CALLER DOES NOT CHANGE — and that is a v4 property worth asserting, not assuming.** v3
+  moved the guard to a new `UserPromptSubmit` hook; v4 keeps it in `.claude/hooks/block-idle-stop.sh`
+  at `:62`, ahead of the blocking check, where its sampling is already correct (§3.1). No
+  `.claude/settings.json` change, no new wrapper, no change to that hook's exit-code arithmetic. A
+  diff touching either is a signal the revert was incomplete;
 * the declared self-test count is updated in the canonical form — `check-selftest-counts.py` pins
   this file's count, and a stale declared count is itself a gate failure;
 * a mutation manifest entry per new decision predicate, each killed **via the case it names**;
