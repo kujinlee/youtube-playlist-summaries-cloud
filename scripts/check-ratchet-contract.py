@@ -12,6 +12,11 @@ work exists to remove.
 
   R1  a `--self-test` entry point            ENFORCED
   R2  no fail-open exception handler         ENFORCED  (AST: `except:` whose body returns success)
+  R3  something EXECUTES it, or `NO-CALLER:`  ENFORCED
+  R4  a mutation manifest, or `NO-MUTATIONS:` ENFORCED — R1 asks whether a self-test EXISTS;
+      only a mutation asks whether it would NOTICE the guard breaking. Measured 2026-09-05:
+      six review passes found four of ~ten vacuous cases; reverting each fix found the rest
+      in minutes. Debt baseline 24, MEASURED not estimated.
   --  exit semantics in all three directions NOT CHECKABLE statically — needs the tool run
   --  baseline is a dated named constant     NOT ENFORCED ON PURPOSE. Measured 2026-08-11:
       check-arch-findings.py carries a per-metric `baseline: int` dataclass field, and
@@ -160,7 +165,8 @@ def check_caller(path: str, text: str, caller_blob: str) -> list[Violation]:
                       "or declare `NO-CALLER: <reason>` in its docstring")]
 
 
-def evaluate(texts: dict[str, str], caller_blob_for: dict[str, str]) -> list[Violation]:
+def evaluate(texts: dict[str, str], caller_blob_for: dict[str, str],
+             manifest_stems: set[str]) -> list[Violation]:
     """The whole verdict, in one place both `main()` and the suite drive.
 
     ⚠ EXTRACTED FOR THE WIRING, not for tidiness. With R1/R2/R3 applied inline in
@@ -174,6 +180,11 @@ def evaluate(texts: dict[str, str], caller_blob_for: dict[str, str]) -> list[Vio
     for rel in discover_guards(list(texts)):
         out.extend(check_contract(rel, texts[rel]))
         out.extend(check_caller(rel, texts[rel], caller_blob_for.get(rel, "")))
+        # ⚠ R3 IS WIRED HERE, for the reason this function's docstring already gives: applied in
+        # main() instead, deleting this line would leave every check_manifest case green — coverage
+        # of the function, none of its use. `manifest_stems` is REQUIRED, not defaulted, so a caller
+        # cannot silently get the vacuous "everything has a manifest" answer.
+        out.extend(check_manifest(rel, texts[rel], manifest_stems))
     return out
 
 
@@ -186,6 +197,59 @@ def check_contract(path: str, text: str) -> list[Violation]:
         v.append(Violation(path, "R2_fail_open",
                            f"line {line}: an `except` handler returns 0 — 'could not run' reported as success"))
     return v
+
+
+# R4 — A MUTATION MANIFEST, OR A WRITTEN REASON.
+# (R4, not R3: `R3_no_caller` is taken. Reusing the number would make two different rules
+#  indistinguishable in the violation output, which is where a reader looks first.)
+#
+# WHY THIS RULE EXISTS, and it is the most expensive lesson this project has measured.
+# R1 asks whether a guard HAS a self-test. It cannot ask whether that self-test would NOTICE the
+# guard breaking. On 2026-09-05, backlog #95 shipped roughly TEN cases that passed with AND without
+# the bug they named. SIX adversarial review passes found four of them; reverting each fix and
+# watching a named case go red found the rest in MINUTES.
+#
+# That asymmetry is the whole argument: reading does not find vacuity, and running does. Adding more
+# review rounds buys a decaying return on the one defect class that dominates this codebase's
+# guards; a manifest converts that recurring per-slice cost into a one-time CI cost.
+#
+# ⚠ THE ESCAPE IS A WRITTEN REASON, NOT A FLAG — `NO-MUTATIONS: <why>` in the docstring, exactly as
+# NO-CALLER works above. A boolean opt-out is a rubber stamp; a sentence has an author and can be
+# argued with. Same rule, same shape, deliberately.
+NO_MUTATIONS_RE = re.compile(r"NO-MUTATIONS:[ \t]*(\S[^\n]*)")
+
+# MEASURED 2026-09-05, not estimated: 28 guards discovered on disk, 4 carry a manifest
+# (check-dashboard-entry, check-plan-code, check-selftest-counts, check-theme-token-coverage),
+# so 24 do not. The first estimate for R1's own debt was "three" and the truth was six — written
+# from memory, undercounted by half — so this number was produced by running discover_guards
+# against scripts/mutations/ rather than by counting by eye.
+#
+# ⚠ EXACT MATCH, NOT A CEILING. `!=`, not `>`. A ceiling lets the debt be paid down silently and
+# then re-accrued back up to the old number, which is how a ratchet stops ratcheting. Paying one
+# down FAILS this check until the constant is lowered in the SAME commit — the identity-not-
+# cardinality rule that `check-plan-code.EXPECTED_MUTATIONS` already applies to mutation counts.
+# ⚠ 23, AND THE NUMBER CAME FROM THE TOOL, NOT FROM A SCRIPT THAT RE-IMPLEMENTED IT. A throwaway
+# measurement written alongside this change said 24: it globbed scripts/*.py and applied its own
+# idea of the population, and it disagreed with `discover_guards` + `check_manifest` by one. The
+# recorded shape is *a second implementation of one rule DRIFTS* — so the baseline is whatever
+# `python3 scripts/check-ratchet-contract.py` prints, and nothing else.
+MANIFEST_BASELINE = 23
+
+
+def check_manifest(path: str, text: str, manifest_stems: set[str]) -> list[Violation]:
+    """PURE. The manifest SET is passed in, never globbed here.
+
+    ⚠ Separating the RULE from the FETCH is not style. Three ratchets in this repo went eight days
+    untestable because their only entry point needed Docker, and "give it a self-test" read as
+    "stand up a database". A rule that reads the filesystem inherits the filesystem's availability.
+    """
+    if Path(path).stem in manifest_stems:
+        return []
+    if NO_MUTATIONS_RE.search(text):
+        return []
+    return [Violation(path, "R4_no_mutation_manifest",
+                      "no scripts/mutations/<name>.json and no written `NO-MUTATIONS: <why>` — "
+                      "its self-test is unproven against the guard actually breaking")]
 
 
 # ── self-test ────────────────────────────────────────────────────────────────────────────────
@@ -364,13 +428,21 @@ def self_test() -> int:
     wiring = [
         ("evaluate APPLIES the caller rule, not just defines it",
          {"scripts/check-w.py": HAS_CALLER_STUB}, {"scripts/check-w.py": "nothing"},
-         ["R3_no_caller"]),
+         ["R3_no_caller", "R4_no_mutation_manifest"]),
+        # ⚠ THE WIRING CASE FOR R4. Without it, deleting the check_manifest call from evaluate()
+        # leaves every check_manifest case green — the exact blind spot this list exists for.
+        ("evaluate APPLIES the manifest rule, not just defines it",
+         {"scripts/check-w.py": SELF_TEST_OK},
+         {"scripts/check-w.py": "python3 scripts/check-w.py"},
+         ["R4_no_mutation_manifest"]),
         ("evaluate APPLIES the self-test rule too",
          {"scripts/check-w.py": NO_SELF_TEST}, {"scripts/check-w.py": "python3 scripts/check-w.py"},
-         ["R1_no_self_test"]),
+         ["R1_no_self_test", "R4_no_mutation_manifest"]),
     ]
+    # Empty on purpose: the stub guards have no manifest, so R4 fires unless a case opts out.
+    manifests: set[str] = set()
     for name, texts, blobs, expected in wiring:
-        got = sorted({v.rule for v in evaluate(texts, blobs)})
+        got = sorted({v.rule for v in evaluate(texts, blobs, manifests)})
         if got != sorted(expected):
             print(f"  FAIL {name}\n       expected {sorted(expected)}\n       got      {got}")
             failures += 1
@@ -429,7 +501,9 @@ def main(argv: list[str]) -> int:
             p.read_text(errors="ignore") for p in caller_sources
             if p.is_file() and str(p.relative_to(ROOT)) != rel)
 
-    violations = evaluate(texts, blob_for)
+    # THE FETCH, kept out of the rule: check_manifest is pure and takes this set.
+    manifest_stems = {q.stem for q in (ROOT / 'scripts/mutations').glob('*.json')}
+    violations = evaluate(texts, blob_for, manifest_stems)
 
     print(f"guards discovered ({len(ratchets)}): " + ", ".join(ratchets))
     if not violations:
@@ -440,12 +514,26 @@ def main(argv: list[str]) -> int:
         print(f"  {v.script}  [{v.rule}]\n      → {v.detail}")
     print(f"\nsummary: {len(violations)} violation(s), baseline {BASELINE}")
 
-    if len(violations) > BASELINE:
+    # R4 has its own baseline: the manifest debt is 24 guards deep and is paid down
+    # separately from R1/R2/R3. Counting them in ONE number would let a new fail-open
+    # handler hide behind a manifest that got written the same week.
+    manifest_v = [v for v in violations if v.rule == "R4_no_mutation_manifest"]
+    other_v = [v for v in violations if v.rule != "R4_no_mutation_manifest"]
+    print(f"  (of which {len(manifest_v)} are R4 manifest debt, baseline {MANIFEST_BASELINE})")
+
+    if len(manifest_v) != MANIFEST_BASELINE:
+        verb = "GREW" if len(manifest_v) > MANIFEST_BASELINE else "SHRANK"
+        print(f"RATCHET FAILED: R4 manifest debt {verb} — {len(manifest_v)} vs baseline "
+              f"{MANIFEST_BASELINE}. Set MANIFEST_BASELINE to {len(manifest_v)} in THIS commit; "
+              f"an exact match is what stops paid-down debt being silently re-accrued.")
+        return 1
+
+    if len(other_v) > BASELINE:
         print("RATCHET FAILED: a ratchet was added or changed without following the contract.")
         print("See docs/process-checklists.md → Writing a RATCHET.")
         return 1
-    if len(violations) < BASELINE:
-        print(f"Only {len(violations)} remain — LOWER THE BASELINE to lock the gain in.")
+    if len(other_v) < BASELINE:
+        print(f"Only {len(other_v)} remain — LOWER THE BASELINE to lock the gain in.")
     else:
         print("at baseline — not growing.")
     return 0
