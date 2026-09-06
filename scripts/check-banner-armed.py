@@ -100,7 +100,7 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 96 cases
+    python3 scripts/check-banner-armed.py --self-test  # 98 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -1396,6 +1396,16 @@ def _self_test() -> int:
             case("F11a a judged turn whose ASSISTANT TEXT grew records ONE observation, "
                  "stays QUIET, and warns NOT AT ALL",
                  safe(lambda: _flush_scenario("fl-text", "text") == (QUIET, 1, 0)))
+            # ⚠ READS THE LOG LEFT BY THE CASE ABOVE — it must stay directly beneath it.
+            # Cx-Medium (code review r1) — F11a COUNTS the observation and never reads it, so a
+            # `flush_line` that returned a constant string passed 94/94 on a mutated copy. That is
+            # the recorded rule *a guard's own output is a CONTRACT with whatever parses it*: the
+            # counts ARE the evidence, and a line that has lost them records that something
+            # happened while destroying what was measured. The judged turn held ONE text block at
+            # its own stop and TWO one stop later, so those are the values the line must carry.
+            case("Cx-M1 ...and the observation LINE carries the measured counts, not just a line",
+                 safe(lambda: _flushtext().rstrip("\n").split("\n")[-1].split("\t")[-3:]
+                      == ["fl-text", "1", "2"]))
             case("F11b a turn that did NOT grow records nothing — the check is not vacuous",
                  safe(lambda: _flush_scenario("fl-none", "none") == (QUIET, 0, 0)))
             case("F11c growth by a TOOL RESULT alone records nothing — the live false positive",
@@ -1417,6 +1427,24 @@ def _self_test() -> int:
                  _rcF[0] == WARN and _rcF[1] == 1 and _rcF[2] == 1
                  and _logtext().rstrip("\n").endswith("\tunarmed\tSTEP 2 of 3")
                  and "LATE FLUSH OBSERVED" in _errbuf.getvalue())
+
+            # F97c (author self-review) — THE NEW ERROR PATH HAD NO FALSIFIER, while the sibling
+            # journal-write failure has had one since round 1 (F7). The asymmetry is the finding:
+            # this slice ADDED a failure mode and asserted nothing about it. It matters more than
+            # it looks, because the hook allows a QUIET stop SILENTLY, so "the instrument could not
+            # record" is invisible unless the exit code carries it.
+            _blocker = _fx / "not-a-dir"
+            _blocker.write_text("a FILE where the log's parent directory would have to be, so "
+                                "mkdir raises and the append cannot happen")
+            _savedflush = globals()["FLUSH_LOG"]
+            globals()["FLUSH_LOG"] = _blocker / "obs.log"
+            try:
+                _rcU2 = safe(lambda: _flush_scenario("fl-unwritable", "text")[0] == CANNOT_RUN)
+            finally:
+                globals()["FLUSH_LOG"] = _savedflush
+            case("F97c an UNWRITABLE observation log is CANNOT RUN, never silence — the verdict "
+                 "was sound but F11's evidence for that turn is gone",
+                 _rcU2)
             (_fx / ".claude" / "executing-plan").write_text("plan: plans/p.md\narmed: t\n")
 
             # Cx-M2 (code review r2) — the FOLD'S OWN M1 FIX had no wiring test. The case below

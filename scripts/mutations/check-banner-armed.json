@@ -93,5 +93,18 @@
     "expect": [
       "F11a a judged turn whose ASSISTANT TEXT grew records ONE observation, stays QUIET, and warns NOT AT ALL"
     ]
+  },
+  {
+    "name": "flush_line stops recording the measured counts, so the observation loses its evidence",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    return f\"{when}\\t{session or '-'}\\t{before}\\t{after}\\n\"",
+        "    return f\"{when}\\t{session or '-'}\\tflush\\n\""
+      ]
+    ],
+    "expect": [
+      "Cx-M1 ...and the observation LINE carries the measured counts, not just a line"
+    ]
   }
 ]

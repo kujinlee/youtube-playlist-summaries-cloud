@@ -157,6 +157,29 @@ alive across the change that would otherwise have hollowed it out.
 
 ---
 
+## 4.1 Code review r1 fold — the falsifier was half-anchored, not fully
+
+`docs/reviews/coordinator/late-flush-escalation-code-r1-codex.md`, NOT CONVERGED, one Medium,
+folded here rather than argued with.
+
+**The finding:** §3's re-anchoring moved F11 off the exit code and onto *whether a line was
+appended* — and stopped there. It never read the line. Measured by the reviewer on a mutated copy:
+`flush_line` rewritten to return a constant string passed **94/94**.
+
+That is this slice's own thesis applied one layer in. The counts **are** the evidence; a line that
+has lost them records that something happened while destroying what was measured — the recorded
+rule *a guard's own output is a CONTRACT with whatever parses it*, which is exactly what D2 was.
+Half-anchoring is how F11 became vacuous the first two times, and it nearly happened again inside
+the fix for it.
+
+**Response:** case `Cx-M1` asserts the recorded line's trailing fields are `["fl-text", "1", "2"]` —
+the judged turn held one text block at its own stop and two one stop later. A manifest entry
+(`EXPECTED_MUTATIONS` 7 → 8) blanks the counts and must die through that case. Verified: control
+95/95, mutant 94/95 with **only** `Cx-M1` red, so the kill is attributable and no sibling case
+takes credit for it.
+
+---
+
 ## 5. Out of scope — named, not hidden
 
 * **`highest_banner` conflates sequences with different totals.** Named in #96 spec §8, still open,
