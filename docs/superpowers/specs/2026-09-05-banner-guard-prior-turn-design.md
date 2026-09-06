@@ -128,11 +128,14 @@ windows(records)[-1].body == records_since_last_user(lines)
 ```
 
 ⚠ **The window must carry its OPENER, and v1's flat form made that impossible** (r1 Codex, Medium).
-`records_since_last_user` sets `start = i + 1` (`:162`), *excluding* the boundary record. The finding
-was raised against v2's journal key, which needed that record's `uuid` — and it **survives the switch
-to `UserPromptSubmit`**, because the opener is also what identifies a window for logging (§6) and for
-the F3 selection falsifier. A flat window cannot both equal today's function and name its own turn.
-The pair resolves it: equality is asserted on `.body`, identity comes from `.opener`.
+`records_since_last_user` sets `start = i + 1` (`:162`), *excluding* the boundary record — but the
+journal is keyed on that record's `uuid` (§3.4). A flat window either includes the opener, and the
+equality with today's function is false, or excludes it and cannot supply the key. The pair resolves
+both: equality is asserted on `.body`, identity comes from `.opener`.
+
+⚠ The opener is load-bearing for **three** things, not just the key — it also identifies the window
+for the log line (§6) and for F3. So this finding held through the v3 detour, when there was no
+journal at all, and holds now that there is one again.
 
 ⚠ **THE DEGENERATE CASE, which v1 asserted away** (r1 Claude, High). With **no** real-user boundary
 at all, today's function returns **every** record — `start` stays `0` and `:163` returns `records[0:]`.
@@ -178,9 +181,11 @@ Two predicates for "a turn happened" is the *two mechanisms for one concern* sha
 `scripts/check-vocabulary-collisions.py` exists to catch. **One predicate: a window is judgable iff it
 contains at least one `assistant` record.**
 
-⚠ This finding was raised against the journal design, where the mismatch also desynchronised a
-persisted key. **The key half is gone with the journal; the coverage half above is not**, and it was
-always the more serious of the two.
+⚠ **Both consequences are live again.** This finding was raised against the journal design; the v3
+detour removed the journal and with it the key-desynchronisation half, leaving only the coverage half.
+v4 restores the journal, so **both** apply: a tool-only turn would be journalled but not selected, and
+the coverage gap would make the plan-without-a-banner class unreachable. The coverage half was always
+the more serious, and neither is optional now.
 
 The slash-command shells of §2.2 still drop out — they contain **zero** records, so they are excluded
 because there is no assistant activity, not because there is no text.
