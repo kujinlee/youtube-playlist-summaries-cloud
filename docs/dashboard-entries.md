@@ -3575,3 +3575,40 @@ the merge, so it would have reviewed prose.
 Spec+plan: `docs/superpowers/{specs,plans}/2026-09-04-banner-guard-inverse*`; twelve review files
 under `docs/reviews/{claude,coordinator}/`. ⚠ `check-ci-watched.py` is deliberately still unreachable
 on blocked stops — moving it would add a `gh pr view` call (25s timeout) per blocked mid-plan stop.
+
+## 2026-09-05
+Yesterday's summary of the banner-guard work was wrong, and this corrects it. Worth a line of its
+own because a stale record is the kind of thing you would never find by looking — it reads as
+confidently as a true one.
+
+The entry above was written at the first commit of that work and never touched again, so it stopped
+before both review rounds, before the defect they turned up, and before the merge. It still told you
+merging was waiting on you, after it had been merged. Its test counts were the numbers from a week
+of work ago. The backlog row for the open defect said "not started" while half of it had already
+shipped; it now says which half, because "partly done" without saying which half is worse than
+either extreme.
+
+The reason this is worth telling you rather than just fixing: the check that is supposed to catch a
+missing record could not see it. It verifies that an entry *exists*, not that it is still true, and
+those are very different guarantees. The same shape as the defect the entry above describes.
+
+**And this pull request failed CI on exactly that point**, which is the good news. I had run the
+entry check locally and read it as green — but I ran it before committing, when the branch had no
+commits and the check was comparing nothing to nothing. It passed over an empty diff. CI ran it
+against the real change and refused. The gate did its job; my local reading of it was the part that
+was broken.
+
+Nothing is waiting on you.
+<!--tech-->
+Follow-up to PR #225 (`956a4de6`). `docs/dashboard-entries.md`: the 2026-09-05 entry rewritten to
+cover code review r1+r2, backlog #96 and the merge — it had drifted to `55 self-tests` (78),
+`11/11 mutations` (the final sweep breaks five fixes, each killed via the case it names),
+`four review rounds` (six), and a live `**Waiting on you:** merging` after the merge.
+`docs/backlog.md` row 96 status now states the split: (a) DOCUMENTED — docstring retraction, the
+WARN message no longer asserting `total - step` unannounced steps, log re-baselined; (b) NOT DONE —
+the `SHAPE:`, judging the PREVIOUS completed turn, which needs per-turn sentinel state and is a spec
+rather than a patch. ⚠ `check-dashboard-entry.py` counts entry blocks ADDED, so editing an existing
+block registers as zero; and run WITHOUT `--base`, against an uncommitted tree, it passes
+vacuously — CI runs it as `--base origin/$GITHUB_BASE_REF --pr-body-file`, which is the invocation
+to reproduce locally before believing a green. Dashboard page regenerated (derived, ADR-0010; writes
+to `~/explainers/`), not committed.
