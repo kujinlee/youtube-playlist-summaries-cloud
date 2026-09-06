@@ -63,7 +63,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 84 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 88 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -484,11 +484,33 @@ tbody tr:last-child td{{border-bottom:none}}
 <main>{body}</main></body></html>"""
 
 
+# A FRAGMENT is a composer's INPUT, not a page: `…-brief-x.fragment.html` is the body that
+# `brief-compose.py` wraps to produce `…-brief-x.html`. It has no chrome, no theme control and no
+# Ask tray.
+#
+# ⟳ 2026-09-05. brief-compose writes the fragment BESIDE the page it produces, with the same date
+# prefix and — measured — the same mtime. So both were dated, both passed the standing-page filter,
+# and `sorted(reverse=True)` on equal keys is decided by glob order: the fragment could win /latest.
+# MEASURED before this fix, on a tie: `/latest -> /2026-09-05-brief-x.fragment.html`.
+#
+# The failure is quiet and it is the dangerous kind — the reader opens their bookmark, gets a page
+# that renders, and simply has no tray to answer in. The channel looks alive and is dead. Same class
+# as the standing-page hazard the comment below describes, arriving by a different route.
+#
+# Excluded from the LIST, not from serving: `resolve_page` reaches files by path independently, so
+# a direct request for a fragment still works and the composer is unaffected.
+FRAGMENT_SUFFIX = ".fragment.html"
+
+
+def is_fragment(p: pathlib.Path) -> bool:
+    return p.name.endswith(FRAGMENT_SUFFIX)
+
+
 def explainers(root: pathlib.Path) -> list[pathlib.Path]:
-    """Explainer pages, newest first by mtime."""
+    """Explainer PAGES, newest first by mtime. Composer fragments are not pages — see above."""
     if not root.is_dir():
         return []
-    return sorted((p for p in root.glob("*.html") if p.is_file()),
+    return sorted((p for p in root.glob("*.html") if p.is_file() and not is_fragment(p)),
                   key=lambda p: p.stat().st_mtime, reverse=True)
 
 
@@ -1156,6 +1178,36 @@ def _self_test() -> int:
              lambda: latest_target(dated) == "/2026-08-21-brief-new.html")
         case("a standing page is still listed on the index",
              lambda: "backlog-table.html" in index_html(dated))
+
+        # FRAGMENTS: a composer's input, not a page. brief-compose writes `<page>.fragment.html`
+        # beside `<page>.html` with the SAME date prefix and the same mtime, so before this fix both
+        # were dated, both survived the standing filter, and `sorted(reverse=True)` on equal keys
+        # was decided by glob order. MEASURED before the fix, on a tie:
+        #   /latest -> /2026-09-05-brief-x.fragment.html
+        # ⚠ THE TIE IS THE WHOLE CASE. Give the fragment a STRICTLY NEWER mtime and it would win
+        # even with a correct date filter, so the case would pass for the wrong reason; give it an
+        # older one and it could never have won, so the case proves nothing. Equal mtimes are the
+        # only setting in which this discriminates, and they are also what actually happens.
+        frags = root / "frags"
+        frags.mkdir()
+        _pg = frags / "2026-09-05-brief-x.html"
+        _fr = frags / "2026-09-05-brief-x.fragment.html"
+        _pg.write_text("composed page, has the Ask tray")
+        _fr.write_text("raw fragment, no chrome and no tray")
+        os.utime(_pg, (5_000_000, 5_000_000))
+        os.utime(_fr, (5_000_000, 5_000_000))          # EXACT tie — as brief-compose leaves them
+        case("⭐ a fragment does NOT steal /latest from the page it belongs to, on an mtime tie",
+             lambda: latest_target(frags) == "/2026-09-05-brief-x.html")
+        case("...and the fragment is not offered on the index either",
+             lambda: "fragment" not in index_html(frags))
+        # ⚠ COMPARE RESOLVED PATHS. safe_path resolves, and on darwin a tempdir under /var resolves
+        # to /private/var — so comparing against the unresolved `_fr` fails on correct behaviour.
+        # This case failed exactly that way when first written; the assertion was wrong, not the fix.
+        case("...but it is still SERVABLE by direct path — the composer reads it by name",
+             lambda: resolve_page("/2026-09-05-brief-x.fragment.html", frags) == _fr.resolve())
+        case("is_fragment names the suffix, not merely the word",
+             lambda: is_fragment(pathlib.Path("a.fragment.html"))
+             and not is_fragment(pathlib.Path("fragment-notes.html")))
         case("⭐ /backlog-table resolves to backlog-table.html",
              lambda: resolve_page("/backlog-table", dated) == (dated / "backlog-table.html").resolve())
         case("an extensionless path for a file that does not exist is None",
