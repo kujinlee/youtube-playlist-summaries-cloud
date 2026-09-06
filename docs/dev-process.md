@@ -132,7 +132,7 @@ copy that drifts.
 
 | Check | Enforces |
 |---|---|
-| `.claude/hooks/block-default-branch-push.sh` | no push to the default branch (escape: `ALLOW_DEFAULT_BRANCH_PUSH=1`) |
+| `.claude/hooks/block-default-branch-push.sh` | TWO push rules, one hook — the filename is now narrower than the content and is kept only because five MERGED review docs cite it. (1) no push to the default branch (escape: `ALLOW_DEFAULT_BRANCH_PUSH=1`). (2) ⟳ 2026-09-05: no bare `--force`/`-f` and no `--no-verify` on ANY branch (escape: `ALLOW_DANGEROUS_PUSH=1`, deliberately a SEPARATE flag — authorising a force-push is not the same decision as authorising a push to master). `--force-with-lease` is ALLOWED: denying the safe form would drive people to the dangerous one. Gating every feature-branch push was considered and REJECTED — a prefix everyone types past is worse than none. `--self-test`: 9 cases, its first ever, all four mutations killed via the case each names |
 | `.claude/hooks/check-plan-gate.sh` | the Post-Plan Gate before dispatching subagents |
 | `.claude/hooks/regen-goals-page.sh` | the goals view is rebuilt whenever one of its FIVE sources changes — it is derived, so it is never edited by hand (`/goals`; ADR-0010) |
 | `.claude/hooks/check-schema-gates.sh` | after editing schema, the gates must run before reporting done |
