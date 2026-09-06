@@ -3871,3 +3871,50 @@ scripts-only delta for the two cases reading `.claude/hooks/`. selftest-counts, 
 Warn log re-baselined again: 16 lines archived to `.claude/banner-warnings-archived-2026-09-06.log`,
 10 of them escalation artifacts that cannot be separated from real warnings retrospectively. Also
 corrected backlog row 96's merge tick, which named a deleted branch instead of PR #229.
+
+## 2026-09-06
+Before picking the next piece of comprehensibility work, I re-read every open item in that group
+against the code — and found that the backlog was describing a world that had moved on.
+
+Twice in a row I proposed building something the project already had. Both times the code, not my
+memory, caught it. That is worth recording as a habit rather than an embarrassment: the rows are
+written once and then trusted for weeks, while the code they describe keeps changing underneath
+them.
+
+The concrete finds: one item had already shipped and its row still said "not started"; one item's
+stated harm was solved four days after it was filed; one was waiting on something that has since
+merged; and my own newly-filed item turned out to be warned about, in advance, by an older item
+nobody had connected it to.
+
+Nothing is waiting on you. The work this pass replaced — a slice to build staleness detection —
+was cancelled, because staleness detection already exists and works.
+<!--tech-->
+Branch `entry-gate-timing-78b`. No code changed; this is a records pass plus the three corrections
+committed earlier as `3d53980c`.
+
+FINDINGS, each verified against the tree rather than recalled:
+
+- **#88** — merged as PR #224 (squash `65cd509e`) while its 1422-char status cell said "OPEN —
+  not started". Corrected. Filed the blindness as **#98**: `check-docs.py` compares the severity
+  MARKER to the STATUS CELL, both internal to the row, so a stale row's two fields agree with each
+  other and disagree only with git. One-directional, the same shape as #95's banner detector.
+- **#78 half (2)** — premise HOLDS (`ci.yml:313` is still `pull_request`-only) but its stated harm
+  does NOT. `/_stale` + `RELOAD_JS` (`explainer-serve.py:811-830`) poll every 2s and on
+  `visibilitychange` and tell the reader which source file moved; `gen-dashboard.py:1187` renders
+  "Could not parse this entry". Filed 2026-08-31, answered 2026-09-02, never re-read. Now recorded
+  as a CI-timing preference rather than a reader-facing defect.
+- **#89** — its stated blocker (#88) is cleared. Also noted: every open question in it is about
+  forking agents, so it cannot be validated while the Agent tool is off.
+- **#98 ↔ #56** — ⭐ the best find. #56 already says *"Do NOT rebuild the reconciliation as a gate:
+  it fires on every docs-only commit and gets disabled."* #98 proposes exactly a row-vs-git check.
+  That measured verdict settles #98's open warn-vs-block question in favour of WARN, and the
+  cross-reference is recorded on both rows so it is not derived a third time.
+- **#82, #40, #50, #90** — premises intact; no correction needed.
+
+⚠ A SLICE WAS CANCELLED, deliberately and mid-flight. `entry-gate-timing` was armed to widen the
+regen hook's trigger and add serve-time staleness detection. Reading `explainer-serve.py` before
+writing the spec showed the second half already shipped, which also bounded the first half's harm
+to a "press Refresh" banner instead of an auto-refresh. The plan was paused with the refuting
+reason rather than completed. The measured fact behind it stands and is NOT filed, because its
+consequence is now small: `regen-dashboard.sh:30` keys on `tool_input.file_path`, so a Bash
+heredoc append moves the store without regenerating the page.
