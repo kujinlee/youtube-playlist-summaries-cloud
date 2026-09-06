@@ -1182,6 +1182,57 @@ def _self_test() -> int:
          verdict(["docs/dashboard-entries.md"], True, "", (), ["names no entry"])[0], 1)
     case("...and is quiet when there is none", verdict([], False, "", (), [])[0], 0)
 
+
+    # ── the relocated parser's own behaviours (backlog #82) ────────────────────────────────
+    # ⛔ THESE EXIST BECAUSE THE MUTATION HARNESS RUNS ONLY THE MUTATED FILE'S SUITE
+    # (`check-plan-code.py:852`, `run_suite(d, fname)`). `parse_entries` moved here, so the
+    # eight mutations that guard it moved with it — and a mutation whose killing case sits in
+    # ANOTHER file's suite reads as a survivor. gen-dashboard keeps its own copies as
+    # CONSUMER coverage: the page asserting the imported function still behaves is a
+    # different question from the owner asserting its own rules.
+    _R2 = parse_entries("## 2026-08-26\nOne.\n## 2026-08-27\nTwo.\n"
+                        "## 2026-08-28 [resolved: 2026-08-26/1] [resolved: 2026-08-27/1]\nBoth.\n")
+    case("two [resolved:] flags are both kept", len(_R2[2]["resolves"]), 2)
+    case("resolve of an unknown id is an error",
+         "names no entry" in (parse_entries("## 2026-08-29 [resolved: 1999-01-01/9]\nX.\n")[0]["error"] or ""),
+         True)
+    # ⛔ THE ORDINAL IS CLAIMED WHEN THE DATE IS GOOD, BEFORE the flag check — so repairing a
+    # typo'd flag must not renumber the entries after it and silently rebind a standing
+    # [resolved:]. A bad-DATE block is the wrong fixture: it never claims an ordinal at all.
+    _ORD = parse_entries("## 2026-08-28 [needs-yo]\nTypo'd flag.\n## 2026-08-28\nReal one.\n")
+    case("a malformed block still consumes its ordinal",
+         [e["id"] for e in _ORD], ["2026-08-28/1", "2026-08-28/2"])
+    # ⚠ FLAG IS WIDENED ON PURPOSE. The else-branch below is unreachable while FLAG matches
+    # exactly the three flags the if/elif chain handles — so a case using a plain `[blocked]`
+    # tests the HEADER's unrecognised-text path instead and cannot kill the flag-loop
+    # mutations. This simulates the real hazard: the gate learns a new flag and the loop does
+    # not. The case above asserts the widening is real, so it cannot pass for the wrong reason.
+    _wide = re.compile(r"\[(needs-you|heads-up|blocked|resolved:\s*[^\]]*)\]")
+    case("the unknown-flag fixture really extends the gate's own pattern",
+         (_wide.pattern != FLAG.pattern, _wide.findall("[blocked]")), (True, ["blocked"]))
+    _real_flag = globals()["FLAG"]
+    globals()["FLAG"] = _wide
+    try:
+        _UNK = parse_entries("## 2026-08-29 [blocked]\nA thing.\n")
+    except Exception as exc:                 # the defect: an unknown flag would crash the page
+        _UNK = [{"error": f"RAISED {type(exc).__name__}"}]
+    finally:
+        globals()["FLAG"] = _real_flag
+    case("an unrecognised flag is an ERROR, not a crash", bool(_UNK[0]["error"]), True)
+    case("...and says WHICH text it could not recognise",
+         "unrecognised flag" in (_UNK[0]["error"] or ""), True)
+    _LONG = ("A first sentence deliberately far longer than any truncation cap this parser has "
+             "ever applied to a headline, so a reinstated cap would visibly cut its tail off.")
+    case("a long first sentence reaches the reader WHOLE",
+         parse_entries(f"## 2026-08-28\n{_LONG}\nMore.\n")[0]["title"], _LONG)
+    _FEN = parse_entries("## 2026-08-28\nTitle.\n```\n## 2026-08-29\nfenced\n```\nAfter.\n")
+    case("a fenced header does not split the entry", len(_FEN), 1)
+    case("...and mints no phantom id", [e["id"] for e in _FEN], ["2026-08-28/1"])
+    _INERT = parse_entries("## 2026-08-28\nI mention `<!--` in prose.\n## 2026-08-29\nB.\n")
+    case("prose mentioning <!-- does not swallow the NEXT entry", len(_INERT), 2)
+    case("...and both keep their ids", [e["id"] for e in _INERT],
+         ["2026-08-28/1", "2026-08-29/1"])
+
     print(f"\n{ok}/{ok+fail} passed")
     return 1 if fail else 0
 
