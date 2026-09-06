@@ -835,7 +835,22 @@ def _self_test() -> int:
 
     def case(name: str, ok: bool) -> None:
         cases.append((name, ok))
-        print(f"  {'PASS' if ok else 'FAIL'}  {name}")
+        if ok:
+            print(f"  PASS  {name}")
+            return
+        # ⛔ THE FAILURE LINE SHAPE IS A CONTRACT WITH THE MUTATION HARNESS, NOT A STYLE CHOICE.
+        # `check-plan-code.py:855-856` attributes a kill by scanning for lines that START WITH
+        # "[FAIL] " and splitting on the LAST ": got ". This suite printed "  FAIL  {name}", which
+        # that parser cannot see — so every mutation against this guard died while reporting
+        # "matched 0 red case(s) … caught by something else: []". MEASURED 2026-09-06: the
+        # `armed: null` mutation genuinely turns Cx-M2 red (90/91 on a temp copy), and the harness
+        # still could not name it.
+        #
+        # ⚠ THIS IS THE RECORDED SHAPE *a report format is a CONTRACT*, where "the guard did not
+        # fire" and "nothing could see it fire" produce identical output — it once masked three
+        # real bugs behind 12 mutations reporting zero red cases. It stayed invisible here for as
+        # long as this guard had no manifest, because nothing ever parsed its output.
+        print(f"  [FAIL] {name}: got {ok!r} want {True!r}")
 
     def safe(predicate) -> bool:
         """Evaluate a predicate so a RAISE is a FAILED CASE, not an aborted run.
@@ -1092,6 +1107,19 @@ def _self_test() -> int:
         _tr = _fx / "t.jsonl"
         _log = _fx / ".claude/banner-warnings.log"
 
+        def _logtext() -> str:
+            """The warn log's contents, or "" when it does not exist yet.
+
+            ⛔ NEVER `_logtext()` DIRECTLY IN A FIXTURE. A mutation that stops the guard
+            logging also stops the file being created, so a bare read raises FileNotFoundError,
+            which ABORTS THE WHOLE SUITE — every case after it silently never runs. MEASURED
+            2026-09-06 on the `judged_window` mutation: four cases went red, the run then died,
+            and F3/F9/F10/F11 never executed at all. The mutation harness recorded it as "killed",
+            which is true and useless: killed BY A CRASH names no guard.
+            This is the `safe()` docstring's warning reproduced one layer out, in the fixture.
+            """
+            return _log.read_text() if _log.exists() else ""
+
         def _turn(uid: str, blocks: list) -> list:
             return [json.dumps({"type": "user", "uuid": uid, "message": {"content": "go"}}),
                     json.dumps({"type": "assistant", "message": {"content": blocks}})]
@@ -1129,17 +1157,17 @@ def _self_test() -> int:
             _rc = _drive(_tr, _subject)
             case("F4 run_decide WARNS on the new class AND appends a line — the side effect",
                  _rc == WARN and _log.exists()
-                 and _log.read_text().rstrip("\n").endswith("\tunbannered\t3 unticked"))
+                 and _logtext().rstrip("\n").endswith("\tunbannered\t3 unticked"))
 
             # ⛔ THE BACKLOG #96 CASE ITSELF. A turn whose ONLY banner is its closing `n of n` was
             # warned about before this change, because the live reader could not see that message.
             # Judged one turn later it is QUIET. This is the falsifier the row named.
             (_fx / ".claude" / "executing-plan").unlink()
             _closing = _turn("c1", [{"type": "text", "text": "## ▶ STEP 3 of 3 — done"}])
-            _before = _log.read_text() if _log.exists() else ""
+            _before = _logtext() if _log.exists() else ""
             _rcC = _drive(_fx / "closing.jsonl", _closing)
             case("F1 a turn ending `STEP n of n` with nothing armed is QUIET, and logs nothing",
-                 _rcC == QUIET and (_log.read_text() if _log.exists() else "") == _before)
+                 _rcC == QUIET and _logtext() == _before)
             case("F2 ...while a turn whose highest banner is BELOW its total still WARNS",
                  _drive(_fx / "partway.jsonl",
                         _turn("p1", [{"type": "text", "text": "## ▶ STEP 2 of 5 — mid"}])) == WARN)
@@ -1149,21 +1177,21 @@ def _self_test() -> int:
             # run: the verdict is computed from the sample taken at the judged turn's own stop, so
             # breaking it afterwards would change nothing and the case would pass vacuously.
             (_fx / "plans" / "p.md").write_text("just prose, no checkboxes at all\n")
-            _before = _log.read_text()
+            _before = _logtext()
             _rc0 = _drive(_tr, _subject)
             case("H1 a plan with ZERO checkboxes is CANNOT RUN through run_decide, not quiet",
                  _rc0 == CANNOT_RUN)
             case("...and nothing is logged for a run that could not measure",
-                 _log.read_text() == _before)
+                 _logtext() == _before)
             (_fx / "plans" / "p.md").write_text("- [x] one\n- [ ] two\n- [ ] three\n- [ ] four\n")
 
             # M5 — spec R3 at the WIRING, not just the predicate: `edited` hardcoded True in
             # run_decide would pass the old predicate-level case and fail this one.
-            _before = _log.read_text()
+            _before = _logtext()
             _rcO = _drive(_fx / "outside.jsonl",
                           _turn("o1", [_edit_block("/tmp/scratch/not-in-repo.md")]))
             case("M5 an edit OUTSIDE the repo stays QUIET through run_decide, and logs nothing",
-                 _rcO == QUIET and _log.read_text() == _before)
+                 _rcO == QUIET and _logtext() == _before)
 
             # F9 — a BLOCKED stop re-fires this hook inside the same turn. The judged turn must get
             # exactly ONE verdict, and must not fall out of both journal slots (review r1 Blocking).
@@ -1174,23 +1202,46 @@ def _self_test() -> int:
             run_decide(json.dumps({"transcript_path": str(_tr9), "session_id": "s9"}))
             _tr9.write_text("\n".join(_subject + _turn("live9", [{"type": "text", "text": "a"}])))
             _first = run_decide(json.dumps({"transcript_path": str(_tr9), "session_id": "s9"}))
-            _logged_once = _log.read_text()
+            _logged_once = _logtext()
             _tr9.write_text("\n".join(_subject + _turn("live9", [{"type": "text", "text": "a"}])
                                       + [json.dumps({"type": "assistant", "message": {
                                           "content": [{"type": "text", "text": "continued"}]}})]))
             _second = run_decide(json.dumps({"transcript_path": str(_tr9), "session_id": "s9"}))
             case("F9 a continuation stop issues NO second verdict for a turn already judged",
-                 _first == WARN and _second == QUIET and _log.read_text() == _logged_once)
+                 _first == WARN and _second == QUIET and _logtext() == _logged_once)
 
             # F10 — two sessions in one working copy must not clobber each other's samples.
+            #
+            # ⛔ THIS CASE WAS VACUOUS UNTIL 2026-09-06 AND THE MUTATION HARNESS PROVED IT.
+            # Both sessions used the SAME opener uuid, so a shared journal file was undetectable:
+            # session B's record carried the same key session A was about to look for, A found a
+            # "matching" sample, and the case passed while the defect was fully present. MEASURED —
+            # with the per-session path mutated away (BOTH the read and the write, which is the
+            # realistic regression), F10 stayed green and only an unrelated case went red.
+            #
+            # ⚠ Mutating the WRITE path alone hides this: reads then look for `<session>.json`,
+            # find nothing, and everything fails loudly for the wrong reason. A one-sided mutation
+            # made the case look load-bearing. The turn uuids must DIFFER, or "we kept our own
+            # sample" and "we read someone else's identical-looking one" are the same observation.
             for _s in (_fx / ".claude/banner-turn-state").glob("*.json"):
                 _s.unlink()
             _trA, _trB = _fx / "a.jsonl", _fx / "b.jsonl"
-            _trA.write_text("\n".join(_subject))
-            _trB.write_text("\n".join(_subject))
+            _subjA = _turn("uA", [_edit_block(str(_fx / "scripts" / "x.py"))])
+            _subjB = _turn("uB", [_edit_block(str(_fx / "scripts" / "y.py"))])
+            # ⚠ SESSION B MUST STOP TWICE, and that is the second thing this case got wrong.
+            # With a SHARED file and B stopping once, B reads A's record and faithfully carries
+            # `uA` into `prev_turn_uuid` — so A still finds its sample in the prev slot and judges
+            # correctly. The `prev_*` pair, which exists to fix round 1's BLOCKED-STOP Blocking,
+            # therefore MASKS round 1's CONCURRENCY Blocking. One fix disarmed the other's
+            # falsifier, and only the mutation harness could see it.
+            # Two stops from B push `uA` out of BOTH slots, which is what losing a sample means.
+            _trA.write_text("\n".join(_subjA))
+            _trB.write_text("\n".join(_subjB))
             run_decide(json.dumps({"transcript_path": str(_trA), "session_id": "sA"}))
             run_decide(json.dumps({"transcript_path": str(_trB), "session_id": "sB"}))
-            _trA.write_text("\n".join(_subject + _turn("lA", [{"type": "text", "text": "x"}])))
+            _trB.write_text("\n".join(_subjB + _turn("lB", [{"type": "text", "text": "y"}])))
+            run_decide(json.dumps({"transcript_path": str(_trB), "session_id": "sB"}))
+            _trA.write_text("\n".join(_subjA + _turn("lA", [{"type": "text", "text": "x"}])))
             case("F10 a second session's stop does NOT cost the first its sample",
                  run_decide(json.dumps({"transcript_path": str(_trA),
                                         "session_id": "sA"})) == WARN)
@@ -1255,13 +1306,36 @@ def _self_test() -> int:
                                         "text": "## ▶ STEP 2 of 5 — doing a thing"}]))
             case("H3 the UNARMED class still warns AND logs its own reason and detail",
                  _rcU == WARN
-                 and _log.read_text().rstrip("\n").endswith("\tunarmed\tSTEP 2 of 5"))
+                 and _logtext().rstrip("\n").endswith("\tunarmed\tSTEP 2 of 5"))
         finally:
             (globals()["ROOT"], globals()["SENTINEL"],
              globals()["WARN_LOG"], globals()["JOURNAL_DIR"]) = _saved
 
     # ── F6: reachability. STRUCTURAL, not an execution test — see the plan. ────────────────
-    _hook = (ROOT / ".claude/hooks/block-idle-stop.sh").read_text()
+    # ⛔ THIS CASE'S SUBJECT IS THE REPO, NOT THIS SCRIPT, AND THAT BROKE THE MUTATION HARNESS
+    # (backlog #96, 2026-09-06). `mutate_delivered` copies the whole `scripts/` tree and nothing
+    # else — deliberately, because these scripts import each other as siblings — so
+    # `.claude/hooks/` is absent there. Until this slice the guard had no manifest, so its suite
+    # never ran inside the harness and nobody found out; adding one turned the CONTROL red with
+    # FileNotFoundError, which correctly refused to report any mutation verdict at all.
+    #
+    # ⚠ NEITHER OBVIOUS FIX IS ACCEPTABLE. Passing when the file is missing is fail-open — the
+    # case exists to prove the hook still invokes this guard, and "the file was not there" would
+    # silently satisfy it. Failing whenever it is missing makes the manifest permanently unusable.
+    #
+    # The discriminator is whether `.claude/` EXISTS. A scripts-only copy has no `.claude` at all;
+    # a real checkout that lost the hook has `.claude` and no hook, which IS a regression and must
+    # fail. So absence is only excused where the whole directory is absent, and the excuse is
+    # PRINTED rather than silent.
+    _claude_dir = ROOT / ".claude"
+    _hook_path = _claude_dir / "hooks" / "block-idle-stop.sh"
+    if not _hook_path.exists():
+        case("reachability NOT CHECKED — scripts-only tree, no .claude/ to read "
+             "(this is the mutation harness; a real checkout missing the hook FAILS here)",
+             not _claude_dir.exists())
+        _hook = ""
+    else:
+        _hook = _hook_path.read_text()
     # ⚠ _obs PINS THE INVOCATION, NOT THE FILENAME (code review r2, Medium). A bare
     # "check-banner-armed.py" is matched by str.index at its FIRST occurrence ANYWHERE — comments
     # included — and L3 put a five-line comment about the observer directly above the blocking
@@ -1271,16 +1345,17 @@ def _self_test() -> int:
     # order. Anchors bind by TEXT, so improving the prose breaks the guard and the suite stays
     # green — the recorded shape. No comment plausibly contains the `" --decide` suffix.
     _obs, _blk = 'check-banner-armed.py" --decide', 'check-plan-progress.py" "${ARGS[@]}"'
-    case("F6 the banner guard is invoked BEFORE the blocking check that can exit early",
-         _obs in _hook and _blk in _hook and _hook.index(_obs) < _hook.index(_blk))
-    case("F6b the hook uses REPO_ROOT — $ROOT is empty and would block every stop",
-         "$ROOT/scripts" not in _hook)
+    if _hook:
+        case("F6 the banner guard is invoked BEFORE the blocking check that can exit early",
+             _obs in _hook and _blk in _hook and _hook.index(_obs) < _hook.index(_blk))
+        case("F6b the hook uses REPO_ROOT — $ROOT is empty and would block every stop",
+             "$ROOT/scripts" not in _hook)
     # F6c — the guard being INVOKED is not the same as its result being READ. Deleting BANNER_RC
     # from the exit arithmetic leaves an unblocked stop at exit 0, which discards the warning:
     # the guard would run, log, report success, and reach nobody. This slice's own failure, one
     # layer out. Structural, like F6.
-    case("F6c BANNER_RC reaches the hook's exit arithmetic, not just the invocation",
-         '"$BANNER_RC" != "0"' in _hook)
+        case("F6c BANNER_RC reaches the hook's exit arithmetic, not just the invocation",
+             '"$BANNER_RC" != "0"' in _hook)
 
 
     # ── an ATTEMPTED edit is not an edit (code review r1) ──────────────────────────────────

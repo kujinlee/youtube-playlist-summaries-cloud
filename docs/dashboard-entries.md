@@ -3768,3 +3768,51 @@ not a whole turn, and it is still unmeasured.
 ⚠ Round 1 reviewed the journal. Round 2 reviews a mechanism no reviewer has seen.
 The guard also leaves `block-idle-stop.sh` and needs a `UserPromptSubmit` registration in
 `.claude/settings.json`, which has no such entry today.
+
+## 2026-09-06
+The check that nags about missing step-headings has been fixed. It now waits until a turn is
+finished before judging it.
+
+The problem was that it looked at the record of a turn while that turn was still being written, so
+the last thing said — usually the heading announcing the final step — was invisible to it. It then
+complained that a finished job had stopped partway. Measured across every session recorded here:
+of the 48 turns that ever used these headings, 9 hid their closing one and **8 got the wrong answer
+because of it**. About one in six.
+
+It also went wrong in the other direction, staying silent when it should have spoken. The recorded
+description of this bug said it only ever over-complained; that was incomplete, and is corrected.
+
+Two things are worth knowing about how this was checked, because both were nearly missed:
+
+The test that was supposed to prove the fix **could not fail**. It compared the order of records in
+a file, which is fixed by how the file is split — so it would have reported success against a
+completely broken check. It has been replaced by something that actually watches for the problem
+while running, and reports it when it happens.
+
+And the first attempt to prove the bug even existed showed no difference between old and new. That
+was the test setup being wrong, not the bug being absent. Reproducing it properly needed the old
+check to see the turn exactly as it looked at the moment it ran.
+<!--tech-->
+Backlog #96 structural half. `scripts/check-banner-armed.py` now judges the PREVIOUS completed
+turn, using the sentinel sample taken at THAT turn's own stop, carried in a per-session journal at
+`.claude/banner-turn-state/<session_id>.json`.
+
+The sample point was already correct — `block-idle-stop.sh:62` runs this guard ahead of
+`check-plan-progress.py:180-182`'s unlink precisely so it sees the sentinel before deletion. The
+observation was simply discarded; it is now kept for one turn. The guard does NOT move hooks.
+
+Round 1 and round 2 both NOT CONVERGED on both halves. v3 briefly switched to `UserPromptSubmit`
+(no state at all) and was reverted: that mechanism reads the sentinel AFTER the turn it describes,
+so its race is about TIME and cannot be repaired without the state it exists to avoid — and its
+failure mode is a SILENT MISS of the plan-without-a-banner class, versus a noisy CANNOT RUN.
+Recorded as spec §3.2, rejected, with the reasoning.
+
+Journal carries prev_* (a blocked stop re-fires the hook inside one turn), last_judged_uuid
+(exactly one verdict per turn), and sampled_turn_len — the F11 replacement, which compares how many
+records a turn held at its own stop against one stop later, so a late flush is observed rather than
+argued. ⚠ Pyright, not a test, caught that a journalled `armed: null` is falsy and would have turned
+CANNOT RUN into a false accusation.
+
+93/93 self-test (78 → 93); 7-mutation manifest added, so R4 debt 23 → 22 with MANIFEST_BASELINE
+lowered in the same commit. F6 ran once as a migration check — 526 transcripts, 526 identical —
+because after the refactor it too would have been a tautology.
