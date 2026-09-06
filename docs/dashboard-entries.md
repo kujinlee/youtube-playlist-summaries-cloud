@@ -3688,3 +3688,46 @@ force-with-lease case; removing `--no-verify` → its own; sharing one escape fl
 two-intents case; `push_only="$cmd"` → the commit-message case. Filename NOT renamed: cited by
 `.claude/settings.json`, three live docs and five merged review documents, and rewriting a
 historical record to keep it true is not keeping a record.
+
+## 2026-09-05
+The check that nags about missing step-headings has been reading a half-written page, and we now
+have a design for fixing it properly.
+
+The problem: that check runs at the moment a turn ends, and reads the record of the turn — but the
+last thing written in a turn is not on disk yet when it looks. So the closing heading, the one that
+says the work finished, is invisible to it. It then complains that a finished job stopped partway.
+
+Measuring it across every session ever recorded here — 524 of them — gives the honest size. Only 48
+turns ever used these headings at all, and of those, **9 hid their closing heading and 8 got the
+wrong answer because of it**. Roughly one in six of the turns it can actually judge.
+
+Two things turned up that were not previously known. The check can also go wrong in the *other*
+direction — staying silent when it should have complained — which the recorded description of this
+bug says it cannot. And the obvious simple fix turns out to be quietly wrong: it would be blind on
+exactly the turns that under-announce, which are the ones the check exists to catch.
+
+Nothing is fixed yet. This is the written design and its first review round, which both reviewers
+failed — three serious problems, all now folded in. The code comes next.
+<!--tech-->
+Spec `docs/superpowers/specs/2026-09-05-banner-guard-prior-turn-design.md` (v2), the structural half
+of backlog #96, deferred out of PR #225. Anchor `status-visibility`.
+
+Design: judge the PREVIOUS completed turn, whose text is durably on disk. `decide()` is unchanged —
+its inputs change era, not its rules. `armed`/`steps` cannot be re-sampled at judgement time, so they
+travel in a per-session journal written at each Stop; `block-idle-stop.sh:62` already runs this guard
+ahead of the blocking check precisely so it samples the sentinel before `check-plan-progress.py:180-182`
+unlinks it, so the sample point was already right and was simply being discarded.
+
+Round 1, both halves NOT CONVERGED (`docs/reviews/{claude,coordinator}/banner-guard-prior-turn-r1-*.md`).
+Three Blockings, all folded: one shared journal file breaks under concurrent sessions in one working
+copy; "non-empty window" defined as *has assistant text* would have made the plan-without-a-banner
+class structurally unreachable for tool-only turns; and a blocked stop re-firing within one turn
+overwrites the still-needed sample and reports CANNOT RUN against a subject it just had.
+
+⚠ The Codex half refuted v1's rejection of the `UserPromptSubmit` alternative and was right —
+`:326-327` returns QUIET before `armed` is consulted, so "every turn that finished a plan warns
+wrongly" was false. The rejection now rests on the narrow true case, and the residue is the
+interesting part: it lands only on turns that under-announce, which is the guard's own subject.
+
+The v1 falsifier list promised behaviour; v2 turns each Blocking into F8–F11, and adds F11 for the
+durability assumption that was argued but never measured.
