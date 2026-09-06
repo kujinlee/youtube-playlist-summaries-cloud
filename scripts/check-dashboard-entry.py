@@ -715,6 +715,41 @@ def parse_entries(text: str) -> list[dict]:
     return out
 
 
+def added_reference_errors(base_text: str, head_text: str) -> list[str]:
+    """PURE. Entry errors present in HEAD's store that are NOT already in BASE's.
+
+    ⛔ THIS IS WHY THE PARSER HAD TO MOVE (backlog #82). Whether `[resolved: 2026-09-01/99]`
+    names a real entry is a property of the WHOLE STORE; `added_entry_problems` only ever sees a
+    PATCH, so no tightening of `FLAG` could ever reach it. Measured 2026-09-01: three
+    `[resolved: …]` shapes returned `header_error -> None` while the page said "names no entry".
+
+    ⛔ AND IT REPORTS ONLY WHAT THE BRANCH ADDED. Reporting every error in HEAD would make one
+    pre-existing broken entry fail every future branch, including branches that never touch the
+    store — the gate everyone learns to override. `#56` records that verdict from measurement
+    ("do NOT rebuild the reconciliation as a gate: it fires on every docs-only commit and gets
+    disabled"), and `#98` now cites it.
+
+    ⚠ THE KEY IS (title, error), NOT THE ENTRY ID, and that is the trap in this function.
+    Ids are POSITIONAL — `YYYY-MM-DD/N` counts entries sharing a date in FILE ORDER — so
+    appending one entry renumbers every later one that day. Keyed by id, a pre-existing error
+    would read as NEW the moment anything shifted it: a false positive on the most ordinary
+    action there is, which is exactly how a gate gets switched off. The title is content-derived
+    and does not move. (`header` would be better still and is NOT available: `parse_entries`
+    never sets it, and adding it would change the page's data shape for a gate-only need.)
+
+    A COUNTER, not a set: two entries can carry the same bad reference, and a branch adding a
+    SECOND one has added something. Multiset difference sees that; set difference would not.
+    """
+    from collections import Counter
+
+    def errors_in(text: str) -> "Counter":
+        return Counter((e.get("title") or "", e["error"])
+                       for e in parse_entries(text) if e.get("error"))
+
+    fresh = errors_in(head_text) - errors_in(base_text)
+    return [msg for (_title, msg), n in sorted(fresh.items()) for _ in range(n)]
+
+
 def added_entry_problems(patch: str) -> list[str]:
     """Every added line ATTEMPTING an entry header that is malformed (backlog #78).
 
@@ -749,7 +784,8 @@ def added_entry_problems(patch: str) -> list[str]:
 
 
 def verdict(changed: list[str], added_entry: bool, pr_body: str,
-            entry_problems: list[str] | tuple = ()) -> tuple[int, str]:
+            entry_problems: list[str] | tuple = (),
+            ref_problems: list[str] | tuple = ()) -> tuple[int, str]:
     # ⚠ ABOVE the exemption short-circuit, and that ORDER is the fix. Every branch
     # below answers "does this branch owe an entry?"; this one answers "is what it
     # added well-formed?". Putting it second would re-create the hole, because the
@@ -758,6 +794,12 @@ def verdict(changed: list[str], added_entry: bool, pr_body: str,
         return 1, ("the entry this branch adds is malformed, so the page would render "
                    "it under 'Could not parse this entry' — "
                    + "; ".join(entry_problems))
+    # ⚠ ALSO above the short-circuit, and for the same reason: this answers "is what the branch
+    # added sound?", not "does the branch owe an entry?". Referential, so it needed the whole
+    # store — backlog #82.
+    if ref_problems:
+        return 1, ("this branch adds a reference that names nothing in the store — "
+                   + "; ".join(ref_problems))
     real = [p for p in changed if not _is_exempt(p)]
     if not real:
         return 0, "no tracked files changed outside the exempt paths"
@@ -1109,10 +1151,41 @@ def _self_test() -> int:
     case("header_error names the space", "space" in (header_error("##2026-08-28") or ""), True)
     case("header_error is None on a good header", header_error("## 2026-08-28 [needs-you]"), None)
 
+
+    # ── backlog #82: the REFERENTIAL half, which needed the whole store ────────────────────
+    _BASE = ("## 2026-08-28\nTarget entry.\n"
+             "## 2026-08-30 [resolved: nonsense]\nA pre-existing broken reference.\n")
+    case("F1 a NEWLY added dangling reference is reported",
+         added_reference_errors(_BASE, _BASE + "## 2026-08-31 [resolved: 2026-09-01/99]\nNew.\n"),
+         ["[resolved: 2026-09-01/99] names no entry in this file"])
+    case("F1b ...and so is the `nonsense` shape, which header_error returns None for",
+         (header_error("## 2026-08-30 [resolved: nonsense]"),
+          bool(added_reference_errors("", "## 2026-08-30 [resolved: nonsense]\nX.\n"))),
+         (None, True))
+    case("F2 an error present in BOTH base and head is NOT this branch's",
+         added_reference_errors(_BASE, _BASE), [])
+    # ⛔ THE CASE THE OBVIOUS IMPLEMENTATION FAILS. Appending an entry that shares a date
+    # RENUMBERS every later id that day, so an id-keyed diff would call the pre-existing
+    # error new. That false positive on the most ordinary action is how a gate gets disabled.
+    case("F3 a valid append that RENUMBERS later ids reports nothing",
+         added_reference_errors(_BASE, _BASE + "## 2026-08-28\nValid, and it renumbers.\n"),
+         [])
+    case("F7 a reference that NAMES a real entry is accepted",
+         added_reference_errors("", "## 2026-08-28\nTarget.\n"
+                                    "## 2026-08-29 [resolved: 2026-08-28/1]\nGood.\n"), [])
+    # A COUNTER, not a set: a second copy of the same bad reference IS something added.
+    case("...and a SECOND identical bad reference is still an addition",
+         len(added_reference_errors(_BASE, _BASE + "## 2026-09-02 [resolved: nonsense]\nAgain.\n")),
+         1)
+    # WIRING, not just the predicate — the r2 lesson: a correct rule that nothing calls.
+    case("verdict REFUSES on a referential problem, above the exemption short-circuit",
+         verdict(["docs/dashboard-entries.md"], True, "", (), ["names no entry"])[0], 1)
+    case("...and is quiet when there is none", verdict([], False, "", (), [])[0], 0)
+
     print(f"\n{ok}/{ok+fail} passed")
     return 1 if fail else 0
 
-def collect(base: str) -> tuple[list[str], bool, str | None, list[str]]:
+def collect(base: str) -> tuple[list[str], bool, str | None, list[str], list[str]]:
     try:
         names = subprocess.run(["git", "diff", "--name-only", f"{base}...HEAD"],
                                cwd=ROOT, capture_output=True, text=True, timeout=20)
@@ -1120,9 +1193,9 @@ def collect(base: str) -> tuple[list[str], bool, str | None, list[str]]:
                                 "--", "docs/dashboard-entries.md"],
                                cwd=ROOT, capture_output=True, text=True, timeout=20)
     except (OSError, subprocess.SubprocessError) as exc:
-        return [], False, f"could not run git: {exc}", []
+        return [], False, f"could not run git: {exc}", [], []
     if names.returncode != 0:
-        return [], False, f"git diff exited {names.returncode}: {names.stderr.strip()[:200]}", []
+        return [], False, f"git diff exited {names.returncode}: {names.stderr.strip()[:200]}", [], []
     changed = [l for l in names.stdout.split("\n") if l.strip()]
     added = any(_added_entry_line(l) for l in patch.stdout.split("\n"))
     # ⚠ The SAME `-U0` patch already fetched. Measured on 7183111: an appended entry
@@ -1130,7 +1203,23 @@ def collect(base: str) -> tuple[list[str], bool, str | None, list[str]]:
     # question needs no second revision and no working-tree read. (Author and both
     # reviewers once agreed `-U0` omits the body; one `git diff` refuted all three.)
     problems = added_entry_problems(patch.stdout)
-    return changed, added, None, problems
+    # ── the referential half needs the STORE, not the patch (backlog #82) ──────────────────
+    store = ROOT / "docs/dashboard-entries.md"
+    head_text = store.read_text(encoding="utf-8") if store.exists() else ""
+    try:
+        shown = subprocess.run(["git", "show", f"{base}:docs/dashboard-entries.md"],
+                               cwd=ROOT, capture_output=True, text=True, timeout=20)
+        base_text, base_ok = shown.stdout, shown.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        base_text, base_ok = "", False
+    refs = added_reference_errors(base_text, head_text)
+    if not base_ok and refs:
+        # ⚠ NOT SILENCE. A first commit, a shallow clone or a rename makes the baseline
+        # unreadable; treating that as "nothing added" would let a broken reference through on
+        # exactly the runs where the check cannot see. Say so, and report what HEAD holds.
+        refs = [f"(baseline {base}:docs/dashboard-entries.md unreadable — "
+                f"reporting every error in HEAD) {r}" for r in refs]
+    return changed, added, None, problems, refs
 
 
 def _impure_self_test() -> int:
@@ -1173,7 +1262,7 @@ def _impure_self_test() -> int:
     def _boom(*a, **k):
         raise OSError("git is not installed")
 
-    ch, ad, err, pr = _with_run(_boom, lambda: collect("master"))
+    ch, ad, err, pr, rf = _with_run(_boom, lambda: collect("master"))
     case("collect: a missing git is a could-not-tell, not 'nothing changed'",
          (ch, ad, bool(err)), ([], False, True))
     # ⚠ The 4th element on the CANNOT-RUN paths. An empty list here is not a
@@ -1192,14 +1281,18 @@ def _impure_self_test() -> int:
         _cwds.append(k.get("cwd"))
         return _R(0, "", "")
     _with_run(_spy, lambda: collect("master"))
+    # ⟳ 2 -> 3 calls, backlog #82: `collect` now also runs `git show <base>:…` for the
+    # referential half. The COUNT is pinned deliberately — this case guards that every git
+    # call is scoped to THIS repo, so a new call that forgot `cwd=ROOT` must fail here rather
+    # than be absorbed by a length-agnostic assertion.
     case("collect: asks about THIS repo, not the caller's cwd — on EVERY call",
-         (_cwds, len(_cwds)), ([ROOT, ROOT], 2))
-    ch, ad, err, pr = _with_run(lambda *a, **k: _R(128, "", "fatal: no merge base"),
+         (_cwds, len(_cwds)), ([ROOT, ROOT, ROOT], 3))
+    ch, ad, err, pr, rf = _with_run(lambda *a, **k: _R(128, "", "fatal: no merge base"),
                             lambda: collect("master"))
     case("collect: a non-zero git exit is a could-not-tell, not 'nothing changed'",
          (ch, ad, bool(err)), ([], False, True))
     case("...and that path reports no entry problems either", pr, [])
-    ch, ad, err, pr = _with_run(lambda *a, **k: _R(0, "lib/x.ts\n", ""),
+    ch, ad, err, pr, rf = _with_run(lambda *a, **k: _R(0, "lib/x.ts\n", ""),
                             lambda: collect("master"))
     # ⟲ `ad` is asserted, not just ch/err. Branch review of backlog #70 mutated
     # `added = any(...)` to `added = True` and it SURVIVED the whole manifest: this
@@ -1219,7 +1312,7 @@ def _impure_self_test() -> int:
         if "-U0" in argv:
             return _R(0, "@@ -1 +1,2 @@\n+## 2026-02-30 [needs-you]\n+body\n", "")
         return _R(0, "docs/dashboard-entries.md\n", "")
-    ch, ad, err, pr = _with_run(_entry_patch, lambda: collect("master"))
+    ch, ad, err, pr, rf = _with_run(_entry_patch, lambda: collect("master"))
     case("collect: a malformed ADDED header reaches the caller as a problem",
          (len(pr), ad, err), (1, False, None))
     case("...and an entry-only branch is then REFUSED, not exempted",
@@ -1230,7 +1323,10 @@ def _impure_self_test() -> int:
     import contextlib as _cl, io as _io
     g = globals()
     real_collect = g["collect"]
-    g["collect"] = lambda base: ([], False, "could not run git: boom", [])
+    # ⚠ FIVE values since backlog #82. A stub that drifts from the real signature tests a
+    # contract nobody has — here it crashed loudly, which is the good failure; a stub returning
+    # the RIGHT arity with the wrong meaning would not have.
+    g["collect"] = lambda base: ([], False, "could not run git: boom", [], [])
     try:
         with _cl.redirect_stdout(_io.StringIO()) as buf:
             rc = main(["--base", "master"])
@@ -1245,7 +1341,7 @@ def _impure_self_test() -> int:
     # `verdict` directly. This is the only case that fails if the argument is
     # not passed through, so it is the one that makes the wiring load-bearing.
     g["collect"] = lambda base: (["docs/dashboard-entries.md"], False, None,
-                                 ["'## 2026-02-30' — not a real calendar date"])
+                                 ["'## 2026-02-30' — not a real calendar date"], [])
     try:
         with _cl.redirect_stdout(_io.StringIO()) as buf2:
             rc2 = main(["--base", "master"])
@@ -1271,7 +1367,7 @@ def main(argv: list[str]) -> int:
         # cannot-run cases whenever the pure suite is already red.
         pure, impure = _self_test(), _impure_self_test()
         return 1 if (pure or impure) else 0
-    changed, added, err, entry_problems = collect(a.base)
+    changed, added, err, entry_problems, ref_problems = collect(a.base)
     if err:
         print(f"CANNOT RUN — {err}\nTreat this as NOT CHECKED.")
         return 2
@@ -1280,7 +1376,7 @@ def main(argv: list[str]) -> int:
         import pathlib
         p = pathlib.Path(a.pr_body_file)
         body = p.read_text(encoding="utf-8") if p.exists() else ""
-    code, reason = verdict(changed, added, body, entry_problems)
+    code, reason = verdict(changed, added, body, entry_problems, ref_problems)
     print(("ok — " if code == 0 else "REFUSED — ") + reason)
     return code
 
