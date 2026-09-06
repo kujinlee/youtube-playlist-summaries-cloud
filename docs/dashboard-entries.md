@@ -3511,14 +3511,30 @@ script exits before ever reaching it. Fixing that also revealed the same thing h
 happening to the CI watcher added the day before — it too was skipped whenever a plan was mid-flight.
 Only one of the two was moved; moving both would buy a network call on every blocked stop.
 
-Second, and more usefully: four review rounds all found the same class of problem, which was that
+Second, and more usefully: six review rounds all found the same class of problem, which was that
 the tests I had written did not test what they claimed. They were written into a plan document,
 which cannot be run. The fix was to build the whole change in a throwaway copy of the repo and run
-it first — which immediately caught two more broken tests that four rounds of careful reading had
-not. The change now ships with 55 self-tests and a sweep that breaks each fix in turn and confirms a
-named test goes red for it.
+it first — which immediately caught two more broken tests that rounds of careful reading had not.
+Eight such tests were found before the pull request; the round after it found two more, one of them
+guarding a fix written *during* the previous round. The pattern only broke when I stopped reading
+and started reverting each fix in turn to watch a named test go red for it.
 
-**Waiting on you:** merging. Nothing else needs a decision.
+Then the guard turned out to have the same disease as the thing it was built to catch, and that is
+the part worth your attention. You noticed a "Stop hook error" printing too often. Explaining one of
+its warnings showed the check reads the transcript of a turn that is *still being written* — so the
+banner that CLOSES a sequence, normally the last thing I say, is invisible to it. It had been
+reporting "step 2 of 3" for turns that reached step 3. Confirmed on two sessions by timestamp, one
+of them this one.
+
+That is a real defect and it is **not fixed**. You chose to document it rather than chase it, which
+I think was right: the honest repair means judging the *previous* completed turn, and that needs
+state the guard does not carry, so it is a design change rather than a patch. What shipped instead
+is a retraction — the guard's docstring no longer claims a precision it does not have, and the
+warning no longer tells you how many steps are unannounced, because it cannot know. The warning log
+was cleared, because its entries mix real misses with this artifact and nothing can separate them
+after the fact. Filed as backlog #96.
+
+**Merged.** Nothing is waiting on you here.
 <!--tech-->
 Backlog #95, branch `backlog-95-banner-guard`. `scripts/check-banner-armed.py` gains the
 plan-without-banner branch: `armed AND unticked > 0 AND edited AND zero banners`. `_armed()` now
@@ -3528,7 +3544,71 @@ stops treating `isMeta` records as turn boundaries (but keeps task notifications
 measured: 52 of 72 such records begin a genuinely new turn); `log_line` gains a reason column so the
 banner-less class can be recorded at all. `.claude/hooks/block-idle-stop.sh` runs the observer ahead
 of `check-plan-progress.py`, which also matters because that script unlinks the sentinel as a side
-effect. 55/55 self-tests, 11/11 mutations killed via the case each names, `bash -n` clean.
-Spec+plan: `docs/superpowers/{specs,plans}/2026-09-04-banner-guard-inverse*`; eight review files
+effect. MERGED as `956a4de6` (PR #225). 78/78 self-tests, `bash -n` clean; the final sweep breaks
+five fixes in turn and each is killed via the case it names.
+
+Code review r2 (both halves NOT CONVERGED) found five, and the sharpest was that the r1 fold's OWN
+fix shipped naked: `_armed()` became three-valued and nothing tested that `run_decide` maps `None`
+to CANNOT RUN — mutating `if armed is None:` to `if False:` left the suite green at 75/75. Same
+shape as r1's own M5 finding ("delivered against the predicate, not the wiring"), fixed there for
+`edited` and reintroduced for `armed` in the same commit. Also: the `OSError` arm of `_armed()` was
+untested; F6 — the ONLY guard on the observer/blocking ordering this slice exists to create — was
+satisfiable by a COMMENT, because `_obs` was a bare filename and `str.index` takes the first hit
+anywhere (now pinned to `check-banner-armed.py" --decide`); the NotebookEdit case passed
+`file_path`, so the `notebook_path` fallback that branch actually takes was untested.
+
+⚠ THE SELF-TEST HARNESS ITSELF WAS LYING, which is why `safe()` exists. Measuring the `OSError`
+fix, the sweep reported ZERO red cases — the PermissionError propagated through `case()` and ABORTED
+the run, so no `FAIL` line and no summary line was ever printed. A harness grepping for `FAIL` reads
+that as "nothing caught it". `safe()` makes a raise a failed case, and the sweep now checks for the
+summary line rather than trusting an empty grep.
+
+Backlog #96 (option B) then retracted this guard's own precision claim in its docstring, stopped the
+WARN message asserting `total - step` steps unannounced, and re-baselined
+`.claude/banner-warnings.log` (six entries archived: 2 confirmed artifacts, 1 real partway stop, 2
+undetermined — they cannot be retro-classified). ⚠ #96's structural fix, judging the PREVIOUS
+completed turn, is NOT taken: `_armed()`/`_plan_steps()` sample the sentinel at decide time while
+the banners would come from the prior turn, so it needs per-turn state and is a spec, not a patch.
+Round 3 was deliberately NOT run — measured, no decision predicate changed between the PR head and
+the merge, so it would have reviewed prose.
+
+Spec+plan: `docs/superpowers/{specs,plans}/2026-09-04-banner-guard-inverse*`; twelve review files
 under `docs/reviews/{claude,coordinator}/`. ⚠ `check-ci-watched.py` is deliberately still unreachable
 on blocked stops — moving it would add a `gh pr view` call (25s timeout) per blocked mid-plan stop.
+
+## 2026-09-05
+Yesterday's summary of the banner-guard work was wrong, and this corrects it. Worth a line of its
+own because a stale record is the kind of thing you would never find by looking — it reads as
+confidently as a true one.
+
+The entry above was written at the first commit of that work and never touched again, so it stopped
+before both review rounds, before the defect they turned up, and before the merge. It still told you
+merging was waiting on you, after it had been merged. Its test counts were the numbers from a week
+of work ago. The backlog row for the open defect said "not started" while half of it had already
+shipped; it now says which half, because "partly done" without saying which half is worse than
+either extreme.
+
+The reason this is worth telling you rather than just fixing: the check that is supposed to catch a
+missing record could not see it. It verifies that an entry *exists*, not that it is still true, and
+those are very different guarantees. The same shape as the defect the entry above describes.
+
+**And this pull request failed CI on exactly that point**, which is the good news. I had run the
+entry check locally and read it as green — but I ran it before committing, when the branch had no
+commits and the check was comparing nothing to nothing. It passed over an empty diff. CI ran it
+against the real change and refused. The gate did its job; my local reading of it was the part that
+was broken.
+
+Nothing is waiting on you.
+<!--tech-->
+Follow-up to PR #225 (`956a4de6`). `docs/dashboard-entries.md`: the 2026-09-05 entry rewritten to
+cover code review r1+r2, backlog #96 and the merge — it had drifted to `55 self-tests` (78),
+`11/11 mutations` (the final sweep breaks five fixes, each killed via the case it names),
+`four review rounds` (six), and a live `**Waiting on you:** merging` after the merge.
+`docs/backlog.md` row 96 status now states the split: (a) DOCUMENTED — docstring retraction, the
+WARN message no longer asserting `total - step` unannounced steps, log re-baselined; (b) NOT DONE —
+the `SHAPE:`, judging the PREVIOUS completed turn, which needs per-turn sentinel state and is a spec
+rather than a patch. ⚠ `check-dashboard-entry.py` counts entry blocks ADDED, so editing an existing
+block registers as zero; and run WITHOUT `--base`, against an uncommitted tree, it passes
+vacuously — CI runs it as `--base origin/$GITHUB_BASE_REF --pr-body-file`, which is the invocation
+to reproduce locally before believing a green. Dashboard page regenerated (derived, ADR-0010; writes
+to `~/explainers/`), not committed.
