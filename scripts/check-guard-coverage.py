@@ -32,6 +32,7 @@ guards that are plainly correct) but "what does it do when the caller is merely
 SECOND?"
 
 Usage:  ./scripts/check-guard-coverage.py     (exit 0 = every guard classified)
+    --self-test  # 16 cases
 """
 import ast
 import subprocess

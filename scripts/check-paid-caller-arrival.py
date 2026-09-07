@@ -2,7 +2,7 @@
 """Backlog 26's trigger, made observable: has a NON-TEST caller reached `record_artifact` yet?
 
     python3 scripts/check-paid-caller-arrival.py
-    python3 scripts/check-paid-caller-arrival.py --self-test
+    --self-test  # 32 cases
 
     exit 0 = DORMANT — no production caller. Backlog 26 may remain open.
     exit 1 = FIRED   — a production caller exists. Backlog 26 must be closed FIRST.

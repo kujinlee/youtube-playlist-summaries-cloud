@@ -27,6 +27,7 @@ Usage:
 
 Full criteria, including the ones no script can judge:
     docs/reviews/architecture-findings-acceptance.md
+    --self-test  # 16 cases
 """
 from __future__ import annotations
 

@@ -45,7 +45,7 @@ WHAT IT CANNOT CHECK, stated loudly rather than passed over:
 
 Usage:
     python3 scripts/check-producer-enumeration.py
-    python3 scripts/check-producer-enumeration.py --self-test
+    --self-test  # 11 cases
 """
 from __future__ import annotations
 
@@ -255,7 +255,7 @@ def self_test() -> int:
         ("NOT an alias — a call", "const k = baseOf(v.summaryMd);", None),
         ("NOT an alias — a branch", "const k = a ?? b;", None),
     ]
-    failures = 0
+    failures = ran = 0
     for name, src, should_flag in cases:
         with tempfile.NamedTemporaryFile("w", suffix=".ts", dir=ROOT, delete=False) as fh:
             fh.write(src + "\n")
@@ -268,6 +268,7 @@ def self_test() -> int:
             flagged = bool(branches_in(expr)) and not err
             ok = flagged == should_flag
             print(f"  {'ok  ' if ok else 'FAIL'} {name:<38} flagged={flagged} expected={should_flag}")
+            ran += 1
             failures += 0 if ok else 1
         finally:
             os.unlink(tmp)
@@ -276,6 +277,7 @@ def self_test() -> int:
         got = bare_alias(src)
         ok = got == expect
         print(f"  {'ok  ' if ok else 'FAIL'} {name:<38} alias={got!r} expected={expect!r}")
+        ran += 1
         failures += 0 if ok else 1
 
     # A citation pointing at the wrong line must FAIL, not pass quietly.
@@ -286,6 +288,7 @@ def self_test() -> int:
         _, err = defining_expression(os.path.relpath(tmp, ROOT), 1, "k")
         ok = err is not None
         print(f"  {'ok  ' if ok else 'FAIL'} {'citation on the wrong line is an ERROR':<38} err={bool(err)}")
+        ran += 1
         failures += 0 if ok else 1
     finally:
         os.unlink(tmp)
@@ -293,9 +296,18 @@ def self_test() -> int:
     # An unparseable table must exit 2, never 0.
     ok = find_table(["# nothing here", "some prose"]) == []
     print(f"  {'ok  ' if ok else 'FAIL'} {'no table parsed -> empty (caller exits 2)':<38}")
+    ran += 1
     failures += 0 if ok else 1
 
-    print(f"\n  {'PASS' if failures == 0 else f'{failures} FAILURE(S)'}")
+    # ⛔ THE RATIO AND THE WORD "passed" ARE A CONTRACT, not a style choice.
+    # check-plan-code.control_is_green is `rc == 0 and "passed" in out`, because an exit code
+    # alone cannot separate "green" from "never ran" — a script with no __main__ exits 0 in
+    # silence. This printed `PASS`, so a manifest pointing here would have had every verdict
+    # withheld as NOT CHECKED (measured on check-handoff-path, CI 2026-09-07).
+    # ⚠ `ran` is COUNTED, never a literal: check-selftest-counts compares the DECLARED count
+    # against this printed one, and two literals would drift together and agree.
+    # ⚠ NOT named `cases` — that is already the fixture list at :244.
+    print(f"\n  {ran - failures}/{ran} self-test cases passed")
     return 1 if failures else 0
 
 

@@ -32,7 +32,7 @@ what is actually live in production — it is a repo-text check, not an infrastr
 
 Usage:
     python3 scripts/check-storage-grant-pin.py             # 0 = unchanged, 1 = changed or cannot run
-    python3 scripts/check-storage-grant-pin.py --self-test
+    --self-test  # 6 cases
 """
 from __future__ import annotations
 

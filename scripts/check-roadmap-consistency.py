@@ -54,7 +54,7 @@ pinned as such in the self-test. It shrinks the class; it does not close it.
 Usage:
     python3 scripts/check-roadmap-consistency.py
     python3 scripts/check-roadmap-consistency.py --report     # list findings, always exit 0
-    python3 scripts/check-roadmap-consistency.py --self-test
+    --self-test  # 26 cases
 """
 from __future__ import annotations
 

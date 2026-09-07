@@ -30,7 +30,7 @@ So this catches SHAPE, not TRUTH. A wrong `FAILS IF:` still passes. It shrinks t
 Usage:
     python3 scripts/check-gate-falsifiability.py            # check the gate docs
     python3 scripts/check-gate-falsifiability.py --report    # list findings, always exit 0
-    python3 scripts/check-gate-falsifiability.py --self-test
+    --self-test  # 19 cases
 """
 from __future__ import annotations
 

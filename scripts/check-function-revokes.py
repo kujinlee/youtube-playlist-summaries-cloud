@@ -38,6 +38,7 @@ revoke, and requiring one would be a false positive. `DROP FUNCTION` puts the na
 "next create is a creation" state.
 
 Exit 0 = every creation is covered.  1 = at least one is not.  2 = CANNOT RUN (treat as NOT RUN).
+    --self-test  # 16 cases
 """
 from __future__ import annotations
 

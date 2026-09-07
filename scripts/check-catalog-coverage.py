@@ -2,7 +2,7 @@
 """Every catalog column M4's digest could read is either DIGESTED or EXCLUDED WITH A REASON.
 
     python3 scripts/check-catalog-coverage.py              # against the live container
-    python3 scripts/check-catalog-coverage.py --self-test  # the pure classifier's cases
+    --self-test  # 15 cases
 
     exit 0 = every column of every catalog we read is classified
     exit 1 = a column is neither digested nor excused — the digest may be silently narrower

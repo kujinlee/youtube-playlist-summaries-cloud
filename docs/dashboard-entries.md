@@ -4334,3 +4334,49 @@ file. **Check all three before writing mutations for any of the remaining 19.**
 that mirrored the parse rule but *not* the control predicate — so it could not see this. Per the
 lighter-verification default I skipped the local `--mutate .` and let CI own it; CI earned its keep.
 Now run and green here too: **12 files, 217 mutations, 0 survivors.**
+
+## 2026-09-07 [resolved: 2026-09-06/7]
+Fourteen more safety nets are now watched by a check that already existed.
+
+Two days of paying down testing debt kept running into the same thing: the tool that verifies these
+guards expects them to report results in a particular way, and almost none of them did. The obvious
+response was to build something new to enforce it. **That would have been a mistake** — a check
+already in the project does exactly this, as a by-product of its real job, and it was simply pointed
+at fourteen too few files. Widening it was cheaper, safer, and added nothing new to maintain.
+
+Measured before deciding: of the guards already covered, every single one already met the
+requirement. Of the fourteen outside, one did not. That ratio is what settled it.
+
+Separately, the question about whether a status check runs early enough is **closed** — but not for
+the reason previously written down. And a genuinely different gap found while merging yesterday is
+filed on its own rather than folded in, because merging two questions into one is the exact mistake
+the closed item documents.
+<!--tech-->
+**`check-selftest-counts.POPULATION` 14 → 28.** All 14 additions declare `--self-test  # N cases` and
+the guard verifies each **by running it**: *"28 script(s) declare a count, every one verified by
+running it"*. Counts came from live runs, never literals: 74, 16, 15, 13, 16, 19, 16, 117, 32, 11,
+26, 14, 6, 10.
+
+**Why widen rather than build.** `control_is_green(rc, out)` is `rc == 0 and "passed" in out`;
+POPULATION membership enforces that as a side effect of parsing `N/M … passed`. MEASURED: of the
+unpaid guards, **5 were already members and 5 of 5 satisfied it**; of the 14 outside, **1 did not**.
+A new guard would have needed its own `--self-test`, non-fail-open, a caller and a manifest — adding
+to the very R4 debt it existed to pay down — and would have been a second mechanism for one concern,
+the shape `check-vocabulary-collisions.py` exists to catch. **Result: all 19 remaining unpaid guards
+now satisfy contract (3); measured 0 failures.**
+
+⚠ **MY OWN CAVEAT WAS WRONG, in the useful direction.** I flagged that `check-live-schema`,
+`check-catalog-coverage` and `check-anon-exposure` might be ineligible because they need a live
+catalog. Their **entry points** do; their `--self-test` rules are pure and run in ~0.1s. Conflating
+those two is what left three ratchets untestable for eight days once already. All 14 were eligible.
+
+Two output defects fixed: `check-producer-enumeration` printed `PASS` (now `11/11 self-test cases
+passed`, with the total **counted**, not a literal — two literals drift together and agree); and
+`check-live-schema`'s summary sat **before** a multi-line epilogue while `printed_total` reads the
+**last** ratio line — correct only because that prose happened to contain no ratio. Moved to last.
+
+**Backlog #78 half (2) CLOSED** on a measured inclusion: `header_error` is shared, #82 (`3ec912f6`)
+added the referential half wired through `collect():1271` and `main():1426,1435`, and
+`decision_errors` is renderer-only — so page ⊇ gate on content, and the page renders first.
+**Backlog #101 FILED**: a PR based on another branch gets no CI at all, and *"no checks reported"*
+sits where a green tick would, with `mergeStateStatus` still `CLEAN`.

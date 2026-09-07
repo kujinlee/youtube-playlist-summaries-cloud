@@ -102,6 +102,38 @@ POPULATION: frozenset[str] = frozenset({
     "explainer-serve.py",
     "gen-goals-page.py",
     "page_chrome.py",
+    # ⟳ 2026-09-07 — THE FOURTEEN, added together, and the reason is worth more than the names.
+    # Paying down the R4 mutation-manifest debt kept hitting output contracts with
+    # check-plan-code that bind only when a manifest first points at a file. One of them is
+    # `control_is_green(rc, out)` == `rc == 0 and "passed" in out` — an exit code alone cannot
+    # tell "green" from "never ran", since a script with no __main__ exits 0 in silence.
+    #
+    # ⛔ MEMBERSHIP HERE ALREADY ENFORCES THAT, as a side effect of running each suite and
+    # parsing `N/M … passed`. MEASURED 2026-09-07: of the unpaid guards, 5 were already in this
+    # set and 5 of 5 satisfied the contract; of the 14 outside it, ONE (check-producer-enumeration,
+    # printing `PASS`) did not. So the enforcement was never missing — it was pointed at 14 too
+    # few files. Widening an existing, mutation-tested guard beat writing a new one, which would
+    # have added to the very manifest debt it existed to pay down.
+    #
+    # ⚠ The three catalog-reading guards are in DELIBERATELY. Their ENTRY POINT needs a live
+    # Postgres; their `--self-test` rules are pure and run here in ~0.1s. Conflating those two is
+    # what left three ratchets untestable for eight days once already.
+    "check-anon-exposure.py",
+    "check-arch-findings.py",
+    "check-catalog-coverage.py",     # entry point needs the catalog; its self-test does not
+    "check-docs.py",
+    "check-function-revokes.py",
+    "check-gate-falsifiability.py",
+    "check-guard-coverage.py",
+    "check-live-schema.py",          # ⟳ its summary moved to LAST in the same commit: it sat
+                                     # before a multi-line epilogue, and `printed_total` reads the
+                                     # LAST ratio line
+    "check-paid-caller-arrival.py",  # ~12s, the slowest member; still well inside the timeout
+    "check-producer-enumeration.py",  # ⟳ printed `PASS`, so it failed control_is_green outright
+    "check-roadmap-consistency.py",
+    "check-sentinel-meanings.py",
+    "check-storage-grant-pin.py",
+    "check-vocabulary-collisions.py",
 })
 
 # The denominator is the total. Scripts differ on the words around it, so the line is matched on
