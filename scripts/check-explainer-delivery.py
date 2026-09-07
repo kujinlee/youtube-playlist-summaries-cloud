@@ -122,7 +122,19 @@ def self_test() -> int:
         ok = (len(got) > 0) == want_problem and (not needle or any(needle in g for g in got))
         if not ok:
             failures += 1
-            print(f"  ✗ {label}: got {got!r}")
+            # ⛔ `[FAIL] {label}: got {got!r} want {want!r}` IS A CONTRACT, not a style.
+            # scripts/check-plan-code.py attributes a killed mutation by taking lines that
+            # START WITH "[FAIL] " and doing `.strip()[7:].rsplit(": got ", 1)[0]`. This
+            # printed `  ✗ {label}: got …`, which that parser cannot see at all — so every
+            # mutation aimed at this guard would kill the suite UNATTRIBUTABLY and report
+            # `matched 0 red case(s) … caught by something else: []`. The mutation would
+            # look uncovered while in fact being caught, which is the worst of both readings.
+            # Same defect, same day, as the one fixed in begin-plan.py and
+            # check-plan-progress.py — it stays latent until a manifest first points here.
+            want = "a problem" if want_problem else "no problems"
+            if needle:
+                want += f" containing {needle!r}"
+            print(f"  [FAIL] {label}: got {got!r} want {want!r}")
         else:
             print(f"  ✓ {label}")
 

@@ -625,6 +625,11 @@ EXPECTED_MUTATIONS = {
     # the `plan:` pointer with it.
     "scripts/check-plan-progress.py": 12,
     "scripts/begin-plan.py": 9,
+    # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
+    # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
+    # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
+    # so every mutation here would have killed the suite UNATTRIBUTABLY.
+    "scripts/check-explainer-delivery.py": 5,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree
@@ -2454,6 +2459,12 @@ def _self_test() -> int:
          sorted(EXPECTED_MUTATIONS), ["scripts/begin-plan.py",
                                       "scripts/check-banner-armed.py",
                                       "scripts/check-dashboard-entry.py",
+                                      # ⟳ 2026-09-06: the FIRST payment against the R4 manifest
+                                      # debt (MANIFEST_BASELINE 21 -> 20). This list is a LIVE
+                                      # inventory, so it grows with each guard paid off — unlike
+                                      # the pinned-to-a-past-event counts elsewhere in this file,
+                                      # which must NOT be "corrected" to today's number.
+                                      "scripts/check-explainer-delivery.py",
                                       "scripts/check-plan-code.py",
                                       "scripts/check-plan-progress.py",
                                       "scripts/check-selftest-counts.py",
@@ -2552,7 +2563,11 @@ def _self_test() -> int:
     # the fold's OWN r1 L1 finding recurring inside the fix for it — the class was "a
     # guard's message naming the only escape is unguarded", and r1 closed the instance.
     # `--finish` is named in exactly one place in the tree; `--resume` in five.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 207)
+    # ⟳ 207 -> 212, 2026-09-06: +5 for scripts/check-explainer-delivery.py, the first guard paid
+    # off against the R4 manifest debt (MANIFEST_BASELINE 21 -> 20 in the same commit, because
+    # that ratchet is an exact match and not a ceiling). This total is a LIVE sum, so it moves
+    # whenever coverage does; it is not one of the counts pinned to a past measurement.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 212)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so
