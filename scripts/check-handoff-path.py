@@ -131,7 +131,21 @@ def self_test() -> int:
         failures += not ok
         print(f"  [{'ok' if ok else 'FAIL'}] compliant file exits 0: got {code} want 0")
 
-    print("PASS" if not failures else f"FAIL — {failures} case(s)")
+    # ⛔ THE WORD "passed" IS LOAD-BEARING — a SECOND contract with check-plan-code.py, on the
+    # SUCCESS side, and it is not the FAIL-line one above. `control_is_green(rc, out)` is
+    # literally `rc == 0 and "passed" in out`: the exit code alone cannot distinguish "green"
+    # from "never ran", because a script with no `__main__` exits 0 in silence.
+    #
+    # This printed `PASS` — rc 0, no "passed". MEASURED in CI 2026-09-07, the first run where a
+    # manifest pointed here: every case reported `[ok]`, the suite printed PASS, and the harness
+    # still refused with *"control run … did not prove the suite works (exit 0)"* and withheld
+    # all five verdicts as NOT CHECKED. That refusal is CORRECT — the harness cannot read PASS —
+    # and it is the reason this line now carries a ratio and the word, matching every sibling.
+    #
+    # ⚠ A failing run still contains "passed" (`8/10 … passed`), which is fine: `control_is_green`
+    # also requires rc == 0, and a failing suite returns 1 below.
+    total = len(CASES) + 3          # 3 file cases follow the text cases
+    print(f"\n{total - failures}/{total} self-test cases passed")
     return 1 if failures else 0
 
 

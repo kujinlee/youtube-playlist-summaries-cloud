@@ -4304,3 +4304,33 @@ short-circuits the check → *pristine upstream — the reversion this exists to
 That last one matters beyond coverage: `check-handoff-path` is layer 2 of the three-layer defence in
 `docs/plugins.md`, and *pristine upstream* is the exact reversion it exists to catch. Gates: 189/189,
 ratchet 19/baseline 19 at baseline, all rc=0.
+
+## 2026-09-07
+The automated check caught something my own testing could not, which is the point of having it.
+
+Yesterday's second safety-net fix looked complete: every local check passed. The shared automated
+check then refused it — correctly. The tool that verifies these nets needs the word "passed" in a
+suite's summary line to tell "everything worked" apart from "nothing ran at all", because a program
+that does nothing also finishes without complaint. The guard in question said "PASS" instead, so the
+tool declined to report anything and said so, rather than guessing.
+
+Nothing was broken by this and nothing shipped wrong — the refusal happened before the merge. It is
+the third undocumented expectation this exercise has turned up about how these guards must speak,
+and finding it early is worth more than the fix.
+<!--tech-->
+**CI red on #238, diagnosed and fixed.** `check-plan-code.control_is_green(rc, out)` is literally
+`rc == 0 and "passed" in out`. `check-handoff-path.py` printed `PASS`, so the control was rejected —
+*"did not prove the suite works (exit 0) … Every verdict below would be an artefact"* — and all five
+verdicts were correctly withheld as NOT CHECKED. Its summary now reads `10/10 self-test cases passed`,
+matching every sibling. It is not in `check-selftest-counts.POPULATION`, so no declared count moves;
+10 = 7 text + 3 file cases, which is what `docs/plugins.md` already claims.
+
+⚠ **THIS IS A THIRD CONTRACT, on the SUCCESS side**, distinct from the two FAIL-line ones: (1) the
+line must start `[FAIL] `, (2) it must contain `: got ` for `rsplit` to name the case, and now
+(3) a green suite must print `passed`. All three are enforced only when a manifest first points at a
+file. **Check all three before writing mutations for any of the remaining 19.**
+
+⚠ **AND THE LESSON ABOUT MY OWN VERIFICATION.** I verified attribution with a purpose-built harness
+that mirrored the parse rule but *not* the control predicate — so it could not see this. Per the
+lighter-verification default I skipped the local `--mutate .` and let CI own it; CI earned its keep.
+Now run and green here too: **12 files, 217 mutations, 0 survivors.**
