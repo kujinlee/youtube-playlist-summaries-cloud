@@ -42,6 +42,7 @@ CONJUNCTION_OK and move on. False NEGATIVES are the expensive direction, which i
 why the test is deliberately blunt.
 
 Usage:  ./scripts/check-sentinel-meanings.py     (exit 0 = every nullable classified)
+    --self-test  # 14 cases
 """
 import re
 import subprocess

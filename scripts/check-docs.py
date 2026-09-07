@@ -29,6 +29,7 @@ WHAT IS ONLY REPORTED (never fails the build)
 SCOPE NOTE: `docs/reviews/` and `docs/superpowers/` are point-in-time artifacts —
 a review records what was true on its date, and rewriting it later would be
 falsifying the record. They are excluded from link checking on purpose.
+    --self-test  # 13 cases
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 
     python3 scripts/check-live-schema.py --expect-absent    # before 0027, or after the rollback
     python3 scripts/check-live-schema.py --expect-present   # after 0027
-    python3 scripts/check-live-schema.py --self-test        # prints its own case count
+    --self-test  # 117 cases
 
 WHY THIS EXISTS
 ---------------
@@ -802,7 +802,15 @@ def self_test() -> int:
         check(f"CATALOG_SQL still reads {col} — the flag that decides whether a rule EXECUTES",
               col in CATALOG_SQL, True)
 
-    print(f"\n{cases - failures}/{cases} self-test cases passed")
+    # ⛔ THE SUMMARY IS PRINTED LAST, AFTER the epilogue — moved 2026-09-07, and the reason is
+    # mechanical rather than cosmetic. check-selftest-counts.printed_total reads the LAST
+    # `N/M … passed` line, deliberately: an earlier version took the FIRST and misread its own
+    # suite, because case labels there quote example summaries. The convention that keeps LAST
+    # correct is "the summary is the final line in every member". This suite printed it BEFORE a
+    # multi-line epilogue — correct today only because that prose happens to contain no ratio,
+    # which is a property of the wording, not of the code. Anyone adding "12/12" to the text
+    # below would silently redefine this suite's total. Printing last makes that impossible
+    # instead of documenting it.
     if failures == 0:
         print("⚠ THREE THINGS THESE CASES DO NOT PROVE:\n"
               "  * that ENFORCEMENT_COLUMNS is COMPLETE — only that it is not shrinking. The\n"
@@ -816,6 +824,7 @@ def self_test() -> int:
               "    to the 4 FOREIGN relations M4 only extends, or a new fn:/type:.\n"
               "    Those bounds are asserted as PASSING cases above, so widening them is a decision\n"
               "    that turns a test red — never a silent accident.")
+    print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
 
 

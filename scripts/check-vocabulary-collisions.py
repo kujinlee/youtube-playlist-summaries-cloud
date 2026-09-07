@@ -35,6 +35,7 @@ False positives cost one line in ALLOWED with a reason. False negatives cost six
 review rounds. The trade is deliberate.
 
 Usage:  ./scripts/check-vocabulary-collisions.py    (exit 0 = no unjustified duplicate mechanism)
+    --self-test  # 10 cases
 """
 import subprocess
 import sys

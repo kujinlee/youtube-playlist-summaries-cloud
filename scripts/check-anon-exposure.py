@@ -72,7 +72,7 @@ Usage:
     ./scripts/check-anon-exposure.py            # prod (read-only) — the subject that matters
     ./scripts/check-anon-exposure.py --local    # the docker stack
     ./scripts/check-anon-exposure.py --local --database <db>   # a named db in the container
-    ./scripts/check-anon-exposure.py --self-test
+    --self-test  # 74 cases
 """
 from __future__ import annotations
 
