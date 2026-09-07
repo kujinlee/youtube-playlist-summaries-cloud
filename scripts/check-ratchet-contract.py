@@ -233,7 +233,7 @@ NO_MUTATIONS_RE = re.compile(r"NO-MUTATIONS:[ \t]*(\S[^\n]*)")
 # idea of the population, and it disagreed with `discover_guards` + `check_manifest` by one. The
 # recorded shape is *a second implementation of one rule DRIFTS* — so the baseline is whatever
 # `python3 scripts/check-ratchet-contract.py` prints, and nothing else.
-MANIFEST_BASELINE = 14
+MANIFEST_BASELINE = 13
 
 
 def check_manifest(path: str, text: str, manifest_stems: set[str]) -> list[Violation]:

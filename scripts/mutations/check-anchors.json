@@ -1,0 +1,32 @@
+[
+  {
+    "name": "R2 stops checking the registry, so a document may claim an anchor that does not exist",
+    "file": "scripts/check-anchors.py",
+    "edits": [["            if anchor not in registry:  # R2", "            if False:  # R2"]],
+    "expect": ["R2 unregistered anchor caught"]
+  },
+  {
+    "name": "R3 accepts any ADR number, so a citation with no file survives",
+    "file": "scripts/check-anchors.py",
+    "edits": [["                if n not in known_adrs:", "                if False:"]],
+    "expect": ["R3 dangling ADR caught"]
+  },
+  {
+    "name": "R4 stops sweeping, so a registry anchor no document claims is never reported",
+    "file": "scripts/check-anchors.py",
+    "edits": [["    for slug in registry:  # R4", "    for slug in []:  # R4"]],
+    "expect": ["R4 unclaimed registry anchor caught"]
+  },
+  {
+    "name": "R5 lets a ROOTS key sit outside the registry — two vocabularies, not one",
+    "file": "scripts/check-anchors.py",
+    "edits": [["        if key not in registry:", "        if False:"]],
+    "expect": ["R5 ROOTS key outside the registry caught"]
+  },
+  {
+    "name": "R6's floor becomes a ceiling test, so deleting headers never breaches it",
+    "file": "scripts/check-anchors.py",
+    "edits": [["    if with_header < floor:  # R6", "    if False:  # R6"]],
+    "expect": ["R6 floor breach caught"]
+  }
+]
