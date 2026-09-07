@@ -1,0 +1,67 @@
+[
+  {
+    "name": "the UNDOCUMENTED sweep is dropped, so a nullable column needs no recorded meaning",
+    "file": "scripts/check-sentinel-meanings.py",
+    "edits": [
+      [
+        "    for t, c in sorted(live - set(meanings)):",
+        "    for t, c in sorted(set()):"
+      ]
+    ],
+    "expect": [
+      "a nullable column with NO recorded meaning is caught"
+    ]
+  },
+  {
+    "name": "the STALE sweep is dropped, so a meaning outlives the column it described",
+    "file": "scripts/check-sentinel-meanings.py",
+    "edits": [
+      [
+        "    for t, c in sorted(set(meanings) - live):",
+        "    for t, c in sorted(set() - live):"
+      ]
+    ],
+    "expect": [
+      "a documented column that is no longer nullable is STALE"
+    ]
+  },
+  {
+    "name": "the ORPHAN label is renamed, so a justification for a deleted meaning is no longer reported as one",
+    "file": "scripts/check-sentinel-meanings.py",
+    "edits": [
+      [
+        "                f\"ORPHAN JUST.  {key[0]}.{key[1]}\\n\"",
+        "                f\"orphan note  {key[0]}.{key[1]}\\n\""
+      ]
+    ],
+    "expect": [
+      "a justification for a meaning that does not exist is an ORPHAN"
+    ]
+  },
+  {
+    "name": "the STALE-JUSTIFICATION branch is dropped \u2014 the exact disarm this guard was built after",
+    "file": "scripts/check-sentinel-meanings.py",
+    "edits": [
+      [
+        "        elif not CONJUNCTION.search(meanings[key]):",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "a justification whose meaning has NO conjunction is caught as STALE"
+    ]
+  },
+  {
+    "name": "CONJUNCTION loses its word boundaries, so 'brand' and 'record' trip the rule",
+    "file": "scripts/check-sentinel-meanings.py",
+    "edits": [
+      [
+        "CONJUNCTION = re.compile(r\"\\b(and|or)\\b\", re.IGNORECASE)",
+        "CONJUNCTION = re.compile(r\"(and|or)\", re.IGNORECASE)"
+      ]
+    ],
+    "expect": [
+      "a word containing a conjunction does not trip it: 'brand'"
+    ]
+  }
+]

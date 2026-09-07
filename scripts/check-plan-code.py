@@ -605,6 +605,7 @@ EXPECTED_MUTATIONS = {
     # comprehension instead of calling it, so deleting the real rule left the case green. A
     # second implementation of one rule, tested against itself.
     "scripts/check-selftest-counts.py": 8,
+    "scripts/check-sentinel-meanings.py": 5,
     # ⟳ 2026-09-06, backlog #99: the Stop guard and its driver BOTH join the manifest, in the
     # commit that changes their decision paths. Only ONE of them is R4 debt — begin-plan.py is
     # not a `check-*` guard, so `discover_guards` never saw it and it was never counted as owed.
@@ -2473,6 +2474,7 @@ def _self_test() -> int:
                                       "scripts/check-plan-code.py",
                                       "scripts/check-plan-progress.py",
                                       "scripts/check-selftest-counts.py",
+                                      "scripts/check-sentinel-meanings.py",
                                       "scripts/check-theme-token-coverage.py",
                                       "scripts/check-vocabulary-collisions.py",
                                       "scripts/gen-dashboard.py",
@@ -2573,7 +2575,7 @@ def _self_test() -> int:
     # off against the R4 manifest debt (MANIFEST_BASELINE 21 -> 20 in the same commit, because
     # that ratchet is an exact match and not a ceiling). This total is a LIVE sum, so it moves
     # whenever coverage does; it is not one of the counts pinned to a past measurement.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 227)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 232)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so

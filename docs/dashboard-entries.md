@@ -4496,3 +4496,47 @@ a mutation proving the case which asserts it is load-bearing.
 
 Verified: control green on the full tree, 5/5 red via the case each names. Real harness:
 **14 files, 227 mutations, 0 survivors.** 189/189; `check-selftest-counts` 28 verified by running.
+
+## 2026-09-07
+The "one column, one meaning" guard is covered — including the branch that exists because this guard once disarmed itself.
+
+Fifth of these. The interesting one is a check that catches an *excuse outliving the thing it
+excused* — a note saying "this exception is fine" that stays behind after the exception is gone.
+This guard had already suffered exactly that, silently, and the branch that now prevents it had no
+coverage of its own until today.
+
+One attempt had to be softened: removing a guard clause outright made the program crash rather than
+report a failure, and a crash proves nothing about which check was watching.
+
+Debt drops from 17 to 16.
+<!--tech-->
+`scripts/mutations/check-sentinel-meanings.json` — 5 mutations against `evaluate()`, the pure rule
+split out of `main()` so it runs without Postgres. `EXPECTED_MUTATIONS` 227 → 232;
+`MANIFEST_BASELINE` 17 → 16, same commit. Contract (1) fixed first (`✓`/`✗`).
+
+| # | Mutation | Red via |
+|---|---|---|
+| 1 | UNDOCUMENTED sweep dropped | `a nullable column with NO recorded meaning is caught` |
+| 2 | STALE sweep dropped | `a documented column that is no longer nullable is STALE` |
+| 3 | the `ORPHAN JUST.` label renamed | `a justification … does not exist is an ORPHAN` |
+| 4 | `STALE JUST.` branch dropped | `a justification whose meaning has NO conjunction …` |
+| 5 | `CONJUNCTION` loses `\b` | `a word containing a conjunction does not trip it: 'brand'` |
+
+⭐ **Mutation 4 guards the disarm this script actually suffered.** Its one `CONJUNCTION_OK` entry had
+gone unreachable: the meaning for `video_artifacts.generation_id` was reworded to
+`"CONFLATED — see CONJUNCTION_OK"`, which contains no conjunction, so the search `continue`d before
+consulting the allowlist. The conflation was still live. **The guard had been disarmed by an edit to
+the text it inspects** — this project's most-repeated defect shape — and it was found by this
+script's own new self-test, not by reading it. That branch now has a mutation.
+
+⚠ **Mutation 3 had to be WEAKENED.** Removing `if key not in meanings:` let the `elif` reach
+`meanings[key]` and raise `KeyError`: the suite went red with **zero** `[FAIL]` lines, so nothing
+could say which case was watching. **A crash is not a kill.** Renaming the label instead reddens the
+one case that reads it.
+
+⭐ **Mutation 5's case is protective in the other direction**: `CONJUNCTION` uses `\b` so ordinary
+English — "brand", "record" — does not trip the rule. A guard that fires on prose gets muted rather
+than obeyed.
+
+Verified: control green on the full tree, 5/5 red via the case each names. Real harness:
+**15 files, 232 mutations, 0 survivors.** 189/189; `check-selftest-counts` 28 verified by running.
