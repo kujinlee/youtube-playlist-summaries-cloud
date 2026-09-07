@@ -4620,3 +4620,34 @@ nothing able to say which case was watching. Renaming the finding kind reddens e
 
 Verified: control green on the full tree, 5/5 red via the case each names. Real harness:
 **17 files, 242 mutations, 0 survivors.** 189/189; `check-selftest-counts` 28 verified by running.
+
+## 2026-09-07
+The guard that keeps every document pointing at a named goal is covered — one check per rule it enforces.
+
+Eighth of these, and the tidiest: this guard has five numbered rules and now has exactly five
+deliberate-breakage checks, one per rule. Nothing needed weakening or retrying.
+
+Debt drops from 14 to 13. Eight of the original twenty-one done, and the pace is now limited by
+reading each guard carefully rather than by anything going wrong.
+<!--tech-->
+`scripts/mutations/check-anchors.json` — 5 mutations against `audit()`, one per numbered rule.
+`EXPECTED_MUTATIONS` 242 → 247; `MANIFEST_BASELINE` 14 → 13, same commit. Contract (1) fixed first
+(`✓`/`✗`).
+
+| Rule | Mutation | Red via |
+|---|---|---|
+| R2 | registry membership unchecked | `R2 unregistered anchor caught` |
+| R3 | any ADR number accepted | `R3 dangling ADR caught` |
+| R4 | unclaimed-anchor sweep dropped | `R4 unclaimed registry anchor caught` |
+| R5 | ROOTS key may sit outside the registry | `R5 ROOTS key outside the registry caught` |
+| R6 | the header floor never breaches | `R6 floor breach caught` |
+
+⭐ **R5 and R6 are the two worth naming.** R5 enforces *one vocabulary, not two* — a `ROOTS` key in
+`gen-backlog-page.py` that is not a registry anchor means the project has grown a second naming
+scheme for the same concept. R6 is a **floor**: it fires when the number of documents carrying a
+valid anchor header drops, so silently deleting headers is caught rather than read as "nothing to
+check". A floor with no test is a number nobody has watched move.
+
+Verified: control green on the full tree, 5/5 red via the case each names, no extras. Real harness:
+**18 files, 247 mutations, 0 survivors.** 189/189; `check-anchors` itself `rc=0` against the live
+registry (10 anchors, all claimed).

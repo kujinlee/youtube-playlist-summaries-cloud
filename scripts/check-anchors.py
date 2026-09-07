@@ -205,7 +205,11 @@ def self_test() -> int:
         nonlocal cases, failures
         cases += 1
         ok = (len(got) > 0) == want and (not needle or any(needle in g for g in got))
-        print(("  ✓ " if ok else "  ✗ ") + label + ("" if ok else f"  got {got!r}"))
+        # ⛔ `[FAIL] {label}: got … want …` IS A CONTRACT with check-plan-code.py, which
+        # attributes a killed mutation from lines STARTING WITH "[FAIL] " via
+        # `.strip()[7:].rsplit(": got ", 1)[0]`. A `✗` is invisible to it, so every
+        # mutation aimed here would redden the suite UNATTRIBUTABLY.
+        print(f"  ✓ {label}" if ok else f"  [FAIL] {label}: got {got!r} want {want!r}")
         failures += 0 if ok else 1
 
     with tempfile.TemporaryDirectory() as td:
