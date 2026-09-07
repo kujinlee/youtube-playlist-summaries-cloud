@@ -8,8 +8,11 @@
 # ⟳ CORRECTED 2026-09-05 (code review r2, Low). This header used to say the wrapper "only
 # translates Claude Code's stdin JSON into that script's flags", and that all of the reasoning
 # lived in the blocking script. Both were false, and had been since the observers were added:
-#   * it invokes THREE scripts — check-banner-armed.py (:48), check-plan-progress.py (:56),
-#     check-ci-watched.py (:67) — not one;
+#   * it invokes THREE scripts — check-banner-armed.py, check-plan-progress.py and
+#     check-ci-watched.py — not one. (⟳ r2 M1: this line used to give their invocation LINE
+#     NUMBERS. They were already wrong on `origin/master`, and backlog #99 moved them a further
+#     three lines, leaving three counter-examples 74 lines above the paragraph that declares line
+#     numbers expire. The r1 cleanup was instance-not-class; this finishes the sweep.);
 #   * the exit-code collapsing rule at the bottom of this file lives ONLY here and has no other
 #     home. That is reasoning, not translation.
 # Same shape as the r1 finding "Existing callers unchanged" describing an empty set: the sweep
@@ -121,8 +124,9 @@ CI_RC=$?
 # Any non-zero from EITHER observer surfaces as exit 1 — Claude Code's non-blocking error, which
 # shows stderr to the human and lets the stop proceed.
 #
-# ⚠ BOTH observers CAN return 2 — it is their CANNOT-RUN code (check-banner-armed.py:70,
-# check-ci-watched.py:43), and they return it by design when they cannot reach what they measure.
+# ⚠ BOTH observers CAN return 2 — it is their CANNOT-RUN code (their CANNOT-RUN codes; r2 M1
+# measured the check-banner-armed line reference as already pointing at unrelated prose, so it is
+# named rather than numbered), and they return it by design when they cannot reach what they measure.
 # What this arithmetic guarantees is that the HOOK never surfaces a 2 on their behalf: a detector
 # that only observes must not be able to wedge a turn it has no stake in. An earlier version of
 # this comment said "neither may return 2", which was false about both scripts (code review r2).

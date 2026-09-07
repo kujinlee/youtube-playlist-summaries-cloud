@@ -91,16 +91,16 @@
     ]
   },
   {
-    "name": "--pause accepts a multi-line reason again, re-opening sentinel field injection",
+    "name": "--pause goes back to a HAND-LISTED separator set, letting 8 of 10 through",
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "    if \"\\n\" in why or \"\\r\" in why:",
-        "    if False:"
+        "    if len(cleaned.splitlines()) > 1:",
+        "    if \"\\n\" in cleaned or \"\\r\" in cleaned:"
       ]
     ],
     "expect": [
-      "--pause REFUSES a multi-line reason"
+      "EVERY separator splitlines() honours is refused (10 of them)"
     ]
   },
   {

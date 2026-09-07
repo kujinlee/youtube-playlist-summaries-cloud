@@ -141,5 +141,18 @@
     "expect": [
       "the warning names the command that re-arms the guard"
     ]
+  },
+  {
+    "name": "the preserve WARN stops naming --finish, the only exit it alone documents",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "            \"   Work resumed and genuinely finished? → `scripts/begin-plan.py --finish`.\\n\"",
+        "            \"   Work resumed and genuinely finished? → clear the plan when you are done.\\n\""
+      ]
+    ],
+    "expect": [
+      "...and it names --finish, the explicit way to clear a parked plan"
+    ]
   }
 ]

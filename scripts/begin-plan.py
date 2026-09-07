@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause; re-arm the Stop guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 47 cases
+    scripts/begin-plan.py --self-test  # 50 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -104,7 +104,12 @@ def _load_plan_progress():
         raise ImportError("cannot load scripts/check-plan-progress.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    missing = [n for n in ("count_steps", "next_pending_task", "parse_sentinel", "strip_field")
+    # ⟳ r2 L2: `decide` and `WARN` joined this list. The self-test borrows both, and without them
+    # a rename in the owning file surfaced as a bare AttributeError mid-suite instead of the
+    # explanatory ImportError this list exists to raise. Still loud either way — but the loader's
+    # whole job is to say WHY, and it can only do that for names it knows it borrows.
+    missing = [n for n in ("count_steps", "next_pending_task", "parse_sentinel", "strip_field",
+                           "decide", "WARN")
                if not hasattr(mod, n)]
     if missing:
         raise ImportError(
@@ -411,14 +416,28 @@ def cmd_pause(why: str) -> int:
     # it correctly removes only the line that IS the field, so `--resume` reported success and
     # left the injected line behind. The whole `strip_field` design presumes the pause is one
     # line; this is what makes that presumption true, at the only place that can.
-    if "\n" in why or "\r" in why:
-        print("refusing: `--pause` takes a ONE-LINE reason. The sentinel is a `key: value` file, "
-              "so a newline in the reason writes its remainder as top-level lines — and any of "
-              "them shaped `key: value` becomes a live field the Stop guard obeys. Rewrite the "
-              "reason on one line.", file=sys.stderr)
+    # ⛔ ASK `splitlines()`, DO NOT ENUMERATE SEPARATORS (code review r2, High).
+    # The first version of this guard tested `"\n" in why or "\r" in why` — a HAND-WRITTEN copy of
+    # the consumer's rule, and it covered two characters out of eleven. `str.splitlines()`, which
+    # `parse_sentinel` and `strip_field` both use, also breaks on \v \f \x1c \x1d \x1e \x85 U+2028
+    # and U+2029. MEASURED 2026-09-06: all EIGHT defeated the guard, and
+    # `--pause "waiting plan: other.md"` produced a sentinel whose `parse_sentinel` returned
+    # `{'plan': '.claude/plans/other.md', ...}` — the injection the guard existed to stop, through
+    # the door it did not know was there. The Codex half found two; enumerating found six more.
+    #
+    # ⚠ THE LESSON IS THE SHAPE, NOT THE CHARACTER LIST. Lengthening the list would rebuild the
+    # same defect one release later, because the authority on "what is a line" is the function the
+    # READER calls. So this asks that function. Recorded as *measure the population the CODE sees*.
+    cleaned = why.strip()
+    if len(cleaned.splitlines()) > 1:
+        print("refusing: `--pause` takes a ONE-LINE reason. The sentinel is a `key: value` file "
+              "read with `str.splitlines()`, so anything that function treats as a line break — "
+              "not just a newline — writes the remainder as top-level lines, and any of them "
+              "shaped `key: value` becomes a live field the Stop guard obeys. Rewrite the reason "
+              "on one line.", file=sys.stderr)
         return REFUSED
-    SENTINEL.write_text(SENTINEL.read_text().rstrip("\n") + f"\npaused: {why.strip()}\n")
-    print(f"paused: {why.strip()}\nThe Stop guard will now allow the turn to end. "
+    SENTINEL.write_text(SENTINEL.read_text().rstrip("\n") + f"\npaused: {cleaned}\n")
+    print(f"paused: {cleaned}\nThe Stop guard will now allow the turn to end. "
           f"`--banner` still shows where the plan stands.\n"
           f"⚠ WHEN THE WORK RESUMES, run `scripts/begin-plan.py --resume` FIRST. Until you do, "
           f"the guard stays stood down and `--tick` will refuse (backlog #99).")
@@ -642,10 +661,34 @@ def _self_test() -> int:
             case("the refused pause wrote NOTHING — no injected `plan:` line survives",
                  SENTINEL.read_text() == sent_before)
 
+            # ⛔ r2 High: the separator set is DERIVED from `str.splitlines()`, never hand-listed.
+            # The first guard tested only \n and \r and eight others walked through it. Building
+            # the corpus by asking splitlines() is the whole point — a hand-written list here
+            # would re-create the defect in the test as well as in the code.
+            seps = [c for c in ("\n", "\r", "\v", "\f", "\x1c", "\x1d", "\x1e",
+                                "\x85", "\u2028", "\u2029")
+                    if len(f"a{c}b".splitlines()) > 1]
+            leaked = []
+            for c in seps:
+                before_c = SENTINEL.read_text()
+                if cmd_pause(f"waiting{c}plan: .claude/plans/other.md") != REFUSED \
+                        or SENTINEL.read_text() != before_c:
+                    leaked.append(repr(c))
+            case(f"EVERY separator splitlines() honours is refused ({len(seps)} of them)",
+                 seps and not leaked)
+            case("...and none of them injected a second `plan:` field",
+                 "other.md" not in SENTINEL.read_text())
+
             # ── r1 H1 / Codex M1: a PAUSED sentinel is never deleted, even when fully ticked ──
             # BOTH review halves reached this independently. The first version cleared it and
             # said so only on stdout, which the Stop wrapper swallows.
-            cmd_tick()   # 2 of 2 -> fully ticked
+            # ⟳ r2 L3: this used to be `cmd_tick()  # 2 of 2 -> fully ticked`, and it was a
+            # NO-OP — the case above already ticked to 2/2, so the comment asserted an action
+            # that did not happen and the H1 cases below got their state by side effect. The
+            # same file already had one mutation SURVIVE by re-ticking a ticked box; this is
+            # that line. State is now asserted rather than assumed.
+            case("precondition for the H1 cases: the plan really is fully ticked",
+                 pp.count_steps(plan_on_disk.read_text()) == (2, 2))
             cmd_pause("waiting on CI before the PR")
             code_p, msg_p, unt_p = pp.decide(
                 SENTINEL.read_text(), plan_on_disk.read_text(), None, False)

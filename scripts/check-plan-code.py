@@ -623,7 +623,7 @@ EXPECTED_MUTATIONS = {
     # stops naming `--resume` strands the reader in #99's own state with no discoverable exit),
     # and two on `--resume` — one for a write-back that never clears, one for a clear that takes
     # the `plan:` pointer with it.
-    "scripts/check-plan-progress.py": 11,
+    "scripts/check-plan-progress.py": 12,
     "scripts/begin-plan.py": 9,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -2548,7 +2548,11 @@ def _self_test() -> int:
     # guidance, which r1 L1 measured as reddening only under a 7-case blunderbuss) and +2 on
     # the driver (the multi-line `--pause` refusal from M3, and an isolating mutation for
     # "byte-identical on disk", which L2 measured as never being the sole red).
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 206)
+    # ⟳ 206 -> 207, code review r2 fold: the preserve WARN's `--finish` guidance. r2 M2 is
+    # the fold's OWN r1 L1 finding recurring inside the fix for it — the class was "a
+    # guard's message naming the only escape is unguarded", and r1 closed the instance.
+    # `--finish` is named in exactly one place in the tree; `--resume` in five.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 207)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so

@@ -4069,10 +4069,41 @@ half recommended — its own escalation clause ("Blocking if the remaining work 
 the checkbox list") describes a checkpoint pause exactly, and since #94 a pause means *waiting*.
 
 Also folded: `--pause` refuses a multi-line reason (r1 M3 drove a real `plan:` field injection that
-left the guard supervising a DIFFERENT plan); ten stale cross-file line citations replaced by
+left the guard supervising a DIFFERENT plan); seven stale cross-file line citations replaced by
 symbol references, five of them broken by this very commit; `cmd_tick` reads the sentinel once.
 
 ⚠ THE FOLD BROKE ITS OWN COVERAGE, TWICE, AND ONLY EXECUTION SAW IT. The `_armed_plan` refactor
 orphaned a mutation anchor (anchors bind by TEXT), a new anchor collided with an existing one, and
 a third mutation SURVIVED because it re-ticked an already-ticked box. 206 mutations / 0 survivors
 only after re-running. Reading the diff would have found none of them.
+
+⟳ ROUND 2 FOUND A HIGH IN THE ROUND-1 FIX, and both halves found it independently again. The
+multi-line guard added in r1 tested for two characters. Python's `splitlines()` — which the sentinel
+reader actually uses — breaks on eleven, so EIGHT separators walked straight through the new guard
+and re-opened the exact injection it was written to stop. Measured: `parse_sentinel` returned the
+injected plan path.
+
+The fix is not a longer character list. The guard now asks `splitlines()` itself, and the test
+derives its separator corpus the same way, so neither can fall behind the reader again. That was the
+real defect: a hand-written copy of the consumer's rule, covering 2 of 11.
+
+Two more from r2, both my own errors. The claim "ten stale citations removed" was wrong — the diff
+removed seven, and FOUR wrong ones survived in the same file, three of them sitting just above the
+paragraph declaring that line numbers expire. Corrected in both documents and the sweep finished.
+And the preserve message's `--finish` guidance had no mutation — which is r1's own finding recurring
+inside the code written to fix it.
+<!--tech-->
+r2 both halves NOT CONVERGED: Codex 1 High; Claude 1 High + 2 Medium + 8 Low. Filed under
+`docs/reviews/{claude,coordinator}/backlog-99-paused-tick-r2-*.md`.
+
+Separators that defeated the r1 guard: `\v` `\f` `\x1c` `\x1d` `\x1e` `\x85` U+2028 U+2029.
+Codex named the last two; enumerating the `splitlines()` set found the other six.
+
+Also folded: `_load_plan_progress` now asserts `decide` and `WARN` (r2 L2 — borrowed but
+unasserted, so a rename surfaced as a bare AttributeError instead of the explanatory ImportError);
+a no-op `cmd_tick()` whose comment claimed an action replaced by an explicit precondition assertion
+(r2 L3 — the same line that let a mutation survive earlier).
+
+EXPECTED_MUTATIONS 206→207. Declared counts 47→50. r2 L1/L4/L5 recorded as dispositions: L1 is a
+correction to a COVERAGE CLAIM, not code — the "isolating" mutation narrows 3 co-red cases to 2 and
+cannot isolate further, because the r1 L3 rename made the sibling a superset assertion.
