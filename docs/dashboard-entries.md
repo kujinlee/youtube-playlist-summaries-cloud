@@ -4380,3 +4380,48 @@ added the referential half wired through `collect():1271` and `main():1426,1435`
 `decision_errors` is renderer-only — so page ⊇ gate on content, and the page renders first.
 **Backlog #101 FILED**: a PR based on another branch gets no CI at all, and *"no checks reported"*
 sits where a green tick would, with `mergeStateStatus` still `CLEAN`.
+
+## 2026-09-07
+Two planned pieces of work turned out to be wrong, and finding that out is the result.
+
+The plan was: build a small rule to catch a reporting mistake, then work through the remaining
+nineteen safety nets. **Neither survived contact with measurement, and both failures are cheap
+now instead of expensive later.**
+
+The rule cannot be written. Distinguishing a mangled label from a legitimately punctuated one needs
+information that simply is not in the text — and the existing machinery already reports the problem
+when it matters. Building it would have added false alarms and caught nothing new.
+
+The remaining nineteen are not nineteen. **Four of them cannot be covered as written**, because
+their tests read project files that the coverage tool deliberately does not copy. Those four need a
+small change first. The other fifteen are ready.
+<!--tech-->
+**Step 2 (contract-(2) static rule) — DROPPED, with evidence.** The rule I proposed was
+*"a `[FAIL]` print must also contain `: got `"*. It is wrong twice over. (a) `[FAIL] {name}` with
+**nothing** after it is already correct — `rsplit(": got ", 1)` on an absent needle returns the whole
+string, which IS the name; `gen-dashboard.py` uses exactly that shape and has 64 working mutations, so
+the rule would have flagged a working guard. (b) Scoped to manifested files it produced **11 false
+positives** in `check-plan-code.py` itself, whose case names are plain text (`[FAIL] f returns one:
+got %r`). The root reason it cannot work: `check-plan-code.py`'s own docstring records that **a case
+name may contain a colon**, so `[FAIL] my case: expected 2, got 1` is indistinguishable from a
+legitimately punctuated name. The needed information is not in the literal. ⇒ contract (2) is
+**detectable only at manifest time**, which the existing harness already does as
+`expect matched 0 red case(s)`.
+
+**Step 3 re-scoped by measurement.** `mutate_delivered` does `shutil.copytree(root/"scripts", …)` —
+**scripts/ only**. A suite whose `--self-test` reads anything else fails its control in the harness
+and can never be manifested. Run in a tree containing only `scripts/`:
+
+| | |
+|---|---|
+| **15 manifestable now** | anchors, arch-findings, catalog-coverage, ci-watched, docs, gate-falsifiability, guard-coverage, live-schema, plan-task-order, producer-enumeration, review-rounds, roadmap-consistency, sentinel-meanings, test-counts, vocabulary-collisions |
+| **4 blocked (non-hermetic)** | `check-anon-exposure` (rc=2), `check-function-revokes` (rc=1), `check-paid-caller-arrival` (rc=20), `check-storage-grant-pin` (rc=1) |
+
+`check-storage-grant-pin` is the worked example: `MIGRATION = ROOT/"supabase"/"migrations"/"0007_storage_and_rpcs.sql"`, and `ROOT` resolves into the temp tree. Its fix is a decision, not a
+typo — make the self-test hermetic (inline a fixture) or teach the harness to copy more — so it is
+recorded, not guessed at.
+
+**Kept from the attempt:** its per-case line printed `PASS`/`FAIL` with no bracket, a contract-(1)
+violation. Now `[FAIL] {name}: got … want …`. That fix is what made the control failure *readable* —
+it reported `[FAIL] policy is extractable from the migration: got False want True` instead of an
+unattributable red. Debt stays at **19**; nothing was registered.

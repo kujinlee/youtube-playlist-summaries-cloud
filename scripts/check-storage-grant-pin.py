@@ -136,7 +136,13 @@ def self_test() -> int:
 
     failed = [name for name, ok in cases if not ok]
     for name, ok in cases:
-        print(f"  {'PASS' if ok else 'FAIL'}  {name}")
+        # ⛔ `[FAIL] {name}: got … want …` IS A CONTRACT with check-plan-code.py, which
+        # attributes a killed mutation from lines STARTING WITH "[FAIL] " via
+        # `.strip()[7:].rsplit(": got ", 1)[0]`. This printed `PASS`/`FAIL` with no
+        # bracket, so every mutation aimed here would have reddened the suite
+        # UNATTRIBUTABLY — `matched 0 red case(s) … caught by something else: []`.
+        print(f"  {'ok  ' if ok else '[FAIL]'} {name}: got {ok!r} want {True!r}"
+              if not ok else f"  ok   {name}")
     print(f"\n{len(cases) - len(failed)}/{len(cases)} self-test cases passed")
     return 1 if failed else 0
 
