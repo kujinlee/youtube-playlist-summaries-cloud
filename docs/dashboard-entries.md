@@ -4215,3 +4215,122 @@ producing. The replacement states what the function decides and names the siblin
 Control run BEFORE the edit: 146/146 + 13/13 `rc=0`. After: identical. `check-ratchet-contract`
 21/baseline 21 unmoved; `check-selftest-counts` 14 scripts verified. Diff is docstring-only. The ten
 Pyright unused-variable warnings are **pre-existing** — identical on `origin/master`.
+
+## 2026-09-06
+The first of twenty-one unchecked safety nets now has a test that it actually catches things.
+
+The project has a set of small scripts that guard against mistakes. Each has its own tests — but a
+test can pass while the thing it tests has quietly stopped working, so there is a second layer that
+deliberately breaks each guard and checks the tests notice. **Twenty-one guards had no second layer.
+This is the first one paid off**, and the debt counter drops from 21 to 20.
+
+Doing it turned up something worth more than the coverage. The guard reported its own failures in a
+slightly different format from the one the checking machinery reads. Everything looked fine — the
+tests passed, the guard worked — but had anyone added this coverage without noticing, all five checks
+would have reported "we broke the guard and nothing caught it", when in truth the guard caught all
+five and merely said so in words the machine could not read. **A false report of no coverage, which
+would most likely have been answered by writing more tests that were never needed.**
+
+That is now fixed and, more importantly, demonstrated: the same five checks were run against the old
+format and against the new one, and the difference is exactly the five wrong answers.
+<!--tech-->
+**GOAL 2/3, first payment. `scripts/mutations/check-explainer-delivery.json` — 5 mutations.**
+`EXPECTED_MUTATIONS["scripts/check-explainer-delivery.py"] = 5`; `MANIFEST_BASELINE` **21 → 20 in the
+same commit**, which the ratchet requires — it compares with `!=`, not `>`, so paid-down debt cannot
+be silently re-accrued.
+
+Chosen first because its rules are pure: 8 self-test cases against synthetic trees, no live Postgres,
+no network. Each mutation is the WEAKEST edit that still fails via the case it names:
+
+| # | Mutation | Red via |
+|---|---|---|
+| 1 | citation requirement dropped | `missing citation caught` |
+| 2 | `Monitor({` check dropped | `Monitor block caught` |
+| 3 | hollow shared reference accepted | `hollow shared file caught` |
+| 4 | restatement sought in whole text, not only fences | `prose mention allowed` |
+| 5 | restatement sweep narrowed to one skill | `restatement in another skill caught` |
+
+**⛔ THE FAIL-LINE CONTRACT HAD TO BE FIXED IN THE SAME CHANGE.** `self_test` printed
+`  ✗ {label}: got {got!r}`. `check-plan-code.py` attributes a kill by taking lines that **start with**
+`[FAIL] ` and doing `.strip()[7:].rsplit(": got ", 1)[0]`, so it could not see these at all.
+
+**MEASURED BOTH WAYS on a temp copy** (never the repo — an instrument that edits the repo corrupts
+its peers):
+
+* control, unmutated: `rc=0`, zero `[FAIL]` lines;
+* with the fix: 5/5 red **via the case each names**, no extras, nothing killed by something else;
+* with the OLD format, same 5 mutations: `rc=1` every time and **attributable cases `[]` every time** —
+  the `matched 0 red case(s) … caught by something else: []` shape. Red, and mute about why.
+
+Same defect, same day, as the one the handoff records for `begin-plan.py` and
+`check-plan-progress.py`. It stays latent until a manifest first points at the file, so **expect it on
+the next several of the remaining 20** — check the print format before writing any mutations.
+
+`check-ratchet-contract` now reports 20 violations against baseline 20, at baseline. Guard self-test
+unchanged at 8/8; its declared count is still 8, so `check-selftest-counts` is unaffected.
+
+## 2026-09-06
+A second guard is covered, and this one would have lied rather than gone quiet.
+
+Same job as the previous entry — proving a safety net actually catches things — but the guard in
+question reported its failures in a format that *almost* matched what the checking machinery reads.
+The others in this family are unreadable to it and produce an obviously empty answer. This one
+produced a **plausible but wrong** answer instead, which is the harder kind to notice.
+
+Debt drops from 20 to 19.
+<!--tech-->
+`scripts/mutations/check-handoff-path.json` — 5 mutations, `EXPECTED_MUTATIONS` +5 (total 212 → 217),
+`MANIFEST_BASELINE` 20 → 19 in the same commit.
+
+⚠ **THE NEAR-MISS, which is why this guard was taken second and not last.** It printed
+`[FAIL] {name}: expected {expected}, got {got}` — note `, got `, not `: got `. It therefore CLEARS
+`check-plan-code.py`'s `startswith("[FAIL] ")` filter, unlike its 18 siblings. But attribution is
+`rsplit(": got ", 1)[0]`, and **`rsplit` on an absent needle returns the whole string**. MEASURED
+before the fix:
+
+    'pristine upstream — the reversion this exists to catch: expected 1, got 0'   ← today
+    'pristine upstream — the reversion this exists to catch'                      ← after
+
+The first is a case name no `expect` entry can ever match, delivered with the confidence of a real
+one. All four print sites in the file now use `: got {got} want {want}`.
+
+The five mutations, each the weakest edit that reddens exactly one case, verified on a temp copy with
+a green control first — no extras, none killed by something else:
+`CONSUMED_PATH` loses its directory → *near-miss: remember.md without the directory*; missing file
+returns 0 not 2 → *missing file is CANNOT RUN*; empty file returns 0 not 2 → *empty file is CANNOT
+RUN*; the violations→exit-code map inverted → *compliant file exits 0*; a `mktemp` mention
+short-circuits the check → *pristine upstream — the reversion this exists to catch*.
+
+That last one matters beyond coverage: `check-handoff-path` is layer 2 of the three-layer defence in
+`docs/plugins.md`, and *pristine upstream* is the exact reversion it exists to catch. Gates: 189/189,
+ratchet 19/baseline 19 at baseline, all rc=0.
+
+## 2026-09-07
+The automated check caught something my own testing could not, which is the point of having it.
+
+Yesterday's second safety-net fix looked complete: every local check passed. The shared automated
+check then refused it — correctly. The tool that verifies these nets needs the word "passed" in a
+suite's summary line to tell "everything worked" apart from "nothing ran at all", because a program
+that does nothing also finishes without complaint. The guard in question said "PASS" instead, so the
+tool declined to report anything and said so, rather than guessing.
+
+Nothing was broken by this and nothing shipped wrong — the refusal happened before the merge. It is
+the third undocumented expectation this exercise has turned up about how these guards must speak,
+and finding it early is worth more than the fix.
+<!--tech-->
+**CI red on #238, diagnosed and fixed.** `check-plan-code.control_is_green(rc, out)` is literally
+`rc == 0 and "passed" in out`. `check-handoff-path.py` printed `PASS`, so the control was rejected —
+*"did not prove the suite works (exit 0) … Every verdict below would be an artefact"* — and all five
+verdicts were correctly withheld as NOT CHECKED. Its summary now reads `10/10 self-test cases passed`,
+matching every sibling. It is not in `check-selftest-counts.POPULATION`, so no declared count moves;
+10 = 7 text + 3 file cases, which is what `docs/plugins.md` already claims.
+
+⚠ **THIS IS A THIRD CONTRACT, on the SUCCESS side**, distinct from the two FAIL-line ones: (1) the
+line must start `[FAIL] `, (2) it must contain `: got ` for `rsplit` to name the case, and now
+(3) a green suite must print `passed`. All three are enforced only when a manifest first points at a
+file. **Check all three before writing mutations for any of the remaining 19.**
+
+⚠ **AND THE LESSON ABOUT MY OWN VERIFICATION.** I verified attribution with a purpose-built harness
+that mirrored the parse rule but *not* the control predicate — so it could not see this. Per the
+lighter-verification default I skipped the local `--mutate .` and let CI own it; CI earned its keep.
+Now run and green here too: **12 files, 217 mutations, 0 survivors.**

@@ -88,12 +88,25 @@ CASES = [
 
 def self_test() -> int:
     failures = 0
+    # ⛔ `[FAIL] {name}: got {got} want {want}` IS A CONTRACT, and this file was the
+    # NEAR-MISS of the class — which makes it the dangerous one, not the mild one.
+    # scripts/check-plan-code.py attributes a killed mutation with
+    #     l.strip()[7:].rsplit(": got ", 1)[0].strip()   for lines starting "[FAIL] "
+    # This printed `[FAIL] {name}: expected {expected}, got {got}` — note `, got `,
+    # not `: got `. It CLEARS the startswith filter, so unlike its 18 siblings it does
+    # not fail loudly-and-emptily; `rsplit` on an absent needle returns the WHOLE
+    # string, so it yields the case name with `: expected 1, got 0` welded on. A
+    # plausible-looking attribution that no `expect` entry can ever match.
+    # MEASURED 2026-09-06 before the fix:
+    #   'pristine upstream — the reversion this exists to catch: expected 1, got 0'
+    # after:
+    #   'pristine upstream — the reversion this exists to catch'
     print(f"check-handoff-path --self-test  ({len(CASES)} text cases + 3 file cases)")
     for name, text, expected in CASES:
         got = 1 if check_text(text) else 0
         ok = got == expected
         failures += not ok
-        print(f"  [{'ok' if ok else 'FAIL'}] {name}: expected {expected}, got {got}")
+        print(f"  [{'ok' if ok else 'FAIL'}] {name}: got {got} want {expected}")
 
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
@@ -102,23 +115,37 @@ def self_test() -> int:
         code, _ = check_file(missing)
         ok = code == 2
         failures += not ok
-        print(f"  [{'ok' if ok else 'FAIL'}] missing file is CANNOT RUN (2), got {code}")
+        print(f"  [{'ok' if ok else 'FAIL'}] missing file is CANNOT RUN: got {code} want 2")
 
         empty = tmp / "empty.md"
         empty.write_text("", encoding="utf-8")
         code, _ = check_file(empty)
         ok = code == 2
         failures += not ok
-        print(f"  [{'ok' if ok else 'FAIL'}] empty file is CANNOT RUN (2), got {code}")
+        print(f"  [{'ok' if ok else 'FAIL'}] empty file is CANNOT RUN: got {code} want 2")
 
         good = tmp / "good.md"
         good.write_text(GOOD, encoding="utf-8")
         code, _ = check_file(good)
         ok = code == 0
         failures += not ok
-        print(f"  [{'ok' if ok else 'FAIL'}] compliant file exits 0, got {code}")
+        print(f"  [{'ok' if ok else 'FAIL'}] compliant file exits 0: got {code} want 0")
 
-    print("PASS" if not failures else f"FAIL — {failures} case(s)")
+    # ⛔ THE WORD "passed" IS LOAD-BEARING — a SECOND contract with check-plan-code.py, on the
+    # SUCCESS side, and it is not the FAIL-line one above. `control_is_green(rc, out)` is
+    # literally `rc == 0 and "passed" in out`: the exit code alone cannot distinguish "green"
+    # from "never ran", because a script with no `__main__` exits 0 in silence.
+    #
+    # This printed `PASS` — rc 0, no "passed". MEASURED in CI 2026-09-07, the first run where a
+    # manifest pointed here: every case reported `[ok]`, the suite printed PASS, and the harness
+    # still refused with *"control run … did not prove the suite works (exit 0)"* and withheld
+    # all five verdicts as NOT CHECKED. That refusal is CORRECT — the harness cannot read PASS —
+    # and it is the reason this line now carries a ratio and the word, matching every sibling.
+    #
+    # ⚠ A failing run still contains "passed" (`8/10 … passed`), which is fine: `control_is_green`
+    # also requires rc == 0, and a failing suite returns 1 below.
+    total = len(CASES) + 3          # 3 file cases follow the text cases
+    print(f"\n{total - failures}/{total} self-test cases passed")
     return 1 if failures else 0
 
 

@@ -1,0 +1,57 @@
+[
+  {
+    "name": "the citation requirement is dropped, so a page skill need not cite the shared reference",
+    "file": "scripts/check-explainer-delivery.py",
+    "edits": [
+      [
+        "        if shared_rel not in text:",
+        "        if False:"
+      ]
+    ],
+    "expect": ["missing citation caught"]
+  },
+  {
+    "name": "the Monitor-arming check is dropped, so a second copy of the snippet passes",
+    "file": "scripts/check-explainer-delivery.py",
+    "edits": [
+      [
+        "        if \"Monitor({\" in text:",
+        "        if False:"
+      ]
+    ],
+    "expect": ["Monitor block caught"]
+  },
+  {
+    "name": "a hollow shared reference is accepted — the ONE file that must describe delivery need not",
+    "file": "scripts/check-explainer-delivery.py",
+    "edits": [
+      [
+        "    if not DELIVERY_CMD.search(shared.read_text()):",
+        "    if False:"
+      ]
+    ],
+    "expect": ["hollow shared file caught"]
+  },
+  {
+    "name": "restatement is looked for in the WHOLE text, not only inside fences",
+    "file": "scripts/check-explainer-delivery.py",
+    "edits": [
+      [
+        "        for body in FENCE.findall(text):",
+        "        for body in [text]:"
+      ]
+    ],
+    "expect": ["prose mention allowed"]
+  },
+  {
+    "name": "the restatement sweep is narrowed to one skill, so another skill's copy is invisible",
+    "file": "scripts/check-explainer-delivery.py",
+    "edits": [
+      [
+        "    for f in sorted(skills_dir.glob(\"*/SKILL.md\")):",
+        "    for f in sorted(skills_dir.glob(\"explain-diff/SKILL.md\")):"
+      ]
+    ],
+    "expect": ["restatement in another skill caught"]
+  }
+]
