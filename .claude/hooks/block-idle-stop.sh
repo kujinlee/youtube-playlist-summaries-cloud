@@ -26,6 +26,9 @@
 #   exit 1 — allows the stop, shows stderr, does not block. Produced by EITHER observer warning or
 #            reporting CANNOT RUN. This is the path the banner/CI observers added, and the header
 #            omitted it entirely until 2026-09-05 (code review r2, Low).
+#            ⟳ 2026-09-06 (backlog #99): the BLOCKING check can now reach this path too, by
+#            returning 3 — a paused plan with steps outstanding. It is the only case where the
+#            blocking check declines to block and still has something to say.
 #   exit 0 — allows the stop silently.
 #
 # stop_hook_active tells us this turn is ALREADY a continuation caused by this hook. It is passed
@@ -79,7 +82,21 @@ BANNER_RC=$?
 # NOT a wedge, though — the real escape is printed by the block itself at `:109`: *"Fix the path or
 # delete .claude/executing-plan"*. The code was right; the comment named the wrong mechanism for it.
 # The r1 fold checked WHERE this comment sat and never re-read WHAT it claimed.
-if ! python3 "$REPO_ROOT/scripts/check-plan-progress.py" "${ARGS[@]}"; then
+#
+# ⟳ 2026-09-06, backlog #99 (shape (c)). This used to be `if ! python3 ...; then exit 2; fi` —
+# EVERY non-zero was a block. That is still the default, and deliberately so, but the blocking
+# check can now also return 3 = WARN: a paused plan that still has steps outstanding. It allows
+# the stop and says so out loud, because "paused" and "finished" used to produce identical
+# output (nothing at all).
+#
+# ⛔ THE ALLOW-LIST IS {0, 3} AND NOTHING WIDER, WHICH IS WHY WARN IS 3 AND NOT 1. A Python
+# traceback exits 1 and an argparse error exits 2; both must keep landing on the fail-closed
+# path below. Had WARN reused 1, a broken interpreter would have become a polite non-blocking
+# warning — turning the one check that must fail closed into a fail-open one, which is the exact
+# class of defect the comment above this block was written about.
+python3 "$REPO_ROOT/scripts/check-plan-progress.py" "${ARGS[@]}"
+PROGRESS_RC=$?
+if [[ "$PROGRESS_RC" != "0" && "$PROGRESS_RC" != "3" ]]; then
     exit 2
 fi
 
@@ -101,7 +118,7 @@ CI_RC=$?
 # What this arithmetic guarantees is that the HOOK never surfaces a 2 on their behalf: a detector
 # that only observes must not be able to wedge a turn it has no stake in. An earlier version of
 # this comment said "neither may return 2", which was false about both scripts (code review r2).
-if [[ "$BANNER_RC" != "0" || "$CI_RC" != "0" ]]; then
+if [[ "$BANNER_RC" != "0" || "$CI_RC" != "0" || "$PROGRESS_RC" == "3" ]]; then
     exit 1
 fi
 exit 0

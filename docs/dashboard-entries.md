@@ -4007,3 +4007,53 @@ sequences with different totals, the defect #96 spec §8 deliberately left open.
 half was right; the number was not, and it should not be cited as evidence.
 
 Also this turn: PR #232 merged (`3ec912f6`, backlog #82), and the stale sentinel removed by hand.
+
+## 2026-09-06
+The pause that never ended now has a way to end. Yesterday's finding was that pausing a plan quietly
+switched off the check that stops a turn ending mid-work — and that once paused, nothing could
+un-pause it except editing a file by hand. Both halves are fixed, and you chose the shape.
+
+Two things changed. Ticking off a step on a paused plan is now refused outright, and the refusal
+tells you the one command that resumes. And when a plan really is paused with work left, the guard
+says so at the end of every turn instead of standing down in silence — it still lets you stop, which
+is the whole point of pausing, it just stops being indistinguishable from a plan that finished.
+
+The third option — having a tick quietly un-pause the plan — was rejected, because pausing is also
+how work says it is waiting on something, and a wait that cancels itself without telling anyone is
+how you lose track of what you were waiting for.
+
+Worth knowing: the fix was proved by running the failure end to end against an unmodified copy of
+yesterday's code, side by side. The old copy drove a paused plan from one step done to two with the
+guard off; the new one refused. Nothing here rests on a test that only ever saw the fixed version.
+<!--tech-->
+Backlog **#99** 🟠 CLOSED, PR #234, branch `backlog-99-paused-tick`. Decided shapes **(a)+(c)**;
+**(b)** rejected.
+
+⚠ TWO CORRECTIONS TO THE ROW AS FILED, both found by reading the code rather than the row.
+(1) It told (a) to say *"run `--resume` first"* — **`--resume` did not exist.** `paused:` had ONE
+writer (`begin-plan.py:369`) and ZERO removers; a state with a setter and no clearer is why a stale
+pause could only ever be cleared by hand. (2) (c) could not be "ALLOW with a message":
+`check-plan-progress.py` sent every non-BLOCK message to **stdout**, which
+`.claude/hooks/block-idle-stop.sh` swallows — the stream that made `begin-plan.py`'s banner reach
+nobody for a whole session (CLAUDE.md records it). So (c) is a third exit code, `WARN = 3`, message
+on **stderr**, wrapper allow-list `{0,3}`. **NOT 1** — a traceback exits 1 and every other non-zero
+is a fail-closed BLOCK, so reusing 1 turns a broken interpreter into a polite warning.
+
+`strip_field` lives in `check-plan-progress.py` beside `parse_sentinel`, and `--resume` BORROWS it:
+one owner for "which line is the `paused` line", because `check-banner-armed.py:499` already records
+what two disagreeing parsers of that grammar cost.
+
+FALSIFIER (the row's own, run by hand against an `origin/master` control) — they separate at all
+four points: stop-while-paused says nothing / names `2 of 3`; tick-while-paused ADVANCES the plan /
+refuses byte-identically; `--resume` exits 2 no-such-flag / exits 0; the stop after that is allowed
+silently / BLOCKS. 203 mutations, 0 survivors.
+
+⛔ OUT-OF-SCOPE FINDING, and the useful one. Both files printed `FAIL  {name}` while the mutation
+harness parses `[FAIL] {name}: got … want …` (`check-plan-code.py:887`), so **all 17 new mutations
+killed their suites and NOT ONE could be attributed** — "the guard did not fire" and "nothing could
+see it fire" are the same output. `check-banner-armed.py:924` records the identical finding from the
+same day. Latent in both files for exactly as long as neither had a manifest.
+
+`MANIFEST_BASELINE` 22→21 (only `check-plan-progress.py` is R4 population; `begin-plan.py` is not a
+`check-*` guard and was never counted as owed). `EXPECTED_MUTATIONS` 186→203. Declared self-test
+counts 17→31 and 33→42.

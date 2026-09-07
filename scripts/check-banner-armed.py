@@ -494,6 +494,12 @@ def _armed_from_text(text: str) -> bool:
     about what "armed" means, or this guard's principal firing state becomes the one documented
     escape (begin-plan.py --pause, for being legitimately blocked on in-flight work).
 
+    ⟳ 2026-09-06, backlog #99: THE AGREEMENT STILL HOLDS AND THE OTHER GUARD GOT LOUDER. decide()
+    now returns WARN (3) rather than a silent ALLOW when a paused plan still has steps
+    outstanding. That is a change to what it SAYS, not to whether it allows, so "armed" means the
+    same thing in both places and this function is unchanged. Do not read a WARN over there as a
+    divergence from `not armed` over here — they are the same verdict, differently voiced.
+
     ⚠ THE `":" not in line` SKIP IS LOAD-BEARING, and it is the SECOND parser problem, not a
     style choice. check-plan-progress.parse_sentinel skips any line without a colon. Without this
     line, `**paused**` (no colon) reads as key "**paused**" here and as nothing there — this guard

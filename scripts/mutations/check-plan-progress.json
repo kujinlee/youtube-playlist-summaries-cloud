@@ -1,0 +1,132 @@
+[
+  {
+    "name": "paused short-circuits to a silent ALLOW again (backlog #99 restored)",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "    paused = fields.get(\"paused\") if \"paused\" in fields else None",
+        "    paused = None\n    if \"paused\" in fields:\n        return ALLOW, \"\", None"
+      ]
+    ],
+    "expect": [
+      "paused WITH steps outstanding -> WARN, not a silent allow"
+    ]
+  },
+  {
+    "name": "the WARN reports that steps remain but not HOW MANY",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "            f\"⏸ PAUSED with {unticked} of {total} steps still outstanding in `{plan}`.\\n\"",
+        "            f\"⏸ PAUSED with steps still outstanding in `{plan}`.\\n\""
+      ]
+    ],
+    "expect": [
+      "the warning counts what is outstanding (2 of 5)"
+    ]
+  },
+  {
+    "name": "the WARN drops the human's own pause reason",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "            f\"   Paused because: {paused}\\n\"",
+        "            \"   Paused because: (a reason was given)\\n\""
+      ]
+    ],
+    "expect": [
+      "the warning repeats the human's own reason back"
+    ]
+  },
+  {
+    "name": "a paused WARN records the unticked count, poisoning the anti-nag on resume",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "            \"   If the plan is abandoned   → `scripts/begin-plan.py --finish`.\"\n        ), None",
+        "            \"   If the plan is abandoned   → `scripts/begin-plan.py --finish`.\"\n        ), unticked"
+      ]
+    ],
+    "expect": [
+      "a WARN records NO unticked count — the anti-nag state is left alone"
+    ]
+  },
+  {
+    "name": "a paused plan whose plan file is missing BLOCKS, breaking the escape",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "        if paused is not None:\n            return WARN, f\"⏸ PAUSED ({paused}) — and {msg}\", None\n        return BLOCK, msg, None\n\n    done, total = count_steps(plan_text)",
+        "        return BLOCK, msg, None\n\n    done, total = count_steps(plan_text)"
+      ]
+    ],
+    "expect": [
+      "paused + missing plan -> WARN and NOT RUN, never BLOCK"
+    ]
+  },
+  {
+    "name": "a paused plan that parses to ZERO checkboxes BLOCKS, breaking the escape",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "               \"of a warning as 'no work left'.\")\n        if paused is not None:\n            return WARN, f\"⏸ PAUSED ({paused}) — and {msg}\", None\n        return BLOCK, msg, None",
+        "               \"of a warning as 'no work left'.\")\n        return BLOCK, msg, None"
+      ]
+    ],
+    "expect": [
+      "paused + zero checkboxes -> WARN and NOT RUN, never BLOCK"
+    ]
+  },
+  {
+    "name": "a finished-but-paused plan stops clearing its sentinel, so it goes stale",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "    unticked = total - done\n    if unticked == 0:",
+        "    unticked = total - done\n    if unticked == 0 and paused is None:"
+      ]
+    ],
+    "expect": [
+      "paused with EVERY step ticked -> allow and CLEAR the sentinel"
+    ]
+  },
+  {
+    "name": "strip_field takes any line CONTAINING the key, not the parsed field",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "            if not (\":\" in ln and ln.split(\":\", 1)[0].strip() == key)]",
+        "            if key not in ln]"
+      ]
+    ],
+    "expect": [
+      "strip_field agrees with parse_sentinel: a colon-less `paused` is NOT the field"
+    ]
+  },
+  {
+    "name": "strip_field removes only the FIRST match, so a doubled pause survives",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "    kept = [ln for ln in text.splitlines(keepends=True)\n            if not (\":\" in ln and ln.split(\":\", 1)[0].strip() == key)]\n    return \"\".join(kept)",
+        "    kept, dropped = [], False\n    for ln in text.splitlines(keepends=True):\n        if not dropped and \":\" in ln and ln.split(\":\", 1)[0].strip() == key:\n            dropped = True\n            continue\n        kept.append(ln)\n    return \"\".join(kept)"
+      ]
+    ],
+    "expect": [
+      "strip_field removes EVERY occurrence, so a doubled pause cannot survive one"
+    ]
+  },
+  {
+    "name": "WARN collapses onto 1, so a traceback would read as a warning",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "WARN = 3",
+        "WARN = 1"
+      ]
+    ],
+    "expect": [
+      "WARN is a code CPython does not produce by accident (not 1, not 2)"
+    ]
+  }
+]
