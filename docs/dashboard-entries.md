@@ -4057,3 +4057,22 @@ same day. Latent in both files for exactly as long as neither had a manifest.
 `MANIFEST_BASELINE` 22→21 (only `check-plan-progress.py` is R4 population; `begin-plan.py` is not a
 `check-*` guard and was never counted as owed). `EXPECTED_MUTATIONS` 186→203. Declared self-test
 counts 17→31 and 33→42.
+
+⟳ AFTER REVIEW — the shipped behaviour CHANGED. Dual adversarial r1 (Codex gpt-5.5 + an
+independent Claude subagent) came back NOT CONVERGED from both halves: 0 Blocking, 1 High,
+5 Medium, 8 Low between them. The High and Codex's top Medium are THE SAME FINDING, reached
+independently — the first cut deleted a paused-but-fully-ticked sentinel, discarding the reason
+text, and said so only on stdout, which the Stop wrapper swallows.
+
+Fixed by PRESERVING rather than clearing-and-announcing, which is the opposite of what the Claude
+half recommended — its own escalation clause ("Blocking if the remaining work is tracked outside
+the checkbox list") describes a checkpoint pause exactly, and since #94 a pause means *waiting*.
+
+Also folded: `--pause` refuses a multi-line reason (r1 M3 drove a real `plan:` field injection that
+left the guard supervising a DIFFERENT plan); ten stale cross-file line citations replaced by
+symbol references, five of them broken by this very commit; `cmd_tick` reads the sentinel once.
+
+⚠ THE FOLD BROKE ITS OWN COVERAGE, TWICE, AND ONLY EXECUTION SAW IT. The `_armed_plan` refactor
+orphaned a mutation anchor (anchors bind by TEXT), a new anchor collided with an existing one, and
+a third mutation SURVIVED because it re-ticked an already-ticked box. 206 mutations / 0 survivors
+only after re-running. Reading the diff would have found none of them.

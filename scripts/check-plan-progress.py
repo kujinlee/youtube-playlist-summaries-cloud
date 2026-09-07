@@ -38,7 +38,7 @@ docstring, not the code, was the thing that needed fixing.
 Usage (the hook calls form 1; a human can call form 2 to see where things stand):
     python3 scripts/check-plan-progress.py --decide [--stop-hook-active]
     python3 scripts/check-plan-progress.py --status
-    python3 scripts/check-plan-progress.py --self-test  # 31 cases
+    python3 scripts/check-plan-progress.py --self-test  # 35 cases
 Exit codes for --decide:
     0 = allow the stop, silently (message, if any, on stdout)
     2 = block it (message on stderr)
@@ -91,7 +91,10 @@ def strip_field(text: str, key: str) -> str:
 
     ⚠ THE POINT IS THE AGREEMENT, NOT THE STRING SURGERY. This lives here, beside
     `parse_sentinel`, because the two must answer "which line is the `paused` line" identically.
-    `check-banner-armed.py:499` records the near-miss that makes that concrete: a colon-less
+    `check-banner-armed._armed_from_text`'s docstring — cited by SYMBOL, because the commit that
+    wrote this citation also moved the line it first named by six (code review r1, M2), and a line
+    number into a file you are editing in the same change is a citation with a countdown on it —
+    records the near-miss that makes that concrete: a colon-less
     `paused` line is a key to one parser and not the other, and a sentinel that reads as paused to
     one guard and running to the next is the exact contradiction backlog #99 is about. So the
     predicate below is `parse_sentinel`'s own rule applied per line, and nothing else may hold a
@@ -143,16 +146,27 @@ def decide(
     #
     # ⚠ THE PAUSED PATH IS NOW FOLDED INTO THE COUNTING RATHER THAN BYPASSING IT, and that is the
     # whole design. To report "paused with N outstanding" you must count, and once you count you
-    # also learn the case where N is ZERO — a paused plan with every box ticked, whose sentinel has
-    # no remaining job and which is exactly the stale file a human had to clear by hand on the day
-    # this was filed. Both of those states were invisible for the same reason.
-    paused = fields.get("paused") if "paused" in fields else None
+    # also learn the case where N is ZERO — a paused plan with every box ticked.
+    #
+    # `.get` alone, not `.get(...) if ... in ... else None` (code review r1, L8): parse_sentinel
+    # only ever stores `str`, so `.get` returns None exactly when the key is absent. The longer
+    # form read as if it defended the empty-reason case and defended nothing — and no mutation can
+    # tell the two apart, so it was untested by construction.
+    paused = fields.get("paused")
 
     if plan_text is None:
-        # ⚠ NOT-RUN, LOUDLY, BUT STILL NOT A BLOCK. "Cannot run" is a failure never a pass
-        # (CLAUDE.md), so it must say so — but blocking here would break the escape the pause
-        # exists to be, including the blocked-on-in-flight-work case backlog #94 widened it for.
-        # WARN is precisely the combination those two rules require: audible and non-blocking.
+        # ⚠ NOT-RUN, LOUDLY, BUT STILL NOT A BLOCK — AND THAT IS A DECISION, NOT AN OVERSIGHT.
+        # "Cannot run" is a failure never a pass (CLAUDE.md), so it must SAY so. But blocking here
+        # would break the escape the pause exists to be, including the blocked-on-in-flight-work
+        # case backlog #94 widened it for — a human who has already said "I am stopping
+        # deliberately" must not be trapped by a broken plan path. WARN is the combination those
+        # two rules require: audible and non-blocking.
+        #
+        # ⟳ RECORDED EXPLICITLY at the Codex half's request (code review r1, Cx-M2), which asked
+        # whether `paused:` is meant to override cannot-run. IT IS, on this path only. The
+        # non-paused arm below still BLOCKS, so the fail-closed behaviour is intact for every case
+        # where the human has not said otherwise. Before this branch these paths were allowed
+        # SILENTLY; the change is that the failure is now stated.
         msg = (f"CANNOT RUN: the executing-plan sentinel names `{plan}`, which does not exist. "
                "TREAT THIS AS NOT RUN — this check cannot tell you whether work remains. "
                f"Fix the path or delete {SENTINEL.relative_to(ROOT)}.")
@@ -170,9 +184,36 @@ def decide(
         return BLOCK, msg, None
 
     unticked = total - done
+
+    # ⛔ A PAUSED SENTINEL IS NEVER DELETED BY THIS SCRIPT, INCLUDING WHEN EVERY BOX IS TICKED.
+    # ⟳ 2026-09-06, code review r1 — the ONE finding BOTH halves reached independently (Claude H1,
+    # Codex M1), which is this project's strongest signal. The first version of this branch put
+    # `unticked == 0` ABOVE the paused branch, and `run_decide` unlinks the sentinel on a zero. So
+    # a plan paused on external work, whose local boxes all happened to be ticked, was DESTROYED on
+    # the next stop — taking the free-text reason with it — and the only notice went to stdout,
+    # which `block-idle-stop.sh` swallows. The Claude half drove it: `--pause "waiting on CI"`, then
+    # one stop later `--resume` answers *"nothing is armed, so there is nothing to resume"*.
+    #
+    # ⚠ I TOOK THE OTHER OPTION FROM THE ONE THE CLAUDE HALF RECOMMENDED, and the reason is its own
+    # escalation clause: it said this would be Blocking if the remaining work were tracked outside
+    # the checkbox list — which is exactly what a checkpoint pause is. Since backlog #94 `paused:`
+    # means BLOCKED ON IN-FLIGHT WORK, and in that state "all boxes ticked" does not mean *done*,
+    # it means *waiting*. A paused sentinel is not stale, it is parked. `--finish` already exists
+    # as the explicit way to clear one, so nothing here needs to do it implicitly.
+    if paused is not None and unticked == 0:
+        return WARN, (
+            f"⏸ PAUSED, and every step in `{plan}` is ticked ({done}/{total}).\n"
+            f"   Paused because: {paused}\n"
+            "\n"
+            "   The sentinel is KEPT, not cleared — a pause means the plan is waiting on\n"
+            "   something, and the checkboxes cannot see that something. Clearing it here would\n"
+            "   discard the reason above and leave `--resume` answering 'nothing is armed'.\n"
+            "\n"
+            "   Work resumed and genuinely finished? → `scripts/begin-plan.py --finish`.\n"
+            "   Work resumed and continuing?         → `scripts/begin-plan.py --resume`."
+        ), None
+
     if unticked == 0:
-        # Deliberately BEFORE the paused branch: a plan with nothing outstanding has nothing to
-        # supervise, paused or not, and leaving the sentinel behind is how it goes stale.
         return ALLOW, (
             f"✅ every step in `{plan}` is ticked ({done}/{total}). "
             f"Clearing {SENTINEL.relative_to(ROOT)}."
@@ -180,9 +221,12 @@ def decide(
 
     if paused is not None:
         # ⚠ RETURNS None, NOT `unticked`, AND THE REASON IS NOT COSMETIC. run_decide writes STATE
-        # from this value, and STATE is the anti-nag's memory. A count written while paused would
-        # satisfy `unticked >= prev_unticked` on the first stop AFTER the resume, allowing it —
+        # from this value, and STATE is the anti-nag's memory. A count written while paused could
+        # then satisfy `unticked >= prev_unticked` on a stop after the resume, allowing it —
         # re-disarming the guard by a second route, having just closed the first.
+        # ⟳ r1 L4: that hazard ALSO requires `stop_hook_active`, which is false on a fresh turn.
+        # The earlier wording said "the first stop AFTER the resume", omitting that conjunct and
+        # overstating the case. The conservative `None` is still right; the reason is narrower.
         return WARN, (
             f"⏸ PAUSED with {unticked} of {total} steps still outstanding in `{plan}`.\n"
             f"   Paused because: {paused}\n"
@@ -352,10 +396,23 @@ def _self_test() -> int:
     case("WARN is a code CPython does not produce by accident (not 1, not 2)",
          WARN == 3 and WARN not in (ALLOW, BLOCK, 1))
 
+    # ⛔ r1 H1 / Codex M1 — the ONE finding both review halves reached independently. The first
+    # version of this branch CLEARED the sentinel here and said so only on stdout, which the Stop
+    # wrapper swallows: a plan paused on external work was destroyed, reason text and all, and
+    # `--resume` then answered "nothing is armed". A paused sentinel is parked, not stale.
     all_done_p = PLAN.replace("- [ ]", "- [x]")
     code, msg, unticked = decide(PAUSED, all_done_p, None, False)
-    case("paused with EVERY step ticked -> allow and CLEAR the sentinel",
-         code == ALLOW and unticked == 0)
+    case("paused with EVERY step ticked does NOT clear the sentinel", unticked is None)
+    case("...and it is a WARN, not a silent allow", code == WARN)
+    case("...and the message keeps the pause reason it refuses to discard",
+         "waiting on the user" in msg)
+    case("...and it names --finish, the explicit way to clear a parked plan",
+         "--finish" in msg)
+    # The CONTROL: unpaused and fully ticked still clears, so the case above is about the PAUSE
+    # and not about fully-ticked plans in general.
+    code_u, msg_u, unt_u = decide(SENT, all_done_p, None, False)
+    case("an UNPAUSED fully-ticked plan still clears — the pause is what changes it",
+         code_u == ALLOW and unt_u == 0 and "Clearing" in msg_u)
 
     # Paused must never block, including when the check cannot reach what it measures. It says
     # NOT RUN instead of going quiet — "cannot run" is a failure, never a pass (CLAUDE.md).
@@ -368,7 +425,8 @@ def _self_test() -> int:
 
     # ── strip_field: this file OWNS the sentinel grammar, so it owns removal too ────────────
     # begin-plan.py's `--resume` borrows this rather than re-implementing "which line is the
-    # paused line". check-banner-armed.py:499 records the near-miss that makes that matter: a
+    # paused line". check-banner-armed._armed_from_text's docstring (cited by SYMBOL — r1 M2:
+    # this commit moved the line the first draft named) records the near-miss that matters: a
     # colon-less `paused` line is a key here and not a key there, and two parsers that disagree
     # about one line are how a plan ends up paused in one guard and running in the other.
     case("strip_field removes the paused line",

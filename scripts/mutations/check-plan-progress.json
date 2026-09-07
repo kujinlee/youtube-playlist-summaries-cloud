@@ -4,8 +4,8 @@
     "file": "scripts/check-plan-progress.py",
     "edits": [
       [
-        "    paused = fields.get(\"paused\") if \"paused\" in fields else None",
-        "    paused = None\n    if \"paused\" in fields:\n        return ALLOW, \"\", None"
+        "    paused = fields.get(\"paused\")\n",
+        "    paused = None\n    if \"paused\" in fields:\n        return ALLOW, \"\", None\n"
       ]
     ],
     "expect": [
@@ -30,8 +30,8 @@
     "file": "scripts/check-plan-progress.py",
     "edits": [
       [
-        "            f\"   Paused because: {paused}\\n\"",
-        "            \"   Paused because: (a reason was given)\\n\""
+        "            f\"   Paused because: {paused}\\n\"\n            f\"   Next: {next_pending_task(plan_text)}\\n\"",
+        "            \"   Paused because: (a reason was given)\\n\"\n            f\"   Next: {next_pending_task(plan_text)}\\n\""
       ]
     ],
     "expect": [
@@ -78,16 +78,16 @@
     ]
   },
   {
-    "name": "a finished-but-paused plan stops clearing its sentinel, so it goes stale",
+    "name": "a finished-but-paused plan is CLEARED again, destroying the parked reason (r1 H1)",
     "file": "scripts/check-plan-progress.py",
     "edits": [
       [
-        "    unticked = total - done\n    if unticked == 0:",
-        "    unticked = total - done\n    if unticked == 0 and paused is None:"
+        "    if paused is not None and unticked == 0:",
+        "    if False:"
       ]
     ],
     "expect": [
-      "paused with EVERY step ticked -> allow and CLEAR the sentinel"
+      "paused with EVERY step ticked does NOT clear the sentinel"
     ]
   },
   {
@@ -127,6 +127,19 @@
     ],
     "expect": [
       "WARN is a code CPython does not produce by accident (not 1, not 2)"
+    ]
+  },
+  {
+    "name": "the paused WARN stops naming --resume, the command that re-arms the guard",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "\"   If the work HAS resumed  → `scripts/begin-plan.py --resume` re-arms the guard.\\n\"",
+        "\"   If the work HAS resumed  → re-arm the guard before continuing.\\n\""
+      ]
+    ],
+    "expect": [
+      "the warning names the command that re-arms the guard"
     ]
   }
 ]

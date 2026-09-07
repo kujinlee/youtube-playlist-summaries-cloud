@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause; re-arm the Stop guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 42 cases
+    scripts/begin-plan.py --self-test  # 47 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -255,15 +255,24 @@ def render_sentinel(plan_rel: str, now: str) -> str:
 
 # ── I/O shell ─────────────────────────────────────────────────────────────────────────────────
 
-def _armed_plan() -> tuple[Path, str] | None:
-    """(absolute path, repo-relative path) of the armed plan, or None."""
+def _armed_plan() -> tuple[Path, str, dict[str, str]] | None:
+    """(absolute path, repo-relative path, parsed sentinel fields) of the armed plan, or None.
+
+    ⟳ 2026-09-06, code review r1 (L7 / Codex Low): this used to parse the sentinel and then throw
+    the fields away, so `cmd_tick` re-read and re-parsed the same file — and re-imported
+    `check-plan-progress.py` to do it. Two reads of one file to answer two questions about it is a
+    question waiting to be asked (what if it changes in between? an uncaught FileNotFoundError,
+    whose exit code happens to equal REFUSED — right answer, wrong reason). Returning the fields
+    removes the question rather than documenting it.
+    """
     if not SENTINEL.is_file():
         return None
     pp = _load_plan_progress()
-    rel = pp.parse_sentinel(SENTINEL.read_text()).get("plan", "")
+    fields = pp.parse_sentinel(SENTINEL.read_text())
+    rel = fields.get("plan", "")
     if not rel:
         return None
-    return ROOT / rel, rel
+    return ROOT / rel, rel, fields
 
 
 def _arm(plan_rel: str) -> None:
@@ -333,7 +342,7 @@ def cmd_tick() -> int:
         print("refusing: nothing is armed — no .claude/executing-plan, or it names no plan. "
               "Start with `scripts/begin-plan.py <slug> \"step\" ...`", file=sys.stderr)
         return REFUSED
-    plan_abs, plan_rel = armed
+    plan_abs, plan_rel, fields = armed
 
     # ⛔ A PAUSED PLAN CANNOT BE ADVANCED (backlog #99, decided 2026-09-06 — shape (a)).
     # The refusal is HERE, before anything is read or written, because this is the single moment
@@ -347,8 +356,6 @@ def cmd_tick() -> int:
     # since backlog #94 deliberately covers *blocked on in-flight work*. A tick that cleared the
     # pause as a side effect would throw that reason away, so a plan parked on a dispatched review
     # would silently un-park and nobody would learn whether the thing it waited for arrived.
-    pp = _load_plan_progress()
-    fields = pp.parse_sentinel(SENTINEL.read_text())
     if "paused" in fields:
         print(f"refusing: this plan is PAUSED — {fields['paused']}\n"
               f"Ticking it would advance a plan the sentinel says is not running, and the Stop "
@@ -376,7 +383,7 @@ def cmd_banner() -> int:
     if armed is None:
         print("refusing: nothing is armed.", file=sys.stderr)
         return REFUSED
-    plan_abs, plan_rel = armed
+    plan_abs, plan_rel, _fields = armed
     if not plan_abs.is_file():
         print(f"CANNOT RUN: the sentinel names {plan_rel}, which does not exist.", file=sys.stderr)
         return REFUSED
@@ -391,6 +398,24 @@ def cmd_pause(why: str) -> int:
         print("refusing: `--pause` needs a reason. A bare pause is indistinguishable from "
               "abandoning the plan, and the human reading the sentinel cannot tell which.",
               file=sys.stderr)
+        return REFUSED
+    # ⛔ ONE LINE, OR NOTHING — the reason is FIELD INJECTION, not tidiness (code review r1, M3).
+    # The sentinel is a `key: value` file and this writes free text straight into it. A `why`
+    # containing a newline puts its continuation lines at top level, and any of them shaped
+    # `key: value` becomes a LIVE FIELD. The Claude half drove it:
+    #
+    #     --pause $'waiting on review\nplan: .claude/plans/other.md'
+    #
+    # left a second `plan:` line, `parse_sentinel` is last-wins, and the Stop guard went on to
+    # supervise a DIFFERENT plan. `strip_field` cannot clean it up afterwards and should not try —
+    # it correctly removes only the line that IS the field, so `--resume` reported success and
+    # left the injected line behind. The whole `strip_field` design presumes the pause is one
+    # line; this is what makes that presumption true, at the only place that can.
+    if "\n" in why or "\r" in why:
+        print("refusing: `--pause` takes a ONE-LINE reason. The sentinel is a `key: value` file, "
+              "so a newline in the reason writes its remainder as top-level lines — and any of "
+              "them shaped `key: value` becomes a live field the Stop guard obeys. Rewrite the "
+              "reason on one line.", file=sys.stderr)
         return REFUSED
     SENTINEL.write_text(SENTINEL.read_text().rstrip("\n") + f"\npaused: {why.strip()}\n")
     print(f"paused: {why.strip()}\nThe Stop guard will now allow the turn to end. "
@@ -596,13 +621,40 @@ def _self_test() -> int:
             case("cmd_resume clears the pause",
                  cmd_resume() == OK
                  and "paused" not in pp.parse_sentinel(SENTINEL.read_text()))
-            case("cmd_resume leaves the plan itself untouched",
+            # ⟳ r1 L3: this was called "cmd_resume leaves the plan itself untouched", which
+            # attributed the observation to the wrong subject — it re-reads the same `before`
+            # snapshot and so reddens whenever ANY earlier command in the sequence wrote the
+            # plan (measured: it goes red under a cmd_tick mutation and under no cmd_resume one).
+            # Renamed to say what it actually watches: nothing in the pause/refuse/resume
+            # SEQUENCE has touched the plan file.
+            case("no command in the pause->refuse->resume sequence has written the plan",
                  plan_on_disk.read_text() == before)
             case("after --resume the tick works again",
                  cmd_tick() == OK
                  and pp.count_steps(plan_on_disk.read_text()) == (2, 2))
             case("cmd_resume REFUSES when the plan is not paused — it never invents a state",
                  cmd_resume() == REFUSED)
+
+            # ── r1 M3: a multi-line pause reason is FIELD INJECTION ───────────────────────
+            sent_before = SENTINEL.read_text()
+            rc_multi = cmd_pause("waiting on review\nplan: .claude/plans/other.md")
+            case("--pause REFUSES a multi-line reason", rc_multi == REFUSED)
+            case("the refused pause wrote NOTHING — no injected `plan:` line survives",
+                 SENTINEL.read_text() == sent_before)
+
+            # ── r1 H1 / Codex M1: a PAUSED sentinel is never deleted, even when fully ticked ──
+            # BOTH review halves reached this independently. The first version cleared it and
+            # said so only on stdout, which the Stop wrapper swallows.
+            cmd_tick()   # 2 of 2 -> fully ticked
+            cmd_pause("waiting on CI before the PR")
+            code_p, msg_p, unt_p = pp.decide(
+                SENTINEL.read_text(), plan_on_disk.read_text(), None, False)
+            case("a fully-ticked PAUSED plan does not report 'clear the sentinel'",
+                 unt_p is None)
+            case("...and it WARNs rather than allowing silently", code_p == pp.WARN)
+            case("...and the message names the pause reason it refuses to discard",
+                 "waiting on CI before the PR" in msg_p)
+            cmd_resume()
 
             cmd_finish()
             case("cmd_finish removes the sentinel, so the guard stands down",

@@ -75,13 +75,21 @@ BANNER_RC=$?
 # the next attempt", and that is FALSE for both paths that reach this `exit 2`:
 #   * a broken interpreter — decide() never runs, so the anti-nag never runs, and every subsequent
 #     stop blocks identically. "Blocking ONCE" is not what happens;
-#   * check-plan-progress's own CANNOT-RUN blocks (`:105` plan file missing, `:113` zero checkboxes)
-#     `return BLOCK, ..., None` BEFORE reaching the anti-nag at `:130`. That None means `:183`
-#     (`elif unticked is not None`) never writes STATE, so `prev_unticked` stays None and the
-#     anti-nag's own precondition is unsatisfiable by construction.
-# NOT a wedge, though — the real escape is printed by the block itself at `:109`: *"Fix the path or
-# delete .claude/executing-plan"*. The code was right; the comment named the wrong mechanism for it.
+#   * check-plan-progress's own CANNOT-RUN blocks (the plan file is missing; the plan parses to
+#     zero checkboxes) `return BLOCK, ..., None` BEFORE reaching the anti-nag. That None means the
+#     `elif unticked is not None` arm in run_decide never writes STATE, so `prev_unticked` stays
+#     None and the anti-nag's own precondition is unsatisfiable by construction.
+# NOT a wedge, though — the real escape is printed by the block itself: *"Fix the path or delete
+# .claude/executing-plan"*. The code was right; the comment named the wrong mechanism for it.
 # The r1 fold checked WHERE this comment sat and never re-read WHAT it claimed.
+#
+# ⟳ 2026-09-06, code review r1 (M1). THE LINE NUMBERS ARE GONE, DELIBERATELY. This paragraph used
+# to cite `:105`, `:109`, `:113`, `:130` and `:183` in check-plan-progress.py. All five were EXACT
+# when written and all five were WRONG one commit later, because backlog #99 grew that file by
+# ~60 lines — and the commit that broke them is the same commit that added a paragraph directly
+# beneath them without re-reading them. That is the third correction to this one comment block.
+# A cross-file line number is a citation with a countdown on it; naming the BEHAVIOUR does not
+# expire, and a reader can still find it with a grep.
 #
 # ⟳ 2026-09-06, backlog #99 (shape (c)). This used to be `if ! python3 ...; then exit 2; fi` —
 # EVERY non-zero was a block. That is still the default, and deliberately so, but the blocking

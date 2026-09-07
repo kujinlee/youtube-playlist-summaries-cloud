@@ -4,8 +4,8 @@
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "    fields = pp.parse_sentinel(SENTINEL.read_text())\n    if \"paused\" in fields:",
-        "    fields = pp.parse_sentinel(SENTINEL.read_text())\n    if False:"
+        "    if \"paused\" in fields:\n",
+        "    if False:\n"
       ]
     ],
     "expect": [
@@ -88,6 +88,32 @@
     ],
     "expect": [
       "after --resume the tick works again"
+    ]
+  },
+  {
+    "name": "--pause accepts a multi-line reason again, re-opening sentinel field injection",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if \"\\n\" in why or \"\\r\" in why:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "--pause REFUSES a multi-line reason"
+    ]
+  },
+  {
+    "name": "the refusal path writes to the plan before returning REFUSED",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "        return REFUSED\n\n    if not plan_abs.is_file():",
+        "        plan_abs.write_text(plan_abs.read_text() + \"\\n\")\n        return REFUSED\n\n    if not plan_abs.is_file():"
+      ]
+    ],
+    "expect": [
+      "the refused tick leaves the plan BYTE-IDENTICAL on disk"
     ]
   }
 ]
