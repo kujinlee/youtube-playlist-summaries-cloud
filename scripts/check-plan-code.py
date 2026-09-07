@@ -631,6 +631,7 @@ EXPECTED_MUTATIONS = {
     # so every mutation here would have killed the suite UNATTRIBUTABLY.
     "scripts/check-explainer-delivery.py": 5,
     "scripts/check-handoff-path.py": 5,
+    "scripts/check-vocabulary-collisions.py": 5,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree
@@ -2471,6 +2472,7 @@ def _self_test() -> int:
                                       "scripts/check-plan-progress.py",
                                       "scripts/check-selftest-counts.py",
                                       "scripts/check-theme-token-coverage.py",
+                                      "scripts/check-vocabulary-collisions.py",
                                       "scripts/gen-dashboard.py",
                                       "scripts/page_chrome.py",
                                       "scripts/page_markup.py"])
@@ -2569,7 +2571,7 @@ def _self_test() -> int:
     # off against the R4 manifest debt (MANIFEST_BASELINE 21 -> 20 in the same commit, because
     # that ratchet is an exact match and not a ceiling). This total is a LIVE sum, so it moves
     # whenever coverage does; it is not one of the counts pinned to a past measurement.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 217)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 222)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so

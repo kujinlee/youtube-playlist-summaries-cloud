@@ -1,0 +1,72 @@
+[
+  {
+    "name": "a collision needs THREE tables, so the two-table case stops being reported",
+    "file": "scripts/check-vocabulary-collisions.py",
+    "edits": [
+      [
+        "        if len({h.split(\".\")[0] for h in hits}) > 1:",
+        "        if len({h.split(\".\")[0] for h in hits}) > 2:"
+      ]
+    ],
+    "expect": [
+      "a stem on TWO tables is a collision"
+    ]
+  },
+  {
+    "name": "stems match whole-word instead of by substring",
+    "file": "scripts/check-vocabulary-collisions.py",
+    "edits": [
+      [
+        "        hits = [f\"{t}.{c}\" for t, c in cols if stem in c]",
+        "        hits = [f\"{t}.{c}\" for t, c in cols if stem == c]"
+      ]
+    ],
+    "expect": [
+      "a stem matches by SUBSTRING, not whole word"
+    ]
+  },
+  {
+    "name": "the STALE-justification sweep is dropped, so a dead entry outlives its collision",
+    "file": "scripts/check-vocabulary-collisions.py",
+    "edits": [
+      [
+        "    for stem in sorted(set(allowed) - set(collisions)):",
+        "    for stem in sorted(set()):"
+      ]
+    ],
+    "expect": [
+      "a STALE justification is caught",
+      "a stale justification cannot be silently outlived"
+    ]
+  },
+  {
+    "name": "ALLOWED is ignored, so a justified collision is still reported",
+    "file": "scripts/check-vocabulary-collisions.py",
+    "edits": [
+      [
+        "        if stem in allowed:\n            continue",
+        "        if False:\n            continue"
+      ]
+    ],
+    "expect": [
+      "a justified collision produces no problem"
+    ]
+  },
+  {
+    "name": "the collision report names only ONE table \u2014 header truncated and per-hit lines dropped",
+    "file": "scripts/check-vocabulary-collisions.py",
+    "edits": [
+      [
+        "        tables = sorted({h.split(\".\")[0] for h in hits})",
+        "        tables = sorted({h.split(\".\")[0] for h in hits})[:1]"
+      ],
+      [
+        "            + \"\".join(f\"                       {h}\\n\" for h in hits)",
+        "            + \"\""
+      ]
+    ],
+    "expect": [
+      "the problem names both tables"
+    ]
+  }
+]
