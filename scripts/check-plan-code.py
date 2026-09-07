@@ -5,7 +5,7 @@
     python3 scripts/check-plan-code.py <plan.md> --evidence # ...and print the evidence block
     python3 scripts/check-plan-code.py <plan.md> --compare .   # ...and diff vs the REAL files
     python3 scripts/check-plan-code.py <plan.md> --verify-evidence   # ...and FAIL if it is stale
-    python3 scripts/check-plan-code.py --self-test          # 189 cases
+    python3 scripts/check-plan-code.py --self-test          # 194 cases
 
 ⚠ `--compare` takes the REPO ROOT, and each file tag is resolved under it as the
 repo-relative path it already is. It took the containing DIRECTORY until round 5,
@@ -293,6 +293,60 @@ def child_env(d: pathlib.Path) -> dict[str, str]:
     env["HOME"] = str(d / CHILD_HOME)
     env["USERPROFILE"] = env["HOME"]   # the same concept on Windows
     return env
+
+
+# What the harness stages into the mutation tree.
+#
+# ⚠ THIS LIST DOES NOT BOUND WHAT A MUTATION CAN REACH, and reading it that way is how four
+# guards sat unmanifested. `shutil.copytree` yields a COPY: a mutant resolving `ROOT` from its
+# own path can only read and rewrite this tree, whatever is in it. Containment against the
+# escapes that DO reach the real machine is `child_env`'s (`$HOME`) and `home_escapes`' — both
+# ABSOLUTE-path routes, neither affected by adding a directory here. So widening costs reach
+# exactly nothing; the list decides only which guards can RUN.
+#
+# It is an allow-list because the repo root is 2.2 GB and `node_modules` alone is 504 MB.
+# Every entry is here because some `--self-test` cannot reach its own subject without it,
+# measured 2026-09-07 by running each of the four in a scripts-only tree:
+HARNESS_TREE = (
+    # All of them: these scripts import each other as siblings and resolve a repo root from
+    # their own path, so a partial copy gives a red control — `mutate_delivered`'s docstring.
+    "scripts",
+    # check-function-revokes  — "the real migrations directory is non-empty (else this gate is
+    #                            vacuous)", the one case of 16 that a fixture would make a
+    #                            tautology, which is why this is a copy and not a fixture.
+    # check-storage-grant-pin — 0007_storage_and_rpcs.sql, its whole subject (6 cases).
+    "supabase",
+    # check-anon-exposure — docs/superpowers/specs/m4/live-manifest.txt and .../schema/05_*.sql.
+    # Without it the suite exits 2 before case 1, concealing all 74.
+    "docs",
+    # check-paid-caller-arrival shells out to `node scripts/ts-comment-spans.mjs`, which imports
+    # typescript. That oracle refuses to fall back — DELIBERATELY, `:177` — so 20 of its 32 cases
+    # report CANNOT RUN without this. 23 MB; the whole of `node_modules` would be 504 MB.
+    "node_modules/typescript",
+)
+
+
+def stage_tree(root: pathlib.Path, dest: pathlib.Path) -> list[str]:
+    """Copy `HARNESS_TREE` from `root` into `dest`. An empty return means the tree is complete.
+
+    A missing entry is CANNOT RUN, never a quieter, smaller tree. The control run would catch
+    it either way — a guard whose subject was not copied exits 2 and `control_is_green` goes
+    false — but it would name the wrong cause, reporting the GUARD as broken when the harness
+    was the thing that failed to stage its subject. That is the "plausible and wrong" shape
+    this file already refuses elsewhere, so say which path was absent instead.
+    """
+    problems = []
+    for rel in HARNESS_TREE:
+        src = root / rel
+        if not src.exists():
+            problems.append(f"CANNOT RUN — {rel} is missing under {root}, so the mutation "
+                            f"tree would be incomplete and every verdict below it an "
+                            f"artefact. TREAT THIS AS NOT CHECKED")
+            continue
+        dst = dest / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(src, dst)
+    return problems
 
 
 # The home-resolution routes `$HOME` does NOT govern — see `child_env`'s scope note.
@@ -721,6 +775,12 @@ def mutate_delivered(root: pathlib.Path) -> tuple[bool, list[str], dict]:
     The whole `scripts/` tree is copied because these scripts import each other as
     siblings and resolve a repo root from their own path; copying only the targeted
     files gives a red control, and a mutation table over a red control is not evidence.
+
+    ⟳ 2026-09-07: that same reasoning reaches past `scripts/`. Four guards resolve their
+    SUBJECT from the repo root too — a migration, a spec directory, a node oracle's
+    dependency — so a scripts-only tree gave them a red control for the identical reason,
+    and they went unmanifested. What gets staged is now `HARNESS_TREE`; read its note
+    before assuming the list is a containment boundary, because it is not one.
     """
     muts, problems = load_manifests(root)
     # ⟳ 2026-09-03. `trustworthy` answers ONE question: may the caller print the tally as a
@@ -785,7 +845,9 @@ def mutate_delivered(root: pathlib.Path) -> tuple[bool, list[str], dict]:
     targets = sorted(counts)
     with tempfile.TemporaryDirectory() as td:
         d = pathlib.Path(td)
-        shutil.copytree(root / "scripts", d / "scripts")
+        staging = stage_tree(root, d)
+        if staging:
+            return False, staging, ev
         # The redirected home the suites will resolve `Path.home()` to — see `child_env`.
         # Inside the TemporaryDirectory, so it is removed with everything else.
         (d / CHILD_HOME).mkdir()
@@ -2151,6 +2213,12 @@ def _self_test() -> int:
     # 2026-08-29 — three separate hand-run harnesses reported a red or meaningless control
     # on first use for exactly this reason.
     def _mini(root, val=1):
+        # ⟳ 2026-09-07. Every HARNESS_TREE entry must EXIST or `stage_tree` refuses this root —
+        # correctly: an incomplete tree is CANNOT RUN, not a quieter run. Scaffolded by iterating
+        # the tuple rather than by listing the entries again, so adding one there cannot leave
+        # nine cases red here. A second copy of a rule is a copy that drifts.
+        for _rel in HARNESS_TREE:
+            (root / _rel).mkdir(parents=True, exist_ok=True)
         (root / "scripts" / "mutations").mkdir(parents=True, exist_ok=True)
         (root / "scripts" / "helper.py").write_text(f"VALUE = {val}\n")
         (root / "scripts" / "thing.py").write_text(
@@ -2582,6 +2650,30 @@ def _self_test() -> int:
     # that ratchet is an exact match and not a ceiling). This total is a LIVE sum, so it moves
     # whenever coverage does; it is not one of the counts pinned to a past measurement.
     case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 247)
+
+    # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
+    # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
+    # are the real ones, and run from a staged tree they are the ones just copied. That is the
+    # property worth having — a staged tree that cannot restage itself is a tree missing
+    # something a guard needs, and the first case says so wherever it runs.
+    _repo = pathlib.Path(__file__).resolve().parent.parent
+    case("every HARNESS_TREE entry is present in the tree this file lives in",
+         [r for r in HARNESS_TREE if not (_repo / r).exists()], [])
+    with tempfile.TemporaryDirectory() as _td:
+        _dest = pathlib.Path(_td) / "staged"
+        case("a complete stage reports no problems",
+             stage_tree(_repo, _dest), [])
+        case("...and every entry actually arrives, nested paths included",
+             [r for r in HARNESS_TREE if not (_dest / r).exists()], [])
+    with tempfile.TemporaryDirectory() as _td:
+        # An empty root: nothing to copy, so EVERY entry must be reported. Counting them is
+        # what makes this fail if a future entry is added to the tuple and skipped by the loop.
+        _probs = stage_tree(pathlib.Path(_td), pathlib.Path(_td) / "out")
+        case("a missing entry is CANNOT RUN, one problem per absent path",
+             len(_probs), len(HARNESS_TREE))
+        case("...and it names the path rather than blaming the guard",
+             all("CANNOT RUN" in p for p in _probs) and any("supabase" in p for p in _probs),
+             True)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so

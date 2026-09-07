@@ -4651,3 +4651,26 @@ check". A floor with no test is a number nobody has watched move.
 Verified: control green on the full tree, 5/5 red via the case each names, no extras. Real harness:
 **18 files, 247 mutations, 0 survivors.** 189/189; `check-anchors` itself `rc=0` against the live
 registry (10 anchors, all claimed).
+
+## 2026-09-07
+Four guards had no safety-net coverage because the test harness was copying too little of the project for their tests to run at all.
+The harness proves a guard's tests are real by breaking the guard on purpose and checking the tests notice. It does that inside a throwaway copy of the project — and that copy held only the `scripts/` folder. Four guards whose subject lives elsewhere (a database migration, a spec folder, a TypeScript helper) could not run there at all, so they were left uncovered. The copy now includes what they need. Nothing else changed: all eighteen already-covered guards still pass in the wider copy.
+<!--tech-->
+`scripts/check-plan-code.py` — new `HARNESS_TREE` tuple and `stage_tree()`; `mutate_delivered` stages scripts + supabase + docs + node_modules/typescript instead of `copytree(root / "scripts")` alone. Self-test 189 → 194: list completeness, complete stage, every entry arrives, per-entry CANNOT RUN, and the message names the path rather than blaming the guard. `_mini` scaffolds every entry by iterating the tuple, so adding one there cannot leave nine cases red here.
+
+MEASURED in a scripts-only tree, 2026-09-07: `check-anon-exposure` rc=2 before case 1 (concealing all 74), `check-function-revokes` 15/16, `check-storage-grant-pin` aborted at 1/2 (it has 6), `check-paid-caller-arrival` 12/32. In the widened tree: 74/74, 16/16, 6/6. The fourth needed `node_modules/typescript` as well — `ts-comment-spans.mjs` imports typescript and `:177` refuses to fall back, deliberately.
+
+WHY WIDENING, NOT FIXTURES: `check-function-revokes`' one failing case is *"the real migrations directory is non-empty (else this gate is vacuous)"* and `check-storage-grant-pin`'s is *"policy is extractable from the migration"*. Both assert something about the real repo, so a fixture turns both into tautologies. And the scripts-only copy was never a containment boundary — `copytree` yields a COPY; the boundary is `child_env`'s `$HOME` redirect, which is unchanged.
+
+Controls 18/18 green in the widened tree; `check-docs`, `check-ratchet-contract`, `check-guard-coverage`, `check-selftest-counts` all green. Unblocks R4 manifest debt 13 → 9.
+
+## 2026-09-07 [needs-you]
+Two decisions about the comprehensibility suite are waiting on you, and goal 3 cannot be finished without them.
+First — is the comprehensibility suite an official deliverable of this project? It is seven page-producers and forty-three built pages, and nowhere does the project actually say it is one. Most of it therefore has no declared goal, and the check that exists to catch exactly that cannot see the gap.
+Second — is publishing it to the marketplace still the plan? If it is, then being usable outside this repo stops being a nicety and becomes something that blocks release.
+<!--tech-->
+Both are recorded in `docs/backlog.md` row 89, which states them as the user's call and deliberately does not act on them.
+
+(1) A deliverable declaration's home is `docs/anchors.md`. Of its 10 anchors exactly one touches comprehension — `status-visibility`, scoped to *"a person who was AWAY"* — which covers `brief` and the three hook-regenerated pages but not `explain-diff`, `explain-topic` or `explain-findings`, all of which serve a human who is PRESENT. None of the four skill files declares an anchor at all, and `check-anchors` cannot see this because it enforces declarations on specs and plans, not on skills.
+
+(2) Marketplace publication is outward-facing and irreversible, so it is a human gate. Coupling measured in row 89: `shared/explainer-delivery.md` has **0** project-specific references, `explain-topic` and `explain-findings` **1** each, and `brief/SKILL.md` **9** — all of them step 1's ground-truth command list. The generalization problem is concentrated in one file, which `brief`'s own *Known gaps* section already confesses.
