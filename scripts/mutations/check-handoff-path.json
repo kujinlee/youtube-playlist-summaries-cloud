@@ -1,0 +1,57 @@
+[
+  {
+    "name": "the consumed path loses its directory, so a bare remember.md passes",
+    "file": "scripts/check-handoff-path.py",
+    "edits": [
+      [
+        "CONSUMED_PATH = \".remember/remember.md\"",
+        "CONSUMED_PATH = \"remember.md\""
+      ]
+    ],
+    "expect": ["near-miss: remember.md without the directory"]
+  },
+  {
+    "name": "a missing SKILL.md reports a PASS instead of CANNOT RUN",
+    "file": "scripts/check-handoff-path.py",
+    "edits": [
+      [
+        "return 2, [f\"CANNOT RUN — {path} does not exist. Treat this as NOT RUN, not as a pass.\"]",
+        "return 0, [f\"CANNOT RUN — {path} does not exist. Treat this as NOT RUN, not as a pass.\"]"
+      ]
+    ],
+    "expect": ["missing file is CANNOT RUN"]
+  },
+  {
+    "name": "an empty SKILL.md reports a PASS instead of CANNOT RUN",
+    "file": "scripts/check-handoff-path.py",
+    "edits": [
+      [
+        "return 2, [f\"CANNOT RUN — {path} is empty. Treat this as NOT RUN.\"]",
+        "return 0, [f\"CANNOT RUN — {path} is empty. Treat this as NOT RUN.\"]"
+      ]
+    ],
+    "expect": ["empty file is CANNOT RUN"]
+  },
+  {
+    "name": "the violations-to-exit-code mapping is inverted",
+    "file": "scripts/check-handoff-path.py",
+    "edits": [
+      [
+        "    return (1 if violations else 0), violations",
+        "    return (0 if violations else 1), violations"
+      ]
+    ],
+    "expect": ["compliant file exits 0"]
+  },
+  {
+    "name": "any mention of mktemp short-circuits the check, so pristine upstream passes",
+    "file": "scripts/check-handoff-path.py",
+    "edits": [
+      [
+        "    violations: list[str] = []\n    if CONSUMED_PATH not in text:",
+        "    violations: list[str] = []\n    if \"mktemp\" in text:\n        return violations\n    if CONSUMED_PATH not in text:"
+      ]
+    ],
+    "expect": ["pristine upstream — the reversion this exists to catch"]
+  }
+]

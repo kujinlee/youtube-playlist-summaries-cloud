@@ -4268,3 +4268,39 @@ the next several of the remaining 20** — check the print format before writing
 
 `check-ratchet-contract` now reports 20 violations against baseline 20, at baseline. Guard self-test
 unchanged at 8/8; its declared count is still 8, so `check-selftest-counts` is unaffected.
+
+## 2026-09-06
+A second guard is covered, and this one would have lied rather than gone quiet.
+
+Same job as the previous entry — proving a safety net actually catches things — but the guard in
+question reported its failures in a format that *almost* matched what the checking machinery reads.
+The others in this family are unreadable to it and produce an obviously empty answer. This one
+produced a **plausible but wrong** answer instead, which is the harder kind to notice.
+
+Debt drops from 20 to 19.
+<!--tech-->
+`scripts/mutations/check-handoff-path.json` — 5 mutations, `EXPECTED_MUTATIONS` +5 (total 212 → 217),
+`MANIFEST_BASELINE` 20 → 19 in the same commit.
+
+⚠ **THE NEAR-MISS, which is why this guard was taken second and not last.** It printed
+`[FAIL] {name}: expected {expected}, got {got}` — note `, got `, not `: got `. It therefore CLEARS
+`check-plan-code.py`'s `startswith("[FAIL] ")` filter, unlike its 18 siblings. But attribution is
+`rsplit(": got ", 1)[0]`, and **`rsplit` on an absent needle returns the whole string**. MEASURED
+before the fix:
+
+    'pristine upstream — the reversion this exists to catch: expected 1, got 0'   ← today
+    'pristine upstream — the reversion this exists to catch'                      ← after
+
+The first is a case name no `expect` entry can ever match, delivered with the confidence of a real
+one. All four print sites in the file now use `: got {got} want {want}`.
+
+The five mutations, each the weakest edit that reddens exactly one case, verified on a temp copy with
+a green control first — no extras, none killed by something else:
+`CONSUMED_PATH` loses its directory → *near-miss: remember.md without the directory*; missing file
+returns 0 not 2 → *missing file is CANNOT RUN*; empty file returns 0 not 2 → *empty file is CANNOT
+RUN*; the violations→exit-code map inverted → *compliant file exits 0*; a `mktemp` mention
+short-circuits the check → *pristine upstream — the reversion this exists to catch*.
+
+That last one matters beyond coverage: `check-handoff-path` is layer 2 of the three-layer defence in
+`docs/plugins.md`, and *pristine upstream* is the exact reversion it exists to catch. Gates: 189/189,
+ratchet 19/baseline 19 at baseline, all rc=0.
