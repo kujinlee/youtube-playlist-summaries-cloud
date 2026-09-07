@@ -1908,6 +1908,17 @@ unapplied for eight days while every document read "merged, done".
 > the measurements; this block carries the shape, because the task list does not survive `/compact`
 > and this file does.
 >
+> ⚠ **THERE IS ALSO A HARNESS-LEVEL `/goal`, AND THIS FILE — NOT IT — IS THE RECORD.** Claude Code
+> ships a built-in `/goal` slash command (**verified 2026-09-06: `claude --version` → 2.1.221**; it
+> is compiled into the CLI, so it appears in neither `.claude/commands/` nor the plugin skill list,
+> and an assistant that searches only those two will wrongly report it absent — that mistake was made
+> here first). **Its state is session-scoped and leaves no trace in the repo** — nothing under
+> `~/.claude/` or `.claude/` exposes an active goal, checked the same day. So it cannot answer
+> *"what is the current goal"* for anyone who was not in that session, which is exactly the question
+> this block exists to answer. **If a harness goal is set, it restates this block; it never competes
+> with it.** Recorded because the paragraph above rejects a second answer to *what's next* — and
+> would have shipped silently omitting a third.
+>
 > **1 — `docs/backlog.md` row 78, half (2): decide CLOSE vs fix.** Half (1) shipped in PR #201.
 > Half (2) is *"the entry gate runs only on `pull_request`"*, and the row's own 2026-09-06 re-read
 > already demoted it to a CI-timing preference. **Measured 2026-09-06:** `.github/workflows/ci.yml`
