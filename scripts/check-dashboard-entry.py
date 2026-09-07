@@ -73,11 +73,27 @@ def header_error(line: str) -> str | None:
     are REFERENTIAL and cannot be judged from a header alone at all — they are
     properties of the whole store.
 
-    So the honest contract is: SYNTAX agrees; REFERENCE does not, and this function
-    cannot make it agree. Closing that needs the entry parser itself to live here,
-    where the grammar already does — backlog #82. Until then a wrong-but-existing
-    `[resolved:]` id reaches the reader as "could not parse this entry" on the page
-    rather than as a refusal at the gate.
+    So the honest contract is: SYNTAX agrees here; REFERENCE cannot be judged from a
+    header alone and never will be, because it is a property of the whole store.
+
+    ⟳ CORRECTED 2026-09-06 — backlog #82 SHIPPED (`3ec912f6`), and this paragraph
+    outlived it by hours. It used to end: *"Until then a wrong-but-existing
+    `[resolved:]` id reaches the reader as 'could not parse this entry' on the page
+    rather than as a refusal at the gate."* **That is now false.**
+    `added_reference_errors` reads BASE and HEAD of the store and `verdict` refuses on
+    it ABOVE the exemption short-circuit, so the gate rejects a dangling reference.
+    MEASURED the same day on `[resolved: 2026-09-01/99]`: `header_error` → `None`,
+    `added_reference_errors` → `['… names no entry in this file']`, `verdict` → `rc=1`.
+
+    ⚠ NOTE THE SHAPE, because it is the one this file keeps producing. The old
+    sentence was TRUE ABOUT THIS FUNCTION — `header_error` still returns `None` on a
+    dangling reference and still cannot do otherwise — and STALE ABOUT THE FILE, where
+    a sibling now refuses it. A docstring that scopes its claim to its own function but
+    states a consequence for the whole gate will go stale every time a sibling grows.
+    **State what this function decides; name the sibling that decides the rest.**
+
+    So: reference is decided by `added_reference_errors`, not here. This function is
+    the SYNTAX half, and remains shared with the page's parser.
 
     The SYNTAX half is still worth the shared definition, and was earned the hard
     way: v2.2 claimed the two already agreed; measured, they diverged on five
