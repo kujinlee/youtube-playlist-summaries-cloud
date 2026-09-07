@@ -3,6 +3,38 @@
 **This project has two deliverables.** One is the product. The other is a battle-tested harness and
 the documents that make it reproducible somewhere else. This file is the second one's index.
 
+> ### ⭐ THE COMPREHENSIBILITY SUITE IS PART OF DELIVERABLE 2, AND IT IS MEANT TO SHIP
+>
+> **Decided 2026-09-07 by the user, who had said it twice before and never had it written down:**
+> *"Human comprehensibility is a big issue when I work with Claude Code. Sometimes it is opaque to
+> me. One of the main deliverables of this project is the comprehensibility suite."* And: *"I had
+> plan to publish the comprehensibility suite to marketplace. So that it should be general."*
+>
+> **The suite is 9 files / 3,599 lines** — the four page-producing skills (`explain-diff`, `brief`,
+> `explain-findings`, `explain-topic`), the shared delivery contract, `brief-compose.py`,
+> `explainer-serve.py`, `page_chrome.py`, `page_markup.py` — plus the three hook-regenerated pages
+> (`regen-backlog-page.sh`, `regen-dashboard.sh`, `regen-goals-page.sh`). Enumerated in
+> `docs/backlog.md` row 89, not recalled.
+>
+> ⚠ **WHY THIS SENTENCE CHANGES WHAT THE FILE IS FOR.** *Project-independent* is filter 2 below,
+> where it reads as a quality bar for entries. For the suite it is now a **release blocker**: a
+> marketplace plugin that only works in this repo is not shippable, so coupling is a defect, not a
+> tidiness note. The good news is measured — `shared/explainer-delivery.md` has **0**
+> project-specific references, `explain-topic` and `explain-findings` **1** each, and
+> `brief/SKILL.md` **9**, all in step 1's ground-truth command list. The problem is concentrated in
+> one file, which `brief`'s own *Known gaps* section already confesses.
+>
+> ⛔ **WHAT IS STILL NOT DECLARED, stated so the gap is not read as closed.** `docs/anchors.md`
+> registers 10 anchors and exactly one touches comprehension — `status-visibility`, scoped to *"a
+> person who was AWAY"*. That covers `brief` and the three hook-regenerated pages. It does **not**
+> cover `explain-diff`, `explain-topic` or `explain-findings`, which serve a human who is PRESENT
+> and trying to understand a change, a concept, or a triage decision. **A second anchor is owed and
+> is deliberately NOT allocated here:** `check-anchors.py` R4 fails an anchor that no document
+> claims, and the document that would claim it is backlog #89's design pass, which is not written.
+> Allocating the name now would trade an invisible gap for a red gate. The name lands **with** that
+> spec. ⚠ Do not close this by widening `status-visibility` instead — one anchor covering two
+> different readers is the one-name-two-meanings defect this repo already runs a guard for.
+
 **Status: STARTED 2026-08-11, deliberately incomplete.** §1–§7 measured 2026-08-11, §8 on 2026-08-12,
 §9 and §10 on 2026-08-13, §11 and §12 on 2026-08-15, §13 on 2026-08-17, §14 and §15 on 2026-08-22,
 §16 on 2026-08-26. *(⟳ 2026-08-26: this line had gone stale in the way it warns about everywhere else
