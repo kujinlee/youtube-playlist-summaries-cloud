@@ -4129,3 +4129,45 @@ the consumer's own parser instead of patching another instance.
 Three r2 dispositions ride to merge unfixed and are named on the PR: L1 (a corrected coverage
 CLAIM, not code), L4 (no mutation in the fix-went-too-far direction), L5 (a message printed before
 a pause still says the sentinel will be cleared, which the preserve branch no longer does).
+
+## 2026-09-06
+The next three pieces of work are now written down, so a context reset cannot lose them.
+
+Until now the roadmap offered a *candidate pool* — a list to pick from, explicitly not a plan. It now
+carries one plan, chosen by the user: settle a continuous-integration timing question that has
+already been demoted twice and may simply be closeable; pay down the mutation-testing debt owed by
+21 guard scripts; and work out how the status pages get built without consuming the main
+conversation's working memory. None of the three depends on the others, so they can be taken in any
+order.
+
+Nothing was broken and nothing was fixed here. This is bookkeeping, and its whole value is that the
+next session starts with an answer to "what now" instead of a search for one.
+<!--tech-->
+A `CURRENT GOAL` block is added inside `docs/roadmap-to-launch.md`'s `▶ NEXT ACTIONS` section rather
+than as a competing top-level heading — two answers to *what's next* is the duplicate-mechanism
+shape `scripts/check-vocabulary-collisions.py` exists to catch. Mirrored as three entries in the
+session task list (Claude Code's own in-session to-do list — **not** GitHub issues and **not**
+`docs/backlog.md` rows), which is the layer that does not survive `/compact`; the roadmap is the one
+that does.
+
+**Measured this session, not recalled:**
+`.github/workflows/ci.yml` triggers on **both** `pull_request` and `push: branches:[master]`, and
+exactly **one** step in the workflow is `pull_request`-gated — the dashboard entry ratchet — because
+it feeds `--base "origin/$GITHUB_BASE_REF"` and a `--pr-body-file` from
+`github.event.pull_request.body`. ⚠ That does **not** mean the gate cannot run on a push:
+`check-dashboard-entry.py` defaults `--base` to `origin/master` and `--pr-body-file` to `None`, so it
+would execute against an empty diff and hit the exempt short-circuit — **vacuous, not impossible**.
+`scripts/check-ratchet-contract.py` reports 21 R4 manifest violations against `MANIFEST_BASELINE`
+21, at baseline; 10 manifests exist in `scripts/mutations/`. The baseline is compared with `!=`, so
+paying one down reddens CI until the constant drops in the same commit.
+
+Backlog **#89**'s stated dependency is cleared: backlog **#88** merged as PR **#224** (squash
+`65cd509e`, verified by `git show`). ⚠ Note the namespace hazard in that neighbourhood — commit
+`8642b2e0` carries `(#88)` as a **PR** number while `a0ea4d79` names **backlog** #88; same digits,
+different registries.
+
+Gates run on this branch: `check-docs`, `check-roadmap-consistency`, `check-anchors` — all `rc=0`
+(anchors: 10 registered, all claimed, floor 22 held). No new anchor was allocated: `docs/anchors.md`
+holds names of durable goals claimed by a spec or plan, and three unrelated maintenance items are
+not one goal. The deliverable-declaration question inside backlog #89 — which *would* be an anchor
+change — is deliberately left to the user.
