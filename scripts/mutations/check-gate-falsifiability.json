@@ -1,0 +1,67 @@
+[
+  {
+    "name": "the unversioned-tick finding is renamed, so the fail-open it names is no longer reported as one",
+    "file": "scripts/check-gate-falsifiability.py",
+    "edits": [
+      [
+        "                    findings.append(Finding(path, line_no, \"unversioned_tick\", excerpt,",
+        "                    findings.append(Finding(path, line_no, \"unversioned_note\", excerpt,"
+      ]
+    ],
+    "expect": [
+      "a tick with no VERIFIED AGAINST is reported, never silently skipped"
+    ]
+  },
+  {
+    "name": "staleness compares with <= so a tick against the CURRENT release reads as stale",
+    "file": "scripts/check-gate-falsifiability.py",
+    "edits": [
+      [
+        "                elif int(m.group(1)) < current_release:",
+        "                elif int(m.group(1)) <= current_release:"
+      ]
+    ],
+    "expect": [
+      "a tick verified against the current release is clean"
+    ]
+  },
+  {
+    "name": "ticked items are no longer skipped for falsifiers, so done work is demanded a FAILS IF",
+    "file": "scripts/check-gate-falsifiability.py",
+    "edits": [
+      [
+        "        if mark in (\"x\", \"X\"):",
+        "        if mark in (\"X\",):"
+      ]
+    ],
+    "expect": [
+      "ticked items are out of scope"
+    ]
+  },
+  {
+    "name": "investigation phrasing loses its specific diagnosis and reports as a plain missing falsifier",
+    "file": "scripts/check-gate-falsifiability.py",
+    "edits": [
+      [
+        "        if INVESTIGATION_RE.search(body):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "investigation phrasing is called out specifically"
+    ]
+  },
+  {
+    "name": "unknown npm scripts stop being flagged, so a gate can name a command that does not exist",
+    "file": "scripts/check-gate-falsifiability.py",
+    "edits": [
+      [
+        "            if m.group(1) not in known_scripts:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "an unknown npm script is flagged"
+    ]
+  }
+]
