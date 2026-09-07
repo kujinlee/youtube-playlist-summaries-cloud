@@ -604,6 +604,27 @@ EXPECTED_MUTATIONS = {
     # comprehension instead of calling it, so deleting the real rule left the case green. A
     # second implementation of one rule, tested against itself.
     "scripts/check-selftest-counts.py": 8,
+    # ⟳ 2026-09-06, backlog #99: the Stop guard and its driver BOTH join the manifest, in the
+    # commit that changes their decision paths. Only ONE of them is R4 debt — begin-plan.py is
+    # not a `check-*` guard, so `discover_guards` never saw it and it was never counted as owed.
+    # MANIFEST_BASELINE therefore drops 22 -> 21, not 20, and the number came from running
+    # check-ratchet-contract.py rather than from arithmetic (this file's own recorded lesson:
+    # a second implementation of the population rule drifted by one).
+    #
+    # The ten check-plan-progress entries exist because the defect being fixed was a guard that
+    # went QUIET, so the mutations are weighted at what the guard SAYS, not only at what it
+    # returns: dropping the count, dropping the human's pause reason, and — the one that matters
+    # most — collapsing WARN from 3 onto 1, which would make a Python traceback indistinguishable
+    # from a pause warning and turn the fail-closed path in block-idle-stop.sh into a fail-open
+    # one. Two more assert the pause escape still cannot BLOCK on either cannot-run arm.
+    #
+    # The seven begin-plan entries split the same way: three on the refusal happening at all and
+    # on the plan staying byte-identical when it does, two on the refusal's TEXT (a refusal that
+    # stops naming `--resume` strands the reader in #99's own state with no discoverable exit),
+    # and two on `--resume` — one for a write-back that never clears, one for a clear that takes
+    # the `plan:` pointer with it.
+    "scripts/check-plan-progress.py": 12,
+    "scripts/begin-plan.py": 9,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree
@@ -2430,9 +2451,11 @@ def _self_test() -> int:
     finally:
         EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved)
     case("the declared counts name every manifest that ships",
-         sorted(EXPECTED_MUTATIONS), ["scripts/check-banner-armed.py",
+         sorted(EXPECTED_MUTATIONS), ["scripts/begin-plan.py",
+                                      "scripts/check-banner-armed.py",
                                       "scripts/check-dashboard-entry.py",
                                       "scripts/check-plan-code.py",
+                                      "scripts/check-plan-progress.py",
                                       "scripts/check-selftest-counts.py",
                                       "scripts/check-theme-token-coverage.py",
                                       "scripts/gen-dashboard.py",
@@ -2517,7 +2540,19 @@ def _self_test() -> int:
     # "block-start regex stops excluding sub-headings", which still guards the rule where
     # it now lives. CI caught the duplicate; the harness refuses an entry that repeats
     # another's anchors, which is exactly the check that should have stopped me.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 186)
+    # ⟳ 186 -> 203, backlog #99: the Stop guard (+10) and its driver (+7) join together, because
+    # the fix is a PAIR — begin-plan.py refuses the tick, check-plan-progress.py reports the state
+    # — and coverage on one half without the other would leave the pair's silent-failure mode
+    # (a paused plan advancing while the guard says nothing) guarded at exactly one end.
+    # ⟳ 203 -> 206, code review r1 fold: +1 on the guard (the paused WARN's `--resume`
+    # guidance, which r1 L1 measured as reddening only under a 7-case blunderbuss) and +2 on
+    # the driver (the multi-line `--pause` refusal from M3, and an isolating mutation for
+    # "byte-identical on disk", which L2 measured as never being the sole red).
+    # ⟳ 206 -> 207, code review r2 fold: the preserve WARN's `--finish` guidance. r2 M2 is
+    # the fold's OWN r1 L1 finding recurring inside the fix for it — the class was "a
+    # guard's message naming the only escape is unguarded", and r1 closed the instance.
+    # `--finish` is named in exactly one place in the tree; `--resume` in five.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 207)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so

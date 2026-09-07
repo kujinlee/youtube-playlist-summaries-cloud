@@ -38,8 +38,17 @@ docstring, not the code, was the thing that needed fixing.
 Usage (the hook calls form 1; a human can call form 2 to see where things stand):
     python3 scripts/check-plan-progress.py --decide [--stop-hook-active]
     python3 scripts/check-plan-progress.py --status
-    python3 scripts/check-plan-progress.py --self-test  # 17 cases
-Exit codes for --decide:  0 = allow the stop   2 = block it (message on stderr)
+    python3 scripts/check-plan-progress.py --self-test  # 35 cases
+Exit codes for --decide:
+    0 = allow the stop, silently (message, if any, on stdout)
+    2 = block it (message on stderr)
+    3 = allow it but SAY SO — the plan is paused with steps outstanding (message on stderr)
+
+⏸ WHY 3 EXISTS (backlog #99, decided 2026-09-06). `paused:` used to short-circuit this whole
+check, so a paused plan and a finished plan produced the same output: none. Measured 2026-09-06 —
+a pause written at a checkpoint outlived the pause by four steps, a code review and a PR, and the
+premature-stop guard was stood down for all of it with no symptom anyone could distinguish from
+noise. A pause still ALLOWS the stop; it just stops being invisible while doing it.
 """
 from __future__ import annotations
 
@@ -54,6 +63,15 @@ STATE = ROOT / ".claude/executing-plan.state"
 
 ALLOW, BLOCK = 0, 2
 
+# ⚠ WHY 3 AND NOT 1 (backlog #99, option C). WARN allows the stop but says so out loud, and the
+# Stop wrapper must be able to tell it apart from a CRASH. A Python traceback exits 1 and an
+# argparse error exits 2; `.claude/hooks/block-idle-stop.sh` treats every non-zero from this
+# script as a fail-closed BLOCK, which is what makes a broken interpreter refuse the stop instead
+# of waving it through. Reusing 1 here would silently convert that fail-closed path into a
+# non-blocking warning — the fail-open shape this project keeps measuring. 3 is a code CPython
+# never produces on its own, so the wrapper's allow-list of {0, 3} cannot be satisfied by accident.
+WARN = 3
+
 _STEP_RE = re.compile(r"^- \[( |x)\] ", re.M)
 _TASK_RE = re.compile(r"^### (Task \d+:.*)$", re.M)
 
@@ -66,6 +84,28 @@ def parse_sentinel(text: str) -> dict[str, str]:
             k, v = line.split(":", 1)
             out[k.strip()] = v.strip()
     return out
+
+
+def strip_field(text: str, key: str) -> str:
+    """Return `text` with every line `parse_sentinel` would read as `key` removed.
+
+    ⚠ THE POINT IS THE AGREEMENT, NOT THE STRING SURGERY. This lives here, beside
+    `parse_sentinel`, because the two must answer "which line is the `paused` line" identically.
+    `check-banner-armed._armed_from_text`'s docstring — cited by SYMBOL, because the commit that
+    wrote this citation also moved the line it first named by six (code review r1, M2), and a line
+    number into a file you are editing in the same change is a citation with a countdown on it —
+    records the near-miss that makes that concrete: a colon-less
+    `paused` line is a key to one parser and not the other, and a sentinel that reads as paused to
+    one guard and running to the next is the exact contradiction backlog #99 is about. So the
+    predicate below is `parse_sentinel`'s own rule applied per line, and nothing else may hold a
+    second copy of it — `begin-plan.py` borrows this function rather than writing its own.
+
+    Removes EVERY match, not the first. `--pause` appends, so two pauses can accumulate, and
+    clearing one of them would leave the plan still paused while reporting that it had resumed.
+    """
+    kept = [ln for ln in text.splitlines(keepends=True)
+            if not (":" in ln and ln.split(":", 1)[0].strip() == key)]
+    return "".join(kept)
 
 
 def count_steps(plan_text: str) -> tuple[int, int]:
@@ -97,32 +137,110 @@ def decide(
         return ALLOW, "", None
 
     fields = parse_sentinel(sentinel_text)
-    if "paused" in fields:
-        return ALLOW, "", None
-
     plan = fields.get("plan", "(no `plan:` line in the sentinel)")
 
+    # ⏸ A PAUSE ALWAYS ALLOWS THE STOP — but from here on it is never SILENT (backlog #99, shape
+    # (c), decided 2026-09-06). `paused` used to short-circuit above this line, so a plan that was
+    # paused and a plan that was finished produced identical output: nothing. The guard stood down
+    # for four steps, a code review and a PR without ever saying so.
+    #
+    # ⚠ THE PAUSED PATH IS NOW FOLDED INTO THE COUNTING RATHER THAN BYPASSING IT, and that is the
+    # whole design. To report "paused with N outstanding" you must count, and once you count you
+    # also learn the case where N is ZERO — a paused plan with every box ticked.
+    #
+    # `.get` alone, not `.get(...) if ... in ... else None` (code review r1, L8): parse_sentinel
+    # only ever stores `str`, so `.get` returns None exactly when the key is absent. The longer
+    # form read as if it defended the empty-reason case and defended nothing — and no mutation can
+    # tell the two apart, so it was untested by construction.
+    paused = fields.get("paused")
+
     if plan_text is None:
-        return BLOCK, (
-            f"CANNOT RUN: the executing-plan sentinel names `{plan}`, which does not exist. "
-            "TREAT THIS AS NOT RUN — this check cannot tell you whether work remains. "
-            f"Fix the path or delete {SENTINEL.relative_to(ROOT)}."
-        ), None
+        # ⚠ NOT-RUN, LOUDLY, BUT STILL NOT A BLOCK — AND THAT IS A DECISION, NOT AN OVERSIGHT.
+        # "Cannot run" is a failure never a pass (CLAUDE.md), so it must SAY so. But blocking here
+        # would break the escape the pause exists to be, including the blocked-on-in-flight-work
+        # case backlog #94 widened it for — a human who has already said "I am stopping
+        # deliberately" must not be trapped by a broken plan path. WARN is the combination those
+        # two rules require: audible and non-blocking.
+        #
+        # ⟳ RECORDED EXPLICITLY at the Codex half's request (code review r1, Cx-M2), which asked
+        # whether `paused:` is meant to override cannot-run. IT IS, on this path only. The
+        # non-paused arm below still BLOCKS, so the fail-closed behaviour is intact for every case
+        # where the human has not said otherwise. Before this branch these paths were allowed
+        # SILENTLY; the change is that the failure is now stated.
+        msg = (f"CANNOT RUN: the executing-plan sentinel names `{plan}`, which does not exist. "
+               "TREAT THIS AS NOT RUN — this check cannot tell you whether work remains. "
+               f"Fix the path or delete {SENTINEL.relative_to(ROOT)}.")
+        if paused is not None:
+            return WARN, f"⏸ PAUSED ({paused}) — and {msg}", None
+        return BLOCK, msg, None
 
     done, total = count_steps(plan_text)
     if total == 0:
-        return BLOCK, (
-            f"CANNOT RUN: parsed ZERO step checkboxes from `{plan}`. Either the plan's shape "
-            "changed or this parser is broken. TREAT THIS AS NOT RUN — do not read the absence of "
-            "a warning as 'no work left'."
-        ), None
+        msg = (f"CANNOT RUN: parsed ZERO step checkboxes from `{plan}`. Either the plan's shape "
+               "changed or this parser is broken. TREAT THIS AS NOT RUN — do not read the absence "
+               "of a warning as 'no work left'.")
+        if paused is not None:
+            return WARN, f"⏸ PAUSED ({paused}) — and {msg}", None
+        return BLOCK, msg, None
 
     unticked = total - done
+
+    # ⛔ A PAUSED SENTINEL IS NEVER DELETED BY THIS SCRIPT, INCLUDING WHEN EVERY BOX IS TICKED.
+    # ⟳ 2026-09-06, code review r1 — the ONE finding BOTH halves reached independently (Claude H1,
+    # Codex M1), which is this project's strongest signal. The first version of this branch put
+    # `unticked == 0` ABOVE the paused branch, and `run_decide` unlinks the sentinel on a zero. So
+    # a plan paused on external work, whose local boxes all happened to be ticked, was DESTROYED on
+    # the next stop — taking the free-text reason with it — and the only notice went to stdout,
+    # which `block-idle-stop.sh` swallows. The Claude half drove it: `--pause "waiting on CI"`, then
+    # one stop later `--resume` answers *"nothing is armed, so there is nothing to resume"*.
+    #
+    # ⚠ I TOOK THE OTHER OPTION FROM THE ONE THE CLAUDE HALF RECOMMENDED, and the reason is its own
+    # escalation clause: it said this would be Blocking if the remaining work were tracked outside
+    # the checkbox list — which is exactly what a checkpoint pause is. Since backlog #94 `paused:`
+    # means BLOCKED ON IN-FLIGHT WORK, and in that state "all boxes ticked" does not mean *done*,
+    # it means *waiting*. A paused sentinel is not stale, it is parked. `--finish` already exists
+    # as the explicit way to clear one, so nothing here needs to do it implicitly.
+    if paused is not None and unticked == 0:
+        return WARN, (
+            f"⏸ PAUSED, and every step in `{plan}` is ticked ({done}/{total}).\n"
+            f"   Paused because: {paused}\n"
+            "\n"
+            "   The sentinel is KEPT, not cleared — a pause means the plan is waiting on\n"
+            "   something, and the checkboxes cannot see that something. Clearing it here would\n"
+            "   discard the reason above and leave `--resume` answering 'nothing is armed'.\n"
+            "\n"
+            "   Work resumed and genuinely finished? → `scripts/begin-plan.py --finish`.\n"
+            "   Work resumed and continuing?         → `scripts/begin-plan.py --resume`."
+        ), None
+
     if unticked == 0:
         return ALLOW, (
             f"✅ every step in `{plan}` is ticked ({done}/{total}). "
             f"Clearing {SENTINEL.relative_to(ROOT)}."
         ), 0
+
+    if paused is not None:
+        # ⚠ RETURNS None, NOT `unticked`, AND THE REASON IS NOT COSMETIC. run_decide writes STATE
+        # from this value, and STATE is the anti-nag's memory. A count written while paused could
+        # then satisfy `unticked >= prev_unticked` on a stop after the resume, allowing it —
+        # re-disarming the guard by a second route, having just closed the first.
+        # ⟳ r1 L4: that hazard ALSO requires `stop_hook_active`, which is false on a fresh turn.
+        # The earlier wording said "the first stop AFTER the resume", omitting that conjunct and
+        # overstating the case. The conservative `None` is still right; the reason is narrower.
+        return WARN, (
+            f"⏸ PAUSED with {unticked} of {total} steps still outstanding in `{plan}`.\n"
+            f"   Paused because: {paused}\n"
+            f"   Next: {next_pending_task(plan_text)}\n"
+            "\n"
+            "   The Stop guard is STOOD DOWN while that line is present — this stop is allowed,\n"
+            "   and so is every stop after it. That is intended when the plan really is waiting\n"
+            "   on something. It is NOT intended when the work has quietly resumed, which is the\n"
+            "   case this line exists to make visible (backlog #99).\n"
+            "\n"
+            "   If the work HAS resumed  → `scripts/begin-plan.py --resume` re-arms the guard.\n"
+            "   If it is genuinely waiting → nothing to do; this is a status line, not an error.\n"
+            "   If the plan is abandoned   → `scripts/begin-plan.py --finish`."
+        ), None
 
     # Anti-nag: only keep blocking while blocking is producing progress. If a block has already
     # fired and the unticked count has not fallen since, let the stop through — a hook that can
@@ -183,8 +301,14 @@ def run_decide(stop_hook_active: bool) -> int:
     elif unticked is not None:
         STATE.write_text(str(unticked))
 
+    # ⚠ WARN GOES TO STDERR, AND THIS LINE IS THE WHOLE OF SHAPE (c)'S DELIVERY.
+    # `.claude/hooks/block-idle-stop.sh` surfaces a hook's STDERR to the human on exit 1 and
+    # swallows its stdout. Routing the pause warning to stdout would produce a message that
+    # exists on every stop and reaches nobody — the failure CLAUDE.md records against
+    # begin-plan.py's banner, which printed correctly for a whole session into a stream the
+    # human does not see. ALLOW keeps stdout: it is the quiet, everything-is-fine channel.
     if message:
-        print(message, file=sys.stderr if code == BLOCK else sys.stdout)
+        print(message, file=sys.stdout if code == ALLOW else sys.stderr)
     return code
 
 
@@ -215,7 +339,29 @@ def _self_test() -> int:
 
     def case(name: str, ok: bool) -> None:
         cases.append((name, ok))
-        print(f"  {'PASS' if ok else 'FAIL'}  {name}")
+        if ok:
+            print(f"  PASS  {name}")
+            return
+        # ⛔ THE FAILURE LINE SHAPE IS A CONTRACT WITH THE MUTATION HARNESS, NOT A STYLE CHOICE.
+        # `check-plan-code.py:887` attributes a kill by scanning for lines that START WITH
+        # "[FAIL] " and splitting on the LAST ": got ". This suite printed "  FAIL  {name}",
+        # which that parser cannot see — so all ten mutations added for backlog #99 died while
+        # reporting "matched 0 red case(s) … caught by something else: []". MEASURED 2026-09-06:
+        # collapsing the WARN constant onto 1 genuinely turns its named case red (30/31 on a temp
+        # copy), and the harness still could not name it.
+        #
+        # ⚠ THAT SENTENCE IS PARAPHRASED ON PURPOSE. Written out as the literal assignment, this
+        # comment matched the mutation's own anchor twice, and the harness refused the entry —
+        # "only the FIRST is replaced, so a 'caught' verdict would not be about the line you
+        # named". Anchors bind by TEXT, so even PROSE quoting the code can orphan a mutation.
+        #
+        # ⚠ SAME FINDING, SAME DAY, AS check-banner-armed.py:924 — and that is the point worth
+        # keeping. Both files were written with this shape and neither was wrong until something
+        # tried to PARSE them; the defect was latent for as long as the file had no manifest,
+        # because nothing ever read the output. It is the recorded shape *a report format is a
+        # CONTRACT*, where "the guard did not fire" and "nothing could see it fire" are
+        # indistinguishable from outside.
+        print(f"  [FAIL] {name}: got {ok!r} want {True!r}")
 
     PLAN = (
         "### Task 1: A\n\n- [x] **Step 1**\n\n- [x] **Step 2**\n\n"
@@ -225,7 +371,75 @@ def _self_test() -> int:
     SENT = "plan: docs/superpowers/plans/p.md\narmed: 2026-08-24T00:00:00Z\n"
 
     case("no sentinel -> allow", decide(None, PLAN, None, False)[0] == ALLOW)
-    case("paused sentinel -> allow", decide(SENT + "paused: waiting on the user\n", PLAN, None, False)[0] == ALLOW)
+
+    # ── PAUSED IS VISIBLE, NOT SILENT (backlog #99, option C) ──────────────────────────────
+    # A paused plan still ALLOWS the stop — that is the whole purpose of the escape, and
+    # blocking here would break the in-flight-work case backlog #94 widened it for. What
+    # changes is that a pause with work outstanding stops being INDISTINGUISHABLE from a
+    # finished plan. The guard stood down for four steps, a code review and a PR without ever
+    # saying so; these cases are what make that state announce itself.
+    PAUSED = SENT + "paused: waiting on the user\n"
+    code, msg, unticked = decide(PAUSED, PLAN, None, False)
+    case("paused WITH steps outstanding -> WARN, not a silent allow", code == WARN)
+    case("WARN is not BLOCK — the pause escape still works", code != BLOCK)
+    case("the warning counts what is outstanding (2 of 5)", "2 of 5" in msg)
+    case("the warning repeats the human's own reason back",
+         "waiting on the user" in msg)
+    case("the warning names the command that re-arms the guard",
+         "--resume" in msg)
+    case("a WARN records NO unticked count — the anti-nag state is left alone", unticked is None)
+
+    # ⚠ THE CONTROL FOR THE CASE ABOVE. `unticked is None` is also what a crash would produce,
+    # and the reason it must stay None is not obvious: run_decide writes STATE from it, and a
+    # STATE written while paused would satisfy the anti-nag's `unticked >= prev` on the first
+    # stop AFTER the resume — re-disarming the guard by a different route than #99's.
+    case("WARN is a code CPython does not produce by accident (not 1, not 2)",
+         WARN == 3 and WARN not in (ALLOW, BLOCK, 1))
+
+    # ⛔ r1 H1 / Codex M1 — the ONE finding both review halves reached independently. The first
+    # version of this branch CLEARED the sentinel here and said so only on stdout, which the Stop
+    # wrapper swallows: a plan paused on external work was destroyed, reason text and all, and
+    # `--resume` then answered "nothing is armed". A paused sentinel is parked, not stale.
+    all_done_p = PLAN.replace("- [ ]", "- [x]")
+    code, msg, unticked = decide(PAUSED, all_done_p, None, False)
+    case("paused with EVERY step ticked does NOT clear the sentinel", unticked is None)
+    case("...and it is a WARN, not a silent allow", code == WARN)
+    case("...and the message keeps the pause reason it refuses to discard",
+         "waiting on the user" in msg)
+    case("...and it names --finish, the explicit way to clear a parked plan",
+         "--finish" in msg)
+    # The CONTROL: unpaused and fully ticked still clears, so the case above is about the PAUSE
+    # and not about fully-ticked plans in general.
+    code_u, msg_u, unt_u = decide(SENT, all_done_p, None, False)
+    case("an UNPAUSED fully-ticked plan still clears — the pause is what changes it",
+         code_u == ALLOW and unt_u == 0 and "Clearing" in msg_u)
+
+    # Paused must never block, including when the check cannot reach what it measures. It says
+    # NOT RUN instead of going quiet — "cannot run" is a failure, never a pass (CLAUDE.md).
+    code, msg, _ = decide(PAUSED, None, None, False)
+    case("paused + missing plan -> WARN and NOT RUN, never BLOCK",
+         code == WARN and "TREAT THIS AS NOT RUN" in msg)
+    code, msg, _ = decide(PAUSED, "# no checkboxes\n", None, False)
+    case("paused + zero checkboxes -> WARN and NOT RUN, never BLOCK",
+         code == WARN and "TREAT THIS AS NOT RUN" in msg)
+
+    # ── strip_field: this file OWNS the sentinel grammar, so it owns removal too ────────────
+    # begin-plan.py's `--resume` borrows this rather than re-implementing "which line is the
+    # paused line". check-banner-armed._armed_from_text's docstring (cited by SYMBOL — r1 M2:
+    # this commit moved the line the first draft named) records the near-miss that matters: a
+    # colon-less `paused` line is a key here and not a key there, and two parsers that disagree
+    # about one line are how a plan ends up paused in one guard and running in the other.
+    case("strip_field removes the paused line",
+         "paused" not in parse_sentinel(strip_field(PAUSED, "paused")))
+    case("strip_field leaves every other line byte-identical",
+         strip_field(PAUSED, "paused") == SENT)
+    case("strip_field agrees with parse_sentinel: a colon-less `paused` is NOT the field",
+         strip_field("plan: x\npaused\n", "paused") == "plan: x\npaused\n")
+    case("strip_field on a key that is absent changes nothing",
+         strip_field(SENT, "paused") == SENT)
+    case("strip_field removes EVERY occurrence, so a doubled pause cannot survive one",
+         "paused" not in parse_sentinel(
+             strip_field(SENT + "paused: a\npaused: b\n", "paused")))
 
     code, msg, _ = decide(SENT, None, None, False)
     case("missing plan -> BLOCK, fails closed", code == BLOCK and "TREAT THIS AS NOT RUN" in msg)

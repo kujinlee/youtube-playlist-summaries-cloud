@@ -8,8 +8,11 @@
 # ⟳ CORRECTED 2026-09-05 (code review r2, Low). This header used to say the wrapper "only
 # translates Claude Code's stdin JSON into that script's flags", and that all of the reasoning
 # lived in the blocking script. Both were false, and had been since the observers were added:
-#   * it invokes THREE scripts — check-banner-armed.py (:48), check-plan-progress.py (:56),
-#     check-ci-watched.py (:67) — not one;
+#   * it invokes THREE scripts — check-banner-armed.py, check-plan-progress.py and
+#     check-ci-watched.py — not one. (⟳ r2 M1: this line used to give their invocation LINE
+#     NUMBERS. They were already wrong on `origin/master`, and backlog #99 moved them a further
+#     three lines, leaving three counter-examples 74 lines above the paragraph that declares line
+#     numbers expire. The r1 cleanup was instance-not-class; this finishes the sweep.);
 #   * the exit-code collapsing rule at the bottom of this file lives ONLY here and has no other
 #     home. That is reasoning, not translation.
 # Same shape as the r1 finding "Existing callers unchanged" describing an empty set: the sweep
@@ -26,6 +29,9 @@
 #   exit 1 — allows the stop, shows stderr, does not block. Produced by EITHER observer warning or
 #            reporting CANNOT RUN. This is the path the banner/CI observers added, and the header
 #            omitted it entirely until 2026-09-05 (code review r2, Low).
+#            ⟳ 2026-09-06 (backlog #99): the BLOCKING check can now reach this path too, by
+#            returning 3 — a paused plan with steps outstanding. It is the only case where the
+#            blocking check declines to block and still has something to say.
 #   exit 0 — allows the stop silently.
 #
 # stop_hook_active tells us this turn is ALREADY a continuation caused by this hook. It is passed
@@ -72,14 +78,36 @@ BANNER_RC=$?
 # the next attempt", and that is FALSE for both paths that reach this `exit 2`:
 #   * a broken interpreter — decide() never runs, so the anti-nag never runs, and every subsequent
 #     stop blocks identically. "Blocking ONCE" is not what happens;
-#   * check-plan-progress's own CANNOT-RUN blocks (`:105` plan file missing, `:113` zero checkboxes)
-#     `return BLOCK, ..., None` BEFORE reaching the anti-nag at `:130`. That None means `:183`
-#     (`elif unticked is not None`) never writes STATE, so `prev_unticked` stays None and the
-#     anti-nag's own precondition is unsatisfiable by construction.
-# NOT a wedge, though — the real escape is printed by the block itself at `:109`: *"Fix the path or
-# delete .claude/executing-plan"*. The code was right; the comment named the wrong mechanism for it.
+#   * check-plan-progress's own CANNOT-RUN blocks (the plan file is missing; the plan parses to
+#     zero checkboxes) `return BLOCK, ..., None` BEFORE reaching the anti-nag. That None means the
+#     `elif unticked is not None` arm in run_decide never writes STATE, so `prev_unticked` stays
+#     None and the anti-nag's own precondition is unsatisfiable by construction.
+# NOT a wedge, though — the real escape is printed by the block itself: *"Fix the path or delete
+# .claude/executing-plan"*. The code was right; the comment named the wrong mechanism for it.
 # The r1 fold checked WHERE this comment sat and never re-read WHAT it claimed.
-if ! python3 "$REPO_ROOT/scripts/check-plan-progress.py" "${ARGS[@]}"; then
+#
+# ⟳ 2026-09-06, code review r1 (M1). THE LINE NUMBERS ARE GONE, DELIBERATELY. This paragraph used
+# to cite `:105`, `:109`, `:113`, `:130` and `:183` in check-plan-progress.py. All five were EXACT
+# when written and all five were WRONG one commit later, because backlog #99 grew that file by
+# ~60 lines — and the commit that broke them is the same commit that added a paragraph directly
+# beneath them without re-reading them. That is the third correction to this one comment block.
+# A cross-file line number is a citation with a countdown on it; naming the BEHAVIOUR does not
+# expire, and a reader can still find it with a grep.
+#
+# ⟳ 2026-09-06, backlog #99 (shape (c)). This used to be `if ! python3 ...; then exit 2; fi` —
+# EVERY non-zero was a block. That is still the default, and deliberately so, but the blocking
+# check can now also return 3 = WARN: a paused plan that still has steps outstanding. It allows
+# the stop and says so out loud, because "paused" and "finished" used to produce identical
+# output (nothing at all).
+#
+# ⛔ THE ALLOW-LIST IS {0, 3} AND NOTHING WIDER, WHICH IS WHY WARN IS 3 AND NOT 1. A Python
+# traceback exits 1 and an argparse error exits 2; both must keep landing on the fail-closed
+# path below. Had WARN reused 1, a broken interpreter would have become a polite non-blocking
+# warning — turning the one check that must fail closed into a fail-open one, which is the exact
+# class of defect the comment above this block was written about.
+python3 "$REPO_ROOT/scripts/check-plan-progress.py" "${ARGS[@]}"
+PROGRESS_RC=$?
+if [[ "$PROGRESS_RC" != "0" && "$PROGRESS_RC" != "3" ]]; then
     exit 2
 fi
 
@@ -96,12 +124,13 @@ CI_RC=$?
 # Any non-zero from EITHER observer surfaces as exit 1 — Claude Code's non-blocking error, which
 # shows stderr to the human and lets the stop proceed.
 #
-# ⚠ BOTH observers CAN return 2 — it is their CANNOT-RUN code (check-banner-armed.py:70,
-# check-ci-watched.py:43), and they return it by design when they cannot reach what they measure.
+# ⚠ BOTH observers CAN return 2 — it is their CANNOT-RUN code (their CANNOT-RUN codes; r2 M1
+# measured the check-banner-armed line reference as already pointing at unrelated prose, so it is
+# named rather than numbered), and they return it by design when they cannot reach what they measure.
 # What this arithmetic guarantees is that the HOOK never surfaces a 2 on their behalf: a detector
 # that only observes must not be able to wedge a turn it has no stake in. An earlier version of
 # this comment said "neither may return 2", which was false about both scripts (code review r2).
-if [[ "$BANNER_RC" != "0" || "$CI_RC" != "0" ]]; then
+if [[ "$BANNER_RC" != "0" || "$CI_RC" != "0" || "$PROGRESS_RC" == "3" ]]; then
     exit 1
 fi
 exit 0

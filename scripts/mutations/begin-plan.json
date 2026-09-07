@@ -1,0 +1,119 @@
+[
+  {
+    "name": "--tick stops consulting the pause, so a paused plan advances again (backlog #99)",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if \"paused\" in fields:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "cmd_tick REFUSES on a paused plan"
+    ]
+  },
+  {
+    "name": "--tick warns about the pause but ticks anyway",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "              f\"If the work has resumed, run `scripts/begin-plan.py --resume` first.\",\n              file=sys.stderr)\n        return REFUSED",
+        "              f\"If the work has resumed, run `scripts/begin-plan.py --resume` first.\",\n              file=sys.stderr)"
+      ]
+    ],
+    "expect": [
+      "the refused tick leaves the plan BYTE-IDENTICAL on disk"
+    ]
+  },
+  {
+    "name": "the tick refusal stops naming the only command that clears the pause",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "              f\"If the work has resumed, run `scripts/begin-plan.py --resume` first.\",",
+        "              f\"If the work has resumed, clear the pause first.\","
+      ]
+    ],
+    "expect": [
+      "the refusal names --resume, the only exit from a pause"
+    ]
+  },
+  {
+    "name": "the tick refusal drops the pause reason, so the reader cannot judge it",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "        print(f\"refusing: this plan is PAUSED — {fields['paused']}\\n\"",
+        "        print(f\"refusing: this plan is PAUSED.\\n\""
+      ]
+    ],
+    "expect": [
+      "the refusal quotes the pause reason, so the reader knows what it was waiting on"
+    ]
+  },
+  {
+    "name": "--resume writes the sentinel back unchanged, so the pause never clears",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    SENTINEL.write_text(pp.strip_field(text, \"paused\"))",
+        "    SENTINEL.write_text(text)"
+      ]
+    ],
+    "expect": [
+      "cmd_resume clears the pause"
+    ]
+  },
+  {
+    "name": "--resume reports success on a plan that was never paused",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if \"paused\" not in pp.parse_sentinel(text):\n        print(\"refusing: this plan is not paused.",
+        "    if False:\n        print(\"refusing: this plan is not paused."
+      ]
+    ],
+    "expect": [
+      "cmd_resume REFUSES when the plan is not paused — it never invents a state"
+    ]
+  },
+  {
+    "name": "--resume also clears the plan pointer, orphaning the guard",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    SENTINEL.write_text(pp.strip_field(text, \"paused\"))\n    print(\"resumed:",
+        "    SENTINEL.write_text(pp.strip_field(pp.strip_field(text, \"paused\"), \"plan\"))\n    print(\"resumed:"
+      ]
+    ],
+    "expect": [
+      "after --resume the tick works again"
+    ]
+  },
+  {
+    "name": "--pause goes back to a HAND-LISTED separator set, letting 8 of 10 through",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if len(cleaned.splitlines()) > 1:",
+        "    if \"\\n\" in cleaned or \"\\r\" in cleaned:"
+      ]
+    ],
+    "expect": [
+      "EVERY separator splitlines() honours is refused (10 of them)"
+    ]
+  },
+  {
+    "name": "the refusal path writes to the plan before returning REFUSED",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "        return REFUSED\n\n    if not plan_abs.is_file():",
+        "        plan_abs.write_text(plan_abs.read_text() + \"\\n\")\n        return REFUSED\n\n    if not plan_abs.is_file():"
+      ]
+    ],
+    "expect": [
+      "the refused tick leaves the plan BYTE-IDENTICAL on disk"
+    ]
+  }
+]

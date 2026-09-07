@@ -4007,3 +4007,125 @@ sequences with different totals, the defect #96 spec §8 deliberately left open.
 half was right; the number was not, and it should not be cited as evidence.
 
 Also this turn: PR #232 merged (`3ec912f6`, backlog #82), and the stale sentinel removed by hand.
+
+## 2026-09-06
+The pause that never ended now has a way to end. Yesterday's finding was that pausing a plan quietly
+switched off the check that stops a turn ending mid-work — and that once paused, nothing could
+un-pause it except editing a file by hand. Both halves are fixed, and you chose the shape.
+
+Two things changed. Ticking off a step on a paused plan is now refused outright, and the refusal
+tells you the one command that resumes. And when a plan really is paused with work left, the guard
+says so at the end of every turn instead of standing down in silence — it still lets you stop, which
+is the whole point of pausing, it just stops being indistinguishable from a plan that finished.
+
+The third option — having a tick quietly un-pause the plan — was rejected, because pausing is also
+how work says it is waiting on something, and a wait that cancels itself without telling anyone is
+how you lose track of what you were waiting for.
+
+Worth knowing: the fix was proved by running the failure end to end against an unmodified copy of
+yesterday's code, side by side. The old copy drove a paused plan from one step done to two with the
+guard off; the new one refused. Nothing here rests on a test that only ever saw the fixed version.
+<!--tech-->
+Backlog **#99** 🟠 CLOSED, PR #234, branch `backlog-99-paused-tick`. Decided shapes **(a)+(c)**;
+**(b)** rejected.
+
+⚠ TWO CORRECTIONS TO THE ROW AS FILED, both found by reading the code rather than the row.
+(1) It told (a) to say *"run `--resume` first"* — **`--resume` did not exist.** `paused:` had ONE
+writer (`begin-plan.py:369`) and ZERO removers; a state with a setter and no clearer is why a stale
+pause could only ever be cleared by hand. (2) (c) could not be "ALLOW with a message":
+`check-plan-progress.py` sent every non-BLOCK message to **stdout**, which
+`.claude/hooks/block-idle-stop.sh` swallows — the stream that made `begin-plan.py`'s banner reach
+nobody for a whole session (CLAUDE.md records it). So (c) is a third exit code, `WARN = 3`, message
+on **stderr**, wrapper allow-list `{0,3}`. **NOT 1** — a traceback exits 1 and every other non-zero
+is a fail-closed BLOCK, so reusing 1 turns a broken interpreter into a polite warning.
+
+`strip_field` lives in `check-plan-progress.py` beside `parse_sentinel`, and `--resume` BORROWS it:
+one owner for "which line is the `paused` line", because `check-banner-armed.py:499` already records
+what two disagreeing parsers of that grammar cost.
+
+FALSIFIER (the row's own, run by hand against an `origin/master` control) — they separate at all
+four points: stop-while-paused says nothing / names `2 of 3`; tick-while-paused ADVANCES the plan /
+refuses byte-identically; `--resume` exits 2 no-such-flag / exits 0; the stop after that is allowed
+silently / BLOCKS. 203 mutations, 0 survivors.
+
+⛔ OUT-OF-SCOPE FINDING, and the useful one. Both files printed `FAIL  {name}` while the mutation
+harness parses `[FAIL] {name}: got … want …` (`check-plan-code.py:887`), so **all 17 new mutations
+killed their suites and NOT ONE could be attributed** — "the guard did not fire" and "nothing could
+see it fire" are the same output. `check-banner-armed.py:924` records the identical finding from the
+same day. Latent in both files for exactly as long as neither had a manifest.
+
+`MANIFEST_BASELINE` 22→21 (only `check-plan-progress.py` is R4 population; `begin-plan.py` is not a
+`check-*` guard and was never counted as owed). `EXPECTED_MUTATIONS` 186→203. Declared self-test
+counts 17→31 and 33→42.
+
+⟳ AFTER REVIEW — the shipped behaviour CHANGED. Dual adversarial r1 (Codex gpt-5.5 + an
+independent Claude subagent) came back NOT CONVERGED from both halves: 0 Blocking, 1 High,
+5 Medium, 8 Low between them. The High and Codex's top Medium are THE SAME FINDING, reached
+independently — the first cut deleted a paused-but-fully-ticked sentinel, discarding the reason
+text, and said so only on stdout, which the Stop wrapper swallows.
+
+Fixed by PRESERVING rather than clearing-and-announcing, which is the opposite of what the Claude
+half recommended — its own escalation clause ("Blocking if the remaining work is tracked outside
+the checkbox list") describes a checkpoint pause exactly, and since #94 a pause means *waiting*.
+
+Also folded: `--pause` refuses a multi-line reason (r1 M3 drove a real `plan:` field injection that
+left the guard supervising a DIFFERENT plan); seven stale cross-file line citations replaced by
+symbol references, five of them broken by this very commit; `cmd_tick` reads the sentinel once.
+
+⚠ THE FOLD BROKE ITS OWN COVERAGE, TWICE, AND ONLY EXECUTION SAW IT. The `_armed_plan` refactor
+orphaned a mutation anchor (anchors bind by TEXT), a new anchor collided with an existing one, and
+a third mutation SURVIVED because it re-ticked an already-ticked box. 206 mutations / 0 survivors
+only after re-running. Reading the diff would have found none of them.
+
+⟳ ROUND 2 FOUND A HIGH IN THE ROUND-1 FIX, and both halves found it independently again. The
+multi-line guard added in r1 tested for two characters. Python's `splitlines()` — which the sentinel
+reader actually uses — breaks on eleven, so EIGHT separators walked straight through the new guard
+and re-opened the exact injection it was written to stop. Measured: `parse_sentinel` returned the
+injected plan path.
+
+The fix is not a longer character list. The guard now asks `splitlines()` itself, and the test
+derives its separator corpus the same way, so neither can fall behind the reader again. That was the
+real defect: a hand-written copy of the consumer's rule, covering 2 of 11.
+
+Two more from r2, both my own errors. The claim "ten stale citations removed" was wrong — the diff
+removed seven, and FOUR wrong ones survived in the same file, three of them sitting just above the
+paragraph declaring that line numbers expire. Corrected in both documents and the sweep finished.
+And the preserve message's `--finish` guidance had no mutation — which is r1's own finding recurring
+inside the code written to fix it.
+<!--tech-->
+r2 both halves NOT CONVERGED: Codex 1 High; Claude 1 High + 2 Medium + 8 Low. Filed under
+`docs/reviews/{claude,coordinator}/backlog-99-paused-tick-r2-*.md`.
+
+Separators that defeated the r1 guard: `\v` `\f` `\x1c` `\x1d` `\x1e` `\x85` U+2028 U+2029.
+Codex named the last two; enumerating the `splitlines()` set found the other six.
+
+Also folded: `_load_plan_progress` now asserts `decide` and `WARN` (r2 L2 — borrowed but
+unasserted, so a rename surfaced as a bare AttributeError instead of the explanatory ImportError);
+a no-op `cmd_tick()` whose comment claimed an action replaced by an explicit precondition assertion
+(r2 L3 — the same line that let a mutation survive earlier).
+
+EXPECTED_MUTATIONS 206→207. Declared counts 47→50. r2 L1/L4/L5 recorded as dispositions: L1 is a
+correction to a COVERAGE CLAIM, not code — the "isolating" mutation narrows 3 co-red cases to 2 and
+cannot isolate further, because the r1 L3 rename made the sibling a superset assertion.
+
+**Decided: merge, and file the design question rather than run a third round.** Two review rounds
+both came back not-converged, and every single finding in the second round had been introduced by
+the first round's own fix. The review method has a name for that shape and a prescribed response,
+and the response is not "review again" — it is to stop and look at the design.
+
+So what got filed is the thing underneath all of it: the small file that records which plan is
+running has no agreed shape, and the code that writes it checks different rules from the code that
+reads it. Three defects this slice looked unrelated and were all that one fact.
+<!--tech-->
+Backlog **#100** 🟡 filed (`M`, comprehensibility). NOT a live defect — all three instances it names
+are fixed in PR #234. The call was made with `docs/review-method.md:195`'s own discriminator, *"did
+the previous fix cause this?"*, which answered **yes for five of five** r2 findings: the thrashing
+tell, whose prescribed response is Phase 6 rather than another round.
+
+⚠ Recorded so it is not read as a verdict on the slice: the ROUNDS were not converging but the
+FIXES were — each was more structural than the last, and r2's removed its class by delegating to
+the consumer's own parser instead of patching another instance.
+
+Three r2 dispositions ride to merge unfixed and are named on the PR: L1 (a corrected coverage
+CLAIM, not code), L4 (no mutation in the fix-went-too-far direction), L5 (a message printed before
+a pause still says the sentinel will be cleared, which the preserve branch no longer does).
