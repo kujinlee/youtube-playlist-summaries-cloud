@@ -4107,3 +4107,25 @@ a no-op `cmd_tick()` whose comment claimed an action replaced by an explicit pre
 EXPECTED_MUTATIONS 206→207. Declared counts 47→50. r2 L1/L4/L5 recorded as dispositions: L1 is a
 correction to a COVERAGE CLAIM, not code — the "isolating" mutation narrows 3 co-red cases to 2 and
 cannot isolate further, because the r1 L3 rename made the sibling a superset assertion.
+
+**Decided: merge, and file the design question rather than run a third round.** Two review rounds
+both came back not-converged, and every single finding in the second round had been introduced by
+the first round's own fix. The review method has a name for that shape and a prescribed response,
+and the response is not "review again" — it is to stop and look at the design.
+
+So what got filed is the thing underneath all of it: the small file that records which plan is
+running has no agreed shape, and the code that writes it checks different rules from the code that
+reads it. Three defects this slice looked unrelated and were all that one fact.
+<!--tech-->
+Backlog **#100** 🟡 filed (`M`, comprehensibility). NOT a live defect — all three instances it names
+are fixed in PR #234. The call was made with `docs/review-method.md:195`'s own discriminator, *"did
+the previous fix cause this?"*, which answered **yes for five of five** r2 findings: the thrashing
+tell, whose prescribed response is Phase 6 rather than another round.
+
+⚠ Recorded so it is not read as a verdict on the slice: the ROUNDS were not converging but the
+FIXES were — each was more structural than the last, and r2's removed its class by delegating to
+the consumer's own parser instead of patching another instance.
+
+Three r2 dispositions ride to merge unfixed and are named on the PR: L1 (a corrected coverage
+CLAIM, not code), L4 (no mutation in the fix-went-too-far direction), L5 (a message printed before
+a pause still says the sentinel will be cleared, which the preserve branch no longer does).
