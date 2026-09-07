@@ -557,6 +557,7 @@ EXPECTED_MUTATIONS = {
     # read one. The counts ARE the evidence, so a line that has lost them records that something
     # happened while destroying what was measured — the recorded *a guard's own output is a
     # CONTRACT* shape, one layer in from the log-format defect this whole slice is about.
+    "scripts/check-arch-findings.py": 5,
     "scripts/check-banner-armed.py": 8,
     "scripts/gen-dashboard.py": 64,
     "scripts/page_markup.py": 14,
@@ -2459,6 +2460,7 @@ def _self_test() -> int:
         EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved)
     case("the declared counts name every manifest that ships",
          sorted(EXPECTED_MUTATIONS), ["scripts/begin-plan.py",
+                                      "scripts/check-arch-findings.py",
                                       "scripts/check-banner-armed.py",
                                       "scripts/check-dashboard-entry.py",
                                       # ⟳ 2026-09-06: the FIRST payment against the R4 manifest
@@ -2571,7 +2573,7 @@ def _self_test() -> int:
     # off against the R4 manifest debt (MANIFEST_BASELINE 21 -> 20 in the same commit, because
     # that ratchet is an exact match and not a ceiling). This total is a LIVE sum, so it moves
     # whenever coverage does; it is not one of the counts pinned to a past measurement.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 222)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 227)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so

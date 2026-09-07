@@ -4462,3 +4462,37 @@ is sorted; position is not free.
 
 Verified: control green on the full tree, 5/5 red **via the case each names**. Real harness:
 **13 files, 222 mutations, 0 survivors.** 189/189; `check-selftest-counts` 28 verified by running.
+
+## 2026-09-07
+The architecture-findings ratchet is covered, and one of its five checks defends against a guard quietly switching itself off.
+
+Fourth of these done, and the routine is holding: fix how the guard reports failures, then break it
+five ways and confirm its own tests catch each. No surprises this time — every attempt worked first
+try, which is what the last three rounds' corrections bought.
+
+Debt drops from 18 to 17.
+<!--tech-->
+`scripts/mutations/check-arch-findings.json` — 5 mutations across the two pure functions,
+`line_counts` and `Metric.run`. `EXPECTED_MUTATIONS` 222 → 227; `MANIFEST_BASELINE` 18 → 17, same
+commit. Contract (1) fixed first — it printed `✓`/`✗`.
+
+| # | Mutation | Red via |
+|---|---|---|
+| 1 | `/*` dropped from the comment-skip set | `a block open … is NOT counted` |
+| 2 | `skip_comments` ignored | `skip_comments=False counts the comment too` |
+| 3 | indentation not stripped | `a line comment … is NOT counted` |
+| 4 | `cur > baseline` → `>=` | `sitting exactly ON the baseline is OPEN, not REGRESSED` |
+| 5 | `lower_is_better=False` loses its REGRESSED branch | `lower_is_better=False — more is better` |
+
+⭐ **Mutations 1–3 defend a defect this script shipped on its FIRST run**: it reported finding #2/2a
+as REGRESSED because `sync-run.ts:329` is a *comment explaining* that `promote()` is
+create-if-absent — the one site that had already fixed the bug counted as a site still exhibiting it.
+A ratchet that scores its own fix as a regression is one somebody switches off.
+
+⭐ **Mutation 5 defends the subtler failure.** A `target == baseline` regression guard is only safe
+with `lower_is_better=False`; under the default, deleting the guarded file makes `cur < baseline`
+classify as **OPEN**, so `main()` returns 0 and the guard is silently disarmed. That branch now has
+a mutation proving the case which asserts it is load-bearing.
+
+Verified: control green on the full tree, 5/5 red via the case each names. Real harness:
+**14 files, 227 mutations, 0 survivors.** 189/189; `check-selftest-counts` 28 verified by running.

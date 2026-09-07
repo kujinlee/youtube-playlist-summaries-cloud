@@ -1,0 +1,36 @@
+[
+  {
+    "name": "the block-comment opener is dropped from the skip set, so /* lines count as code",
+    "file": "scripts/check-arch-findings.py",
+    "edits": [["        if stripped.startswith((\"//\", \"*\", \"/*\")):",
+               "        if stripped.startswith((\"//\", \"*\")):"]],
+    "expect": ["a block open mentioning the pattern is NOT counted"]
+  },
+  {
+    "name": "skip_comments is ignored, so a comment is never counted even when asked for",
+    "file": "scripts/check-arch-findings.py",
+    "edits": [["    if skip_comments:\n        stripped = line.lstrip()",
+               "    if True:\n        stripped = line.lstrip()"]],
+    "expect": ["skip_comments=False counts the comment too"]
+  },
+  {
+    "name": "indentation is not stripped, so an indented comment reads as code",
+    "file": "scripts/check-arch-findings.py",
+    "edits": [["        stripped = line.lstrip()", "        stripped = line"]],
+    "expect": ["a line comment mentioning the pattern is NOT counted"]
+  },
+  {
+    "name": "sitting exactly ON the baseline is called REGRESSED, so a flat metric cries wolf",
+    "file": "scripts/check-arch-findings.py",
+    "edits": [["            if cur > self.baseline:\n                return \"REGRESSED\"",
+               "            if cur >= self.baseline:\n                return \"REGRESSED\""]],
+    "expect": ["sitting exactly ON the baseline is OPEN, not REGRESSED"]
+  },
+  {
+    "name": "lower_is_better=False loses its REGRESSED branch, so a deleted guard reads as OPEN",
+    "file": "scripts/check-arch-findings.py",
+    "edits": [["            if cur < self.baseline:\n                return \"REGRESSED\"",
+               "            if False:\n                return \"REGRESSED\""]],
+    "expect": ["lower_is_better=False — more is better, so fewer is REGRESSED"]
+  }
+]
