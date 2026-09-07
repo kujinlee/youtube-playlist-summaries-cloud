@@ -1,0 +1,33 @@
+[
+  {
+    "name": "the UNCLASSIFIED sweep is dropped, so a new guard reaches the schema undecided",
+    "file": "scripts/check-guard-coverage.py",
+    "edits": [["    for name in sorted(live - set(guards)):", "    for name in sorted(set()):"]],
+    "expect": ["a guard in the schema but not classified is caught"]
+  },
+  {
+    "name": "the STALE sweep is dropped, so a classification outlives the guard it described",
+    "file": "scripts/check-guard-coverage.py",
+    "edits": [["    for name in sorted(set(guards) - live):", "    for name in sorted(set() - live):"]],
+    "expect": ["a classified guard no longer in the schema is STALE"]
+  },
+  {
+    "name": "the UNJUSTIFIED check is dropped, so a SEQUENCE guard need not say HOW it reconciles",
+    "file": "scripts/check-guard-coverage.py",
+    "edits": [["        if not note:", "        if False:"]],
+    "expect": ["a SEQUENCE guard with no reconciliation note is UNJUSTIFIED"]
+  },
+  {
+    "name": "COVERED_BY needs only ONE token, not every one, so partial coverage passes",
+    "file": "scripts/check-guard-coverage.py",
+    "edits": [["        for token in wanted:\n            if not any(token in label for label in labels):",
+               "        for token in wanted[:1]:\n            if not any(token in label for label in labels):"]],
+    "expect": ["COVERED_BY requires EVERY listed token, not just one"]
+  },
+  {
+    "name": "MUTATION_EXEMPT stops working, so an exempted guard is still demanded a mutation",
+    "file": "scripts/check-guard-coverage.py",
+    "edits": [["        if name in exempt:\n            continue", "        if False:\n            continue"]],
+    "expect": ["MUTATION_EXEMPT suppresses only the mutation requirement"]
+  }
+]

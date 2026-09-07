@@ -4540,3 +4540,41 @@ than obeyed.
 
 Verified: control green on the full tree, 5/5 red via the case each names. Real harness:
 **15 files, 232 mutations, 0 survivors.** 189/189; `check-selftest-counts` 28 verified by running.
+
+## 2026-09-07
+The guard that demands other guards be tested is now itself tested.
+
+Sixth of these, and the most self-referential: this is the check that classifies every database
+guard and insists the ones that matter have deliberate-breakage coverage. It was demanding of others
+what it did not have. It does now.
+
+Two of the five checks defend its **escape hatches** — the ways a person can legitimately say "this
+one is exempt". An escape hatch that silently stops working is worse than none, because people plan
+around it and only find out when the plan fails.
+
+Debt drops from 16 to 15. Ten of the original twenty-one now covered or resolved.
+<!--tech-->
+`scripts/mutations/check-guard-coverage.json` — 5 mutations against `evaluate()`.
+`EXPECTED_MUTATIONS` 232 → 237; `MANIFEST_BASELINE` 16 → 15, same commit. Contract (1) fixed first.
+
+| # | Mutation | Red via |
+|---|---|---|
+| 1 | UNCLASSIFIED sweep dropped | `a guard in the schema but not classified is caught` |
+| 2 | STALE sweep dropped | `a classified guard no longer in the schema is STALE` |
+| 3 | UNJUSTIFIED check dropped | `a SEQUENCE guard with no reconciliation note is UNJUSTIFIED` |
+| 4 | `COVERED_BY` needs only ONE token | `COVERED_BY requires EVERY listed token, not just one` |
+| 5 | `MUTATION_EXEMPT` stops working | `MUTATION_EXEMPT suppresses only the mutation requirement` |
+
+⭐ **4 and 5 cover the two escape hatches.** `COVERED_BY` lets a differently-named mutation label
+satisfy a guard; `MUTATION_EXEMPT` waives the mutation requirement entirely. Both are deliberate
+concessions, and the suite's own comment says it plainly: *"the two escape hatches must actually
+work, or people will stop trusting them."* Mutation 4 is the sharper one — narrowing `for token in
+wanted` to `wanted[:1]` means a guard listing two required tokens is satisfied by one, so coverage
+looks complete while half is missing.
+
+⚠ Checked explicitly this round: the inventory case compares `sorted(EXPECTED_MUTATIONS)`, so the
+new name's **position** matters, not just its presence. That cost a red case two rounds ago; asserted
+before running this time.
+
+Verified: control green on the full tree, 5/5 red via the case each names. Real harness:
+**16 files, 237 mutations, 0 survivors.** 189/189; `check-selftest-counts` 28 verified by running.
