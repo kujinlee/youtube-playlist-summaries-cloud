@@ -1900,6 +1900,56 @@ numbered engineering list as a *candidate pool*, not a current plan, and check e
 this file claimed prod was at migration `0021` when it was at `0022`, which is how `0023` came to sit
 unapplied for eight days while every document read "merged, done".
 
+> ### ⭐ CURRENT GOAL — set by the user 2026-09-06. Three items, no ordering between them.
+>
+> **Everything else in this block remains a candidate pool. These three are the plan.** They are
+> also tracked in the session task list as `GOAL 1/3`–`GOAL 3/3` — *that is Claude Code's own
+> in-session to-do list, not GitHub issues and not `docs/backlog.md` rows*. The task entries carry
+> the measurements; this block carries the shape, because the task list does not survive `/compact`
+> and this file does.
+>
+> ⚠ **THERE IS ALSO A HARNESS-LEVEL `/goal`, AND THIS FILE — NOT IT — IS THE RECORD.** Claude Code
+> ships a built-in `/goal` slash command (**verified 2026-09-06: `claude --version` → 2.1.221**; it
+> is compiled into the CLI, so it appears in neither `.claude/commands/` nor the plugin skill list,
+> and an assistant that searches only those two will wrongly report it absent — that mistake was made
+> here first). **Its state is session-scoped and leaves no trace in the repo** — nothing under
+> `~/.claude/` or `.claude/` exposes an active goal, checked the same day. So it cannot answer
+> *"what is the current goal"* for anyone who was not in that session, which is exactly the question
+> this block exists to answer. **If a harness goal is set, it restates this block; it never competes
+> with it.** Recorded because the paragraph above rejects a second answer to *what's next* — and
+> would have shipped silently omitting a third.
+>
+> **1 — `docs/backlog.md` row 78, half (2): decide CLOSE vs fix.** Half (1) shipped in PR #201.
+> Half (2) is *"the entry gate runs only on `pull_request`"*, and the row's own 2026-09-06 re-read
+> already demoted it to a CI-timing preference. **Measured 2026-09-06:** `.github/workflows/ci.yml`
+> triggers on **both** `pull_request` and `push: branches:[master]`, and **exactly one** step in the
+> workflow is `pull_request`-gated — the dashboard entry ratchet — because that step feeds the script
+> `--base "origin/$GITHUB_BASE_REF"` and a `--pr-body-file` built from `github.event.pull_request.body`,
+> neither of which exists on a push. ⚠ **Do not upgrade that into "the gate cannot run on push":**
+> `check-dashboard-entry.py` defaults `--base` to `origin/master` and `--pr-body-file` to `None`, so
+> on a push to master it *would* execute — against an empty diff, and return the exempt
+> short-circuit. **Vacuous, not impossible.** The deliverable is a verdict with evidence, and
+> **closing the row is the user's step.**
+>
+> **2 — Pay down the 21 unpaid mutation manifests (the R4 debt).** **Measured 2026-09-06:**
+> `scripts/check-ratchet-contract.py` reports *21 violation(s) … of which 21 are R4 manifest debt,
+> baseline 21 — at baseline, not growing*; 10 manifests exist in `scripts/mutations/`. ⛔ The gate is
+> an **exact match, not a ceiling** (`MANIFEST_BASELINE`, compared with `!=`), so paying one down
+> **fails CI until the constant drops in the same commit** — deliberately, because that is what stops
+> paid-down debt being silently re-accrued. One guard per PR. A written `NO-MUTATIONS: <why>` is a
+> legitimate alternative to a manifest, so **not all 21 are necessarily owed code** — decide per guard.
+>
+> **3 — `docs/backlog.md` row 89: should observability pages be BUILT outside the main context?**
+> **Now unblocked** — the row's stated dependency was backlog row 88, which merged as PR #224
+> (squash `65cd509e`, verified 2026-09-06). Two things make it startable only now: that merge, and
+> the Agent tool being available again — **every open question in the row is about forking agents**,
+> so a spec written without it would rest on argument rather than measurement. ⚠ **The thesis holds
+> for the four agent-authored pages only.** The three hook-regenerated ones already cost zero context;
+> proposing to fork them is a category error. ⚠ **Two items in that row are the user's call and are
+> deliberately NOT part of this goal:** declaring the comprehensibility suite a project deliverable
+> (a goal change, whose home is `docs/anchors.md`), and marketplace publication (outward-facing and
+> irreversible).
+
 **⭐ 2026-08-13 — M3.1-A LANDED, and M3 now waits on a decision rather than on work.**
 - **PR #98 merged (`8ba3183`): the browser-level cloud e2e runs unattended against a LOCAL stack,
   7 rungs, and MEASURES that it spent nothing** rather than asserting it. Five dual review rounds.
