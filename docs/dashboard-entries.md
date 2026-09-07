@@ -3970,3 +3970,40 @@ entry could collide with a pre-existing one and go unreported. `parse_entries` n
 
 Verified: gate 146/146 + 13/13, page 314/314, check-plan-code 189/189, controls green FIRST then
 43/43 and 64/64 mutations with zero survivors, and every ratchet green.
+
+## 2026-09-06
+A warning I was about to dismiss as noise turned out to be reporting something real: a safety check
+had been switched off for hours without anyone noticing.
+
+Partway through the last piece of work I paused the plan at a checkpoint. When we resumed, I ticked
+off the remaining steps and finished the job — but nothing ever cleared the pause. The tool that is
+supposed to stop me ending a turn with work outstanding only does that while a plan is *running*,
+and as far as it was concerned nothing was.
+
+So the warning was correct, and its wording is what made it easy to ignore. Filed, with the fix
+left as a genuine choice rather than an assumption — the options differ in whether resuming should
+be something you say out loud or something that just happens.
+<!--tech-->
+Backlog **#99** 🟠, branch `backlog-99-paused-tick`.
+
+`.claude/executing-plan` still carried `paused: T1+T2 committed and pushed…` from a checkpoint
+hours earlier. `_armed()` returns **False** on a paused sentinel, so every turn after the resume was
+judged as "nothing armed" — the `unarmed` warning was literally right.
+
+⛔ THE COST IS THE GUARD, NOT THE WARNING. `check-plan-progress.py:100` and `:206` treat
+`"paused" in fields` as *allow the stop immediately*. Arming a plan exists so that script REFUSES a
+premature stop; from the pause to the end of the slice that protection was off — through four
+steps, a code review and a PR.
+
+`begin-plan.py:369` writes the `paused:` line and `--tick` never consults or clears it, so a plan
+can be simultaneously *paused* and *5 of 6 done* with nothing noticing.
+
+Three shapes recorded, not decided: `--tick` refuses on a paused plan; or it clears the pause
+implicitly; or the Stop guard reports `paused with N steps outstanding` instead of allowing
+silently. Falsifier: pause, tick, then stop with steps outstanding — today that is ALLOWED.
+
+⚠ The step number in the warning (`STEP 3 of 6`) is NOT trustworthy — `highest_banner` conflates
+sequences with different totals, the defect #96 spec §8 deliberately left open. The armed/unarmed
+half was right; the number was not, and it should not be cited as evidence.
+
+Also this turn: PR #232 merged (`3ec912f6`, backlog #82), and the stale sentinel removed by hand.
