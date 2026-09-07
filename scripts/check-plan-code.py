@@ -631,6 +631,7 @@ EXPECTED_MUTATIONS = {
     # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
     # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
     # so every mutation here would have killed the suite UNATTRIBUTABLY.
+    "scripts/check-gate-falsifiability.py": 5,
     "scripts/check-explainer-delivery.py": 5,
     "scripts/check-guard-coverage.py": 5,
     "scripts/check-handoff-path.py": 5,
@@ -2471,6 +2472,7 @@ def _self_test() -> int:
                                       # the pinned-to-a-past-event counts elsewhere in this file,
                                       # which must NOT be "corrected" to today's number.
                                       "scripts/check-explainer-delivery.py",
+                                      "scripts/check-gate-falsifiability.py",
                                       "scripts/check-guard-coverage.py",
                                       "scripts/check-handoff-path.py",
                                       "scripts/check-plan-code.py",
@@ -2577,7 +2579,7 @@ def _self_test() -> int:
     # off against the R4 manifest debt (MANIFEST_BASELINE 21 -> 20 in the same commit, because
     # that ratchet is an exact match and not a ceiling). This total is a LIVE sum, so it moves
     # whenever coverage does; it is not one of the counts pinned to a past measurement.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 237)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 242)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so

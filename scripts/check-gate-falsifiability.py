@@ -287,13 +287,25 @@ def self_test() -> int:
     for name, text, release, expected in STALENESS_CASES:
         got = [f.kind for f in find_gate_defects(text, "t.md", scripts, None, release)]
         if got != expected:
-            print(f"  FAIL {name}\n       expected {expected}\n       got      {got}")
+            # ⛔ `[FAIL] {name}: got … want …` IS A CONTRACT with check-plan-code.py, which
+            # attributes a killed mutation from lines STARTING WITH "[FAIL] " via
+            # `.strip()[7:].rsplit(": got ", 1)[0]`. `FAIL {name}` has no bracket, so the
+            # parser cannot see it at all and every mutation aimed here would redden the
+            # suite UNATTRIBUTABLY. Kept on ONE line for the same reason: the parser reads
+            # per line, and the detail belonged on continuation lines it never inspects.
+            print(f"  [FAIL] {name}: got {got!r} want {expected!r}")
             failures += 1
     for name, text, expected in CASES:
         sections = ["## M1", "## M2", "## M3"] if text.startswith("## ") else None
         got = [f.kind for f in find_gate_defects(text, "t.md", scripts, sections)]
         if got != expected:
-            print(f"  FAIL {name}\n       expected {expected}\n       got      {got}")
+            # ⛔ `[FAIL] {name}: got … want …` IS A CONTRACT with check-plan-code.py, which
+            # attributes a killed mutation from lines STARTING WITH "[FAIL] " via
+            # `.strip()[7:].rsplit(": got ", 1)[0]`. `FAIL {name}` has no bracket, so the
+            # parser cannot see it at all and every mutation aimed here would redden the
+            # suite UNATTRIBUTABLY. Kept on ONE line for the same reason: the parser reads
+            # per line, and the detail belonged on continuation lines it never inspects.
+            print(f"  [FAIL] {name}: got {got!r} want {expected!r}")
             failures += 1
     total = len(CASES) + len(STALENESS_CASES)
     print(f"self-test: {total - failures}/{total} passed")

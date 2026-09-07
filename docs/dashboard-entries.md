@@ -4578,3 +4578,45 @@ before running this time.
 
 Verified: control green on the full tree, 5/5 red via the case each names. Real harness:
 **16 files, 237 mutations, 0 survivors.** 189/189; `check-selftest-counts` 28 verified by running.
+
+## 2026-09-07
+The guard that insists every check can fail is now proven able to fail itself.
+
+Seventh of these. This one enforces the rule that a checkbox must say what observation would make it
+*fail* — otherwise it is a wish, not a gate. Its own five checks now include the one that matters
+most: that an item ticked without saying **which build it was verified against** gets reported rather
+than quietly waved through.
+
+The same trap as two rounds ago recurred and was caught the same way: deleting a guard clause made
+the program crash instead of reporting a failure, and a crash proves nothing about which check was
+watching.
+
+Debt drops from 15 to 14 — two thirds of the original twenty-one now done.
+<!--tech-->
+`scripts/mutations/check-gate-falsifiability.json` — 5 mutations against `find_gate_defects`.
+`EXPECTED_MUTATIONS` 237 → 242; `MANIFEST_BASELINE` 15 → 14, same commit.
+
+**Contract (1) fixed at BOTH print sites**, and the multi-line form collapsed to one line: it printed
+`FAIL {name}` + indented `expected`/`got` continuation lines. No bracket, so the parser could not see
+it — and the detail sat on lines the parser never inspects anyway. Now
+`[FAIL] {name}: got {got!r} want {expected!r}`.
+
+| # | Mutation | Red via |
+|---|---|---|
+| 1 | `unversioned_tick` finding renamed | `a tick with no VERIFIED AGAINST is reported, never silently skipped` |
+| 2 | staleness compares `<=` | `a tick verified against the current release is clean` |
+| 3 | ticked items no longer skipped for falsifiers | `ticked items are out of scope` |
+| 4 | investigation phrasing loses its diagnosis | `investigation phrasing is called out specifically` |
+| 5 | unknown npm scripts stop being flagged | `an unknown npm script is flagged` |
+
+⭐ **Mutation 1 covers the fail-open the whole script exists to prevent.** Its own comment says it:
+*"NOT silently skipped. Saying 'nothing is stale' while being unable to judge most items is the
+fail-open this whole exercise is about."*
+
+⚠ **Mutation 1 had to be WEAKENED — second time this session.** Removing `if m is None:` let the
+`elif` call `m.group(1)` on `None` and raise `AttributeError`: red suite, **zero** `[FAIL]` lines,
+nothing able to say which case was watching. Renaming the finding kind reddens exactly one case.
+**A crash is not a kill**, and guard clauses are exactly where that trap lives.
+
+Verified: control green on the full tree, 5/5 red via the case each names. Real harness:
+**17 files, 242 mutations, 0 survivors.** 189/189; `check-selftest-counts` 28 verified by running.
