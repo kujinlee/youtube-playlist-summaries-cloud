@@ -4425,3 +4425,40 @@ recorded, not guessed at.
 violation. Now `[FAIL] {name}: got … want …`. That fix is what made the control failure *readable* —
 it reported `[FAIL] policy is extractable from the migration: got False want True` instead of an
 unattributable red. Debt stays at **19**; nothing was registered.
+
+## 2026-09-07
+A third guard is covered — and this one is the guard that watches for duplicated vocabulary.
+
+Same routine as the last two: deliberately break the safety net five ways and confirm its own tests
+notice each one. It needed the usual reporting fix first, and two of the five attempts were wrong
+before they were right — one broke the same line twice, and one turned out not to break anything at
+all. Both were caught here rather than by the shared check, which is the point of running it locally.
+
+Debt drops from 19 to 18.
+<!--tech-->
+`scripts/mutations/check-vocabulary-collisions.json` — 5 mutations against `evaluate`, the pure
+rule split out of `main()` so the check can run without Postgres. `EXPECTED_MUTATIONS` +5
+(217 → 222); `MANIFEST_BASELINE` 19 → 18, same commit.
+
+Contract (1) fixed first: it printed `✓`/`✗`, invisible to the attribution parser.
+
+**Three things went wrong and each is worth keeping:**
+
+1. **Two mutations shared one anchor** (`len({…tables…}) > 1`). `check-plan-code` refuses duplicate
+   anchors, so this would have been rejected. Caught by asserting uniqueness *before* registering.
+2. **A mutation SURVIVED.** Truncating the header's table list to `[:1]` left the per-hit lines
+   below still naming both tables, so `the problem names both tables` still passed. The fix is a
+   two-edit mutation that removes both. **A mutation that survives is not a coverage gap — it is a
+   wrong hypothesis about what the case reads.**
+3. ⚠ **MY VERIFY HARNESS WAS WRONG, and it had been wrong for two guards.** It copied a SINGLE
+   file; `mutate_delivered` does `shutil.copytree(root/"scripts", …)`. On a guard importing a
+   sibling it reported `CONTROL FAILED — rc=1 fails=[]` — a harness bug wearing the costume of a
+   guard defect. Now copies the whole tree. This is the second time a substitute for the real
+   checker inherited only the rules I had noticed.
+
+Also fixed: the manifest-inventory case compares against `sorted(EXPECTED_MUTATIONS)`, and I
+inserted the new name in the wrong position — same members, different order, one red case. The list
+is sorted; position is not free.
+
+Verified: control green on the full tree, 5/5 red **via the case each names**. Real harness:
+**13 files, 222 mutations, 0 survivors.** 189/189; `check-selftest-counts` 28 verified by running.

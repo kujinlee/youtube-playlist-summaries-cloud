@@ -212,7 +212,13 @@ def self_test() -> int:
 
     failed = [n for n, ok in cases if not ok]
     for name, ok in cases:
-        print(f"  {'✓' if ok else '✗'} {name}")
+        # ⛔ `[FAIL] {name}: got … want …` IS A CONTRACT with check-plan-code.py, which
+        # attributes a killed mutation from lines STARTING WITH "[FAIL] " via
+        # `.strip()[7:].rsplit(": got ", 1)[0]`. A `✗` is invisible to it, so every
+        # mutation aimed here would redden the suite UNATTRIBUTABLY —
+        # `matched 0 red case(s) … caught by something else: []`, which reads as NO
+        # COVERAGE when the guard in fact caught it.
+        print(f"  ✓ {name}" if ok else f"  [FAIL] {name}: got {ok!r} want {True!r}")
     print(f"\n{len(cases) - len(failed)}/{len(cases)} passed")
     return 1 if failed else 0
 
