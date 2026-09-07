@@ -4171,3 +4171,47 @@ Gates run on this branch: `check-docs`, `check-roadmap-consistency`, `check-anch
 holds names of durable goals claimed by a spec or plan, and three unrelated maintenance items are
 not one goal. The deliverable-declaration question inside backlog #89 — which *would* be an anchor
 change — is deliberately left to the user.
+
+## 2026-09-06 [needs-you]
+The "should the entry check run earlier?" question has an answer, and the answer is no — it can be closed.
+
+The worry was that a reader might see a badly-formed status entry on the page before the automated
+check had a chance to reject it, because that check only runs when a change is proposed for merging.
+Reading the code settles it: **every rule the check enforces, the page also enforces — and the page
+runs first.** So the reader is never quietly shown something the check would have rejected; the page
+says "could not parse this entry" at the moment it is written, hours before the check ever looks.
+
+That is a different reason from the one written down when the item was demoted, and a stronger one.
+The note on file argued from a *staleness* banner, which answers "this page is out of date" — a
+genuinely different question from "this entry is malformed".
+
+**Waiting on you:** closing the item is your call, not mine. The engineering is done and needs nothing.
+
+Along the way this turned up a comment in the checking script that had gone out of date the same day,
+describing a limitation that a change merged hours earlier had removed. That is fixed here.
+<!--tech-->
+**Backlog #78 half (2) — RECOMMEND CLOSE.** Verified rather than argued:
+
+* `header_error` is **shared** between `check-dashboard-entry.py` (gate) and the page's parser, so
+  header SYNTAX cannot diverge.
+* Backlog #82 (`3ec912f6`, merged today) added the REFERENTIAL half: `collect()` → `added_reference_errors(base_text, head_text)` → `verdict(..., ref_problems)`, refused **above** the exemption
+  short-circuit. Wiring confirmed at `collect():1271` and `main():1426,1435` — not merely present.
+* `decision_errors` runs in the RENDERER only and is deliberately not wired into the gate (backlog
+  #81 tier 2, held by user decision 2026-09-01). So on content the page is currently **stricter**
+  than the gate, never weaker.
+* ⇒ For every content rule in force, page ⊇ gate, and the page renders at write time while the gate
+  runs at PR time. The `if: github.event_name == 'pull_request'` window therefore has **no
+  reader-facing hole**. The gate's other job — refusing a branch that owes an entry — is a process
+  rule that runs on every PR, and every change reaches master through one.
+* ⚠ Residue, stated not hidden: a FUTURE rule added to the gate with no renderer counterpart would
+  break that inclusion. The seam is documented at `added_entry_problems`, so it is visible, not latent.
+
+**Defect found and fixed here.** `header_error`'s docstring ended *"Until then a wrong-but-existing
+`[resolved:]` id reaches the reader as 'could not parse this entry' on the page rather than as a
+refusal at the gate."* Measured today, that is false: `header_error("## 2026-09-02 [resolved: 2026-09-01/99]")` → `None`, but `added_reference_errors` → `['… names no entry in this file']` and
+`verdict` → `rc=1`. **True about the FUNCTION, stale about the FILE** — the shape this repo keeps
+producing. The replacement states what the function decides and names the sibling that decides the rest.
+
+Control run BEFORE the edit: 146/146 + 13/13 `rc=0`. After: identical. `check-ratchet-contract`
+21/baseline 21 unmoved; `check-selftest-counts` 14 scripts verified. Diff is docstring-only. The ten
+Pyright unused-variable warnings are **pre-existing** — identical on `origin/master`.
