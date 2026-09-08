@@ -460,7 +460,7 @@ def _self_test() -> int:
         if got == expected:
             passed += 1
         else:
-            print(f"  FAIL: {name} — expected {expected} {kind}, got {got}")
+            print(f"  [FAIL] {name}: got {got!r} want {expected!r} {kind}")
     total, ok = len(cases), passed
     print(f"self-test: {ok}/{total} passed")
     return 0 if ok == total else 1

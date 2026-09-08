@@ -201,7 +201,7 @@ def _self_test() -> int:
 
     def case(name: str, ok: bool) -> None:
         cases.append((name, ok))
-        print(f"  {'PASS' if ok else 'FAIL'}  {name}")
+        print(f"  PASS  {name}" if ok else f"  [FAIL] {name}: got {ok!r} want {True!r}")
 
     SHA = "a62de1380000000000000000000000000000000f"
     OLD = "266984620000000000000000000000000000000f"

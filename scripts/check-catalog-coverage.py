@@ -232,7 +232,7 @@ def self_test() -> int:
         nonlocal cases, failures
         cases += 1
         ok = got == want
-        print(("  ✓ " if ok else f"  ✗ [{got!r} != {want!r}] ") + label)
+        print("  ✓ " + label if ok else f"  [FAIL] {label}: got {got!r} want {want!r}")
         failures += 0 if ok else 1
 
     d = digested_columns()

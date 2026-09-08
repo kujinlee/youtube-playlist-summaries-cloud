@@ -495,7 +495,7 @@ def self_test() -> int:
         if want == got:
             print(f"  \u2713 {name}")
         else:
-            print(f"  \u2717 {name} — wanted exit {want}, got {got}")
+            print(f"  [FAIL] {name}: got {got!r} want {want!r}")
             bad += 1
 
     with tempfile.TemporaryDirectory() as td:

@@ -364,12 +364,12 @@ def _self_test() -> int:
         except CannotRun:
             passed = should_raise
         except Exception as exc:  # noqa: BLE001 — a wrong exception type is a failed case
-            print(f"  FAIL: {name} — unexpected {type(exc).__name__}: {exc}")
+            print(f"  [FAIL] {name}: got unexpected {type(exc).__name__} ({exc}) want no exception")
             continue
         if passed:
             ok += 1
         else:
-            print(f"  FAIL: {name}")
+            print(f"  [FAIL] {name}: got {passed!r} want {True!r}")
     print(f"self-test: {ok}/{len(cases)} passed")
     return 0 if ok == len(cases) else 1
 
