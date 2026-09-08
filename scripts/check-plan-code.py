@@ -701,7 +701,12 @@ EXPECTED_MUTATIONS = {
     # to scripts/coverage_verdict.py with the clauses they guard. The sum below is unchanged
     # at 359, which is the point: a seam that relocates coverage must not be able to look
     # like coverage that was deleted, and only the per-file split can tell those apart.
-    "scripts/check-plan-code.py": 30,
+    "scripts/check-plan-code.py": 33,   # ⟳ 2026-09-08 r2 M1: +3. The fold added THREE
+    # behaviours and ZERO manifest entries — cases guarded them, nothing in CI did, and a
+    # case is held only by the self-test COUNT ratchet, which sees the number move rather
+    # than the coverage leave. Anchors deliberately quote a rendered message, a predicate
+    # assignment and an initialisation — NOT the branch expression under active revision,
+    # which orphaned a sibling entry TWICE in two commits this same session.
     "scripts/coverage_verdict.py": 5,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
@@ -3001,7 +3006,11 @@ def _self_test() -> int:
     # off against the R4 manifest debt (MANIFEST_BASELINE 21 -> 20 in the same commit, because
     # that ratchet is an exact match and not a ceiling). This total is a LIVE sum, so it moves
     # whenever coverage does; it is not one of the counts pinned to a past measurement.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 359)
+    # ⟳ 359 -> 362, 2026-09-08 (backlog #91, review r2 M1): +3 on check-plan-code.py for the
+    # three behaviours the r1/r2 folds added and left case-guarded but manifest-less. This
+    # total is a LIVE sum that moves whenever coverage does — RISING is the permitted
+    # direction; the ratchet exists so it cannot fall silently.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 362)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

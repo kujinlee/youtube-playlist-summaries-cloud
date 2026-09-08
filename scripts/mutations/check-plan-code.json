@@ -330,5 +330,38 @@
       ]
     ],
     "expect": "...and the word `caught` appears NOWHERE under that refusal"
+  },
+  {
+    "name": "the third subject sentence collapses back into the DIFFED header (r2 H2)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        out.append(\"  subject: --compare was given, but no block was assembled, so nothing\")",
+        "        out.append(\"  subject: the plan's blocks, DIFFED against the delivered files:\")"
+      ]
+    ],
+    "expect": "...it says the one honest thing: given, but nothing was assembled"
+  },
+  {
+    "name": "an UNREADABLE mutations declaration is treated as an honest zero (r2 H3)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        mut_unreadable = any(p.startswith(\"mutations block is not valid JSON\")",
+        "        mut_unreadable = False and any(p.startswith(\"mutations block is not valid JSON\")"
+      ]
+    ],
+    "expect": "a plan whose mutations block does not PARSE is not an honest zero"
+  },
+  {
+    "name": "`compared` regains its empty-dict meaning, so a dropped block reads as a clean diff (r2 H1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    report, ev_files, compared = list(problems), {}, None",
+        "    report, ev_files, compared = list(problems), {}, ({} if compare is not None else None)"
+      ]
+    ],
+    "expect": "a DROPPED block with --compare leaves `compared` None, never an empty dict"
   }
 ]
