@@ -5,7 +5,7 @@
     python3 scripts/check-plan-code.py <plan.md> --evidence # ...and print the evidence block
     python3 scripts/check-plan-code.py <plan.md> --compare .   # ...and diff vs the REAL files
     python3 scripts/check-plan-code.py <plan.md> --verify-evidence   # ...and FAIL if it is stale
-    python3 scripts/check-plan-code.py --self-test          # 196 cases
+    python3 scripts/check-plan-code.py --self-test          # 201 cases
 
 ⚠ `--compare` takes the REPO ROOT, and each file tag is resolved under it as the
 repo-relative path it already is. It took the containing DIRECTORY until round 5,
@@ -1148,7 +1148,17 @@ def check(plan: pathlib.Path,
     # `RunContext`. They are tracked separately from the first line so that no path can
     # reach a printer holding one object that answers both "what was this run about" and
     # "did it measure anything".
-    report, ev_files, compared = list(problems), {}, None
+    # ⟳ code review r1, H3. `compared` starts as "no compare was asked for" — but the
+    # `not files` return below ships this context BEFORE the `if compare is not None:` block
+    # can ever run, so a run given `--compare` used to emit an evidence block saying
+    # "--compare was not given" while its own final line said the mode was `compared`. Two
+    # lines of one output contradicting each other, on the DURABLE half. That is r4 H1 — the
+    # evidence misstating its own SUBJECT — and making `ctx` required (T5) closed the
+    # default-argument route to it while leaving this one, which is the route reachable from
+    # the command line. Fixing the affordance and leaving the live instance is this project's
+    # recorded instance-not-class shape; an empty dict means "compared, and nothing matched".
+    report, ev_files = list(problems), {}
+    compared = {} if compare is not None else None
     if not files:
         report.append("no `<!-- file: … -->` tagged Python blocks found — nothing to assemble")
         # ⭐ AN HONEST ZERO IS A `Measured`, AND THAT IS THE WHOLE BACKLOG-#93 DISTINCTION
@@ -1165,7 +1175,21 @@ def check(plan: pathlib.Path,
         # `([], 0, False)` is False — this mapping matches behaviour, it does not change it.
         # ⛔ This is the ONLY plan-mode path that returns early, so after this change
         # `declared is None` is UNREACHABLE in plan mode — see main()'s gate.
-        return (False, report, Measured(files=ev_files, declared=0, mutations=[], survivors=[]),
+        # ⟳ code review r1, H2. This used to HARDCODE `declared=0`, throwing away the `muts`
+        # already parsed at the top of this function — so clause 2 ("every DECLARED mutation
+        # produced a verdict") passed over a number the producer INVENTED rather than one it
+        # measured. `extract()` can return a non-empty `muts` with an empty `files`: the two
+        # tag families parse independently, and file tags are additionally dropped by the
+        # `unsafe_tag` branch. A plan declaring two mutations and no parseable file tag then
+        # printed `mutations declared and run: 0` on the DURABLE evidence block — r3 B4's
+        # shape, reproduced inside the change built to end it. Master printed the same words
+        # but carried `declared: None`, which honestly means "never attempted"; a `Measured`
+        # positively asserts zero WERE declared, so the union makes the lie explicit and typed.
+        # Branching restores the honest zero for its real case and refuses the other.
+        return (False, report,
+                (Measured(files=ev_files, declared=0, mutations=[], survivors=[],
+                          controls_green=True)          # explicit — see coverage_verdict H1
+                 if not muts else NotMeasured.from_counts([], len(muts), ev_files)),
                 RunContext(tally=tally, compared=compared))
 
     with tempfile.TemporaryDirectory() as td:
@@ -1480,6 +1504,34 @@ def _self_test() -> int:
         good_ok, rep, ev, _ctx1 = check(pl)
         case("a well-formed plan passes", good_ok, True)
         case("its mutation is recorded as caught", ev.mutations[0]["caught"], True)
+
+        # ⟳ code review r1, H2 + H3. A plan that DECLARES mutations but has no parseable
+        # file tag takes the `not files` early return. Both findings live on that one path.
+        _no_files_muts = ('<!-- mutations -->\n```json\n'
+                          '[{"name": "a", "file": "m.py", "edits": [["x", "y"]], '
+                          '"expect": "c"},\n'
+                          ' {"name": "b", "file": "m.py", "edits": [["p", "q"]], '
+                          '"expect": "c"}]\n```\n')
+        pl.write_text(_no_files_muts)
+        _h2_ok, _h2_rep, _h2_v, _h2_ctx = check(pl)
+        # H2: the honest zero must NOT swallow declared mutations. Asserting the TYPE, not a
+        # string, so a renderer change cannot make this vacuous.
+        case("a plan declaring mutations with nothing to assemble is NOT a measured zero",
+             isinstance(_h2_v, Measured), False)
+        case("...and it reports how many were declared, so they are not invisible",
+             _h2_v.declared, 2)
+        # PRESENCE TWIN — the honest zero itself must survive, or H2's fix has broken T2a.
+        pl.write_text("# a plan with no code and no mutations\n")
+        _hz_ok, _hz_rep, _hz_v, _hz_ctx = check(pl)
+        case("...while a plan with NO mutations either is still an honest Measured zero",
+             (isinstance(_hz_v, Measured), _hz_v.declared), (True, 0))
+        # H3: `compared` must distinguish "compare given, nothing matched" from "not given",
+        # on the SAME early-return path. Absence assertion plus its presence twin.
+        _h3_cmp = check(pl, pathlib.Path(td))[3].compared
+        _h3_bare = check(pl)[3].compared
+        case("--compare on the early-return path does NOT report 'compare was not given'",
+             _h3_cmp is None, False)
+        case("...and without --compare it still reports exactly that", _h3_bare, None)
 
         # A script with no entrypoint exits 0 and prints nothing — r3's Blocking.
         pl.write_text('<!-- file: m.py -->\n```python\ndef f():\n    return 1\n```\n')

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The coverage verdict is a type you cannot read wrongly.
 
-    python3 scripts/coverage_verdict.py --self-test  # 21 cases
+    python3 scripts/coverage_verdict.py --self-test  # 22 cases
 
 WHY THIS EXISTS
 ---------------
@@ -112,7 +112,15 @@ class Measured:
     declared: int
     mutations: list
     survivors: list
-    controls_green: InitVar[bool] = True
+    # ⛔ NO DEFAULT, AND THAT IS THE POINT (code review r1, H1). This read
+    # `= True`, which made clause 1 — the one r2 DROPPED and r3 B1 had to restore — the
+    # single clause a producer could omit, and omitting it did not withhold the claim: it
+    # ASSERTED the controls were green. `declared`, `mutations` and `survivors` had no
+    # default, so a forgetful producer got a TypeError; only the fail-open clause was
+    # forgiving. That is the exact shape this change removes from `evidence()`'s `ctx`
+    # 700 lines away, left standing in the constructor that is the whole point of the union.
+    # Every call site passes it explicitly, so requiring it costs nothing.
+    controls_green: InitVar[bool]
 
     def __post_init__(self, controls_green: bool) -> None:
         # Clause 1 — the suites were green WITHOUT the mutation. Every `caught` claims the
@@ -234,6 +242,21 @@ def _self_test() -> int:
     # ⚠ same `is True` discipline on the clause itself, not only on the entries
     raises("F3 controls_green truthy but not True",
            lambda: Measured(files={}, declared=1, mutations=ok, survivors=[], controls_green=1))
+
+    # ⛔ THE FALSIFIER FOR REMOVING clause 1's DEFAULT (code review r1, H1). Without this
+    # case the removal is a change with no guard: restoring `= True` breaks nothing that any
+    # existing call site would notice, because every one of them already passes the argument.
+    # The refusal itself is the only thing that can be asserted, so assert it — and assert it
+    # for the CLAUSE-1 argument specifically, since the other three fields were never
+    # forgiving and a case over them would pass for the wrong reason.
+    cases += 1
+    try:
+        Measured(files={}, declared=0, mutations=[], survivors=[])   # type: ignore[call-arg]
+        failed += 1
+        print("  [FAIL] H1 clause 1 has no default, so a producer cannot silently assert it: "
+              "constructed without controls_green")
+    except TypeError:
+        pass
 
     # --- F4/F5: the absences are real, not gated ---
     nm = NotMeasured(reason="nothing was staged")
