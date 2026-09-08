@@ -2,7 +2,7 @@
 """A review round has TWO halves, or a written reason why it does not — a RATCHET on silent gaps.
 
     python3 scripts/check-review-rounds.py             # audit docs/reviews/
-    python3 scripts/check-review-rounds.py --self-test # 27 cases
+    python3 scripts/check-review-rounds.py --self-test # 29 cases
 
 WHY THIS EXISTS
 ---------------
@@ -304,6 +304,12 @@ def self_test() -> int:
 
         d = tree({"p-r1-codex.md": "x", "p-r1-claude.md": "y"})
         check("both halves pass", audit(d, set())[0] == [], True)
+        # ⟳ 2026-09-08 — MEASURED: the case above passes when the FLAT scan is deleted, and the
+        # nested one below passes when the NESTED scan is deleted. Both assert an ABSENCE of
+        # problems, and reading no files produces exactly that absence: "nothing went wrong" is
+        # satisfied by "nothing happened". Assert the round was SEEN, or the pairing is unguarded.
+        check("…and the flat pair was actually SEEN, not merely un-complained-about",
+              audit(d, set())[1]["rounds"], 1)
 
         d = tree({"p-r1-codex.md": "x"})
         check("solo half FAILS", len(audit(d, set())[0]) == 1, True)
@@ -329,6 +335,8 @@ def self_test() -> int:
         # and every round reads as half-missing — the loud failure, but still worth naming.
         d = tree({"codex/p-r1-codex.md": "x", "claude/p-r1-claude.md": "y"})
         check("halves in per-writer subdirectories pair normally", audit(d, set())[0] == [], True)
+        check("…and the nested pair was actually SEEN, not merely un-complained-about",
+              audit(d, set())[1]["rounds"], 1)
 
         # MIXED, because the migration is not atomic: ~700 files stay flat while new halves nest.
         d = tree({"p-r1-codex.md": "x", "claude/p-r1-claude.md": "y"})

@@ -4857,3 +4857,17 @@ Twelve deliberate breakages, all caught. Two things worth knowing. The rule for 
 **Also:** the guard printed nothing for passing cases, so its case names were invisible to any outside tool and an `expect` could only be hand-transcribed. It now prints `PASS <name>` like every other guard in the suite, and my generator harvests those names to refuse an inexact `expect`.
 
 Registration: `EXPECTED_MUTATIONS["scripts/check-roadmap-consistency.py"] = 12`; live sum 299 → 311; sorted want-list — position now **derived and asserted sorted** (27 entries), which is why there was no third mis-sort; `MANIFEST_BASELINE` 5 → 4.
+
+## 2026-09-08
+The guard that makes sure every review round has both of its halves now has a safety net, and two of its own checks were proving nothing.
+Twelve deliberate breakages, all caught. The interesting part: two checks said "this pairs up correctly" by confirming that no complaint was raised — and if you delete the code that finds the files in the first place, no complaint is raised either. So the parts that locate review files, in both the old flat layout and the new per-writer folders, could each have been removed without either check noticing. They now also confirm the pair was actually *found*, not merely un-complained-about.
+<!--tech-->
+`scripts/mutations/check-review-rounds.json` — 12 mutations, all attributed, over a green 27/27 control, verified through `check-plan-code`'s own `run_mutations` (`caught=12 survivors=0`). All four output contracts already held.
+
+⭐ **TWO VACUOUS ABSENCE-ASSERTIONS, one shape.** `both halves pass` and `halves in per-writer subdirectories pair normally` both assert `audit(d, set())[0] == []`. Delete `flat = sorted(reviews.glob("*.md"))` or `nested.extend(...)` and the audit finds **no files**, so it reports **no problems** — the same empty list. *"Nothing went wrong" satisfied by "nothing happened."* Both scans were therefore unguarded, in the guard whose entire job is noticing a missing half.
+
+Fix: companion cases asserting `stats["rounds"] == 1` — the pair was **seen**. Measured: each is the only case its scan's mutation kills. **27 → 29 cases.**
+
+The other ten cover the rules worth having: `gate_ran` is READ and never re-derived from `exit_code` (a second implementation of the wrapper's rule, which the docstring forbids); a `REVIEW GAP:` line still needs a reason; `verdicts/` is not scanned for halves; a basename filed in two layouts is REPORTED, not silently deduped.
+
+Registration: `EXPECTED_MUTATIONS["scripts/check-review-rounds.py"] = 12`; live sum 311 → 323; sorted want-list (28 entries, position derived); `MANIFEST_BASELINE` 4 → 3. ⚠ The declared self-test count uses `--self-test # N cases` here, not the `--self-test  # N cases` spacing of its siblings; my first edit missed it and `check-selftest-counts` caught the drift — the outside observer doing its job.

@@ -665,6 +665,12 @@ EXPECTED_MUTATIONS = {
     #     for the verdict and once for the sentence main() prints. Byte-identical with nothing
     #     holding them so — drift would fail the check while printing "every checkbox is ticked".
     "scripts/check-roadmap-consistency.py": 12,
+    # ⟳ 2026-09-08, R4 manifest debt 4 -> 3. TWO VACUOUS ABSENCE-ASSERTIONS, same shape: both
+    # `both halves pass` and `halves in per-writer subdirectories pair normally` assert
+    # `problems == []`, and deleting the scan they depend on produces exactly that empty list.
+    # "Nothing went wrong" was satisfied by "nothing happened", so the flat and nested scans were
+    # each unguarded. Companion cases now assert stats["rounds"] == 1 — the pair was SEEN.
+    "scripts/check-review-rounds.py": 12,
     "scripts/check-dashboard-entry.py": 42,
     "scripts/check-plan-code.py": 35,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
@@ -2621,6 +2627,7 @@ def _self_test() -> int:
                                       "scripts/check-plan-progress.py",
                                       "scripts/check-plan-task-order.py",
                                       "scripts/check-producer-enumeration.py",
+                                      "scripts/check-review-rounds.py",
                                       "scripts/check-roadmap-consistency.py",
                                       "scripts/check-selftest-counts.py",
                                       "scripts/check-sentinel-meanings.py",
@@ -2725,7 +2732,7 @@ def _self_test() -> int:
     # off against the R4 manifest debt (MANIFEST_BASELINE 21 -> 20 in the same commit, because
     # that ratchet is an exact match and not a ceiling). This total is a LIVE sum, so it moves
     # whenever coverage does; it is not one of the counts pinned to a past measurement.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 311)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 323)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
