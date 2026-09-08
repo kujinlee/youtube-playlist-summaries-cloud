@@ -4966,3 +4966,41 @@ Backlog #89's whole question was whether an agent should be constructing these p
 The section also records the fork obligations: **name it at spawn** (an unnamed fork is unaddressable and §6's second half has nowhere to go), give it an explicit `as of`, and **write nothing inside the repository** — with the Codex-detector hazard labelled **UNMEASURED**, so the conservative rule stands until T4 runs.
 
 **T2 needs no work and is confirmed by the gate:** `check-explainer-delivery.py` still reports 1 shared description, 5 skills cite it, **0 restatements** — adding a section did not create one. `--self-test` 8/8. Doc 273 → 314 lines.
+
+## 2026-09-08 [needs-you]
+The experiment about how these explainer pages get built has finished, and it answered the question
+it was built to answer. A page was researched and written by a separate agent, then checked and
+handed over by this session. The check caught something the writer could not see: in light mode the
+page's body text was very nearly the same colour as its background, which makes it unreadable. That
+was fixed and re-measured, and the page is fine now.
+
+The reason this matters more than one page: the separate agent had even flagged that area as worth
+checking, and still could not find it, because from the source both light and dark looked properly
+defined. It only appears when the page is actually opened in a browser. So the split — one agent
+writes, a different one opens the result and checks it — earned its keep the first time it was used.
+
+Four things this turned up have been written down as work for later, at your instruction. The one
+worth knowing about is that a safety check meant to catch exactly this colour problem only ever
+looks at one of the five pages that could have it, and nothing said so.
+
+A fifth thing turned up afterwards and is NOT written down yet, because that is your call: building
+the same page five times from identical input produced five different files, each slightly larger
+than the last. Since answering a reader's question rebuilds the page, a page that gets used grows
+every time.
+
+<!--tech-->
+Backlog #89 T0, T3 and T4 all run; spec §8 records them. T0 discharged — first Group-A `.fragment.html`
+ever written (`~/explainers/` 47 files/2 fragments -> 49/3). T3: fork spent ~786k tokens and 82 tool
+uses outside the parent's context; parent's §5b cost ~15 tool calls and caught light-theme body
+contrast at **1.03:1**, fixed to **8.69:1** worst case across all eight theme/OS states, re-measured
+independently in Chrome. Geometry probe passed 8/8 distinct positions, refuting the fork's own
+prediction. T4 attempt 1 was VACUOUS (page write 10:18:36 vs verdict 10:17:09 — no overlap) and is
+recorded as such; attempt 2 arranged the overlap (write 10:21:28 inside window 10:20:51-10:21:50)
+and returned `intrusions: []`, `docs/reviews/` unchanged at 866, zero quarantine. ⚠ The falsifier
+CANNOT fire: `ARTIFACT_ROOTS = ("docs/reviews",)`, `watched_dirs()` is `dirname(--out)` plus that,
+and `dir_snapshot()` is non-recursive, so a writer confined to `~/explainers/` never appears there.
+§5 is confirmed for THIS MECHANISM only; CPU and a shared Postgres remain unmeasured. Filed #102-#105.
+Corrected a false sentence in `explainer-delivery.md` §5 — monitors do NOT die with their session
+(five were armed; one probe fired five events). Unfiled: `brief-compose.py` recompose is not
+idempotent (1,139,120 -> 1,151,240 bytes over five identical inputs; it lifts the tray from the
+NEWEST page, which after the first write is itself).

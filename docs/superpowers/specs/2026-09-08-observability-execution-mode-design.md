@@ -152,11 +152,11 @@ conservative rule stands: **do not start a page-building fork while a Codex revi
 
 | | Task | Falsifier |
 |---|---|---|
-| **T0** | **Close #88 in practice for Group A** (precondition) | Build one `/brief`; assert the sibling `.fragment.html` exists. Fails today for all 32 pages |
+| **T0** ✅ | **Close #88 in practice for Group A** (precondition) | Build one `/brief`; assert the sibling `.fragment.html` exists. Fails today for all 32 pages — **DISCHARGED 2026-09-08**, see §8 |
 | T1 | `explainer-delivery.md` gains an **execution-mode** section — it currently says nothing about who RUNS the skill | The section names, for each of build / verify / announce / answer, which participant does it |
 | T2 | The four Group-A skills cite T1 rather than restating it | `check-explainer-delivery.py` already enforces cite-not-restate; it stays green |
-| T3 | The fork is spawned **named**, and the parent performs §5b | A page reaches the human that the parent never executed |
-| T4 | **Measure** the concurrency hypothesis (§5) | Run a page-building fork beside a Codex review; read `docs/reviews/verdicts/<stem>.verdict.json`. If the intrusion field fires on a fork that wrote nothing in the repo, §5 is wrong and the conservative rule stays |
+| T3 ✅ | The fork is spawned **named**, and the parent performs §5b | A page reaches the human that the parent never executed — **RUN 2026-09-08, §8** |
+| T4 ✅ | **Measure** the concurrency hypothesis (§5) | Run a page-building fork beside a Codex review; read `docs/reviews/verdicts/<stem>.verdict.json`. If the intrusion field fires on a fork that wrote nothing in the repo, §5 is wrong and the conservative rule stays — **RUN 2026-09-08, and the falsifier CANNOT FIRE; §8** |
 
 ---
 
@@ -171,3 +171,74 @@ conservative rule stands: **do not start a page-building fork while a Codex revi
   they are solved by a stronger mechanism than an agent.
 - **`explain-topic`'s free-form subject** may need a different spawn prompt from the other three;
   not investigated.
+
+---
+
+## 8. RESULTS — T0, T3 and T4 were run on 2026-09-08
+
+### T0 — DISCHARGED
+
+Baseline taken before the build: `~/explainers/` held **47 files, 32 `/brief` pages, 2 fragments**,
+both belonging to `dashboard`/`goals`. After: **49 files, 3 fragments**, the new one being the first
+fragment ever written for a Group-A page. §1's measurement is closed in practice.
+
+### T3 — RUN, and the split paid for itself on its first use
+
+A fork named `brief-builder` researched and composed; the parent performed §5b and delivered.
+
+| Measured | Value |
+|---|---|
+| Spent inside the fork (build + fix + revision) | **~786k tokens, 82 tool uses** |
+| Reached the parent's context | three reports, ~2,000 words |
+| Parent's §5b cost | ~15 tool calls |
+
+**The fork shipped a defect only execution could reveal:** light-theme body contrast **1.03:1**, dark
+text on a dark background. Its fragment declared `[data-theme="light"]` overrides for `--ink` but not
+`--bg`, so from the source both directions looked defined. Two controls placed the fault: `/dashboard`
+measured 15.46:1, and a 2026-09-05 brief page measured 15.22:1 **in both themes** — a fully inert
+toggle, readable by accident. After the fix, re-measured **by the parent** in Chrome: worst case
+**8.69:1**, all eight states pass AA.
+
+⛔ **This is §2's claim, demonstrated rather than argued: a fork that also performed §5b would have
+shipped 1.03:1 and reported success.** Note the fork had even flagged the toggle as worth checking.
+
+The geometry probe **passed** — 8 buttons, 8 distinct positions, 8 reachable — which *refutes* the
+fork's own prediction that `.sh` being `display:flex` would collapse them. Recorded because a failed
+prediction is evidence too. Both question paths drove clean, section label and 156-character quote
+intact.
+
+⚠ **Two hazards met, neither anticipated by this spec.** (1) §5b's render gate fired for real: the
+tab reported `document.hidden: true`, and the geometry probe was correctly refused as CANNOT RUN
+until a human surfaced the window — `osascript` could not do it, because two Chrome instances were
+running and the one AppleScript addresses had no windows. (2) Driving the question path revealed
+**five** monitors armed on `questions.md` when this session armed one; see backlog #103.
+
+### T4 — RUN, §5 CONFIRMED, and the scope is narrower than the task implies
+
+**Attempt 1 was VACUOUS and is recorded as such.** Review and fork were started together; the verdict
+read `intrusions: []`. But a page build researches for minutes and writes for a fraction of a second
+at the end: page mtime **10:18:36** against verdict mtime **10:17:09**. The window contained no
+concurrent write. It passed for a reason unrelated to what it names — and both the parent and the
+fork initially read it as a result.
+
+**Attempt 2 arranged the overlap.** The fork recomposed repeatedly at ~40s intervals for the
+review's duration. Review window **10:20:51 → 10:21:50**; a page write landed at **10:21:28**,
+provably inside it. Verdict: `intrusions: []`, `gate_ran: true`, `docs/reviews/` unchanged at 866
+entries, **zero quarantine directories**.
+
+⚠ **THE FALSIFIER CANNOT FIRE, so state the narrow claim.** An adversarial review of the experiment
+established that `ARTIFACT_ROOTS = ("docs/reviews",)` (`codex-review.py:283`), `watched_dirs()` returns
+only `dirname(--out)` plus `<repo>/docs/reviews` (`:286`), and `dir_snapshot()` uses `os.listdir()`
+with **no recursion** (`:332`). A writer confined to `~/explainers/` can therefore *never* appear in a
+watched directory, whatever the timing. What T4 licenses:
+
+> A page-building fork that honours the write rule is **invisible to this repo-artifact detector**.
+
+What it does **not** license: *"forks are safe beside reviews."* Other interference channels are
+untouched and unmeasured — CPU contention, and a shared Postgres, which this project has already seen
+produce a **false Blocking** from two concurrent reviewers. **The §5 conservative rule may be lifted
+for this mechanism only**, and the sentence that replaces it must say which mechanism.
+
+The reviewer also noted there is **no discriminating scenario at all** while the agent honours the
+rule — a rule whose violation this instrument cannot observe. That is worth knowing and is not a
+defect in the rule.

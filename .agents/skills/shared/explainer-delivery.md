@@ -58,8 +58,16 @@ Keeping §5b in the parent also **dissolves two problems rather than solving the
 * **It writes nothing inside the repository** — page and fragment go to `~/explainers/`, notes to its
   scratchpad. ⚠ The Codex review wrapper snapshots `docs/reviews/` non-recursively and its intrusion
   detector fires on **any** concurrent write; on the failure path it has **moved a concurrent file
-  out of the tree**. Whether a repo-silent fork is safe beside a review is **UNMEASURED** — until it
-  is, do not start one while a Codex review is in flight.
+  out of the tree**. ✅ **MEASURED 2026-09-08 (backlog #89 T4): a fork that honours this rule is
+  invisible to that detector, so the two may overlap.** A page write landed at `10:21:28` inside a
+  review window of `10:20:51–10:21:50` and the verdict recorded `intrusions: []`, `docs/reviews/`
+  unchanged, no quarantine. ⛔ **State the narrow claim, not the comfortable one.** `watched_dirs()`
+  covers only `dirname(--out)` and `<repo>/docs/reviews`, and the snapshot is non-recursive, so a
+  writer confined to `~/explainers/` could never appear there **whatever the timing** — the test can
+  only ever confirm. It says nothing about the other ways two agents collide: CPU, and a shared
+  Postgres, which has already produced a **false Blocking** here from two concurrent reviewers. So:
+  overlap a review freely **if the write rule holds**, and treat any other shared resource as still
+  unmeasured.
 
 ---
 
@@ -171,10 +179,26 @@ notices when the reader thinks to say *"read my questions"*.
 
 **One monitor per session, not per page.** The monitor watches `questions.md`, which every page
 shares, so arming a second one duplicates every event rather than covering a second document.
-`TaskStop` the previous one, or check whether one is already armed.
 
-The monitor is **per session** and fires only **while the session is alive** — which is why the
-page's *"say read my questions"* fallback line stays correct and must not be removed.
+⛔ **MONITORS OUTLIVE THEIR SESSIONS — MEASURED 2026-09-08, and this file used to say the opposite.**
+One probe question produced **five** events from five distinct task ids, in a session that had armed
+**one**. All five were byte-identical `tail -F` commands, so they were the same monitor accumulated
+across earlier sessions. The sentence that stood here — *"the monitor is per session and fires only
+while the session is alive"* — is **false**, and it was load-bearing: it made "check whether one is
+already armed" feel unnecessary, so nobody checked, and a reader's question was being answered once
+per session that had ever run. **So enumerate and stop the strays BEFORE arming**, rather than
+trusting session boundaries to have done it:
+
+```
+TaskList  ->  TaskStop every task whose command tails ~/explainers/questions.md
+```
+
+⚠ **Rewriting `questions.md` makes every surviving `tail -F` replay the WHOLE file as fresh events**,
+so clean up the monitors first and the file second, or the cleanup itself floods the session.
+
+What *is* still true, and is why the page's *"say read my questions"* fallback line must not be
+removed: a monitor cannot fire into a session that has ended, so a page outlives any watcher of it.
+Backlog **#103** carries the durable fix.
 
 ## 5a. Put the URL and its instructions ON the page
 

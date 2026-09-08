@@ -1949,6 +1949,17 @@ unapplied for eight days while every document read "merged, done".
 > deliberately NOT part of this goal:** declaring the comprehensibility suite a project deliverable
 > (a goal change, whose home is `docs/anchors.md`), and marketplace publication (outward-facing and
 > irreversible).
+>
+> ✅ **DONE 2026-09-08 — all five tasks run; results in the spec's §8.** T0 discharged (first
+> Group-A fragment ever written). T3 shipped the fork/parent split once and it **caught a defect the
+> fork could not see** — light-theme body contrast at **1.03:1**, fixed and re-measured at **8.69:1**
+> worst case. T4 needed **two attempts**: the first was **vacuous** (the page write missed the review
+> window by 87 seconds) and is recorded as such rather than as a pass. The second arranged the overlap
+> and confirmed §5 — ⚠ **for one mechanism only.** The falsifier *cannot fire*: the detector's
+> watched set is `dirname(--out)` plus `docs/reviews` and its snapshot is non-recursive, so a writer
+> confined to `~/explainers/` never appears there. CPU and a shared Postgres remain unmeasured.
+> **Four findings filed as backlog #102–#105**; a fifth (recompose is not idempotent) is awaiting a
+> file/don't-file verdict.
 
 **⭐ 2026-08-13 — M3.1-A LANDED, and M3 now waits on a decision rather than on work.**
 - **PR #98 merged (`8ba3183`): the browser-level cloud e2e runs unattended against a LOCAL stack,
