@@ -259,8 +259,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                 if not muts else NotMeasured.from_counts([], len(muts), ev_files)),",
-        "                 if False else NotMeasured.from_counts([], len(muts), ev_files)),"
+        "                 if not muts and not mut_unreadable",
+        "                 if False"
       ]
     ],
     "expect": "a plan with NO tagged blocks reports an HONEST ZERO, not a refusal"
