@@ -656,6 +656,15 @@ EXPECTED_MUTATIONS = {
     # pending state into the resolved list), not decisive — mutating it would be unkillable-by-
     # construction, the `check-storage-grant-pin` case-5 shape.
     "scripts/check-ci-watched.py": 9,
+    # ⟳ 2026-09-08, R4 manifest debt 5 -> 4. Two findings, both about a rule with no single owner:
+    #   * `range(a, b + 1)`'s INCLUSIVE bound was unfalsifiable — every range case writes both
+    #     endpoints (`B1-B5`), and ident_re matches each on its own, so expansion only ever
+    #     supplied the interior. A range written `B1-5` is the only shape where the top member
+    #     exists solely by expansion; that case is now present.
+    #   * `open_items` did not exist: the "what counts as still open" rule was written TWICE, once
+    #     for the verdict and once for the sentence main() prints. Byte-identical with nothing
+    #     holding them so — drift would fail the check while printing "every checkbox is ticked".
+    "scripts/check-roadmap-consistency.py": 12,
     "scripts/check-dashboard-entry.py": 42,
     "scripts/check-plan-code.py": 35,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
@@ -2612,6 +2621,7 @@ def _self_test() -> int:
                                       "scripts/check-plan-progress.py",
                                       "scripts/check-plan-task-order.py",
                                       "scripts/check-producer-enumeration.py",
+                                      "scripts/check-roadmap-consistency.py",
                                       "scripts/check-selftest-counts.py",
                                       "scripts/check-sentinel-meanings.py",
                                       "scripts/check-storage-grant-pin.py",
@@ -2715,7 +2725,7 @@ def _self_test() -> int:
     # off against the R4 manifest debt (MANIFEST_BASELINE 21 -> 20 in the same commit, because
     # that ratchet is an exact match and not a ceiling). This total is a LIVE sum, so it moves
     # whenever coverage does; it is not one of the counts pinned to a past measurement.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 299)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 311)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
