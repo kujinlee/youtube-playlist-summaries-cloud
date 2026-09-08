@@ -692,6 +692,11 @@ EXPECTED_MUTATIONS = {
     # so every mutation here would have killed the suite UNATTRIBUTABLY.
     "scripts/check-gate-falsifiability.py": 5,
     "scripts/check-explainer-delivery.py": 5,
+    # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
+    # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
+    # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed
+    # BEFORE these were registered, which is the order the loop requires and I got wrong once.
+    "scripts/check-function-revokes.py": 6,
     "scripts/check-guard-coverage.py": 5,
     "scripts/check-handoff-path.py": 5,
     "scripts/check-vocabulary-collisions.py": 5,
@@ -2546,6 +2551,7 @@ def _self_test() -> int:
                                       # the pinned-to-a-past-event counts elsewhere in this file,
                                       # which must NOT be "corrected" to today's number.
                                       "scripts/check-explainer-delivery.py",
+                                      "scripts/check-function-revokes.py",
                                       "scripts/check-gate-falsifiability.py",
                                       "scripts/check-guard-coverage.py",
                                       "scripts/check-handoff-path.py",
@@ -2654,7 +2660,7 @@ def _self_test() -> int:
     # off against the R4 manifest debt (MANIFEST_BASELINE 21 -> 20 in the same commit, because
     # that ratchet is an exact match and not a ceiling). This total is a LIVE sum, so it moves
     # whenever coverage does; it is not one of the counts pinned to a past measurement.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 253)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 259)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

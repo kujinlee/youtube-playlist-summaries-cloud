@@ -1,0 +1,68 @@
+[
+  {
+    "name": "a replacement is audited instead of skipped",
+    "file": "scripts/check-function-revokes.py",
+    "edits": [
+      [
+        "continue                      # replacement \u2014 PostgreSQL preserves the ACL",
+        "pass                          # replacement \u2014 PostgreSQL preserves the ACL"
+      ]
+    ],
+    "expect": "`create or replace` of an EXISTING function needs no new revoke"
+  },
+  {
+    "name": "a DROP marks the function as still existing",
+    "file": "scripts/check-function-revokes.py",
+    "edits": [
+      [
+        "seen.discard(name)",
+        "seen.add(name)"
+      ]
+    ],
+    "expect": "drop then recreate needs a fresh revoke"
+  },
+  {
+    "name": "the grantee filter accepts any grantee, not just public",
+    "file": "scripts/check-function-revokes.py",
+    "edits": [
+      [
+        "re.search(r\"\\bpublic\\b\", grantees, re.I)",
+        "re.search(r\"\", grantees, re.I)"
+      ]
+    ],
+    "expect": "a revoke naming a DIFFERENT grantee does not count"
+  },
+  {
+    "name": "the revoke pattern no longer tolerates a public.-qualified name",
+    "file": "scripts/check-function-revokes.py",
+    "edits": [
+      [
+        "on\\s+function\\s+(?:public\\.)?([a-z_][a-z0-9_]*)\\s*\\([^)]*\\)\\s*from\\s+([^;]+);",
+        "on\\s+function\\s+([a-z_][a-z0-9_]*)\\s*\\([^)]*\\)\\s*from\\s+([^;]+);"
+      ]
+    ],
+    "expect": "public.-qualified revoke satisfies it"
+  },
+  {
+    "name": "migrations are ordered newest-first",
+    "file": "scripts/check-function-revokes.py",
+    "edits": [
+      [
+        "return sorted(d.glob(\"*.sql\"))",
+        "return sorted(d.glob(\"*.sql\"), reverse=True)"
+      ]
+    ],
+    "expect": "ordering is by FILENAME, so 0002 sees 0001's function"
+  },
+  {
+    "name": "the audited directory is not the real migrations directory",
+    "file": "scripts/check-function-revokes.py",
+    "edits": [
+      [
+        "ROOT / \"supabase\" / \"migrations\"",
+        "ROOT / \"supabase\" / \"migrations__absent\""
+      ]
+    ],
+    "expect": "the real migrations directory is non-empty (else this gate is vacuous)"
+  }
+]
