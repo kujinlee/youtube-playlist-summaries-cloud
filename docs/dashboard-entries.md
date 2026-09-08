@@ -5054,3 +5054,53 @@ first-marker parse returns the ORIGINAL filing — row #78 parsed as open while 
 agree; today they differ on four rows. Consequence recorded for the page generators: any headline
 count of open work is a RANGE, not a number. Page rebuild follows this commit so it reports the
 settled state.
+
+## 2026-09-08
+The tool that checks whether our safety checks actually work had a flaw that made it expensive to
+maintain: seven reviews in a row each found a mistake inside the previous review's fix. None of those
+fixes was wrong. The problem was the shape of the thing they were all editing — a bag of seven loose
+values, where the one saying "these numbers are trustworthy" was easy to forget to look at. So each
+review found one more place that forgot, and there was always one more place.
+
+That bag is now a type with two shapes: either the run produced a real result, or it did not. When it
+did not, the numbers **do not exist** to be read — in particular the count of problems found, which
+reads as "all clear" and is the single most misleading thing you can print about a run that measured
+nothing. You can no longer reach for it by accident, because there is nothing there to reach for.
+
+The nicest part is something we did not expect. There were two rules elsewhere in the code that look
+identical, mean opposite things, and were held apart only by a long comment warning people not to
+tidy them into one. Under the new shape they are genuinely different things, so the comment describes
+a fact rather than pleading for one.
+
+No behaviour changed. The tool prints exactly what it printed before, checked character by character.
+<!--tech-->
+Backlog #91, from architecture review 2026-09-03b (the four-non-converging-rounds trigger).
+`scripts/coverage_verdict.py` holds `Measured | NotMeasured`. `NotMeasured` has no `survivors` field
+and its list is `entries`, so copying a line from the measured path raises `AttributeError` instead of
+printing a wrong number. `Measured.__post_init__` enforces all three clauses; `controls_green` is an
+`InitVar`, so you cannot ask a `Measured` whether its controls were green — it only exists if they were.
+
+⭐ Plan mode's `declared is None` maps to `Measured(declared=0)`, NOT `NotMeasured`. Measured with a
+control: the same shape with `declared=1` and no verdicts raises. This is what makes backlog #93's
+two-printer-gate asymmetry a type distinction rather than a comment.
+
+`tally`/`compared` moved to a frozen `RunContext`, and that parameter is REQUIRED — the default made
+`evidence()` claim "--compare was not given" over a run where it was, which is r4 H1 reintroduced as a
+default argument. Eleven fixture call sites were leaning on it; a case now asserts the refusal, because
+a mutation restoring the default would survive.
+
+`EXPECTED_MUTATIONS` held at 359 (check-plan-code 35 → 30, coverage_verdict 5) — a relocation must not
+read as a deletion. `--mutate .` → 359 mutations, 0 survivors.
+
+⚠ Two importlib loaders (`check-selftest-counts.py`, `begin-plan.py`) now register the module in
+`sys.modules` before exec: `check-plan-code.py` gained a `@dataclass` under
+`from __future__ import annotations`. Reverting that one line gives
+`AttributeError: 'NoneType' object has no attribute '__dict__'` from inside dataclasses.
+
+⚠ F6 cannot be byte-identical as the spec words it: the new module joins the mutation corpus, so the
+file count moves 31 → 32. Everything else is unchanged (359 / 0). F7 IS byte-identical, both the plan
+stdout and the evidence block. Spec §4 F7 should also name its subject rather than say "clean".
+
+⚠ A first anchor measurement reported 12 orphaned mutations and was WRONG — it matched the delivered
+repo's manifest against rewired code, when a retarget edits the manifest too. The `--mutate .` run
+refuted it. Measure each tree against its own manifest.
