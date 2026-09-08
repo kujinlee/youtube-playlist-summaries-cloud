@@ -3,7 +3,7 @@
 
     python3 scripts/check-live-schema.py --expect-absent    # before 0027, or after the rollback
     python3 scripts/check-live-schema.py --expect-present   # after 0027
-    --self-test  # 117 cases
+    --self-test  # 119 cases
 
 WHY THIS EXISTS
 ---------------
@@ -647,6 +647,11 @@ def self_test() -> int:
             ("TRIGGER", "trg:workspaces.ws_backdoor_trg@x2"),
             ("POLICY", "pol:workspaces.ws_anyone_reads@x3"),
             ("CONSTRAINT", "con:workspaces.ws_weakened@x4"),
+            # ⟳ 2026-09-08 — MEASURED GAP: `idx` joined ATTRIBUTABLE_KINDS on 2026-08-28 because
+            # `create unique index rev_uq on video_artifacts (video_id)` PASSED, and no case was
+            # added with it. Removing "idx" from that tuple survived every case here. This is the
+            # kind the fix was FOR.
+            ("INDEX", "idx:workspaces.ws_rev_uq@x6"),
             ("COLUMN on an owned VIEW", "col:video_artifacts_current.smuggled@x5")):
         live = set(M) | {extra}
         check(f"present FAILS on an UNEXPECTED {kind} on a relation M4 owns",

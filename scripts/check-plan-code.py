@@ -682,6 +682,11 @@ EXPECTED_MUTATIONS = {
     # different normaliser from the relation side, so `to "anon"` matched nothing). Both are now
     # mutation-covered rather than merely commented.
     "scripts/check-anon-exposure.py": 13,
+    # ⟳ 2026-09-08, R4 manifest debt 1 -> 0. THE LAST ONE. Also closed a MEASURED coverage gap:
+    # `idx` joined ATTRIBUTABLE_KINDS on 2026-08-28 because `create unique index rev_uq on
+    # video_artifacts (video_id)` PASSED — and no case arrived with the fix. Removing "idx" from
+    # that tuple survived all 117 cases; the drift table now carries an INDEX row, so it does not.
+    "scripts/check-live-schema.py": 12,
     "scripts/check-dashboard-entry.py": 42,
     "scripts/check-plan-code.py": 35,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
@@ -2634,6 +2639,7 @@ def _self_test() -> int:
                                       "scripts/check-gate-falsifiability.py",
                                       "scripts/check-guard-coverage.py",
                                       "scripts/check-handoff-path.py",
+                                      "scripts/check-live-schema.py",
                                       "scripts/check-paid-caller-arrival.py",
                                       "scripts/check-plan-code.py",
                                       "scripts/check-plan-progress.py",
@@ -2745,7 +2751,7 @@ def _self_test() -> int:
     # off against the R4 manifest debt (MANIFEST_BASELINE 21 -> 20 in the same commit, because
     # that ratchet is an exact match and not a ceiling). This total is a LIVE sum, so it moves
     # whenever coverage does; it is not one of the counts pinned to a past measurement.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 347)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 359)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

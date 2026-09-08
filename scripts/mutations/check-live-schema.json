@@ -1,0 +1,158 @@
+[
+  {
+    "name": "the SYMBOL spelling leaves the key set, so an ADR-0011 function carrying one extra argument renders differently and is simply not in the forbidden set (r5 L2)",
+    "file": "scripts/check-live-schema.py",
+    "edits": [
+      [
+        "    keys = {n, symbol_of(obj)}",
+        "    keys = {n}"
+      ]
+    ],
+    "expect": [
+      "forbidden catches the ADR-0011 function with an ADDED ARGUMENT (r5 L2)"
+    ]
+  },
+  {
+    "name": "the bare trigger-name spelling leaves the key set, so an ADR-0011 trigger moved to a DIFFERENT TABLE is no longer forbidden (r5 L2)",
+    "file": "scripts/check-live-schema.py",
+    "edits": [
+      [
+        "        keys.add(\"trg:\" + n.rsplit(\".\", 1)[1])",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "forbidden catches the ADR-0011 trigger on a DIFFERENT TABLE (r5 L2)"
+    ]
+  },
+  {
+    "name": "forbidden compares the WHOLE rendered name@digest instead of the key set — the digest-bearing comparison this file's own docstring says would silently never match",
+    "file": "scripts/check-live-schema.py",
+    "edits": [
+      [
+        "    return {o for o in live if _keys(o) & FORBIDDEN_KEYS}",
+        "    return {o for o in live if o in FORBIDDEN_KEYS}"
+      ]
+    ],
+    "expect": [
+      "forbidden matches by NAME, ignoring the digest"
+    ]
+  },
+  {
+    "name": "absent-mode goes back to matching name@digest, so every DRIFTED survivor is invisible — a hot-fixed or one-parameter-drifted M4 function stays live on a database this gate certifies as M4-free (r5 B1, MEASURED after a real rollback)",
+    "file": "scripts/check-live-schema.py",
+    "edits": [
+      [
+        "        return not survivors(live, manifest)",
+        "        return not (live & manifest)"
+      ]
+    ],
+    "expect": [
+      "absent FAILS when an M4 object survives and it drifted by one DEFAULTED PARAMETER, so `drop function` was a silent no-op"
+    ]
+  },
+  {
+    "name": "the ADR-0011 short-circuit is dropped, so a half-applied Task 1 passes as a valid M4 in PRESENT mode",
+    "file": "scripts/check-live-schema.py",
+    "edits": [
+      [
+        "    if forbidden(live):\n        return False",
+        "    if False:\n        return False"
+      ]
+    ],
+    "expect": [
+      "PRESENT also FAILS on an ADR-0011 object — a half-applied Task 1 is not a valid M4"
+    ]
+  },
+  {
+    "name": "present mode reverts to the bare SUBSET test, so a REMOVED object is caught and an ADDED one passes silently — backlog 65, on the only gate that can see production",
+    "file": "scripts/check-live-schema.py",
+    "edits": [
+      [
+        "    return manifest <= live and not unexpected(live, manifest, accepted)",
+        "    return manifest <= live"
+      ]
+    ],
+    "expect": [
+      "drift fails even when EVERY manifest object is present (subset holds)"
+    ]
+  },
+  {
+    "name": "`idx` leaves ATTRIBUTABLE_KINDS, so an index can no longer be attributed to a relation and every idx: entry is SKIPPED — measured 2026-08-28, `create unique index rev_uq on video_artifacts (video_id)` PASSED",
+    "file": "scripts/check-live-schema.py",
+    "edits": [
+      [
+        "ATTRIBUTABLE_KINDS = (\"col\", \"con\", \"trg\", \"pol\", \"idx\")",
+        "ATTRIBUTABLE_KINDS = (\"col\", \"con\", \"trg\", \"pol\")"
+      ]
+    ],
+    "expect": [
+      "present FAILS on an UNEXPECTED INDEX on a relation M4 owns"
+    ]
+  },
+  {
+    "name": "the ownership test is dropped, so nothing is ever reported as drift and the additions half of the gate is inert",
+    "file": "scripts/check-live-schema.py",
+    "edits": [
+      [
+        "        if rest.split(\".\", 1)[0] in owned and n not in known:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "present FAILS on an UNEXPECTED COLUMN on a relation M4 owns"
+    ]
+  },
+  {
+    "name": "the accepted-additions allow-list stops being consulted, so a reviewed, deliberately-accepted later migration turns the gate permanently red with no exit",
+    "file": "scripts/check-live-schema.py",
+    "edits": [
+      [
+        "    known = {name_of(o) for o in manifest} | (accepted or set())",
+        "    known = {name_of(o) for o in manifest}"
+      ]
+    ],
+    "expect": [
+      "an ACCEPTED addition is not drift"
+    ]
+  },
+  {
+    "name": "VIEWS leave the owned namespace, so drift on any M4 view is unattributable and therefore skipped",
+    "file": "scripts/check-live-schema.py",
+    "edits": [
+      [
+        "        if kind in (\"table\", \"view\"):",
+        "        if kind in (\"table\",):"
+      ]
+    ],
+    "expect": [
+      "owned_relations DERIVES the M4 namespace from table:/view: entries"
+    ]
+  },
+  {
+    "name": "missing and REDEFINED swap, so an object that is right there but inert is reported as missing and sends the reader hunting for a migration that did run",
+    "file": "scripts/check-live-schema.py",
+    "edits": [
+      [
+        "    missing = {o for o in manifest - live if name_of(o) not in live_names}",
+        "    missing = {o for o in manifest - live if name_of(o) in live_names}"
+      ]
+    ],
+    "expect": [
+      "a genuinely NEVER-CREATED object is reported as missing, not redefined"
+    ]
+  },
+  {
+    "name": "absent-mode residue reports MANIFEST lines instead of the live objects, so the failure names the line it failed to match rather than the thing still in the database",
+    "file": "scripts/check-live-schema.py",
+    "edits": [
+      [
+        "    return survivors(live, manifest) if mode == \"absent\" else (manifest - live)",
+        "    return (manifest - live)"
+      ]
+    ],
+    "expect": [
+      "…and residue names the LIVE object, not the manifest line — it drifted by one DEFAULTE"
+    ]
+  }
+]

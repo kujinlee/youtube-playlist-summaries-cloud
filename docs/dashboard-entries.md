@@ -4901,3 +4901,19 @@ Every target is in the PURE half — `_norm_ident`, `session_readable`, `derive_
 Also covered: `05_assert.sql` stays **excluded** from the corpus (2,500 lines of deliberately hostile SQL — the thing that attacks the contract, not the contract); views stay in the derived relation set; and all four arms of `justification_holds`, including that an **unknown** kind is never a justification.
 
 Registration: `EXPECTED_MUTATIONS["scripts/check-anon-exposure.py"] = 13`; live sum 334 → 347; sorted want-list (30 entries, position derived); `MANIFEST_BASELINE` 2 → 1.
+
+## 2026-09-08
+The last guard is covered. Every safety check in this project now has a safety check of its own — the count of unprotected ones is zero.
+Twelve deliberate breakages on the final guard, all caught, and one more real gap found on the way. This guard compares what is actually in the production database against what the project believes it put there. Last month it was taught to notice stray indexes, after one slipped through unseen — but the test proving it notices them was never written. Removing that capability again passed all one hundred and seventeen checks. It has a test now. That closes a run of twenty-one guards: the ones that were entirely unprotected are all done, and along the way roughly a dozen individual checks turned out to be unable to fail for the reason their name gave.
+<!--tech-->
+`scripts/mutations/check-live-schema.json` — 12 mutations, all attributed, over a green 117/117 control, verified through `check-plan-code`'s own `run_mutations` (`caught=12 survivors=0`).
+
+⭐ **MEASURED GAP: `idx` had the fix but not the case.** It joined `ATTRIBUTABLE_KINDS` on 2026-08-28 because `create unique index rev_uq on video_artifacts (video_id)` **PASSED** — and no self-test case arrived with the fix. Removing `"idx"` from that tuple survived all 117 cases. The drift table is a loop over `(kind, extra)` pairs and simply had no INDEX row; it does now. **117 → 119 cases.**
+
+The other targets are this file's own documented history, now executable rather than commented:
+- **r5 B1** — absent mode matched `name@digest`, so every DRIFTED survivor was invisible: a hot-fixed guard function, or `record_artifact` drifted by one defaulted parameter, stays live on a database the gate certifies as M4-free.
+- **r5 L2** — `_keys` matches every spelling, so an added argument cannot smuggle an ADR-0011 object past `forbidden`.
+- **backlog 65** — present mode is `manifest <= live` **and** no unexpected object on an owned relation; the subset test alone catches removals and passes additions silently.
+- the `accepted-additions.txt` exit, without which a legitimate later migration turns the gate permanently red with no remedy.
+
+Registration: `EXPECTED_MUTATIONS["scripts/check-live-schema.py"] = 12`; live sum 347 → 359; sorted want-list (31 entries); **`MANIFEST_BASELINE` 1 → 0** — `check-ratchet-contract.py` now prints `ratchet contract OK` with zero violations, for the first time since the R4 rule was written.
