@@ -248,8 +248,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "controls_green=controls_green)\n        except VerdictContractError:\n            verdict = NotMeasured.from_counts(m_muts, declared, ev_files)\n    return ok, report, verdict",
-        "controls_green=True)\n        except VerdictContractError:\n            verdict = NotMeasured.from_counts(m_muts, declared, ev_files)\n    return ok, report, verdict"
+        "                    \"entries that survived rather than the ones the plan wrote\")\n            verdict = Measured(files=ev_files, declared=declared, mutations=m_muts,\n                               survivors=m_survivors, controls_green=controls_green)",
+        "                    \"entries that survived rather than the ones the plan wrote\")\n            verdict = Measured(files=ev_files, declared=declared, mutations=m_muts,\n                               survivors=m_survivors, controls_green=True)"
       ]
     ],
     "expect": "a RED control makes check() withhold trust, whatever the tally says"
@@ -451,5 +451,38 @@
       ]
     ],
     "expect": "a plan whose mutations block does not PARSE is not an honest zero"
+  },
+  {
+    "name": "the census counts PYTHON FENCES again, not what entered `files` (r4 H1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                files.setdefault(pending, []).append(text)\n                py_tagged += 1\n                tagged_by_name[pending] = tagged_by_name.get(pending, 0) + 1",
+        "                files.setdefault(pending, []).append(text)\n                if f.group(1) == \"python\":\n                    py_tagged += 1\n                    tagged_by_name[pending] = tagged_by_name.get(pending, 0) + 1"
+      ]
+    ],
+    "expect": "a NON-python block that is assembled anyway is counted as assembled"
+  },
+  {
+    "name": "the refusal cause is discarded, so three causes render one sentence (r4 M1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        except VerdictContractError as exc:\n            verdict = NotMeasured.from_counts(m_muts, declared, ev_files, cause=str(exc))",
+        "        except VerdictContractError:\n            verdict = NotMeasured.from_counts(m_muts, declared, ev_files)"
+      ]
+    ],
+    "expect": "a lost declaration and a red control do not render the SAME refusal"
+  },
+  {
+    "name": "the two parse rules report the SAME message, so the split buys nothing (r4 M2)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                        problems.append(\n                            \"mutations block is a list, but its elements are not entry \"\n                            \"objects. `extend` would have taken them one by one, so every \"\n                            \"`mut.get(...)` downstream would read a field off a str\")",
+        "                        problems.append(\n                            \"mutations block parsed, but it is not a LIST (got list). A \"\n                            \"declaration that yields no entries is not the same as \"\n                            \"declaring none, and this one would have read as an honest zero\")"
+      ]
+    ],
+    "expect": "...and the not-entries rule names the elements, not the container"
   }
 ]

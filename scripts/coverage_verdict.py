@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The coverage verdict is a type you cannot read wrongly.
 
-    python3 scripts/coverage_verdict.py --self-test  # 22 cases
+    python3 scripts/coverage_verdict.py --self-test  # 27 cases
 
 WHY THIS EXISTS
 ---------------
@@ -81,7 +81,7 @@ class VerdictContractError(ValueError):
     """
 
 
-def not_measured_reason(entries: int, declared: "int | None") -> str:
+def not_measured_reason(entries: int, declared: "int | None", cause: str = "") -> str:
     """The clause that says a run produced no coverage verdict, with its arithmetic.
 
     ⚠ THE PARENTHETICAL APPEARS ONLY WHEN A SHORTFALL IS THE REASON. On the after-control
@@ -93,10 +93,23 @@ def not_measured_reason(entries: int, declared: "int | None") -> str:
     two numbers. Rendering it at each consumer is what let the header print
     `len(mutations)` while calling the number DECLARED, so two dropped entries were
     invisible (r3 B4).
+
+    ⟳ code review r4, M1. `cause` EXISTS BECAUSE THE ARITHMETIC IS NOT THE REASON. Three
+    different refusals — a red control, an unparseable mutations declaration, a declaration
+    lost to a stray tag — rendered ONE byte-identical sentence on the durable half, because
+    `check()` constructed a precise `VerdictContractError` and then caught it bare. A reader
+    holding the pasted block could not tell "your suite was already failing" from "your
+    mutations JSON has a trailing comma". The console `report` distinguished them; the
+    durable artifact, which outlives the console, did not — and this project's own rule is
+    that the durable half must not be the LESS informative of the two.
+
+    Optional and defaulted to "" because the shortfall path has no exception to quote and
+    inventing one would be worse than saying nothing.
     """
     short = (f" ({entries} of {declared} declared mutation(s) produced a verdict)"
              if declared is not None and entries != declared else "")
-    return (f"the mutation harness produced no coverage verdict{short}. "
+    why = f" {cause.rstrip('.')}." if cause else ""
+    return (f"the mutation harness produced no coverage verdict{short}.{why} "
             f"Treat this as NOT CHECKED.")
 
 
@@ -166,12 +179,16 @@ class NotMeasured:
 
     @classmethod
     def from_counts(cls, entries: list, declared: "int | None",
-                    files: "dict | None" = None) -> "NotMeasured":
+                    files: "dict | None" = None, cause: str = "") -> "NotMeasured":
         """The ONLY constructor production code uses, so `reason` cannot disagree with
         `entries` and `declared`. A hand-set `reason` that says "1 of 3" over a list of two
         is exactly the drift a derived field invites; the factory removes the opportunity
-        rather than adding a check nobody runs."""
-        return cls(reason=not_measured_reason(len(entries), declared),
+        rather than adding a check nobody runs.
+
+        ⟳ r4 M1. `cause` passes STRAIGHT THROUGH to `not_measured_reason` rather than being
+        stored and re-rendered — the arithmetic and the cause are baked in together, at
+        construction, so no consumer can recompute either and get it wrong."""
+        return cls(reason=not_measured_reason(len(entries), declared, cause),
                    declared=declared, entries=list(entries), files=dict(files or {}))
 
 
@@ -179,7 +196,7 @@ CoverageVerdict = "Measured | NotMeasured"
 
 
 def _self_test() -> int:
-    """21 cases. Run after touching this file."""
+    """27 cases. Run after touching this file."""
     cases, failed = 0, 0
 
     def chk(label, actual, expected):
@@ -291,6 +308,32 @@ def _self_test() -> int:
     chk("...and carries the control-run files without calling them coverage", sorted(f.files), ["x.py"])
     # The presence twin of the absence above: a factory-built verdict still has no survivors.
     chk("...and STILL has no survivors field", hasattr(f, "survivors"), False)
+
+    # ── ⟳ code review r4, M1. THE CAUSE TRAVELS, AND TWO CAUSES MUST DIFFER ────────
+    # The defect was three refusals rendering ONE byte-identical sentence, so the case that
+    # guards the fix cannot assert a substring of one of them — it has to assert they are
+    # NOT EQUAL. A case reading only "controls were not green" in the first would pass over
+    # a renderer that appended the same cause to everything.
+    _red = not_measured_reason(0, 0, "controls were not green")
+    _lost = not_measured_reason(0, 0, "a mutations declaration did not parse")
+    chk("two different causes render two DIFFERENT reasons", _red == _lost, False)
+    chk("...and each names its own cause", ("controls were not green" in _red,
+                                            "did not parse" in _lost), (True, True))
+    # PRESENCE TWIN — the no-cause path must be untouched, or the fix has changed every
+    # refusal sentence in the repo rather than the ones that had something to say.
+    chk("...while no cause leaves the sentence exactly as it was",
+        not_measured_reason(3, 3),
+        "the mutation harness produced no coverage verdict. Treat this as NOT CHECKED.")
+    # A cause does not displace the arithmetic; both appear, in that order.
+    chk("a cause and a shortfall both appear, shortfall first",
+        not_measured_reason(1, 3, "controls were not green"),
+        "the mutation harness produced no coverage verdict (1 of 3 declared mutation(s) "
+        "produced a verdict). controls were not green. Treat this as NOT CHECKED.")
+    # ⚠ The factory must PASS IT THROUGH rather than store-and-re-render — the whole reason
+    # `reason` is derived at construction is that a second renderer drifts from the first.
+    chk("from_counts carries the cause into the reason it derives",
+        "declaration did not parse" in
+        NotMeasured.from_counts([], 0, None, cause="a declaration did not parse").reason, True)
 
     print(f"\n{cases - failed}/{cases} passed")
     return 1 if failed else 0

@@ -5,7 +5,7 @@
     python3 scripts/check-plan-code.py <plan.md> --evidence # ...and print the evidence block
     python3 scripts/check-plan-code.py <plan.md> --compare .   # ...and diff vs the REAL files
     python3 scripts/check-plan-code.py <plan.md> --verify-evidence   # ...and FAIL if it is stale
-    python3 scripts/check-plan-code.py --self-test          # 223 cases
+    python3 scripts/check-plan-code.py --self-test          # 231 cases
 
 ⚠ `--compare` takes the REPO ROOT, and each file tag is resolved under it as the
 repo-relative path it already is. It took the containing DIRECTORY until round 5,
@@ -252,8 +252,7 @@ def extract(md: str) -> tuple[dict[str, list[str]], list[dict], list[str], dict,
             if is_py:
                 py_total += 1
                 if pending:
-                    py_tagged += 1
-                    tagged_by_name[pending] = tagged_by_name.get(pending, 0) + 1
+                    pass          # counted below, where the block enters `files` — r4 H1
                 elif illus:
                     py_illus += 1
                     illus_reasons.append(illus)
@@ -266,7 +265,24 @@ def extract(md: str) -> tuple[dict[str, list[str]], list[dict], list[str], dict,
             if pending:
                 if f.group(1) != "python":
                     problems.append(f"block for {pending!r} is tagged ```{f.group(1)}, not ```python")
+                # ⟳ code review r4, H1. COUNT WHERE THE BLOCK ENTERS `files`, not where a
+                # PYTHON fence is seen. r3's H3 fix moved the census to follow the unsafe-tag
+                # drop and its comment declared "ONE OWNER FOR THE WORD assembled, and it is
+                # `files`" — which was false the moment it was written, because a block tagged
+                # with a NON-python fence is reported and then assembled ANYWAY (the line
+                # above appends the problem; this one appends the block). So `files` held a
+                # name the census never counted, and the shipped CLI printed
+                # "0 assembled" two lines above "a.py 1 blocks assembled". MEASURED by r4 on
+                # the real command line, and identical on `master` — so it is not a regression
+                # from r3's fix, it is r3 fixing the instance it was shown and asserting the
+                # CLASS was closed. This project's recorded instance-not-class shape, in a
+                # comment I wrote. All 223 cases were blind to it in BOTH directions.
+                # ⚠ `assembled` can now exceed `python fences`, and that is honest: the census
+                # counts python FENCES, this counts ASSEMBLED blocks, and a non-python tagged
+                # block is the second without being the first. The label says which is which.
                 files.setdefault(pending, []).append(text)
+                py_tagged += 1
+                tagged_by_name[pending] = tagged_by_name.get(pending, 0) + 1
                 pending = None
             elif want_mut:
                 # ⟳ r3 H2(b)(c) + L1. `muts.extend(json.loads(text))` accepted ANY iterable
@@ -792,7 +808,7 @@ EXPECTED_MUTATIONS = {
     # to scripts/coverage_verdict.py with the clauses they guard. The sum below is unchanged
     # at 359, which is the point: a seam that relocates coverage must not be able to look
     # like coverage that was deleted, and only the per-file split can tell those apart.
-    "scripts/check-plan-code.py": 41,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 44,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -805,7 +821,7 @@ EXPECTED_MUTATIONS = {
     # The lesson that survives: there is no anchor a rewrite of its own subject cannot break,
     # so the ratchet is the instrument — every new entry quotes a problem MESSAGE or a whole
     # statement, and `--mutate .` in CI is what will say if one stops resolving.
-    "scripts/coverage_verdict.py": 5,
+    "scripts/coverage_verdict.py": 6,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
@@ -1392,8 +1408,22 @@ def check(plan: pathlib.Path,
                     "entries that survived rather than the ones the plan wrote")
             verdict = Measured(files=ev_files, declared=declared, mutations=m_muts,
                                survivors=m_survivors, controls_green=controls_green)
-        except VerdictContractError:
-            verdict = NotMeasured.from_counts(m_muts, declared, ev_files)
+        # ⟳ code review r4, M1. NAMED, so the diagnosis this function just CONSTRUCTED
+        # survives onto the durable half. Caught bare, three different refusals — a red
+        # control, an unparseable declaration, a declaration lost to a stray tag — rendered
+        # one byte-identical `NOT MEASURED` sentence, because `from_counts` derives `reason`
+        # from arithmetic alone and the shortfall parenthetical never fires here (`declared`
+        # counts the entries that SURVIVED, so it always equals `len(m_muts)`). The console
+        # `report` told them apart; the block pasted into the plan did not, and this file
+        # argues twice over that the durable half must not be the less informative one.
+        # ⚠ RESIDUE, stated rather than discovered later: the two DECLARATION causes still
+        # share a sentence, because both reach the raise above through one `mut_readable`
+        # bool. Distinguishing them means the flag carrying its reason, which is a fifth
+        # return value growing a second meaning — the shape this branch spent three rounds
+        # deleting. The class a reader actually confuses (suite-was-red vs declaration-lost)
+        # is now separated, and that is the whole of what M1 asked for.
+        except VerdictContractError as exc:
+            verdict = NotMeasured.from_counts(m_muts, declared, ev_files, cause=str(exc))
     return ok, report, verdict, RunContext(tally=tally, compared=compared,
                                            compare_requested=compare is not None)
 
@@ -1827,6 +1857,78 @@ def _self_test() -> int:
         case("...and an assembled block is counted as assembled, with no DROPPED clause",
              ("(1 assembled, 0 illustrative)" in _as_block, "DROPPED" in _as_block),
              (True, False))
+
+        # ⛔ ⟳ code review r4, H1 — THE SIBLING OWNER OF THE WORD "assembled".
+        # r3's H3 fix moved the census to follow the unsafe-tag DROP and its comment declared
+        # the word had ONE owner. It did not: a file tagged with a NON-python fence is
+        # reported AND assembled, so `files` held a name the census never counted and the
+        # shipped CLI printed "0 assembled" two lines above "a.py 1 blocks assembled".
+        # Identical on `master`, so this is not r3's fix regressing — it is r3 fixing the
+        # instance it was shown and asserting the class. All 223 cases were blind to it in
+        # BOTH directions: the reviewer applied the fix and the suite stayed green either way.
+        # Same requirement r3 accepted for the python route — ASSERT BOTH LINES IN ONE CASE.
+        pl.write_text('<!-- file: a.py -->\n```bash\necho hi\n```\n')
+        _np_ok, _np_rep, _np_v, _np_ctx = check(pl)
+        _np_block = evidence(_np_v, _np_ctx)
+        case("a NON-python block that is assembled anyway is counted as assembled",
+             ("(1 assembled, 0 illustrative)" in _np_block,
+              "a.py" in _np_block and "1 blocks assembled" in _np_block),
+             (True, True))
+        # ...and the drop of a non-python block must be VISIBLE too — r3's `tagged_by_name`
+        # only ever counted python fences, so a tagged-then-dropped bash block decremented
+        # zero and announced nothing. Row E of the reviewer's table.
+        pl.write_text('<!-- file: ../evil.py -->\n```bash\necho hi\n```\n')
+        _nd_ok, _nd_rep, _nd_v, _nd_ctx = check(pl)
+        _nd_block = evidence(_nd_v, _nd_ctx)
+        case("...and dropping a NON-python block is stated, not silently deducted",
+             ("(0 assembled, 1 tagged then DROPPED, 0 illustrative)" in _nd_block,
+              "a.py" in _nd_block),
+             (True, False))
+
+        # ⛔ ⟳ code review r4, M1 — TWO CAUSES, TWO SENTENCES, asserted as NOT EQUAL.
+        # Three refusals rendered one byte-identical durable line because the handler caught
+        # the exception bare and threw away the diagnosis it had just built. Asserting a
+        # substring of ONE of them would pass over a renderer that appends the same cause to
+        # everything, so the assertion is the INEQUALITY plus each naming its own cause.
+        pl.write_text('<!-- file: m.py -->\n```python\ndef f():\n    return 1\n```\n'
+                      '<!-- mutations -->\n```json\n[{"name": "a",},]\n```\n')
+        _c1_ok, _c1_rep, _c1_v, _c1_ctx = check(pl)          # green control, bad declaration
+        pl.write_text('<!-- file: m.py -->\n```bash\necho hi\n```\n')
+        _c2_ok, _c2_rep, _c2_v, _c2_ctx = check(pl)          # red control, no declaration
+        # ⚠ READ `reason` DEFENSIVELY, AND THE REASON IS MEASURED, NOT STYLISTIC. A
+        # `Measured` has no `reason` — that absence is the whole point of the union — so a
+        # mutation that turns either of these into a `Measured` made this case raise
+        # AttributeError, which kills the SUITE instead of printing a named red case.
+        # `run_mutations` then reported `matched 0 red case(s) … caught by something else:
+        # []` for the entry that was doing exactly its job. That is this project's recorded
+        # "a report format is a CONTRACT" shape: coverage that exists and cannot be seen.
+        # The variant is therefore asserted AS PART OF the tuple rather than assumed.
+        _reason = lambda v: getattr(v, "reason", "")          # noqa: E731
+        case("a lost declaration and a red control do not render the SAME refusal",
+             (isinstance(_c1_v, Measured), isinstance(_c2_v, Measured),
+              _reason(_c1_v) == _reason(_c2_v)),
+             (False, False, False))
+        case("...and the lost declaration says so on the DURABLE half",
+             "did not parse" in evidence(_c1_v, _c1_ctx), True)
+        case("...while the red control says THAT, not something about parsing",
+             ("controls were not green" in _reason(_c2_v),
+              "did not parse" in _reason(_c2_v)),
+             (True, False))
+
+        # ⛔ ⟳ code review r4, M2 — THE SPLIT'S OWN JUSTIFICATION, WHICH NOTHING CHECKED.
+        # `746178f6` split one conjunction into two branches because "each now says which one
+        # failed", and the reviewer collapsed both messages into ONE identical string and got
+        # 223/223: the stated reason for the change had no falsifier. The two manifest entries
+        # there mutate the PREDICATES, so they defend the behaviour and say nothing about the
+        # text. These fail if either message is deleted, swapped, or merged.
+        _, _, _pl_list, _t, _ = extract('<!-- mutations -->\n```json\n{}\n```\n')
+        _, _, _pl_elem, _t, _ = extract('<!-- mutations -->\n```json\n[1, 2]\n```\n')
+        case("the two parse rules report DIFFERENTLY, which is why they are two rules",
+             _pl_list == _pl_elem, False)
+        case("...the not-a-list rule names the shape it wanted",
+             any("not a LIST" in p for p in _pl_list), True)
+        case("...and the not-entries rule names the elements, not the container",
+             any("elements are not entry objects" in p for p in _pl_elem), True)
 
         # ⛔ ⟳ code review r3, H4 — `verify_evidence`'s mode is a statement about the
         # INVOCATION. Keyed off the RESULT it printed "(no --compare)" on a run whose own
@@ -3238,7 +3340,7 @@ def _self_test() -> int:
     # three behaviours the r1/r2 folds added and left case-guarded but manifest-less. This
     # total is a LIVE sum that moves whenever coverage does — RISING is the permitted
     # direction; the ratchet exists so it cannot fall silently.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 370)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 374)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

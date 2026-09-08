@@ -5163,3 +5163,67 @@ the flag standing) and reported SURVIVED; running them is what caught it.
 variables with no shared derivation, and every round so far has fixed one narrator and left the other
 disagreeing. If round 4 produces another self-contradicting artifact, Phase 6 convenes instead of a
 fifth fold.
+
+## 2026-09-08 [needs-you]
+A fourth review round on the same tool, and this one is different in a way worth two minutes.
+
+The one significant finding is a mistake I made and then wrote a comment claiming I had not. Round
+three fixed a case where the tool's report contradicted itself, and I added a note saying the whole
+class of that problem was now closed. It was not. There was a second route to the same
+contradiction, the tool has printed it since long before this work started, and none of our 223
+automated checks could see it — in either direction. A reviewer found it by running the actual
+command and reading the output.
+
+Everything else went the right way. This round introduced no new breakage, which is the first time
+in four rounds; the fixes from round three survived being attacked directly; and the two independent
+reviewers **disagreed** — one said all clear, the other found the problem. Had I trusted the clean
+one, which arrived first, it would have shipped.
+
+**A decision is waiting on you, and it is not about this change.** Our rule says four inconclusive
+rounds should trigger a design review rather than a fifth round of patches. I do not think the
+design review should be about the thing we keep patching. It should be about a fact nobody has
+acted on: **none of the 92 plan documents we have actually use the feature these four rounds have
+been reviewing.** Its only exerciser is its own test suite. Whether that feature should exist, or
+should be exercised by something real, is a question I can't answer for you.
+
+The work itself is merged and the tool is meaningfully better than it was this morning.
+<!--tech-->
+Fold of round 4 — `docs/reviews/{claude,coordinator}/plan-coverage-verdict-union-r4-*.md` plus the
+first Codex half in the series (`gate_ran=true`, `gpt-5.5`). Claude: 0B/1H/2M/2L NOT CONVERGED.
+Codex: **CONVERGED** 0/0/0/1. ⭐ The halves disagreed and the finding-reviewer was right — Codex
+enumerated `mut_readable`'s routes correctly and the defect was in the CENSUS, which its question
+could not reach. Fourth recorded instance of *dual halves are not redundant*.
+
+**H1** — a file tagged with a NON-python fence is reported AND assembled, but the census incremented
+inside the `is_py` branch, so the CLI printed `0 assembled` two lines above `a.py 1 blocks
+assembled`; and a tagged-then-DROPPED non-python block decremented zero, making the drop invisible.
+**Identical on `master`** — not a regression, but r3's comment declared the class closed. Fixed by
+counting where the block enters `files`. Both lines asserted in one case on a non-python fixture.
+⚠ `assembled` may now exceed `python fences`; different denominators, and the label says so.
+
+**M1** — `except VerdictContractError:` caught bare, so three refusals rendered one byte-identical
+durable sentence. Now `as exc` → `from_counts(..., cause=str(exc))` → `not_measured_reason`, where
+the arithmetic already lives. Cased as an INEQUALITY. ⚠ Residue: the two *declaration* causes still
+share a sentence; separating them needs the flag to carry its reason, which is the second-meaning
+shape this branch spent three rounds deleting. ⚠ Entry 22's anchor spanned the `except` line and
+orphaned exactly as the reviewer predicted BEFORE the fix — retargeted onto the raise message.
+
+**M2** — the anchor-split from earlier today was justified as "each says which one failed", and that
+had no falsifier: both messages collapsed to one string still gave 223/223. Three cases added. A fix
+that shipped without its case, in a branch about fixes that ship without cases.
+
+Self-test 223 → **231**; coverage_verdict 22 → **27**; EXPECTED_MUTATIONS 41 → **44** and 5 → **6**,
+sum 370 → **374**. Two green controls, **15/15** new-or-retargeted entries red via their named case,
+`load_manifests` 374/0 problems.
+
+⭐ Two defects in my OWN new mutations/cases, both found by running rather than reading: a case read
+`.reason` off what a mutation turns into a `Measured` (no such attribute) and crashed the SUITE, so
+the entry reported `0 red cases … caught by something else: []` — the *report format is a CONTRACT*
+shape; and an `expect` named a case the mutation couldn't kill because both messages embed
+`type(parsed).__name__`.
+
+⛔ **Phase 6:** the pre-registered r3 rule fired on its literal terms (H1 is a self-contradicting
+artifact) and its stated CAUSE was measured false — the three narrators now agree. Per
+`review-method.md` the trigger is read off the cause, so Phase 6 is NOT convened on `evidence()`.
+Escalated instead: **0 of 92 plans exercise plan mode's file path**; four rounds spent on a renderer
+whose only exerciser is its own `--self-test`. That is a goal-moving question → user's call.
