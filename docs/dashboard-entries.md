@@ -4779,3 +4779,13 @@ Five deliberate breakages, each caught by the check it was aimed at, first time 
 ⭐ **Verified through `check-plan-code`'s OWN `run_mutations`**, on a staged tree, not through the retired scratchpad copy: `verdicts=5 survivors=0`. All four output contracts checked BEFORE choosing targets, including the newly-found contract (4) — this guard already returned `1 if failures else 0`.
 
 Registration: `EXPECTED_MUTATIONS["scripts/check-producer-enumeration.py"] = 5`; live sum 265 → 270; sorted want-list; `MANIFEST_BASELINE` 10 → 9.
+
+## 2026-09-07
+The guard that keeps the backlog rendering as a real table now has a safety net.
+Four deliberate breakages, each caught by the check aimed at it, first time. This guard exists because the backlog once silently stopped being a table on GitHub — nineteen rows rendered as raw pipe-delimited text — and because a row missing four of its six columns caused two items to be marked closed that were not.
+<!--tech-->
+`scripts/mutations/check-docs.json` — 4 mutations, all attributed, over a green 13/13 control, verified through `check-plan-code`'s own `run_mutations` (`verdicts=4 survivors=0`). Targets are all in `backlog_shape_errors`, the pure half: `CELL_SPLIT`'s `(?<!\\)` escaped-pipe lookbehind, the `len(cells) != expected` column comparison, the delimiter-row `count("-") >= 3` threshold, and the `prev_was_row` flag that a blank-line split depends on.
+
+All four output contracts checked before choosing targets; this guard already returned `1 if failed else 0`.
+
+Registration: `EXPECTED_MUTATIONS["scripts/check-docs.py"] = 4`; live sum 270 → 274; sorted want-list; `MANIFEST_BASELINE` 9 → 8.
