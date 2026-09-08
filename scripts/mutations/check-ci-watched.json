@@ -1,0 +1,120 @@
+[
+  {
+    "name": "the unknown-state fallback is dropped, so a state GitHub adds later reads as finished and the warning goes silent on exactly the case it was not designed for",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "if state in UNRESOLVED or state not in {\"SUCCESS\", \"FAILURE\", \"CANCELLED\", \"SKIPPED\",\n                                                \"NEUTRAL\", \"TIMED_OUT\", \"STALE\", \"ERROR\"}:",
+        "if state in UNRESOLVED:"
+      ]
+    ],
+    "expect": [
+      "⭐ an UNKNOWN state counts as unresolved, never as done"
+    ]
+  },
+  {
+    "name": "FAILURE leaves the resolved list, so a red check is reported as still running and the warning fires forever",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "{\"SUCCESS\", \"FAILURE\", \"CANCELLED\", \"SKIPPED\",",
+        "{\"SUCCESS\", \"CANCELLED\", \"SKIPPED\","
+      ]
+    ],
+    "expect": [
+      "FAILURE does not — it is resolved, just red"
+    ]
+  },
+  {
+    "name": "case folding is dropped, so a lowercase terminal state is misread as unresolved",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "state = str(r.get(\"state\", \"\")).upper()",
+        "state = str(r.get(\"state\", \"\"))"
+      ]
+    ],
+    "expect": [
+      "...and in the direction the unknown-state fallback cannot mask: lowercase SUCCESS is still resolved"
+    ]
+  },
+  {
+    "name": "an unreadable HEAD stops being CANNOT RUN — with both shas None they compare EQUAL, so the check reports 'a watcher is armed' when it read nothing at all",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    if head_sha is None:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "unreadable HEAD -> CANNOT RUN"
+    ]
+  },
+  {
+    "name": "unreadable checks downgrade from CANNOT RUN to QUIET — the fail-open where 'could not ask GitHub' is served as 'nothing to say'",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "return CANNOT_RUN, (\"CANNOT RUN: could not read the PR's checks from GitHub. TREAT THIS AS \"",
+        "return QUIET, (\"CANNOT RUN: could not read the PR's checks from GitHub. TREAT THIS AS \""
+      ]
+    ],
+    "expect": [
+      "unreadable checks -> CANNOT RUN, not a quiet pass"
+    ]
+  },
+  {
+    "name": "ANY armed watcher silences the warning, so a watcher armed for an older commit covers a commit it cannot see — the exact bug this guard was written for",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    if watching_sha == head_sha:",
+        "    if watching_sha is not None:"
+      ]
+    ],
+    "expect": [
+      "⭐ pending + armed for an OLDER sha -> WARN (the exact bug: a new push un-arms it)",
+      "...and the message SAYS the old watcher no longer covers this commit"
+    ]
+  },
+  {
+    "name": "the no-pending short-circuit is dropped, so a fully resolved run still warns and the guard becomes noise nobody reads",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    if not pending:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "resolved checks -> quiet even with nothing armed"
+    ]
+  },
+  {
+    "name": "the stale-watcher explanation is suppressed, so the reader is told to arm a watcher without being told why the one they armed stopped counting",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "if watching_sha else \"\"",
+        "if False else \"\""
+      ]
+    ],
+    "expect": [
+      "...and the message SAYS the old watcher no longer covers this commit"
+    ]
+  },
+  {
+    "name": "the sentinel key check is dropped, so the FIRST key with a value is read as the watched sha and an unarmed sentinel reads as armed",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "if k.strip() == \"sha\" and v.strip():",
+        "if v.strip():"
+      ]
+    ],
+    "expect": [
+      "a sentinel with no sha line reads as unarmed"
+    ]
+  }
+]

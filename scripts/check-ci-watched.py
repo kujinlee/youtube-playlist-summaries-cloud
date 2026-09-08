@@ -39,7 +39,7 @@ Usage (the hook calls form 1):
     python3 scripts/check-ci-watched.py --decide
     python3 scripts/check-ci-watched.py --watching   # record that a watcher is armed for HEAD
     python3 scripts/check-ci-watched.py --clear
-    python3 scripts/check-ci-watched.py --self-test  # 22 cases
+    python3 scripts/check-ci-watched.py --self-test  # 23 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -69,6 +69,10 @@ def unresolved_checks(rows: list[dict]) -> list[str]:
     An unknown state counts as UNRESOLVED. A checker that treats a state it has never seen as
     "done" reports silence over exactly the case it was not designed for.
     """
+    # ⚠ `state in UNRESOLVED` is DEFENSIVE, not decisive, and deliberately not mutation-tested:
+    # the two sets are disjoint, so it always implies the second disjunct and NO input can tell
+    # the two apart. It earns its place by catching a future edit that wrongly moves a pending
+    # state into the resolved list — a mistake the fallback alone would not survive.
     out = []
     for r in rows:
         state = str(r.get("state", "")).upper()
@@ -241,6 +245,12 @@ def _self_test() -> int:
          unresolved_checks([{"name": "v", "state": "SOMETHING_NEW"}]) == ["v"])
     case("state matching is case-insensitive",
          unresolved_checks([{"name": "v", "state": "pending"}]) == ["v"])
+    # ⟳ 2026-09-08 — MEASURED: the case above passes with `.upper()` DELETED. Lowercase "pending"
+    # then matches neither list and the unknown-state fallback calls it unresolved — the right
+    # answer for the wrong reason. Only the RESOLVED direction can see the folding actually happen.
+    case("...and in the direction the unknown-state fallback cannot mask: lowercase SUCCESS "
+         "is still resolved",
+         unresolved_checks([{"name": "v", "state": "success"}]) == [])
     case("only the unresolved ones are named",
          unresolved_checks([{"name": "a", "state": "SUCCESS"},
                             {"name": "b", "state": "PENDING"}]) == ["b"])
