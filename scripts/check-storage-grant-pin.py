@@ -129,7 +129,14 @@ def self_test() -> int:
         rerole = stmt.replace("auth.uid()", "auth.jwt()")
         cases.append(("changing the compared credential trips the pin", digest(rerole) != digest(stmt)))
         # 5. a comment-only edit above the statement does not trip it (the statement is what is pinned)
-        cases.append(("digest is over the statement, not the file", digest(stmt) == digest(stmt + "")))
+        # ⟳ 2026-09-07, found while writing this file's mutation manifest. This read
+        # `digest(stmt) == digest(stmt + "")` — a string compared to ITSELF, so it was true for every
+        # possible implementation of `digest`, `normalise` and `extract_policy`. NO mutation could
+        # kill it; it asserted nothing while reading as the case that pins the SUBJECT of the digest.
+        # It now edits the FILE and re-extracts, which is what the comment above always claimed:
+        # if extraction ever widened to the whole file, the added comment would move the digest.
+        cases.append(("digest is over the statement, not the file",
+                      digest(extract_policy("-- an unrelated comment\n" + real) or "") == digest(stmt)))
 
     # 6. a missing policy is NOT-RUN, not a pass
     cases.append(("absent policy yields None, not a silent pass", extract_policy("select 1;") is None))
