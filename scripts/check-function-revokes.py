@@ -118,7 +118,13 @@ def _self_test() -> int:
 
     def case(label: str, ok: bool) -> None:
         nonlocal passed, failed
-        print(f"  {'✅' if ok else '❌'}  {label}")
+        # ⛔ `[FAIL] {label}: got … want …` IS A CONTRACT with check-plan-code.py, which attributes
+        # a killed mutation from lines STARTING WITH "[FAIL] " via
+        # `.strip()[7:].rsplit(": got ", 1)[0]`. This printed `❌  {label}` with no bracket and no
+        # `: got `, so measured 2026-09-07 all six mutations aimed here reddened the suite with
+        # ZERO parseable failure lines — reported as CRASH, indistinguishable from no coverage.
+        # The rule binds only once a manifest points at this file, which is why it stayed latent.
+        print(f"  ✅  {label}" if ok else f"  [FAIL] {label}: got {ok!r} want {True!r}")
         if ok:
             passed += 1
         else:
@@ -128,7 +134,13 @@ def _self_test() -> int:
         d = pathlib.Path(tempfile.mkdtemp())
         for n, body in files.items():
             (d / n).write_text(body)
-        return sorted(d.glob("*.sql"))
+        # ⟳ 2026-09-07, found while writing this file's mutation manifest. This was
+        # `sorted(d.glob("*.sql"))` — a SECOND copy of `migrations()`, so every case ran against
+        # the fixture's own ordering and the delivered function was exercised by NOTHING. The
+        # case named "ordering is by FILENAME" was the worst of it: it read as the guarantee the
+        # audit depends on, and tested a lookalike. Delegating means a mutation to `migrations()`
+        # now reaches these cases, which is the whole point of having them.
+        return migrations(d)
 
     mk = "create function f() returns int language sql as 'select 1';\n"
     rv = "revoke all on function f() from public;\n"

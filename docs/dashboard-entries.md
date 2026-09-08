@@ -4701,3 +4701,15 @@ This guard watches a database permission that a money-path protection depends on
 Registration, all four numbers in one commit because the ratchet is an exact match: `EXPECTED_MUTATIONS["scripts/check-storage-grant-pin.py"] = 6`; the live sum 247 → 253; the guard added to the sorted want-list; `MANIFEST_BASELINE` 13 → 12. `check-plan-code --self-test` 194/194; `check-ratchet-contract` at baseline, not growing.
 
 First of the four guards PR #247 made stageable. Remaining: `check-function-revokes` (16 cases), `check-paid-caller-arrival` (32), `check-anon-exposure` (74).
+
+## 2026-09-07
+The revoke guard now has a safety net, and writing it found two ways the guard was harder to trust than it looked.
+This guard checks that every new database function explicitly withdraws the permission Postgres hands out by default — miss one and it becomes callable by anyone on the internet. Proving its sixteen checks actually work turned up two problems. First, when a check failed it announced this in a format the mutation harness cannot read, so a broken guard would have looked like a guard nobody had tested rather than a broken one. Second, the checks were quietly running against a private copy of the file-ordering logic rather than the real one, so the function that decides ordering was exercised by nothing at all.
+<!--tech-->
+`scripts/mutations/check-function-revokes.json` — 6 mutations, all attributed via the case each names. Targets: the `seen`/replacement branch in `audit()`, the DROP discard, the grantee filter, the REVOKE pattern's `public.` tolerance, `migrations()` ordering, and the `MIGRATIONS` path itself.
+
+⚠ **CONTRACT (1) WAS VIOLATED and that is why the first run scored 0/6.** The suite printed `❌  {label}` — no `[FAIL] ` prefix, no `: got ` — so every mutation reddened it with **zero parseable failure lines**, reported as CRASH. `check-plan-code` attributes kills via `.strip()[7:].rsplit(": got ", 1)[0]`; with nothing to parse, a real kill and no coverage look identical. Fixed first, then re-verified 6/6. The rule binds only once a manifest points at the file, which is why it sat latent.
+
+⭐ **`migrations()` was covered by NOTHING.** The self-test's `tree()` helper ended `return sorted(d.glob("*.sql"))` — a second copy of `migrations()` — and every one of the sixteen cases calls `audit(tree({...}))`. The case named *"ordering is by FILENAME, so 0002 sees 0001's function"* therefore tested the fixture's private sort, not the delivered function whose ordering `audit()` depends on. `tree()` now delegates to `migrations(d)`, so a mutation there reaches the cases.
+
+Registration: `EXPECTED_MUTATIONS["scripts/check-function-revokes.py"] = 6`; live sum 253 → 259; want-list; `MANIFEST_BASELINE` 12 → 11. 194/194, ratchet at baseline, 16/16.
