@@ -76,7 +76,12 @@ CONTRACT. In the plan, tag each Python block with the file it belongs to:
 Blocks with the same tag are concatenated in document order. Declare mutations in one
 JSON block tagged `<!-- mutations -->`; each needs a `name`, a `file`, a list of
 `edits` (find/replace pairs applied in order, each of which MUST match), and
-optionally `expect` — a substring of the self-test case name that has to go red.
+optionally `expect` — the EXACT name(s) of the self-test case(s) that have to go red,
+as a string or a list. ⚠ Exact, not a substring: round 6 measured that a fragment of a
+name — or a name belonging to a different case entirely — still certified a mutation, so
+`:1060` compares with `==`. This line said "a substring" until 2026-09-08, describing the
+round-5 rule that round 6 replaced; four expects were written against the stale sentence
+before the mismatch was noticed.
 """
 from __future__ import annotations
 import argparse
@@ -645,6 +650,12 @@ EXPECTED_MUTATIONS = {
     # only the per-file split can tell a relocation apart from deleted coverage, which is
     # the same reason #71 held its sum at 73. `run_suite(d, fname)` runs only the mutated
     # file's suite, so the killing cases moved too.
+    # ⟳ 2026-09-08, R4 manifest debt 6 -> 5. ⚠ `state in UNRESOLVED` is NOT a target and must not
+    # become one: the two state lists are disjoint, so that disjunct always implies the second and
+    # NO input can distinguish it. It is defensive (it catches a future edit that wrongly moves a
+    # pending state into the resolved list), not decisive — mutating it would be unkillable-by-
+    # construction, the `check-storage-grant-pin` case-5 shape.
+    "scripts/check-ci-watched.py": 9,
     "scripts/check-dashboard-entry.py": 42,
     "scripts/check-plan-code.py": 35,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
@@ -2583,6 +2594,7 @@ def _self_test() -> int:
                                       "scripts/check-arch-findings.py",
                                       "scripts/check-banner-armed.py",
                                       "scripts/check-catalog-coverage.py",
+                                      "scripts/check-ci-watched.py",
                                       "scripts/check-dashboard-entry.py",
                                       "scripts/check-docs.py",
                                       # ⟳ 2026-09-06: the FIRST payment against the R4 manifest
@@ -2703,7 +2715,7 @@ def _self_test() -> int:
     # off against the R4 manifest debt (MANIFEST_BASELINE 21 -> 20 in the same commit, because
     # that ratchet is an exact match and not a ceiling). This total is a LIVE sum, so it moves
     # whenever coverage does; it is not one of the counts pinned to a past measurement.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 290)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 299)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

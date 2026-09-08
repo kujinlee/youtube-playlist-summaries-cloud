@@ -4827,3 +4827,19 @@ Fixes: capitalise the fixture symbols (`Epsilon`, `Omega`, `MyModule/index.ts`, 
 2. My first anchor for the ordering predicate collided with the self-test **comment that quotes it** — caught by the generator on its first run, which is what that check is for.
 
 Registration: `EXPECTED_MUTATIONS["scripts/check-plan-task-order.py"] = 9`; live sum 281 → 290; sorted want-list (⚠ a red caught my first insert — `check-plan-progress` sorts before `check-plan-task-order`); `MANIFEST_BASELINE` 7 → 6, read off the tool.
+
+## 2026-09-08
+The guard that notices when CI is running and nobody is watching now has a safety net — and the instructions for writing these safety nets turned out to be wrong.
+Nine deliberate breakages, all caught. Two things came out of it. First, one of the guard's own checks was passing for the wrong reason: it claimed to prove that upper/lower case does not matter, but the example it used would have been handled correctly anyway by a different rule, so the case-handling could have been deleted without the check noticing. Second, and more consequential: the written instructions for how these safety nets declare *which* check must fail said one thing, and the tool that reads them does another — it requires the exact name, not a fragment. The instructions had been wrong since the day the tool was tightened. I wrote four declarations against the wrong sentence before the tool refused them. Both the sentence and my own tooling are now fixed, so the next person cannot repeat it.
+<!--tech-->
+`scripts/mutations/check-ci-watched.json` — 9 mutations, all attributed, over a green 22/22 control, verified through `check-plan-code`'s own `run_mutations` (`caught=9 survivors=0`). All four output contracts already held.
+
+⭐ **STALE DOCSTRING ON THE RULE THAT DECIDES WHETHER COVERAGE COUNTS.** `check-plan-code.py:79` said `expect` is *"a substring of the self-test case name"*. `:1060` implements `w == f` — **exact equality** — and has since round 6, whose own comment says why: *"an `expect` naming a completely unrelated case, or a mere fragment of a name, still certified the mutation."* The round-5 sentence survived the round-6 fix. Four expects here were written against it and were rejected by the real instrument. Docstring corrected; the round-6 rationale is now stated in it.
+
+**Guard finding:** `state matching is case-insensitive` used `"pending"` — which the **unknown-state fallback** classifies as unresolved anyway, so `.upper()` could be deleted and the case stayed green. Only the resolved direction can see the folding happen; added `lowercase SUCCESS is still resolved`. **22 → 23 cases.**
+
+⚠ **NOT a mutation target, and now commented as such:** `state in UNRESOLVED` is disjoint from the resolved set, so it always implies the second disjunct and **no input can distinguish it**. It is defensive (it catches a future edit that moves a pending state into the resolved list), not decisive. Mutating it would be unkillable-by-construction — the `check-storage-grant-pin` case-5 shape.
+
+**My generator now harvests the real case names** from a green `--self-test` run and refuses any `expect` that is not an exact match, printing the near-miss it found. It caught all four of mine before a five-minute sweep could.
+
+Registration: `EXPECTED_MUTATIONS["scripts/check-ci-watched.py"] = 9`; live sum 290 → 299; sorted want-list; `MANIFEST_BASELINE` 6 → 5. ⚠ Second want-list mis-sort in two PRs (`check-catalog-coverage` sorts before `check-ci-watched`) — the position is now DERIVED and the literal asserted sorted, rather than placed by eye.
