@@ -668,7 +668,14 @@ def self_test() -> int:
 
     print()
     print(f"{cases - bad} of {cases} self-test cases passed")
-    return bad
+    # ⛔ CONTRACT (4) with check-plan-code.py, and the FOURTH one that binds only once a manifest
+    # points at this file. `run_mutations` decides a kill with `caught = rc == 1` (:998) — EXACTLY
+    # one, not "non-zero". This returned `bad`, the COUNT of failing cases, so a mutation breaking
+    # 16 cases exited 16 and was recorded as a SURVIVOR while its named case sat in the red list.
+    # MEASURED 2026-09-07: 4 of 6 mutations here broke exactly one case and were caught; the 2 that
+    # broke 16 and 7 "survived". The louder the failure, the less it counted.
+    # Every one of the other twelve guards already returns 0/1; this file was alone.
+    return 1 if bad else 0
 
 
 if __name__ == "__main__":

@@ -4755,3 +4755,17 @@ This is the guard that fires when real code first calls the function that spends
 Replaced with: the SQL line-comment blanker (kills *"a comment cannot resurrect a dropped symbol (r12 H1)"*) and reversed ledger ordering (kills *"a LATER migration dropping the symbol is CANNOT RUN (r10 H3)"*).
 
 Registration: `EXPECTED_MUTATIONS["scripts/check-paid-caller-arrival.py"] = 6`; live sum 259 → 265; sorted want-list; `MANIFEST_BASELINE` 11 → 10. 194/194; ratchet at baseline; 32/32.
+
+## 2026-09-07
+A fourth hidden rule turned up: the louder a guard failed, the less its failure counted.
+CI rejected the previous entry's work, saying two of the six deliberate breakages had not been caught. They had been — the right check complained in both cases. The problem was the exit code. The checking tool treats "exactly 1" as the signal for a caught breakage, and this one guard reported the *number* of things that broke instead. So a breakage that failed one check reported 1 and counted; a breakage that failed sixteen reported 16 and was recorded as not caught at all. Every other guard in the project already reported 0 or 1; this one was alone.
+<!--tech-->
+⭐ **CONTRACT (4), and it is a fourth latent one.** `run_mutations` decides a kill with `caught = rc == 1` (`check-plan-code.py:998`) — exactly one, not non-zero. `check-paid-caller-arrival.self_test()` ended `return bad`, the COUNT of failing cases.
+
+MEASURED: of six mutations, the four that broke exactly one case exited 1 and were caught; the two that broke **16** and **7** cases exited 16 and 7 and were recorded as SURVIVORS — while their named case sat plainly in the red list, confirmed by membership test. Fixed to `return 1 if bad else 0`. Real instrument now: **verdicts=6, survivors=0**.
+
+**CLASS CHECKED, and it is an instance:** all twelve other guards already return `1 if failed else 0` or `0 if passed == len(cases) else 1`. This file was the only one returning a count.
+
+⚠⚠ **THE SCRATCHPAD VERIFY HARNESS GAVE A FALSE GREEN and is retired for verdicts.** It reported 6/6 by parsing `[FAIL]` lines and ignoring the exit code entirely — a second implementation of `check-plan-code`'s attribution rule that drifted from it. That is the defect the mutation harness exists to catch, reintroduced one layer out, in the tool used to check the tool. Future manifests are verified by calling `check-plan-code`'s own `run_mutations`, not a copy of its logic. (Guards in PRs #249 and #250 are unaffected — both passed real CI.)
+
+Like contracts (1)–(3), this binds only once a manifest first points at a file, which is why it sat latent through every previous run of this guard.
