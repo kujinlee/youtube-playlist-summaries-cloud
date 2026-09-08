@@ -217,7 +217,25 @@ the same shape, inside the change that exists to remove that shape.
 | F5 | `.mutations` on `NotMeasured` → AttributeError | ✅ verified |
 | F6 | clean `--mutate .` stdout byte-for-byte | ⚠ **one-token delta — see below** |
 | F7 | plan-mode stdout + evidence block byte-for-byte | ✅ **IDENTICAL, both files** |
-| F8 | delete the constructor's clause-checking → red, naming the case | ⚠ re-run against the REWIRED tree |
+| F8 | delete the constructor's clause-checking → red, naming the case | ✅ **DISCHARGED, all 4 mutations** |
+
+**F8 DISCHARGED** (`scratchpad/f8.py`, throwaway copies, **control first**: `coverage_verdict`
+21/21 rc=0, `check-plan-code` 196/196 rc=0):
+
+| clause mutated | `coverage_verdict` | `check-plan-code` |
+|---|---|---|
+| 1 — controls green | 19/21 — both **F3** cases | 190/196 — 4 named cases |
+| 2 — cardinality | 19/21 — both **F1** cases | 193/196 — 3 shortfall cases |
+| 3 — every entry measured | 17/21 — all four **F2** cases | 193/196 — 3 named cases |
+| 3b — `is True` → truthiness | 19/21 — exactly the 2 truthy cases | 195/196 — 1 case |
+
+⭐ Row 3b is the useful one: the WEAKEST mutation, killing exactly the two cases the `is True`
+construct buys (`measured: 1`, `measured: "yes"`) and nothing else. It isolates what strict identity
+provides over truthiness, rather than proving the clause merely exists.
+
+⚠ **The first F8 run had a RED CONTROL (193/196) and every verdict under it was an artefact.** The
+copy excluded `node_modules`, and `HARNESS_TREE` requires `node_modules/typescript`. **Third time
+this hazard fired in one session.** Any scratch copy must keep that path.
 
 **F7 DISCHARGED.** Both `plan.txt` and `evidence.txt` re-derived from the rewired tree are
 byte-for-byte identical to the pristine baselines. This is the falsifier that proves T2a's
