@@ -19,6 +19,50 @@ craft was **already** shared: `brief` defers to `artifact-design`. Only delivery
 
 ---
 
+## 0. WHO RUNS THIS — build, verify, announce, answer
+
+**Backlog #89 asked, and this file used to answer nothing.** These pages enhance the human's
+comprehension of the work; they are a **side-car of it**, not the work. So the expensive half may be
+delegated — and one step may not.
+
+| Step | Who | Why that one |
+|---|---|---|
+| research the subject, write the fragment, compose the page | **a fork** (optional) | this is the whole cost — one measured `/brief` spent a 22.5 KB fragment rewritten five times, a 987 KB composed page, ten ratchet exit codes, `git log -15`, review inventories and `flyctl releases`, nearly all single-use once the URL exists |
+| **§5b — execute the page and verify it** | **the parent, always** | ⛔ see below |
+| print the URL to the human | **the parent** | a fork's report is not shown to the user; the parent verifies, so it already holds the URL |
+| answer a reader's question | **the fork, resumed by name** | §6 |
+
+### ⛔ §5b is NOT delegable, and this is why
+
+Two defects in the 2026-09-03 page were visible **only by executing it**, and neither appears in the
+source: a `document.hidden` gate producing a false *"0 of 5 buttons reachable"* (a backgrounded tab
+has 0×0 geometry, so every geometric assertion is an artifact), and a missing `#modechip` block whose
+CSS **and** JS both existed. **A fork that skips §5b ships a page that looks verified and is not** —
+and the parent cannot tell, because a fork's report is prose.
+
+Keeping §5b in the parent also **dissolves two problems rather than solving them**:
+
+* **delivery** — the parent already has the URL, so no message has to carry it, and no path exists
+  where an unverified page is announced;
+* **staleness** — a fork's context is a snapshot taken when it was spawned. On 2026-09-03 the human
+  chose an option mid-build and the page would have shipped stamped *decision pending*. Relaying that
+  by message works only if someone remembers, which is a record, not a mechanism. Verification is
+  performed by the one participant that cannot be stale about its own session — so §5b includes
+  reading the page's decision/status section against what is true **now**.
+
+### If a fork builds it
+
+* **Name it at spawn.** An unnamed fork is not addressable and §6's second half has nowhere to go.
+* **Give it an explicit `as of <commit/time>`**, so the page states its own horizon instead of
+  implying it is current.
+* **It writes nothing inside the repository** — page and fragment go to `~/explainers/`, notes to its
+  scratchpad. ⚠ The Codex review wrapper snapshots `docs/reviews/` non-recursively and its intrusion
+  detector fires on **any** concurrent write; on the failure path it has **moved a concurrent file
+  out of the tree**. Whether a repo-silent fork is safe beside a review is **UNMEASURED** — until it
+  is, do not start one while a Codex review is in flight.
+
+---
+
 ## 1. Where the file goes
 
 ```
