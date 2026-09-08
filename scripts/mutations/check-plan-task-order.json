@@ -1,0 +1,119 @@
+[
+  {
+    "name": "'produced ONLY later' weakens to 'produced by SOME later task', so a symbol that already exists by the time it is consumed is reported as a forward reference",
+    "file": "scripts/check-plan-task-order.py",
+    "edits": [
+      [
+        "and all(t > num for t in owners):",
+        "and any(t > num for t in owners):"
+      ]
+    ],
+    "expect": [
+      "a symbol produced both EARLIER and later is not a forward reference"
+    ]
+  },
+  {
+    "name": "the ordering comparison admits equality, so a task consuming what it produces itself is accused of a forward reference",
+    "file": "scripts/check-plan-task-order.py",
+    "edits": [
+      [
+        "if owners and all(t > num",
+        "if owners and all(t >= num"
+      ]
+    ],
+    "expect": [
+      "a task consuming what it also produces is not a forward reference"
+    ]
+  },
+  {
+    "name": "the pre-existence escape stops working, so consuming a symbol the repo already exports is reported as a forward reference",
+    "file": "scripts/check-plan-task-order.py",
+    "edits": [
+      [
+        "            if sym in preexisting:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "a symbol that already exists in the repo is not a forward reference"
+    ]
+  },
+  {
+    "name": "the file-path guard is dropped, so the first segment of a path becomes a symbol",
+    "file": "scripts/check-plan-task-order.py",
+    "edits": [
+      [
+        "if \"/\" in span or re.match",
+        "if False or re.match"
+      ]
+    ],
+    "expect": [
+      "a path whose first segment is CAPITALISED still names no symbol"
+    ]
+  },
+  {
+    "name": "the file:line citation guard is dropped, so the filename in a citation becomes a symbol",
+    "file": "scripts/check-plan-task-order.py",
+    "edits": [
+      [
+        "or re.match(r\"^[\\w.-]+\\.\\w+:\\d\", span):",
+        "or False:"
+      ]
+    ],
+    "expect": [
+      "a citation whose file is CAPITALISED still names no symbol"
+    ]
+  },
+  {
+    "name": "the lowercase-prose rule is dropped, so ordinary prose in backticks becomes a symbol and every plan grows false forward references",
+    "file": "scripts/check-plan-task-order.py",
+    "edits": [
+      [
+        "        if name.islower() and \"_\" not in name and not looks_declared:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "a bare lowercase prose word is not a symbol"
+    ]
+  },
+  {
+    "name": "a call site stops counting as a declaration, so a lowercase symbol shown being CALLED is silently discarded as prose",
+    "file": "scripts/check-plan-task-order.py",
+    "edits": [
+      [
+        "looks_declared = bool(rest[:1] in (\"(\", \"<\", \":\", \"=\")) or len(tokens) > 1",
+        "looks_declared = bool(rest[:1] in (\"<\", \":\", \"=\")) or len(tokens) > 1"
+      ]
+    ],
+    "expect": [
+      "a lowercase symbol shown being called IS a symbol"
+    ]
+  },
+  {
+    "name": "a non-Produces top-level bullet no longer re-decides the mode, so an 'Unchanged, deliberately' bullet is read as a Produces",
+    "file": "scripts/check-plan-task-order.py",
+    "edits": [
+      [
+        "                else:\n                    mode = None",
+        "                else:\n                    pass"
+      ]
+    ],
+    "expect": [
+      "a non-Produces top-level bullet is not a Produces"
+    ]
+  },
+  {
+    "name": "un-indented prose no longer ends the interfaces list, so a symbol merely MENTIONED after the block is recorded as produced",
+    "file": "scripts/check-plan-task-order.py",
+    "edits": [
+      [
+        "            elif not line.startswith(\" \"):",
+        "            elif False:"
+      ]
+    ],
+    "expect": [
+      "un-indented prose ends a LIVE Produces block"
+    ]
+  }
+]

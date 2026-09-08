@@ -4803,3 +4803,27 @@ Seven deliberate breakages, all caught first time. Five of them confirm rules th
 Self-test 15 → 18 cases, declared in the docstring (this guard is in `check-selftest-counts.POPULATION`, so an undeclared count is itself a red gate).
 
 Registration: `EXPECTED_MUTATIONS["scripts/check-catalog-coverage.py"] = 7`; live sum 274 → 281; sorted want-list; `MANIFEST_BASELINE` 8 → 7 — read off `check-ratchet-contract.py`'s own output, never computed.
+
+## 2026-09-07
+The guard that catches a plan using something before it has been built now has a safety net — and five of its sixteen existing checks turned out to be untestable.
+Nine deliberate breakages, all caught. The striking part is what writing them exposed: five checks were passing for a reason other than the one their name gives. Each one described a rule, but the example it used was filtered out earlier by a *different* rule, so the rule under test was never reached. Delete the thing the check is named for and it still says PASS. Nothing was broken — the guard works — but five of its sixteen assurances were worth nothing, and only running a deliberate breakage against them could tell. Two more of my own tools failed the same way during this work, and both are now fixed.
+<!--tech-->
+`scripts/mutations/check-plan-task-order.json` — 9 mutations, all attributed, over a green 16/16 control, verified through `check-plan-code`'s own `run_mutations` (`caught=9 survivors=0`). All four output contracts already held; no repair needed.
+
+⭐ **FIVE UNFALSIFIABLE CASES, one shape: the fixture used an input a DIFFERENT rule filters first.** Each was MEASURED by disabling the named rule and watching the case stay green — not inferred by reading.
+
+| Case | Named mechanism | What actually satisfied it |
+|---|---|---|
+| file paths name no symbol | `"/" in span` | the lowercase-prose rule — `lib/…` is lowercase |
+| file:line citations name no symbol | the citation regex | same rule — `parse.ts:42` is lowercase |
+| a non-Produces bullet is not a Produces | the `else: mode = None` reset | `epsilon` is lowercase, dropped whatever the mode |
+| un-indented prose ends the block | the prose-termination branch | the preceding bullet had already reset the mode |
+| forward reference detected | `all(t > num for t in owners)` | every fixture symbol had exactly ONE producer, so `all`/`any` and `>`/`>=` agree |
+
+Fixes: capitalise the fixture symbols (`Epsilon`, `Omega`, `MyModule/index.ts`, `Parse.ts:42`) so the named rule is the thing reached; add prose directly after a LIVE `- Produces:`; add two multi-producer ordering cases. **16 → 21 cases**, declared in the docstring (pinned at `check-selftest-counts.py:98`).
+
+⚠ **TWO OF MY OWN INSTRUMENTS FAILED THE SAME WAY, both caught by measurement, both fixed:**
+1. The manifest generator asserted each anchor was unique **in the file** but not **across mutations**. Two mutations disabling opposite halves of one `if` shared an anchor; `load_manifests` refuses a duplicate, dropped one, and the run reported **8 of 9 with no error at the call site**. Now checked, and the anchors are distinct substrings.
+2. My first anchor for the ordering predicate collided with the self-test **comment that quotes it** — caught by the generator on its first run, which is what that check is for.
+
+Registration: `EXPECTED_MUTATIONS["scripts/check-plan-task-order.py"] = 9`; live sum 281 → 290; sorted want-list (⚠ a red caught my first insert — `check-plan-progress` sorts before `check-plan-task-order`); `MANIFEST_BASELINE` 7 → 6, read off the tool.

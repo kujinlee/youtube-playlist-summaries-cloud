@@ -647,6 +647,17 @@ EXPECTED_MUTATIONS = {
     # file's suite, so the killing cases moved too.
     "scripts/check-dashboard-entry.py": 42,
     "scripts/check-plan-code.py": 35,
+    # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
+    # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
+    # input that a DIFFERENT rule filters first, so the named rule was never reached.
+    #   * `lib/…` and `parse.ts:42` are stopped by the lowercase-prose rule, not by the path and
+    #     file:line guards those two cases are named for. Both only bite when the first segment is
+    #     CAPITALISED (`MyModule/index.ts` -> `MyModule`, `Parse.ts:42` -> `Parse`).
+    #   * `epsilon` and `omega` are lowercase, so the mode-reset and prose-termination branches
+    #     could both be deleted and the cases stayed green. MEASURED, then capitalised.
+    #   * `all(t > num for t in owners)` was unfalsifiable: every fixture symbol had exactly ONE
+    #     producer, and with one owner `all`/`any` agree and `>`/`>=` agree.
+    "scripts/check-plan-task-order.py": 9,
     # ⟳ 2026-08-31, backlog #76/#77: the shared page chrome. Adding it found TWO
     # vacuous cases of my own — a "dirty tree" assertion compared against a
     # NON-repo, so it differed by the UNKNOWN text and never by the dirty flag,
@@ -2587,6 +2598,7 @@ def _self_test() -> int:
                                       "scripts/check-paid-caller-arrival.py",
                                       "scripts/check-plan-code.py",
                                       "scripts/check-plan-progress.py",
+                                      "scripts/check-plan-task-order.py",
                                       "scripts/check-producer-enumeration.py",
                                       "scripts/check-selftest-counts.py",
                                       "scripts/check-sentinel-meanings.py",
@@ -2691,7 +2703,7 @@ def _self_test() -> int:
     # off against the R4 manifest debt (MANIFEST_BASELINE 21 -> 20 in the same commit, because
     # that ratchet is an exact match and not a ceiling). This total is a LIVE sum, so it moves
     # whenever coverage does; it is not one of the counts pinned to a past measurement.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 281)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 290)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
