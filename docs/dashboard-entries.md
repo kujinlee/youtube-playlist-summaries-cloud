@@ -4769,3 +4769,13 @@ MEASURED: of six mutations, the four that broke exactly one case exited 1 and we
 ⚠⚠ **THE SCRATCHPAD VERIFY HARNESS GAVE A FALSE GREEN and is retired for verdicts.** It reported 6/6 by parsing `[FAIL]` lines and ignoring the exit code entirely — a second implementation of `check-plan-code`'s attribution rule that drifted from it. That is the defect the mutation harness exists to catch, reintroduced one layer out, in the tool used to check the tool. Future manifests are verified by calling `check-plan-code`'s own `run_mutations`, not a copy of its logic. (Guards in PRs #249 and #250 are unaffected — both passed real CI.)
 
 Like contracts (1)–(3), this binds only once a manifest first points at a file, which is why it sat latent through every previous run of this guard.
+
+## 2026-09-07
+The guard that checks each documented value names the right number of producers now has a safety net.
+Five deliberate breakages, each caught by the check it was aimed at, first time — no wrong hypotheses on this one. All five were verified by calling the real checking tool rather than a lookalike, which is the change of habit the previous entry paid for.
+<!--tech-->
+`scripts/mutations/check-producer-enumeration.json` — 5 mutations, all attributed, over a green 11/11 control. Targets are all in the pure rules: the ternary probe's `(?!\.)` optional-chain exclusion, `bare_alias`'s `ALIAS_RHS.fullmatch` gate, `ALIAS_RHS`'s `+` repeat quantifier (so a deep path stops matching), and the `\|\|` and `\?\?` branch patterns.
+
+⭐ **Verified through `check-plan-code`'s OWN `run_mutations`**, on a staged tree, not through the retired scratchpad copy: `verdicts=5 survivors=0`. All four output contracts checked BEFORE choosing targets, including the newly-found contract (4) — this guard already returned `1 if failures else 0`.
+
+Registration: `EXPECTED_MUTATIONS["scripts/check-producer-enumeration.py"] = 5`; live sum 265 → 270; sorted want-list; `MANIFEST_BASELINE` 10 → 9.

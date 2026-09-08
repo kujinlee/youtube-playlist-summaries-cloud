@@ -1,0 +1,57 @@
+[
+  {
+    "name": "the ternary probe no longer excludes an optional chain",
+    "file": "scripts/check-producer-enumeration.py",
+    "edits": [
+      [
+        "(re.compile(r\"\\?(?!\\.)(?![?=])\"), \"`?:` ternary\")",
+        "(re.compile(r\"\\?\"), \"`?:` ternary\")"
+      ]
+    ],
+    "expect": "optional chain only \u2014 NOT a branch"
+  },
+  {
+    "name": "any right-hand side counts as an alias",
+    "file": "scripts/check-producer-enumeration.py",
+    "edits": [
+      [
+        "return rhs if ALIAS_RHS.fullmatch(rhs) else None",
+        "return rhs"
+      ]
+    ],
+    "expect": "NOT an alias \u2014 a call"
+  },
+  {
+    "name": "an alias may have only ONE dotted segment",
+    "file": "scripts/check-producer-enumeration.py",
+    "edits": [
+      [
+        "r\"^[A-Za-z_$][A-Za-z0-9_$]*(?:\\??\\.[A-Za-z0-9_$]+)+!?$\"",
+        "r\"^[A-Za-z_$][A-Za-z0-9_$]*(?:\\??\\.[A-Za-z0-9_$]+)!?$\""
+      ]
+    ],
+    "expect": "deep alias"
+  },
+  {
+    "name": "the logical-fallback pattern needs three pipes",
+    "file": "scripts/check-producer-enumeration.py",
+    "edits": [
+      [
+        "(re.compile(r\"\\|\\|\"), \"`||` logical fallback\")",
+        "(re.compile(r\"\\|\\|\\|\"), \"`||` logical fallback\")"
+      ]
+    ],
+    "expect": "|| fallback"
+  },
+  {
+    "name": "the nullish pattern needs three question marks",
+    "file": "scripts/check-producer-enumeration.py",
+    "edits": [
+      [
+        "(re.compile(r\"\\?\\?\"), \"`??` nullish coalescing\")",
+        "(re.compile(r\"\\?\\?\\?\"), \"`??` nullish coalescing\")"
+      ]
+    ],
+    "expect": "?? (round-18 M1)"
+  }
+]
