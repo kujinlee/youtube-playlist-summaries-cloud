@@ -5,7 +5,7 @@
     python3 scripts/check-plan-code.py <plan.md> --evidence # ...and print the evidence block
     python3 scripts/check-plan-code.py <plan.md> --compare .   # ...and diff vs the REAL files
     python3 scripts/check-plan-code.py <plan.md> --verify-evidence   # ...and FAIL if it is stale
-    python3 scripts/check-plan-code.py --self-test          # 201 cases
+    python3 scripts/check-plan-code.py --self-test          # 207 cases
 
 ⚠ `--compare` takes the REPO ROOT, and each file tag is resolved under it as the
 repo-relative path it already is. It took the containing DIRECTORY until round 5,
@@ -510,10 +510,20 @@ class RunContext:
     because `check()` is where they are produced and `verify_evidence()` needs `compared`
     too; threading them as parameters would mean the caller re-deriving what the producer
     already knew, which is how a copy starts.
+
+    ⟳ code review r2 (H1+H2). `compared` briefly carried TWO meanings — "no compare was
+    asked for" and "a compare was asked for but nothing was assembled" — because r1's H3
+    fix used `{}` for the second. `evidence()` renders any non-None `cmp` as the DIFFED
+    header, so on a plan whose only block was DROPPED (an unsafe tag) the durable artifact
+    said "DIFFED against the delivered files" with zero rows: a permissive false claim,
+    which this project rates worse than master's conservative one. One value, a meaning
+    with an OR in it — exactly what `check-sentinel-meanings.py` exists to catch.
+    `compare_requested` splits them, so each of the three worlds gets its own sentence.
     """
 
     tally: dict = dataclasses.field(default_factory=dict)
     compared: "dict | None" = None
+    compare_requested: bool = False
 
 
 def run_suite(d: pathlib.Path, name: str) -> tuple[int, str]:
@@ -1157,8 +1167,7 @@ def check(plan: pathlib.Path,
     # default-argument route to it while leaving this one, which is the route reachable from
     # the command line. Fixing the affordance and leaving the live instance is this project's
     # recorded instance-not-class shape; an empty dict means "compared, and nothing matched".
-    report, ev_files = list(problems), {}
-    compared = {} if compare is not None else None
+    report, ev_files, compared = list(problems), {}, None
     if not files:
         report.append("no `<!-- file: … -->` tagged Python blocks found — nothing to assemble")
         # ⭐ AN HONEST ZERO IS A `Measured`, AND THAT IS THE WHOLE BACKLOG-#93 DISTINCTION
@@ -1186,11 +1195,27 @@ def check(plan: pathlib.Path,
         # but carried `declared: None`, which honestly means "never attempted"; a `Measured`
         # positively asserts zero WERE declared, so the union makes the lie explicit and typed.
         # Branching restores the honest zero for its real case and refuses the other.
+        # ⟳ code review r2 (H3). `muts == []` means THREE different things — none declared,
+        # the JSON did not parse, or the tag had no block after it — and only the first is
+        # an honest zero. Branching on the count alone left `Measured(declared=0)` standing
+        # over a plan whose text visibly declares two, which is r1 H2's own sentence
+        # unchanged: a number the producer invented rather than one it measured. The
+        # narrowed hole was the likelier one in practice, because an unparseable block is
+        # what a typo produces. One value, a meaning with an OR in it —
+        # `check-sentinel-meanings.py` exists for exactly this shape.
+        # ⚠ Matching on problem STRINGS is itself a convention, and the stronger form is
+        # for `extract()` to return the fact. That is a wider change; this one is
+        # falsifiable today and both fixtures are cased below.
+        mut_unreadable = any(p.startswith("mutations block is not valid JSON")
+                             or p == "mutations tag has no JSON block after it"
+                             for p in problems)
         return (False, report,
                 (Measured(files=ev_files, declared=0, mutations=[], survivors=[],
                           controls_green=True)          # explicit — see coverage_verdict H1
-                 if not muts else NotMeasured.from_counts([], len(muts), ev_files)),
-                RunContext(tally=tally, compared=compared))
+                 if not muts and not mut_unreadable
+                 else NotMeasured.from_counts([], len(muts), ev_files)),
+                RunContext(tally=tally, compared=compared,
+                           compare_requested=compare is not None))
 
     with tempfile.TemporaryDirectory() as td:
         d = pathlib.Path(td)
@@ -1247,7 +1272,8 @@ def check(plan: pathlib.Path,
                                survivors=m_survivors, controls_green=controls_green)
         except VerdictContractError:
             verdict = NotMeasured.from_counts(m_muts, declared, ev_files)
-    return ok, report, verdict, RunContext(tally=tally, compared=compared)
+    return ok, report, verdict, RunContext(tally=tally, compared=compared,
+                                           compare_requested=compare is not None)
 
 
 def evidence(v: "Measured | NotMeasured", ctx: RunContext) -> str:
@@ -1285,8 +1311,19 @@ def evidence(v: "Measured | NotMeasured", ctx: RunContext) -> str:
     out.append("")
     # The subject is stated in the evidence itself, so a reader cannot mistake a
     # green over the plan's copy for a green over the delivered scripts (round 4 H1).
+    # ⟳ code review r2 (H2). THREE worlds, three sentences. Two of them used to share one,
+    # because r1's H3 fix reached for `{}` to mean "compare asked for, nothing assembled" —
+    # and `{}` is not None, so the durable block claimed "DIFFED against the delivered
+    # files" with zero rows over a plan whose only block had been DROPPED. Master was wrong
+    # here too, but conservatively (it under-claimed); the `{}` version was wrong
+    # PERMISSIVELY, and a permissive false claim on the durable artifact is the worse of
+    # the two by this project's own rule. There is no sentinel that can carry both meanings
+    # honestly, so the second fact travels as its own flag.
     cmp = ctx.compared
-    if cmp is None:
+    if cmp is None and ctx.compare_requested:
+        out.append("  subject: --compare was given, but no block was assembled, so nothing")
+        out.append("           was measured against the files in scripts/.")
+    elif cmp is None:
         out.append("  subject: the PLAN'S COPY of the code. --compare was not given, so")
         out.append("           nothing here was measured against the files in scripts/.")
     else:
@@ -1525,13 +1562,55 @@ def _self_test() -> int:
         _hz_ok, _hz_rep, _hz_v, _hz_ctx = check(pl)
         case("...while a plan with NO mutations either is still an honest Measured zero",
              (isinstance(_hz_v, Measured), _hz_v.declared), (True, 0))
-        # H3: `compared` must distinguish "compare given, nothing matched" from "not given",
-        # on the SAME early-return path. Absence assertion plus its presence twin.
-        _h3_cmp = check(pl, pathlib.Path(td))[3].compared
-        _h3_bare = check(pl)[3].compared
-        case("--compare on the early-return path does NOT report 'compare was not given'",
-             _h3_cmp is None, False)
-        case("...and without --compare it still reports exactly that", _h3_bare, None)
+        # ⛔ ASSERT THE RENDERED SENTENCE, NOT THE VALUE BEHIND IT (code review r2, H1).
+        # The first version of these two cases read `ctx.compared`, which is only an INPUT
+        # to the sentence. MEASURED by r2: `evidence()`'s `if cmp is None:` weakened to
+        # `if not cmp:` restored the exact defect end-to-end and the suite stayed 201/201 —
+        # a case asserting the wrong subject is a case that cannot fail for the right
+        # reason. This project's recorded rule: assert the PROPERTY, not the mechanism.
+        _h3_ok, _h3_rep, _h3_v, _h3_ctx = check(pl, pathlib.Path(td))
+        _h3_block = evidence(_h3_v, _h3_ctx)
+        _bare_ok, _bare_rep, _bare_v, _bare_ctx = check(pl)
+        _bare_block = evidence(_bare_v, _bare_ctx)
+        case("with --compare and nothing assembled, the block does NOT claim a diff ran",
+             "DIFFED against the delivered files" in _h3_block, False)
+        case("...and it does NOT say --compare was not given, because it WAS",
+             "--compare was not given" in _h3_block, False)
+        case("...it says the one honest thing: given, but nothing was assembled",
+             "--compare was given, but no block was assembled" in _h3_block, True)
+        # PRESENCE TWIN — without --compare the original sentence must survive verbatim.
+        case("...while WITHOUT --compare the block still says --compare was not given",
+             "--compare was not given" in _bare_block, True)
+
+        # ⟳ code review r2 (H3). `muts == []` has THREE causes and only one is honest.
+        # An unparseable declaration is what a typo produces, so it is the likelier one.
+        pl.write_text('<!-- mutations -->\n```json\n[{"name": "a",},]\n```\n')
+        _bad_ok, _bad_rep, _bad_v, _bad_ctx = check(pl)
+        case("a plan whose mutations block does not PARSE is not an honest zero",
+             isinstance(_bad_v, Measured), False)
+        pl.write_text("<!-- mutations -->\nno json block follows this tag\n")
+        _nt_ok, _nt_rep, _nt_v, _nt_ctx = check(pl)
+        case("...nor is a mutations tag with no JSON block after it",
+             isinstance(_nt_v, Measured), False)
+
+        # ⛔ THE INVARIANT THAT KEEPS r2 H1's MUTATION DEAD, and it needs its own case.
+        # r2 H1 measured that `evidence()`'s `if cmp is None:` -> `if not cmp:` restored the
+        # defect. The fix was NOT to add a case distinguishing them — it was to delete the
+        # state that made them differ, so `compared` is only ever None or a NON-EMPTY dict
+        # and the two predicates are equivalent on every reachable input. MEASURED over five
+        # fixtures (scratchpad/probe_compared_states.py): no empty dict is reachable.
+        # ⚠ That equivalence is what makes the mutation semantically dead, so the INVARIANT
+        # is now the load-bearing thing. Reintroduce `{}` and the defect returns silently.
+        # This fixture is r2 H2's own: a block that IS assembled and then DROPPED by the
+        # unsafe-tag branch — the case where `{}` was most tempting and most wrong.
+        pl.write_text('<!-- file: ../evil.py -->\n```python\ndef f():\n    return 1\n```\n')
+        _ev_ok, _ev_rep, _ev_v, _ev_ctx = check(pl, pathlib.Path(td))
+        case("a DROPPED block with --compare leaves `compared` None, never an empty dict",
+             _ev_ctx.compared, None)
+        case("...so the block says nothing was assembled, not that a diff came back clean",
+             ("given, but no block was assembled" in evidence(_ev_v, _ev_ctx),
+              "DIFFED against the delivered files" in evidence(_ev_v, _ev_ctx)),
+             (True, False))
 
         # A script with no entrypoint exits 0 and prints nothing — r3's Blocking.
         pl.write_text('<!-- file: m.py -->\n```python\ndef f():\n    return 1\n```\n')
