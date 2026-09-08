@@ -4947,3 +4947,22 @@ Every explanation page is supposed to save its own source alongside it, so a que
 ⚠ **T0 is not closed by this commit, and the spec should not be read as saying so.** The observation now exists; **the next `/brief` build is what proves it.** If that page also lacks a fragment, §5b.0 fails loudly and names the cause — which is the whole point.
 
 `check-explainer-delivery.py`: 1 shared description, 5 skills cite it, 0 restatements. `--self-test` 8/8.
+
+## 2026-09-08
+The shared instructions for building these pages now say who is supposed to build them.
+Backlog #89's whole question was whether an agent should be constructing these pages inside the main conversation at all, and the file that describes how the pages work said nothing about who runs it. It does now: the research and writing may be handed to a separate agent, the final check — opening the page and driving it — stays here, and so does announcing the URL. Keeping that last step here is not caution for its own sake; it removes two other problems at once. The page cannot be announced before it has been checked, because whoever checks it is the one who has the address. And it cannot go out describing a decision as pending after you have made it, because the checker is the only participant that cannot be out of date about this conversation.
+<!--tech-->
+**T1 of the #89 design.** `.claude/skills/shared/explainer-delivery.md` gains **§0 — WHO RUNS THIS**, placed before §1 because it governs everything below.
+
+| Step | Who |
+|---|---|
+| research, write the fragment, compose | a fork (optional) — this is the measured cost |
+| **§5b execute and verify** | **the parent, always** |
+| print the URL | the parent |
+| answer a reader's question | the fork, resumed by name |
+
+⛔ **§5b is not delegable**, and the section states the evidence rather than asserting it: two defects in the 2026-09-03 page were visible only by executing it — a `document.hidden` gate producing a false *"0 of 5 buttons reachable"* (a backgrounded tab has 0×0 geometry) and a missing `#modechip` block whose CSS **and** JS both existed. A fork that skips §5b ships a page that looks verified and is not.
+
+The section also records the fork obligations: **name it at spawn** (an unnamed fork is unaddressable and §6's second half has nowhere to go), give it an explicit `as of`, and **write nothing inside the repository** — with the Codex-detector hazard labelled **UNMEASURED**, so the conservative rule stands until T4 runs.
+
+**T2 needs no work and is confirmed by the gate:** `check-explainer-delivery.py` still reports 1 shared description, 5 skills cite it, **0 restatements** — adding a section did not create one. `--self-test` 8/8. Doc 273 → 314 lines.
