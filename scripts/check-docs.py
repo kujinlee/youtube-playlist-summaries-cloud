@@ -579,7 +579,7 @@ def self_test() -> int:
 
     failed = [n for n, ok in cases if not ok]
     for name, ok in cases:
-        print(f"  {'✓' if ok else '✗'} {name}")
+        print(f"  ✓ {name}" if ok else f"  [FAIL] {name}: got {ok!r} want {True!r}")
     print(f"\n{len(cases) - len(failed)}/{len(cases)} passed")
     return 1 if failed else 0
 

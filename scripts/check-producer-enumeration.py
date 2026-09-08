@@ -267,7 +267,8 @@ def self_test() -> int:
             expr, err = defining_expression(os.path.relpath(tmp, ROOT), 1, ident)
             flagged = bool(branches_in(expr)) and not err
             ok = flagged == should_flag
-            print(f"  {'ok  ' if ok else 'FAIL'} {name:<38} flagged={flagged} expected={should_flag}")
+            print(f"  ok   {name:<38} flagged={flagged} expected={should_flag}" if ok
+                  else f"  [FAIL] {name}: got {flagged!r} want {should_flag!r}")
             ran += 1
             failures += 0 if ok else 1
         finally:
@@ -276,7 +277,8 @@ def self_test() -> int:
     for name, src, expect in alias_cases:
         got = bare_alias(src)
         ok = got == expect
-        print(f"  {'ok  ' if ok else 'FAIL'} {name:<38} alias={got!r} expected={expect!r}")
+        print(f"  ok   {name:<38} alias={got!r} expected={expect!r}" if ok
+              else f"  [FAIL] {name}: got {got!r} want {expect!r}")
         ran += 1
         failures += 0 if ok else 1
 
@@ -287,7 +289,8 @@ def self_test() -> int:
     try:
         _, err = defining_expression(os.path.relpath(tmp, ROOT), 1, "k")
         ok = err is not None
-        print(f"  {'ok  ' if ok else 'FAIL'} {'citation on the wrong line is an ERROR':<38} err={bool(err)}")
+        print(f"  ok   {'citation on the wrong line is an ERROR':<38} err={bool(err)}" if ok
+          else f"  [FAIL] citation on the wrong line is an ERROR: got {bool(err)!r} want {True!r}")
         ran += 1
         failures += 0 if ok else 1
     finally:
@@ -295,7 +298,8 @@ def self_test() -> int:
 
     # An unparseable table must exit 2, never 0.
     ok = find_table(["# nothing here", "some prose"]) == []
-    print(f"  {'ok  ' if ok else 'FAIL'} {'no table parsed -> empty (caller exits 2)':<38}")
+    print(f"  ok   {'no table parsed -> empty (caller exits 2)':<38}" if ok
+          else f"  [FAIL] no table parsed -> empty (caller exits 2): got {ok!r} want {True!r}")
     ran += 1
     failures += 0 if ok else 1
 

@@ -279,7 +279,7 @@ def self_test() -> int:
         nonlocal cases, failures
         cases += 1
         ok = got == want
-        print(("  ✓ " if ok else "  ✗ ") + label)
+        print("  ✓ " + label if ok else f"  [FAIL] {label}: got {got!r} want {want!r}")
         failures += 0 if ok else 1
 
     check("shape A parsed", parse("plan-x-r2-codex.md") == ("plan-x", 2, "codex"), True)

@@ -544,7 +544,7 @@ def self_test() -> int:
         nonlocal cases, failures
         cases += 1
         ok = got == want
-        print(("  ✓ " if ok else f"  ✗ [{got!r} != {want!r}] ") + label_)
+        print("  ✓ " + label_ if ok else f"  [FAIL] {label_}: got {got!r} want {want!r}")
         failures += 0 if ok else 1
 
     # objects carry `@digest`; the digest is what makes the verdict about BEHAVIOUR, not names.

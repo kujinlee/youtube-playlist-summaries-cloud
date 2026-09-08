@@ -4727,3 +4727,17 @@ When a guard is put under test, the test breaks it on purpose and checks the gua
 ⚠ **NOT MECHANICAL — do not script it.** The eleven use at least four printer shapes: `{'✓' if ok else '✗'} {name}` (`check-anon-exposure`, `check-docs`), `{'PASS' if ok else 'FAIL'}  {name}` (`check-ci-watched`, `check-plan-task-order`), `{'ok  ' if ok else 'FAIL'} {name:<38} flagged=… expected=…` (`check-producer-enumeration`), plus per-case bespoke forms (`check-paid-caller-arrival` prints `✗ {name} — wanted exit X, got Y`). A uniform substitution would corrupt the ones that differ. Each also has to keep printing `passed` on a green run — contract (3).
 
 Debt now **11** (PRs #249, #250 merged). Remaining: 2 of PR #247's four (`check-paid-caller-arrival` 32 cases, `check-anon-exposure` 74) plus 9 hermetic.
+
+## 2026-09-07
+All eleven guards still owing a safety net can now be tested at all — and proving it needed breaking each one on purpose, because a passing test never runs the code that reports failure.
+Yesterday's finding was that every remaining guard announces its failures in a format the checking tool cannot read, which makes a genuine failure and a guard nobody has tested look identical. All eleven are now fixed. The fix could not be verified by running them, because they all pass — and a passing run never executes the code that prints a failure. So each was forced to fail on purpose and the resulting output was fed through the real parser: 390 failure lines across the eleven, every one readable.
+<!--tech-->
+Contract (1) — a failure line starts with `[FAIL] ` and contains `: got ` — now satisfied by all eleven: `check-anon-exposure`, `check-docs`, `check-ci-watched`, `check-plan-task-order`, `check-producer-enumeration`, `check-paid-caller-arrival`, `check-review-rounds`, `check-catalog-coverage`, `check-live-schema`, `check-test-counts`, `check-roadmap-consistency`.
+
+⭐ **VERIFIED BY FORCING, NOT BY PASSING.** For each guard, its printer's success branch was disabled in a staged copy and the output parsed with `check-plan-code`'s exact rule — `line.strip()[7:].rsplit(": got ", 1)[0]`. Result: **390 parseable case lines, 11/11 guards OK**, every extracted name non-empty. Running the suites green proves only contract (3); it says nothing about a branch it never enters.
+
+⚠ **`check-producer-enumeration` had FOUR printers, not one, and the first sweep fixed one.** The survey that found "one printer per guard" used `grep … | head -3`, and the truncation hid the other three. Caught only because the forced-failure check reported **0 parseable lines** for that guard while the other ten reported plenty. A static token count would have said "conforming=1" and passed. This is the repo's own recorded lesson — grep the concept **without `head`** — and it cost a wrong first answer here.
+
+All 11 suites still green and still print `passed` (contract 3): 74, 13, 22, 16, 11, 32, 27, 15, 117, 27, 26. `check-selftest-counts` verifies all 28 declared counts by running them; `check-docs`, `check-guard-coverage`, `check-ratchet-contract`, `check-plan-code` (194/194) green; ratchet at baseline 11.
+
+This unblocks every remaining manifest. Debt is unchanged at **11** — this PR adds no coverage, it makes coverage measurable.
