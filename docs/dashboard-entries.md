@@ -4713,3 +4713,17 @@ This guard checks that every new database function explicitly withdraws the perm
 ⭐ **`migrations()` was covered by NOTHING.** The self-test's `tree()` helper ended `return sorted(d.glob("*.sql"))` — a second copy of `migrations()` — and every one of the sixteen cases calls `audit(tree({...}))`. The case named *"ordering is by FILENAME, so 0002 sees 0001's function"* therefore tested the fixture's private sort, not the delivered function whose ordering `audit()` depends on. `tree()` now delegates to `migrations(d)`, so a mutation there reaches the cases.
 
 Registration: `EXPECTED_MUTATIONS["scripts/check-function-revokes.py"] = 6`; live sum 253 → 259; want-list; `MANIFEST_BASELINE` 12 → 11. 194/194, ratchet at baseline, 16/16.
+
+## 2026-09-07
+Every one of the eleven guards still owing a safety net announces its failures in a format the checker cannot read — so the next ten attempts would each have failed the same way the last one did.
+When a guard is put under test, the test breaks it on purpose and checks the guard complains. That only works if the complaint is written in the one format the checking tool parses. The guard finished today turned out to use a different format, which made all six of its tests look like they had crashed rather than worked. Rather than fix that one and move on, the same question was asked of every guard still waiting: all eleven have the same problem. Fixing it is a prerequisite for the remaining work, and it is not a find-and-replace — the eleven use at least four different formats between them.
+<!--tech-->
+⭐ **MEASURED 2026-09-07, with a control.** Contract (1) — a failure line must start with `[FAIL] ` and contain `: got ` — is violated by all **eleven** remaining unmanifested guards. Each has **zero** `[FAIL]` literals: `check-paid-caller-arrival`, `check-anon-exposure`, `check-ci-watched`, `check-docs`, `check-plan-task-order`, `check-producer-enumeration`, `check-review-rounds`, `check-roadmap-consistency`, `check-test-counts`, `check-catalog-coverage`, `check-live-schema`.
+
+**CONTROLLED, because a uniform zero is the shape that is usually a broken measurement:** five already-manifested guards — `check-anchors`, `check-sentinel-meanings`, `check-storage-grant-pin`, `check-guard-coverage`, `check-explainer-delivery` — each have exactly **3**. So the zero is the world, not the grep.
+
+**CONSEQUENCE.** `check-plan-code` attributes a kill via `.strip()[7:].rsplit(": got ", 1)[0]`. With no parseable line, a mutation that genuinely kills and a guard with no coverage produce the same observation — reported as CRASH. This is precisely what made `check-function-revokes` score 0/6 on its first verify run (PR #250). The rule binds only once a manifest points at a file, which is why eleven violations sat latent.
+
+⚠ **NOT MECHANICAL — do not script it.** The eleven use at least four printer shapes: `{'✓' if ok else '✗'} {name}` (`check-anon-exposure`, `check-docs`), `{'PASS' if ok else 'FAIL'}  {name}` (`check-ci-watched`, `check-plan-task-order`), `{'ok  ' if ok else 'FAIL'} {name:<38} flagged=… expected=…` (`check-producer-enumeration`), plus per-case bespoke forms (`check-paid-caller-arrival` prints `✗ {name} — wanted exit X, got Y`). A uniform substitution would corrupt the ones that differ. Each also has to keep printing `passed` on a green run — contract (3).
+
+Debt now **11** (PRs #249, #250 merged). Remaining: 2 of PR #247's four (`check-paid-caller-arrival` 32 cases, `check-anon-exposure` 74) plus 9 hermetic.
