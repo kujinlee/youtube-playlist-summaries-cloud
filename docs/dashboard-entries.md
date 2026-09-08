@@ -5104,3 +5104,62 @@ stdout and the evidence block. Spec §4 F7 should also name its subject rather t
 ⚠ A first anchor measurement reported 12 orphaned mutations and was WRONG — it matched the delivered
 repo's manifest against rewired code, when a retarget edits the manifest too. The `--mutate .` run
 refuted it. Measure each tree against its own manifest.
+
+## 2026-09-08
+Three rounds of adversarial review of that same tool are now folded in. Each round was scoped to the
+*previous* round's fixes, which is deliberate: the failure this whole change exists to end is a fix
+that quietly introduces the next defect, and rounds one, two and three each found exactly that.
+
+Round three found four. Two were the same mistake seen twice — a fix applied to one of two places
+the same thing happens, so the path a real document takes was still wrong. Two were the tool
+contradicting itself in the report it leaves behind: one line said a block had been assembled and
+another, four lines below it, said none had; and a run given a flag reported in one sentence that it
+was given and in another that it was not.
+
+All four are fixed, and the fixes are held by tests that fail when reverted rather than by comments
+saying they were checked. One thing is worth flagging honestly: **three review rounds in a row have
+found their defects inside the previous round's fixes.** Our own process says that at four rounds we
+stop patching and review the design instead. We are one round from that line, and the rule for round
+four is written down in advance rather than argued after the fact.
+<!--tech-->
+Fold of `docs/reviews/{claude,coordinator}/plan-coverage-verdict-union-r3-*.md` — 0 Blocking, 4 High,
+2 Medium, 1 Low, three of the four Highs regressions from r2's own fixes.
+
+**H1+H2, one fix.** `extract()` returns a fifth value `mut_readable`; r2's caller-side match on two
+problem STRINGS is deleted. It guarded one of `check()`'s two returns — the one a plan with NO code
+takes — so `declared = len(muts)` still built `Measured(declared=0)` over an unparseable declaration
+on the reachable path. And the string set was already incomplete on three routes (a `FILE_TAG`
+silently clearing `want_mut`; `{}` and `""`, valid JSON extending to nothing with an EMPTY problems
+list). Searching the class found two more: a second `<!-- mutations -->` clobbering the first, and
+`[1, 2]`, whose "names" every `mut.get(...)` would read off a `str`. L1 (`null`/`0` →
+unhandled `TypeError`) has the same cause and is fixed in the same edit. ⚠ Fifth POSITIONAL value,
+not a `tally` key: 19 stale call sites raised `ValueError` at the unpack; a dict key would have been
+silent to miss — the fail-open `coverage_verdict.py` exists to delete.
+
+**H3.** `tally['tagged']` was rendered as "N assembled" while the subject sentence speaks for `files`;
+on a tagged-then-DROPPED block one artifact printed `1 assembled` above `no block was assembled`. The
+count now moves with the file at the drop site, the key is `assembled`, and the drop is stated:
+`(0 assembled, 1 tagged then DROPPED, 0 illustrative)`. Both lines asserted in ONE case.
+
+**H4.** `verify_evidence`'s `mode` read `ctx.compared` (the result) instead of `ctx.compare_requested`
+(the invocation). r1 had corrected it by accident, r2 recorded it as checked-and-clean **in prose**,
+and deleting the `{}` state reverted it with nothing to fail. Both directions cased.
+
+**M1 — the anchor orphaning was called BEFORE the fix, a first on this branch.** Two entries were
+orphaned by this fold and RETARGETED: the r2-H3 anchor (its line is deleted outright) and the
+honest-zero predicate, for the FOURTH time here. `EXPECTED_MUTATIONS["check-plan-code.py"]` 33 → **41**,
+declared sum 362 → **370**; self-test 207 → **223**.
+
+EXECUTED: `stage_tree` complete, control **223/223 green**, then the 10 new/retargeted entries run
+individually — **10/10 caught, measured, 0 survivors, each red via the case it NAMES**. Static anchor
+sweep over all 32 manifests: **375 edits, 0 orphaned, 0 ambiguous**. Full `--mutate .` deferred to CI.
+⚠ One of my own mutations was a NO-OP dressed as a mutation (it re-appended the same message and left
+the flag standing) and reported SURVIVED; running them is what caught it.
+
+**REVIEW GAP: codex** — third consecutive round unavailable (`gpt-5.6-sol/-terra/-luna` all HTTP 400,
+`gpt-5.5` timed out). Treat the Codex pass as NOT RUN, not clean.
+
+⛔ **Round 4 rule, set in advance:** `evidence()` and `verify_evidence()` narrate one run from two
+variables with no shared derivation, and every round so far has fixed one narrator and left the other
+disagreeing. If round 4 produces another self-contradicting artifact, Phase 6 convenes instead of a
+fifth fold.

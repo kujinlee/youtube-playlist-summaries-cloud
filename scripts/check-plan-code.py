@@ -5,7 +5,7 @@
     python3 scripts/check-plan-code.py <plan.md> --evidence # ...and print the evidence block
     python3 scripts/check-plan-code.py <plan.md> --compare .   # ...and diff vs the REAL files
     python3 scripts/check-plan-code.py <plan.md> --verify-evidence   # ...and FAIL if it is stale
-    python3 scripts/check-plan-code.py --self-test          # 207 cases
+    python3 scripts/check-plan-code.py --self-test          # 223 cases
 
 ⚠ `--compare` takes the REPO ROOT, and each file tag is resolved under it as the
 repo-relative path it already is. It took the containing DIRECTORY until round 5,
@@ -168,18 +168,53 @@ def unsafe_tag(name: str) -> bool:
     return p.is_absolute() or ".." in p.parts or not name.strip()
 
 
-def extract(md: str) -> tuple[dict[str, list[str]], list[dict], list[str], dict]:
-    """(files -> blocks, mutations, problems). A tag with no block that follows is a
-    problem, not a silent skip — that is how a plan loses a function to prose."""
+def extract(md: str) -> tuple[dict[str, list[str]], list[dict], list[str], dict, bool]:
+    """(files -> blocks, mutations, problems, tally, mut_readable). A tag with no block
+    that follows is a problem, not a silent skip — that is how a plan loses a function
+    to prose.
+
+    ⭐ THE FIFTH VALUE IS THE FACT, NOT A CONVENTION FOR RECOVERING IT (code review r3,
+    H1 + H2). `mut_readable` is False whenever a mutations declaration was seen and no
+    list of entries came out of it. It exists because the caller cannot tell an honest
+    zero from a lost declaration by looking at `muts`: `[]` is what BOTH produce.
+
+    r2 answered that by string-matching two problem messages at ONE of `check()`'s two
+    return paths. r3 measured the cost of both halves of that shape — three routes reach
+    `muts == []` producing NEITHER string (a file tag silently clearing `want_mut`; a
+    block holding `{}`; a block holding `""`), and the guarded return was the one a plan
+    with no code takes, so a plan WITH code still called an unparseable block a measured
+    zero. A set of strings the caller must keep in sync with the messages the parser
+    happens to emit is a second implementation of one rule, and this project has measured
+    those drifting. The parser knows; it now says so, and there is nothing to keep in sync.
+
+    ⚠ THE POSITION IS THE MECHANISM. A caller that has not been updated raises ValueError
+    on the unpack — loud, at import of the first call. A key in the `tally` dict would
+    have been free to add and silent to miss, which is the dict-shaped fail-open that
+    `coverage_verdict.py` exists to delete.
+    """
     lines, files, muts, problems = md.split("\n"), {}, [], []
     pending, want_mut, illus, i = None, False, None, 0
-    py_total = py_tagged = py_illus = 0
+    mut_readable = True
+    py_total = py_tagged = py_illus = py_dropped = 0
+    tagged_by_name: dict[str, int] = {}
     illus_reasons = []
     while i < len(lines):
         line = lines[i]
         if (m := FILE_TAG.search(line)):
             if pending:
                 problems.append(f"file tag for {pending!r} was followed by another tag, not a block")
+            # ⟳ r3 H2(a). THE FOURTH CLOBBER DIRECTION, and it was the silent one. Three of
+            # the four ways one tag can overwrite another announce themselves — file-over-file
+            # above, file-over-mutations below, and the unterminated mutations tag at the end
+            # of the function. This one cleared `want_mut` and said nothing, so a plan that
+            # declares mutations and then tags a file loses the declaration entirely: no
+            # problem, no entries, and `muts == []` indistinguishable from a plan that
+            # declared none. Measured r3 end to end — the durable block printed
+            # "mutations declared and run: 0" over a plan whose text declares them.
+            if want_mut:
+                problems.append("the mutations tag was followed by a file tag, not a JSON "
+                                "block — the declaration was never read")
+                mut_readable = False
             pending, want_mut = m.group(1), False
         elif (m := ILLUS_TAG.search(line)):
             illus = m.group(1)
@@ -192,6 +227,14 @@ def extract(md: str) -> tuple[dict[str, list[str]], list[dict], list[str], dict]
         elif MUT_TAG.search(line):
             if pending:
                 problems.append(f"file tag for {pending!r} was followed by the mutations tag")
+            # The mutations tag clobbering ITSELF is the same loss by a different route: the
+            # first declaration never gets a block, and the second one's entries are all that
+            # survive. Found by asking what else route (a) is true of, rather than fixing the
+            # instance r3 measured — this project's recorded instance-not-class shape.
+            if want_mut:
+                problems.append("a mutations tag was followed by another mutations tag, not "
+                                "a JSON block — the first declaration was never read")
+                mut_readable = False
             pending, want_mut = None, True
         elif INVISIBLE_FENCE.match(line):
             problems.append(
@@ -210,6 +253,7 @@ def extract(md: str) -> tuple[dict[str, list[str]], list[dict], list[str], dict]
                 py_total += 1
                 if pending:
                     py_tagged += 1
+                    tagged_by_name[pending] = tagged_by_name.get(pending, 0) + 1
                 elif illus:
                     py_illus += 1
                     illus_reasons.append(illus)
@@ -225,10 +269,30 @@ def extract(md: str) -> tuple[dict[str, list[str]], list[dict], list[str], dict]
                 files.setdefault(pending, []).append(text)
                 pending = None
             elif want_mut:
+                # ⟳ r3 H2(b)(c) + L1. `muts.extend(json.loads(text))` accepted ANY iterable
+                # and crashed on the rest. `{}` and `""` are valid JSON that extend to
+                # NOTHING, so a declaration the reader can see became an honest zero with an
+                # EMPTY problems list — the one shape no string set could ever have matched.
+                # `{"a": 1}` was worse: it extended to `['a', 'b']`, entry "names" that are
+                # strings, which every downstream `mut.get(...)` then reads off a str. And
+                # `null` / `0` propagated an unhandled TypeError out of a parser whose whole
+                # contract is to turn a malformed document into a PROBLEM.
+                # One validation, at the point of parsing, answers all four.
                 try:
-                    muts.extend(json.loads(text))
+                    parsed = json.loads(text)
                 except json.JSONDecodeError as exc:
                     problems.append(f"mutations block is not valid JSON: {exc}")
+                    mut_readable = False
+                else:
+                    if isinstance(parsed, list) and all(isinstance(e, dict) for e in parsed):
+                        muts.extend(parsed)
+                    else:
+                        problems.append(
+                            f"mutations block parsed, but it is not a LIST of entry objects "
+                            f"(got {type(parsed).__name__}). A declaration that yields no "
+                            f"entries is not the same as declaring none, and this one would "
+                            f"have read as an honest zero")
+                        mut_readable = False
                 want_mut = False
         i += 1
     if pending:
@@ -249,12 +313,24 @@ def extract(md: str) -> tuple[dict[str, list[str]], list[dict], list[str], dict]
             # did it printed `identical <path>` beside its own `FAILED`. The verdict
             # was right and the side effect was data loss. Round 6, H2 — half a
             # must-change is not a fix.
+            #
+            # ⟳ r3 H3. THE CENSUS MUST FOLLOW THE DROP, or the evidence block contradicts
+            # itself. `tagged` was rendered as "N assembled" while `files` — what the
+            # subject sentence speaks for — no longer held this name, so one block printed
+            # "1 assembled" four lines above "no block was assembled", both true of one run
+            # under two meanings of one word. The count moves with the file: the key is
+            # `assembled` because that is what it now means, and the drop is stated rather
+            # than deducted invisibly (an exclusion nobody can see is the hiding vector).
+            py_dropped += tagged_by_name.get(name, 0)
+            py_tagged -= tagged_by_name.get(name, 0)
             del files[name]
     if want_mut:
         problems.append("mutations tag has no JSON block after it")
+        mut_readable = False
     return files, muts, problems, {"python_fences": py_total,
-                                   "tagged": py_tagged, "illustrative": py_illus,
-                                   "illustrative_reasons": illus_reasons}
+                                   "assembled": py_tagged, "dropped": py_dropped,
+                                   "illustrative": py_illus,
+                                   "illustrative_reasons": illus_reasons}, mut_readable
 
 
 # The home directory every spawned suite sees, relative to the run's own tree.
@@ -701,12 +777,19 @@ EXPECTED_MUTATIONS = {
     # to scripts/coverage_verdict.py with the clauses they guard. The sum below is unchanged
     # at 359, which is the point: a seam that relocates coverage must not be able to look
     # like coverage that was deleted, and only the per-file split can tell those apart.
-    "scripts/check-plan-code.py": 33,   # ⟳ 2026-09-08 r2 M1: +3. The fold added THREE
-    # behaviours and ZERO manifest entries — cases guarded them, nothing in CI did, and a
-    # case is held only by the self-test COUNT ratchet, which sees the number move rather
-    # than the coverage leave. Anchors deliberately quote a rendered message, a predicate
-    # assignment and an initialisation — NOT the branch expression under active revision,
-    # which orphaned a sibling entry TWICE in two commits this same session.
+    "scripts/check-plan-code.py": 41,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
+    # did, and a case is held only by the self-test COUNT ratchet, which sees the number
+    # move rather than the coverage leave.
+    # ⟳⟳ 2026-09-08, r3 M1 — AND THE ANCHOR NOTE ABOVE IT WAS TRUE ON THE WRONG AXIS, which
+    # the reviewer measured on a copy BEFORE the fix rather than predicting it. r2's anchors
+    # avoided the branch expression and landed on `mut_unreadable = any(…)` instead — a
+    # PREDICATE ASSIGNMENT, indented 8 spaces inside `if not files:`, and r3 H1's fix deletes
+    # that line outright. Two entries were orphaned by this fold (that one, and the honest-zero
+    # predicate for the FOURTH time on this branch); both are retargeted here, not adjusted.
+    # The lesson that survives: there is no anchor a rewrite of its own subject cannot break,
+    # so the ratchet is the instrument — every new entry quotes a problem MESSAGE or a whole
+    # statement, and `--mutate .` in CI is what will say if one stops resolving.
     "scripts/coverage_verdict.py": 5,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
@@ -1154,7 +1237,7 @@ def check(plan: pathlib.Path,
           compare: pathlib.Path | None = None
           ) -> tuple[bool, list[str], "Measured | NotMeasured", RunContext]:
     md = plan.read_text(encoding="utf-8")
-    files, muts, problems, tally = extract(md)
+    files, muts, problems, tally, mut_readable = extract(md)
     # ONE contract, TWO producers. `check()` gets the same default-deny `trustworthy` as
     # `mutate_delivered`: code review r2 (both halves) found this path printing a timed-out
     # mutation as `1 survivor(s)` and as `SURVIVED <name>` in the evidence block — the exact
@@ -1208,16 +1291,17 @@ def check(plan: pathlib.Path,
         # narrowed hole was the likelier one in practice, because an unparseable block is
         # what a typo produces. One value, a meaning with an OR in it —
         # `check-sentinel-meanings.py` exists for exactly this shape.
-        # ⚠ Matching on problem STRINGS is itself a convention, and the stronger form is
-        # for `extract()` to return the fact. That is a wider change; this one is
-        # falsifiable today and both fixtures are cased below.
-        mut_unreadable = any(p.startswith("mutations block is not valid JSON")
-                             or p == "mutations tag has no JSON block after it"
-                             for p in problems)
+        # ⟳ code review r3 (H1 + H2). The string set is GONE — `extract()` returns
+        # `mut_readable` and BOTH returns of this function read it. r2 matched two problem
+        # messages here, which was wrong twice over: three routes to a lost declaration
+        # produce neither string, and the return 60 lines below never consulted it at all,
+        # so the path a plan WITH code takes still built `Measured(declared=0)` over an
+        # unparseable block. One predicate, computed by the parser that knows, read at
+        # every exit — see the note on the second one.
         return (False, report,
                 (Measured(files=ev_files, declared=0, mutations=[], survivors=[],
                           controls_green=True)          # explicit — see coverage_verdict H1
-                 if not muts and not mut_unreadable
+                 if not muts and mut_readable
                  else NotMeasured.from_counts([], len(muts), ev_files)),
                 RunContext(tally=tally, compared=compared,
                            compare_requested=compare is not None))
@@ -1273,6 +1357,19 @@ def check(plan: pathlib.Path,
         # outright at :677; this producer merely withholds trust, which is the weaker of
         # the two and the one that keeps `--compare`'s diff report useful.
         try:
+            # ⟳ code review r3, H1. THE SIBLING RETURN, and it was the reachable one. r2
+            # closed the honest-zero hole on the `not files` path and left this one, where
+            # `declared = len(muts)` is `0` for a lost declaration exactly as it is for a
+            # plan that declared none — so `len(mutations) == declared`, clause 2 passes,
+            # and the durable block prints "mutations declared and run: 0" over a plan whose
+            # text declares one. That is r1 H2's sentence, third instance, on the path any
+            # plan WITH code takes. Raised INTO the existing handler rather than branched
+            # around it: one construction, one fallback, and the reason a `Measured` cannot
+            # exist here is stated in the same vocabulary as the three clauses.
+            if not mut_readable:
+                raise VerdictContractError(
+                    "a mutations declaration did not parse, so `declared` counts the "
+                    "entries that survived rather than the ones the plan wrote")
             verdict = Measured(files=ev_files, declared=declared, mutations=m_muts,
                                survivors=m_survivors, controls_green=controls_green)
         except VerdictContractError:
@@ -1304,8 +1401,21 @@ def evidence(v: "Measured | NotMeasured", ctx: RunContext) -> str:
     out = ["```", "GENERATED by scripts/check-plan-code.py — do not edit by hand.", ""]
     tl = ctx.tally
     if tl:
+        # ⟳ code review r3, H3. ONE OWNER FOR THE WORD "assembled", and it is `files`.
+        # This line read `tl['tagged']` — python fences the parser TAGGED — and called the
+        # number "assembled", while the subject sentence below speaks for what survived
+        # into `files`. On a block that is tagged and then DROPPED by the unsafe-tag branch
+        # those are different numbers, and one durable artifact printed "1 assembled" four
+        # lines above "no block was assembled". Master and r1 were each wrong in one
+        # direction and self-consistent; r2's new sentence was the first to make the block
+        # disagree with itself, on r2's own motivating fixture. `extract()` now moves the
+        # count with the file, so the census cannot drift from the sentence — and the drop
+        # is NAMED, because a tagged block that vanishes with no account is the hiding
+        # vector this renderer already refuses for illustrative blocks.
+        dropped = f", {tl['dropped']} tagged then DROPPED" if tl.get("dropped") else ""
         out.append(f"  python fences: {tl['python_fences']} "
-                   f"({tl['tagged']} assembled, {tl['illustrative']} illustrative)")
+                   f"({tl['assembled']} assembled{dropped}, "
+                   f"{tl['illustrative']} illustrative)")
         # What was EXCLUDED, and why. An exclusion nobody can see is the hiding vector.
         for why in tl.get("illustrative_reasons", []):
             out.append(f"    not assembled: {why}")
@@ -1423,8 +1533,17 @@ def verify_evidence(plan: pathlib.Path, v: "Measured | NotMeasured",
     diff = list(difflib.unified_diff(pasted.strip().split("\n"), fresh.split("\n"),
                                      fromfile="pasted in the plan",
                                      tofile="generated by this run", lineterm=""))
-    mode = ("--compare " + str(ctx.compared and "<dir>" or "")).strip() if (
-        ctx.compared) is not None else "(no --compare)"
+    # ⟳ code review r3, H4. `mode` IS A STATEMENT ABOUT THE INVOCATION, so it reads the
+    # FLAG. Keyed off `ctx.compared` — the RESULT — it said "(no --compare)" on a run where
+    # --compare was given and nothing survived to be compared, twelve lines after
+    # `evidence()` printed "--compare was given". That is r4 H1 verbatim, direction flipped:
+    # two lines of one output contradicting each other on the durable half. It reached here
+    # by REVERSION, not by omission — r1's `{}` had incidentally made this line right, r2's
+    # review recorded it as checked-and-clean in PROSE, and deleting the `{}` state undid
+    # the correction with nothing to fail. A prose note is not coverage; the two cases below
+    # are. The `<dir>` detail still comes from the result, because that is what it describes.
+    mode = (("--compare <dir>" if ctx.compared else "--compare")
+            if ctx.compare_requested else "(no --compare)")
     return [f"--verify-evidence: the pasted evidence block is STALE. It describes a "
             f"different run than the one that just happened, which was {mode}. "
             f"⚠ The block is INVOCATION-SPECIFIC: a compared run and a bare run "
@@ -1509,21 +1628,25 @@ def _self_test() -> int:
             ' "edits": [["def f():\\n    return 1", "def f():\\n    return 2"]],'
             ' "expect": "f returns one"}]\n```\n')
 
-    files, muts, probs, tally = extract(GOOD + MUTS)
+    files, muts, probs, tally, _mr = extract(GOOD + MUTS)
     case("one file extracted", list(files), ["m.py"])
     case("one mutation extracted", len(muts), 1)
     case("no problems on a well-formed plan", probs, [])
-    case("the tally counts one tagged python fence", (tally["python_fences"], tally["tagged"]), (1, 1))
-    _f, _m, p2, t2 = extract('```python\nx = 1\n```\n')
+    case("the tally counts one ASSEMBLED python fence, and none dropped",
+         (tally["python_fences"], tally["assembled"], tally["dropped"]), (1, 1, 0))
+    # PRESENCE TWIN for the whole `mut_readable` family below: a well-formed declaration
+    # reports readable, or every one of those cases could pass over a parser stuck at False.
+    case("...and a well-formed mutations declaration reports READABLE", _mr, True)
+    _f, _m, p2, t2, _mr = extract('```python\nx = 1\n```\n')
     case("an UNTAGGED python block is a problem", len(p2), 1)
-    _f, _m, p3, t3 = extract('<!-- illustrative: a fragment, shown for context -->\n'
+    _f, _m, p3, t3, _mr = extract('<!-- illustrative: a fragment, shown for context -->\n'
                              '```python\nx = 1\n```\n')
     case("an explicitly ILLUSTRATIVE block with a reason is not", p3, [])
     case("...and is counted as such", t3["illustrative"], 1)
     case("...and its reason is recorded for the evidence block",
          t3["illustrative_reasons"], ["a fragment, shown for context"])
     # A bare tag excuses a block from every check here with no account of why.
-    _f, _m, p3b, _t = extract('<!-- illustrative -->\n```python\nx = 1\n```\n')
+    _f, _m, p3b, _t, _mr = extract('<!-- illustrative -->\n```python\nx = 1\n```\n')
     # TWO problems, and that is right: the tag is rejected, and the block it was
     # meant to excuse is then simply untagged. Fail closed in both directions.
     case("a BARE illustrative tag (no reason) is a problem", len(p3b), 2)
@@ -1531,14 +1654,45 @@ def _self_test() -> int:
     case("...and the block it failed to excuse is reported as UNTAGGED",
          any("UNTAGGED" in p for p in p3b), True)
 
-    _, _, p, _t = extract('<!-- file: a.py -->\n<!-- file: b.py -->\n```python\nx = 1\n```\n')
+    _, _, p, _t, _mr = extract('<!-- file: a.py -->\n<!-- file: b.py -->\n```python\nx = 1\n```\n')
     case("a tag followed by another tag is a problem", len(p), 1)
-    _, _, p, _t = extract("<!-- file: a.py -->\nno block follows\n")
+    _, _, p, _t, _mr = extract("<!-- file: a.py -->\nno block follows\n")
     case("a tag with no block is a problem", len(p), 1)
-    _, _, p, _t = extract('<!-- file: a.py -->\n```bash\necho hi\n```\n')
+    _, _, p, _t, _mr = extract('<!-- file: a.py -->\n```bash\necho hi\n```\n')
     case("a non-python block under a file tag is a problem", len(p), 1)
-    _, _, p, _t = extract('<!-- mutations -->\n```json\nnot json\n```\n')
+    _, _, p, _t, _mr = extract('<!-- mutations -->\n```json\nnot json\n```\n')
     case("an unparseable mutations block is a problem", len(p), 1)
+    case("...and it reports the declaration as UNREADABLE, not as none declared", _mr, False)
+
+    # ── ⟳ code review r3, H2 + L1. THE ROUTES TO A LOST DECLARATION ────────────────
+    # Every case here reaches `muts == []` from a plan whose text DECLARES mutations.
+    # r2's caller-side string set matched none of them, which is the difference between
+    # a convention and a fact: the parser is the only thing that knows, so it is the only
+    # thing that can say. Each is asserted on BOTH halves — a problem the reader can see,
+    # and the flag the verdict rests on — because a problem with no flag still produced a
+    # measured zero, and a flag with no problem tells the reader nothing.
+    _, _mA, pA, _t, mrA = extract('<!-- mutations -->\n<!-- file: m.py -->\n'
+                                  '```python\nx = 1\n```\n')
+    case("a file tag after the mutations tag LOSES the declaration, and says so",
+         (any("was followed by a file tag" in x for x in pA), mrA, _mA), (True, False, []))
+    _, _mB, pB, _t, mrB = extract('<!-- mutations -->\n<!-- mutations -->\n'
+                                  '```json\n[]\n```\n')
+    case("...and so does a second mutations tag before the first one gets its block",
+         (any("another mutations tag" in x for x in pB), mrB), (True, False))
+    # VALID JSON that is not a list of entries. `muts.extend()` accepted any iterable, so
+    # these produced an EMPTY problems list — the shape no string set could ever match.
+    for _body, _what in [("{}", "an empty object"), ('""', "an empty string"),
+                         ('{"a": 1, "b": 2}', "an object with keys"), ("[1, 2]", "a list of scalars")]:
+        _, _mC, pC, _t, mrC = extract(f'<!-- mutations -->\n```json\n{_body}\n```\n')
+        case(f"valid JSON that is not a list of entries ({_what}) is not an honest zero",
+             (mrC, _mC == [], len(pC)), (False, True, 1))
+    # ⟳ L1. `null` and a bare number crashed with an unhandled TypeError out of the one
+    # function whose contract is to turn a malformed document into a problem. It failed
+    # LOUD, which is why it was Low — but the fix is the same validation, so it lands here.
+    for _body in ["null", "0"]:
+        _, _mD, pD, _t, mrD = extract(f'<!-- mutations -->\n```json\n{_body}\n```\n')
+        case(f"a mutations block holding `{_body}` is a problem, not a TypeError",
+             (mrD, len(pD)), (False, 1))
 
     with tempfile.TemporaryDirectory() as td:
         pl = pathlib.Path(td) / "p.md"
@@ -1598,6 +1752,22 @@ def _self_test() -> int:
         case("...nor is a mutations tag with no JSON block after it",
              isinstance(_nt_v, Measured), False)
 
+        # ⛔ ⟳ code review r3, H1 — THE SIBLING RETURN, AND IT IS THE REACHABLE ONE.
+        # Everything above this line takes the `not files` early return. r2's fix lived
+        # there and nowhere else, so a plan that HAS code — the path any real plan takes —
+        # still reached `declared = len(muts)` and constructed a `Measured` over a
+        # declaration nobody could read. Same fixture family, one file tag apart.
+        pl.write_text(GOOD + '<!-- mutations -->\n```json\n[{"name": "a",},]\n```\n')
+        _h1_ok, _h1_rep, _h1_v, _h1_ctx = check(pl)
+        case("a plan WITH code and an unparseable mutations block is not a measured zero",
+             isinstance(_h1_v, Measured), False)
+        # PRESENCE TWIN — the same path with a READABLE declaration must still measure, or
+        # the fix above is indistinguishable from refusing every plan that has code.
+        pl.write_text(GOOD + MUTS)
+        _h1t_ok, _h1t_rep, _h1t_v, _h1t_ctx = check(pl)
+        case("...while a plan with code and a READABLE declaration still measures it",
+             (isinstance(_h1t_v, Measured), _h1t_v.declared), (True, 1))
+
         # ⛔ THE INVARIANT THAT KEEPS r2 H1's MUTATION DEAD, and it needs its own case.
         # r2 H1 measured that `evidence()`'s `if cmp is None:` -> `if not cmp:` restored the
         # defect. The fix was NOT to add a case distinguishing them — it was to delete the
@@ -1616,6 +1786,44 @@ def _self_test() -> int:
              ("given, but no block was assembled" in evidence(_ev_v, _ev_ctx),
               "DIFFED against the delivered files" in evidence(_ev_v, _ev_ctx)),
              (True, False))
+
+        # ⛔ ⟳ code review r3, H3 — BOTH LINES OF ONE BLOCK, ASSERTED TOGETHER, and the
+        # reviewer named that requirement explicitly. Each line was separately defensible:
+        # the census said "1 assembled" of a fence the parser tagged, the subject said "no
+        # block was assembled" of what survived into `files`, and one word carried both
+        # meanings four lines apart in the durable artifact. A case asserting either alone
+        # passes over the contradiction, which is how it shipped — so the ASSERTION is the
+        # pair. Same fixture as above: r2 H2's own motivating case.
+        _h3_census = evidence(_ev_v, _ev_ctx)
+        case("the census and the subject sentence cannot contradict each other",
+             ("(0 assembled, 1 tagged then DROPPED, 0 illustrative)" in _h3_census,
+              "no block was assembled" in _h3_census),
+             (True, True))
+        # PRESENCE TWIN — a block that IS assembled says so, and names no drop. Without
+        # this the census could hardcode zero and the case above would still pass.
+        pl.write_text(GOOD)
+        _as_ok, _as_rep, _as_v, _as_ctx = check(pl)
+        _as_block = evidence(_as_v, _as_ctx)
+        case("...and an assembled block is counted as assembled, with no DROPPED clause",
+             ("(1 assembled, 0 illustrative)" in _as_block, "DROPPED" in _as_block),
+             (True, False))
+
+        # ⛔ ⟳ code review r3, H4 — `verify_evidence`'s mode is a statement about the
+        # INVOCATION. Keyed off the RESULT it printed "(no --compare)" on a run whose own
+        # evidence block, rendered twelve lines earlier by the sibling function, said
+        # "--compare was given". Both directions are cased because r1 had this line right
+        # by accident and r2 reverted it with nothing to fail: a checked-and-clean note in
+        # prose is not coverage, and this pair is the difference.
+        pl.write_text('<!-- file: ../evil.py -->\n```python\ndef f():\n    return 1\n```\n'
+                      '\n```\n' + EV_MARK + '\nstale, and deliberately so\n```\n')
+        _m1_ok, _m1_rep, _m1_v, _m1_ctx = check(pl, pathlib.Path(td))
+        _m1 = " ".join(verify_evidence(pl, _m1_v, _m1_ctx))
+        _m2_ok, _m2_rep, _m2_v, _m2_ctx = check(pl)
+        _m2 = " ".join(verify_evidence(pl, _m2_v, _m2_ctx))
+        case("a --compare run with nothing assembled reports the mode it was GIVEN",
+             ("which was --compare." in _m1, "(no --compare)" in _m1), (True, False))
+        case("...while a bare run still reports (no --compare)",
+             "(no --compare)" in _m2, True)
 
         # A script with no entrypoint exits 0 and prints nothing — r3's Blocking.
         pl.write_text('<!-- file: m.py -->\n```python\ndef f():\n    return 1\n```\n')
@@ -1791,7 +1999,7 @@ def _self_test() -> int:
 
         # ── --compare: the delivered files are the subject, or nothing is ────
         pl.write_text(GOOD + MUTS)
-        files, _m, _p, _t = extract(GOOD + MUTS)
+        files, _m, _p, _t, _mr = extract(GOOD + MUTS)
         assembled = "\n\n".join(files["m.py"]) + "\n"
         shipped = pathlib.Path(td) / "shipped"
         shipped.mkdir()
@@ -1866,7 +2074,7 @@ def _self_test() -> int:
 
         # Tags that escape the assembly directory.
         for bad_tag in ("../escape.py", "/tmp/abs.py"):
-            _f, _m, esc, _t = extract(GOOD.replace("m.py", bad_tag, 1))
+            _f, _m, esc, _t, _mr = extract(GOOD.replace("m.py", bad_tag, 1))
             case(f"a file tag of {bad_tag!r} is refused",
                  any("escapes" in p for p in esc), True)
 
@@ -2126,7 +2334,7 @@ def _self_test() -> int:
     # N lands on a source already carrying 1…N-1 and `caught` stops meaning anything.
     ORDER = ('<!-- file: o.py -->\n```python\nFIRST = 1\n```\n\n'
              '<!-- file: o.py -->\n```python\nSECOND = 2\n```\n')
-    files_o, _m, _p, _t = extract(ORDER)
+    files_o, _m, _p, _t, _mr = extract(ORDER)
     case("blocks are concatenated in DOCUMENT order", files_o["o.py"],
          ["FIRST = 1", "SECOND = 2"])
 
@@ -2151,7 +2359,7 @@ def _self_test() -> int:
     for label, fixture in (
             ("indented", "<!-- file: m.py -->\n```python\nx = 1\n```\n\n    ```python\n    1/0\n    ```\n"),
             ("info-string", "<!-- file: m.py -->\n```python\nx = 1\n```\n\n```python title=foo\n1/0\n```\n")):
-        _f, _m, fp, _t = extract(fixture)
+        _f, _m, fp, _t, _mr = extract(fixture)
         case(f"a {label} python fence is REPORTED, not skipped in silence",
              any("cannot see" in p for p in fp), True)
 
@@ -2242,12 +2450,12 @@ def _self_test() -> int:
              'DOC = """\n    ```\n    not a fence\n    """\n\n\n'
              'def _self_test():\n    print("1/1 passed")\n    return 0\n\n\n'
              'import sys\nif __name__ == "__main__":\n    sys.exit(_self_test())\n```\n')
-    _f, _m, inner_p, inner_t = extract(INNER)
+    _f, _m, inner_p, inner_t, _mr = extract(INNER)
     case("an INDENTED ``` inside a python block does not close it",
          [inner_t["python_fences"], inner_p], [1, []])
 
     # ── a file tag written into PROSE is not a tag (FILE_TAG anchoring, M4) ──
-    _f, _m, ft, _t = extract("Tag it with `<!-- file: gen-dashboard.py -->` above the block.\n"
+    _f, _m, ft, _t, _mr = extract("Tag it with `<!-- file: gen-dashboard.py -->` above the block.\n"
                              + GOOD + MUTS)
     case("a file tag quoted in prose is not parsed as a tag", ft, [])
 
@@ -2353,7 +2561,7 @@ def _self_test() -> int:
     # the tag merely mentioned and nothing after it, the later real manifest resets
     # `want_mut` and the run is identical either way — an earlier version of this
     # case asserted exactly that and the unanchored mutant walked through it.
-    _f, _m, mt, _t = extract(
+    _f, _m, mt, _t, _mr = extract(
         "Declare them under `<!-- mutations -->` in one block.\n\n"
         "```json\n{\"not\": \"the manifest\",}\n```\n" + GOOD + MUTS)
     case("a mutations tag quoted in prose does not claim the next json block", mt, [])
@@ -2364,10 +2572,10 @@ def _self_test() -> int:
     # that cannot be followed. The repo already contains the idiom.
     QUOTED = (GOOD + "\nAn example of the convention:\n\n"
               "````md\n<!-- file: x.py -->\n```python\nx = 1\n```\n````\n")
-    _f, _m, qp, _t = extract(QUOTED)
+    _f, _m, qp, _t, _mr = extract(QUOTED)
     case("a FOUR-backtick fence quoting a python fence raises no problem", qp, [])
     for lang in ("```c++", "```{r}", "```objective-c"):
-        _f, _m, lp, _t = extract(GOOD + f"\n{lang}\nsomething\n```\n")
+        _f, _m, lp, _t, _mr = extract(GOOD + f"\n{lang}\nsomething\n```\n")
         case(f"a {lang!r} fence is somebody else's fence, not a defect", lp, [])
 
     # ── the evidence block's per-file result line (L1) ──
@@ -2414,12 +2622,12 @@ def _self_test() -> int:
     # read as a tag, the UNTAGGED complaint is still raised — plus a spurious
     # "needs a REASON" one — so `any(UNTAGGED)` cannot tell the two apart, and an
     # earlier version of this case let the unanchored mutant through.
-    _f, _m, pr1, _t = extract(
+    _f, _m, pr1, _t, _mr = extract(
         "Mark it `<!-- illustrative -->` to exclude a block.\n"
         "```python\nx = 1\n```\n")
     case("prose mentioning the BARE tag raises ONE problem, not two",
          [len(pr1), any("UNTAGGED" in p for p in pr1)], [1, True])
-    _f, _m, pr2, _t = extract(
+    _f, _m, pr2, _t, _mr = extract(
         "Give a reason, as in `<!-- illustrative: why -->`.\n"
         "```python\nx = 1\n```\n")
     case("prose mentioning the REASON form does not excuse the block after it",
@@ -3010,7 +3218,7 @@ def _self_test() -> int:
     # three behaviours the r1/r2 folds added and left case-guarded but manifest-less. This
     # total is a LIVE sum that moves whenever coverage does — RISING is the permitted
     # direction; the ratchet exists so it cannot fall silently.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 362)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 370)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

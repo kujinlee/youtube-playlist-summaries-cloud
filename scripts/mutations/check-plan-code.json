@@ -4,8 +4,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        return 2, (f\"CANNOT RUN — {name} --self-test did not finish in \"",
-        "        return 1, (f\"CANNOT RUN — {name} --self-test did not finish in \""
+        "        return 2, (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \"",
+        "        return 1, (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \""
       ]
     ],
     "expect": "a hung suite is rc 2, distinct from both pass and fail"
@@ -70,8 +70,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            if not control_is_green(rc, out):\n                report.append(f\"CANNOT RUN — control run of ",
-        "            if False:\n                report.append(f\"CANNOT RUN — control run of "
+        "            if not control_is_green(rc, out):\n                report.append(f\"CANNOT RUN \u2014 control run of ",
+        "            if False:\n                report.append(f\"CANNOT RUN \u2014 control run of "
       ]
     ],
     "expect": "a RED control is refused, not reported as catches"
@@ -114,7 +114,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        return \"CANNOT RUN — the docstring no longer declares a case count.\"",
+        "        return \"CANNOT RUN \u2014 the docstring no longer declares a case count.\"",
         "        return None"
       ]
     ],
@@ -173,7 +173,7 @@
         "        for name, blocks in files.items():"
       ]
     ],
-    "expect": "a PLAN suite may still write to Path.home() — the redirect is not a broken home"
+    "expect": "a PLAN suite may still write to Path.home() \u2014 the redirect is not a broken home"
   },
   {
     "name": "the exemption marker needs no written reason",
@@ -259,7 +259,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                 if not muts and not mut_unreadable",
+        "                 if not muts and mut_readable",
         "                 if False"
       ]
     ],
@@ -343,12 +343,12 @@
     "expect": "...it says the one honest thing: given, but nothing was assembled"
   },
   {
-    "name": "an UNREADABLE mutations declaration is treated as an honest zero (r2 H3)",
+    "name": "an UNREADABLE mutations declaration is treated as an honest zero (r2 H3, retargeted r3)",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        mut_unreadable = any(p.startswith(\"mutations block is not valid JSON\")",
-        "        mut_unreadable = False and any(p.startswith(\"mutations block is not valid JSON\")"
+        "                    problems.append(f\"mutations block is not valid JSON: {exc}\")\n                    mut_readable = False",
+        "                    problems.append(f\"mutations block is not valid JSON: {exc}\")"
       ]
     ],
     "expect": "a plan whose mutations block does not PARSE is not an honest zero"
@@ -363,5 +363,93 @@
       ]
     ],
     "expect": "a DROPPED block with --compare leaves `compared` None, never an empty dict"
+  },
+  {
+    "name": "the return a plan WITH code takes stops reading `mut_readable` (r3 H1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if not mut_readable:",
+        "            if False and mut_readable:"
+      ]
+    ],
+    "expect": "a plan WITH code and an unparseable mutations block is not a measured zero"
+  },
+  {
+    "name": "a file tag silently clears the mutations tag again (r3 H2a)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                problems.append(\"the mutations tag was followed by a file tag, not a JSON \"\n                                \"block \u2014 the declaration was never read\")\n                mut_readable = False",
+        "                pass"
+      ]
+    ],
+    "expect": "a file tag after the mutations tag LOSES the declaration, and says so"
+  },
+  {
+    "name": "a second mutations tag silently replaces the first declaration (r3 H2a, sibling)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                problems.append(\"a mutations tag was followed by another mutations tag, not \"\n                                \"a JSON block \u2014 the first declaration was never read\")\n                mut_readable = False",
+        "                pass"
+      ]
+    ],
+    "expect": "...and so does a second mutations tag before the first one gets its block"
+  },
+  {
+    "name": "any iterable is accepted as a mutations declaration again (r3 H2b)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                    if isinstance(parsed, list) and all(isinstance(e, dict) for e in parsed):",
+        "                    if hasattr(parsed, \"__iter__\") and all(isinstance(e, dict) for e in parsed):"
+      ]
+    ],
+    "expect": "valid JSON that is not a list of entries (an empty object) is not an honest zero"
+  },
+  {
+    "name": "a list of non-entries is accepted as a declaration again (r3 H2c)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                    if isinstance(parsed, list) and all(isinstance(e, dict) for e in parsed):",
+        "                    if isinstance(parsed, list):"
+      ]
+    ],
+    "expect": "valid JSON that is not a list of entries (a list of scalars) is not an honest zero"
+  },
+  {
+    "name": "the census stops following the DROP, so `assembled` means two things (r3 H3)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            py_tagged -= tagged_by_name.get(name, 0)",
+        "            pass"
+      ]
+    ],
+    "expect": "the census and the subject sentence cannot contradict each other"
+  },
+  {
+    "name": "verify_evidence keys its mode off the RESULT again (r3 H4)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if ctx.compare_requested else \"(no --compare)\")",
+        "            if ctx.compared is not None else \"(no --compare)\")"
+      ]
+    ],
+    "expect": "a --compare run with nothing assembled reports the mode it was GIVEN"
+  },
+  {
+    "name": "the EARLY return stops reading `mut_readable` (r3 H1, consumer half)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                 if not muts and mut_readable",
+        "                 if not muts"
+      ]
+    ],
+    "expect": "a plan whose mutations block does not PARSE is not an honest zero"
   }
 ]
