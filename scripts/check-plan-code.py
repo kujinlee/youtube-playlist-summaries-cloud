@@ -614,6 +614,17 @@ EXPECTED_MUTATIONS = {
     "scripts/check-anchors.py": 5,
     "scripts/check-arch-findings.py": 5,
     "scripts/check-banner-armed.py": 8,
+    # ⟳ 2026-09-07, R4 manifest debt 8 -> 7. FIVE of the seven cover rules the 15 shipped cases
+    # already asserted; the other two are the gaps writing them found, and both are the same
+    # shape — a claim about coverage that nothing executed:
+    #   * `_moved_problems_for`'s unreadable-harness branch was driven by NO case, so `return []`
+    #     in its place was a fail-open. "Cannot run" reported as clean is the failure this repo
+    #     has now paid for four times, and it was sitting inside the script whose entire purpose
+    #     is to stop "covered elsewhere" claims going unverified.
+    #   * the ACL regex is written TWICE (EXCLUDED and MOVED_COVERAGE) and nothing checked the
+    #     two agree. The case that looked like it did — `any("relacl" in pat …)` — is a SUBSTRING
+    #     test on the pattern text, so either copy could narrow while it stayed green.
+    "scripts/check-catalog-coverage.py": 7,
     "scripts/gen-dashboard.py": 64,
     "scripts/page_markup.py": 14,
     # ⟳ 2026-09-01, backlog #78: 18 -> 23. The entry gate now answers TWO questions
@@ -2560,6 +2571,7 @@ def _self_test() -> int:
                                       "scripts/check-anchors.py",
                                       "scripts/check-arch-findings.py",
                                       "scripts/check-banner-armed.py",
+                                      "scripts/check-catalog-coverage.py",
                                       "scripts/check-dashboard-entry.py",
                                       "scripts/check-docs.py",
                                       # ⟳ 2026-09-06: the FIRST payment against the R4 manifest
@@ -2679,7 +2691,7 @@ def _self_test() -> int:
     # off against the R4 manifest debt (MANIFEST_BASELINE 21 -> 20 in the same commit, because
     # that ratchet is an exact match and not a ceiling). This total is a LIVE sum, so it moves
     # whenever coverage does; it is not one of the counts pinned to a past measurement.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 274)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 281)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
