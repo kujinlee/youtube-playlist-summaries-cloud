@@ -283,17 +283,32 @@ def extract(md: str) -> tuple[dict[str, list[str]], list[dict], list[str], dict,
                 except json.JSONDecodeError as exc:
                     problems.append(f"mutations block is not valid JSON: {exc}")
                     mut_readable = False
+                # ⚠ TWO RULES, TWO BRANCHES, and the split was forced by a GUARD rather than
+                # chosen — which is the interesting part. Written as one conjunction, the two
+                # mutations that pin it had to quote the same line, and `run_mutations` refuses
+                # an entry that repeats an earlier entry's anchor ("it measures nothing new").
+                # CI said so; a local sweep checking only "resolves exactly once" did not,
+                # because it was a second implementation of the tool's rule and weaker than it.
+                # They ARE two rules — "a declaration is a list" and "its elements are entries"
+                # — and each now says which one failed.
                 else:
-                    if isinstance(parsed, list) and all(isinstance(e, dict) for e in parsed):
-                        muts.extend(parsed)
-                    else:
+                    if not isinstance(parsed, list):
                         problems.append(
-                            f"mutations block parsed, but it is not a LIST of entry objects "
-                            f"(got {type(parsed).__name__}). A declaration that yields no "
-                            f"entries is not the same as declaring none, and this one would "
-                            f"have read as an honest zero")
+                            f"mutations block parsed, but it is not a LIST (got "
+                            f"{type(parsed).__name__}). A declaration that yields no entries "
+                            f"is not the same as declaring none, and this one would have read "
+                            f"as an honest zero")
                         mut_readable = False
+                    elif not all(isinstance(entry, dict) for entry in parsed):
+                        problems.append(
+                            "mutations block is a list, but its elements are not entry "
+                            "objects. `extend` would have taken them one by one, so every "
+                            "`mut.get(...)` downstream would read a field off a str")
+                        mut_readable = False
+                    else:
+                        muts.extend(parsed)
                 want_mut = False
+
         i += 1
     if pending:
         problems.append(f"file tag for {pending!r} has no code block after it")
@@ -1298,10 +1313,15 @@ def check(plan: pathlib.Path,
         # so the path a plan WITH code takes still built `Measured(declared=0)` over an
         # unparseable block. One predicate, computed by the parser that knows, read at
         # every exit — see the note on the second one.
+        # ⚠ NAMED, for the same reason the parse validation above is split in two: the rule
+        # ("nothing was declared, AND nothing was lost") and the branch that acts on it are
+        # two things, and a manifest cannot pin both while they share one line. The name is
+        # also what forty lines of comment above have been calling it.
+        honest_zero = not muts and mut_readable
         return (False, report,
                 (Measured(files=ev_files, declared=0, mutations=[], survivors=[],
                           controls_green=True)          # explicit — see coverage_verdict H1
-                 if not muts and mut_readable
+                 if honest_zero
                  else NotMeasured.from_counts([], len(muts), ev_files)),
                 RunContext(tally=tally, compared=compared,
                            compare_requested=compare is not None))

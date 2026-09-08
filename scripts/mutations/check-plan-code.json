@@ -259,7 +259,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                 if not muts and mut_readable",
+        "                 if honest_zero",
         "                 if False"
       ]
     ],
@@ -402,8 +402,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                    if isinstance(parsed, list) and all(isinstance(e, dict) for e in parsed):",
-        "                    if hasattr(parsed, \"__iter__\") and all(isinstance(e, dict) for e in parsed):"
+        "                    if not isinstance(parsed, list):",
+        "                    if not hasattr(parsed, \"__iter__\"):"
       ]
     ],
     "expect": "valid JSON that is not a list of entries (an empty object) is not an honest zero"
@@ -413,8 +413,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                    if isinstance(parsed, list) and all(isinstance(e, dict) for e in parsed):",
-        "                    if isinstance(parsed, list):"
+        "                    elif not all(isinstance(entry, dict) for entry in parsed):",
+        "                    elif False:"
       ]
     ],
     "expect": "valid JSON that is not a list of entries (a list of scalars) is not an honest zero"
@@ -446,8 +446,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                 if not muts and mut_readable",
-        "                 if not muts"
+        "        honest_zero = not muts and mut_readable",
+        "        honest_zero = not muts"
       ]
     ],
     "expect": "a plan whose mutations block does not PARSE is not an honest zero"
