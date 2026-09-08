@@ -37,6 +37,7 @@ failure, not a placeholder — allocate the name when the first document needs i
 | `corrections-in-cloud` | — | A cloud user corrects a summary and gets the same result a local user would. |
 | `prod-smoke` | — | Every deploy is proven by machine to serve the real application, against the deployed URL. |
 | `status-visibility` | — | A person who was away can see the current state, what changed, and what needs them — without reading the chat transcript. |
+| `explanation-on-demand` | — | A person working now can have a subject they choose — a change, a concept, or a set of findings — explained in a page they can read and ask questions inside. |
 
 ## Declaring the anchor in a document
 

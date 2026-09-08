@@ -4917,3 +4917,19 @@ The other targets are this file's own documented history, now executable rather 
 - the `accepted-additions.txt` exit, without which a legitimate later migration turns the gate permanently red with no remedy.
 
 Registration: `EXPECTED_MUTATIONS["scripts/check-live-schema.py"] = 12`; live sum 347 → 359; sorted want-list (31 entries); **`MANIFEST_BASELINE` 1 → 0** — `check-ratchet-contract.py` now prints `ratchet contract OK` with zero violations, for the first time since the R4 rule was written.
+
+## 2026-09-08
+A design is drafted for how these explanation pages should be built — and checking its stated precondition found the earlier fix has never actually done its job.
+The question backlog #89 asks: these pages exist to help you follow what is happening, they are not the work itself, so should an agent be building them inside the main conversation at all? The draft says: hand the expensive research and writing to a separate agent, but keep the final step — actually opening the page in a browser and checking it works — in the main thread. That is deliberate. Twice, defects were invisible in the source and only appeared when the page was run; a helper that skips that step reports success it has not earned. Keeping verification here also means the page cannot go out stale, because the one participant that cannot be out of date about this conversation is this conversation.
+
+Along the way: a fix from four days ago was supposed to make every page save its own source alongside it, so a question asked tomorrow can be answered in the page. The code does that unconditionally. Across 47 files, exactly two sources exist — and both belong to the two pages that a hook regenerates, never to the ones an agent writes, which is the group the fix was for. One page written after the fix landed still has no source beside it. This needs closing before anything else here is built.
+<!--tech-->
+`docs/superpowers/specs/2026-09-08-observability-execution-mode-design.md` — **v1 DRAFT, nothing implemented.** Answers backlog #89's questions (1), (2), (3), (5). New anchor **`explanation-on-demand`** allocated (`check-anchors.py`: 11 registered, all claimed, floor 22 held).
+
+⚠ **The anchor is NEW, not a widening.** `status-visibility` is scoped to *"a person who was AWAY"*; `explain-diff` / `explain-topic` / `explain-findings` serve someone who is HERE and chose the subject. One name for two readers is how a goal stops being falsifiable.
+
+**MEASURED — #88's precondition is cleared in code, unproven in practice:** `frag_out.write_text` entered `brief-compose.py` at `65cd509e` (2026-09-04 15:28), unconditional. `~/explainers/` holds **47 files, 32 brief pages, 2 fragments** — and both fragments are `dashboard`/`goals`, the hook-regenerated Group B. **Zero brief fragments**, including a page written 2026-09-05 10:14, after the fix. #88's own falsifier still fails for every brief page on disk. That is **T0**, and it blocks the rest.
+
+**The deviation from #89's sketch, and why.** #89 proposed the fork do everything then `SendMessage({to: "main"})` after §5b. This draft splits it: **fork builds, parent verifies and announces.** The measured cost is research and drafting (22,576-byte fragment × 5 rewrites, 986,929-byte page, ten ratchet runs); browser verification is a few tool calls. Forking the expensive half captures nearly all the saving while keeping the step that caught the `document.hidden` false negative and the missing `#modechip` block — neither visible in source. It also **dissolves question (1)**: the parent verifies, so it already holds the URL, and no path exists where an unverified page is announced.
+
+**§5 is a HYPOTHESIS, labelled as one** — a fork writing only under `~/explainers/` should not trip the Codex overwrite detector, but that is unreproduced. Until T4 measures it, the conservative rule stands: do not build a page beside a Codex review.
