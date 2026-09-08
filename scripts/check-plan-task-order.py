@@ -23,7 +23,7 @@ WHAT IT CANNOT SEE — stated, not assumed:
 
 Usage:
     python3 scripts/check-plan-task-order.py [PLAN.md ...]     # default: the slice A plan
-    python3 scripts/check-plan-task-order.py --self-test       # 16 cases
+    python3 scripts/check-plan-task-order.py --self-test       # 21 cases
 """
 from __future__ import annotations
 
@@ -191,6 +191,15 @@ def _self_test() -> int:
          identifiers_in("a required third `opts` argument; status is `ok`") == set())
     case("a lowercase symbol shown being called IS a symbol",
          identifiers_in("`promote(key)`") == {"promote"})
+    # ⟳ 2026-09-07 — MEASURED, not read: the two cases above pass with their OWN guards deleted.
+    # `lib/html-doc/parse.ts` and `parse.ts:42` are both stopped by the lowercase-prose rule below,
+    # so the `"/" in span` test and the file:line regex were each named by a case that could not
+    # fail. They only bite when the first segment is CAPITALISED, which no fixture used:
+    # without them, `MyModule/index.ts` yields `MyModule` and `Parse.ts:42` yields `Parse`.
+    case("a path whose first segment is CAPITALISED still names no symbol",
+         identifiers_in("see `MyModule/index.ts`") == set())
+    case("a citation whose file is CAPITALISED still names no symbol",
+         identifiers_in("at `Parse.ts:42`") == set())
 
     # -- parse_plan ----------------------------------------------------------------------------
     plan = """
@@ -203,6 +212,8 @@ def _self_test() -> int:
   - `type Beta = 'x' | 'y'`
   - `const Gamma = 1`
 
+Prose sitting directly after a LIVE Produces block, mentioning `OmegaProse`.
+
 - [ ] **Step 1**
 
 ### Task 2: B
@@ -213,9 +224,9 @@ def _self_test() -> int:
   - `zeta(): void` from Task 3.
 - Produces:
   - `function delta(): void`
-- **Unchanged, deliberately:** `epsilon`. Do not touch it.
+- **Unchanged, deliberately:** `Epsilon`. Do not touch it.
 
-Some prose mentioning `omega` that is not an interface at all.
+Some prose mentioning `Omega` that is not an interface at all.
 
 - [ ] **Step 1**
 
@@ -235,9 +246,15 @@ Some prose mentioning `omega` that is not an interface at all.
          produces.get(1) == {"alpha", "Beta", "Gamma"})
     case("Consumes sub-bullets captured", consumes.get(2) == {"alpha", "zeta"})
     case("a non-Produces top-level bullet is not a Produces",
-         "epsilon" not in produces.get(2, set()))
-    case("un-indented prose ends the block", "omega" not in produces.get(2, set())
-         and "omega" not in consumes.get(2, set()))
+         "Epsilon" not in produces.get(2, set()))
+    case("un-indented prose ends the block", "Omega" not in produces.get(2, set())
+         and "Omega" not in consumes.get(2, set()))
+    # ⟳ 2026-09-07 — MEASURED: the case above passes with the prose branch DELETED. In Task 2 the
+    # `- **Unchanged, deliberately:**` bullet already reset the mode one line earlier, so `omega`
+    # was never reachable and the branch it is named for was never exercised. Task 1 now puts
+    # prose directly after a LIVE `- Produces:`, which is the only shape that tests it.
+    case("un-indented prose ends a LIVE Produces block",
+         "OmegaProse" not in produces.get(1, set()))
 
     refs = forward_refs(produces, consumes, preexisting=set())
     case("forward reference detected",
@@ -245,6 +262,13 @@ Some prose mentioning `omega` that is not an interface at all.
     case("backward reference is fine", not any("alpha" in r for r in refs))
     case("a symbol that already exists in the repo is not a forward reference",
          forward_refs(produces, consumes, preexisting={"zeta"}) == [])
+    # ⟳ 2026-09-07 — MEASURED: `all(t > num for t in owners)` was UNFALSIFIABLE. Every symbol in
+    # the fixture above has exactly ONE producer, and with one owner `all` and `any` agree, as do
+    # `>` and `>=`. The rule is "produced ONLY later" — both halves of that need a case.
+    case("a symbol produced both EARLIER and later is not a forward reference",
+         forward_refs({1: {"X"}, 3: {"X"}}, {2: {"X"}}, preexisting=set()) == [])
+    case("a task consuming what it also produces is not a forward reference",
+         forward_refs({2: {"Y"}}, {2: {"Y"}}, preexisting=set()) == [])
 
     # -- fail-closed ---------------------------------------------------------------------------
     empty_p, empty_c = parse_plan("### Task 1: A\n\nNo interfaces block here.\n")
