@@ -1,0 +1,158 @@
+[
+  {
+    "name": "an unrecognised filename stops being unparsed and is invented into a review half, so junk in the directory pairs with real work",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "            return m.group(\"subject\"), int(m.group(\"round\")), m.group(\"who\")\n    return None",
+        "            return m.group(\"subject\"), int(m.group(\"round\")), m.group(\"who\")\n    return (\"x\", 1, \"claude\")"
+      ]
+    ],
+    "expect": [
+      "no round number -> unparsed"
+    ]
+  },
+  {
+    "name": "a REVIEW GAP line no longer needs a REASON, so `REVIEW GAP: codex —` with nothing after it excuses a missing half",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "[*_\\s]*(\\S.*?)[*_\\s]*$",
+        "[*_\\s]*(.*?)[*_\\s]*$"
+      ]
+    ],
+    "expect": [
+      "gap line needs a reason"
+    ]
+  },
+  {
+    "name": "gap lines stop being found at all, so the documented Codex-down escape hatch silently stops working and every legitimate solo half fails",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "    return f\"{m.group(1)}: {m.group(2).strip()}\" if m else None",
+        "    return None"
+      ]
+    ],
+    "expect": [
+      "gap line found"
+    ]
+  },
+  {
+    "name": "every verdict is treated as a gate that RAN, so a failed Codex run whose artifact was filed anyway is no longer caught — backlog #68(d)'s whole purpose",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "        if rec.get(\"gate_ran\"):\n            continue",
+        "        if True:\n            continue"
+      ]
+    ],
+    "expect": [
+      "a failed gate with its artifact filed anyway is caught"
+    ]
+  },
+  {
+    "name": "`gate_ran` is RE-DERIVED from exit_code — a second implementation of the wrapper's rule, which is exactly what the docstring says must not happen",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "rec.get(\"gate_ran\")",
+        "rec.get(\"exit_code\") == 0"
+      ]
+    ],
+    "expect": [
+      "exit_code is not consulted"
+    ]
+  },
+  {
+    "name": "a failed gate is reported even when it left NO artifact, so the check accuses a run that correctly wrote nothing",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "        if review in review_names:",
+        "        if True:"
+      ]
+    ],
+    "expect": [
+      "a failed gate that left NO artifact is not a contradiction"
+    ]
+  },
+  {
+    "name": "a verdict with no `gate_ran` field is accepted instead of reported, so testimony that cannot say whether the gate ran is read as saying it did",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "        if not isinstance(rec, dict) or \"gate_ran\" not in rec:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "malformed and field-less verdicts are reported, not skipped"
+    ]
+  },
+  {
+    "name": "an unreadable verdict file is skipped silently rather than reported, so a corrupt record is indistinguishable from one that was never written",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "            bad.append(f\"{p.name}: unreadable ({exc})\")",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "malformed and field-less verdicts are reported, not skipped"
+    ]
+  },
+  {
+    "name": "`verdicts/` is scanned for review halves, so JSON testimony is audited as if it were a review",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "        if d.name == VERDICT_DIRNAME:\n            continue",
+        "        if False:\n            continue"
+      ]
+    ],
+    "expect": [
+      "verdicts/ is not scanned for review halves"
+    ]
+  },
+  {
+    "name": "a basename filed in TWO layouts is silently deduped instead of reported — the collision that overwrites, which counting what survived can never find",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "        if p.name in seen:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "the same half filed in two places is REPORTED, not silently deduped"
+    ]
+  },
+  {
+    "name": "per-writer subdirectories stop being read, so every half filed the NEW way is invisible and its round looks unreviewed",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "        nested.extend(sorted(d.glob(\"*.md\")))",
+        "        nested.extend([])"
+      ]
+    ],
+    "expect": [
+      "…and the nested pair was actually SEEN, not merely un-complained-about"
+    ]
+  },
+  {
+    "name": "the FLAT layout stops being read, so the ~700 historical halves vanish and a nested half can never pair with one",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "    flat = sorted(reviews.glob(\"*.md\"))",
+        "    flat = []"
+      ]
+    ],
+    "expect": [
+      "…and the flat pair was actually SEEN, not merely un-complained-about"
+    ]
+  }
+]
