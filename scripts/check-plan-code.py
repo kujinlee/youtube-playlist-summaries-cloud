@@ -699,6 +699,14 @@ EXPECTED_MUTATIONS = {
     "scripts/check-function-revokes.py": 6,
     "scripts/check-guard-coverage.py": 5,
     "scripts/check-handoff-path.py": 5,
+    # ⟳ 2026-09-07. Third of PR #247's four, and the money one — backlog #26's trigger. Six
+    # targets in the PURE halves: the per-occurrence line scan (the r12 blocking defect), the
+    # comment/code bucket, the SQL string blanker, block-comment NESTING, the SQL line-comment
+    # blanker, and the ledger's file ordering. TWO first attempts were WRONG and the harness
+    # said so: disabling the dollar-quote branch SURVIVED (that case is actually killed by the
+    # STRING branch — its fixture puts the create inside quotes), and dropping "scripts" from
+    # PRODUCTION_DIRS CRASHED, because the fixture mkdirs from that same tuple.
+    "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -2555,6 +2563,7 @@ def _self_test() -> int:
                                       "scripts/check-gate-falsifiability.py",
                                       "scripts/check-guard-coverage.py",
                                       "scripts/check-handoff-path.py",
+                                      "scripts/check-paid-caller-arrival.py",
                                       "scripts/check-plan-code.py",
                                       "scripts/check-plan-progress.py",
                                       "scripts/check-selftest-counts.py",
@@ -2660,7 +2669,7 @@ def _self_test() -> int:
     # off against the R4 manifest debt (MANIFEST_BASELINE 21 -> 20 in the same commit, because
     # that ratchet is an exact match and not a ceiling). This total is a LIVE sum, so it moves
     # whenever coverage does; it is not one of the counts pinned to a past measurement.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 259)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 265)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

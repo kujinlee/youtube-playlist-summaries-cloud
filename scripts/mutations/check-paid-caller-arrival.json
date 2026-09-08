@@ -1,0 +1,68 @@
+[
+  {
+    "name": "only the FIRST occurrence on a line is classified (the r12 blocking defect)",
+    "file": "scripts/check-paid-caller-arrival.py",
+    "edits": [
+      [
+        "col = line.find(SYMBOL, col + len(SYMBOL))",
+        "col = -1"
+      ]
+    ],
+    "expect": "a real comment BEFORE a real call on one line does not hide it (r12 B1)"
+  },
+  {
+    "name": "a comment and a call swap buckets",
+    "file": "scripts/check-paid-caller-arrival.py",
+    "edits": [
+      [
+        "bucket = commented if inside else code",
+        "bucket = code if inside else commented"
+      ]
+    ],
+    "expect": "a LINE comment is not a caller"
+  },
+  {
+    "name": "string literal contents are skipped rather than blanked",
+    "file": "scripts/check-paid-caller-arrival.py",
+    "edits": [
+      [
+        "            blank(start, i)\n            continue\n        if c == \"$\":",
+        "            continue\n        if c == \"$\":"
+      ]
+    ],
+    "expect": "\u2026nor can a STRING literal"
+  },
+  {
+    "name": "block comments stop nesting, so the first */ closes the outer one",
+    "file": "scripts/check-paid-caller-arrival.py",
+    "edits": [
+      [
+        "depth += 1",
+        "depth += 0"
+      ]
+    ],
+    "expect": "\u2026nor a NESTED block comment (Postgres nests them)"
+  },
+  {
+    "name": "a SQL line comment is not blanked, so prose can resurrect a dropped function",
+    "file": "scripts/check-paid-caller-arrival.py",
+    "edits": [
+      [
+        "if c == \"-\" and sql.startswith(\"--\", i):",
+        "if False and sql.startswith(\"--\", i):"
+      ]
+    ],
+    "expect": "a comment cannot resurrect a dropped symbol (r12 H1)"
+  },
+  {
+    "name": "the ledger is read newest-first, so an earlier file wins",
+    "file": "scripts/check-paid-caller-arrival.py",
+    "edits": [
+      [
+        "sorted(migrations_dir.glob(\"*.sql\"))",
+        "sorted(migrations_dir.glob(\"*.sql\"), reverse=True)"
+      ]
+    ],
+    "expect": "a LATER migration dropping the symbol is CANNOT RUN (r10 H3)"
+  }
+]
