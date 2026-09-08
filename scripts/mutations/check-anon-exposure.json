@@ -1,0 +1,171 @@
+[
+  {
+    "name": "schema qualification stops being stripped, so `public.video_artifacts` matches no manifest name and an ordinary READABLE relation derives as OUT OF REACH (r9 M1)",
+    "file": "scripts/check-anon-exposure.py",
+    "edits": [
+      [
+        "        name = name.rsplit(\".\", 1)[-1]",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "derive: a SCHEMA-QUALIFIED grant resolves to the bare manifest name"
+    ]
+  },
+  {
+    "name": "unquoted identifiers stop folding to lower case, so an UPPERCASE spelling of a granted relation no longer matches the manifest",
+    "file": "scripts/check-anon-exposure.py",
+    "edits": [
+      [
+        "    return name.lower()                  # unquoted: Postgres folds to lower case, so we must too",
+        "    return name                          # unquoted: Postgres folds to lower case, so we must too"
+      ]
+    ],
+    "expect": [
+      "derive: an UPPERCASE relation folds to lower case"
+    ]
+  },
+  {
+    "name": "quotes stop being stripped, so a quoted identifier keeps its quotes and matches nothing in the manifest",
+    "file": "scripts/check-anon-exposure.py",
+    "edits": [
+      [
+        "        return name[1:-1]                # quoted: case is PRESERVED, that is what quoting means",
+        "        return name                      # quoted: case is PRESERVED, that is what quoting means"
+      ]
+    ],
+    "expect": [
+      "derive: a QUOTED identifier resolves to the bare name"
+    ]
+  },
+  {
+    "name": "the GRANTEE side stops using the same normaliser as the relation side, so `to \"anon\"` matches nothing — the instance-not-class half of r9 M3",
+    "file": "scripts/check-anon-exposure.py",
+    "edits": [
+      [
+        "        who = {_norm_ident(g) for g in grantees.split(\",\")}",
+        "        who = {g.lower() for g in grantees.split(\",\")}"
+      ]
+    ],
+    "expect": [
+      "derive: a QUOTED GRANTEE is still a session role"
+    ]
+  },
+  {
+    "name": "a grant to service_role counts as a SESSION read, so a relation only the service role may see is treated as reachable by anon",
+    "file": "scripts/check-anon-exposure.py",
+    "edits": [
+      [
+        "        if not (who & {\"anon\", \"authenticated\"}):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "derive: a service_role-only grant does NOT count as a session read"
+    ]
+  },
+  {
+    "name": "the out-of-reach set INVERTS — the relations the spec grants session SELECT on become the ones no session role may touch",
+    "file": "scripts/check-anon-exposure.py",
+    "edits": [
+      [
+        "    return tuple(sorted(r for r in relations if r not in readable))",
+        "    return tuple(sorted(r for r in relations if r in readable))"
+      ]
+    ],
+    "expect": [
+      "derive: a relation the spec grants no session SELECT on is OUT OF REACH"
+    ]
+  },
+  {
+    "name": "05_assert.sql rejoins the corpus, so 2,500 lines of deliberately HOSTILE SQL — the thing that ATTACKS the contract — is read as the contract",
+    "file": "scripts/check-anon-exposure.py",
+    "edits": [
+      [
+        "    files = sorted(f for f in SPEC_DIR.glob(\"*.sql\") if not f.name.startswith(\"05_\"))",
+        "    files = sorted(f for f in SPEC_DIR.glob(\"*.sql\"))"
+      ]
+    ],
+    "expect": [
+      "read_spec EXCLUDES 05_assert.sql — the hostile corpus is not the contract"
+    ]
+  },
+  {
+    "name": "function names keep their signature, so a manifest entry never matches the live function and the allow-list check compares two disjoint vocabularies",
+    "file": "scripts/check-anon-exposure.py",
+    "edits": [
+      [
+        "            out.append(line[3:].split(\"(\", 1)[0])",
+        "            out.append(line[3:])"
+      ]
+    ],
+    "expect": [
+      "m4_functions DERIVES names from the manifest, stripping the signature"
+    ]
+  },
+  {
+    "name": "VIEWS drop out of the derived relation set, so every M4 view is unaudited by a check whose subject is what anon can read",
+    "file": "scripts/check-anon-exposure.py",
+    "edits": [
+      [
+        "        for prefix in (\"table:\", \"view:\"):",
+        "        for prefix in (\"table:\",):"
+      ]
+    ],
+    "expect": [
+      "m4_relations DERIVES names from the manifest, tables and views alike"
+    ]
+  },
+  {
+    "name": "the `uid` justification stops being checked against the body, so a function allow-listed for calling auth.uid() keeps its exemption after auth.uid() is removed",
+    "file": "scripts/check-anon-exposure.py",
+    "edits": [
+      [
+        "        return \"auth.uid()\" in body",
+        "        return True"
+      ]
+    ],
+    "expect": [
+      "kind 'uid' FAILS when auth.uid() is edited out"
+    ]
+  },
+  {
+    "name": "the `trigger` justification stops checking the return type, so any function may claim to be a trigger",
+    "file": "scripts/check-anon-exposure.py",
+    "edits": [
+      [
+        "        return returns.strip().lower() == \"trigger\"",
+        "        return True"
+      ]
+    ],
+    "expect": [
+      "kind 'trigger' passes only for a trigger return type"
+    ]
+  },
+  {
+    "name": "the `readonly` justification stops looking for write verbs, so a function that gained an INSERT keeps its read-only exemption",
+    "file": "scripts/check-anon-exposure.py",
+    "edits": [
+      [
+        "        return not WRITE_VERB.search(body)",
+        "        return True"
+      ]
+    ],
+    "expect": [
+      "kind 'readonly' FAILS when a write verb appears"
+    ]
+  },
+  {
+    "name": "an UNKNOWN justification kind becomes a valid one, so a typo in the allow-list reads as a reason rather than as nonsense",
+    "file": "scripts/check-anon-exposure.py",
+    "edits": [
+      [
+        "    return False                      # an unknown kind is never a justification",
+        "    return True                       # an unknown kind is never a justification"
+      ]
+    ],
+    "expect": [
+      "an UNKNOWN kind is never a justification"
+    ]
+  }
+]

@@ -4885,3 +4885,19 @@ The other ten cover rules with real history: **ambiguity is cannot-run** (two `*
 Also: the guard printed nothing per passing case, so its case names were invisible to any outside tool. It now prints `PASS <name>`.
 
 Registration: `EXPECTED_MUTATIONS["scripts/check-test-counts.py"] = 11`; live sum 323 → 334; sorted want-list (29 entries, position derived); `MANIFEST_BASELINE` 3 → 2.
+
+## 2026-09-08
+The guard that stops logged-out visitors reaching data they should not see now has a safety net.
+Thirteen deliberate breakages, all caught first time — no wrong guesses on this one. What it protects is worth stating plainly: this check derives, from the schema files themselves, which tables a signed-out visitor is allowed to read, and then verifies the live database agrees. Two of the breakages recreate real defects this guard has already been through, where the text-parsing was correct only for the exact spelling in front of it — an ordinary schema-qualified name, or a quoted role name, and the check would have decided a perfectly readable table was off-limits, or vice versa. Those are now held by executable tests rather than by a comment explaining what went wrong last time.
+<!--tech-->
+`scripts/mutations/check-anon-exposure.json` — 13 mutations, all attributed, over a green 74/74 control, verified through `check-plan-code`'s own `run_mutations` (`caught=13 survivors=0`). All four output contracts already held. **First-try, 13 for 13.**
+
+Every target is in the PURE half — `_norm_ident`, `session_readable`, `derive_no_session_access`, `read_spec`, `m4_functions`, `m4_relations`, `justification_holds` — so the manifest needs no database.
+
+⭐ **The two the guard already paid for, now covered rather than commented:**
+- **r9 M1** — schema qualification unstripped: `public.video_artifacts` matches no manifest name, so an ordinary **readable** relation derives as **out of reach** and the cross-check refuses to run.
+- **r9 M3** — the grantee side used a different normaliser from the relation side, so `to "anon"` matched nothing. The comment in the source calls this out as "instance-not-class"; both directions now have a mutation.
+
+Also covered: `05_assert.sql` stays **excluded** from the corpus (2,500 lines of deliberately hostile SQL — the thing that attacks the contract, not the contract); views stay in the derived relation set; and all four arms of `justification_holds`, including that an **unknown** kind is never a justification.
+
+Registration: `EXPECTED_MUTATIONS["scripts/check-anon-exposure.py"] = 13`; live sum 334 → 347; sorted want-list (30 entries, position derived); `MANIFEST_BASELINE` 2 → 1.
