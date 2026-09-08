@@ -153,6 +153,33 @@ Possible, and therefore required. Navigate to it with the Chrome tools, read it 
 interactive affordance you added. Shipping an unexecuted affordance is what produced all four rounds
 of tray defects.
 
+### 5b.0 — FIRST, the cheapest check: the SOURCE is beside the page
+
+```bash
+test -f "${PAGE%.html}.fragment.html" || echo "NO FRAGMENT — the page cannot be answered tomorrow"
+```
+
+**One line, and it is here because the write alone was not enough.** `brief-compose.py` has copied
+the fragment beside every page it composes since `65cd509e` (2026-09-04) — unconditionally, no flag.
+**MEASURED 2026-09-08, four days later:** `~/explainers/` held **47 files, 32 `/brief` pages and 2
+fragments** — and both fragments belonged to `dashboard` and `goals`, the hook-regenerated pages.
+**Zero `/brief` fragments**, including one page written *after* the fix landed.
+
+⛔ **The write shipped without its observation, so nothing could tell whether it had fired.** That is
+the same shape this repo keeps paying for: a fix prompted by a measured defect is not finished until
+something fails when it stops working. Backlog #88 added the copy; this line is the half that was
+missing.
+
+**Why here and not a script.** `~/explainers/` is outside the repository, and 32 historical pages
+will never have a fragment — a repo-side ratchet would be permanently red with its own printed
+remedy unable to clear it, which is exactly the failure `check-live-schema`'s accepted-additions
+list exists to prevent. §5b already runs once per page, at the only moment the answer is knowable.
+
+**What it protects:** §6 requires answers be written **into** the page, and §1 puts the page outside
+the repo so it outlives its session. Without the fragment those two rules contradict each other the
+moment the building session ends — and the page's own §5a block promises *"say read my questions"*
+as the cross-session fallback, a promise the write half cannot keep.
+
 ⛔ **`element.click()` IS NOT A TEST OF A BUTTON.** It fires the handler regardless of where the
 button is painted, whether it has zero size, or whether six siblings are stacked on top of it. Every
 session that "drove both paths" did it this way, and all of them passed a live defect:

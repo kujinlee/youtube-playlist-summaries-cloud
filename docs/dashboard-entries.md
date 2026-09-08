@@ -4933,3 +4933,17 @@ Along the way: a fix from four days ago was supposed to make every page save its
 **The deviation from #89's sketch, and why.** #89 proposed the fork do everything then `SendMessage({to: "main"})` after §5b. This draft splits it: **fork builds, parent verifies and announces.** The measured cost is research and drafting (22,576-byte fragment × 5 rewrites, 986,929-byte page, ten ratchet runs); browser verification is a few tool calls. Forking the expensive half captures nearly all the saving while keeping the step that caught the `document.hidden` false negative and the missing `#modechip` block — neither visible in source. It also **dissolves question (1)**: the parent verifies, so it already holds the URL, and no path exists where an unverified page is announced.
 
 **§5 is a HYPOTHESIS, labelled as one** — a fork writing only under `~/explainers/` should not trip the Codex overwrite detector, but that is unreproduced. Until T4 measures it, the conservative rule stands: do not build a page beside a Codex review.
+
+## 2026-09-08
+The check that would have noticed the four-day-old fix wasn't working is now in place.
+Every explanation page is supposed to save its own source alongside it, so a question asked tomorrow can be answered inside the page rather than by rebuilding it from memory. The code that does this was added four days ago and does it unconditionally — I confirmed by running it. But across 47 files only two sources existed, and both belonged to the pages a hook regenerates, never to the ones an agent writes. The reason nothing caught this is simple: the step where a page gets checked before being handed over never looked for the source file. The write shipped without the observation, so there was no way to tell whether it had happened. That one-line check now runs first, before the expensive browser checks, because it is the cheapest thing that can fail.
+<!--tech-->
+**T0 of the #89 design.** `.claude/skills/shared/explainer-delivery.md` gains **§5b.0** — `test -f "${PAGE%.html}.fragment.html"` — ahead of the browser verification, because it is the cheapest check that can fail.
+
+**EXECUTED, not reasoned:** ran `brief-compose.py --content … --out <tmp>/out.html` into a temp directory. It produced a 1,080,287-byte page **and** `out.fragment.html`. So the script is not the bug — the write at `:303` is unconditional and works. What was missing is anything that asserts it fired.
+
+**Why §5b and not a script:** `~/explainers/` is outside the repo and 32 historical pages will never have a fragment. A repo-side ratchet would be permanently red with its own printed remedy unable to clear it — the failure `check-live-schema`'s accepted-additions list exists to prevent. §5b already runs once per page, at the only moment the answer is knowable.
+
+⚠ **T0 is not closed by this commit, and the spec should not be read as saying so.** The observation now exists; **the next `/brief` build is what proves it.** If that page also lacks a fragment, §5b.0 fails loudly and names the cause — which is the whole point.
+
+`check-explainer-delivery.py`: 1 shared description, 5 skills cite it, 0 restatements. `--self-test` 8/8.
