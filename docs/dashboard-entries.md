@@ -4741,3 +4741,17 @@ Contract (1) — a failure line starts with `[FAIL] ` and contains `: got ` — 
 All 11 suites still green and still print `passed` (contract 3): 74, 13, 22, 16, 11, 32, 27, 15, 117, 27, 26. `check-selftest-counts` verifies all 28 declared counts by running them; `check-docs`, `check-guard-coverage`, `check-ratchet-contract`, `check-plan-code` (194/194) green; ratchet at baseline 11.
 
 This unblocks every remaining manifest. Debt is unchanged at **11** — this PR adds no coverage, it makes coverage measurable.
+
+## 2026-09-07
+The guard that watches the money trigger now has a safety net, and two of the six tests written for it were wrong in ways only running them could show.
+This is the guard that fires when real code first calls the function that spends money. Six deliberate breakages were written to prove its thirty-two checks work; four behaved as predicted and two did not. One breakage changed nothing at all, because the check it was aimed at is actually caught by a different part of the code than assumed. The other made the test crash rather than fail, which reads as "no coverage" rather than "caught it". Both were replaced with breakages that do what was claimed.
+<!--tech-->
+`scripts/mutations/check-paid-caller-arrival.json` — 6 mutations, all attributed via the case each names, over a green control (32/32) in the staged tree. Targets are all in the pure halves: the per-occurrence line scan (`col = line.find(SYMBOL, col + len(SYMBOL))` — the r12 blocking defect), the comment/code bucket assignment, `strip_sql_noise`'s string blanker, its block-comment NESTING depth, its line-comment blanker, and `ledger_net_effect`'s file ordering.
+
+⚠ **TWO FIRST ATTEMPTS WERE WRONG, and the harness distinguished the two failure modes.**
+1. Disabling the dollar-quote branch **SURVIVED**. The case named *"…nor a dollar-quoted body"* is in fact killed by the **string** branch — its fixture is `do $$ begin raise notice 'create function record_artifact'; end $$;`, and the create sits inside single quotes, which the string lexer blanks regardless. The case's name attributes it to a mechanism that is not what makes it pass.
+2. Removing `"scripts"` from `PRODUCTION_DIRS` **CRASHED** with 0 `[FAIL]` lines. The self-test mkdirs its fixture tree *from that same tuple*, so the case then writes to a directory that no longer exists. A crash is not a kill — the harness reports it separately for exactly this reason.
+
+Replaced with: the SQL line-comment blanker (kills *"a comment cannot resurrect a dropped symbol (r12 H1)"*) and reversed ledger ordering (kills *"a LATER migration dropping the symbol is CANNOT RUN (r10 H3)"*).
+
+Registration: `EXPECTED_MUTATIONS["scripts/check-paid-caller-arrival.py"] = 6`; live sum 259 → 265; sorted want-list; `MANIFEST_BASELINE` 11 → 10. 194/194; ratchet at baseline; 32/32.
