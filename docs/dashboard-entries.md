@@ -5030,3 +5030,27 @@ after the first write is the page itself, and three of five runs self-lifted whi
 `goals.html`). Structure held across all five — one `#tray`, one `#qbox`, buttons matching headings,
 contrast unchanged at 8.69:1 — so it degrades size and determinism, not correctness yet.
 PR #267 carries all of it.
+
+## 2026-09-08
+You read the briefing page and spotted that some of what it asked for had already been done. That
+was right: the page was built at 10:24 and everything it asks about happened afterwards, so it was
+about forty minutes out of date by the time you read it.
+
+Reconciling it turned up one genuine gap. The page listed four things as needing your yes/no; three
+had been written down, and one had not — that the backlog cannot be counted reliably. Three
+reasonable ways of counting the same 101 rows gave 59, 61 and 63 open items.
+
+That is now recorded, deliberately as evidence on an existing item rather than as a new one, because
+the item it belongs to already said the status column was doing too many jobs. What it was missing
+was proof.
+
+<!--tech-->
+Folded into row #90 rather than opening #107 — #90 already owns "one Status column has to serve all
+three — which is how #46 and #50 were once marked closed while still open", so a new row would be
+duplicate coordination vocabulary for a concern it already covers; what was absent was the
+measurement. Cause: Status cells are append-only, up to 3,889 chars, verdict at the END, so a
+first-marker parse returns the ORIGINAL filing — row #78 parsed as open while its tail reads
+`✅ CLOSED 2026-09-07`. Falsifier added: two independent open/closed parsers over the table must
+agree; today they differ on four rows. Consequence recorded for the page generators: any headline
+count of open work is a RANGE, not a number. Page rebuild follows this commit so it reports the
+settled state.
