@@ -685,6 +685,10 @@ EXPECTED_MUTATIONS = {
     # and two on `--resume` — one for a write-back that never clears, one for a clear that takes
     # the `plan:` pointer with it.
     "scripts/check-plan-progress.py": 12,
+    # ⟳ 2026-09-07. Five targets in the PURE rules: the ternary probe's optional-chain
+    # exclusion, the alias fullmatch, ALIAS_RHS's repeat quantifier, and the `||` and `??`
+    # patterns. Verified through check-plan-code's OWN run_mutations, not a copy of it.
+    "scripts/check-producer-enumeration.py": 5,
     "scripts/begin-plan.py": 9,
     # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
     # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
@@ -2566,6 +2570,7 @@ def _self_test() -> int:
                                       "scripts/check-paid-caller-arrival.py",
                                       "scripts/check-plan-code.py",
                                       "scripts/check-plan-progress.py",
+                                      "scripts/check-producer-enumeration.py",
                                       "scripts/check-selftest-counts.py",
                                       "scripts/check-sentinel-meanings.py",
                                       "scripts/check-storage-grant-pin.py",
@@ -2669,7 +2674,7 @@ def _self_test() -> int:
     # off against the R4 manifest debt (MANIFEST_BASELINE 21 -> 20 in the same commit, because
     # that ratchet is an exact match and not a ceiling). This total is a LIVE sum, so it moves
     # whenever coverage does; it is not one of the counts pinned to a past measurement.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 265)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 270)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
