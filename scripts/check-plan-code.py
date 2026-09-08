@@ -695,6 +695,10 @@ EXPECTED_MUTATIONS = {
     # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
     # so every mutation here would have killed the suite UNATTRIBUTABLY.
     "scripts/check-gate-falsifiability.py": 5,
+    # ⟳ 2026-09-07. Four targets in `backlog_shape_errors`, the PURE half: CELL_SPLIT's
+    # escaped-pipe lookbehind, the column-count comparison, the delimiter-row threshold, and
+    # the prev_was_row flag a split table depends on.
+    "scripts/check-docs.py": 4,
     "scripts/check-explainer-delivery.py": 5,
     # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
     # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
@@ -2557,6 +2561,7 @@ def _self_test() -> int:
                                       "scripts/check-arch-findings.py",
                                       "scripts/check-banner-armed.py",
                                       "scripts/check-dashboard-entry.py",
+                                      "scripts/check-docs.py",
                                       # ⟳ 2026-09-06: the FIRST payment against the R4 manifest
                                       # debt (MANIFEST_BASELINE 21 -> 20). This list is a LIVE
                                       # inventory, so it grows with each guard paid off — unlike
@@ -2674,7 +2679,7 @@ def _self_test() -> int:
     # off against the R4 manifest debt (MANIFEST_BASELINE 21 -> 20 in the same commit, because
     # that ratchet is an exact match and not a ceiling). This total is a LIVE sum, so it moves
     # whenever coverage does; it is not one of the counts pinned to a past measurement.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 270)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 274)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

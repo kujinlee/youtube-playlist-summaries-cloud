@@ -1,0 +1,46 @@
+[
+  {
+    "name": "an escaped pipe is treated as a cell separator",
+    "file": "scripts/check-docs.py",
+    "edits": [
+      [
+        "CELL_SPLIT = re.compile(r\"(?<!\\\\)\\|\")",
+        "CELL_SPLIT = re.compile(r\"\\|\")"
+      ]
+    ],
+    "expect": "an ESCAPED pipe inside a cell passes"
+  },
+  {
+    "name": "the column count is never compared",
+    "file": "scripts/check-docs.py",
+    "edits": [
+      [
+        "elif len(cells) != expected:",
+        "elif False:"
+      ]
+    ],
+    "expect": "a row missing a column is caught"
+  },
+  {
+    "name": "a delimiter row needs three hundred dashes, so no table ever opens",
+    "file": "scripts/check-docs.py",
+    "edits": [
+      [
+        "line.count(\"-\") >= 3",
+        "line.count(\"-\") >= 300"
+      ]
+    ],
+    "expect": "a well-formed table passes"
+  },
+  {
+    "name": "a row never records that it was a row, so a split is invisible",
+    "file": "scripts/check-docs.py",
+    "edits": [
+      [
+        "            prev_was_row = True",
+        "            prev_was_row = False"
+      ]
+    ],
+    "expect": "a blank line between rows is caught"
+  }
+]
