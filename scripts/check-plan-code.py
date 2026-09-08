@@ -671,6 +671,11 @@ EXPECTED_MUTATIONS = {
     # "Nothing went wrong" was satisfied by "nothing happened", so the flat and nested scans were
     # each unguarded. Companion cases now assert stats["rounds"] == 1 — the pair was SEEN.
     "scripts/check-review-rounds.py": 12,
+    # ⟳ 2026-09-08, R4 manifest debt 3 -> 2. ⚠ ONE MUTATION SURVIVED FIRST: I removed the words
+    # "Produce one with" from the absent-results refusal, but the case asserts that `--outputFile=`
+    # appears in the message and that token is on the NEXT fragment. The mutation READ like the one
+    # the case names and touched a different string. Retargeted to the fragment carrying the claim.
+    "scripts/check-test-counts.py": 11,
     "scripts/check-dashboard-entry.py": 42,
     "scripts/check-plan-code.py": 35,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
@@ -2632,6 +2637,7 @@ def _self_test() -> int:
                                       "scripts/check-selftest-counts.py",
                                       "scripts/check-sentinel-meanings.py",
                                       "scripts/check-storage-grant-pin.py",
+                                      "scripts/check-test-counts.py",
                                       "scripts/check-theme-token-coverage.py",
                                       "scripts/check-vocabulary-collisions.py",
                                       "scripts/gen-dashboard.py",
@@ -2732,7 +2738,7 @@ def _self_test() -> int:
     # off against the R4 manifest debt (MANIFEST_BASELINE 21 -> 20 in the same commit, because
     # that ratchet is an exact match and not a ceiling). This total is a LIVE sum, so it moves
     # whenever coverage does; it is not one of the counts pinned to a past measurement.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 323)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 334)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

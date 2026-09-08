@@ -1,0 +1,145 @@
+[
+  {
+    "name": "thousands separators stop being stripped, so `2,703` no longer parses as a number and the documented pair is misread",
+    "file": "scripts/check-test-counts.py",
+    "edits": [
+      [
+        "return int(raw.replace(\",\", \"\"))",
+        "return int(raw)"
+      ]
+    ],
+    "expect": [
+      "tolerates thousands separators"
+    ]
+  },
+  {
+    "name": "the BOLD delimiters leave the pattern, so any prose sentence mentioning counts is read as the roadmap's machine-readable claim",
+    "file": "scripts/check-test-counts.py",
+    "edits": [
+      [
+        "r\"\\*\\*\\s*([\\d,]+)\\s*unit\\s*/\\s*([\\d,]+)\\s*suites\\s*\\*\\*\"",
+        "r\"\\s*([\\d,]+)\\s*unit\\s*/\\s*([\\d,]+)\\s*suites\\s*\""
+      ]
+    ],
+    "expect": [
+      "unbolded counts are NOT matched (the block's shape is the contract)"
+    ]
+  },
+  {
+    "name": "AMBIGUITY stops being cannot-run, so with two count statements the check silently picks the first — going green over a stale figure with nothing saying which it read",
+    "file": "scripts/check-test-counts.py",
+    "edits": [
+      [
+        "    if len(matches) > 1:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "TWO count statements is ambiguous, and ambiguous is cannot-run"
+    ]
+  },
+  {
+    "name": "a FAILED jest run stops raising, so counts describing a world we are not in are compared and a red suite can produce a green gate",
+    "file": "scripts/check-test-counts.py",
+    "edits": [
+      [
+        "    if results.get(\"success\") is not True:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a FAILED run raises rather than reporting counts"
+    ]
+  },
+  {
+    "name": "non-integer counts are accepted, so a malformed results file is compared instead of refused",
+    "file": "scripts/check-test-counts.py",
+    "edits": [
+      [
+        "        if not isinstance(results.get(key), int):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "a non-integer count raises"
+    ]
+  },
+  {
+    "name": "the comparison never reports drift, so the roadmap may claim any number it likes",
+    "file": "scripts/check-test-counts.py",
+    "edits": [
+      [
+        "        if claimed != real:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "a stale unit count is caught"
+    ]
+  },
+  {
+    "name": "only the FIRST count is compared, so the suite total is checked and the suite COUNT drifts unwatched",
+    "file": "scripts/check-test-counts.py",
+    "edits": [
+      [
+        "    for label, claimed, real in zip(labels, documented, actual):",
+        "    for label, claimed, real in zip(labels[:1], documented, actual):"
+      ]
+    ],
+    "expect": [
+      "a stale suite count is caught"
+    ]
+  },
+  {
+    "name": "an empty test inventory stops being cannot-run, so the staleness check below compares against NO files and is vacuous",
+    "file": "scripts/check-test-counts.py",
+    "edits": [
+      [
+        "    if not files:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a testMatch matching NO files is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "globs resolve from a module-level ROOT instead of the config's own directory — the first draft's defect, which made the empty-inventory refusal unable to fire",
+    "file": "scripts/check-test-counts.py",
+    "edits": [
+      [
+        "    root = config.parent",
+        "    root = ROOT"
+      ]
+    ],
+    "expect": [
+      "the globs are DERIVED from the config, not hardcoded"
+    ]
+  },
+  {
+    "name": "the STALENESS check stops looking, so counts from a three-day-old run are reported as a match — task #144's measured defect, restored",
+    "file": "scripts/check-test-counts.py",
+    "edits": [
+      [
+        "    newer = [f for f in test_sources(config) if f.stat().st_mtime > run_at]",
+        "    newer = [f for f in test_sources(config) if False]"
+      ]
+    ],
+    "expect": [
+      "a test file NEWER than the run is STALE — the whole point of #144"
+    ]
+  },
+  {
+    "name": "the absent-results refusal stops naming the command that produces the file, so the reader is told what is missing but not how to fix it",
+    "file": "scripts/check-test-counts.py",
+    "edits": [
+      [
+        "            f\"    npm test -- --ci --json --outputFile={path.name}\\n\"",
+        "            f\"    regenerate it somehow\\n\""
+      ]
+    ],
+    "expect": [
+      "the absent-file message names the command that produces it"
+    ]
+  }
+]

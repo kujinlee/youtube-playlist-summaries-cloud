@@ -4871,3 +4871,17 @@ Fix: companion cases asserting `stats["rounds"] == 1` — the pair was **seen**.
 The other ten cover the rules worth having: `gate_ran` is READ and never re-derived from `exit_code` (a second implementation of the wrapper's rule, which the docstring forbids); a `REVIEW GAP:` line still needs a reason; `verdicts/` is not scanned for halves; a basename filed in two layouts is REPORTED, not silently deduped.
 
 Registration: `EXPECTED_MUTATIONS["scripts/check-review-rounds.py"] = 12`; live sum 311 → 323; sorted want-list (28 entries, position derived); `MANIFEST_BASELINE` 4 → 3. ⚠ The declared self-test count uses `--self-test # N cases` here, not the `--self-test  # N cases` spacing of its siblings; my first edit missed it and `check-selftest-counts` caught the drift — the outside observer doing its job.
+
+## 2026-09-08
+The guard that stops the roadmap claiming a test count the suite does not have now has a safety net.
+Eleven deliberate breakages, all caught — but one of them only after a correction worth recording. I wrote a breakage meant to strip the "how to fix it" line out of an error message, and the check stayed green. The words I deleted were not the ones the check looks for: it looks for the command flag, which sits on the following line. The breakage *read* like the one the check names and touched something else entirely — the same trap this whole exercise keeps finding, this time in my own work rather than the code's.
+<!--tech-->
+`scripts/mutations/check-test-counts.json` — 11 mutations, all attributed, over a green 27/27 control, verified through `check-plan-code`'s own `run_mutations` (`caught=11 survivors=0`). All four output contracts already held.
+
+⚠ **ONE SURVIVED FIRST, and the reason is the session's recurring shape.** The case is `the absent-file message names the command that produces it`, which asserts `"--outputFile=" in str(exc)`. My mutation removed `"no jest results at {path}. Produce one with\n"` — prose that *reads* like the guidance — while `--outputFile=` lives on the **next** f-string fragment. Retargeted to the fragment carrying the claim; the survivor is what told me, which is the harness earning its keep.
+
+The other ten cover rules with real history: **ambiguity is cannot-run** (two `**N unit / M suites**` statements and the check cannot say which it read); a **failed** jest run raises rather than reporting counts from a world we are not in; the **staleness** check of task #144 (a three-day-old results file once reported a confident match); and `test_sources` globbing from the **config's own directory**, whose absence made the empty-inventory refusal unable to fire.
+
+Also: the guard printed nothing per passing case, so its case names were invisible to any outside tool. It now prints `PASS <name>`.
+
+Registration: `EXPECTED_MUTATIONS["scripts/check-test-counts.py"] = 11`; live sum 323 → 334; sorted want-list (29 entries, position derived); `MANIFEST_BASELINE` 3 → 2.

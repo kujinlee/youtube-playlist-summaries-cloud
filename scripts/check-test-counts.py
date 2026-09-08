@@ -368,6 +368,7 @@ def _self_test() -> int:
             continue
         if passed:
             ok += 1
+            print(f"  PASS  {name}")
         else:
             print(f"  [FAIL] {name}: got {passed!r} want {True!r}")
     print(f"self-test: {ok}/{len(cases)} passed")
