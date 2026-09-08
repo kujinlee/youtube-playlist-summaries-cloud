@@ -1,0 +1,68 @@
+[
+  {
+    "name": "the policy pattern no longer matches `create policy`",
+    "file": "scripts/check-storage-grant-pin.py",
+    "edits": [
+      [
+        "r\"create\\s+policy\\s+\\\"\"",
+        "r\"create\\s+policyx\\s+\\\"\""
+      ]
+    ],
+    "expect": "policy is extractable from the migration"
+  },
+  {
+    "name": "normalise collapses newlines but leaves space runs intact",
+    "file": "scripts/check-storage-grant-pin.py",
+    "edits": [
+      [
+        "re.sub(r\"\\s+\", \" \", sql)",
+        "re.sub(r\"\\n+\", \" \", sql)"
+      ]
+    ],
+    "expect": "whitespace reflow does not trip the pin"
+  },
+  {
+    "name": "normalise discards digits, so a segment index cannot move the digest",
+    "file": "scripts/check-storage-grant-pin.py",
+    "edits": [
+      [
+        ".strip().lower()",
+        ".strip().lower().translate(str.maketrans(\"\", \"\", \"0123456789\"))"
+      ]
+    ],
+    "expect": "narrowing the split_part segment trips the pin"
+  },
+  {
+    "name": "digest blanks the credential before hashing",
+    "file": "scripts/check-storage-grant-pin.py",
+    "edits": [
+      [
+        "hashlib.sha256(normalise(sql).encode(\"utf-8\"))",
+        "hashlib.sha256(normalise(sql).replace(\"auth.uid()\", \"\").replace(\"auth.jwt()\", \"\").encode(\"utf-8\"))"
+      ]
+    ],
+    "expect": "changing the compared credential trips the pin"
+  },
+  {
+    "name": "extraction widens from the statement to the whole file",
+    "file": "scripts/check-storage-grant-pin.py",
+    "edits": [
+      [
+        "return m.group(0) if m else None",
+        "return text if m else None"
+      ]
+    ],
+    "expect": "digest is over the statement, not the file"
+  },
+  {
+    "name": "a non-matching file yields an empty match instead of None",
+    "file": "scripts/check-storage-grant-pin.py",
+    "edits": [
+      [
+        "m = POLICY_RE.search(text)",
+        "m = POLICY_RE.search(text) or re.match(\"\", text)"
+      ]
+    ],
+    "expect": "absent policy yields None, not a silent pass"
+  }
+]

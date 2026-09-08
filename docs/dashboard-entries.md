@@ -4687,3 +4687,17 @@ One thing is deliberately still open, and is flagged rather than quietly closed.
 ⛔ The second anchor is owed and deliberately NOT allocated: `check-anchors.py` R4 fails an anchor claimed by no document, and the claimant is #89's design pass. Allocating now trades an invisible gap for a red gate. Must not be closed by widening `status-visibility` — one anchor for two different readers is the one-name-two-meanings defect this repo runs a guard for.
 
 ⚠ Entry 2026-09-07/11 was malformed: the page flagged it *"no decision — add a `**Decide:**` line with at least two options"*. The ask-tray guard caught it and got louder, as designed. Recorded because the author did not notice; the page did.
+
+## 2026-09-07
+The storage-grant guard now has a safety net, and writing it found one of its six checks was testing nothing at all.
+This guard watches a database permission that a money-path protection depends on: if the permission is ever narrowed, serving a summary could start paying twice. It had six checks. Proving each one actually works — by breaking the guard on purpose, six different ways, and confirming the right check complains each time — turned up a check that compared a value to itself. It read as the check that pins *what* gets measured, and no possible bug could have made it fail. It now edits the file and re-reads it, which is what its own comment always claimed it did.
+<!--tech-->
+`scripts/mutations/check-storage-grant-pin.json` — 6 mutations, one per self-test case, all attributed via the case each names. Targets are the pure functions: `POLICY_RE`, `normalise`, `digest`, `extract_policy`.
+
+⭐ **Case 5 was vacuous.** It read `digest(stmt) == digest(stmt + "")` — a string compared to itself, true for every possible implementation of `digest`, `normalise` and `extract_policy`. No mutation could kill it. Now `digest(extract_policy("-- an unrelated comment\n" + real) or "") == digest(stmt)`, which fails if extraction ever widens from the statement to the whole file. Found by asking what would kill each case *before* writing mutations, which is the only step that could have found it.
+
+⚠ **One mutation SURVIVED first time and the hypothesis was wrong, not the coverage.** `re.sub(r"\s+"," ")` → `re.sub(r" +"," ")` left case 2 green: collapsing *runs* of spaces maps both `"\n  "` and `"\n   "` to `"\n "`, so reflow stays equal. Replaced with `re.sub(r"\n+"," ")` — collapsing the wrong character class — which reddens case 2 alone. Measured, not reasoned: the real statement has 3 newlines and 3 double-spaces.
+
+Registration, all four numbers in one commit because the ratchet is an exact match: `EXPECTED_MUTATIONS["scripts/check-storage-grant-pin.py"] = 6`; the live sum 247 → 253; the guard added to the sorted want-list; `MANIFEST_BASELINE` 13 → 12. `check-plan-code --self-test` 194/194; `check-ratchet-contract` at baseline, not growing.
+
+First of the four guards PR #247 made stageable. Remaining: `check-function-revokes` (16 cases), `check-paid-caller-arrival` (32), `check-anon-exposure` (74).
