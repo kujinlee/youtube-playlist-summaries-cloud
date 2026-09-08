@@ -27,7 +27,7 @@ delegated — and one step may not.
 
 | Step | Who | Why that one |
 |---|---|---|
-| research the subject, write the fragment, compose the page | **a fork** (optional) | this is the whole cost — one measured `/brief` spent a 22.5 KB fragment rewritten five times, a 987 KB composed page, ten ratchet exit codes, `git log -15`, review inventories and `flyctl releases`, nearly all single-use once the URL exists |
+| research the subject, write the fragment, compose the page | **a fork** — the DEFAULT since 2026-09-08 | this is the whole cost — one measured `/brief` spent a 22.5 KB fragment rewritten five times, a 987 KB composed page, ten ratchet exit codes, `git log -15`, review inventories and `flyctl releases`, nearly all single-use once the URL exists. **Measured over one full build + two revisions (2026-09-08):** the fork spent **~786k tokens across 82 tool uses**, none of which entered the parent's context; the parent's whole share was **~15 tool calls** |
 | **§5b — execute the page and verify it** | **the parent, always** | ⛔ see below |
 | print the URL to the human | **the parent** | a fork's report is not shown to the user; the parent verifies, so it already holds the URL |
 | answer a reader's question | **the fork, resumed by name** | §6 |

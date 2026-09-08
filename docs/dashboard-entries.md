@@ -5004,3 +5004,29 @@ Corrected a false sentence in `explainer-delivery.md` §5 — monitors do NOT di
 (five were armed; one probe fired five events). Unfiled: `brief-compose.py` recompose is not
 idempotent (1,139,120 -> 1,151,240 bytes over five identical inputs; it lifts the tray from the
 NEWEST page, which after the first write is itself).
+
+## 2026-09-08 [resolved: 2026-09-08/10]
+You made the call on the experiment: keep the split. A separate agent researches and writes the
+page; this session opens the finished result, checks it, and only then hands it over. The part that
+must never be handed off is the checking — that is the step that caught the unreadable page today.
+
+That closes the one question the design deliberately left open. The cost of working this way had
+been measured; the benefit had only been argued. Now it has been seen once, so the argument is
+retired.
+
+You also settled the other open thing: rebuilding a page produces a slightly different file every
+time, and that is now written down as work for later. Nothing is waiting on you.
+
+<!--tech-->
+Spec §9 records the decision verbatim and closes §7's first open item. `explainer-delivery.md` §0
+promotes the fork from "(optional)" to the default and carries the measured figures (~786k tokens /
+82 tool uses inside the fork, ~15 parent tool calls). Two things deliberately NOT fixed by the
+decision: that every page must be forked (a trivial page inline is fine), and the cost side — §9
+carries an expiry falsifier, since the benefit is context saved and that number moves with model
+context limits. The invariant that IS fixed: no page reaches the human that the parent did not
+execute. The fifth finding is filed as backlog **#106** — recompose is not idempotent (five
+byte-identical inputs, 1,139,120 -> 1,151,240 bytes; the tray is lifted from the NEWEST page, which
+after the first write is the page itself, and three of five runs self-lifted while two took it from
+`goals.html`). Structure held across all five — one `#tray`, one `#qbox`, buttons matching headings,
+contrast unchanged at 8.69:1 — so it degrades size and determinism, not correctness yet.
+PR #267 carries all of it.

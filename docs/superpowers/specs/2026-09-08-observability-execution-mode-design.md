@@ -162,9 +162,11 @@ conservative rule stands: **do not start a page-building fork while a Codex revi
 
 ## 7. What this spec does NOT settle
 
-- **Whether forking is worth it at all.** The cost is measured (one page ≈ 1 MB of composed output
-  plus single-use scaffolding); the benefit is inferred. T3 shipping once, with the context saving
-  observed, is the honest test.
+- ~~**Whether forking is worth it at all.**~~ ✅ **SETTLED 2026-09-08 by the user — see §9.** The
+  trial ran, the benefit was observed, and the split is adopted. Kept struck-through rather than
+  deleted because the *reason* it was open — the cost was measured and the benefit only inferred — is
+  what the trial was designed to resolve, and a reader should be able to see that it was answered by
+  running it rather than by argument.
 - **Group B is out of scope and must stay out.** `regen-backlog-page.sh`, `regen-dashboard.sh` and
   `regen-goals-page.sh` are `PostToolUse` hooks — **no agent runs them**, they already cost zero
   context, and the goals page is *derived* by ADR-0010. Proposing to fork them is a category error:
@@ -242,3 +244,32 @@ for this mechanism only**, and the sentence that replaces it must say which mech
 The reviewer also noted there is **no discriminating scenario at all** while the agent honours the
 rule — a rule whose violation this instrument cannot observe. That is worth knowing and is not a
 defect in the rule.
+
+---
+
+## 9. DECISION — the split is adopted (user, 2026-09-08)
+
+> *"Keep the split, and treat the trial as passed. A fork researches and writes; the main session
+> executes the finished page and only then hands it over. The step that must stay undelegated is
+> verification — that is what earned its keep today."*
+
+**This closes §7's first open item.** The question was never whether the split was elegant; it was
+whether a measured cost bought an inferred benefit. It ran once, and the benefit stopped being
+inferred.
+
+**What the decision fixes, and what it deliberately does not:**
+
+| | |
+|---|---|
+| **Fixed — the default** | a fork researches, writes the fragment and composes; the parent executes §5b and delivers |
+| **Fixed — the invariant** | ⛔ **verification is never delegated.** This is the load-bearing half. It is the step that caught 1.03:1, and it is the one a fork's prose report structurally cannot substitute for |
+| **NOT fixed** | that every page must be forked. A trivial page built inline is fine — what may never happen is a page reaching the human that the parent did not execute |
+
+⚠ **The falsifier for this decision, stated so it can expire rather than calcify:** if a future page
+is built by a fork and §5b finds nothing on several consecutive runs, the *verification* half is
+still justified (it is cheap and the failure it prevents is silent), but the *forking* half should be
+re-argued on cost — the benefit is context saved, and that number moves with model context limits.
+Re-read the measured figures in §8 before assuming they still hold.
+
+**Recorded here rather than only in the roadmap** because this file is the spec a future reader opens
+to ask *"why is it built this way?"*, and the answer is now an observation instead of an argument.
