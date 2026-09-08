@@ -1,0 +1,158 @@
+[
+  {
+    "name": "fenced code stops being skipped, so an EXAMPLE block is audited as if it were the real plan and the check invents findings from its own documentation",
+    "file": "scripts/check-roadmap-consistency.py",
+    "edits": [
+      [
+        "            in_fence = not in_fence",
+        "            in_fence = False"
+      ]
+    ],
+    "expect": [
+      "fenced example blocks are ignored"
+    ]
+  },
+  {
+    "name": "a unit no longer ends at a new bullet, so a cue in one item leaks onto every identifier mentioned in the items below it",
+    "file": "scripts/check-roadmap-consistency.py",
+    "edits": [
+      [
+        "        if starts_bullet:\n            flush()",
+        "        if False:\n            flush()"
+      ]
+    ],
+    "expect": [
+      "a new bullet ends the unit, so cues do not leak across items"
+    ]
+  },
+  {
+    "name": "the identifier vocabulary stops being derived from the checkboxes, so a new item family is invisible — neither checked nor reported unknown",
+    "file": "scripts/check-roadmap-consistency.py",
+    "edits": [
+      [
+        "def build_ident_re(marks: dict[str, str]) -> re.Pattern[str]:\n    \"\"\"Prose-reference pattern for the identifier families that actually exist in the documents.\"\"\"\n    prefixes = sorted({i[0] for i in marks if i[:1].isalpha()})",
+        "def build_ident_re(marks: dict[str, str]) -> re.Pattern[str]:\n    \"\"\"Prose-reference pattern for the identifier families that actually exist in the documents.\"\"\"\n    prefixes = []"
+      ]
+    ],
+    "expect": [
+      "a brand-new item family is covered with no edit to this script"
+    ]
+  },
+  {
+    "name": "the RANGE vocabulary stops being derived, so `C1-C3` over a new family expands to nothing and the group is silently unaudited",
+    "file": "scripts/check-roadmap-consistency.py",
+    "edits": [
+      [
+        "def build_range_re(marks: dict[str, str]) -> re.Pattern[str]:\n    \"\"\"Range pattern over the same derived families: `B1-B5`, and `C1-C4` the day C items exist.\"\"\"\n    prefixes = sorted({i[0] for i in marks if i[:1].isalpha()})",
+        "def build_range_re(marks: dict[str, str]) -> re.Pattern[str]:\n    \"\"\"Range pattern over the same derived families: `B1-B5`, and `C1-C4` the day C items exist.\"\"\"\n    prefixes = []"
+      ]
+    ],
+    "expect": [
+      "ranges over a brand-new family expand too"
+    ]
+  },
+  {
+    "name": "the optional M prefix is dropped, so `M3.1` stops resolving to step 3.1 — the measured 2026-08-12 miss where the block's most load-bearing reference was the one identifier the check could not see",
+    "file": "scripts/check-roadmap-consistency.py",
+    "edits": [
+      [
+        "re.compile(r\"\\b(?:M)?(\" + \"|\".join(alts) + r\")\\b\")",
+        "re.compile(r\"\\b(\" + \"|\".join(alts) + r\")\\b\")"
+      ]
+    ],
+    "expect": [
+      "a decimal step keeps resolving when written M3.1"
+    ]
+  },
+  {
+    "name": "range expansion loses its INCLUSIVE upper bound, so the top member of a range is never audited",
+    "file": "scripts/check-roadmap-consistency.py",
+    "edits": [
+      [
+        "out.update(f\"{prefix}{n}\" for n in range(a, b + 1))",
+        "out.update(f\"{prefix}{n}\" for n in range(a, b))"
+      ]
+    ],
+    "expect": [
+      "a range written B1-5 with the prefix on one side still covers the TOP member"
+    ]
+  },
+  {
+    "name": "two copies of one item with different marks stop conflicting, so the roadmap and the checklist can disagree forever and one of them is lying",
+    "file": "scripts/check-roadmap-consistency.py",
+    "edits": [
+      [
+        "            if ident in marks and marks[ident] != mark:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "two copies of one item with different marks conflict"
+    ]
+  },
+  {
+    "name": "named_but_done stops firing, so NEXT ACTIONS can present a ticked item as work still to do — the whole reason this script exists",
+    "file": "scripts/check-roadmap-consistency.py",
+    "edits": [
+      [
+        "            elif mark == \"x\":",
+        "            elif False:"
+      ]
+    ],
+    "expect": [
+      "ticked item named as next step"
+    ]
+  },
+  {
+    "name": "unresolvable stops firing, so a renamed or mistyped identifier is silently accepted as a real next step",
+    "file": "scripts/check-roadmap-consistency.py",
+    "edits": [
+      [
+        "            if mark is None:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "an unresolvable identifier is reported"
+    ]
+  },
+  {
+    "name": "the coverage floor is removed, so a block that names no identifiable step passes having verified nothing",
+    "file": "scripts/check-roadmap-consistency.py",
+    "edits": [
+      [
+        "    if inspected == 0:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a block naming no identifiable step reports no_coverage"
+    ]
+  },
+  {
+    "name": "an in-progress [~] item stops counting as remaining, so a plan can go green in the middle of its own work",
+    "file": "scripts/check-roadmap-consistency.py",
+    "edits": [
+      [
+        "return sorted(i for i, m in marks.items() if m in (\" \", \"~\"))",
+        "return sorted(i for i, m in marks.items() if m in (\" \",))"
+      ]
+    ],
+    "expect": [
+      "an in-progress [~] item still counts as remaining, so naming nothing FAILS"
+    ]
+  },
+  {
+    "name": "the third state collapses back to two: naming nothing fails even when every tracked item is ticked, which is the red CI of 2026-08-13 on a FINISHED roadmap",
+    "file": "scripts/check-roadmap-consistency.py",
+    "edits": [
+      [
+        "        if remaining:\n            findings.append(Finding(",
+        "        if True:\n            findings.append(Finding("
+      ]
+    ],
+    "expect": [
+      "naming nothing PASSES once every tracked item is ticked"
+    ]
+  }
+]

@@ -54,7 +54,7 @@ pinned as such in the self-test. It shrinks the class; it does not close it.
 Usage:
     python3 scripts/check-roadmap-consistency.py
     python3 scripts/check-roadmap-consistency.py --report     # list findings, always exit 0
-    --self-test  # 26 cases
+    --self-test  # 27 cases
 """
 from __future__ import annotations
 
@@ -198,6 +198,19 @@ def expand_ranges(line: str, range_re: re.Pattern[str]) -> set[str]:
     return out
 
 
+def open_items(marks: dict[str, str]) -> list[str]:
+    """Tracked items that are NOT done. `[~]` is in progress, so it is OPEN — a plan must not go
+    green in the middle of its own work.
+
+    ⟳ 2026-09-08: this expression was written TWICE — once at the verdict (does `no_coverage`
+    fire?) and once at the explanation `main()` prints. Byte-identical, with nothing holding them
+    that way: drift would let the check FAIL while printing "every tracked checkbox is ticked".
+    One concern, one mechanism; the self-test cases for the verdict now cover the printed reason
+    too, which `main()` otherwise puts out of their reach.
+    """
+    return sorted(i for i, m in marks.items() if m in (" ", "~"))
+
+
 def _units(block: list[tuple[int, str]]) -> list[tuple[int, str]]:
     """Group the block into (first_line_no, joined_text) units.
 
@@ -316,7 +329,7 @@ def find_inconsistencies(sources: dict[str, str]) -> list[Finding]:
     # state is now DERIVED AND VERIFIED rather than assumed: complete means every tracked checkbox is
     # actually ticked, not merely that nobody wrote an identifier down.
     if inspected == 0:
-        remaining = sorted(i for i, m in marks.items() if m in (" ", "~"))
+        remaining = open_items(marks)
         if remaining:
             findings.append(Finding(
                 "no_coverage", "-", 0, "",
@@ -429,6 +442,14 @@ def _self_test() -> int:
          {ROADMAP: roadmap("Remaining: the C1–C3 checks.",
                            "- [ ] **C1 — a**\n- [x] **C2 — b**\n- [ ] **C3 — c**")},
          "named_but_done", 1),
+        # ⟳ 2026-09-08 — MEASURED: `range(a, b + 1)` -> `range(a, b)` survived every range case,
+        # because `B1-B5` and `C1-C3` have both endpoints matched by ident_re independently, so the
+        # expansion only ever supplied the INTERIOR. Written with the prefix on one side, the top
+        # member exists solely by expansion — which is the only shape that can see the bound.
+        ("a range written B1-5 with the prefix on one side still covers the TOP member",
+         {ROADMAP: roadmap("Remaining: the B1-5 checks.",
+                           "- [ ] **B1 - a**\n- [ ] **B4 - b**\n- [x] **B5 - c**")},
+         "named_but_done", 1),
         ("a family that exists nowhere is still invisible (documented residual)",
          {ROADMAP: roadmap("**The actual next step: Z9** unknown.", "- [ ] **B1 — x**")},
          "unresolvable", 0),
@@ -459,6 +480,7 @@ def _self_test() -> int:
         got = sum(1 for f in find_inconsistencies(sources) if f.kind == kind)
         if got == expected:
             passed += 1
+            print(f"  PASS  {name}")
         else:
             print(f"  [FAIL] {name}: got {got!r} want {expected!r} {kind}")
     total, ok = len(cases), passed
@@ -482,7 +504,7 @@ def main() -> int:
 
     if not findings:
         marks, _ = collect_marks(sources)
-        remaining = sorted(i for i, m in marks.items() if m in (" ", "~"))
+        remaining = open_items(marks)
         if remaining:
             print("roadmap NEXT ACTIONS is consistent with the checkboxes it summarises")
             print(f"  ({len(remaining)} tracked item(s) still open: {', '.join(remaining[:8])}"

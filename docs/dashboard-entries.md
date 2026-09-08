@@ -4843,3 +4843,17 @@ Nine deliberate breakages, all caught. Two things came out of it. First, one of 
 **My generator now harvests the real case names** from a green `--self-test` run and refuses any `expect` that is not an exact match, printing the near-miss it found. It caught all four of mine before a five-minute sweep could.
 
 Registration: `EXPECTED_MUTATIONS["scripts/check-ci-watched.py"] = 9`; live sum 290 → 299; sorted want-list; `MANIFEST_BASELINE` 6 → 5. ⚠ Second want-list mis-sort in two PRs (`check-catalog-coverage` sorts before `check-ci-watched`) — the position is now DERIVED and the literal asserted sorted, rather than placed by eye.
+
+## 2026-09-08
+The guard that checks the roadmap's "what's next" section against its own checkboxes now has a safety net, and it had one rule written down in two places.
+Twelve deliberate breakages, all caught. Two things worth knowing. The rule for "which items are still open" existed as two identical copies — one deciding whether the check fails, the other deciding the sentence it prints when it passes. Nothing kept them in step, so a future edit to one would have let the check fail while announcing that everything was finished. They are now one shared rule. Separately, one check could never have failed: it was meant to prove that a range like "B1 to B5" covers its last member, but both ends of such a range are recognised on their own anyway, so the part being tested was never actually used. A range written with the prefix on one side only is the shape that tests it, and that case now exists.
+<!--tech-->
+`scripts/mutations/check-roadmap-consistency.json` — 12 mutations, all attributed, over a green 26/26 control, verified through `check-plan-code`'s own `run_mutations` (`caught=12 survivors=0`). All four output contracts already held.
+
+⭐ **ONE RULE, TWO OWNERS.** `sorted(i for i, m in marks.items() if m in (" ", "~"))` appeared at `:319` (the **verdict** — does `no_coverage` fire?) and `:494` (the **explanation** `main()` prints). Byte-identical, with nothing holding them that way: drift would fail the check while printing *"every tracked checkbox is ticked"*. Extracted to `open_items()`. Safe to share because the whole rule **is** that one expression — the `a-shared-function-can-hold-half-a-contract` hazard needs a clause one caller has and the other doesn't. Bonus: the self-test cases for the verdict now also protect the printed reason, which `main()` otherwise puts out of their reach.
+
+**Unfalsifiable case:** `range(a, b + 1)` → `range(a, b)` survived *every* range case. `B1–B5` and `C1–C3` have both endpoints matched by `ident_re` independently, so expansion only ever supplied the **interior**. Added `a range written B1-5 with the prefix on one side still covers the TOP member` — measured: it is the only case that mutation kills. **26 → 27 cases.**
+
+**Also:** the guard printed nothing for passing cases, so its case names were invisible to any outside tool and an `expect` could only be hand-transcribed. It now prints `PASS <name>` like every other guard in the suite, and my generator harvests those names to refuse an inexact `expect`.
+
+Registration: `EXPECTED_MUTATIONS["scripts/check-roadmap-consistency.py"] = 12`; live sum 299 → 311; sorted want-list — position now **derived and asserted sorted** (27 entries), which is why there was no third mis-sort; `MANIFEST_BASELINE` 5 → 4.
