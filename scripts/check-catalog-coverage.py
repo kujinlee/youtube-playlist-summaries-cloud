@@ -2,7 +2,7 @@
 """Every catalog column M4's digest could read is either DIGESTED or EXCLUDED WITH A REASON.
 
     python3 scripts/check-catalog-coverage.py              # against the live container
-    --self-test  # 15 cases
+    --self-test  # 18 cases
 
     exit 0 = every column of every catalog we read is classified
     exit 1 = a column is neither digested nor excused — the digest may be silently narrower
@@ -187,10 +187,16 @@ def moved_coverage_problems() -> list[str]:
     return _moved_problems_for(MOVED_COVERAGE)
 
 
-def _moved_problems_for(claims) -> list[str]:
-    """Every claim points at a file that exists and mutations that exist."""
+def _moved_problems_for(claims, harness: str | None = None) -> list[str]:
+    """Every claim points at a file that exists and mutations that exist.
+
+    `harness` is a seam for `--self-test`: passing `""` drives the unreadable-harness path, which
+    is the one branch here that must fail LOUD rather than return a clean list. It went untested
+    until 2026-09-07, so `return []` in its place was a fail-open no case could see.
+    """
     out: list[str] = []
-    harness = HARNESS.read_text() if HARNESS.is_file() else ""
+    if harness is None:
+        harness = HARNESS.read_text() if HARNESS.is_file() else ""
     if not harness:
         return [f"MOVED COVERAGE  cannot read {HARNESS} — the mutation half of every 'covered "
                 "elsewhere' claim is unverifiable. TREAT THIS AS NOT RUN."]
@@ -253,6 +259,17 @@ def self_test() -> int:
     check("a claim naming a file that does not exist FAILS", bool([
         p2 for p2 in _moved_problems_for(
             ((r"^(x)$", "scripts/no-such-file.py", ("mutation 10",)),))]), True)
+    # ⟳ 2026-09-07 — the unreadable-harness branch was driven by NO case, so replacing its return
+    # with `[]` was a fail-open the suite could not see. "Cannot run" is a FAILURE, never a pass.
+    check("an unreadable mutation harness is a PROBLEM, not silence",
+          bool(_moved_problems_for(MOVED_COVERAGE, harness="")), True)
+    check("…and it says TREAT THIS AS NOT RUN, so nobody reads the silence as coverage",
+          "NOT RUN" in "".join(_moved_problems_for(MOVED_COVERAGE, harness="")), True)
+    # ⟳ 2026-09-07 — the ACL regex is written TWICE (EXCLUDED and MOVED_COVERAGE). Case 6 above
+    # only asks whether the letters `relacl` appear in one of them, so the two could DIVERGE — a
+    # column excluded here and claimed by nobody there — and every case stayed green.
+    check("every 'covered elsewhere' claim is attached to a pattern EXCLUDED actually uses",
+          [pat for pat, _, _ in MOVED_COVERAGE if pat not in {p for p, _ in EXCLUDED}], [])
     check("relacl is EXCLUDED, not digested (r6 B1)", classify("relacl", d)[0], "EXCLUDED")
     check("…and its reason names the production divergence",
           "claude_ro" in classify("relacl", d)[1], True)

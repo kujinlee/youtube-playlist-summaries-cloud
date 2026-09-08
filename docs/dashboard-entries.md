@@ -4789,3 +4789,17 @@ Four deliberate breakages, each caught by the check aimed at it, first time. Thi
 All four output contracts checked before choosing targets; this guard already returned `1 if failed else 0`.
 
 Registration: `EXPECTED_MUTATIONS["scripts/check-docs.py"] = 4`; live sum 270 → 274; sorted want-list; `MANIFEST_BASELINE` 9 → 8.
+
+## 2026-09-07
+The guard that stops the database check from quietly narrowing now has a safety net — and writing it found two ways the guard could have gone wrong in silence.
+Seven deliberate breakages, all caught first time. Five of them confirm rules the guard's fifteen existing checks already covered. The other two are genuine gaps, and both are the same shape: a claim about coverage that nothing ever ran. First, when this guard cannot read the file it needs, one small edit would have made it report "no problems" instead of "I could not run" — the exact failure it is supposed to prevent in others. Second, one rule about database privileges is written down twice in the same file, and nothing checked the two copies still agree; the check that looked like it did was only searching for a word in the text, so either copy could have quietly changed while everything stayed green.
+<!--tech-->
+`scripts/mutations/check-catalog-coverage.json` — 7 mutations, all attributed, over a green 15/15 control, verified through `check-plan-code`'s own `run_mutations` (`verdicts=7 survivors=0`). All four output contracts checked BEFORE choosing targets; this guard already satisfied all four, including contract (4)'s `return 1 if failures else 0`.
+
+**GAP 1 — a fail-open on the CANNOT-RUN path.** `_moved_problems_for`'s unreadable-harness branch was driven by NO case, so `return []` in its place was caught by nothing. That is *"cannot run" reported as clean* — inside the one script whose whole job is to stop "covered elsewhere" claims going unverified. Fixed by a `harness` seam so `--self-test` can pass `""`, plus two cases: the result is non-empty, **and** it says `TREAT THIS AS NOT RUN`. Both are load-bearing — one mutation kills each.
+
+**GAP 2 — one rule, two copies, no agreement check.** `^(relacl|proacl|attacl|typacl)$` appears in both `EXCLUDED` (line 92) and `MOVED_COVERAGE` (line 177). The case that appeared to bind them, `any("relacl" in pat …)`, is a **substring test on the pattern text**: it passes as long as those six letters appear somewhere, so either copy could narrow and leave a column excluded here and claimed by nobody there. New case asserts every `MOVED_COVERAGE` pattern is one `EXCLUDED` actually uses — which fails in *both* directions of drift.
+
+Self-test 15 → 18 cases, declared in the docstring (this guard is in `check-selftest-counts.POPULATION`, so an undeclared count is itself a red gate).
+
+Registration: `EXPECTED_MUTATIONS["scripts/check-catalog-coverage.py"] = 7`; live sum 274 → 281; sorted want-list; `MANIFEST_BASELINE` 8 → 7 — read off `check-ratchet-contract.py`'s own output, never computed.

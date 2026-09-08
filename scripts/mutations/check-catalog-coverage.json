@@ -1,0 +1,94 @@
+[
+  {
+    "name": "the digest's SUBJECT is dropped — classify reads an empty query, so every column looks unread",
+    "file": "scripts/check-catalog-coverage.py",
+    "edits": [
+      [
+        "def digested_columns(sql: str = CATALOG_SQL) -> set[str]:",
+        "def digested_columns(sql: str = \"\") -> set[str]:"
+      ]
+    ],
+    "expect": [
+      "proisstrict is DIGESTED (r6 codex B)"
+    ]
+  },
+  {
+    "name": "the ACL exclusion narrows, so relacl is excluded by nobody AND its moved-coverage claim points at a pattern EXCLUDED no longer uses",
+    "file": "scripts/check-catalog-coverage.py",
+    "edits": [
+      [
+        "    (r\"^(relacl|proacl|attacl|typacl)$\",\n     \"⛔⛔",
+        "    (r\"^(proacl|typacl)$\",\n     \"⛔⛔"
+      ]
+    ],
+    "expect": [
+      "relacl is EXCLUDED, not digested (r6 B1)",
+      "every 'covered elsewhere' claim is attached to a pattern EXCLUDED actually uses"
+    ]
+  },
+  {
+    "name": "the fallback stops being UNCLASSIFIED — a column nobody has thought of is silently excused, which is the miss this whole script exists to invert",
+    "file": "scripts/check-catalog-coverage.py",
+    "edits": [
+      [
+        "    return \"UNCLASSIFIED\", (",
+        "    return \"EXCLUDED\", ("
+      ]
+    ],
+    "expect": [
+      "a column nobody has thought of is UNCLASSIFIED, not silently fine"
+    ]
+  },
+  {
+    "name": "the cited-mutation check goes blind, so a 'covered elsewhere' claim may name a mutation the harness does not have",
+    "file": "scripts/check-catalog-coverage.py",
+    "edits": [
+      [
+        "            if mut not in harness:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "a claim citing a mutation that does not exist FAILS"
+    ]
+  },
+  {
+    "name": "the named-file check goes blind, so a moved fact may name a file that does not exist and the claim stays prose",
+    "file": "scripts/check-catalog-coverage.py",
+    "edits": [
+      [
+        "        if not (ROOT / instrument).is_file():",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "a claim naming a file that does not exist FAILS"
+    ]
+  },
+  {
+    "name": "an unreadable harness stops short-circuiting, so the report blames the CLAIM instead of saying the check could not run",
+    "file": "scripts/check-catalog-coverage.py",
+    "edits": [
+      [
+        "    if not harness:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "…and it says TREAT THIS AS NOT RUN, so nobody reads the silence as coverage"
+    ]
+  },
+  {
+    "name": "an unreadable harness returns CLEAN — the fail-open that no case could see before 2026-09-07",
+    "file": "scripts/check-catalog-coverage.py",
+    "edits": [
+      [
+        "        return [f\"MOVED COVERAGE  cannot read {HARNESS} — the mutation half of every 'covered \"\n                \"elsewhere' claim is unverifiable. TREAT THIS AS NOT RUN.\"]",
+        "        return []"
+      ]
+    ],
+    "expect": [
+      "an unreadable mutation harness is a PROBLEM, not silence"
+    ]
+  }
+]
