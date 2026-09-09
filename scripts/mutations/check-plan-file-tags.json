@@ -106,5 +106,18 @@
     "expect": [
       "an undecodable document is reported, not silently skipped"
     ]
+  },
+  {
+    "name": "the guard imitates the reader's line-splitter instead of using it (splitlines vs split)",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "        for n, line in enumerate(text.split(\"\\n\"), start=1):",
+        "        for n, line in enumerate(text.splitlines(), start=1):"
+      ]
+    ],
+    "expect": [
+      "a 0xb before a fence does not open one — extract() splits on '\\n' alone, and assembles this tag"
+    ]
   }
 ]

@@ -5284,3 +5284,32 @@ entries / 0 problems; self-tests green — plan-code 229/229, file-tags 21/21, r
 22/22 (29 guards discovered incl. the new one), selftest-counts 18/18, review-rounds 29/29,
 anchors 15/15, ci-watched 23/23, dashboard-entry 13/13, explainer-delivery 8/8, task-order 21/21.
 Live guard run: `plan-mode tags: 0 across 1115 documents under docs/`.
+
+## 2026-09-08
+Correction to the entry above, and the reason it exists. A review pass over that change found a
+real defect in the new guard — it disagreed with the tool it was meant to mirror about where a
+line ends, in exactly the direction that would let a tag slip past unnoticed. Found by running
+both against the same input rather than reading either. Fixed, with a case for each of the nine
+ways they could have disagreed.
+<!--tech-->
+Review round 1, Claude half, filed at `docs/reviews/claude/retire-plan-mode-r1-claude.md`.
+
+**H1 (fixed in-round).** `check-plan-file-tags.audit` iterated `text.splitlines()`;
+`check-plan-code.extract` iterates `md.split("\n")`. `splitlines()` breaks on NINE further
+separators (`\v \f \x1c \x1d \x1e \x85 U+2028 U+2029 \r`). Measured: for 8 of them,
+`x<SEP>```" opened a fence in the guard that never opens in the parser, so the tag beneath was
+skipped as fenced while `extract()` assembled it — `files=['m.py']` vs **0** findings. Third
+recorded instance of imitating a parser instead of asking it. Fixed to `split("\n")`; re-measured
+**0 disagreements across all nine**, over the file both consumers actually read.
+
+⚠ My first re-measurement said `\r` still disagreed. That was a defect in the TEST — `read_text()`
+does universal-newline translation, so I fed `extract()` a raw string and the fence a translated
+file, then called the difference a divergence. A false finding accepted there would have driven a
+fix to code that was already correct.
+
+Cases 21 → **29** (one per separator — the class, not the instance). `EXPECTED_MUTATIONS` for the
+guard 8 → **9**, sum 382 → **383**. Verified: 9/9 mutations red via the case each names over a
+green control; live run 0 tags across 1,115 documents; all gates green.
+
+⚠ **REVIEW GAP — the Codex half produced no output and must be re-attempted before merge.** Per
+the bounded-wait rule that is a Codex gap, not a clean Codex verdict. Recorded in the review doc.

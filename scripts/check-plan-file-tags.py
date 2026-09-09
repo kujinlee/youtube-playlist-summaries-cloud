@@ -71,7 +71,7 @@ CANNOT RUN (exit 2, never a pass)
 
 Usage:
     python3 scripts/check-plan-file-tags.py
-    python3 scripts/check-plan-file-tags.py --self-test  # 21 cases
+    python3 scripts/check-plan-file-tags.py --self-test  # 29 cases
 """
 from __future__ import annotations
 
@@ -126,7 +126,15 @@ def audit(root: Path) -> tuple[list[Finding], int]:
             continue
         scanned += 1
         in_fence = False
-        for n, line in enumerate(text.splitlines(), start=1):
+        # ⛔ `split("\n")`, NOT `splitlines()` — the parser's own splitter (`extract`: `md.split`).
+        # MEASURED 2026-09-08, review r1: `splitlines()` honours NINE separators that `split("\n")`
+        # does not (\v \f \x1c \x1d \x1e \x85     \r). That is not cosmetic — it broke
+        # the fence in the DANGEROUS direction. For each of five tested, `x<SEP>```" opened a fence
+        # HERE that never opened in `extract`, so a `<!-- file: m.py -->` on the next line was
+        # skipped as fenced while `extract()` assembled it: `files=['m.py']`, fence findings 0.
+        # A line is whatever the reader's parser says a line is. Third recorded instance of
+        # imitating a parser instead of asking it.
+        for n, line in enumerate(text.split("\n"), start=1):
             # Fence FIRST, and toggled by the same rule `extract` used. A tag inside a column-0
             # fence was invisible to the parser, so it is invisible here — see the header for the
             # measurement, and note that an INDENTED fence toggles nothing, which is why a tag
@@ -256,6 +264,18 @@ def self_test() -> int:
         r = _tree(tmp / "p", {"p.md": "```python title=x\n<!-- file: m.py -->\n"})
         case("an INFO-STRING fence opens nothing either — same measurement",
              len(audit(r)[0]), 1)
+
+        # ⛔ A LINE IS WHATEVER THE PARSER SAYS IT IS. `extract` splits on "\n"; `splitlines()`
+        # ALSO breaks on \v \f \x1c \x1d \x1e \x85     \r. Measured in review r1: with
+        # `splitlines()`, `x\v```" opened a fence here that never opened in `extract`, so the tag
+        # below it was skipped as fenced while `extract()` assembled `m.py` — 5 of 5 separators
+        # tested disagreed, every one in the direction that HIDES a live tag.
+        # This case pins the whole class, not the one separator that was noticed first.
+        for _sep in ("\v", "\f", "\x1c", "\x1d", "\x1e", "\x85", " ", " "):
+            r = _tree(tmp / f"q{ord(_sep)}",
+                      {"p.md": f"x{_sep}```\n<!-- file: m.py -->\n```python\nV=1\n```\n"})
+            case(f"a {hex(ord(_sep))} before a fence does not open one — extract() splits on "
+                 f"'\\n' alone, and assembles this tag", len(audit(r)[0]), 1)
 
         # ── the corpus, which is the whole point ───────────────────────────────
         r = _tree(tmp / "i", {"a.md": "x\n", "b/c.md": "y\n"})
