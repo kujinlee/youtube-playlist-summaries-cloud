@@ -5853,3 +5853,73 @@ control is a violated premise, not a result.
 
 **Full sweep after the change:** `33 file(s), 381 mutation(s), 0 survivor(s)` rc=0 (4m39s
 local). `--self-test` 89/89. `check-selftest-counts` rc=0 across 30 declaring scripts.
+
+## 2026-09-09
+The rule about running several assistants at once now exists in writing, in the place
+where that decision actually gets made.
+Until today the guidance lived in a comment inside one script, and that comment named
+two scripts that had already been deleted — so a person following it could not check
+what it was telling them to avoid. Meanwhile the document consulted when two reviewers
+are about to be launched said nothing about the subject at all.
+The substance is a deliberate narrowing. The earlier instinct was to run assistants one
+at a time whenever anything risky was involved, which is slow and buys safety that is
+mostly not needed. What is written down instead is a list of *operations*: two that have
+been tested and shown to be safe to run at the same time, and three that genuinely are
+not. Everything outside those three runs in parallel without ceremony.
+Both of the "safe" entries were established by actually running them concurrently and
+comparing the results, not by reasoning that they ought to be fine. That distinction is
+the whole reason this took as long as it did — the same reasoning has been wrong twice
+here, once producing a serious-looking defect report about a problem that did not exist.
+Stated plainly and not buried: none of the three dangerous operations is prevented by
+any mechanism. They are three written cautions. The document says so in those words,
+because a list of hazards that reads like protection is worse than no list.
+<!--tech-->
+Branch `concurrency-safety-bundle`, off `c407f587`. Backlog **#67** core deliverable.
+
+**Where it landed, and why NOT where the row proposed.** Row 67 said *"a `docs/plugins.md`
+row"*. `check-docs.py` **refused it**: `plugins.md` sits at **exactly** its 260-line budget,
+and the guard's message is *"Move detail to process-checklists.md / review-method.md /
+process-rationale.md, or make the rule a script — do not raise the budget as a reflex."*
+
+The budget was right about the file. `dev-process.md`'s read-trigger table says `plugins.md`
+is read when *choosing a skill*; **`review-method.md` is read when a review round STARTS** —
+which is exactly when two halves get dispatched. Full section → `review-method.md`.
+`plugins.md` gets a **one-line** pointer, achieved by extending a sentence that was already
+there, so its net line cost is **zero** and it is still 260/260.
+
+**The classification (summary; the table itself is in `review-method.md`, not duplicated here):**
+
+* ✅ **SAFE CONCURRENT, measured:** both review halves at once (three overlapping processes →
+  byte-identical red-set data for all 23 manifest entries); `check-plan-code.py --mutate .`
+  (two simultaneous runs → both `rc=0`, byte-identical verdicts). The mechanism both rely on
+  already exists: a per-run `TemporaryDirectory` plus a `$HOME` redirect.
+* ⛔ **MUST SERIALISE, measured, none enforced:** (1) local Postgres **roles** — cluster-wide,
+  `pg_auth_members` defeats per-database clones; (2) `git` in the main working tree; (3)
+  top-level `docs/reviews/` writes while a Codex run is in flight (row #92).
+
+**The stale warning is corrected in place** (`mutate-live-schema-check.sh:25`). It said
+*"TWO OF THESE MUST NOT RUN AT ONCE"* about **`mutate-schema.py` (gate 2)** — re-verified today,
+`scripts/mutate-schema.py` and `scripts/verify-schema.sh` are both **absent**. The measurement
+it carried is kept (23/63 vs 63/63; the prior 23/44 vs 44/44, and the near-identical ratio is
+the tell); the instruction is replaced by a pointer, and the one hazard a clone cannot isolate
+— roles being cluster-wide — was already stated in its own right directly above it.
+
+**`memory/subagent-interference-open-question.md` rewritten** to point at the doc rather than
+carry a second copy of the table, keeping only the two durable lessons: a red on a shared
+resource is contamination until re-measured **alone**, and concurrency safety is observed,
+never inferred.
+
+**The `can-it-be-a-script?` test was applied — that is row 67 step (3), and the answer is
+split.** The classification itself cannot be: it is a dispatch-time decision about what a
+subagent may touch, and enforcing it means `PreToolUse` hooks on subagent tool calls — a build,
+not a check. But *"a comment names `scripts/X` that no longer exists"* **can** be, and this is
+its **second** instance (the first: `docs/available-skills.md` advertising `explain-topic` while
+its symlink was broken for four days). `check-docs.py` validates ADR references and living-doc
+links but does **not** scan script comments. **Guard not built** — it is doc-integrity work, not
+concurrency work, and folding it in would make this change about two things. Not filed; the
+user's call.
+
+⚠ **What this does NOT close.** Rows **#17 / #19 / #20** are product-pipeline races each needing
+its own spec; **#92** and **#103** are separate defects. They share the `(concurrency safety)`
+tag so the whole class is visible in one place — by the user's explicit decision — not because
+one change closes them. Row 67's own status cell now records exactly which part landed.

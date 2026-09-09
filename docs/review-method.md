@@ -159,6 +159,55 @@ itself mutation-checked so it cannot pass vacuously. A future refactor that adds
 job resumption then fails *there*, instead of silently invalidating a schema nobody thought to
 re-read.
 
+## Running agents concurrently — classify the OPERATION, not the agent (added 2026-09-09)
+
+**Read this before dispatching two halves at once.** Backlog #67; the goal in the user's words:
+*"find a safe method to run multiple agents concurrently, and when no safe method exists, then they
+must be serialised for the dangerous operation. This is balancing of speed and safety."*
+
+**Serialising whole agents is the expensive answer and buys safety this project does not need.**
+Only a few operations are dangerous. Serialise those; run the rest in parallel without ceremony.
+
+### ✅ Safe to run concurrently — MEASURED, never inferred
+
+| Operation | Why it is safe | Evidence |
+|---|---|---|
+| **Both review halves at once** (a Codex half and a Claude half) | they read files and each writes only its own review path | 2026-09-09: three overlapping processes produced **byte-identical red-set data for all 23 manifest entries**. Independent runs agreeing is the strongest available evidence of non-interference |
+| **`check-plan-code.py --mutate .`** | `stage_tree()` copies into a fresh `TemporaryDirectory`; `child_env` redirects `$HOME` into it, so two runs share no mutable state | 2026-09-09: two full runs launched together, both `rc=0`, verdict lines byte-identical |
+
+**The safe method already exists and is already implemented** — per-run temp tree plus a `$HOME`
+redirect. Anything adopting that shape can join this table; anything that cannot, does not.
+
+⚠ **Both rows were settled by RUNNING them, and that is the rule, not the ceremony.** This section
+exists because a concurrency *inference* was wrong **twice** — a **Blocking** finding was filed
+against what turned out to be contamination (23/63, then 63/63 alone; the prior instance 23/44 vs
+44/44). **The near-identical ratio is the tell.** `--mutate .` "should obviously be safe by the same
+argument as the reviewers" was not accepted either; it was launched twice and observed.
+
+### ⛔ Must be serialised — each measured, and **none mechanically enforced**
+
+| # | Operation | Why a clone or a temp dir does NOT save you |
+|---|---|---|
+| 1 | Anything touching local Postgres **roles** | roles are **cluster-wide**. `grant service_role to anon` rewrites `pg_auth_members` and changes `has_table_privilege('anon', …)` in *every* clone at once. A role-scoped mutation must create and drop its **own** role, never grant an existing one |
+| 2 | **`git` in the main working tree** | a subagent's `stash` / `checkout` / `add` can take the coordinator's uncommitted work into a stash nobody knows exists. Measured: a `/brief` agent ran `git stash` / `git stash pop` mid-edit and completed cleanly **by luck** |
+| 3 | **Writes to the TOP LEVEL of `docs/reviews/` while a Codex run is in flight** | the wrapper snapshots that directory **non-recursively**, and its failure-path `quarantine()` **moved a concurrently-written half out of the repo**. Mitigated by convention only — file under `docs/reviews/<writer>/` — not by a mechanism (backlog #92) |
+
+⛔ **"None is mechanically enforced" is the honest state, not an omission.** Three named hazards,
+three conventions. Do not read the table as protection.
+
+### What the dispatcher does
+
+- **Commit before spawning.** Hazard 2 has no mechanism; a clean tree is the only protection.
+- **Put the constraint in the BRIEF, not only in the harness.** A reviewer told to *"verify by
+  execution"* will reach for the shared harness — so the brief must name what it may touch: scratch
+  dirs and throwaway repos only, no schema gates, no local Postgres, never `git` in the main tree.
+
+⚠ **`pg_try_advisory_lock` was considered and REJECTED by the user**, and stays rejected: a
+writer-only lock does not protect readers, and extending it to readers would block `--prod` and
+`--database <scratch>` reads that cannot be corrupted — restriction bought with no safety.
+
+---
+
 ## Adversarial Review
 
 Dispatch Codex (`codex:rescue`) with an explicit adversarial mandate at every phase.
