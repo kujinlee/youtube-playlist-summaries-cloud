@@ -256,5 +256,104 @@
       ]
     ],
     "expect": "a SILENTLY-EXITING control is not green, so the run is not trustworthy"
+  },
+  {
+    "name": "the case-name match becomes a SUBSTRING again (r1 F1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    unnamed = [(w, [f for f in fails if w == f]) for w in wants]",
+        "    unnamed = [(w, [f for f in fails if w in f]) for w in wants]"
+      ]
+    ],
+    "expect": "an `expect` that is a mere FRAGMENT of a real case name is REFUSED"
+  },
+  {
+    "name": "a case name is truncated at its FIRST colon again (r1 F2)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        fails = [l.strip()[7:].rsplit(\": got \", 1)[0].strip()",
+        "        fails = [l.strip()[7:].split(\":\", 1)[0].strip()"
+      ]
+    ],
+    "expect": "a case name containing a COLON is matched whole, not truncated at the first one"
+  },
+  {
+    "name": "EXPECTED_MUTATIONS becomes a floor, so a manifest may GROW silently (r1 F3)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if got != want:\n            drift.append(f\"{target}: manifest holds {got} mutation(s), expected {want}. \"",
+        "        if got < want:\n            drift.append(f\"{target}: manifest holds {got} mutation(s), expected {want}. \""
+      ]
+    ],
+    "expect": "a GROWN manifest is refused too — the count is exact, not a floor"
+  },
+  {
+    "name": "the duplicate mutation NAME refusal stops firing (r1 F5a)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if nm in seen_names:",
+        "            if nm in seen_names and False:"
+      ]
+    ],
+    "expect": "two entries sharing a NAME are refused, even with different anchors"
+  },
+  {
+    "name": "a manifest that is not valid JSON is swallowed silently (r1 F5b)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        except json.JSONDecodeError as exc:\n            problems.append(f\"{man.name}: not valid JSON — {exc}\")\n            continue",
+        "        except json.JSONDecodeError:\n            continue"
+      ]
+    ],
+    "expect": "a manifest that is not valid JSON is refused, not skipped"
+  },
+  {
+    "name": "a manifest with no declared count stops being reported (r1 F5c)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    for target in sorted(set(counts) - set(EXPECTED_MUTATIONS)):",
+        "    for target in sorted(set())[:0]:"
+      ]
+    ],
+    "expect": "a manifest with NO declared count is named, not silently accepted"
+  },
+  {
+    "name": "the home-escape scan reads only the FIRST target (r1 F6)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    for target in sorted(counts):",
+        "    for target in sorted(counts)[:1]:"
+      ]
+    ],
+    "expect": "the home-escape scan reaches EVERY target, not just the first"
+  },
+  {
+    "name": "run_suite drops stderr, so a control's traceback is lost (r1 F7)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "(r.stdout + r.stderr).strip()",
+        "r.stdout.strip()"
+      ]
+    ],
+    "expect": "run_suite keeps BOTH halves, so a control's traceback survives into the report"
+  },
+  {
+    "name": "count_drift's declaration anchor is widened to any 'N cases' (r1 F8)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "r\"--self-test\\s+#\\s*(\\d+) cases\"",
+        "r\"(\\d+) cases\""
+      ]
+    ],
+    "expect": "count_drift reads the DECLARATION, not the first 'N cases' in the prose"
   }
 ]
