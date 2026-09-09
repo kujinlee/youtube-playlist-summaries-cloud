@@ -4,8 +4,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        return 2, (f\"CANNOT RUN — {name} --self-test did not finish in \"",
-        "        return 1, (f\"CANNOT RUN — {name} --self-test did not finish in \""
+        "        return 2, (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \"",
+        "        return 1, (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \""
       ]
     ],
     "expect": "a hung suite is rc 2, distinct from both pass and fail"
@@ -73,8 +73,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            if not control_is_green(rc, out):\n                report.append(f\"CANNOT RUN — control run of ",
-        "            if False:\n                report.append(f\"CANNOT RUN — control run of "
+        "            if not control_is_green(rc, out):\n                report.append(f\"CANNOT RUN \u2014 control run of ",
+        "            if False:\n                report.append(f\"CANNOT RUN \u2014 control run of "
       ]
     ],
     "expect": "a RED control is refused, not reported as catches"
@@ -99,7 +99,7 @@
         "        if isinstance(want, list) and not want and False:"
       ]
     ],
-    "expect": "run_mutations refuses an EMPTY expect list — a declared-but-empty set"
+    "expect": "run_mutations refuses an EMPTY expect list \u2014 a declared-but-empty set"
   },
   {
     "name": "a repeated edit anchor measures nothing twice",
@@ -117,7 +117,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        return \"CANNOT RUN — the docstring no longer declares a case count.\"",
+        "        return \"CANNOT RUN \u2014 the docstring no longer declares a case count.\"",
         "        return None"
       ]
     ],
@@ -129,7 +129,7 @@
     "edits": [
       [
         "    if int(m.group(1)) != actual:",
-        "    if int(m.group(1)) == actual:"
+        "    if int(m.group(1)) != actual and False:"
       ]
     ],
     "expect": "count_drift reports a mismatch"
@@ -288,7 +288,7 @@
         "        if got < want:\n            drift.append(f\"{target}: manifest holds {got} mutation(s), expected {want}. \""
       ]
     ],
-    "expect": "a GROWN manifest is refused too — the count is exact, not a floor"
+    "expect": "a GROWN manifest is refused too \u2014 the count is exact, not a floor"
   },
   {
     "name": "the duplicate mutation NAME refusal stops firing (r1 F5a)",
@@ -306,7 +306,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        except json.JSONDecodeError as exc:\n            problems.append(f\"{man.name}: not valid JSON — {exc}\")\n            continue",
+        "        except json.JSONDecodeError as exc:\n            problems.append(f\"{man.name}: not valid JSON \u2014 {exc}\")\n            continue",
         "        except json.JSONDecodeError:\n            continue"
       ]
     ],
@@ -355,5 +355,16 @@
       ]
     ],
     "expect": "count_drift reads the DECLARATION, not the first 'N cases' in the prose"
+  },
+  {
+    "name": "count_drift stops being silent when the docstring MATCHES",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        return f\"[DRIFT] the docstring declares {m.group(1)} cases; the suite ran {actual}\"\n    return None",
+        "        return f\"[DRIFT] the docstring declares {m.group(1)} cases; the suite ran {actual}\"\n    return \"[DRIFT] spurious\""
+      ]
+    ],
+    "expect": "count_drift is silent when the docstring matches"
   }
 ]

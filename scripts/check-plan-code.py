@@ -534,7 +534,14 @@ EXPECTED_MUTATIONS = {
     # It is "is the anchor LOCATED INSIDE one": `src.find(anchor)` -> line -> enclosing def.
     # And the anchor is `edits[i][0]`, not a key called `anchor`; reading the wrong key gives
     # `find("") == 0`, which attributes all 44 entries to line 1 and answers 0 a second way.
-    "scripts/check-plan-code.py": 32,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    # ⟳ 2026-09-09, round 1 F9+F10: 32 -> 33. NOT a new behaviour — a SPLIT of one entry that
+    # was silently carrying two. Entry 11's edit was `!=` -> `==`, an INVERSION, so it broke
+    # count_drift's mismatch branch AND its match branch at once and reddened FOUR cases under a
+    # name claiming one. Retargeted to `!= actual and False` (2 reds, the named case still fires)
+    # and the match branch given its own entry. Measured by the reviewer on a staged copy: the
+    # two directions are INDEPENDENTLY breakable, and breaking the match branch alone does NOT
+    # fire 'count_drift reports a mismatch' — so this was two properties, not one with symptoms.
+    "scripts/check-plan-code.py": 33,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -2010,7 +2017,7 @@ def _self_test() -> int:
     # a target written ahead of the deletion it describes is a green check over code that
     # does not exist yet. Split by function and how the 21 was measured: see
     # EXPECTED_MUTATIONS' own comment.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 380)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 381)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
