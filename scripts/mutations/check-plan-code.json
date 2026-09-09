@@ -244,78 +244,34 @@
     "expect": "...and it is NOT trustworthy, though every declared mutation ran"
   },
   {
-    "name": "a cannot-run mutation counts as a verdict again, so a timeout reports coverage",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "            and all(m.get(\"measured\") is True for m in m_muts))",
-        "            and True)"
-      ]
-    ],
-    "expect": "a TIMED-OUT mutation is counted but is NOT a verdict"
-  },
-  {
-    "name": "the shared predicate stops holding the CONTROL clause (r3 B1)",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "    return (controls_green\n",
-        "    return (True\n"
-      ]
-    ],
-    "expect": "...and a red control alone is disqualifying"
-  },
-  {
-    "name": "the shared predicate stops holding the CARDINALITY clause (r3 B5)",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "            and len(m_muts) == declared\n",
-        "            and True\n"
-      ]
-    ],
-    "expect": "a SHORTFALL is not trustworthy, however good the entries are"
-  },
-  {
-    "name": "`measured` is read by truthiness, so a truthy non-True passes (r3 B6)",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "m.get(\"measured\") is True for m in m_muts",
-        "m.get(\"measured\") for m in m_muts"
-      ]
-    ],
-    "expect": "a TRUTHY-but-not-True `measured` is refused"
-  },
-  {
     "name": "check() stops passing its control result to the predicate (r3 B1)",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        ev[\"trustworthy\"] = verdicts_are_trustworthy(m_muts, len(muts), controls_green)\n    return ok, report, ev",
-        "        ev[\"trustworthy\"] = verdicts_are_trustworthy(m_muts, len(muts), True)\n    return ok, report, ev"
+        "                    \"entries that survived rather than the ones the plan wrote\")\n            verdict = Measured(files=ev_files, declared=declared, mutations=m_muts,\n                               survivors=m_survivors, controls_green=controls_green)",
+        "                    \"entries that survived rather than the ones the plan wrote\")\n            verdict = Measured(files=ev_files, declared=declared, mutations=m_muts,\n                               survivors=m_survivors, controls_green=True)"
       ]
     ],
     "expect": "a RED control makes check() withhold trust, whatever the tally says"
   },
   {
-    "name": "check()'s evidence dict fails OPEN again (r3 B2)",
+    "name": "the plan-mode HONEST ZERO becomes a refusal (r3 B2 successor)",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                                  \"declared\": None, \"trustworthy\": False}",
-        "                                  \"declared\": None, \"trustworthy\": True}"
+        "                 if honest_zero",
+        "                 if False"
       ]
     ],
-    "expect": "a plan with NO tagged blocks reports no verdict, not a trustworthy zero"
+    "expect": "a plan with NO tagged blocks reports an HONEST ZERO, not a refusal"
   },
   {
-    "name": "the plan-mode printer stops gating on trustworthiness (r3 B2)",
+    "name": "the plan-mode REFUSAL leaks a survivor count (r3 B2)",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    if ev.get(\"trustworthy\") or ev.get(\"declared\") is None:",
-        "    if True:"
+        "        print(not_measured_line(verdict, f\"{mode}: \"))",
+        "        print(not_measured_line(verdict, f\"{mode}: \")\n              + f\" {len(verdict.entries)} survivor(s)\")"
       ]
     ],
     "expect": "plan mode refuses to print a tally it did not earn"
@@ -325,30 +281,19 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    untrustworthy = ev.get(\"declared\") is not None and not ev.get(\"trustworthy\")",
-        "    untrustworthy = False"
+        "        entries, refusing = v.entries, True",
+        "        entries, refusing = v.entries, False"
       ]
     ],
     "expect": "the evidence block refuses a tally over an untrustworthy run"
   },
   {
-    "name": "the NOT MEASURED sentence loses its shortfall arithmetic (r3 B4)",
+    "name": "the --mutate REFUSAL leaks a survivor count (r4 B1)",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "             if want is not None and got != want else \"\")",
-        "             if False else \"\")"
-      ]
-    ],
-    "expect": "...and a SHORTFALL names how many of how many produced a verdict"
-  },
-  {
-    "name": "the --mutate printer stops gating on trustworthiness (r4 B1)",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "        if ev[\"trustworthy\"]:",
-        "        if True:"
+        "            print(not_measured_line(verdict))\n        return 0 if ok else 1",
+        "            print(not_measured_line(verdict)\n                  + f\" {len(verdict.entries)} survivor(s)\")\n        return 0 if ok else 1"
       ]
     ],
     "expect": "--mutate mode refuses to print a tally it did not earn"
@@ -369,7 +314,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        verdict = (\"NOT RUN \" if untrustworthy\n",
+        "        verdict = (\"NOT RUN \" if refusing\n",
         "        verdict = (\"NOT RUN \" if False\n"
       ]
     ],
@@ -380,10 +325,164 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        out.append(f\"  mutation entries recorded: {len(ev['mutations'])}\")",
-        "        out.append(f\"  mutation entries recorded: {len(ev['mutations'])}, caught {caught}\")"
+        "        out.append(f\"  mutation entries recorded: {len(entries)}\")",
+        "        out.append(f\"  mutation entries recorded: {len(entries)}, caught {caught}\")"
       ]
     ],
     "expect": "...and the word `caught` appears NOWHERE under that refusal"
+  },
+  {
+    "name": "the third subject sentence collapses back into the DIFFED header (r2 H2)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        out.append(\"  subject: --compare was given, but no block was assembled, so nothing\")",
+        "        out.append(\"  subject: the plan's blocks, DIFFED against the delivered files:\")"
+      ]
+    ],
+    "expect": "...it says the one honest thing: given, but nothing was assembled"
+  },
+  {
+    "name": "an UNREADABLE mutations declaration is treated as an honest zero (r2 H3, retargeted r3)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                    problems.append(f\"mutations block is not valid JSON: {exc}\")\n                    mut_readable = False",
+        "                    problems.append(f\"mutations block is not valid JSON: {exc}\")"
+      ]
+    ],
+    "expect": "a plan whose mutations block does not PARSE is not an honest zero"
+  },
+  {
+    "name": "`compared` regains its empty-dict meaning, so a dropped block reads as a clean diff (r2 H1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    report, ev_files, compared = list(problems), {}, None",
+        "    report, ev_files, compared = list(problems), {}, ({} if compare is not None else None)"
+      ]
+    ],
+    "expect": "a DROPPED block with --compare leaves `compared` None, never an empty dict"
+  },
+  {
+    "name": "the return a plan WITH code takes stops reading `mut_readable` (r3 H1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if not mut_readable:",
+        "            if False and mut_readable:"
+      ]
+    ],
+    "expect": "a plan WITH code and an unparseable mutations block is not a measured zero"
+  },
+  {
+    "name": "a file tag silently clears the mutations tag again (r3 H2a)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                problems.append(\"the mutations tag was followed by a file tag, not a JSON \"\n                                \"block \u2014 the declaration was never read\")\n                mut_readable = False",
+        "                pass"
+      ]
+    ],
+    "expect": "a file tag after the mutations tag LOSES the declaration, and says so"
+  },
+  {
+    "name": "a second mutations tag silently replaces the first declaration (r3 H2a, sibling)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                problems.append(\"a mutations tag was followed by another mutations tag, not \"\n                                \"a JSON block \u2014 the first declaration was never read\")\n                mut_readable = False",
+        "                pass"
+      ]
+    ],
+    "expect": "...and so does a second mutations tag before the first one gets its block"
+  },
+  {
+    "name": "any iterable is accepted as a mutations declaration again (r3 H2b)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                    if not isinstance(parsed, list):",
+        "                    if not hasattr(parsed, \"__iter__\"):"
+      ]
+    ],
+    "expect": "valid JSON that is not a list of entries (an empty object) is not an honest zero"
+  },
+  {
+    "name": "a list of non-entries is accepted as a declaration again (r3 H2c)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                    elif not all(isinstance(entry, dict) for entry in parsed):",
+        "                    elif False:"
+      ]
+    ],
+    "expect": "valid JSON that is not a list of entries (a list of scalars) is not an honest zero"
+  },
+  {
+    "name": "the census stops following the DROP, so `assembled` means two things (r3 H3)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            py_tagged -= tagged_by_name.get(name, 0)",
+        "            pass"
+      ]
+    ],
+    "expect": "the census and the subject sentence cannot contradict each other"
+  },
+  {
+    "name": "verify_evidence keys its mode off the RESULT again (r3 H4)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if ctx.compare_requested else \"(no --compare)\")",
+        "            if ctx.compared is not None else \"(no --compare)\")"
+      ]
+    ],
+    "expect": "a --compare run with nothing assembled reports the mode it was GIVEN"
+  },
+  {
+    "name": "the EARLY return stops reading `mut_readable` (r3 H1, consumer half)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        honest_zero = not muts and mut_readable",
+        "        honest_zero = not muts"
+      ]
+    ],
+    "expect": "a plan whose mutations block does not PARSE is not an honest zero"
+  },
+  {
+    "name": "the census counts PYTHON FENCES again, not what entered `files` (r4 H1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                files.setdefault(pending, []).append(text)\n                py_tagged += 1\n                tagged_by_name[pending] = tagged_by_name.get(pending, 0) + 1",
+        "                files.setdefault(pending, []).append(text)\n                if f.group(1) == \"python\":\n                    py_tagged += 1\n                    tagged_by_name[pending] = tagged_by_name.get(pending, 0) + 1"
+      ]
+    ],
+    "expect": "a NON-python block that is assembled anyway is counted as assembled"
+  },
+  {
+    "name": "the refusal cause is discarded, so three causes render one sentence (r4 M1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        except VerdictContractError as exc:\n            verdict = NotMeasured.from_counts(m_muts, declared, ev_files, cause=str(exc))",
+        "        except VerdictContractError:\n            verdict = NotMeasured.from_counts(m_muts, declared, ev_files)"
+      ]
+    ],
+    "expect": "a lost declaration and a red control do not render the SAME refusal"
+  },
+  {
+    "name": "the two parse rules report the SAME message, so the split buys nothing (r4 M2)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                        problems.append(\n                            \"mutations block is a list, but its elements are not entry \"\n                            \"objects. `extend` would have taken them one by one, so every \"\n                            \"`mut.get(...)` downstream would read a field off a str\")",
+        "                        problems.append(\n                            \"mutations block parsed, but it is not a LIST (got list). A \"\n                            \"declaration that yields no entries is not the same as \"\n                            \"declaring none, and this one would have read as an honest zero\")"
+      ]
+    ],
+    "expect": "...and the not-entries rule names the elements, not the container"
   }
 ]

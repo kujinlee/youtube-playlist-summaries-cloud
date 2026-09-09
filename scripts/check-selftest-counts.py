@@ -98,6 +98,10 @@ POPULATION: frozenset[str] = frozenset({
     "check-plan-task-order.py",
     "check-review-rounds.py",
     "check-selftest-counts.py",      # this file — the observer observes itself
+    "coverage_verdict.py",           # ⟳ 2026-09-08, backlog #91. Not a `check-*` guard, so
+                                     # the ratchet contract never sees it; its cases ARE the
+                                     # union's falsifiers F1-F3, and an unpinned count is how
+                                     # a falsifier leaves without anyone noticing.
     "check-test-counts.py",
     "explainer-serve.py",
     "gen-goals-page.py",
@@ -180,6 +184,14 @@ def _load_plan_code():
     if spec is None or spec.loader is None:
         raise ImportError("cannot load scripts/check-plan-code.py")
     mod = importlib.util.module_from_spec(spec)
+    # ⚠ REGISTER IT BEFORE EXECUTING. `check-plan-code.py` uses `from __future__ import
+    # annotations`, so every annotation is a STRING, and `@dataclass` resolves
+    # InitVar/ClassVar by looking the module up in `sys.modules`. Without this line the
+    # exec raises `AttributeError: 'NoneType' object has no attribute '__dict__'` from
+    # inside dataclasses — a crash that names neither this file nor the real cause.
+    # MEASURED 2026-09-08 (backlog #91): green before the module gained a dataclass, red
+    # the moment it did, with nothing about the loader having changed.
+    sys.modules[spec.name] = mod
     spec.loader.exec_module(mod)
     missing = borrow_errors(mod)
     if missing:

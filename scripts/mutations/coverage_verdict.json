@@ -1,0 +1,68 @@
+[
+  {
+    "name": "a cannot-run mutation counts as a verdict again, so a timeout reports coverage",
+    "file": "scripts/coverage_verdict.py",
+    "edits": [
+      [
+        "        if bad:",
+        "        if False:"
+      ]
+    ],
+    "expect": "F2 measured missing"
+  },
+  {
+    "name": "the constructor stops holding the CONTROL clause (r3 B1)",
+    "file": "scripts/coverage_verdict.py",
+    "edits": [
+      [
+        "        if controls_green is not True:",
+        "        if False:"
+      ]
+    ],
+    "expect": "F3 controls_green=False"
+  },
+  {
+    "name": "the constructor stops holding the CARDINALITY clause (r3 B5)",
+    "file": "scripts/coverage_verdict.py",
+    "edits": [
+      [
+        "        if len(self.mutations) != self.declared:",
+        "        if False:"
+      ]
+    ],
+    "expect": "F1 declared=2 with 1 verdict"
+  },
+  {
+    "name": "`measured` is read by truthiness, so a truthy non-True passes (r3 B6)",
+    "file": "scripts/coverage_verdict.py",
+    "edits": [
+      [
+        "if m.get(\"measured\") is not True]",
+        "if not m.get(\"measured\")]"
+      ]
+    ],
+    "expect": "F2 measured truthy but not True (1)"
+  },
+  {
+    "name": "the NOT MEASURED sentence loses its shortfall arithmetic (r3 B4)",
+    "file": "scripts/coverage_verdict.py",
+    "edits": [
+      [
+        "             if declared is not None and entries != declared else \"\")",
+        "             if False else \"\")"
+      ]
+    ],
+    "expect": "a PARTIAL shortfall names how many of how many"
+  },
+  {
+    "name": "the cause is dropped from the refusal sentence again (r4 M1)",
+    "file": "scripts/coverage_verdict.py",
+    "edits": [
+      [
+        "    why = f\" {cause.rstrip('.')}.\" if cause else \"\"",
+        "    why = \"\""
+      ]
+    ],
+    "expect": "two different causes render two DIFFERENT reasons"
+  }
+]
