@@ -119,5 +119,31 @@
     "expect": [
       "a 0xb before a fence does not open one — extract() splits on '\\n' alone, and assembles this tag"
     ]
+  },
+  {
+    "name": "the narrowed-corpus refusal is dropped, so reading a SUBSET reads as a clean run",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "    total = len(list(docs_root.rglob(\"*.md\")))\n    if scanned == total:",
+        "    total = len(list(docs_root.rglob(\"*.md\")))\n    if True:"
+      ]
+    ],
+    "expect": [
+      "...but reading a SUBSET is CANNOT RUN, not a pass"
+    ]
+  },
+  {
+    "name": "the shortfall check fires ALWAYS, so a complete scan is refused too (unfalsifiable both ways)",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "    if scanned == total:\n        return None",
+        "    if False:\n        return None"
+      ]
+    ],
+    "expect": [
+      "a full-tree scan has no shortfall"
+    ]
   }
 ]

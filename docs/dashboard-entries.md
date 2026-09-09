@@ -5313,3 +5313,45 @@ green control; live run 0 tags across 1,115 documents; all gates green.
 
 ⚠ **REVIEW GAP — the Codex half produced no output and must be re-attempted before merge.** Per
 the bounded-wait rule that is a Codex gap, not a clean Codex verdict. Recorded in the review doc.
+
+## 2026-09-08
+The second reviewer finally ran, and it found a hole the first one missed. The new guard was
+checking a smaller set of documents than it claimed to — and nothing could tell, because both
+its own tests and its live run stayed green while a fifth of the files, including every single
+one of the planning documents it exists to police, went unread. Fixed, with a check that
+compares what was read against what is actually there.
+
+Worth stating plainly: had the second review been skipped as "probably redundant", that hole
+would have shipped.
+<!--tech-->
+The Codex half of review r1 succeeded on a second dispatch — `--model gpt-5.5 --timeout 1800`,
+skipping the three deterministic HTTP 400s and giving the one reachable model enough budget.
+~22 minutes. Filed at `docs/reviews/coordinator/retire-plan-mode-r1-codex.md`; verdict updated
+to `gate_ran: true`. The earlier REVIEW GAP is closed.
+
+⭐ **Cx-H1 (CONFIRMED, FIXED).** `DOCS` is read by `main()` and by NO case — every case drives
+`audit()` on a temp root. Re-measured on HEAD with `DOCS` pointed at `docs/reviews`: live run
+**rc=0, "0 across 896 documents"** (vs 1116) and self-test **29/29** — both green while 220
+documents went unread, **including all 92 plans**. My empty-corpus rc=2 clause refuses a corpus
+of *nothing*; it never saw a corpus of *something smaller*. The clause I was most confident in
+guarded the case that could not happen.
+
+Fix: `coverage_shortfall()` — `main()` refuses unless `scanned` equals the count under
+`ROOT/"docs"`, re-derived by the CALLER. That asymmetry is the mechanism: mutating `DOCS` moves
+what `audit` reads and not what this counts. Falsifier after the fix: **rc=2, "read 896 of
+1116"**. Cases 29 → **33** (with a presence twin, so an always-fires check is caught too);
+mutations 9 → **11**; `EXPECTED_MUTATIONS` 383 → **385**.
+
+**Cx-L1 (CONFIRMED).** The retirement gate returns before the `--mutate`-combination check, so
+that more specific refusal can never fire. Behaviour is fail-closed and right; the **comment**
+was wrong to imply a caller can reach it. Corrected in place.
+
+**Cx-Blocking** was the `splitlines()` divergence — already fixed in `92b2b362`. Codex reviewed
+`71f86f9a` and rediscovered it independently: same defect, same nine separators, same direction.
+
+⭐ **Fifth recorded instance of *dual halves are not redundant* — and the first where the half
+that nearly got skipped is the one that caught the defect.** Round score: 4 defects, 1 by the
+Claude half, 1 by CI's mutation sweep, 2 by Codex.
+
+Codex honestly reported CANNOT RUN on `--mutate .` (two attempts, both interrupted) — which is
+the very check that caught the orphaned mutation.

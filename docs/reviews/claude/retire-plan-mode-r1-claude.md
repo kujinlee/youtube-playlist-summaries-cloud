@@ -3,8 +3,15 @@
 **Subject:** commit `71f86f9a` on branch `retire-plan-mode` (7 files, +604/−41).
 **Verdict:** NOT CONVERGED — 1 High, found and fixed in this round. 2 Medium accepted as designed.
 
-**REVIEW GAP:** codex — no candidate model produced a usable review; 3× HTTP 400 + 1 timeout, so
-the `docs/plugins.md` fallback applies and this Claude adversarial pass ran in its place.
+✅ **THE GAP IS CLOSED — the Codex half RAN on the second dispatch.** See
+`docs/reviews/coordinator/retire-plan-mode-r1-codex.md` (`gate_ran: true`, gpt-5.5). What follows
+is kept as the record of the first attempt, not as a live gap.
+
+⭐ **AND IT FOUND A HIGH THAT THIS HALF MISSED** — `DOCS` is read by `main()` but by no case, so
+narrowing the corpus left both the live run and the suite green while 220 documents went unread.
+Re-measured and confirmed by me on HEAD before fixing. **Fifth recorded instance of *dual halves
+are not redundant*, and the first where the half that would have been skipped is the one that
+caught the defect.** Had I merged on the Claude half alone, that hole would have shipped.
 
 The wrapper walked its whole candidate list and refused to write a review file rather than write an
 empty one — behaving exactly as designed. Recorded in
@@ -105,3 +112,53 @@ rejected, all four fence branches, and now all nine line separators — every on
   by `check-selftest-counts.py` (30 scripts).
 - **No collateral.** `check-ratchet-contract` discovers 29 guards including the new one and passes
   R1/R2/R3/R4; `check-docs` green with `dev-process.md` at 219/220.
+
+---
+
+# Round 1, CODEX half — dispositions (coordinator)
+
+Filed at `docs/reviews/coordinator/retire-plan-mode-r1-codex.md`. Every claim below was
+RE-MEASURED by the coordinator before acting; an agent's output is a lead, not a finding.
+
+| | Codex severity | Disposition |
+|---|---|---|
+| `splitlines()` vs `split("\n")` | Blocking | **Already fixed** in `92b2b362`. Codex reviewed `71f86f9a`, so it independently rediscovered the Claude half's H1 — same defect, same nine separators, same dangerous direction. Two reviewers converging on one measurement. |
+| `DOCS` narrowing is undetectable | High | **CONFIRMED and FIXED.** See below. |
+| the `--mutate` combination refusal cannot fire | Low | **CONFIRMED; comment corrected, behaviour unchanged.** |
+
+## Cx-H1 — the corpus SELECTION was unguarded (CONFIRMED, FIXED)
+
+`DOCS` is read by `main()` and by no case — every case drives `audit()` on a temp root. So a
+mutation narrowing it is invisible. Coordinator re-measurement on HEAD `fceecdfa`, monkeypatching
+`ft.DOCS` to `docs/reviews`:
+
+    live run    rc=0   "plan-mode tags: 0 across 896 documents under docs/"   (vs 1116)
+    --self-test rc=0   "29/29 self-test cases passed"
+
+Both green while 220 documents went unread — **including all 92 plans, which are the actual
+subject of the fence.** I had built the empty-corpus rc=2 clause believing it closed the
+"zero over nothing" hole. It refuses a corpus of *nothing*; it says nothing about a corpus of
+*something smaller*, and narrowing produces the latter. The clause I was most confident in was
+guarding the case that could not happen.
+
+**Fix:** `coverage_shortfall(docs_root, scanned)` — `main()` refuses rc=2 unless `scanned`
+equals the document count under `ROOT / "docs"`, a root re-derived by the CALLER. That
+asymmetry is the mechanism: mutating `DOCS` moves what `audit` reads and not what this counts,
+so the two disagree. Falsifier re-run after the fix: narrowed `DOCS` → **rc=2, "read 896 of
+1116"**. Cases 29 → 33 (including a presence twin, so an always-fires comparison is caught too);
+mutations 9 → 11.
+
+## Cx-L1 — an unreachable refusal described as reachable (CONFIRMED)
+
+The retirement gate returns before the `--mutate`-combination check, so `--mutate ROOT --evidence`
+gets the generic retirement sentence. Coordinator re-measurement: both `--mutate … --evidence`
+and `--mutate … --compare` return rc=2 with the RETIREMENT message; the combination message is
+unreachable. Behaviour is fail-closed and correct — the defect was the **comment**, which implied
+a specific refusal a caller can still reach. Corrected in place; the guard is kept because the
+deletion slice removes the flags, and removing the guard first would leave a window with neither.
+
+## Codex's own CANNOT RUN, recorded rather than glossed
+
+It could not complete `--mutate .` (two attempts, both interrupted, the second inside
+`run_mutations`). That is exactly the check that caught the orphaned mutation, and Codex was
+right to report it as not-run rather than infer a result.

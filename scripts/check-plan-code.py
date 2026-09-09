@@ -857,7 +857,7 @@ EXPECTED_MUTATIONS = {
     # pin each branch of the rule that replaced the guess (column-0 opens, indented does not,
     # the skip ends at the closing fence), because a rule derived from a measurement is only as
     # durable as the case that re-takes it.
-    "scripts/check-plan-file-tags.py": 9,
+    "scripts/check-plan-file-tags.py": 11,
     # ⟳ 2026-08-31, backlog #76/#77: the shared page chrome. Adding it found TWO
     # vacuous cases of my own — a "dirty tree" assertion compared against a
     # NON-repo, so it differed by the UNKNOWN text and never by the dirty flag,
@@ -3377,12 +3377,12 @@ def _self_test() -> int:
     # three behaviours the r1/r2 folds added and left case-guarded but manifest-less. This
     # total is a LIVE sum that moves whenever coverage does — RISING is the permitted
     # direction; the ratchet exists so it cannot fall silently.
-    # ⟳ 374 -> 383, 2026-09-08: +9 for scripts/check-plan-file-tags.py, the fence that replaces
+    # ⟳ 374 -> 385, 2026-09-08: +11 for scripts/check-plan-file-tags.py, the fence that replaces
     # plan mode's only reader of the `<!-- file: … -->` grammar. RISING, which is the permitted
     # direction — and note what did NOT happen here: retiring plan mode did not lower this
     # number, because PR 1 only makes the code unreachable. The DECREASE belongs to the deletion
     # slice, where it must be recorded as a deliberate retirement with its reason.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 383)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 385)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
@@ -3476,6 +3476,15 @@ def main(argv: list[str]) -> int:
         # delivered scripts and --compare/--evidence/--verify-evidence all describe the
         # plan-assembling mode; accepting both would let a caller believe a subject was
         # measured that never was, which is the failure this whole mode exists to end.
+        #
+        # ⚠ AND SINCE 2026-09-08 THE COMBINATION REFUSAL BELOW CANNOT FIRE. The retirement
+        # gate above returns first on any of those three flags, so `--mutate ROOT --evidence`
+        # gets the generic RETIREMENT sentence, not this more specific one. MEASURED by the
+        # Codex half of review r1: rc=2 with "plan mode was RETIRED… --evidence belonged to
+        # it." Still fail-closed, so the BEHAVIOUR is right and nothing is being fixed here —
+        # what was wrong was this comment implying a specific refusal a caller can still
+        # reach. Kept rather than deleted because the deletion slice removes the flags
+        # themselves, and removing the guard first would leave a window where neither fires.
         conflicting = [f for f, v in (("--compare", a.compare), ("--evidence", a.evidence),
                                       ("--verify-evidence", a.verify_evidence)) if v]
         if conflicting:

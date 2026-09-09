@@ -63,15 +63,21 @@ FAILS IF
 CANNOT RUN (exit 2, never a pass)
 ----------------------------------
   * `docs/` is missing;
-  * **the corpus is EMPTY.** This is the load-bearing clause, not a formality. The whole finding
-    is a ZERO, and a zero is the shape this project has repeatedly measured as worthless: a guard
-    reporting "0 tags found" over 0 files scanned is indistinguishable from one reporting it over
-    1,115. So the count of files READ is printed on the green path and refused when it is 0 —
-    "no tags" is only meaningful next to "out of how many".
+  * **the corpus is EMPTY.** The whole finding is a ZERO, and a zero is the shape this project
+    has repeatedly measured as worthless: "0 tags found" over 0 files scanned is
+    indistinguishable from the same sentence over 1,116. So the count of files READ is printed
+    on the green path and refused when it is 0 — "no tags" is only meaningful next to
+    "out of how many".
+  * **the corpus is NARROWED** — `scanned` disagrees with the number of documents under
+    `ROOT/"docs"`. ⚠ THE EMPTY CLAUSE ALONE WAS NOT ENOUGH, and thinking it was is the defect
+    a reviewer caught. It refuses a corpus of *nothing*; it says nothing about a corpus of
+    *something smaller*, which is exactly what narrowing `DOCS` produces. Measured: pointing
+    `DOCS` at `docs/reviews` left the live run AND the suite green while 220 documents —
+    every one of the 92 plans, the actual subject — went unread. See `coverage_shortfall`.
 
 Usage:
     python3 scripts/check-plan-file-tags.py
-    python3 scripts/check-plan-file-tags.py --self-test  # 29 cases
+    python3 scripts/check-plan-file-tags.py --self-test  # 33 cases
 """
 from __future__ import annotations
 
@@ -105,6 +111,32 @@ class Finding:
 
     def __str__(self) -> str:
         return f"{self.path}:{self.line} — {self.detail}"
+
+
+def coverage_shortfall(docs_root: Path, scanned: int) -> str | None:
+    """None if `scanned` accounts for every document under `docs_root`, else why not.
+
+    ⛔ THE EMPTY-CORPUS CLAUSE WAS NOT ENOUGH, AND A REVIEWER PROVED IT. Codex, r1:
+    `DOCS` is read by `main()` but by no case — every case drives `audit()` on a temp root.
+    So narrowing it is invisible. MEASURED on this tree: `DOCS = ROOT/"docs"/"reviews"` gives
+
+        live run   rc=0   "plan-mode tags: 0 across 896 documents under docs/"
+        --self-test rc=0   "29/29 self-test cases passed"
+
+    Both green while 220 documents — including all 92 plans, the actual subject — went
+    unread. "0 findings" then means only that the SELECTED corpus is clean, not that the
+    intended one was selected. An empty corpus is refused; a QUIETLY NARROWED one was not.
+
+    ⚠ The count comes from a root the CALLER derives independently (`ROOT / "docs"`), never
+    from `DOCS`. That is the whole mechanism: a mutation to `DOCS` moves what `audit` reads
+    and leaves what this counts unchanged, so the two disagree and the run refuses.
+    """
+    total = len(list(docs_root.rglob("*.md")))
+    if scanned == total:
+        return None
+    return (f"CANNOT RUN — read {scanned} of {total} document(s) under {docs_root}. "
+            f"The corpus was NARROWED, so '0 tags' describes only the part that was read. "
+            f"Treat this as NOT CHECKED.")
 
 
 def audit(root: Path) -> tuple[list[Finding], int]:
@@ -302,6 +334,26 @@ def self_test() -> int:
         case("an undecodable document is reported, not silently skipped",
              ["NOT checked" in x.detail for x in f], [True])
 
+        # ── the NARROWED corpus (Codex r1 High). The empty-corpus clause above catches a
+        # corpus of nothing; it does NOT catch a corpus of SOMETHING SMALLER, which is the
+        # shape a mutation to `DOCS` actually produces. These drive `coverage_shortfall`
+        # directly, because that is the function `main()` calls.
+        r = _tree(tmp / "r", {"a.md": "x\n", "sub/b.md": "y\n", "sub/deep/c.md": "z\n"})
+        case("a full-tree scan has no shortfall", coverage_shortfall(r, 3), None)
+        got = coverage_shortfall(r, 2)
+        case("...but reading a SUBSET is CANNOT RUN, not a pass",
+             (got is not None, "NARROWED" in (got or ""), "2 of 3" in (got or "")),
+             (True, True, True))
+        # PRESENCE TWIN — a comparison that always fires is as useless as one that never
+        # does. Without this, `return "CANNOT RUN…"` unconditionally passes the case above.
+        case("...and a scan that read MORE than the tree holds also refuses",
+             coverage_shortfall(r, 4) is not None, True)
+        empty2 = tmp / "s" / "docs"
+        empty2.mkdir(parents=True)
+        case("an empty tree read as empty is consistent — main()'s scanned==0 clause owns "
+             "that case, so this one must NOT double-refuse",
+             coverage_shortfall(empty2, 0), None)
+
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
 
@@ -320,6 +372,13 @@ def main(argv: list[str]) -> int:
     if scanned == 0:
         print(f"CANNOT RUN — {DOCS} contains no .md documents, so 'no plan-mode tags' is a "
               f"statement about nothing. Treat this as NOT CHECKED.", file=sys.stderr)
+        return 2
+
+    # ⛔ AND THE CORPUS MUST BE THE WHOLE TREE, not merely non-empty. `ROOT / "docs"` is
+    # re-derived here on purpose rather than reusing `DOCS` — see `coverage_shortfall`.
+    shortfall = coverage_shortfall(ROOT / "docs", scanned)
+    if shortfall:
+        print(shortfall, file=sys.stderr)
         return 2
 
     if findings:
