@@ -1,0 +1,244 @@
+[
+  {
+    "name": "the fence never opens, so a tag QUOTED inside a code block is reported as live",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "                in_fence = not in_fence",
+        "                in_fence = False"
+      ]
+    ],
+    "expect": [
+      "a tag inside a COLUMN-0 fence is NOT flagged"
+    ]
+  },
+  {
+    "name": "the fence swallows the REST of the document instead of just its own body",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "            if in_fence:\n                continue",
+        "            if in_fence:\n                break"
+      ]
+    ],
+    "expect": [
+      "...but a tag AFTER that fence closes is still flagged"
+    ]
+  },
+  {
+    "name": "an INDENTED fence is treated as opening one, so a live tag beneath it is hidden",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "FENCE = re.compile(r\"^```(\\w*)\\s*$\")",
+        "FENCE = re.compile(r\"^\\s*```(\\w*)\\s*$\")"
+      ]
+    ],
+    "expect": [
+      "an INDENTED fence opens nothing"
+    ]
+  },
+  {
+    "name": "leading whitespace stops being allowed, so an indented tag the parser DID assemble walks through",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "FILE_TAG = re.compile(r\"^\\s*<!--\\s*file:\\s*([A-Za-z0-9._/-]+)\\s*-->\\s*$\")",
+        "FILE_TAG = re.compile(r\"^<!--\\s*file:\\s*([A-Za-z0-9._/-]+)\\s*-->\\s*$\")"
+      ]
+    ],
+    "expect": [
+      "an INDENTED tag OUTSIDE a fence is caught"
+    ]
+  },
+  {
+    "name": "the end anchor is dropped from the tag grammar, so prose FOLLOWING a tag reads as a tag",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "FILE_TAG = re.compile(r\"^\\s*<!--\\s*file:\\s*([A-Za-z0-9._/-]+)\\s*-->\\s*$\")",
+        "FILE_TAG = re.compile(r\"^\\s*<!--\\s*file:\\s*([A-Za-z0-9._/-]+)\\s*-->\\s*\")"
+      ],
+      [
+        "MUT_TAG = re.compile(r\"^\\s*<!--\\s*mutations\\s*-->\\s*$\")",
+        "MUT_TAG = re.compile(r\"^\\s*<!--\\s*mutations\\s*-->\\s*\")"
+      ]
+    ],
+    "expect": [
+      "a tag with trailing prose is NOT a tag"
+    ]
+  },
+  {
+    "name": "the mutations tag stops being checked \u2014 half the retired grammar goes unfenced",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "            elif MUT_TAG.match(line):",
+        "            elif False:"
+      ]
+    ],
+    "expect": [
+      "a standalone mutations tag is caught"
+    ]
+  },
+  {
+    "name": "audit reports NOTHING visited, so the corpus size claim is hollow",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "    return findings, visited",
+        "    return findings, set()"
+      ]
+    ],
+    "expect": [
+      "the visited count is the number of documents LOOKED AT"
+    ]
+  },
+  {
+    "name": "an unreadable document is silently skipped \u2014 a file it could not check reads as clean [anchor re-bound r2: the fix moved this line]",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "            findings.append(Finding(str(md), 0, f\"could not be read, so it was NOT checked: {exc}\",\n                                    unreadable=True))",
+        "            _ = exc"
+      ]
+    ],
+    "expect": [
+      "an undecodable document is reported, not silently skipped"
+    ]
+  },
+  {
+    "name": "the guard imitates the reader's line-splitter instead of using it (splitlines vs split)",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "        for n, line in enumerate(text.split(\"\\n\"), start=1):",
+        "        for n, line in enumerate(text.splitlines(), start=1):"
+      ]
+    ],
+    "expect": [
+      "a 0xb before a fence does not open one \u2014 extract() splits on '\\n' alone, and assembles this tag"
+    ]
+  },
+  {
+    "name": "the narrowed-corpus refusal is dropped, so reading a SUBSET reads as a clean run",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "    missing = want - seen\n    stray = seen - want",
+        "    missing = set()\n    stray = seen - want"
+      ]
+    ],
+    "expect": [
+      "...but reading a SUBSET is CANNOT RUN, not a pass"
+    ]
+  },
+  {
+    "name": "the shortfall check fires ALWAYS, so a complete scan is refused too (unfalsifiable both ways)",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "    if missing:\n        shown =",
+        "    if True:\n        shown ="
+      ]
+    ],
+    "expect": [
+      "a full-tree scan has no shortfall"
+    ]
+  },
+  {
+    "name": "an unreadable doc is counted as visited only AFTER a successful read \u2014 the literal pre-r2 code (r2 H1) [r3 F3: retargeted to the faithful, weakest edit]",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "        visited.add(md)\n        try:\n            text = md.read_text(encoding=\"utf-8\")",
+        "        try:\n            text = md.read_text(encoding=\"utf-8\")\n            visited.add(md)"
+      ]
+    ],
+    "expect": [
+      "...so it is ACCOUNTED FOR and does not read as a narrowing"
+    ]
+  },
+  {
+    "name": "the remedy stops being chosen by finding TYPE, so an undecodable file is told to use backticks (r3 C1)",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "        if any(not f.unreadable for f in findings):",
+        "        if True:"
+      ]
+    ],
+    "expect": [
+      "an UNREADABLE-only run gets the not-checked remedy, NOT the backticks one"
+    ]
+  },
+  {
+    "name": "the remedy uses ALL instead of ANY, so ONE unreadable file suppresses the backticks advice a real tag needs [anchor spans the print so it cannot duplicate its sibling's]",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "        if any(not f.unreadable for f in findings):\n            print(\"\\nPlan mode was retired",
+        "        if all(not f.unreadable for f in findings):\n            print(\"\\nPlan mode was retired"
+      ]
+    ],
+    "expect": [
+      "a MIXED run still gets the backticks remedy \u2014 a tag is present"
+    ]
+  },
+  {
+    "name": "every finding claims to be unreadable, so a narrowed corpus excuses itself per tag",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "    unreadable: bool = False",
+        "    unreadable: bool = True"
+      ]
+    ],
+    "expect": [
+      "a TAG finding is not marked unreadable"
+    ]
+  },
+  {
+    "name": "the guard compares CARDINALITY instead of identity, so a same-size different tree passes (Codex r2 High)",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "    missing = want - seen",
+        "    missing = set() if len(seen) == len(want) else want - seen"
+      ],
+      [
+        "    stray = seen - want",
+        "    stray = set()"
+      ]
+    ],
+    "expect": [
+      "...and a same-SIZE but different set is refused \u2014 the property is which documents were read, not how many"
+    ]
+  },
+  {
+    "name": "main() RAISES and the crash is not attributable \u2014 the suite dies with no [FAIL] and no summary, which run_mutations reads as 'caught by something else' (r4 F1)",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "        if any(not f.unreadable for f in findings):\n            print(\"\\nPlan mode was retired on 2026-09-08",
+        "        if any(f.no_such_attribute for f in findings):\n            print(\"\\nPlan mode was retired on 2026-09-08"
+      ]
+    ],
+    "expect": [
+      "a TAG finding gets the backticks remedy"
+    ]
+  },
+  {
+    "name": "_drive_main stops RESTORING the globals it swapped, so a later case reads a temp path that no longer exists (r4 F2)",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "    finally:\n        ROOT, DOCS = keep_root, keep_docs",
+        "    finally:\n        pass"
+      ]
+    ],
+    "expect": [
+      "...and _drive_main RESTORES the module globals it swapped"
+    ]
+  }
+]

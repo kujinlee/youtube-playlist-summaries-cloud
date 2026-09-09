@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """A plan that contains code must ASSEMBLE into that code, and its evidence must be RUN.
 
-    python3 scripts/check-plan-code.py <plan.md>            # assemble, run suites + mutations
-    python3 scripts/check-plan-code.py <plan.md> --evidence # ...and print the evidence block
-    python3 scripts/check-plan-code.py <plan.md> --compare .   # ...and diff vs the REAL files
-    python3 scripts/check-plan-code.py <plan.md> --verify-evidence   # ...and FAIL if it is stale
-    python3 scripts/check-plan-code.py --self-test          # 231 cases
+    python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
+    python3 scripts/check-plan-code.py --self-test          # 229 cases
+
+⛔ PLAN MODE IS RETIRED (2026-09-08) — `<plan.md>`, `--evidence`, `--compare` and
+`--verify-evidence` all REFUSE with rc=2 and a sentence saying so. They are documented
+below because the reasoning is worth keeping, not because they can be run. See `main`.
 
 ⚠ `--compare` takes the REPO ROOT, and each file tag is resolved under it as the
 repo-relative path it already is. It took the containing DIRECTORY until round 5,
@@ -808,6 +809,19 @@ EXPECTED_MUTATIONS = {
     # to scripts/coverage_verdict.py with the clauses they guard. The sum below is unchanged
     # at 359, which is the point: a seam that relocates coverage must not be able to look
     # like coverage that was deleted, and only the per-file split can tell those apart.
+    # ⟳ 2026-09-08, the plan-mode retirement: HELD AT 44, and the hold is the point. The
+    # refusal made `main()`'s plan-mode tail (L3529-3581) UNREACHABLE — every path there needs
+    # `a.plan` truthy and the refusal intercepts exactly that — so the mutation anchored to its
+    # `not_measured_line(verdict, f"{mode}: ")` print could no longer be killed by any case.
+    # CI's `--mutate .` caught it as 1 survivor of 383; the local suite could not, because the
+    # case had been rewritten off the CLI onto `evidence()` and stayed green at 229/229. That is
+    # the recorded shape: A SUITE PASSING IS NOT EVIDENCE ITS MUTATION STILL BINDS.
+    # RETARGETED, not deleted, onto `evidence()`'s `not_measured_line(v)` — the printer that
+    # same case now drives, guarding the identical property (a NOT MEASURED refusal must not
+    # leak a survivor count). The count is therefore UNCHANGED: a retarget must not read as
+    # lost coverage, and a deletion here would have shrunk the ratchet inside the very PR whose
+    # message says it only rises. The retirement of this entry belongs to the deletion slice,
+    # with the case it serves.
     "scripts/check-plan-code.py": 44,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
@@ -833,6 +847,17 @@ EXPECTED_MUTATIONS = {
     #   * `all(t > num for t in owners)` was unfalsifiable: every fixture symbol had exactly ONE
     #     producer, and with one owner `all`/`any` agree and `>`/`>=` agree.
     "scripts/check-plan-task-order.py": 9,
+    # ⟳ 2026-09-08, the plan-mode retirement. A NEW file, 8 entries. It fences the tag grammar
+    # this very script used to parse, and it exists because retiring plan mode removed the only
+    # reader those tags ever had — so `no plan embeds code` went from enforced to merely true.
+    # ⚠ Three of the eight are on the FENCE RULE, and that is where the defect actually was: the
+    # first version had no fence rule at all, on a claim about `extract()` written from reading
+    # it. Its first live run flagged a committed review document, and running `extract()` on
+    # those exact bytes returned `files=[]` — the parser had never seen the tag. The mutations
+    # pin each branch of the rule that replaced the guess (column-0 opens, indented does not,
+    # the skip ends at the closing fence), because a rule derived from a measurement is only as
+    # durable as the case that re-takes it.
+    "scripts/check-plan-file-tags.py": 18,
     # ⟳ 2026-08-31, backlog #76/#77: the shared page chrome. Adding it found TWO
     # vacuous cases of my own — a "dirty tree" assertion compared against a
     # NON-repo, so it differed by the UNKNOWN text and never by the dirty flag,
@@ -2038,13 +2063,15 @@ def _self_test() -> int:
         # Reverting the plan-mode gate to its pre-r2 unconditional print left the suite at
         # 164/164 — measured by the Claude half. Nothing read the printer, so the branch
         # that decides whether a tally is shown at all had no case.
+        # ⟳ 2026-09-08, PLAN MODE RETIRED. This case used to drive `main([plan])` and assert
+        # the refusal PRINTER. `main` no longer reaches that printer — it refuses the whole
+        # mode first — so the case now asserts the RENDERER directly, which is the thing it
+        # was ever really about and which the follow-up deletion slice will remove alongside
+        # `evidence()` itself. Rewritten rather than deleted here, so this commit changes the
+        # CLI only and the deletion stays a separate, reviewable change.
         pl.write_text(RED_MUT)
-        _saved_stdout, sys.stdout = sys.stdout, io.StringIO()
-        try:
-            main([str(pl)])
-            _out_main = sys.stdout.getvalue()
-        finally:
-            sys.stdout = _saved_stdout
+        _rm_ok, _rm_rep, _rm_v, _rm_ctx = check(pl)
+        _out_main = evidence(_rm_v, _rm_ctx)
         case("plan mode refuses to print a tally it did not earn",
              ("NOT MEASURED" in _out_main, "survivor(s)" in _out_main), (True, False))
 
@@ -2398,34 +2425,41 @@ def _self_test() -> int:
         g.write_text(GOOD + MUTS)
         r = pathlib.Path(td4) / "red.md"
         r.write_text(RED)
-        rc, out = _main_rc([str(g)])
-        case("main: a passing plan exits 0", rc, 0)
-        case("...and names the mode, so a CI log shows the subject",
-             "NOT compared" in out, True)
-        case("main: a FAILING plan exits 1", _main_rc([str(r)])[0], 1)
-        case("main: a plan that does not exist exits 2, not 1", _main_rc(["nope.md"])[0], 2)
-        case("main: no plan at all exits 2", _main_rc([])[0], 2)
-        case("main: --compare at a NON-directory exits 2 (cannot run, not failure)",
-             _main_rc([str(g), "--compare", str(g)])[0], 2)
-        rc, out = _main_rc([str(g), "--verify-evidence"])
-        case("main: --verify-evidence on a plan with NO block exits 1", rc, 1)
-        ship3 = pathlib.Path(td4) / "ship3"
-        ship3.mkdir()
-        (ship3 / "m.py").write_text("\n\n".join(extract(GOOD + MUTS)[0]["m.py"]) + "\n")
-        rc, out = _main_rc([str(g), "--compare", str(ship3)])
-        case("main: a compared run that matches exits 0", rc, 0)
-        case("...and says so on the final line", "OK — compared" in out, True)
-        # The mode string has FOUR branches and CI uses the both-flags one. Asserting
-        # only the two single-flag forms left the combined branch unpinned.
-        g2 = pathlib.Path(td4) / "green2.md"
-        _, _, ev_g, _cx4 = check(g)
-        g2.write_text(GOOD + MUTS)
-        _, _, ev_g2, _cx5 = check(g2, ship3)
-        g2.write_text(GOOD + MUTS + "\n" + evidence(ev_g2, _cx5) + "\n")
-        rc, out = _main_rc([str(g2), "--compare", str(ship3), "--verify-evidence"])
-        case("main: the CI form (both flags) exits 0", rc, 0)
-        case("...and the final line names BOTH, so a CI log shows the real subject",
-             "OK — compared + evidence-verified" in out, True)
+        # ⛔ PLAN MODE IS RETIRED (2026-09-08) — THESE CASES NOW PIN THE REFUSAL.
+        # They used to assert that a passing plan exits 0, a failing one exits 1, and that
+        # the final line named the mode. Every one of those is now a wrong expectation, and
+        # replacing them is the point: the retirement's falsifier is that all four retired
+        # entry points refuse, LOUDLY, with rc=2 and a sentence naming what happened.
+        #
+        # ⚠ rc=2 IS THE ASSERTION, not merely "non-zero". rc=1 would read as "the check ran
+        # and failed", which is the false claim this whole script exists to prevent — a
+        # caller must be able to tell "your plan is bad" from "nothing was measured".
+        # ⚠ AND THE MESSAGE IS ASSERTED TOO. An rc-only case passes over a bare argparse
+        # error, which reads like a typo rather than a decision; the retirement is only
+        # useful if it SAYS it is one.
+        for _argv, _what in (([str(g)], "<plan>"),
+                             ([str(g), "--evidence"], "--evidence"),
+                             ([str(g), "--verify-evidence"], "--verify-evidence"),
+                             ([str(g), "--compare", str(td4)], "--compare"),
+                             ([str(r)], "a FAILING plan — still NOT MEASURED, not failed")):
+            _rc, _out = _main_rc(_argv)
+            case(f"retired: {_what} refuses with rc=2, measuring nothing", _rc, 2)
+        # The sentence, once — on stderr, where a CANNOT RUN belongs.
+        with _cl2.redirect_stdout(_io2.StringIO()), \
+                _cl2.redirect_stderr(_io2.StringIO()) as _err:
+            main([str(g), "--verify-evidence"])
+        _msg = _err.getvalue()
+        case("...and says plan mode was RETIRED, not 'unrecognized arguments'",
+             ("RETIRED" in _msg, "NOTHING WAS MEASURED" in _msg), (True, True))
+        case("...and points at what carries the guarantee now",
+             "--mutate" in _msg, True)
+        # PRESENCE TWIN — the SURVIVING modes must not have been caught by the refusal.
+        # Without this, `retired = [...]` widened to always-true would still pass everything
+        # above: the cases would agree, and `--mutate` would be dead.
+        case("...while --mutate is NOT refused (it is what replaced plan mode)",
+             _main_rc(["--mutate", "/nonexistent-root"])[0], 2)
+        case("...and a bare invocation still exits 2, never 0",
+             _main_rc([])[0], 2)
 
     # ── the evidence block's CONTENT, not just its round-trip (round 5, M6) ──
     # `--verify-evidence` diffs `evidence()` against itself, so any change to what
@@ -3226,6 +3260,9 @@ def _self_test() -> int:
                                       "scripts/check-live-schema.py",
                                       "scripts/check-paid-caller-arrival.py",
                                       "scripts/check-plan-code.py",
+                                      # ⟳ 2026-09-08: the plan-mode retirement's replacement
+                                      # fence. A LIVE inventory entry, added with the guard.
+                                      "scripts/check-plan-file-tags.py",
                                       "scripts/check-plan-progress.py",
                                       "scripts/check-plan-task-order.py",
                                       "scripts/check-producer-enumeration.py",
@@ -3340,7 +3377,12 @@ def _self_test() -> int:
     # three behaviours the r1/r2 folds added and left case-guarded but manifest-less. This
     # total is a LIVE sum that moves whenever coverage does — RISING is the permitted
     # direction; the ratchet exists so it cannot fall silently.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 374)
+    # ⟳ 374 -> 392, 2026-09-09: +18 for scripts/check-plan-file-tags.py, the fence that replaces
+    # plan mode's only reader of the `<!-- file: … -->` grammar. RISING, which is the permitted
+    # direction — and note what did NOT happen here: retiring plan mode did not lower this
+    # number, because PR 1 only makes the code unreachable. The DECREASE belongs to the deletion
+    # slice, where it must be recorded as a deliberate retirement with its reason.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 392)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
@@ -3394,11 +3436,55 @@ def main(argv: list[str]) -> int:
     a = ap.parse_args(argv)
     if a.self_test:
         return _self_test()
+    # ⛔ PLAN MODE IS RETIRED (2026-09-08). Decided by the user after four adversarial review
+    # rounds established that nothing exercises it: 0 of 92 plans and 0 of 93 specs on disk
+    # reach the file path, and CI invokes this script only as `--mutate .` and `--self-test`.
+    #
+    # WHAT IT WAS FOR, so the next reader does not have to reconstruct it. A planning document
+    # lied about its own verification three rounds running — r2 dropped a word from an
+    # assertion and reported 55/55 against a test it had weakened; r3's blocks did not
+    # assemble at all while the plan claimed `19/19 mutations caught` over a mutation that
+    # survived. The remedy was to ASSEMBLE the plan's code, RUN it, and GENERATE the evidence
+    # instead of typing it. It worked.
+    #
+    # WHY IT IS RESIDUE, and it is not because it failed. PR #176 (`da5cd27e`, 2026-08-29,
+    # 17:37) superseded it three hours and eighteen minutes after it first became a CI
+    # dependency (`56201500`, 14:19 the same day): "A SUPERSESSION, not a switch-off." The
+    # guarantee — the mutation evidence describes the code that ships — moved to `--mutate .`,
+    # which reads the DELIVERED files instead of a copy asserted to match them. That kept the
+    # guarantee and deleted the copy, so the thing plan mode watched for no longer exists.
+    #
+    # ⚠ REFUSED, NOT REMOVED, and the distinction is the point. Deleting the flags makes an
+    # old invocation die on argparse's generic "unrecognized arguments", which reads like a
+    # typo. Someone who typed `--verify-evidence` believed a subject was being measured; they
+    # are owed a sentence saying it no longer is. rc=2 (CANNOT RUN), never 0 — an exit code of
+    # 0 from a run that measured nothing is the exact failure this script exists to prevent.
+    # The dead code behind these flags is removed in a FOLLOW-UP slice; this refusal is what
+    # makes that deletion safe, because after it nothing can reach them.
+    retired = [f for f, v in (("--compare", a.compare), ("--evidence", a.evidence),
+                              ("--verify-evidence", a.verify_evidence),
+                              ("<plan>", a.plan)) if v]
+    if retired:
+        print(f"CANNOT RUN — plan mode was RETIRED on 2026-09-08, and "
+              f"{', '.join(retired)} belonged to it. NOTHING WAS MEASURED. The guarantee it "
+              f"carried — 'the mutation evidence describes the code that ships' — now lives in "
+              f"`--mutate .`, which reads the delivered scripts rather than a copy of them. "
+              f"See PR #176. Treat this as NOT CHECKED.", file=sys.stderr)
+        return 2
     if a.mutate:
         # REFUSE the combination rather than silently ignoring it. --mutate measures the
         # delivered scripts and --compare/--evidence/--verify-evidence all describe the
         # plan-assembling mode; accepting both would let a caller believe a subject was
         # measured that never was, which is the failure this whole mode exists to end.
+        #
+        # ⚠ AND SINCE 2026-09-08 THE COMBINATION REFUSAL BELOW CANNOT FIRE. The retirement
+        # gate above returns first on any of those three flags, so `--mutate ROOT --evidence`
+        # gets the generic RETIREMENT sentence, not this more specific one. MEASURED by the
+        # Codex half of review r1: rc=2 with "plan mode was RETIRED… --evidence belonged to
+        # it." Still fail-closed, so the BEHAVIOUR is right and nothing is being fixed here —
+        # what was wrong was this comment implying a specific refusal a caller can still
+        # reach. Kept rather than deleted because the deletion slice removes the flags
+        # themselves, and removing the guard first would leave a window where neither fires.
         conflicting = [f for f, v in (("--compare", a.compare), ("--evidence", a.evidence),
                                       ("--verify-evidence", a.verify_evidence)) if v]
         if conflicting:

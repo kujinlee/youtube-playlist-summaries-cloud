@@ -1,0 +1,14 @@
+{
+  "attempts": [
+    "  attempt 1 (full candidate walk): gpt-5.6-sol/-terra/-luna HTTP 400; gpt-5.5 timed out at 900s — gate did NOT run",
+    "  attempt 2 (--model gpt-5.5 --timeout 1800): ok — 2657 chars"
+  ],
+  "exit_code": 0,
+  "gate_ran": true,
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "reason": "2657 chars",
+  "review": "retire-plan-mode-r1-codex.md",
+  "schema": 1,
+  "tool": "codex-review"
+}

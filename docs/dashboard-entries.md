@@ -5227,3 +5227,326 @@ artifact) and its stated CAUSE was measured false — the three narrators now ag
 `review-method.md` the trigger is read off the cause, so Phase 6 is NOT convened on `evidence()`.
 Escalated instead: **0 of 92 plans exercise plan mode's file path**; four rounds spent on a renderer
 whose only exerciser is its own `--self-test`. That is a goal-moving question → user's call.
+
+## 2026-09-08
+Plan mode is retired. The tool that used to check a planning document by assembling the code
+inside it, running that code and generating the evidence now refuses to do so, and says why. The
+job it did moved to a better mechanism a week and a half ago; what stayed behind was a second way
+of doing it that nothing used. This change makes it unreachable and puts a fence around the hole
+it leaves. Nothing is deleted yet — that is a separate, smaller change, and it is safe only
+because this one landed first.
+
+The one thing worth knowing: the guard written to be that fence was **wrong on its first run**,
+and it said so out loud rather than passing quietly. It flagged a review document from last week
+that had merely *quoted* a plan. The fix was to stop reasoning about how the old parser behaved
+and to run it — which showed the quoted text had never been visible to it. The guard now carries
+the parser's own rule, taken by measurement.
+<!--tech-->
+Branch `retire-plan-mode`, PR 1 of 2. Uncommitted work inherited from the previous session plus
+this session's completion.
+
+**The refusal.** `check-plan-code.py main()` now returns **rc=2** with a sentence naming the
+retirement for `<plan>`, `--evidence`, `--compare`, `--verify-evidence`. Refused, not removed:
+argparse's "unrecognized arguments" reads like a typo, and someone who typed `--verify-evidence`
+believed a subject was being measured. rc=2 (CANNOT RUN), never 0.
+
+**The fence** — `scripts/check-plan-file-tags.py`, new, 21 cases, 8 mutations, CI step + self-test
+step. Fails if any `docs/**/*.md` line is a standalone `<!-- file: … -->` or `<!-- mutations -->`
+tag. MEASURED baseline: **0 line-anchored tags across 1,115 documents**, while **13** documents
+mention the tag in backticked prose and must keep passing — a bare substring test breaks all 13,
+which `plan-mutation-retarget-r1` finding 3 already paid for. An **empty corpus is rc=2**, because
+the whole finding is a zero and a zero over nothing is not a finding.
+
+⭐ **v1 had no fence rule**, justified by a claim about `extract()` written from reading it. First
+live run flagged `docs/reviews/claude/plan-coverage-verdict-union-r3-claude.md:159`. Running the
+parser on those exact bytes: `files=[]` — never seen. Control: the same indented tag *without* the
+fence assembles `m.py`. So the fence is the cause and indentation is not; an indented or
+info-string fence opens nothing (`INVISIBLE_FENCE`), so a tag under one is live. All four branches
+are now cases. The alternative — editing a committed review document to satisfy a checker — was
+avoided by measuring rather than assuming.
+
+⭐ Two further defects found by running, not reading: my manifest had **two entries sharing an edit
+anchor** (`load_manifests` refused it — the count would have held while coverage shrank), and a
+case reading `f[0].detail` **crashed the suite** when a mutation emptied the list, so the entry
+reported `0 red case(s) … caught by something else: []` while working perfectly. That is the
+recorded *report format is a CONTRACT* shape, second instance in two days. Every indexing case in
+the file is now a whole-list comprehension.
+
+Counts: `EXPECTED_MUTATIONS` **374 → 382** (+8, RISING — the decrease belongs to PR 2 and must be
+recorded there as a deliberate retirement); `check-plan-code` docstring **231 → 229** (the drift
+that blocked every downstream gate); `check-selftest-counts` population 29 → **30**.
+`dev-process.md` 218 → 219 lines (budget 220), with the stale "the mode still exists" sentence
+corrected in place. **No ADR** — checked, PR #176's own supersession produced none; the precedent
+is a `dev-process.md` row plus the code comment, which is what this does.
+
+Verified: 8/8 mutations red via the case each names over a green control; `load_manifests` 382
+entries / 0 problems; self-tests green — plan-code 229/229, file-tags 21/21, ratchet-contract
+22/22 (29 guards discovered incl. the new one), selftest-counts 18/18, review-rounds 29/29,
+anchors 15/15, ci-watched 23/23, dashboard-entry 13/13, explainer-delivery 8/8, task-order 21/21.
+Live guard run: `plan-mode tags: 0 across 1115 documents under docs/`.
+
+## 2026-09-08
+Correction to the entry above, and the reason it exists. A review pass over that change found a
+real defect in the new guard — it disagreed with the tool it was meant to mirror about where a
+line ends, in exactly the direction that would let a tag slip past unnoticed. Found by running
+both against the same input rather than reading either. Fixed, with a case for each of the nine
+ways they could have disagreed.
+<!--tech-->
+Review round 1, Claude half, filed at `docs/reviews/claude/retire-plan-mode-r1-claude.md`.
+
+**H1 (fixed in-round).** `check-plan-file-tags.audit` iterated `text.splitlines()`;
+`check-plan-code.extract` iterates `md.split("\n")`. `splitlines()` breaks on NINE further
+separators (`\v \f \x1c \x1d \x1e \x85 U+2028 U+2029 \r`). Measured: for 8 of them,
+`x<SEP>```" opened a fence in the guard that never opens in the parser, so the tag beneath was
+skipped as fenced while `extract()` assembled it — `files=['m.py']` vs **0** findings. Third
+recorded instance of imitating a parser instead of asking it. Fixed to `split("\n")`; re-measured
+**0 disagreements across all nine**, over the file both consumers actually read.
+
+⚠ My first re-measurement said `\r` still disagreed. That was a defect in the TEST — `read_text()`
+does universal-newline translation, so I fed `extract()` a raw string and the fence a translated
+file, then called the difference a divergence. A false finding accepted there would have driven a
+fix to code that was already correct.
+
+Cases 21 → **29** (one per separator — the class, not the instance). `EXPECTED_MUTATIONS` for the
+guard 8 → **9**, sum 382 → **383**. Verified: 9/9 mutations red via the case each names over a
+green control; live run 0 tags across 1,115 documents; all gates green.
+
+⚠ **REVIEW GAP — the Codex half produced no output and must be re-attempted before merge.** Per
+the bounded-wait rule that is a Codex gap, not a clean Codex verdict. Recorded in the review doc.
+
+## 2026-09-08
+The second reviewer finally ran, and it found a hole the first one missed. The new guard was
+checking a smaller set of documents than it claimed to — and nothing could tell, because both
+its own tests and its live run stayed green while a fifth of the files, including every single
+one of the planning documents it exists to police, went unread. Fixed, with a check that
+compares what was read against what is actually there.
+
+Worth stating plainly: had the second review been skipped as "probably redundant", that hole
+would have shipped.
+<!--tech-->
+The Codex half of review r1 succeeded on a second dispatch — `--model gpt-5.5 --timeout 1800`,
+skipping the three deterministic HTTP 400s and giving the one reachable model enough budget.
+~22 minutes. Filed at `docs/reviews/coordinator/retire-plan-mode-r1-codex.md`; verdict updated
+to `gate_ran: true`. The earlier REVIEW GAP is closed.
+
+⭐ **Cx-H1 (CONFIRMED, FIXED).** `DOCS` is read by `main()` and by NO case — every case drives
+`audit()` on a temp root. Re-measured on HEAD with `DOCS` pointed at `docs/reviews`: live run
+**rc=0, "0 across 896 documents"** (vs 1116) and self-test **29/29** — both green while 220
+documents went unread, **including all 92 plans**. My empty-corpus rc=2 clause refuses a corpus
+of *nothing*; it never saw a corpus of *something smaller*. The clause I was most confident in
+guarded the case that could not happen.
+
+Fix: `coverage_shortfall()` — `main()` refuses unless `scanned` equals the count under
+`ROOT/"docs"`, re-derived by the CALLER. That asymmetry is the mechanism: mutating `DOCS` moves
+what `audit` reads and not what this counts. Falsifier after the fix: **rc=2, "read 896 of
+1116"**. Cases 29 → **33** (with a presence twin, so an always-fires check is caught too);
+mutations 9 → **11**; `EXPECTED_MUTATIONS` 383 → **385**.
+
+**Cx-L1 (CONFIRMED).** The retirement gate returns before the `--mutate`-combination check, so
+that more specific refusal can never fire. Behaviour is fail-closed and right; the **comment**
+was wrong to imply a caller can reach it. Corrected in place.
+
+**Cx-Blocking** was the `splitlines()` divergence — already fixed in `92b2b362`. Codex reviewed
+`71f86f9a` and rediscovered it independently: same defect, same nine separators, same direction.
+
+⭐ **Fifth recorded instance of *dual halves are not redundant* — and the first where the half
+that nearly got skipped is the one that caught the defect.** Round score: 4 defects, 1 by the
+Claude half, 1 by CI's mutation sweep, 2 by Codex.
+
+Codex honestly reported CANNOT RUN on `--mutate .` (two attempts, both interrupted) — which is
+the very check that caught the orphaned mutation.
+
+## 2026-09-09
+A second review round — this one aimed at the fixes from the first round, not at the original
+change — found three more problems, all of them in the repairs themselves. The most serious: the
+guard meant to prove it had read the right documents was only counting them. A different set of
+files of the same size passed as if nothing were wrong, with a live violation sitting unread
+inside the set it skipped.
+
+The pattern is now the headline of this branch: **every round of fixes has introduced its own
+defects.** That is not a surprise here — it is what the project's own history predicts — but it
+is the reason this work is not finished when the tests go green.
+<!--tech-->
+Round 2, SCOPED to r1's fixes (`git diff 71f86f9a..6e5b2b78`). Both halves filed:
+`docs/reviews/claude/retire-plan-mode-r2-claude.md`,
+`docs/reviews/coordinator/retire-plan-mode-r2-codex.md` (`gate_ran: true`, gpt-5.5).
+
+⭐ **Cx-H1 — cardinality is not identity.** `coverage_shortfall` compared COUNTS. Codex's
+measurement: intended `docs/` = {`a.md`, `has-tag.md`} with a LIVE tag; a different root =
+{`x.md`, `y.md`}; `scanned == total == 2` → verdict `None`. False green over a corpus never
+scanned. Fixed to a SET difference (`want - seen`, `seen - want`), reported by name. Codex's exact
+construction now REFUSES, naming `a.md` as never visited.
+
+**H1 (Claude half) — wrong cause, right cause suppressed.** `rglob` counts PATHS, `scanned` counted
+files READ, so an unreadable document printed "the corpus was NARROWED" and `main()` returned
+before the finding naming the file could print. Measured: rc=2, stdout empty. Fixed with a typed
+`Finding.unreadable` (not a substring match on my own message) and by printing findings first.
+Codex found the same defect independently — its M1.
+
+**H2 (Claude half) — the fixes ORPHANED mutation anchors twice.** Anchors bind by TEXT, so
+improving code silently unhooks them; only the sweep can tell. Three re-bound, then re-bound again
+when the Cx-H1 fix rewrote the same region.
+
+⚠ Two failed attempts at one mutation, both recorded: the first SURVIVED because a guard clause it
+never touched still caught the case; the second CRASHED the suite (`0 red case(s) … caught by
+something else: []`), exposing a real latent fall-through that indexed an empty list. Restructured
+so every branch reports its own condition and `None` is the final fallback.
+
+Cases 33 → **39**; guard mutations 11 → **14**; `EXPECTED_MUTATIONS` 385 → **388**.
+
+**Running total for this branch: 7 defects across 4 instruments** — 3 by the Claude half, 1 by CI's
+mutation sweep, 3 by Codex. No instrument found more than half. Round 2 is NOT CONVERGED by the
+usual reading (it found things), so a round 3 scoped to THESE fixes is the honest next step.
+
+## 2026-09-09 [needs-you]
+Review round 3 is done and the plan-mode retirement still is not finished — but for the first time
+the problems are with the checking, not with what the code does.
+Three rounds of review have now found ten things. None of them changes what the guard does on the
+real project: it still correctly reports zero retired tags across 1,120 documents. Round 3's
+findings are all about the guard's own honesty — a field that was added to tell two kinds of
+failure apart and is in fact read by nothing, a comment that says it is doing a job it cannot do,
+and two entries in the test suite that crash it while appearing to pass.
+Two of the three checking machines used today were themselves broken, which is the part worth
+knowing. One review assistant produced a long, confident, well-argued review of a completely
+different piece of work, and nothing about the document itself gave that away. My own quick check
+of the test suite reported all fourteen entries healthy when two of them were killing the suite
+outright. Both were caught only by looking at something the machine could not fake.
+**A decision is waiting on you: fix these and run a fourth round, or record them and ship.**
+Neither is wrong. Nothing found in three rounds affects what a person using this actually sees.
+<!--tech-->
+Branch `retire-plan-mode`, head `f9d2c498`, PR #270 OPEN, CI `verify` green. VERDICT: NOT CONVERGED.
+Both halves filed: `docs/reviews/claude/retire-plan-mode-r3-claude.md`,
+`docs/reviews/coordinator/retire-plan-mode-r3-codex.md`,
+`docs/reviews/verdicts/retire-plan-mode-r3-codex.verdict.json` (`gate_ran: true`, gpt-5.5).
+`check-review-rounds.py` rc=0, 167 rounds parsed, 0 silent gaps.
+
+**3 Medium, 3 Low, 1 Codex High REFUTED.** Nothing Blocking.
+* **F1** `Finding.unreadable` has NO production reader — `coverage_shortfall(docs_root, seen)` never
+  receives a `Finding` and `main()` never mentions it. Falsifier run twice independently: delete
+  field + kwarg → production stdout BYTE-IDENTICAL, same rc. The real r2-H1 fix is `visited.add(md)`
+  at `:188`. Its comment cites backlog #91's type work, which makes the claim credible and it is false.
+* **F2** r2 moved the undecodable case from rc=2 (CANNOT RUN) to rc=1 (FAIL) and prints "put it in
+  backticks" for a file that cannot be decoded. Filed against itself: FAILS-IF does list it. Coupling
+  is the point — if rc=1 is intended, `unreadable` is *unwireable*, so F1 and F2 cannot both be waved.
+* **F3** manifest entries 6 and 11 CRASH the suite (`IndexError`, no summary line, case 39 never runs)
+  via `sorted(n)[0]` introduced by THIS commit at `:417` — banned by the same file at `:264-269` and
+  recorded in `check-plan-code.py:1668` as measured 2026-09-08. They attribute only because their named
+  case prints before line 417: ordering luck. The r2-H1 entry also does not model its name (deleting
+  `visited.add` ≡ its sibling `return findings, set()`); the faithful edit gives 1 red case, no crash.
+* **F4/F5/F6 + coordinator C2/C3/C4** — mislabelled presence twin; the remediation sentence printing
+  the whole corpus (1120) as though it counted backticked mentions (19); stale `scanned` prose and
+  READ/VISITED labels; docstring "13 documents" now 17; "5 of 5 separators tested" is really 8 of 9;
+  `rglob` does not descend symlinked dirs and BOTH walks share that blindness, so the shortfall check
+  cannot see it (0 symlinks under `docs/` today).
+* **Cx-H1 REFUTED**, independently by both the Claude half and the coordinator: `check():1295` is
+  `plan.read_text(encoding="utf-8")`, so universal-newline translation precedes both splitters and `\r`
+  cannot diverge. SECOND time this exact wrong conclusion was reached on this file by different readers.
+
+⚠ **TWO INSTRUMENT FAILURES, both caught only by out-of-band evidence.** (1) The first Claude-half
+subagent emitted 27,489 bytes BYTE-IDENTICAL to the committed
+`docs/reviews/plan-project-dashboard-r3-claude.md` — wrong plan, wrong branch, wrong findings — then went
+idle. Caught because the brief had been amended mid-flight to demand a FILE, for an unrelated reason. The
+retry brief now requires live `git rev-parse HEAD` + `git diff --stat` pasted first. (2) The coordinator's
+own mutation harness reported "14/14 OK" while two entries crashed: it parsed for the named `[FAIL]` line
+and never checked for a completion summary, and an uncaught exception also exits 1.
+⚠ **The Codex wrapper OVERWROTE a committed verdict** on the first run: `verdict_path()` derives the
+filename from `--out`'s basename with no collision check, so `--out r3-codex.md` clobbered
+`docs/reviews/verdicts/r3-codex.verdict.json` (committed under PR #214). Detected by `git status`,
+restored, re-run under a unique stem. Verbatim recurrence of a defect already in project memory.
+
+## 2026-09-09 [resolved: 2026-09-09/2]
+You chose to fix the round-3 findings rather than ship as-is, and that is done.
+The headline repair is one worth explaining, because it is the opposite of what I proposed. Round 3
+found a piece of bookkeeping that was supposed to tell two kinds of failure apart — a document with
+forbidden content in it, versus a document the checker simply could not open — and proved nothing
+was reading it. My plan was to delete it as dead weight. Working through the second finding showed
+that wrong: the reason the checker was giving nonsensical advice on unreadable files ("put it in
+backticks", to a file that is not even text) is precisely that nothing distinguished the two cases.
+So it was wired up instead of removed. It now decides which advice to print, and the proof it is
+genuinely in use is that deleting it no longer produces identical output — it stops the program.
+Also fixed: two entries in the checker's own test suite were killing that suite while appearing to
+pass, and four recorded measurements had drifted away from what the code does. One of those, a count
+of how many documents mention the thing being checked, moved while I was correcting it — because
+the review documents I had just written mention it too, and joined the count. It is now written as
+a dated observation that says out loud it will keep rising.
+The full sweep that mutates every checking script and confirms each one still catches what it
+claims: 390 checks, none escaping.
+<!--tech-->
+Branch `retire-plan-mode`, PR #270. Folds r3's 3 Medium + 3 Low + coordinator C1–C3; C4 recorded,
+F2 decided (rc=1 stands, message repaired). Both review docs carry a DISPOSITIONS section.
+
+* **F1 FIXED BY WIRING, NOT DELETING.** `main()` now selects its closing message with
+  `any(not f.unreadable for f in findings)`. FALSIFIER RE-RUN: deleting the field + kwarg used to
+  leave stdout BYTE-IDENTICAL (that is how r3 proved it inert); it now raises
+  `AttributeError: 'Finding' object has no attribute 'unreadable'` inside `main()`.
+* **C1 FIXED.** The live corpus count is GONE from the remedy rather than corrected — a number
+  re-measured on every failing run is a liability. Unreadable-only runs print "Every finding is a
+  document this could not open, so it was NOT CHECKED".
+* **F3 FIXED, both halves.** `sorted(n)[0]` → `r / "bad.md"` (the fixture's own path, cannot raise);
+  the r2-H1 entry retargeted to the faithful weakest edit (`visited.add(md)` after a successful
+  read) instead of one indistinguishable from its sibling. Re-measured: **16/16 entries, 0 crashes**,
+  each reddening the case it names, control 43/43.
+* **C3 FIXED + the CAUSE of the twice-repeated false High.** The splitter comment now states that
+  `\r` cannot reach EITHER splitter (both readers use `read_text`, universal-newline translation
+  precedes splitting) and that the loop drives 8 separators because the 9th is UNREACHABLE, not
+  overlooked. Re-measured: old `splitlines()` 8-of-9 disagreements, delivered `split("\n")` 0-of-9.
+* **F4/F6/C2 FIXED** — mislabelled presence twin; retired `scanned` prose; READ→VISITED labels;
+  the mention count dated (17 at r3, **19** once r3's own docs landed).
+
+⚠ THREE THINGS WENT WRONG DURING THE FOLD, all caught by instruments rather than by reading:
+(1) renaming a case ORPHANED its mutation anchor — 4th orphaning on this branch, caught in seconds
+only because the harness now reports `named-hit`; (2) the full sweep went RED and refused a verdict
+because two new mutations shared an edit anchor — `load_manifests` rejects that, correctly, since an
+entry repeating another's anchors measures nothing; (3) a `$?` read after a pipe would have reported
+the sweep's exit code as the pipe's — every rc here is taken from a redirect.
+
+Counts: cases 39 → **43**; guard mutations 14 → **16**; `EXPECTED_MUTATIONS` 388 → **390**. RISING.
+Gates: self-test 43/43 · check-plan-code 229/229 · check-selftest-counts · check-review-rounds
+(167 rounds, 0 silent gaps) · check-ratchet-contract · check-docs — all rc=0. **Full sweep:
+33 file(s), 390 mutation(s), 0 survivor(s).** 0 orphaned anchors across all 33 manifests.
+
+## 2026-09-09
+A fourth review round found four more things, all of them in the checking rather than in what the
+tool does — and this round the reviewer was mostly correcting my own writing.
+The one real fix: the test suite could be killed outright by a fault in the code it was testing, and
+when that happened it produced no failure report at all — the automated checker then read the silence
+as "something else caught it". Four lines turn that silence into three clearly named failures.
+The rest were claims I had written that did not survive being checked. I had asserted that an earlier
+round dated a measurement in a particular place; it never did, and I had taken that from the earlier
+round's write-up instead of from the code — inside a paragraph arguing that exactly this is dangerous.
+And a count of how many documents mention a piece of syntax has now been wrong three separate ways in
+three rounds: stale, then correct-but-measuring-something-else, then ambiguous between three defensible
+answers (19, 18, or 15, depending on what you mean). It is now deleted rather than corrected a third
+time, with a note saying not to put one back.
+Reviewing has stopped here. Four rounds, and the problems have moved steadily from "the tool is wrong"
+to "the notes about the tool are wrong", which is the point at which more review stops paying.
+<!--tech-->
+Branch `retire-plan-mode`, PR #270. Folds r4: 1 Medium + 4 Low, all inside the r3 fold. Both review
+halves filed with DISPOSITIONS. **Full sweep: 33 file(s), 392 mutation(s), 0 survivor(s).**
+
+* **F1 (Med) FIXED — and the coordinator had WRONGLY dismissed it.** I filed the crash-instead-of-red
+  shape as "pre-existing and inherent" and declined to act. The Claude half's decisive fact: **before
+  the r3 fold, NO case in this file invoked `main()`** — every case drove pure functions over an
+  explicit root — so the fold added the first four that call the entry point and genuinely enlarged
+  the surface. `_drive_main` now returns `(-1, "main() RAISED …")`. MEASURED with an injected raise:
+  `3 named [FAIL] lines + 41/44 cases passed`, was `no summary, no [FAIL], traceback`.
+* **F2 (Low) FIXED, and F1's fix is what made it fixable.** The `finally` restore could be deleted
+  with the suite still 43/43 green. With the suite now surviving a raise it has a real beneficiary,
+  and a new case placed after the block is its only observer. Both guarded by new mutations.
+* **F3 (Low) FIXED as a recorded correction.** The header claimed r2 dated a measurement in
+  `coverage_shortfall`'s docstring. Verified false both ways: no date at any revision, and r2 added
+  no dated line to the file at all. Sourced from r2's REVIEW DOC, not the code.
+* **F4 + Cx-L1 (Low) FIXED by DELETION.** "Both numbers" was three; `1,116`, `29/29` and `15/16` were
+  stale. The backticked-mention count is GONE — three predicates give 19 / 18 / 15 and the prose named
+  none. Header now says **"Do not reintroduce a count here."**
+
+Counts: cases 43 → **44**; guard mutations 16 → **18**; `EXPECTED_MUTATIONS` 390 → **392**. RISING.
+Gates rc=0: self-test 44/44 · check-plan-code 229/229 · check-selftest-counts · check-review-rounds
+(168 rounds, 0 silent gaps) · check-ratchet-contract · check-docs. 0 orphaned anchors, 33 manifests.
+
+⚠ **PHASE 6 — count fires, cause does not.** Four non-converging rounds is the written trigger, but
+`dev-process.md` says read it off the CAUSE. The series decayed monotonically: r1 behaviour defects ·
+r2 a real false-green (cardinality vs identity) · r3 one inert mechanism + one wrong message ·
+r4 test scaffolding + four claims ABOUT the code. Nothing in r4 changes what the guard does to any
+document. That is the documented "prose has nothing to execute — go build" signature, not a design
+fight. Judgement recorded, not assumed; reviewing stopped by decision.
