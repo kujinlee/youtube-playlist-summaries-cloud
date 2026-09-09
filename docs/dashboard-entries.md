@@ -5663,6 +5663,74 @@ was piped into `tail`, so the exit code reported was `tail`'s 0, not `gh`'s 1 �
 it as a merge signal. The red was found by reading the checks again, not by the code.
 
 ## 2026-09-09 [needs-you]
+Every automated check in this project stopped working today, and the cause was
+outside the project entirely.
+The checks run on a rented machine that has to install one small video tool before
+it can start. To do that it refreshes its list of available software — and that
+refresh consults several catalogues, including two belonging to Google and Microsoft
+that this project has never used for anything. One of Google's catalogues served a
+corrupted file this afternoon. The refresh treats any bad catalogue as fatal, so it
+stopped, and every check stopped with it, before a single line of this project's own
+code had been looked at.
+The important part is what that means for the red mark currently sitting on the open
+piece of work: it says nothing about that work. The proof is that the same failure
+was reproduced on the main line of the project, on a version that had passed cleanly
+three hours earlier and had not changed since. Same step, same message. A failure
+that follows the clock rather than the content is a broken instrument, not a verdict.
+The fix is to stop asking about catalogues we never install from. That removes a
+dependency on a company we have no relationship with, which was never intended and
+which nobody would have chosen deliberately.
+Until this lands, every check on every branch fails for a reason that has nothing to do
+with the branch, so nothing else can be verified.
+**Decide:** Merge this CI fix now, or wait for Google's catalogue to recover on its own?
+- merge it — checks work again, and stop depending on a company we never install from [recommended]
+- wait for the mirror and drop the change — nothing to review, but every branch stays unverifiable for an unknown number of hours
+- merge it and open a follow-up to remove the video tool from the checks entirely — it is only needed because one test is not self-contained
+<!--tech-->
+Branch `ci-apt-decouple`, commit `852dc3ff`, one file: `.github/workflows/ci.yml:54`.
+
+`apt-get update` exits **100** if ANY configured index fails. The ubuntu-latest runner
+image ships third-party lists in `/etc/apt/sources.list.d/` (google-chrome,
+microsoft-prod). The step ran a bare `sudo apt-get update`, so all ~40 checks in the
+`verify` job — master included — shared fate with `dl.google.com`.
+
+**MEASURED 2026-09-09, and the control is the load-bearing half:**
+
+    34383866204  4084e35b  mutation-faithfulness-r1  FAIL  Install ffmpeg  rc=100
+    34381286294  8cbfdba4  mutation-faithfulness-r1  PASS  (17:10, pre-outage)
+    34364428913  3afe62c0  master, merged + green    FAIL  Install ffmpeg  rc=100
+
+Both failures: `E: Failed to fetch https://dl.google.com/linux/chrome-stable/deb/
+dists/stable/main/binary-amd64/Packages.gz  Hash Sum mismatch`. The master run is a
+**re-run of an already-merged commit**, unchanged since it passed at 14:33 — so the
+failure is time-correlated, not content-correlated. CANNOT RUN, not a verdict on
+either subject.
+
+⚠ **The handoff's evidence for "environmental" was weaker than it read.** It cited a
+17:10 green on the same branch — but that run was on `8cbfdba4`, two commits before
+the fold. Nothing has ever run CI on `4084e35b`. The branch is still unmeasured; the
+master control is what makes the environmental claim safe, and it did not exist until
+it was run.
+
+Fix: `apt-get update -o Dir::Etc::sourceparts="-" -o APT::Get::List-Cleanup="0"`,
+i.e. `/etc/apt/sources.list` (the Ubuntu archive, via the runner's mirrorlist) only.
+Grepped the same day across `.github/`, `scripts/`, `package.json`: `google-chrome`
+and `dl.google.com` appear **nowhere**, and `test:e2e`/Playwright are not in CI — so
+nothing here installs from the disabled lists.
+
+**Not a weakening.** A genuinely unavailable ffmpeg still fails `apt-get install`
+loudly. Added after it: `ffmpeg -version` and `ffprobe -version` are executed, because
+apt reporting *installed* is a claim about the package, not proof that the binaries
+`lib/dig/slide-crop.ts` shells out to will run — *a privilege is not a capability*,
+applied to a package manager.
+
+⚠ **`check-dashboard-entry.py` returned rc=0 on this very change while it was
+uncommitted** — it diffs commits, so it measured an empty population and reported
+"no tracked files changed". Re-run after `git commit`: rc=1, correctly refusing. The
+recorded shape *a measurement is only as good as its corpus*, hit inside the gate whose
+job is to notice changes.
+
+## 2026-09-09 [needs-you]
 We checked whether the automated sabotage-testing can be trusted, and the answer is a
 qualified yes with one real gap.
 Twenty-three deliberate sabotages are kept on file; each is supposed to break the tool in
