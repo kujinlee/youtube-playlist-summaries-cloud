@@ -51,8 +51,32 @@ jobs:
       # (lib/dig/slide-crop.ts) and has no skip-gate, so `npm test` is not hermetic —
       # it passes on a dev Mac with ffmpeg installed and fails anywhere else. Installing
       # it here FIXES the suite rather than normalising a known-red test into a skip.
+      #
+      # ⚠ UPDATE FROM THE UBUNTU ARCHIVE ONLY — `apt-get update` exits 100 if ANY configured
+      # index fails, and the runner image ships third-party source lists in
+      # /etc/apt/sources.list.d/ that this repo does not use (Google Chrome, Microsoft).
+      # A bare `apt-get update` therefore made the WHOLE gate — every check, master included —
+      # share fate with a mirror this project has no relationship with.
+      # MEASURED 2026-09-09: a `Hash Sum mismatch` on
+      # dl.google.com/linux/chrome-stable/deb/dists/stable/main/binary-amd64/Packages.gz
+      # failed this step on PR #272 AND, minutes later, on 3afe62c0 — an already-merged master
+      # commit that had gone green three hours earlier. Same step, same URL, both before a
+      # single line of repo code ran: CANNOT RUN, not a verdict on either subject.
+      # Grepped the same day: `google-chrome` / `dl.google.com` appear NOWHERE in this repo,
+      # and Playwright is not installed in CI, so nothing here installs from those sources.
+      # sourceparts="-" disables the whole sources.list.d directory for this one command;
+      # List-Cleanup=0 stops apt discarding cached lists for the sources it was not shown.
+      # This does NOT weaken the gate: if ffmpeg is genuinely unavailable the install still
+      # fails loudly, and the two binaries are then executed — apt reporting "installed" is a
+      # claim about the package, not proof that the thing the tests shell out to will run.
       - name: Install ffmpeg (required by the slide-crop tests)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+        run: |
+          sudo apt-get update \
+            -o Dir::Etc::sourceparts="-" \
+            -o APT::Get::List-Cleanup="0"
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version > /dev/null
+          ffprobe -version > /dev/null
 
       - name: Install dependencies
         run: npm ci
