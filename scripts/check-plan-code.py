@@ -3472,27 +3472,6 @@ def main(argv: list[str]) -> int:
               f"See PR #176. Treat this as NOT CHECKED.", file=sys.stderr)
         return 2
     if a.mutate:
-        # REFUSE the combination rather than silently ignoring it. --mutate measures the
-        # delivered scripts and --compare/--evidence/--verify-evidence all describe the
-        # plan-assembling mode; accepting both would let a caller believe a subject was
-        # measured that never was, which is the failure this whole mode exists to end.
-        #
-        # ⚠ AND SINCE 2026-09-08 THE COMBINATION REFUSAL BELOW CANNOT FIRE. The retirement
-        # gate above returns first on any of those three flags, so `--mutate ROOT --evidence`
-        # gets the generic RETIREMENT sentence, not this more specific one. MEASURED by the
-        # Codex half of review r1: rc=2 with "plan mode was RETIRED… --evidence belonged to
-        # it." Still fail-closed, so the BEHAVIOUR is right and nothing is being fixed here —
-        # what was wrong was this comment implying a specific refusal a caller can still
-        # reach. Kept rather than deleted because the deletion slice removes the flags
-        # themselves, and removing the guard first would leave a window where neither fires.
-        conflicting = [f for f, v in (("--compare", a.compare), ("--evidence", a.evidence),
-                                      ("--verify-evidence", a.verify_evidence)) if v]
-        if conflicting:
-            print(f"CANNOT RUN — --mutate cannot be combined with "
-                  f"{', '.join(conflicting)}: those describe the plan-assembling mode and "
-                  f"would be silently ignored. Run them as a separate invocation.",
-                  file=sys.stderr)
-            return 2
         mroot = pathlib.Path(a.mutate)
         if not mroot.is_dir():
             print(f"CANNOT RUN — --mutate {mroot} is not a directory. NOT CHECKED.",
@@ -3548,59 +3527,14 @@ def main(argv: list[str]) -> int:
             # F2-S4 emitted exactly that sentence.
             print(not_measured_line(verdict))
         return 0 if ok else 1
-    if not a.plan:
-        print("CANNOT RUN — no plan given. Treat this as NOT CHECKED.", file=sys.stderr)
-        return 2
-    p = pathlib.Path(a.plan)
-    if not p.is_file():
-        print(f"CANNOT RUN — {p} does not exist. Treat this as NOT CHECKED.", file=sys.stderr)
-        return 2
-    cmp_dir = None
-    if a.compare:
-        cmp_dir = pathlib.Path(a.compare)
-        if not cmp_dir.is_dir():
-            print(f"CANNOT RUN — --compare {cmp_dir} is not a directory. NOT CHECKED.",
-                  file=sys.stderr)
-            return 2
-    ok, report, verdict, ctx = check(p, cmp_dir)
-    if a.verify_evidence:
-        stale = verify_evidence(p, verdict, ctx)
-        if stale:
-            ok = False
-            report.extend(stale)
-    for r in report:
-        print(f"  ✗ {r}")
-    if a.evidence:
-        print(evidence(verdict, ctx))
-    # Name the MODE on the final line. All three modes used to end in an identical
-    # `OK — …`, so a CI log could not show which subject was measured, and dropping
-    # both flags looked exactly like passing them. Round 5, L1.
-    mode = ("compared + evidence-verified" if cmp_dir and a.verify_evidence else
-            "compared" if cmp_dir else
-            "evidence-verified, plan's copy only" if a.verify_evidence else
-            "plan's copy only, NOT compared")
-    if isinstance(verdict, Measured):
-        # ⭐ BACKLOG #93 IS NOW A TYPE DISTINCTION, NOT A COMMENT, AND THE DISJUNCT IS GONE.
-        # This gate used to read `trustworthy or declared is None`, and the second disjunct
-        # was the ONLY thing separating it from the `--mutate` gate — because `declared is
-        # None` meant OPPOSITE things in the two modes: here "nothing was assembled, an
-        # honest zero", there "the run died before declaring, no verdict". Same words,
-        # opposite meaning, held apart by prose that check-vocabulary-collisions.py actively
-        # encourages someone to tidy away.
-        # Under the union the two meanings are two TYPES. Plan mode's honest zero is a
-        # `Measured(declared=0)` (check(), the `not files` return); `--mutate`'s died-early
-        # path is a `NotMeasured`. So both gates can now be the same predicate WITHOUT
-        # carrying half of each contract — the thing they must not confuse is no longer a
-        # value they both spell `None`. MEASURED before deleting the disjunct: a probe on it
-        # recorded 0 fires across the whole suite (194 cases AS MEASURED on 2026-09-08, before
-        # this change added its 195th) and 7 end-to-end runs; the probe was proved able to
-        # fire by reverting the honest-zero mapping alone, so the zero is a measurement
-        # and not a broken instrument.
-        print(("OK — " if ok else "FAILED — ") + f"{mode}: {len(verdict.files)} file(s), "
-              f"{len(verdict.mutations)} mutation(s), {len(verdict.survivors)} survivor(s)")
-    else:
-        print(not_measured_line(verdict, f"{mode}: "))
-    return 0 if ok else 1
+    # THE ONLY WAY TO REACH HERE IS A BARE INVOCATION — no `--self-test`, no `--mutate`, and
+    # no retired flag (those return 2 above). It is not dead code: `_self_test` asserts
+    # `main([]) == 2` precisely so that a future edit cannot make "nothing was asked for"
+    # exit 0, which is this script's whole thesis about runs that measured nothing.
+    print("CANNOT RUN — nothing to do. The modes are `--mutate ROOT` (mutate the delivered "
+          "scripts) and `--self-test`. Plan mode was RETIRED on 2026-09-08 and its code "
+          "removed. Treat this as NOT CHECKED.", file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":
