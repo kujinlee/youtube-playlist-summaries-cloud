@@ -1,0 +1,13 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok — 2620 chars"
+  ],
+  "exit_code": 0,
+  "gate_ran": true,
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "reason": "2620 chars",
+  "review": "retire-plan-mode-r2-codex.md",
+  "schema": 1,
+  "tool": "codex-review"
+}

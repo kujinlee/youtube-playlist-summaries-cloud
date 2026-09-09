@@ -77,7 +77,7 @@ CANNOT RUN (exit 2, never a pass)
 
 Usage:
     python3 scripts/check-plan-file-tags.py
-    python3 scripts/check-plan-file-tags.py --self-test  # 33 cases
+    python3 scripts/check-plan-file-tags.py --self-test  # 39 cases
 """
 from __future__ import annotations
 
@@ -108,13 +108,19 @@ class Finding:
     path: str
     line: int
     detail: str
+    # ⛔ A TYPE, NOT A SUBSTRING. `coverage_shortfall` must tell "unread because the corpus was
+    # narrowed" from "unread because the file could not be opened" — and the only honest way to
+    # know which is for the producer to SAY. Recovering it by matching "NOT checked" in `detail`
+    # would be a second implementation of one rule, kept in sync by hope; backlog #91 spent four
+    # rounds turning exactly that shape into a type.
+    unreadable: bool = False
 
     def __str__(self) -> str:
         return f"{self.path}:{self.line} — {self.detail}"
 
 
-def coverage_shortfall(docs_root: Path, scanned: int) -> str | None:
-    """None if `scanned` accounts for every document under `docs_root`, else why not.
+def coverage_shortfall(docs_root: Path, seen: "set[Path]") -> str | None:
+    """None if `seen` is exactly the set of documents under `docs_root`, else which are missing.
 
     ⛔ THE EMPTY-CORPUS CLAUSE WAS NOT ENOUGH, AND A REVIEWER PROVED IT. Codex, r1:
     `DOCS` is read by `main()` but by no case — every case drives `audit()` on a temp root.
@@ -127,36 +133,67 @@ def coverage_shortfall(docs_root: Path, scanned: int) -> str | None:
     unread. "0 findings" then means only that the SELECTED corpus is clean, not that the
     intended one was selected. An empty corpus is refused; a QUIETLY NARROWED one was not.
 
-    ⚠ The count comes from a root the CALLER derives independently (`ROOT / "docs"`), never
-    from `DOCS`. That is the whole mechanism: a mutation to `DOCS` moves what `audit` reads
-    and leaves what this counts unchanged, so the two disagree and the run refuses.
+    ⚠ The set comes from a root the CALLER derives independently (`ROOT / "docs"`), never from
+    `DOCS`. That is the whole mechanism: a mutation to `DOCS` moves what `audit` reads and leaves
+    what this enumerates unchanged, so the two disagree and the run refuses.
+
+    ⛔ IDENTITY, NOT CARDINALITY — AND THE FIRST VERSION GOT THAT WRONG. It compared COUNTS, which
+    a reviewer (Codex, r2) broke in one measurement: intended `docs/` holding `a.md` + `has-tag.md`
+    versus a different root holding `x.md` + `y.md` gives `scanned == total == 2`, so the guard
+    returned None while the intended corpus — containing a live retired tag — went unscanned. A
+    count is a PROXY for "the right documents were read"; the set is the property itself. Same
+    shape as asserting a threshold's presence instead of measuring the ratio.
     """
-    total = len(list(docs_root.rglob("*.md")))
-    if scanned == total:
-        return None
-    return (f"CANNOT RUN — read {scanned} of {total} document(s) under {docs_root}. "
-            f"The corpus was NARROWED, so '0 tags' describes only the part that was read. "
-            f"Treat this as NOT CHECKED.")
+    # ⚠ `seen` includes documents `audit` OPENED and ones it reported as unreadable — both were
+    # visited, and an unreadable file is already named in a finding, so it is not silently
+    # missing. ROUND 2 FOUND THAT THE HARD WAY: counting only successfully-read files made one
+    # undecodable document print "the corpus was NARROWED" — a WRONG CAUSE — and return 2 before
+    # the accurate, file-naming finding was printed at all.
+    want = set(docs_root.rglob("*.md"))
+    missing = want - seen
+    stray = seen - want
+    # ⚠ EACH BRANCH REPORTS ITS OWN CONDITION AND `None` IS THE FINAL FALLBACK — not the first
+    # branch with the rest as an else-tail. The first shape had an unreachable tail that indexed
+    # an empty list, so a mutation aimed at the leading `if` CRASHED the suite instead of
+    # reddening a case: the manifest then read `0 red case(s) … caught by something else: []`,
+    # which is the "uncovered and caught look identical" shape this repo has paid for twice.
+    if missing:
+        shown = ", ".join(sorted(str(p.relative_to(docs_root)) for p in missing)[:3])
+        more = f" (+{len(missing) - 3} more)" if len(missing) > 3 else ""
+        return (f"CANNOT RUN — {len(missing)} of {len(want)} document(s) under {docs_root} were "
+                f"never visited: {shown}{more}. The corpus was NARROWED, so '0 tags' describes "
+                f"only the part that was read. Treat this as NOT CHECKED.")
+    if stray:
+        return (f"CANNOT RUN — {len(stray)} document(s) were visited that are NOT under "
+                f"{docs_root}, e.g. {sorted(str(q) for q in stray)[0]}. The corpus is not the "
+                f"intended tree. Treat this as NOT CHECKED.")
+    return None
 
 
-def audit(root: Path) -> tuple[list[Finding], int]:
-    """Findings and the number of documents actually READ. Pure over a directory.
+def audit(root: Path) -> "tuple[list[Finding], set[Path]]":
+    """Findings and the SET of documents visited. Pure over a directory.
 
-    The second element is not decoration. `[] , 0` and `[], 1115` are the same verdict to a
-    caller that only looks at the list, and only one of them means anything.
+    The second element is not decoration. `[], set()` and `[], {1117 paths}` are the same verdict
+    to a caller that only looks at the list, and only one of them means anything. It is a SET and
+    not a count because `coverage_shortfall` must check WHICH documents were visited — a count
+    lets a different tree of the same size pass (Codex, r2).
+
+    A document appears in `visited` whether it was read or reported unreadable: both were looked
+    at, and the unreadable ones are named in `findings`.
     """
     findings: list[Finding] = []
-    scanned = 0
+    visited: set[Path] = set()
 
     for md in sorted(root.rglob("*.md")):
+        visited.add(md)
         try:
             text = md.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError) as exc:
             # NOT a skip. A document this cannot open is a document it cannot clear, and
             # silently passing over it would make the corpus count a lie.
-            findings.append(Finding(str(md), 0, f"could not be read, so it was NOT checked: {exc}"))
+            findings.append(Finding(str(md), 0, f"could not be read, so it was NOT checked: {exc}",
+                                    unreadable=True))
             continue
-        scanned += 1
         in_fence = False
         # ⛔ `split("\n")`, NOT `splitlines()` — the parser's own splitter (`extract`: `md.split`).
         # MEASURED 2026-09-08, review r1: `splitlines()` honours NINE separators that `split("\n")`
@@ -186,7 +223,7 @@ def audit(root: Path) -> tuple[list[Finding], int]:
                 findings.append(Finding(
                     str(md), n,
                     "a plan-mode mutations tag — manifests live in scripts/mutations/*.json now."))
-    return findings, scanned
+    return findings, visited
 
 
 # ---------------------------------------------------------------- self-test
@@ -260,7 +297,7 @@ def self_test() -> int:
         f, n = audit(r)
         case("backticked prose mentions are NOT flagged — the measured regression from "
              "plan-mutation-retarget-r1 finding 3", f, [])
-        case("...and all four were genuinely read, not skipped past", n, 4)
+        case("...and all four were genuinely read, not skipped past", len(n), 4)
 
         r = _tree(tmp / "g", {"p.md": "<!-- file: gen.py --> and then some prose\n"})
         # The parser was `$`-anchored too, so this was never a tag there either.
@@ -311,12 +348,12 @@ def self_test() -> int:
 
         # ── the corpus, which is the whole point ───────────────────────────────
         r = _tree(tmp / "i", {"a.md": "x\n", "b/c.md": "y\n"})
-        case("the scanned count is the number of documents READ", audit(r)[1], 2)
+        case("the scanned count is the number of documents READ", len(audit(r)[1]), 2)
 
         r = _tree(tmp / "j", {"p.py": "<!-- file: gen.py -->\n", "p.txt": "<!-- file: gen.py -->\n"})
         f, n = audit(r)
         case("non-markdown files are outside the corpus", f, [])
-        case("...and are not counted as scanned either", n, 0)
+        case("...and are not counted as scanned either", len(n), 0)
 
         # ⚠ THE FALSIFIABILITY CLAUSE. Every case above asserts over a corpus this test built.
         # On the REAL tree the answer is zero, and a zero proves nothing unless the run refuses
@@ -324,7 +361,7 @@ def self_test() -> int:
         empty = tmp / "k" / "docs"
         empty.mkdir(parents=True)
         case("an EMPTY corpus scans 0 — main() must call this CANNOT RUN, not a pass",
-             audit(empty), ([], 0))
+             (audit(empty)[0], len(audit(empty)[1])), ([], 0))
 
         # A file that cannot be decoded is REPORTED, never skipped: a skipped file and a clean
         # file are the same thing to anyone reading the exit code.
@@ -339,20 +376,50 @@ def self_test() -> int:
         # shape a mutation to `DOCS` actually produces. These drive `coverage_shortfall`
         # directly, because that is the function `main()` calls.
         r = _tree(tmp / "r", {"a.md": "x\n", "sub/b.md": "y\n", "sub/deep/c.md": "z\n"})
-        case("a full-tree scan has no shortfall", coverage_shortfall(r, 3), None)
-        got = coverage_shortfall(r, 2)
+        case("a full-tree scan has no shortfall", coverage_shortfall(r, set(r.rglob("*.md"))), None)
+        _all = set(r.rglob("*.md"))
+        _dropped = sorted(_all)[0]
+        got = coverage_shortfall(r, _all - {_dropped})
         case("...but reading a SUBSET is CANNOT RUN, not a pass",
-             (got is not None, "NARROWED" in (got or ""), "2 of 3" in (got or "")),
+             (got is not None, "NARROWED" in (got or ""), "never visited" in (got or "")),
              (True, True, True))
+        # ⛔ IDENTITY, NOT CARDINALITY (Codex r2 High). A DIFFERENT tree of the SAME SIZE must
+        # not pass. The count-based version returned None here while a live tag went unscanned.
+        case("...and a same-SIZE but different set is refused — the property is which documents "
+             "were read, not how many",
+             coverage_shortfall(r, {r / "ghost.md"} | (_all - {_dropped})) is not None, True)
+        case("...and the report NAMES a document that was never visited",
+             _dropped.name in (got or ""), True)
         # PRESENCE TWIN — a comparison that always fires is as useless as one that never
         # does. Without this, `return "CANNOT RUN…"` unconditionally passes the case above.
-        case("...and a scan that read MORE than the tree holds also refuses",
-             coverage_shortfall(r, 4) is not None, True)
+        case("...and a scan that reached OUTSIDE the tree also refuses",
+             coverage_shortfall(r, _all | {Path("/elsewhere/x.md")}) is not None, True)
         empty2 = tmp / "s" / "docs"
         empty2.mkdir(parents=True)
         case("an empty tree read as empty is consistent — main()'s scanned==0 clause owns "
              "that case, so this one must NOT double-refuse",
-             coverage_shortfall(empty2, 0), None)
+             coverage_shortfall(empty2, set()), None)
+
+        # ── ROUND 2, H1: an UNREADABLE document is not a narrowed corpus ────────────────
+        # `rglob` counts PATHS; `scanned` counts documents READ. Before this, one undecodable
+        # file made the run print "the corpus was NARROWED" — the WRONG CAUSE — and return 2
+        # before the accurate, file-naming finding was printed at all. Measured end to end.
+        r = _tree(tmp / "t", {"ok.md": "fine\n"})
+        (r / "bad.md").write_bytes(b"\xff\xfe\x00bad\n")
+        f, n = audit(r)
+        case("an unreadable doc is flagged as such ON THE FINDING, not inferred from its text",
+             [x.unreadable for x in f], [True])
+        case("...so it is ACCOUNTED FOR and does not read as a narrowing",
+             coverage_shortfall(r, n), None)
+        # PRESENCE TWIN — without this, `unreadable` could absorb ANY gap and the r1 guard
+        # would be silently undone by the r2 fix. A real narrowing must still refuse.
+        case("...but a genuine narrowing ALONGSIDE an unreadable doc still refuses",
+             coverage_shortfall(r, n - {sorted(n)[0]}) is not None, True)
+        # A TAG finding must NOT be counted as unreadable, or a narrowed corpus containing one
+        # tag would excuse itself by one document.
+        r = _tree(tmp / "u", {"p.md": "<!-- file: gen.py -->\n"})
+        f, n = audit(r)
+        case("a TAG finding is not marked unreadable", [x.unreadable for x in f], [False])
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
@@ -367,7 +434,8 @@ def main(argv: list[str]) -> int:
               file=sys.stderr)
         return 2
 
-    findings, scanned = audit(DOCS)
+    findings, visited = audit(DOCS)
+    scanned = len(visited)
 
     if scanned == 0:
         print(f"CANNOT RUN — {DOCS} contains no .md documents, so 'no plan-mode tags' is a "
@@ -376,15 +444,20 @@ def main(argv: list[str]) -> int:
 
     # ⛔ AND THE CORPUS MUST BE THE WHOLE TREE, not merely non-empty. `ROOT / "docs"` is
     # re-derived here on purpose rather than reusing `DOCS` — see `coverage_shortfall`.
-    shortfall = coverage_shortfall(ROOT / "docs", scanned)
+    # ⚠ THE FINDINGS ARE PRINTED FIRST, ALWAYS. A shortfall is a statement about the corpus;
+    # a finding names a document. Returning on the shortfall before printing them cost round 2
+    # a wrong diagnosis with the right one suppressed.
+    if findings:
+        print("a document embeds code through a retired plan-mode tag, or could not be read:\n")
+        for f in findings:
+            print(f"  ✗ {f}")
+
+    shortfall = coverage_shortfall(ROOT / "docs", visited)
     if shortfall:
         print(shortfall, file=sys.stderr)
         return 2
 
     if findings:
-        print("a document embeds code through a retired plan-mode tag:\n")
-        for f in findings:
-            print(f"  ✗ {f}")
         print(f"\nPlan mode was retired on 2026-09-08 — check-plan-code.py refuses these and "
               f"nothing assembles them. If you are writing ABOUT the tag, put it in backticks, "
               f"as {len(list(DOCS.rglob('*.md')))} documents already do.")

@@ -857,7 +857,7 @@ EXPECTED_MUTATIONS = {
     # pin each branch of the rule that replaced the guess (column-0 opens, indented does not,
     # the skip ends at the closing fence), because a rule derived from a measurement is only as
     # durable as the case that re-takes it.
-    "scripts/check-plan-file-tags.py": 11,
+    "scripts/check-plan-file-tags.py": 14,
     # ⟳ 2026-08-31, backlog #76/#77: the shared page chrome. Adding it found TWO
     # vacuous cases of my own — a "dirty tree" assertion compared against a
     # NON-repo, so it differed by the UNKNOWN text and never by the dirty flag,
@@ -3377,12 +3377,12 @@ def _self_test() -> int:
     # three behaviours the r1/r2 folds added and left case-guarded but manifest-less. This
     # total is a LIVE sum that moves whenever coverage does — RISING is the permitted
     # direction; the ratchet exists so it cannot fall silently.
-    # ⟳ 374 -> 385, 2026-09-08: +11 for scripts/check-plan-file-tags.py, the fence that replaces
+    # ⟳ 374 -> 388, 2026-09-09: +14 for scripts/check-plan-file-tags.py, the fence that replaces
     # plan mode's only reader of the `<!-- file: … -->` grammar. RISING, which is the permitted
     # direction — and note what did NOT happen here: retiring plan mode did not lower this
     # number, because PR 1 only makes the code unreachable. The DECREASE belongs to the deletion
     # slice, where it must be recorded as a deliberate retirement with its reason.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 385)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 388)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

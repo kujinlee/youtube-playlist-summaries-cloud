@@ -82,12 +82,12 @@
     ]
   },
   {
-    "name": "the corpus count stops counting, so an empty run and a 1,115-document run report the same",
+    "name": "audit reports NOTHING visited, so the corpus size claim is hollow",
     "file": "scripts/check-plan-file-tags.py",
     "edits": [
       [
-        "        scanned += 1",
-        "        scanned += 0"
+        "    return findings, visited",
+        "    return findings, set()"
       ]
     ],
     "expect": [
@@ -95,11 +95,11 @@
     ]
   },
   {
-    "name": "an unreadable document is silently skipped — a file it could not check reads as clean",
+    "name": "an unreadable document is silently skipped — a file it could not check reads as clean [anchor re-bound r2: the fix moved this line]",
     "file": "scripts/check-plan-file-tags.py",
     "edits": [
       [
-        "            findings.append(Finding(str(md), 0, f\"could not be read, so it was NOT checked: {exc}\"))",
+        "            findings.append(Finding(str(md), 0, f\"could not be read, so it was NOT checked: {exc}\",\n                                    unreadable=True))",
         "            _ = exc"
       ]
     ],
@@ -125,8 +125,8 @@
     "file": "scripts/check-plan-file-tags.py",
     "edits": [
       [
-        "    total = len(list(docs_root.rglob(\"*.md\")))\n    if scanned == total:",
-        "    total = len(list(docs_root.rglob(\"*.md\")))\n    if True:"
+        "    missing = want - seen\n    stray = seen - want",
+        "    missing = set()\n    stray = seen - want"
       ]
     ],
     "expect": [
@@ -138,12 +138,55 @@
     "file": "scripts/check-plan-file-tags.py",
     "edits": [
       [
-        "    if scanned == total:\n        return None",
-        "    if False:\n        return None"
+        "    if missing:\n        shown =",
+        "    if True:\n        shown ="
       ]
     ],
     "expect": [
       "a full-tree scan has no shortfall"
+    ]
+  },
+  {
+    "name": "an unreadable doc is dropped from the VISITED set, so it reads as a NARROWED corpus (r2 H1)",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "        visited.add(md)\n        try:",
+        "        try:"
+      ]
+    ],
+    "expect": [
+      "...so it is ACCOUNTED FOR and does not read as a narrowing"
+    ]
+  },
+  {
+    "name": "every finding claims to be unreadable, so a narrowed corpus excuses itself per tag",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "    unreadable: bool = False",
+        "    unreadable: bool = True"
+      ]
+    ],
+    "expect": [
+      "a TAG finding is not marked unreadable"
+    ]
+  },
+  {
+    "name": "the guard compares CARDINALITY instead of identity, so a same-size different tree passes (Codex r2 High)",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "    missing = want - seen",
+        "    missing = set() if len(seen) == len(want) else want - seen"
+      ],
+      [
+        "    stray = seen - want",
+        "    stray = set()"
+      ]
+    ],
+    "expect": [
+      "...and a same-SIZE but different set is refused — the property is which documents were read, not how many"
     ]
   }
 ]

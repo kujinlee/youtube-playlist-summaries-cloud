@@ -5355,3 +5355,45 @@ Claude half, 1 by CI's mutation sweep, 2 by Codex.
 
 Codex honestly reported CANNOT RUN on `--mutate .` (two attempts, both interrupted) — which is
 the very check that caught the orphaned mutation.
+
+## 2026-09-09
+A second review round — this one aimed at the fixes from the first round, not at the original
+change — found three more problems, all of them in the repairs themselves. The most serious: the
+guard meant to prove it had read the right documents was only counting them. A different set of
+files of the same size passed as if nothing were wrong, with a live violation sitting unread
+inside the set it skipped.
+
+The pattern is now the headline of this branch: **every round of fixes has introduced its own
+defects.** That is not a surprise here — it is what the project's own history predicts — but it
+is the reason this work is not finished when the tests go green.
+<!--tech-->
+Round 2, SCOPED to r1's fixes (`git diff 71f86f9a..6e5b2b78`). Both halves filed:
+`docs/reviews/claude/retire-plan-mode-r2-claude.md`,
+`docs/reviews/coordinator/retire-plan-mode-r2-codex.md` (`gate_ran: true`, gpt-5.5).
+
+⭐ **Cx-H1 — cardinality is not identity.** `coverage_shortfall` compared COUNTS. Codex's
+measurement: intended `docs/` = {`a.md`, `has-tag.md`} with a LIVE tag; a different root =
+{`x.md`, `y.md`}; `scanned == total == 2` → verdict `None`. False green over a corpus never
+scanned. Fixed to a SET difference (`want - seen`, `seen - want`), reported by name. Codex's exact
+construction now REFUSES, naming `a.md` as never visited.
+
+**H1 (Claude half) — wrong cause, right cause suppressed.** `rglob` counts PATHS, `scanned` counted
+files READ, so an unreadable document printed "the corpus was NARROWED" and `main()` returned
+before the finding naming the file could print. Measured: rc=2, stdout empty. Fixed with a typed
+`Finding.unreadable` (not a substring match on my own message) and by printing findings first.
+Codex found the same defect independently — its M1.
+
+**H2 (Claude half) — the fixes ORPHANED mutation anchors twice.** Anchors bind by TEXT, so
+improving code silently unhooks them; only the sweep can tell. Three re-bound, then re-bound again
+when the Cx-H1 fix rewrote the same region.
+
+⚠ Two failed attempts at one mutation, both recorded: the first SURVIVED because a guard clause it
+never touched still caught the case; the second CRASHED the suite (`0 red case(s) … caught by
+something else: []`), exposing a real latent fall-through that indexed an empty list. Restructured
+so every branch reports its own condition and `None` is the final fallback.
+
+Cases 33 → **39**; guard mutations 11 → **14**; `EXPECTED_MUTATIONS` 385 → **388**.
+
+**Running total for this branch: 7 defects across 4 instruments** — 3 by the Claude half, 1 by CI's
+mutation sweep, 3 by Codex. No instrument found more than half. Round 2 is NOT CONVERGED by the
+usual reading (it found things), so a round 3 scoped to THESE fixes is the honest next step.
