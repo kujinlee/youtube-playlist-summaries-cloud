@@ -5729,3 +5729,59 @@ uncommitted** — it diffs commits, so it measured an empty population and repor
 "no tracked files changed". Re-run after `git commit`: rc=1, correctly refusing. The
 recorded shape *a measurement is only as good as its corpus*, hit inside the gate whose
 job is to notice changes.
+
+## 2026-09-09 [needs-you]
+We checked whether the automated sabotage-testing can be trusted, and the answer is a
+qualified yes with one real gap.
+Twenty-three deliberate sabotages are kept on file; each is supposed to break the tool in
+a way one named test catches. All twenty-three do — confirmed three separate times, by two
+independent reviewers and by me, all producing identical results. That part is sound.
+The gap is one level up. There is a single line of code that decides whether a test
+failing "counts" as catching the sabotage it was aimed at, or merely failed for some other
+reason. That line has no sabotage test of its own. If it were ever weakened, every one of
+the 371 checks in the project could be credited to the wrong test and nothing would say so.
+It is correct today; what is missing is the guard on it. A second, similar gap sits beside
+it. Neither is urgent — nothing is broken — but they are on the one file whose whole job is
+to notice this kind of thing.
+Separately, we now know the answer to a question that had been open for two weeks: is it
+safe to run two review agents at once? Yes, when they only read files and work in their own
+temporary copies — measured today, three overlapping processes, identical results. It is
+NOT safe for three specific operations, and those are now grouped as one body of work so
+they stop being three unrelated notes.
+<!--tech-->
+Branch `mutation-faithfulness-r1`, commits `f2eca70a` + `1e847c71`. No production code
+changed; this is a review round plus a backlog filing.
+
+**Round 1, dual adversarial on merged `3afe62c0`.** Both halves filed under their writer
+directories per #92. `check-review-rounds`: 169 rounds, 0 silent gaps, 39 codex verdicts,
+none contradicted.
+
+* **All 23 entries FAITHFUL**, verified three ways: Codex ran each individually; the Claude
+  half rebuilt the experiment with its own driver; my matched-pair probe confirmed the five
+  newest cases track the guard's MEANING not the manifest's string (a semantically-null
+  rewrite stays green; a *different* real weakening fires the named case). All three runs
+  produced identical red-set data. No case is named by two entries; no compound edits.
+* **F1 (High) — `:975` `w == f` has NO manifest entry.** Reverting equality to substring
+  survives at **78/78, rc=0**. That line is what converts "the suite went red" into "went
+  red via the case it names", for all 371 mutations in all 33 manifests. Its own comment
+  records the round-6 defect where `expect: "does NOT count"` matched seven case names.
+  NOT Blocking — intact on this commit; the *protection* is what is absent.
+* **F2 (Medium) — the colon rule at `:923` is unfalsifiable.** Every fixture name reaching
+  that parser is colon-free, so `rsplit(": got ")` and `split(":")` agree by construction.
+  Reverting to the buggy splitter survives at 78/78. The recorded "the fixture uses an input
+  a DIFFERENT rule filters first" shape.
+* **F9/F10 (Low)** — entry 11's edit INVERTS (`!=` → `==`) rather than disables; shipped
+  4 reds vs 2 for the weakest edit that still fires the named case.
+* Both F1 and F2 independently re-run by me before acceptance. ⚠ The Claude half went idle
+  mid-document and had to be pinged — third instance of that failure mode.
+
+**Backlog `(concurrency safety)` bundle** — #67 rescoped to the user's goal (classify
+operations safe-concurrent vs must-serialise; serialise the OPERATION, not the agent),
+extended 4,204 → 7,296 chars; #92 and #103 joined it. New positive result recorded: the
+safe method already exists — per-run temp tree + `$HOME` redirect. Three must-serialise
+operations named, none mechanically enforced. One cheap measurement outstanding: two
+concurrent `--mutate .` runs.
+
+**⛔ WAITING ON YOU:** whether to fold F1/F2 now as a small slice (2 manifest entries +
+2 cases, `EXPECTED_MUTATIONS` 23 → 25, rising) or leave them filed; and whether the
+product-level races #17/#19/#20 should join the concurrency-safety bundle.

@@ -2,7 +2,7 @@
 """A plan that contains code must ASSEMBLE into that code, and its evidence must be RUN.
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
-    python3 scripts/check-plan-code.py --self-test          # 78 cases
+    python3 scripts/check-plan-code.py --self-test          # 89 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -303,15 +303,18 @@ def control_is_green(rc: int, out: str) -> bool:
     return rc == 0 and "passed" in out
 
 
-def not_measured_line(nm: NotMeasured, subject: str = "") -> str:
+def not_measured_line(nm: NotMeasured) -> str:
     """The ONE sentence that says a run produced no coverage verdict.
 
-    THREE consumers need it — the `--mutate` printer, the plan-mode printer, and the
-    evidence block. Code review r3 found `evidence()` printing a clean tally over an
-    UNTRUSTWORTHY run because it had none of this: on the after-control path every entry
-    is measured and the count is complete, so nothing in the per-entry data records the
-    failure and only `trustworthy` carries it. That is r2's own defect standing in the
-    third consumer of the same dict.
+    ⟳ 2026-09-09, round 1 F4. ONE consumer now — the `--mutate` printer at `main()`. It had
+    THREE (that printer, the plan-mode printer, the evidence block), and PR #271 deleted two
+    of them. The paragraph that used to stand here described the three, and was false from the
+    moment plan mode's code went; it is replaced rather than annotated, because a docstring
+    that names dead callers sends the next reader looking for them.
+
+    Code review r3 is still why this exists: `evidence()` printed a clean tally over an
+    UNTRUSTWORTHY run, because on the after-control path every entry is measured and the count
+    is complete — nothing in the per-entry data records the failure, only the verdict type does.
 
     ⚠ Writing a third copy of the sentence was the first attempt, and the mutation
     pre-flight refused it — the new anchor matched TWICE. A second copy of a sentence is a
@@ -320,17 +323,22 @@ def not_measured_line(nm: NotMeasured, subject: str = "") -> str:
     ⟳ backlog #91. THE SENTENCE IS NOW IN TWO PIECES AND THE SEAM IS THE SUBJECT.
     `nm.reason` is the arithmetic-bearing clause, rendered at CONSTRUCTION by
     `coverage_verdict.not_measured_reason` — so no consumer can recompute it and get it
-    wrong, which is what r3 B4 found. What stays here is the `NOT MEASURED — ` head and
-    the per-invocation `subject`, which the verdict cannot know: two of the three callers
-    pass none, and the third passes `f"{mode}: "`, derived from the command-line flags.
-    A fully pre-rendered reason could not carry that, and the spec's §3 wording is
-    corrected in the module docstring rather than worked around here.
+    wrong, which is what r3 B4 found. What stays here is the `NOT MEASURED — ` head.
+
+    ⛔ THE `subject` PARAMETER IS GONE, and its removal is the finding. It existed so a caller
+    could prefix the sentence with `f"{mode}: "` — and the ONLY caller that ever passed one was
+    plan mode's printer, deleted in PR #271. What was left was a knob no input could turn: a
+    parameter with no producer. ⚠ THE DELETION SLICE DID NOT CATCH IT, and the reason
+    generalises — it retired 21 mutations by locating their ANCHORS inside doomed functions,
+    which is exactly right for a mutation whose subject died, and blind to a SURVIVING function
+    whose callers died. Deleting the parameter is what `check-producer-enumeration.py` exists to
+    encourage; a default argument nobody supplies is an affordance, not a feature.
 
     ⛔ THIS TAKES A `NotMeasured`, NOT A UNION. Handing it a `Measured` is an
     AttributeError on `.reason`, which is the point: the sentence is only ever true of one
     variant, and the type says so instead of a comment saying so.
     """
-    return f"NOT MEASURED — {subject}{nm.reason}"
+    return f"NOT MEASURED — {nm.reason}"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -526,7 +534,7 @@ EXPECTED_MUTATIONS = {
     # It is "is the anchor LOCATED INSIDE one": `src.find(anchor)` -> line -> enclosing def.
     # And the anchor is `edits[i][0]`, not a key called `anchor`; reading the wrong key gives
     # `find("") == 0`, which attributes all 44 entries to line 1 and answers 0 a second way.
-    "scripts/check-plan-code.py": 23,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 32,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1107,6 +1115,23 @@ def _self_test() -> int:
     case("a hung suite is rc 2, distinct from both pass and fail", rc_t, 2)
     case("...and says NOT CHECKED", "NOT CHECKED" in out_t, True)
 
+    # ⟳ 2026-09-09, round 1 F7. `run_suite` returns `(r.stdout + r.stderr)`, and dropping the
+    # stderr half survived at 78/78 — every assertion in this suite reads stdout (`passed`,
+    # `[FAIL] `), so nothing noticed. It matters anyway: every CANNOT RUN message prints an
+    # `out[-400:]` tail, and a control that dies on a TRACEBACK says so only on stderr. Losing it
+    # turns "the control was red, here is why" into "the control was red" — the diagnostic that
+    # makes a red actionable rather than merely true.
+    with tempfile.TemporaryDirectory() as _td:
+        _de = pathlib.Path(_td)
+        (_de / "noisy.py").write_text(
+            'import sys\n'
+            'print("stdout half", flush=True)\n'
+            'sys.stderr.write("STDERR HALF — the traceback lives here\\n")\n'
+            'sys.exit(1)\n')
+        _rc_e, _out_e = run_suite(_de, "noisy.py")
+        case("run_suite keeps BOTH halves, so a control's traceback survives into the report",
+             ("stdout half" in _out_e, "STDERR HALF" in _out_e), (True, True))
+
     # The redirected HOME (`child_env`). A guard over scripts that write nothing under
     # `~` today is INVISIBLE when it breaks — "the redirect held" and "nothing tried to
     # write" are the same observation. So these assert the PROPERTY, not the mechanism:
@@ -1232,6 +1257,17 @@ def _self_test() -> int:
          "DRIFT" in (count_drift("x --self-test          # 7 cases", 8) or ""), True)
     case("count_drift CANNOT RUN when no count is declared",
          "CANNOT RUN" in (count_drift("no count here", 7) or ""), True)
+    # ⟳ 2026-09-09, round 1 F8. THE ANCHOR ITSELF. Widening the pattern to a bare `(\d+) cases`
+    # survived at 78/78: entries 10 and 11 pin the absent-count and mismatch BRANCHES, nothing
+    # held the pattern that decides WHICH number is the declaration. This docstring is 60+ lines
+    # of prose about mutation counts, so a stray "N cases" is not hypothetical — the narrow
+    # `--self-test  # N cases` anchor is the whole reason the right number is read.
+    _decoy = ("This guard used to have 99 cases before the split, and the plan mentions 5 cases.\n"
+              "    python3 x --self-test          # 7 cases\n")
+    case("count_drift reads the DECLARATION, not the first 'N cases' in the prose",
+         count_drift(_decoy, 7), None)
+    case("...so a decoy count cannot make a real drift look clean",
+         "declares 7 cases" in (count_drift(_decoy, 8) or ""), True)
 
     # ── main(): the ONLY layer CI and acceptance criterion 5 read (round 5, H3) ──
     # `check()` was well covered; the wrapper converting its verdict into the
@@ -1422,6 +1458,47 @@ def _self_test() -> int:
         case("...so the mutation is not credited to a case that does not exist",
              any("matched 0 red case(s)" in r for r in _rep6), True)
 
+    # ⛔ ⟳ 2026-09-09, mutation-faithfulness round 1 (F1 HIGH + F2 MEDIUM). ONE fixture, because
+    # the two rules it covers are the two halves of the same sentence — "the suite went red VIA
+    # THE CASE IT NAMES". Both were measured SURVIVING at 78/78 with no manifest entry:
+    #   F1  `w == f` -> `w in f` at the `unnamed` comprehension. This is the single line that
+    #       turns a red suite into a NAMED red case, for all 371 mutations in all 33 manifests.
+    #       Round 6 bought it: an `expect` of `"does NOT count"` matched SEVEN case names.
+    #   F2  `.rsplit(": got ", 1)[0]` -> `.split(":", 1)[0]`. The bought lesson (`:916-919`) is
+    #       that a case NAME may contain a colon; every fixture name reaching this parser was
+    #       colon-FREE, so the two splitters agreed by construction and the rule could not fail
+    #       via the mechanism it is named after — the recorded "the fixture uses an input a
+    #       DIFFERENT rule filters first" shape, twelve times paid for elsewhere in this repo.
+    # The fixture's case name is `collect: a missing git`, which is deliberately BOTH: it holds a
+    # colon (F2) and it has a proper substring, `a missing git` (F1).
+    with tempfile.TemporaryDirectory() as _td:
+        _d3 = pathlib.Path(_td)
+        (_d3 / "m.py").write_text(
+            'def f():\n    return 1\n\n\n'
+            'def _self_test():\n'
+            '    if f() != 1:\n'
+            '        print("  [FAIL] collect: a missing git: got %r want 1" % f())\n'
+            '        return 1\n'
+            '    print("1/1 passed")\n'
+            '    return 0\n\n\n'
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+        _EDIT = ["def f():\n    return 1", "def f():\n    return 2"]
+        _colon = [{"name": "colon name", "file": "m.py", "edits": [_EDIT],
+                   "expect": "collect: a missing git"}]
+        _ok_colon, _rep_colon, _, _ = run_mutations(_d3, _colon, {"m.py"})
+        case("a case name containing a COLON is matched whole, not truncated at the first one",
+             _ok_colon, True)
+        # F1's PRESENCE TWIN, and the reason this pair is one block: the same fixture, with an
+        # `expect` that is a STRICT SUBSTRING of that real name. Equality refuses it; substring
+        # matching would certify the mutation against a case nobody named.
+        _frag = [{"name": "fragment expect", "file": "m.py", "edits": [_EDIT],
+                  "expect": "a missing git"}]
+        _ok_frag, _rep_frag, _, _ = run_mutations(_d3, _frag, {"m.py"})
+        case("an `expect` that is a mere FRAGMENT of a real case name is REFUSED",
+             (_ok_frag, any("matched 0 red case(s)" in r for r in _rep_frag)), (False, True))
+
     # ⟲ Backlog #70, Task 2. The manifest FILENAME names the target script, and an entry
     # whose `file` key disagrees is refused rather than silently believed.
     with tempfile.TemporaryDirectory() as _td:
@@ -1446,6 +1523,27 @@ def _self_test() -> int:
                          "edits": [["a", "b"]], "expect": "e"}]))
         case("a manifest naming a script that does not exist is refused",
              any("does not exist" in x for x in load_manifests(_r)[1]), True)
+        # ⟳ 2026-09-09, round 1 F5. Two of this function's six refusals had NEITHER a case nor a
+        # mutation — measured surviving at 78/78 — while their four siblings above each had both.
+        # ⚠ The duplicate-NAME rule is NOT the duplicate-ANCHORS rule that entry 9 covers: two
+        # entries can share a `name` while differing in anchors, and it is the NAME rule that a
+        # reproduced Codex finding bought (`:696-701`: "entry 32 swapped for a duplicate of entry
+        # 1, still green"). The rule that finding paid for was the unguarded one.
+        _man.write_text(json.dumps([
+            {"name": "same name", "file": "scripts/thing.py",
+             "edits": [["x = 1", "x = 2"]], "expect": "e"},
+            {"name": "same name", "file": "scripts/thing.py",
+             "edits": [["x = 1", "x = 3"]], "expect": "e"}]))
+        _dupn = load_manifests(_r)
+        case("two entries sharing a NAME are refused, even with different anchors",
+             any("duplicate mutation name" in x for x in _dupn[1]), True)
+        case("...and the duplicate is not silently kept, which would hold the count",
+             len(_dupn[0]), 1)
+        # Malformed JSON is a broken manifest, not an empty one. Swallowing it silently would
+        # drop a whole target's coverage while `--mutate .` still printed `0 survivor(s)`.
+        _man.write_text("{ this is not json ]")
+        case("a manifest that is not valid JSON is refused, not skipped",
+             any("not valid JSON" in x for x in load_manifests(_r)[1]), True)
     with tempfile.TemporaryDirectory() as _td:
         _r2 = pathlib.Path(_td)
         (_r2 / "scripts" / "mutations").mkdir(parents=True)
@@ -1509,6 +1607,64 @@ def _self_test() -> int:
             _ok3, _rep3, _ = mutate_delivered(_r)
             case("a SHRUNKEN manifest is refused by name and number",
                  (_ok3, any("holds 1 mutation(s), expected 2" in r for r in _rep3)),
+                 (False, True))
+        # ⟳ 2026-09-09, round 1 F3. THE OTHER DIRECTION, and it was unguarded. `:382-384` states
+        # the rule as "EXACT, not a floor: adding a mutation should also be a visible act", but the
+        # only case pinned SHRINKAGE, so `!=` -> `<` survived at 78/78 and a manifest could GROW
+        # silently. ⚠ The obvious backstops do not backstop it: `the declared counts are the real
+        # ones` compares EXPECTED_MUTATIONS against a literal and `sorted(EXPECTED_MUTATIONS)` pins
+        # the key list — in this scenario EXPECTED_MUTATIONS is UNTOUCHED, so both still match.
+        EXPECTED_MUTATIONS.clear()
+        EXPECTED_MUTATIONS["scripts/thing.py"] = 1
+        with tempfile.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td); _mini(_r)
+            _grown = json.loads((_r / "scripts" / "mutations" / "thing.json").read_text())
+            _grown.append({"name": "value is three", "file": "scripts/thing.py",
+                           "edits": [["VALUE = 1", "VALUE = 3"]], "expect": "value is one"})
+            (_r / "scripts" / "mutations" / "thing.json").write_text(json.dumps(_grown))
+            _okG, _repG, _ = mutate_delivered(_r)
+            case("a GROWN manifest is refused too — the count is exact, not a floor",
+                 (_okG, any("holds 2 mutation(s), expected 1" in r for r in _repG)),
+                 (False, True))
+        # ⟳ 2026-09-09, round 1 F5c. A manifest for a target with NO declared count at all.
+        # Deleting that loop survived at 78/78: a NEW manifest file could ship with no
+        # EXPECTED_MUTATIONS entry, and nothing would say so — its coverage could then shrink to
+        # zero unnoticed, because there is no number for it to disagree with.
+        EXPECTED_MUTATIONS.clear()
+        with tempfile.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td); _mini(_r)
+            _okU, _repU, _ = mutate_delivered(_r)
+            case("a manifest with NO declared count is named, not silently accepted",
+                 (_okU, any("no declared count" in r for r in _repU)), (False, True))
+        # ⟳ 2026-09-09, round 1 F6. THE LOOP ITERATES ALL TARGETS, and that was unfalsifiable.
+        # `for target in sorted(counts):` -> `sorted(counts)[:1]` survived at 78/78, because every
+        # fixture root `_mini` builds holds exactly ONE manifest target — so `[:1]` and the full
+        # loop agree BY CONSTRUCTION. In the real run there are 33 targets; under that edit 32 go
+        # unscanned for home-escape routes and `--mutate .` still prints `0 survivor(s)`.
+        # ⚠ This is the recorded shape the file already names at `:551-552` — "every fixture symbol
+        # had exactly ONE producer, and with one owner `all`/`any` agree". A single-element fixture
+        # cannot tell a loop from a first-element read. The fix is a SECOND target, and it must sort
+        # AFTER the first (`zz` > `thing`) or the probe would pass for the wrong reason.
+        EXPECTED_MUTATIONS.clear()
+        EXPECTED_MUTATIONS["scripts/thing.py"] = 1
+        EXPECTED_MUTATIONS["scripts/zz.py"] = 1
+        with tempfile.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td); _mini(_r)
+            # ⚠ THE ROUTE IS ASSEMBLED AT RUNTIME, and that is deliberate. Writing it as a
+            # literal here puts a real home-escape route into THIS file, and `--mutate .`
+            # then flags check-plan-code.py itself — which it did, twice, while I tried to
+            # place an exemption marker correctly. Splitting the token is not a trick to
+            # evade the scanner: the scanner's subject is code that RESOLVES a home, and this
+            # file does not; `zz.py`, which it writes, does. The exemption markers elsewhere
+            # in this suite are for fixtures small enough to sit on one line — this one is not.
+            _route = "pwd.getpw" + "uid(os.getuid()).pw_dir"
+            (_r / "scripts" / "zz.py").write_text("import os, pwd\nHOME = " + _route + "\n")
+            (_r / "scripts" / "mutations" / "zz.json").write_text(json.dumps(
+                [{"name": "zz route", "file": "scripts/zz.py",
+                  "edits": [["HOME = pwd", "HOME  = pwd"]], "expect": "value is one"}]))
+            _okZ, _repZ, _ = mutate_delivered(_r)
+            case("the home-escape scan reaches EVERY target, not just the first",
+                 (_okZ, any("scripts/zz.py" in r and "getpwuid" in r for r in _repZ)),  # not-a-home-escape: asserts the report NAMES the route
                  (False, True))
         # ⟲ 2026-08-30, Codex Medium. THE WIRING, not just the predicate. This file
         # already records the shape this would otherwise repeat — "extracting the
@@ -1854,7 +2010,7 @@ def _self_test() -> int:
     # a target written ahead of the deletion it describes is a green check over code that
     # does not exist yet. Split by function and how the 21 was measured: see
     # EXPECTED_MUTATIONS' own comment.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 371)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 380)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

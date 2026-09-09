@@ -1,0 +1,26 @@
+{
+  "attempts": [
+    "  gpt-5.6-sol: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.6-terra: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.6-luna: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.5: ok \u2014 4103 chars"
+  ],
+  "exit_code": 0,
+  "gate_ran": true,
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/ec76df9f-257e-466f-b551-f915e55a6558/scratchpad/codex-run.log: OVERWRITTEN during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/ec76df9f-257e-466f-b551-f915e55a6558/scratchpad/control.txt: CREATED during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/ec76df9f-257e-466f-b551-f915e55a6558/scratchpad/drive-out.txt: CREATED during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/ec76df9f-257e-466f-b551-f915e55a6558/scratchpad/drive-results.json: CREATED during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/ec76df9f-257e-466f-b551-f915e55a6558/scratchpad/drive.py: CREATED during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/ec76df9f-257e-466f-b551-f915e55a6558/scratchpad/faith-probe.py: CREATED during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/ec76df9f-257e-466f-b551-f915e55a6558/scratchpad/mutation-faithfulness-r1-claude.md: CREATED during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/ec76df9f-257e-466f-b551-f915e55a6558/scratchpad/probe-out.txt: CREATED during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/ec76df9f-257e-466f-b551-f915e55a6558/scratchpad/probe.py: CREATED during the run (writer unattributed)"
+  ],
+  "model": "gpt-5.5",
+  "reason": "4103 chars",
+  "review": "mutation-faithfulness-r1-codex.md",
+  "schema": 1,
+  "tool": "codex-review"
+}
