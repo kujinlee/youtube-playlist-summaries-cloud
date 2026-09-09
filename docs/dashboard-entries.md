@@ -5942,6 +5942,11 @@ writers and a window of time. An earlier attempt to split this group was rejecte
 drawing the line in the wrong place — it separated by who was racing rather than whether
 racing was involved at all. This split uses the second question, which is the one the
 newly written rule actually asks.
+Two unrelated items were also found claiming to be unfinished when their own notes say
+they were completed days ago — one still flagged at the second-highest priority, so anyone
+choosing work by urgency would have been pulled toward something already done. Both labels
+are corrected. There is an open item in the same group about exactly this kind of drift,
+and it is still open, so these were caught by reading rather than by any check.
 <!--tech-->
 Branch `bundle-membership`, off `6b18b13b`.
 
@@ -5974,3 +5979,22 @@ rest, and reports a **short list with no error**. Re-done with **negative** indi
 second-from-last), all six appear. This is the recorded *positional read needs a verified shape*
 defect — the one where `cells[-2]` hit the wrong cell and closed two open items — and the
 handoff's standing advice to use negative indices on this file is what caught it.
+
+**⟳ FOLDED IN, same branch:** two `(comprehensibility)` rows wore an OPEN severity marker while
+their own status cell recorded completion — **99** (`🟠` / *"RESOLVED 2026-09-06 — PR #234"*) and
+**81** (`🟢` / *"CLOSED 2026-09-01 — tier 1 ADOPTED, tier 2 HELD by user decision"*). Both moved to
+`✅ (was X)`, the convention rows 83/87/95 already use. Bundle recount: **14 closed, 12 open** (50
+and 56 partial), was 12/14.
+
+⚠ **Row 98 of that same bundle is *"a backlog row can say OPEN about work that already MERGED, and
+no gate catches it"*, and it is still open** — so its own bundle accumulated two more instances
+while it waited. The 🟠 on 99 is the expensive half: severity is what a person scans to choose the
+next piece of work, so a stale one does not merely misreport, it misdirects.
+
+⚠ **Two false readings on the way to these two, both from matching prose instead of structure.**
+A keyword pass called row **82** closed on the phrase *"is CLOSED by the same-day fix"* — which
+describes a **different half** of that row — and called **99** open because its status says
+`RESOLVED`, a word the pattern did not list. The count above comes from the severity **marker**,
+cross-checked against every status head printed in full. Deciding state by grepping prose is the
+same class as the positional-index defect in this entry's other half: both return a confident
+answer with no error.
