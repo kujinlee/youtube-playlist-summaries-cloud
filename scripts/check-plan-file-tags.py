@@ -23,14 +23,25 @@ WHAT IT ASSERTS, AND THE ONE DISTINCTION THAT MATTERS
 A tag is only a tag when it OWNS ITS LINE — `^\\s*<!-- file: … -->\\s*$`, byte-for-byte the rule
 `check-plan-code.FILE_TAG` used, so this fence and the retired parser agree on what a tag is.
 
-Anything else is prose ABOUT a tag, and prose about tags is exactly what this repo is full of: 13
-documents mention `<!-- file: … -->` inside backticks — review findings, the `../escape.py`
-path-escape table cell, the retarget plan's own deletion script. **Every one must keep passing.**
+Anything else is prose ABOUT a tag, and prose about tags is exactly what this repo is full of:
+**19 documents on 2026-09-09** mention `<!-- file: … -->` inside backticks — review findings, the
+`../escape.py` path-escape table cell, the retarget plan's own deletion script.
+**Every one must keep passing.**
 This project has already paid for getting that wrong: `docs/reviews/plan-mutation-retarget-r1-claude.md`
 finding 3 records a bare `assert "<!-- file:" not in s` tripping on that very cell — "the regex was
 right; the assertion was wrong". A substring check here would be that defect, rebuilt on purpose.
 
-The escape, therefore, is the one 13 documents already use: put it in backticks.
+The escape, therefore, is the one every document discussing this grammar already uses: put it in
+backticks.
+
+⟳ 2026-09-09, review r3 (C2). This said "the one **13** documents already use", present tense and
+undated; it was 17 when r3 measured it and **19** by the time r3's own review documents were
+written — because each of those discusses the tag in backticks and joins the count. THE NUMBER
+RISES EVERY TIME ANYONE WRITES ABOUT THIS GRAMMAR, INCLUDING THIS PARAGRAPH. So it is stated as a
+dated observation and never maintained: **19 documents on 2026-09-09**. Round 2 accepted this same
+class as a finding (Cx-L1) and fixed it by dating the measurement — but only in
+`coverage_shortfall`'s docstring, so the instance a reviewer happened to open was repaired and the
+class was not. Both numbers in this header now carry the date they were taken.
 
 ⚠ A TAG INSIDE A COLUMN-0 FENCE IS NOT A TAG — AND THIS WAS WRONG ON THE FIRST TRY.
 The first version of this script had no fence rule, on the stated reasoning that `FILE_TAG` allows
@@ -68,19 +79,25 @@ CANNOT RUN (exit 2, never a pass)
     indistinguishable from the same sentence over 1,116. So the count of files READ is printed
     on the green path and refused when it is 0 — "no tags" is only meaningful next to
     "out of how many".
-  * **the corpus is NARROWED** — `scanned` disagrees with the number of documents under
-    `ROOT/"docs"`. ⚠ THE EMPTY CLAUSE ALONE WAS NOT ENOUGH, and thinking it was is the defect
-    a reviewer caught. It refuses a corpus of *nothing*; it says nothing about a corpus of
-    *something smaller*, which is exactly what narrowing `DOCS` produces. Measured: pointing
-    `DOCS` at `docs/reviews` left the live run AND the suite green while 220 documents —
-    every one of the 92 plans, the actual subject — went unread. See `coverage_shortfall`.
+  * **the corpus is NARROWED** — the SET of documents visited is not the set under `ROOT/"docs"`.
+    ⚠ THE EMPTY CLAUSE ALONE WAS NOT ENOUGH, and thinking it was is the defect a reviewer caught.
+    It refuses a corpus of *nothing*; it says nothing about a corpus of *something smaller*,
+    which is exactly what narrowing `DOCS` produces. Measured: pointing `DOCS` at `docs/reviews`
+    left the live run AND the suite green while 220 documents — every one of the 92 plans, the
+    actual subject — went unread. See `coverage_shortfall`.
+    ⟳ 2026-09-09, review r3 (F6): this clause said `scanned` disagrees with a COUNT. That
+    mechanism is gone — r2 replaced it with a set difference after Codex showed a same-size
+    different tree passing, and `scanned` is now compared only against 0, one clause above.
+    Describing a retired mechanism is how a reader learns the wrong falsifier.
 
 Usage:
     python3 scripts/check-plan-file-tags.py
-    python3 scripts/check-plan-file-tags.py --self-test  # 39 cases
+    python3 scripts/check-plan-file-tags.py --self-test  # 43 cases
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import re
 import sys
 import tempfile
@@ -108,11 +125,20 @@ class Finding:
     path: str
     line: int
     detail: str
-    # ⛔ A TYPE, NOT A SUBSTRING. `coverage_shortfall` must tell "unread because the corpus was
-    # narrowed" from "unread because the file could not be opened" — and the only honest way to
-    # know which is for the producer to SAY. Recovering it by matching "NOT checked" in `detail`
-    # would be a second implementation of one rule, kept in sync by hope; backlog #91 spent four
-    # rounds turning exactly that shape into a type.
+    # ⛔ A TYPE, NOT A SUBSTRING, and its ONE CONSUMER IS `main()`'s closing message. Recovering
+    # the distinction by matching "NOT checked" in `detail` would be a second implementation of
+    # one rule, kept in sync by hope; backlog #91 spent four rounds turning that shape into a type.
+    #
+    # ⟳ 2026-09-09, review r3 (F1). THIS COMMENT PREVIOUSLY NAMED THE WRONG CONSUMER — it said
+    # `coverage_shortfall` needs the producer to SAY which cause applies. It cannot: its signature
+    # is `(docs_root, seen)` and it never receives a `Finding`. The field was therefore read by
+    # NOTHING in production, and r3 proved it by deleting the field and its kwarg — stdout came
+    # back BYTE-IDENTICAL, same exit code. What actually fixed r2's H1 was `visited.add(md)` in
+    # `audit`, one line. A type whose stated reason is false is worse than no type, because the
+    # citation to #91 makes a reader trust it.
+    #
+    # It is wired now, and to the decision that genuinely needs it: an undecodable file and an
+    # embedded tag are BOTH findings and want OPPOSITE remedies. See `main()`.
     unreadable: bool = False
 
     def __str__(self) -> str:
@@ -198,9 +224,23 @@ def audit(root: Path) -> "tuple[list[Finding], set[Path]]":
         # ⛔ `split("\n")`, NOT `splitlines()` — the parser's own splitter (`extract`: `md.split`).
         # MEASURED 2026-09-08, review r1: `splitlines()` honours NINE separators that `split("\n")`
         # does not (\v \f \x1c \x1d \x1e \x85     \r). That is not cosmetic — it broke
-        # the fence in the DANGEROUS direction. For each of five tested, `x<SEP>```" opened a fence
-        # HERE that never opened in `extract`, so a `<!-- file: m.py -->` on the next line was
+        # the fence in the DANGEROUS direction. RE-MEASURED 2026-09-09 (review r3, C3) across all
+        # nine, with BOTH readers routed through one `read_text` so the comparison is honest: the
+        # old `splitlines()` disagreed on **8 of 9**, every one of them hiding a live tag; the
+        # delivered `split("\n")` disagrees on **0 of 9**. This previously said "five tested",
+        # understating the eight the case loop below actually drives.
+        # `x<SEP>```" opened a fence HERE that never opened in `extract`, so a
+        # `<!-- file: m.py -->` on the next line was
         # skipped as fenced while `extract()` assembled it: `files=['m.py']`, fence findings 0.
+        #
+        # ⛔ `\r` IS THE NINTH, AND IT CANNOT REACH EITHER SPLITTER — SAY SO, because leaving it
+        # unexplained has now produced the SAME false High from two independent reviewers (r3,
+        # Cx-H1, and once before that). Both readers open with `read_text(encoding="utf-8")` —
+        # `check-plan-code.check():1295` and `audit` below — which is text mode with
+        # `newline=None`, so universal-newline translation rewrites `\r` to `\n` BEFORE any
+        # splitting happens. A `\r` disagreement can only be produced by handing `extract()` a
+        # raw string no caller ever hands it. The loop below drives EIGHT separators because the
+        # ninth is UNREACHABLE, not because it was overlooked.
         # A line is whatever the reader's parser says a line is. Third recorded instance of
         # imitating a parser instead of asking it.
         for n, line in enumerate(text.split("\n"), start=1):
@@ -235,6 +275,40 @@ def _tree(tmp: Path, files: dict[str, str]) -> Path:
         p.write_text(body, encoding="utf-8")
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def _drive_main(tmp: Path, name: str, files: dict[str, str],
+                raw: "dict[str, bytes] | None" = None) -> "tuple[int, str]":
+    """(rc, stdout) from the REAL entry point over a built tree.
+
+    ⛔ THE CASES BELOW ASSERT ON `main()`, NOT ON `audit()`, AND THAT IS THE POINT. Review r3's
+    F1 found a field that EVERY audit-level case passed and that NO production code read: deleting
+    it left stdout byte-identical. A suite that only ever drives helpers cannot see the difference
+    between a wired mechanism and an inert one — only the entry point a person runs can.
+
+    `ROOT`/`DOCS` are module globals that `main()` reads, so they are swapped and restored. The
+    restore is in a `finally` because a raising case must not leave the rest of the suite pointed
+    at a temp directory that no longer exists.
+    """
+    global ROOT, DOCS
+    root = tmp / name
+    docs = root / "docs"
+    docs.mkdir(parents=True, exist_ok=True)
+    for rel, body in files.items():
+        p = docs / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(body, encoding="utf-8")
+    for rel, blob in (raw or {}).items():
+        (docs / rel).write_bytes(blob)
+    keep_root, keep_docs = ROOT, DOCS
+    out = io.StringIO()
+    try:
+        ROOT, DOCS = root, docs
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            rc = main([])
+    finally:
+        ROOT, DOCS = keep_root, keep_docs
+    return rc, out.getvalue()
 
 
 def self_test() -> int:
@@ -337,8 +411,14 @@ def self_test() -> int:
         # ⛔ A LINE IS WHATEVER THE PARSER SAYS IT IS. `extract` splits on "\n"; `splitlines()`
         # ALSO breaks on \v \f \x1c \x1d \x1e \x85     \r. Measured in review r1: with
         # `splitlines()`, `x\v```" opened a fence here that never opened in `extract`, so the tag
-        # below it was skipped as fenced while `extract()` assembled `m.py` — 5 of 5 separators
-        # tested disagreed, every one in the direction that HIDES a live tag.
+        # below it was skipped as fenced while `extract()` assembled `m.py` — re-measured
+        # 2026-09-09 (r3, C3): the old `splitlines()` disagreed on 8 OF 9, every one in the
+        # direction that HIDES a live tag; the delivered splitter disagrees on 0 of 9. This
+        # comment said "5 of 5 tested" while the loop below drove eight.
+        # The loop is EIGHT, not nine, and the missing one is deliberate: `\r` never survives
+        # `read_text`'s universal-newline translation, so no `\r` case could ever fail here. See
+        # `audit`'s header for the measurement and for why omitting that sentence has twice cost
+        # a reviewer a false High.
         # This case pins the whole class, not the one separator that was noticed first.
         for _sep in ("\v", "\f", "\x1c", "\x1d", "\x1e", "\x85", " ", " "):
             r = _tree(tmp / f"q{ord(_sep)}",
@@ -348,12 +428,15 @@ def self_test() -> int:
 
         # ── the corpus, which is the whole point ───────────────────────────────
         r = _tree(tmp / "i", {"a.md": "x\n", "b/c.md": "y\n"})
-        case("the scanned count is the number of documents READ", len(audit(r)[1]), 2)
+        # ⟳ 2026-09-09, r3 (F6): this said "documents READ". The value is `len(visited)`, which by
+        # this commit's own design counts documents that were VISITED — including ones it could
+        # not read. Saying READ here contradicts the exact distinction the r2 fix exists to draw.
+        case("the visited count is the number of documents LOOKED AT", len(audit(r)[1]), 2)
 
         r = _tree(tmp / "j", {"p.py": "<!-- file: gen.py -->\n", "p.txt": "<!-- file: gen.py -->\n"})
         f, n = audit(r)
         case("non-markdown files are outside the corpus", f, [])
-        case("...and are not counted as scanned either", len(n), 0)
+        case("...and are not counted as visited either", len(n), 0)
 
         # ⚠ THE FALSIFIABILITY CLAUSE. Every case above asserts over a corpus this test built.
         # On the REAL tree the answer is zero, and a zero proves nothing unless the run refuses
@@ -411,15 +494,57 @@ def self_test() -> int:
              [x.unreadable for x in f], [True])
         case("...so it is ACCOUNTED FOR and does not read as a narrowing",
              coverage_shortfall(r, n), None)
-        # PRESENCE TWIN — without this, `unreadable` could absorb ANY gap and the r1 guard
-        # would be silently undone by the r2 fix. A real narrowing must still refuse.
+        # PRESENCE TWIN — a shortfall check that never fires is as useless as one that always
+        # does. A real narrowing must still refuse even with an unreadable doc in the tree.
+        # ⛔ `r / "ok.md"`, NOT `sorted(n)[0]` — REVIEW r3, F3. The indexed form CRASHED the
+        # suite under two of this file's own mutations (`IndexError`, no summary line, and every
+        # later case unreported), which the mutation harness reads as `caught by something
+        # else: []`. It is the same ban this file states at the `f[0]` case above and that
+        # `check-plan-code.py:1668` records as measured on 2026-09-08 — the day before the commit
+        # that introduced it here. A path the fixture already knows cannot raise.
+        # ⚠ This does NOT test what its old name implied about `unreadable`: `coverage_shortfall`
+        # never receives a `Finding`, so no value of that field can reach it (r3, F4). It is set
+        # arithmetic, and that is all it claims now.
+        # The dropped document is the UNREADABLE one deliberately — it is the one any future
+        # "excuse the files we could not open" clause would exempt, so it is the stronger fixture.
         case("...but a genuine narrowing ALONGSIDE an unreadable doc still refuses",
-             coverage_shortfall(r, n - {sorted(n)[0]}) is not None, True)
+             coverage_shortfall(r, n - {r / "bad.md"}) is not None, True)
         # A TAG finding must NOT be counted as unreadable, or a narrowed corpus containing one
         # tag would excuse itself by one document.
         r = _tree(tmp / "u", {"p.md": "<!-- file: gen.py -->\n"})
         f, n = audit(r)
         case("a TAG finding is not marked unreadable", [x.unreadable for x in f], [False])
+
+        # ── ROUND 3, F1 + C1: the REMEDY is chosen by the finding TYPE ──────────────────
+        # These are the only cases in this file that drive `main()`. They exist because r3
+        # measured `unreadable` as inert — read by nothing in production — while every case
+        # above passed. A discriminator with no consumer is not a type, it is a decoration.
+        BACKTICKS = "put it in backticks"
+        CANNOT_OPEN = "could not open"
+
+        rc, out = _drive_main(tmp, "m1", {"p.md": "<!-- file: gen.py -->\n"})
+        case("a TAG finding gets the backticks remedy",
+             (rc, BACKTICKS in out, CANNOT_OPEN in out), (1, True, False))
+
+        # PRESENCE TWIN, and the defect C1 actually reported: an undecodable file must NOT be
+        # told to use backticks. Before r3 this printed the tag remedy for a byte sequence.
+        rc, out = _drive_main(tmp, "m2", {"ok.md": "clean\n"},
+                              raw={"bad.md": b"\xff\xfe\x00bad\n"})
+        case("an UNREADABLE-only run gets the not-checked remedy, NOT the backticks one",
+             (rc, BACKTICKS in out, CANNOT_OPEN in out), (1, False, True))
+
+        # MIXED — one of each. A tag IS present, so the backticks remedy is right; this is the
+        # case that stops the fix from being written as `all(...)` instead of `any(...)`.
+        rc, out = _drive_main(tmp, "m3", {"p.md": "<!-- file: gen.py -->\n"},
+                              raw={"bad.md": b"\xff\xfe\x00bad\n"})
+        case("a MIXED run still gets the backticks remedy — a tag is present",
+             (rc, BACKTICKS in out, CANNOT_OPEN in out), (1, True, False))
+
+        # ⚠ AND THE CLEAN PATH THROUGH THE SAME ENTRY POINT, so a mutation that makes `main()`
+        # always take a finding branch is caught rather than passing as "no findings to print".
+        rc, out = _drive_main(tmp, "m4", {"a.md": "clean\n", "b/c.md": "also clean\n"})
+        case("a clean tree reports the corpus size and exits 0",
+             (rc, "0 across 2 documents" in out), (0, True))
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
@@ -458,9 +583,23 @@ def main(argv: list[str]) -> int:
         return 2
 
     if findings:
-        print(f"\nPlan mode was retired on 2026-09-08 — check-plan-code.py refuses these and "
-              f"nothing assembles them. If you are writing ABOUT the tag, put it in backticks, "
-              f"as {len(list(DOCS.rglob('*.md')))} documents already do.")
+        # ⛔ THE REMEDY IS ADDRESSED TO THE FINDING THAT CAN USE IT. Review r3 (C1, found by BOTH
+        # reviewers independently) measured the previous shape telling the operator to put an
+        # UNDECODABLE BYTE SEQUENCE in backticks — advice that cannot apply, on a path that only
+        # became reachable when r2 stopped returning 2 before the findings printed.
+        # ⚠ And the number it quoted was `len(list(DOCS.rglob("*.md")))` — the WHOLE CORPUS, in a
+        # sentence claiming that many documents already use backticks. It rendered "as 1119
+        # documents already do" while the true count was 17. A live count here would have to be
+        # re-measured on every failing run and would drift again; the dated measurement in this
+        # module's header is the one place that number belongs.
+        if any(not f.unreadable for f in findings):
+            print("\nPlan mode was retired on 2026-09-08 — check-plan-code.py refuses these and "
+                  "nothing assembles them. If you are writing ABOUT the tag, put it in backticks, "
+                  "as the documents that discuss this grammar already do.")
+        else:
+            print("\nNothing above is a tag. Every finding is a document this could not open, so "
+                  "it was NOT CHECKED — treat the clean result as covering the rest only. Repair "
+                  "or remove the file; the fence cannot clear what it cannot read.")
         return 1
 
     print(f"plan-mode tags: 0 across {scanned} documents under docs/")

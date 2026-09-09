@@ -5453,3 +5453,54 @@ and never checked for a completion summary, and an uncaught exception also exits
 filename from `--out`'s basename with no collision check, so `--out r3-codex.md` clobbered
 `docs/reviews/verdicts/r3-codex.verdict.json` (committed under PR #214). Detected by `git status`,
 restored, re-run under a unique stem. Verbatim recurrence of a defect already in project memory.
+
+## 2026-09-09 [resolved: 2026-09-09/2]
+You chose to fix the round-3 findings rather than ship as-is, and that is done.
+The headline repair is one worth explaining, because it is the opposite of what I proposed. Round 3
+found a piece of bookkeeping that was supposed to tell two kinds of failure apart — a document with
+forbidden content in it, versus a document the checker simply could not open — and proved nothing
+was reading it. My plan was to delete it as dead weight. Working through the second finding showed
+that wrong: the reason the checker was giving nonsensical advice on unreadable files ("put it in
+backticks", to a file that is not even text) is precisely that nothing distinguished the two cases.
+So it was wired up instead of removed. It now decides which advice to print, and the proof it is
+genuinely in use is that deleting it no longer produces identical output — it stops the program.
+Also fixed: two entries in the checker's own test suite were killing that suite while appearing to
+pass, and four recorded measurements had drifted away from what the code does. One of those, a count
+of how many documents mention the thing being checked, moved while I was correcting it — because
+the review documents I had just written mention it too, and joined the count. It is now written as
+a dated observation that says out loud it will keep rising.
+The full sweep that mutates every checking script and confirms each one still catches what it
+claims: 390 checks, none escaping.
+<!--tech-->
+Branch `retire-plan-mode`, PR #270. Folds r3's 3 Medium + 3 Low + coordinator C1–C3; C4 recorded,
+F2 decided (rc=1 stands, message repaired). Both review docs carry a DISPOSITIONS section.
+
+* **F1 FIXED BY WIRING, NOT DELETING.** `main()` now selects its closing message with
+  `any(not f.unreadable for f in findings)`. FALSIFIER RE-RUN: deleting the field + kwarg used to
+  leave stdout BYTE-IDENTICAL (that is how r3 proved it inert); it now raises
+  `AttributeError: 'Finding' object has no attribute 'unreadable'` inside `main()`.
+* **C1 FIXED.** The live corpus count is GONE from the remedy rather than corrected — a number
+  re-measured on every failing run is a liability. Unreadable-only runs print "Every finding is a
+  document this could not open, so it was NOT CHECKED".
+* **F3 FIXED, both halves.** `sorted(n)[0]` → `r / "bad.md"` (the fixture's own path, cannot raise);
+  the r2-H1 entry retargeted to the faithful weakest edit (`visited.add(md)` after a successful
+  read) instead of one indistinguishable from its sibling. Re-measured: **16/16 entries, 0 crashes**,
+  each reddening the case it names, control 43/43.
+* **C3 FIXED + the CAUSE of the twice-repeated false High.** The splitter comment now states that
+  `\r` cannot reach EITHER splitter (both readers use `read_text`, universal-newline translation
+  precedes splitting) and that the loop drives 8 separators because the 9th is UNREACHABLE, not
+  overlooked. Re-measured: old `splitlines()` 8-of-9 disagreements, delivered `split("\n")` 0-of-9.
+* **F4/F6/C2 FIXED** — mislabelled presence twin; retired `scanned` prose; READ→VISITED labels;
+  the mention count dated (17 at r3, **19** once r3's own docs landed).
+
+⚠ THREE THINGS WENT WRONG DURING THE FOLD, all caught by instruments rather than by reading:
+(1) renaming a case ORPHANED its mutation anchor — 4th orphaning on this branch, caught in seconds
+only because the harness now reports `named-hit`; (2) the full sweep went RED and refused a verdict
+because two new mutations shared an edit anchor — `load_manifests` rejects that, correctly, since an
+entry repeating another's anchors measures nothing; (3) a `$?` read after a pipe would have reported
+the sweep's exit code as the pipe's — every rc here is taken from a redirect.
+
+Counts: cases 39 → **43**; guard mutations 14 → **16**; `EXPECTED_MUTATIONS` 388 → **390**. RISING.
+Gates: self-test 43/43 · check-plan-code 229/229 · check-selftest-counts · check-review-rounds
+(167 rounds, 0 silent gaps) · check-ratchet-contract · check-docs — all rc=0. **Full sweep:
+33 file(s), 390 mutation(s), 0 survivor(s).** 0 orphaned anchors across all 33 manifests.

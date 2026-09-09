@@ -69,7 +69,7 @@
     ]
   },
   {
-    "name": "the mutations tag stops being checked — half the retired grammar goes unfenced",
+    "name": "the mutations tag stops being checked \u2014 half the retired grammar goes unfenced",
     "file": "scripts/check-plan-file-tags.py",
     "edits": [
       [
@@ -91,11 +91,11 @@
       ]
     ],
     "expect": [
-      "the scanned count is the number of documents READ"
+      "the visited count is the number of documents LOOKED AT"
     ]
   },
   {
-    "name": "an unreadable document is silently skipped — a file it could not check reads as clean [anchor re-bound r2: the fix moved this line]",
+    "name": "an unreadable document is silently skipped \u2014 a file it could not check reads as clean [anchor re-bound r2: the fix moved this line]",
     "file": "scripts/check-plan-file-tags.py",
     "edits": [
       [
@@ -117,7 +117,7 @@
       ]
     ],
     "expect": [
-      "a 0xb before a fence does not open one — extract() splits on '\\n' alone, and assembles this tag"
+      "a 0xb before a fence does not open one \u2014 extract() splits on '\\n' alone, and assembles this tag"
     ]
   },
   {
@@ -147,16 +147,42 @@
     ]
   },
   {
-    "name": "an unreadable doc is dropped from the VISITED set, so it reads as a NARROWED corpus (r2 H1)",
+    "name": "an unreadable doc is counted as visited only AFTER a successful read \u2014 the literal pre-r2 code (r2 H1) [r3 F3: retargeted to the faithful, weakest edit]",
     "file": "scripts/check-plan-file-tags.py",
     "edits": [
       [
-        "        visited.add(md)\n        try:",
-        "        try:"
+        "        visited.add(md)\n        try:\n            text = md.read_text(encoding=\"utf-8\")",
+        "        try:\n            text = md.read_text(encoding=\"utf-8\")\n            visited.add(md)"
       ]
     ],
     "expect": [
       "...so it is ACCOUNTED FOR and does not read as a narrowing"
+    ]
+  },
+  {
+    "name": "the remedy stops being chosen by finding TYPE, so an undecodable file is told to use backticks (r3 C1)",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "        if any(not f.unreadable for f in findings):",
+        "        if True:"
+      ]
+    ],
+    "expect": [
+      "an UNREADABLE-only run gets the not-checked remedy, NOT the backticks one"
+    ]
+  },
+  {
+    "name": "the remedy uses ALL instead of ANY, so ONE unreadable file suppresses the backticks advice a real tag needs [anchor spans the print so it cannot duplicate its sibling's]",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "        if any(not f.unreadable for f in findings):\n            print(\"\\nPlan mode was retired",
+        "        if all(not f.unreadable for f in findings):\n            print(\"\\nPlan mode was retired"
+      ]
+    ],
+    "expect": [
+      "a MIXED run still gets the backticks remedy \u2014 a tag is present"
     ]
   },
   {
@@ -186,7 +212,7 @@
       ]
     ],
     "expect": [
-      "...and a same-SIZE but different set is refused — the property is which documents were read, not how many"
+      "...and a same-SIZE but different set is refused \u2014 the property is which documents were read, not how many"
     ]
   }
 ]

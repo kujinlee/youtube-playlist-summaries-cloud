@@ -97,3 +97,22 @@ This is a verbatim recurrence of a defect already recorded in project memory
 committed verdict). It recurred because the only thing standing against it is a note telling a
 human to be careful: `write_verdict` still clobbers silently, and a collision that overwrites can
 never be seen by `ls | uniq -c`. Not filed to the backlog — that is the user's step.
+
+---
+
+# DISPOSITIONS — folded 2026-09-09
+
+* **Cx-H1 (High) — REJECTED**, and the *cause* of the false positive fixed rather than only the
+  claim. The comment at `audit`'s splitter now states that `\r` cannot reach either splitter,
+  because both readers open with `read_text(encoding="utf-8")` and universal-newline translation
+  precedes all splitting — and that the case loop drives EIGHT separators because the ninth is
+  unreachable, not overlooked. Two independent reviewers reached this same wrong conclusion; the
+  third should not have to.
+* **Cx-L1 (Low) — FIXED.** The live corpus count is removed from the remediation message entirely.
+  The remedy is now chosen by finding type, so an undecodable file is no longer told to use
+  backticks. Same edit as the Claude half's F5 and the coordinator's C1.
+
+Codex's non-findings table above was re-verified after the fold and still holds, with one
+correction to the coordinator's own earlier work: the targeted mutation check reported "14/14 OK"
+while **two entries crashed the suite**, because it parsed for the named `[FAIL]` line and never
+checked for a completion summary. Both are fixed; the re-run shows 16/16 with zero crashes.

@@ -191,3 +191,30 @@ not incidental.
 It was caught only because the brief had been amended mid-flight to demand a FILE, for an unrelated
 reason (project memory records a fork that went idle without reporting). One hazard's mitigation
 caught a different hazard entirely.
+
+---
+
+# DISPOSITIONS — folded 2026-09-09, after the round closed
+
+Every finding above has an outcome. Measurements re-taken by the coordinator, not inherited.
+
+| # | Sev | Disposition |
+|---|---|---|
+| **F1** | Med | **FIXED — by WIRING, not deleting.** The obvious fix was to delete the inert field; working through C1 showed that wrong, because the reason the remedy is misaddressed is precisely that nothing distinguishes the two finding kinds. `main()` now selects its closing message with `any(not f.unreadable for f in findings)`. **Falsifier re-run:** deleting the field previously left stdout BYTE-IDENTICAL; it now raises `AttributeError: 'Finding' object has no attribute 'unreadable'` inside `main()`. The comment naming `coverage_shortfall` as the consumer is replaced by one naming `main()`, with the r3 measurement recorded. |
+| **F2** | Med | **DECIDED, not changed — rc=1 stands, with the remedy repaired.** The FAILS-IF section already listed the undecodable case, so rc=1 is deliberate and satisfies *"cannot run is a FAILURE, never a pass"* — it fails loudly and says NOT CHECKED. What was genuinely wrong was the message, and that is fixed: an unreadable-only run now prints *"Every finding is a document this could not open, so it was NOT CHECKED"* instead of advice about backticks. F2's coupling argument is honoured — the field is not unwireable, it is wired. |
+| **F3** | Med | **FIXED, both halves.** `sorted(n)[0]` → `r / "bad.md"`, a path the fixture already holds and that cannot raise; the unreadable document is dropped deliberately as the stronger fixture. Re-measured across all entries: **0 crashes, every entry reddens the case it names, control 43/43.** The r2-H1 entry is retargeted to the faithful weakest edit (`visited.add(md)` moved to after a successful read) — the literal pre-fix code, no longer indistinguishable from its sibling. |
+| **F4** | Low | **FIXED as a relabelling.** The comment claimed the twin defends against `unreadable` absorbing any gap; it cannot, because `coverage_shortfall` never receives a `Finding`. The comment now states what the case actually asserts — set arithmetic — and says why. |
+| **F5** | Low | **FIXED.** See C1 below; the same edit. |
+| **F6** | Low | **FIXED.** The `scanned`-disagrees-with-a-COUNT clause is corrected to describe the set difference that replaced it. `"the scanned count is the number of documents READ"` → `"the visited count is the number of documents LOOKED AT"`, and its sibling likewise. ⚠ **That rename ORPHANED the mutation bound to the old case name** — caught immediately because the harness now reports `named-hit`, re-bound, re-verified. Fourth anchor orphaning on this branch. |
+| **Cx-H1** | High | **REJECTED**, refuted independently twice. The comment that invited it is fixed: it now states that `\r` cannot reach either splitter because `read_text` normalises it first, and that the loop drives eight separators because the ninth is **unreachable, not overlooked**. |
+
+## Coordinator findings, same fold
+
+* **C1** — FIXED. The live corpus count is gone from the remedy; a number that must be re-measured on every failing run is a liability, and the dated measurement in the header is where it belongs.
+* **C2** — FIXED, and the fix is the interesting part: the count moved **17 → 19 while this fold was being written**, because the r3 review documents themselves discuss the tag in backticks and join the count. It is now stated as a dated observation that explicitly says it rises whenever anyone writes about the grammar — including that paragraph.
+* **C3** — FIXED. "5 of 5 tested" → the re-measured **8 of 9** (old splitter) and **0 of 9** (delivered), in both places that carried it.
+* **C4** — RECORDED, not changed. `rglob` does not descend symlinked directories and both walks share that blindness, so the shortfall check cannot see it by construction. Zero symlinks under `docs/` today; changing the walk is a scope decision, not a defect fix.
+
+## Counts after the fold
+
+Cases **43** (was 39) · manifest entries **16** (was 14) · `EXPECTED_MUTATIONS` entry **16**, declared sum **390** (was 388). Rising, which is the permitted direction.
