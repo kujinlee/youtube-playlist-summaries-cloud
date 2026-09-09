@@ -3,14 +3,34 @@
 **Subject:** commit `71f86f9a` on branch `retire-plan-mode` (7 files, +604/−41).
 **Verdict:** NOT CONVERGED — 1 High, found and fixed in this round. 2 Medium accepted as designed.
 
-**REVIEW GAP:** codex — dispatched via `scripts/codex-review.py --prompt-file` and produced a
-**0-byte** output file; a hang under `docs/plugins.md`'s bounded-wait rule, so the fallback applies
-and this Claude adversarial pass ran in its place.
+**REVIEW GAP:** codex — no candidate model produced a usable review; 3× HTTP 400 + 1 timeout, so
+the `docs/plugins.md` fallback applies and this Claude adversarial pass ran in its place.
 
-⚠ That is a Codex **gap**, not a clean Codex verdict, and it must be re-attempted before merge.
-This repo has four recorded instances of the two halves disagreeing with the second half right —
-most recently backlog #91 round 4, where Codex CONVERGED and Claude found the High. Here the
-asymmetry runs the other way, which is exactly why the missing half still matters.
+The wrapper walked its whole candidate list and refused to write a review file rather than write an
+empty one — behaving exactly as designed. Recorded in
+`docs/reviews/verdicts/retire-plan-mode-r1-codex.verdict.json` (`gate_ran: false`, `exit_code: 1`),
+which is the machine-readable half CI reads:
+
+    gpt-5.6-sol    HTTP 400
+    gpt-5.6-terra  HTTP 400
+    gpt-5.6-luna   HTTP 400
+    gpt-5.5        timed out — a partial message is an incomplete review
+
+The one sanctioned retry was taken: `codex-frontier-model.py --write-config` re-synced to
+**`gpt-5.6-sol`** — the same slug that 400s — which is the limitation its own docstring states (it
+ranks by `priority` and cannot know what the pinned CLI accepts). Beyond that, `docs/plugins.md`
+says do not burn time retrying. **`gpt-5.5` is the live lead: it timed out rather than 400'd, so it
+is reachable and merely slower than the wrapper's timeout.**
+
+⚠ **This is an ABSENT reviewer, not a clean Codex verdict, and it should be re-attempted before
+merge.** This repo has four recorded instances of the halves disagreeing with the second one right —
+most recently backlog #91 round 4, where Codex CONVERGED and Claude found the High. Here the Claude
+half found an H1; that says nothing about what Codex would have found.
+
+⚠ **A correction to my own reading, recorded because it is the repo's own recorded hazard.** I first
+read this run as a success from an `rc=0`. That `0` came from an `echo "rc=$?"` after a pipe to
+`tail` — `$?` after a pipe is the LAST command's, not the wrapper's. The wrapper's real exit was
+**1**. Trust the verdict JSON and the output FILE, never a shell `$?` taken through a pipe.
 
 ---
 
