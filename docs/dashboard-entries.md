@@ -5550,3 +5550,63 @@ r2 a real false-green (cardinality vs identity) · r3 one inert mechanism + one 
 r4 test scaffolding + four claims ABOUT the code. Nothing in r4 changes what the guard does to any
 document. That is the documented "prose has nothing to execute — go build" signature, not a design
 fight. Judgement recorded, not assumed; reviewing stopped by decision.
+
+## 2026-09-09
+Plan mode is now actually gone, not just switched off.
+Yesterday's change made four old commands refuse to run and explain why. They kept
+refusing, but the machinery behind them — a parser for plan documents, a runner, and the
+thing that wrote up the results — was still sitting in the file, about sixteen hundred
+lines of it, unreachable and unread. This removes it. The file is now roughly half its
+former size, and the refusals still work exactly as before, which is the point: someone
+who types the old command still gets a sentence telling them what happened, rather than
+a confusing error that looks like a typo.
+Worth knowing, because it is the kind of thing that goes wrong quietly: I wrote a small
+program to do the deletion mechanically, and three times it damaged code that was
+supposed to survive. The worst instance left five tests that could no longer fail — they
+would have gone on reporting success forever while checking nothing. All three were
+caught by running the tests before and after and comparing, never by reading the result.
+A deletion this size is exactly where a green tick is least trustworthy.
+The count of tests fell from 229 to 74 and the count of deliberate sabotage-checks from
+44 to 23. Both are meant to only ever go up, so both falls are recorded in the code
+itself, saying how many and why, rather than being quietly adjusted.
+<!--tech-->
+Branch `retire-plan-mode-pr2`, 4 commits off `4ec7e82a`. `scripts/check-plan-code.py`
+3,607 → 1,983 lines.
+
+* **C1** `main()`'s plan-mode tail (53 lines) + the `--mutate` combination guard, both
+  unreachable past PR #270's refusal. **0 cases lost** — which is what "unreachable"
+  was supposed to mean, now measured rather than asserted.
+* **C2** `verify_evidence`, `pasted_evidence`, `EV_MARK`. 11 cases. ⚠ `EV_MARK` orphaned
+  one commit earlier than the inventory predicted: `evidence()` writes that sentence as
+  its own literal (`:1476`) instead of using the constant.
+* **C3** the core — `extract`, `check`, `evidence`, `compare_delivered`, `unsafe_tag`,
+  7 constants, 143 cases. One commit, not five: the transitive closure is one connected
+  component, so splitting it leaves each commit holding dangling fixtures.
+* **C4** docs. Docstring CONTRACT deleted with its parser (a documented contract nothing
+  implements is worse than none); `dev-process.md` row updated.
+
+**Ratchets, all moved with their subject:** cases 229 → 74 (docstring, `_drift_rc`
+checks it every run) · `EXPECTED_MUTATIONS` 44 → 23 · declared sum 392 → 371. ⭐ 23 is
+EXACTLY the figure the pre-work inventory predicted, reached by a different method —
+the inventory attributed anchors by enclosing line range, the deletion retired them by
+whether `src.find(anchor)` still resolves.
+
+⚠ **THE PRUNER DAMAGED SURVIVING CODE THREE TIMES.** (1) it recursed into a nested `def`
+whose PARAMETERS its binding scan could not see and emptied `_constructs`, leaving five
+verdict-contract cases that could not fail; (2) reads were counted before subtracting
+what a statement binds itself; (3) a `def` binds via `FunctionDef.name`, not an
+`ast.Name` store, so killing a helper did not propagate to its callers. Every one was
+found by RUNNING the suite against the 229/229 control, none by reading the diff.
+
+⚠ **Two case-groups deleted as UNFALSIFIABLE, not as dead:** the escaping-tag block
+("the delivered file is NOT overwritten", "nothing leaked outside the sandbox") and the
+`evidence()`-requires-ctx probe. With their subject gone both assert an absence that
+deleting the subject also satisfies — the recorded shape, not a judgement call made
+loosely.
+
+Gates rc=0: self-test 74/74 · check-selftest-counts (30 scripts, each re-run) ·
+check-ratchet-contract · check-docs · check-review-rounds · check-plan-file-tags
+(0 across 1,123 docs) · check-anchors. All four retired entry points and a bare
+invocation exit 2 via redirect, never a pipe; `--mutate /nonexistent` exits 2 for its
+OWN reason, so the surviving mode is not swallowed by the refusal. `--mutate .` is left
+to CI, which is the run that measures the shipped code.

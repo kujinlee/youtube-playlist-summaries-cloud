@@ -4,16 +4,18 @@
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --self-test          # 74 cases
 
-⛔ PLAN MODE IS RETIRED (2026-09-08) — `<plan.md>`, `--evidence`, `--compare` and
-`--verify-evidence` all REFUSE with rc=2 and a sentence saying so. They are documented
-below because the reasoning is worth keeping, not because they can be run. See `main`.
+⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
+`--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
+saying so; the parser, the runner and the evidence renderer behind them are gone
+(`extract`, `check`, `evidence`, `compare_delivered`, `verify_evidence`,
+`pasted_evidence`, `unsafe_tag`). The refusals STAY, and are not vestigial: an old
+invocation is owed a sentence rather than argparse's "unrecognized arguments", which
+reads like a typo instead of a decision. See `main`.
 
-⚠ `--compare` takes the REPO ROOT, and each file tag is resolved under it as the
-repo-relative path it already is. It took the containing DIRECTORY until round 5,
-which forced the target to be reduced to a basename — so two tags with the same
-basename in different directories both compared to one file and both reported
-`identical`. A false green over a subject never measured: the very defect
-`--compare` was added to fix, one layer in.
+⚠ WHAT SURVIVES BELOW IS HISTORY, NOT INSTRUCTIONS. The account of why plan mode
+existed is kept because the reasoning still governs `--mutate .`; the CONTRACT that
+described its markdown grammar is deleted with the parser, because a documented
+contract nothing implements is worse than none — someone writes to it.
 
 WHY THIS EXISTS. Three adversarial review rounds on the project-dashboard plan each
 found that its stated evidence was wrong, and each found it BY HAND:
@@ -58,31 +60,8 @@ lives in the plan under review, where a reviewer reads it.
                   what CI runs (backlog #70, 2026-08-29), and it is the mode whose
                   green means something about the code that ships.
 
-  <plan>          the PLAN'S COPY, assembled into a TemporaryDirectory from the
-                  markdown. Without `--compare DIR` this never opens
-                  `scripts/gen-dashboard.py`: a green says the DOCUMENT is internally
-                  sound and nothing about what ships. Round 4 filed exactly that (H1)
-                  — `CLAUDE.md`: *"a green check over the wrong subject is an
-                  assertion in better packaging."*
-
 The final line names the mode, so a CI log cannot be read as the wrong subject.
 
-CONTRACT. In the plan, tag each Python block with the file it belongs to:
-
-    <!-- file: gen-dashboard.py -->
-    ```python
-    ...
-    ```
-
-Blocks with the same tag are concatenated in document order. Declare mutations in one
-JSON block tagged `<!-- mutations -->`; each needs a `name`, a `file`, a list of
-`edits` (find/replace pairs applied in order, each of which MUST match), and
-optionally `expect` — the EXACT name(s) of the self-test case(s) that have to go red,
-as a string or a list. ⚠ Exact, not a substring: round 6 measured that a fragment of a
-name — or a name belonging to a different case entirely — still certified a mutation, so
-`:1060` compares with `==`. This line said "a substring" until 2026-09-08, describing the
-round-5 rule that round 6 replaced; four expects were written against the stale sentence
-before the mismatch was noticed.
 """
 from __future__ import annotations
 import argparse
