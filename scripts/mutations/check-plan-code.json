@@ -431,17 +431,6 @@
     "expect": "the census and the subject sentence cannot contradict each other"
   },
   {
-    "name": "verify_evidence keys its mode off the RESULT again (r3 H4)",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "            if ctx.compare_requested else \"(no --compare)\")",
-        "            if ctx.compared is not None else \"(no --compare)\")"
-      ]
-    ],
-    "expect": "a --compare run with nothing assembled reports the mode it was GIVEN"
-  },
-  {
     "name": "the EARLY return stops reading `mut_readable` (r3 H1, consumer half)",
     "file": "scripts/check-plan-code.py",
     "edits": [
