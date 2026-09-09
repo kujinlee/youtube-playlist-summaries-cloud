@@ -117,7 +117,7 @@ worked example). ⚠ That directory is a real git checkout whose `.gitignore` is
 
 ### Code Review (dual review per task)
 
-Both must complete before marking a task done.
+Both must complete before marking a task done. **Dispatch them CONCURRENTLY — measured safe.** What is and is not, plus the three operations that must be serialised and are enforced by nothing: [`review-method.md`](review-method.md) → *Running agents concurrently* (backlog #67). Not restated here — a second copy of a safety table is a copy that drifts.
 
 | Review | Use | Requires |
 |---|---|---|

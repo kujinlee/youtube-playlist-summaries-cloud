@@ -22,11 +22,30 @@
 # for it inside a harness that promises an isolation it does not have for that one case. If you add a
 # role-scoped mutation here, it must create its OWN role and drop it, never grant an existing one.
 #
-# ⚠ AND TWO OF THESE MUST NOT RUN AT ONCE. `mutate-schema.py` (gate 2) works inside the SHARED
-# `postgres` database, and during round 8 a reviewer and the coordinator ran it concurrently: one
-# reported 23/63 with "baseline restored: STILL BROKEN" while the other, minutes later, measured
-# 63/63 and a clean database. That was filed as a Blocking finding before it was traced. There is no
-# lock here; serialise by hand.
+# ⚠ CONCURRENCY — THE RULE NOW LIVES IN `docs/review-method.md` -> "Running agents concurrently".
+# Read it there; it is not restated here, because this comment is not where the dispatch decision
+# gets made and a second copy of a safety table is a copy that drifts.
+#
+# ⟳ CORRECTED 2026-09-09 (backlog #67). This warning previously read "TWO OF THESE MUST NOT RUN AT
+# ONCE" and pinned the hazard on **`mutate-schema.py` (gate 2)** working inside the shared
+# `postgres` database. **`scripts/mutate-schema.py` and `scripts/verify-schema.sh` NO LONGER EXIST**
+# (re-verified 2026-09-09). A warning that names a deleted script cannot be checked by the person it
+# is warning — the same shape as a skills doc advertising a tool whose symlink was broken.
+#
+# WHAT IS ACTUALLY TRUE NOW:
+#   * every writer is scoped to a PID-suffixed scratch clone, and the clone step is FAIL-CLOSED
+#     (`:164` prints CANNOT RUN and exits 2) — that closed the silent-fallback-onto-shared-postgres
+#     residual this warning was really about;
+#   * shared `postgres` is used for reads and `CREATE DATABASE` only;
+#   * the ONE hazard a clone cannot isolate is stated in its own right directly above: **roles are
+#     cluster-wide**. That paragraph is the live warning; this one was history wearing its clothes.
+#
+# THE MEASUREMENT IS KEPT because it is why any of this exists: in round 8 a reviewer and the
+# coordinator ran the harness concurrently against shared `postgres` — one reported 23/63 with
+# "baseline restored: STILL BROKEN", the other measured 63/63 and a clean database minutes later.
+# It was filed as a **Blocking finding** before it was traced. The prior instance was 23/44 vs
+# 44/44, and the near-identical ratio is the tell: a red on a shared resource is contamination
+# until re-measured alone.
 #
 # ⭐ WHAT EACH GENERATION OF THIS HARNESS COULD NOT EXPRESS — the defect keeps moving one layer out:
 #
