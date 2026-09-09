@@ -4,8 +4,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        return 2, (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \"",
-        "        return 1, (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \""
+        "        return 2, (f\"CANNOT RUN — {name} --self-test did not finish in \"",
+        "        return 1, (f\"CANNOT RUN — {name} --self-test did not finish in \""
       ]
     ],
     "expect": "a hung suite is rc 2, distinct from both pass and fail"
@@ -70,8 +70,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            if not control_is_green(rc, out):\n                report.append(f\"CANNOT RUN \u2014 control run of ",
-        "            if False:\n                report.append(f\"CANNOT RUN \u2014 control run of "
+        "            if not control_is_green(rc, out):\n                report.append(f\"CANNOT RUN — control run of ",
+        "            if False:\n                report.append(f\"CANNOT RUN — control run of "
       ]
     ],
     "expect": "a RED control is refused, not reported as catches"
@@ -114,7 +114,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        return \"CANNOT RUN \u2014 the docstring no longer declares a case count.\"",
+        "        return \"CANNOT RUN — the docstring no longer declares a case count.\"",
         "        return None"
       ]
     ],
@@ -173,7 +173,7 @@
         "        for name, blocks in files.items():"
       ]
     ],
-    "expect": "a PLAN suite may still write to Path.home() \u2014 the redirect is not a broken home"
+    "expect": "a PLAN suite may still write to Path.home() — the redirect is not a broken home"
   },
   {
     "name": "the exemption marker needs no written reason",
@@ -266,12 +266,12 @@
     "expect": "a plan with NO tagged blocks reports an HONEST ZERO, not a refusal"
   },
   {
-    "name": "the plan-mode REFUSAL leaks a survivor count (r3 B2)",
+    "name": "the plan-mode REFUSAL leaks a survivor count (r3 B2; RETARGETED 2026-09-08 onto evidence(), the printer its case now drives)",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        print(not_measured_line(verdict, f\"{mode}: \"))",
-        "        print(not_measured_line(verdict, f\"{mode}: \")\n              + f\" {len(verdict.entries)} survivor(s)\")"
+        "        out.append(\"  \" + not_measured_line(v))",
+        "        out.append(\"  \" + not_measured_line(v) + f\" {len(v.entries)} survivor(s)\")"
       ]
     ],
     "expect": "plan mode refuses to print a tally it did not earn"
@@ -380,7 +380,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                problems.append(\"the mutations tag was followed by a file tag, not a JSON \"\n                                \"block \u2014 the declaration was never read\")\n                mut_readable = False",
+        "                problems.append(\"the mutations tag was followed by a file tag, not a JSON \"\n                                \"block — the declaration was never read\")\n                mut_readable = False",
         "                pass"
       ]
     ],
@@ -391,7 +391,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                problems.append(\"a mutations tag was followed by another mutations tag, not \"\n                                \"a JSON block \u2014 the first declaration was never read\")\n                mut_readable = False",
+        "                problems.append(\"a mutations tag was followed by another mutations tag, not \"\n                                \"a JSON block — the first declaration was never read\")\n                mut_readable = False",
         "                pass"
       ]
     ],

@@ -809,6 +809,19 @@ EXPECTED_MUTATIONS = {
     # to scripts/coverage_verdict.py with the clauses they guard. The sum below is unchanged
     # at 359, which is the point: a seam that relocates coverage must not be able to look
     # like coverage that was deleted, and only the per-file split can tell those apart.
+    # ⟳ 2026-09-08, the plan-mode retirement: HELD AT 44, and the hold is the point. The
+    # refusal made `main()`'s plan-mode tail (L3529-3581) UNREACHABLE — every path there needs
+    # `a.plan` truthy and the refusal intercepts exactly that — so the mutation anchored to its
+    # `not_measured_line(verdict, f"{mode}: ")` print could no longer be killed by any case.
+    # CI's `--mutate .` caught it as 1 survivor of 383; the local suite could not, because the
+    # case had been rewritten off the CLI onto `evidence()` and stayed green at 229/229. That is
+    # the recorded shape: A SUITE PASSING IS NOT EVIDENCE ITS MUTATION STILL BINDS.
+    # RETARGETED, not deleted, onto `evidence()`'s `not_measured_line(v)` — the printer that
+    # same case now drives, guarding the identical property (a NOT MEASURED refusal must not
+    # leak a survivor count). The count is therefore UNCHANGED: a retarget must not read as
+    # lost coverage, and a deletion here would have shrunk the ratchet inside the very PR whose
+    # message says it only rises. The retirement of this entry belongs to the deletion slice,
+    # with the case it serves.
     "scripts/check-plan-code.py": 44,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
