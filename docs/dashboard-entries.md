@@ -5227,3 +5227,60 @@ artifact) and its stated CAUSE was measured false — the three narrators now ag
 `review-method.md` the trigger is read off the cause, so Phase 6 is NOT convened on `evidence()`.
 Escalated instead: **0 of 92 plans exercise plan mode's file path**; four rounds spent on a renderer
 whose only exerciser is its own `--self-test`. That is a goal-moving question → user's call.
+
+## 2026-09-08
+Plan mode is retired. The tool that used to check a planning document by assembling the code
+inside it, running that code and generating the evidence now refuses to do so, and says why. The
+job it did moved to a better mechanism a week and a half ago; what stayed behind was a second way
+of doing it that nothing used. This change makes it unreachable and puts a fence around the hole
+it leaves. Nothing is deleted yet — that is a separate, smaller change, and it is safe only
+because this one landed first.
+
+The one thing worth knowing: the guard written to be that fence was **wrong on its first run**,
+and it said so out loud rather than passing quietly. It flagged a review document from last week
+that had merely *quoted* a plan. The fix was to stop reasoning about how the old parser behaved
+and to run it — which showed the quoted text had never been visible to it. The guard now carries
+the parser's own rule, taken by measurement.
+<!--tech-->
+Branch `retire-plan-mode`, PR 1 of 2. Uncommitted work inherited from the previous session plus
+this session's completion.
+
+**The refusal.** `check-plan-code.py main()` now returns **rc=2** with a sentence naming the
+retirement for `<plan>`, `--evidence`, `--compare`, `--verify-evidence`. Refused, not removed:
+argparse's "unrecognized arguments" reads like a typo, and someone who typed `--verify-evidence`
+believed a subject was being measured. rc=2 (CANNOT RUN), never 0.
+
+**The fence** — `scripts/check-plan-file-tags.py`, new, 21 cases, 8 mutations, CI step + self-test
+step. Fails if any `docs/**/*.md` line is a standalone `<!-- file: … -->` or `<!-- mutations -->`
+tag. MEASURED baseline: **0 line-anchored tags across 1,115 documents**, while **13** documents
+mention the tag in backticked prose and must keep passing — a bare substring test breaks all 13,
+which `plan-mutation-retarget-r1` finding 3 already paid for. An **empty corpus is rc=2**, because
+the whole finding is a zero and a zero over nothing is not a finding.
+
+⭐ **v1 had no fence rule**, justified by a claim about `extract()` written from reading it. First
+live run flagged `docs/reviews/claude/plan-coverage-verdict-union-r3-claude.md:159`. Running the
+parser on those exact bytes: `files=[]` — never seen. Control: the same indented tag *without* the
+fence assembles `m.py`. So the fence is the cause and indentation is not; an indented or
+info-string fence opens nothing (`INVISIBLE_FENCE`), so a tag under one is live. All four branches
+are now cases. The alternative — editing a committed review document to satisfy a checker — was
+avoided by measuring rather than assuming.
+
+⭐ Two further defects found by running, not reading: my manifest had **two entries sharing an edit
+anchor** (`load_manifests` refused it — the count would have held while coverage shrank), and a
+case reading `f[0].detail` **crashed the suite** when a mutation emptied the list, so the entry
+reported `0 red case(s) … caught by something else: []` while working perfectly. That is the
+recorded *report format is a CONTRACT* shape, second instance in two days. Every indexing case in
+the file is now a whole-list comprehension.
+
+Counts: `EXPECTED_MUTATIONS` **374 → 382** (+8, RISING — the decrease belongs to PR 2 and must be
+recorded there as a deliberate retirement); `check-plan-code` docstring **231 → 229** (the drift
+that blocked every downstream gate); `check-selftest-counts` population 29 → **30**.
+`dev-process.md` 218 → 219 lines (budget 220), with the stale "the mode still exists" sentence
+corrected in place. **No ADR** — checked, PR #176's own supersession produced none; the precedent
+is a `dev-process.md` row plus the code comment, which is what this does.
+
+Verified: 8/8 mutations red via the case each names over a green control; `load_manifests` 382
+entries / 0 problems; self-tests green — plan-code 229/229, file-tags 21/21, ratchet-contract
+22/22 (29 guards discovered incl. the new one), selftest-counts 18/18, review-rounds 29/29,
+anchors 15/15, ci-watched 23/23, dashboard-entry 13/13, explainer-delivery 8/8, task-order 21/21.
+Live guard run: `plan-mode tags: 0 across 1115 documents under docs/`.

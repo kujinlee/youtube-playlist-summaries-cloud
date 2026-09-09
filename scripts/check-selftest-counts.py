@@ -88,6 +88,9 @@ POPULATION: frozenset[str] = frozenset({
     "check-banner-armed.py",
     "check-ci-watched.py",           # ⟳ 2026-09-04: CI ran unwatched on 2 of 3 pushes         # ⟳ 2026-09-04, task #224 residue (warn-only detector)
     "check-plan-code.py",
+    "check-plan-file-tags.py",       # ⟳ 2026-09-08, plan-mode retirement. It fences a rule that
+                                     # NOTHING else reads any more, so an unpinned count is how
+                                     # its cases would leave without a gate noticing.
     "check-plan-progress.py",        # ⟳ 2026-09-04, architecture review #5 finding E. The Stop
                                      # hook's comment declared a count NOTHING checked, and it had
                                      # drifted (said 18, suite ran 17). The number is now declared

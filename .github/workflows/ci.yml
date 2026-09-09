@@ -159,6 +159,15 @@ jobs:
       - name: Plan task order
         run: python3 scripts/check-plan-task-order.py
 
+      # Plan mode was RETIRED 2026-09-08. check-plan-code.py was the only reader those tags
+      # ever had, and CI runs it as `--mutate .` / `--self-test` only — so without this step
+      # a document could start embedding code again and nothing would notice.
+      - name: No document embeds code through a retired plan-mode tag
+        run: python3 scripts/check-plan-file-tags.py
+
+      - name: check-plan-file-tags self-test
+        run: python3 scripts/check-plan-file-tags.py --self-test
+
       # ⚠ TWO MORE GUARDS CI COULD NOT SEE — Phase 6 architecture review #7, finding 4.
       # Their only automated caller was scripts/check-schema-gates.sh (gates 3/15 and 5/15),
       # itself referenced zero times here.

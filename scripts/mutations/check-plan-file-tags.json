@@ -1,0 +1,110 @@
+[
+  {
+    "name": "the fence never opens, so a tag QUOTED inside a code block is reported as live",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "                in_fence = not in_fence",
+        "                in_fence = False"
+      ]
+    ],
+    "expect": [
+      "a tag inside a COLUMN-0 fence is NOT flagged"
+    ]
+  },
+  {
+    "name": "the fence swallows the REST of the document instead of just its own body",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "            if in_fence:\n                continue",
+        "            if in_fence:\n                break"
+      ]
+    ],
+    "expect": [
+      "...but a tag AFTER that fence closes is still flagged"
+    ]
+  },
+  {
+    "name": "an INDENTED fence is treated as opening one, so a live tag beneath it is hidden",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "FENCE = re.compile(r\"^```(\\w*)\\s*$\")",
+        "FENCE = re.compile(r\"^\\s*```(\\w*)\\s*$\")"
+      ]
+    ],
+    "expect": [
+      "an INDENTED fence opens nothing"
+    ]
+  },
+  {
+    "name": "leading whitespace stops being allowed, so an indented tag the parser DID assemble walks through",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "FILE_TAG = re.compile(r\"^\\s*<!--\\s*file:\\s*([A-Za-z0-9._/-]+)\\s*-->\\s*$\")",
+        "FILE_TAG = re.compile(r\"^<!--\\s*file:\\s*([A-Za-z0-9._/-]+)\\s*-->\\s*$\")"
+      ]
+    ],
+    "expect": [
+      "an INDENTED tag OUTSIDE a fence is caught"
+    ]
+  },
+  {
+    "name": "the end anchor is dropped from the tag grammar, so prose FOLLOWING a tag reads as a tag",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "FILE_TAG = re.compile(r\"^\\s*<!--\\s*file:\\s*([A-Za-z0-9._/-]+)\\s*-->\\s*$\")",
+        "FILE_TAG = re.compile(r\"^\\s*<!--\\s*file:\\s*([A-Za-z0-9._/-]+)\\s*-->\\s*\")"
+      ],
+      [
+        "MUT_TAG = re.compile(r\"^\\s*<!--\\s*mutations\\s*-->\\s*$\")",
+        "MUT_TAG = re.compile(r\"^\\s*<!--\\s*mutations\\s*-->\\s*\")"
+      ]
+    ],
+    "expect": [
+      "a tag with trailing prose is NOT a tag"
+    ]
+  },
+  {
+    "name": "the mutations tag stops being checked — half the retired grammar goes unfenced",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "            elif MUT_TAG.match(line):",
+        "            elif False:"
+      ]
+    ],
+    "expect": [
+      "a standalone mutations tag is caught"
+    ]
+  },
+  {
+    "name": "the corpus count stops counting, so an empty run and a 1,115-document run report the same",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "        scanned += 1",
+        "        scanned += 0"
+      ]
+    ],
+    "expect": [
+      "the scanned count is the number of documents READ"
+    ]
+  },
+  {
+    "name": "an unreadable document is silently skipped — a file it could not check reads as clean",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "            findings.append(Finding(str(md), 0, f\"could not be read, so it was NOT checked: {exc}\"))",
+        "            _ = exc"
+      ]
+    ],
+    "expect": [
+      "an undecodable document is reported, not silently skipped"
+    ]
+  }
+]
