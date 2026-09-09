@@ -5785,3 +5785,71 @@ concurrent `--mutate .` runs.
 **⛔ WAITING ON YOU:** whether to fold F1/F2 now as a small slice (2 manifest entries +
 2 cases, `EXPECTED_MUTATIONS` 23 → 25, rising) or leave them filed; and whether the
 product-level races #17/#19/#20 should join the concurrency-safety bundle.
+
+## 2026-09-09 [resolved: 2026-09-09/7]
+One sabotage-test was quietly doing the work of two, and the accounting has been corrected.
+The project keeps a file of deliberate sabotages. Each one is supposed to break the tool in
+exactly one way, so that when a test goes red you know precisely which rule was broken. One
+of them had drifted from that: it flipped a comparison, which broke two unrelated rules at
+once, while its written name claimed only one. Six tests went red where the name accounted
+for three.
+Nothing was unguarded — both rules were being tested. What was wrong was the bookkeeping:
+anyone reading the file to ask "is this second rule protected?" would have found no entry
+saying so, and would have been told no. That is the kind of answer this project treats as a
+defect even when the underlying thing is fine, because a wrong "no" sends someone off to
+rebuild protection that already exists.
+The sabotage has been narrowed so it breaks only the rule it names, and the second rule has
+been given an entry of its own. Sabotage count rises from 380 to 381 — coverage growing,
+which is the only direction the rules here allow it to move.
+Also cleared: the question from earlier today about the broken software catalogue. It was
+merged, and the checks have been working since.
+<!--tech-->
+Branch `faithfulness-f9-f10`, off `0ac4ba93`. Closes F9 and F10 from
+`docs/reviews/claude/mutation-faithfulness-r1-claude.md` — the two Low findings left unfolded
+when PR #272 shipped.
+
+**F9** — `scripts/mutations/check-plan-code.json` entry 11 edited
+`if int(m.group(1)) != actual:` to `== actual`. That is an **inversion**: it breaks
+`count_drift`'s mismatch branch AND its match branch simultaneously, under the name
+*"count_drift stops reporting a mismatch"*. Retargeted to the strictly weaker
+`!= actual and False`, which disables only the mismatch branch.
+
+**F10** — the match branch (`return None` on a matching count) had **no manifest entry**. It
+was red under entry 11 only as a side effect of the inversion. New entry
+*"count_drift stops being silent when the docstring MATCHES"*, edit
+`return None` → `return "[DRIFT] spurious"`, expecting the existing case at `:1254`.
+
+`EXPECTED_MUTATIONS["scripts/check-plan-code.py"]` 32 → 33; the declared-sum case 380 → 381.
+No new self-test case: F10's point is that the property was *tested* all along and merely had
+no named owner, so `--self-test` stays at **89**.
+
+**MEASURED myself, not quoted from the review** (throwaway `git worktree`, redirected `HOME`,
+control proved green first):
+
+    CONTROL                       rc=0  0 red
+    old entry 11 (!= -> ==)       rc=1  6 red   fires BOTH count_drift cases
+    F9 retarget (and False)       rc=1  3 red   fires 'reports a mismatch'          only
+    F10 new (match branch)        rc=1  3 red   fires 'silent when ... matches'     only
+
+Each entry fires its own named case and **not** the other's — the two directions are
+independently breakable, which is what makes them two properties rather than one with
+symptoms. ⚠ **The review's own figures are stale and are corrected here:** it recorded 4-vs-2,
+measured before last session's F8 fold added two cases to this family. 6-vs-3 today. The
+qualitative claim is unchanged; the numbers were not re-derived when the suite grew.
+
+⚠ **THE ANCHOR CHOICE IS DELIBERATE.** `    return None` is currently unique file-wide, so a
+bare anchor would work today — and would turn any future unrelated `return None` anywhere in
+these 2,000 lines into an ambiguous-anchor refusal, i.e. a CI failure aimed at whoever typed
+it. The two-line anchor pins `count_drift`'s match branch specifically. Both forms fail loudly;
+this one fails about its own subject.
+
+⚠ **MY FIRST TWO CONTROL RUNS WERE RED, and the second is the interesting one.** The first
+copied `scripts/` alone — the exact trap `dev-process.md` already records ("a scripts-only tree
+gave each a red control"). The second used a full `git worktree` and was *still* red: three
+`HARNESS_TREE` cases. Cause: `HARNESS_TREE` includes **`node_modules/typescript`**, which is
+gitignored and therefore absent from any fresh checkout. Symlinked it in → control green. The
+differential happened to be identical all three times, but a differential read over a red
+control is a violated premise, not a result.
+
+**Full sweep after the change:** `33 file(s), 381 mutation(s), 0 survivor(s)` rc=0 (4m39s
+local). `--self-test` 89/89. `check-selftest-counts` rc=0 across 30 declaring scripts.
