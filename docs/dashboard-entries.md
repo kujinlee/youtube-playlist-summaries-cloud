@@ -5397,3 +5397,59 @@ Cases 33 → **39**; guard mutations 11 → **14**; `EXPECTED_MUTATIONS` 385 →
 **Running total for this branch: 7 defects across 4 instruments** — 3 by the Claude half, 1 by CI's
 mutation sweep, 3 by Codex. No instrument found more than half. Round 2 is NOT CONVERGED by the
 usual reading (it found things), so a round 3 scoped to THESE fixes is the honest next step.
+
+## 2026-09-09 [needs-you]
+Review round 3 is done and the plan-mode retirement still is not finished — but for the first time
+the problems are with the checking, not with what the code does.
+Three rounds of review have now found ten things. None of them changes what the guard does on the
+real project: it still correctly reports zero retired tags across 1,120 documents. Round 3's
+findings are all about the guard's own honesty — a field that was added to tell two kinds of
+failure apart and is in fact read by nothing, a comment that says it is doing a job it cannot do,
+and two entries in the test suite that crash it while appearing to pass.
+Two of the three checking machines used today were themselves broken, which is the part worth
+knowing. One review assistant produced a long, confident, well-argued review of a completely
+different piece of work, and nothing about the document itself gave that away. My own quick check
+of the test suite reported all fourteen entries healthy when two of them were killing the suite
+outright. Both were caught only by looking at something the machine could not fake.
+**A decision is waiting on you: fix these and run a fourth round, or record them and ship.**
+Neither is wrong. Nothing found in three rounds affects what a person using this actually sees.
+<!--tech-->
+Branch `retire-plan-mode`, head `f9d2c498`, PR #270 OPEN, CI `verify` green. VERDICT: NOT CONVERGED.
+Both halves filed: `docs/reviews/claude/retire-plan-mode-r3-claude.md`,
+`docs/reviews/coordinator/retire-plan-mode-r3-codex.md`,
+`docs/reviews/verdicts/retire-plan-mode-r3-codex.verdict.json` (`gate_ran: true`, gpt-5.5).
+`check-review-rounds.py` rc=0, 167 rounds parsed, 0 silent gaps.
+
+**3 Medium, 3 Low, 1 Codex High REFUTED.** Nothing Blocking.
+* **F1** `Finding.unreadable` has NO production reader — `coverage_shortfall(docs_root, seen)` never
+  receives a `Finding` and `main()` never mentions it. Falsifier run twice independently: delete
+  field + kwarg → production stdout BYTE-IDENTICAL, same rc. The real r2-H1 fix is `visited.add(md)`
+  at `:188`. Its comment cites backlog #91's type work, which makes the claim credible and it is false.
+* **F2** r2 moved the undecodable case from rc=2 (CANNOT RUN) to rc=1 (FAIL) and prints "put it in
+  backticks" for a file that cannot be decoded. Filed against itself: FAILS-IF does list it. Coupling
+  is the point — if rc=1 is intended, `unreadable` is *unwireable*, so F1 and F2 cannot both be waved.
+* **F3** manifest entries 6 and 11 CRASH the suite (`IndexError`, no summary line, case 39 never runs)
+  via `sorted(n)[0]` introduced by THIS commit at `:417` — banned by the same file at `:264-269` and
+  recorded in `check-plan-code.py:1668` as measured 2026-09-08. They attribute only because their named
+  case prints before line 417: ordering luck. The r2-H1 entry also does not model its name (deleting
+  `visited.add` ≡ its sibling `return findings, set()`); the faithful edit gives 1 red case, no crash.
+* **F4/F5/F6 + coordinator C2/C3/C4** — mislabelled presence twin; the remediation sentence printing
+  the whole corpus (1120) as though it counted backticked mentions (19); stale `scanned` prose and
+  READ/VISITED labels; docstring "13 documents" now 17; "5 of 5 separators tested" is really 8 of 9;
+  `rglob` does not descend symlinked dirs and BOTH walks share that blindness, so the shortfall check
+  cannot see it (0 symlinks under `docs/` today).
+* **Cx-H1 REFUTED**, independently by both the Claude half and the coordinator: `check():1295` is
+  `plan.read_text(encoding="utf-8")`, so universal-newline translation precedes both splitters and `\r`
+  cannot diverge. SECOND time this exact wrong conclusion was reached on this file by different readers.
+
+⚠ **TWO INSTRUMENT FAILURES, both caught only by out-of-band evidence.** (1) The first Claude-half
+subagent emitted 27,489 bytes BYTE-IDENTICAL to the committed
+`docs/reviews/plan-project-dashboard-r3-claude.md` — wrong plan, wrong branch, wrong findings — then went
+idle. Caught because the brief had been amended mid-flight to demand a FILE, for an unrelated reason. The
+retry brief now requires live `git rev-parse HEAD` + `git diff --stat` pasted first. (2) The coordinator's
+own mutation harness reported "14/14 OK" while two entries crashed: it parsed for the named `[FAIL]` line
+and never checked for a completion summary, and an uncaught exception also exits 1.
+⚠ **The Codex wrapper OVERWROTE a committed verdict** on the first run: `verdict_path()` derives the
+filename from `--out`'s basename with no collision check, so `--out r3-codex.md` clobbered
+`docs/reviews/verdicts/r3-codex.verdict.json` (committed under PR #214). Detected by `git status`,
+restored, re-run under a unique stem. Verbatim recurrence of a defect already in project memory.
