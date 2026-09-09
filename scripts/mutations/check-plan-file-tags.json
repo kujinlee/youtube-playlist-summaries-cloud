@@ -214,5 +214,31 @@
     "expect": [
       "...and a same-SIZE but different set is refused \u2014 the property is which documents were read, not how many"
     ]
+  },
+  {
+    "name": "main() RAISES and the crash is not attributable \u2014 the suite dies with no [FAIL] and no summary, which run_mutations reads as 'caught by something else' (r4 F1)",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "        if any(not f.unreadable for f in findings):\n            print(\"\\nPlan mode was retired on 2026-09-08",
+        "        if any(f.no_such_attribute for f in findings):\n            print(\"\\nPlan mode was retired on 2026-09-08"
+      ]
+    ],
+    "expect": [
+      "a TAG finding gets the backticks remedy"
+    ]
+  },
+  {
+    "name": "_drive_main stops RESTORING the globals it swapped, so a later case reads a temp path that no longer exists (r4 F2)",
+    "file": "scripts/check-plan-file-tags.py",
+    "edits": [
+      [
+        "    finally:\n        ROOT, DOCS = keep_root, keep_docs",
+        "    finally:\n        pass"
+      ]
+    ],
+    "expect": [
+      "...and _drive_main RESTORES the module globals it swapped"
+    ]
   }
 ]

@@ -5504,3 +5504,49 @@ Counts: cases 39 → **43**; guard mutations 14 → **16**; `EXPECTED_MUTATIONS`
 Gates: self-test 43/43 · check-plan-code 229/229 · check-selftest-counts · check-review-rounds
 (167 rounds, 0 silent gaps) · check-ratchet-contract · check-docs — all rc=0. **Full sweep:
 33 file(s), 390 mutation(s), 0 survivor(s).** 0 orphaned anchors across all 33 manifests.
+
+## 2026-09-09
+A fourth review round found four more things, all of them in the checking rather than in what the
+tool does — and this round the reviewer was mostly correcting my own writing.
+The one real fix: the test suite could be killed outright by a fault in the code it was testing, and
+when that happened it produced no failure report at all — the automated checker then read the silence
+as "something else caught it". Four lines turn that silence into three clearly named failures.
+The rest were claims I had written that did not survive being checked. I had asserted that an earlier
+round dated a measurement in a particular place; it never did, and I had taken that from the earlier
+round's write-up instead of from the code — inside a paragraph arguing that exactly this is dangerous.
+And a count of how many documents mention a piece of syntax has now been wrong three separate ways in
+three rounds: stale, then correct-but-measuring-something-else, then ambiguous between three defensible
+answers (19, 18, or 15, depending on what you mean). It is now deleted rather than corrected a third
+time, with a note saying not to put one back.
+Reviewing has stopped here. Four rounds, and the problems have moved steadily from "the tool is wrong"
+to "the notes about the tool are wrong", which is the point at which more review stops paying.
+<!--tech-->
+Branch `retire-plan-mode`, PR #270. Folds r4: 1 Medium + 4 Low, all inside the r3 fold. Both review
+halves filed with DISPOSITIONS. **Full sweep: 33 file(s), 392 mutation(s), 0 survivor(s).**
+
+* **F1 (Med) FIXED — and the coordinator had WRONGLY dismissed it.** I filed the crash-instead-of-red
+  shape as "pre-existing and inherent" and declined to act. The Claude half's decisive fact: **before
+  the r3 fold, NO case in this file invoked `main()`** — every case drove pure functions over an
+  explicit root — so the fold added the first four that call the entry point and genuinely enlarged
+  the surface. `_drive_main` now returns `(-1, "main() RAISED …")`. MEASURED with an injected raise:
+  `3 named [FAIL] lines + 41/44 cases passed`, was `no summary, no [FAIL], traceback`.
+* **F2 (Low) FIXED, and F1's fix is what made it fixable.** The `finally` restore could be deleted
+  with the suite still 43/43 green. With the suite now surviving a raise it has a real beneficiary,
+  and a new case placed after the block is its only observer. Both guarded by new mutations.
+* **F3 (Low) FIXED as a recorded correction.** The header claimed r2 dated a measurement in
+  `coverage_shortfall`'s docstring. Verified false both ways: no date at any revision, and r2 added
+  no dated line to the file at all. Sourced from r2's REVIEW DOC, not the code.
+* **F4 + Cx-L1 (Low) FIXED by DELETION.** "Both numbers" was three; `1,116`, `29/29` and `15/16` were
+  stale. The backticked-mention count is GONE — three predicates give 19 / 18 / 15 and the prose named
+  none. Header now says **"Do not reintroduce a count here."**
+
+Counts: cases 43 → **44**; guard mutations 16 → **18**; `EXPECTED_MUTATIONS` 390 → **392**. RISING.
+Gates rc=0: self-test 44/44 · check-plan-code 229/229 · check-selftest-counts · check-review-rounds
+(168 rounds, 0 silent gaps) · check-ratchet-contract · check-docs. 0 orphaned anchors, 33 manifests.
+
+⚠ **PHASE 6 — count fires, cause does not.** Four non-converging rounds is the written trigger, but
+`dev-process.md` says read it off the CAUSE. The series decayed monotonically: r1 behaviour defects ·
+r2 a real false-green (cardinality vs identity) · r3 one inert mechanism + one wrong message ·
+r4 test scaffolding + four claims ABOUT the code. Nothing in r4 changes what the guard does to any
+document. That is the documented "prose has nothing to execute — go build" signature, not a design
+fight. Judgement recorded, not assumed; reviewing stopped by decision.

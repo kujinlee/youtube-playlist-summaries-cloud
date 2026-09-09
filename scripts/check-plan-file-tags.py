@@ -23,10 +23,10 @@ WHAT IT ASSERTS, AND THE ONE DISTINCTION THAT MATTERS
 A tag is only a tag when it OWNS ITS LINE — `^\\s*<!-- file: … -->\\s*$`, byte-for-byte the rule
 `check-plan-code.FILE_TAG` used, so this fence and the retired parser agree on what a tag is.
 
-Anything else is prose ABOUT a tag, and prose about tags is exactly what this repo is full of:
-**19 documents on 2026-09-09** mention `<!-- file: … -->` inside backticks — review findings, the
-`../escape.py` path-escape table cell, the retarget plan's own deletion script.
-**Every one must keep passing.**
+Anything else is prose ABOUT a tag, and prose about tags is exactly what this repo is full of —
+review findings, the `../escape.py` path-escape table cell, the retarget plan's own deletion
+script. **Every one must keep passing**, which is pinned by four self-test cases copied verbatim
+from real lines in this repo rather than by a count.
 This project has already paid for getting that wrong: `docs/reviews/plan-mutation-retarget-r1-claude.md`
 finding 3 records a bare `assert "<!-- file:" not in s` tripping on that very cell — "the regex was
 right; the assertion was wrong". A substring check here would be that defect, rebuilt on purpose.
@@ -34,14 +34,22 @@ right; the assertion was wrong". A substring check here would be that defect, re
 The escape, therefore, is the one every document discussing this grammar already uses: put it in
 backticks.
 
-⟳ 2026-09-09, review r3 (C2). This said "the one **13** documents already use", present tense and
-undated; it was 17 when r3 measured it and **19** by the time r3's own review documents were
-written — because each of those discusses the tag in backticks and joins the count. THE NUMBER
-RISES EVERY TIME ANYONE WRITES ABOUT THIS GRAMMAR, INCLUDING THIS PARAGRAPH. So it is stated as a
-dated observation and never maintained: **19 documents on 2026-09-09**. Round 2 accepted this same
-class as a finding (Cx-L1) and fixed it by dating the measurement — but only in
-`coverage_shortfall`'s docstring, so the instance a reviewer happened to open was repaired and the
-class was not. Both numbers in this header now carry the date they were taken.
+⛔ THERE IS DELIBERATELY NO COUNT HERE, AND THAT IS THE THIRD ATTEMPT AT THIS SENTENCE.
+It said "13 documents" (undated, stale — r3, C2); was corrected to "19 documents on 2026-09-09"
+(dated); and r4 then found that 19 does not mean what the sentence says. Three predicates, three
+answers: a backtick anywhere before the tag on the line -> 19; the tag fully enclosed in a code
+span -> 18; a stricter enclosed form -> 15. The prose named none of them. The number ALSO rises
+whenever anyone writes about this grammar, including the reviews that keep finding it wrong.
+A quantity that changes under both observation and definition does not belong in the one file
+whose job is to be exactly right — and the claim that matters ("every such document must keep
+passing") is asserted by cases, not by arithmetic. **Do not reintroduce a count here.**
+
+⚠ AND A CORRECTION TO WHAT THIS PARAGRAPH USED TO SAY (r4, F3). It claimed round 2 had fixed this
+class "by dating the measurement in `coverage_shortfall`'s docstring". **That is false in both
+halves**: there is no date in that docstring at any revision, and round 2 added no dated line to
+this file at all. The claim came from round 2's REVIEW DOCUMENT rather than from the code — the
+exact substitution ("quote the code, don't characterise it") that this file exists to prevent,
+made inside a paragraph arguing that a false stated reason is worse than none.
 
 ⚠ A TAG INSIDE A COLUMN-0 FENCE IS NOT A TAG — AND THIS WAS WRONG ON THE FIRST TRY.
 The first version of this script had no fence rule, on the stated reasoning that `FILE_TAG` allows
@@ -76,9 +84,9 @@ CANNOT RUN (exit 2, never a pass)
   * `docs/` is missing;
   * **the corpus is EMPTY.** The whole finding is a ZERO, and a zero is the shape this project
     has repeatedly measured as worthless: "0 tags found" over 0 files scanned is
-    indistinguishable from the same sentence over 1,116. So the count of files READ is printed
-    on the green path and refused when it is 0 — "no tags" is only meaningful next to
-    "out of how many".
+    indistinguishable from the same sentence over a thousand. So the number of files VISITED
+    is printed on the green path and refused when it is 0 — "no tags" is only meaningful next
+    to "out of how many".
   * **the corpus is NARROWED** — the SET of documents visited is not the set under `ROOT/"docs"`.
     ⚠ THE EMPTY CLAUSE ALONE WAS NOT ENOUGH, and thinking it was is the defect a reviewer caught.
     It refuses a corpus of *nothing*; it says nothing about a corpus of *something smaller*,
@@ -92,7 +100,7 @@ CANNOT RUN (exit 2, never a pass)
 
 Usage:
     python3 scripts/check-plan-file-tags.py
-    python3 scripts/check-plan-file-tags.py --self-test  # 43 cases
+    python3 scripts/check-plan-file-tags.py --self-test  # 44 cases
 """
 from __future__ import annotations
 
@@ -153,7 +161,7 @@ def coverage_shortfall(docs_root: Path, seen: "set[Path]") -> str | None:
     So narrowing it is invisible. MEASURED on this tree: `DOCS = ROOT/"docs"/"reviews"` gives
 
         live run   rc=0   "plan-mode tags: 0 across 896 documents under docs/"
-        --self-test rc=0   "29/29 self-test cases passed"
+        --self-test rc=0   (the whole suite green, over the narrowed corpus)
 
     Both green while 220 documents — including all 92 plans, the actual subject — went
     unread. "0 findings" then means only that the SELECTED corpus is clean, not that the
@@ -286,9 +294,28 @@ def _drive_main(tmp: Path, name: str, files: dict[str, str],
     it left stdout byte-identical. A suite that only ever drives helpers cannot see the difference
     between a wired mechanism and an inert one — only the entry point a person runs can.
 
-    `ROOT`/`DOCS` are module globals that `main()` reads, so they are swapped and restored. The
-    restore is in a `finally` because a raising case must not leave the rest of the suite pointed
-    at a temp directory that no longer exists.
+    `ROOT`/`DOCS` are module globals that `main()` reads, so they are swapped and restored.
+
+    ⛔ A RAISE INSIDE `main()` IS RETURNED AS `(-1, "main() RAISED …")`, NEVER PROPAGATED — review
+    r4, F1. Before this, an exception from `main()` escaped `self_test()` and killed the suite:
+    no `[FAIL]` line, no `N/M cases passed` summary. `run_mutations` reads that as `rc == 1` with
+    `fails == []` and reports `matched 0 red case(s) — it was caught by something else: []`, which
+    this file calls "the worse of the two readings" and which r3's F3 had just finished fixing at
+    the fixture level. The fold that fixed it REOPENED it at the entry-point level, because these
+    were the FIRST cases in this file ever to call `main()`. Measured with an injected raise:
+
+        propagating   traceback, no summary, no [FAIL]  -> "caught by something else: []"
+        returning -1  3 named [FAIL] lines, "40/43 self-test cases passed"
+
+    ⚠ The bare `except Exception` is deliberate and is NOT a fail-open: it converts a crash into a
+    LOUDER, ATTRIBUTABLE failure. `-1` matches no expected rc, so every case that drives it goes
+    red and names itself. Narrowing it would re-open the silent-death path for the exception types
+    left out.
+
+    The restore stays in a `finally` — and now has a real beneficiary, since the suite survives a
+    raise and later cases genuinely could see a stale global. That is what the case
+    "…and _drive_main RESTORES the module globals" pins (r4, F2: before this the restore could be
+    deleted with the suite still 43/43 green).
     """
     global ROOT, DOCS
     root = tmp / name
@@ -306,6 +333,8 @@ def _drive_main(tmp: Path, name: str, files: dict[str, str],
         ROOT, DOCS = root, docs
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
             rc = main([])
+    except Exception as exc:                       # noqa: BLE001 — see the docstring
+        return -1, f"main() RAISED {exc!r}"
     finally:
         ROOT, DOCS = keep_root, keep_docs
     return rc, out.getvalue()
@@ -440,7 +469,8 @@ def self_test() -> int:
 
         # ⚠ THE FALSIFIABILITY CLAUSE. Every case above asserts over a corpus this test built.
         # On the REAL tree the answer is zero, and a zero proves nothing unless the run refuses
-        # to call an empty corpus clean. Without this, deleting the rglob would pass 15/16.
+        # to call an empty corpus clean. Without this, deleting the rglob would pass every
+        # OTHER case in the suite — the count is deliberately not quoted; it moves.
         empty = tmp / "k" / "docs"
         empty.mkdir(parents=True)
         case("an EMPTY corpus scans 0 — main() must call this CANNOT RUN, not a pass",
@@ -545,6 +575,15 @@ def self_test() -> int:
         rc, out = _drive_main(tmp, "m4", {"a.md": "clean\n", "b/c.md": "also clean\n"})
         case("a clean tree reports the corpus size and exits 0",
              (rc, "0 across 2 documents" in out), (0, True))
+
+        # ⛔ THE RESTORE, PINNED (r4, F2). `_drive_main` swaps the module globals; before this case
+        # the `finally` that puts them back could be DELETED with the suite still 43/43 green,
+        # because these are the last cases and nothing afterwards read them. A safety mechanism
+        # whose absence nothing observes is r3's F1 shape — which is what the fold containing it
+        # had just fixed. This case must stay LAST-ish: it is the only observer.
+        case("...and _drive_main RESTORES the module globals it swapped",
+             (ROOT, DOCS), (Path(__file__).resolve().parent.parent,
+                            Path(__file__).resolve().parent.parent / "docs"))
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
