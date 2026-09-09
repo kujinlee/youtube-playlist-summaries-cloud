@@ -5923,3 +5923,78 @@ user's call.
 its own spec; **#92** and **#103** are separate defects. They share the `(concurrency safety)`
 tag so the whole class is visible in one place — by the user's explicit decision — not because
 one change closes them. Row 67's own status cell now records exactly which part landed.
+
+## 2026-09-09
+One item has been moved out of the concurrency group, because it turned out not to
+be a concurrency problem at all.
+The group collects work about things going wrong when two processes act at the same
+time. One member described a different failure entirely: change a video's title,
+re-summarise it, and the extra research already paid for is left behind at an address
+nobody looks at any more. No second process is involved. It happens with one person,
+one action, nothing running in parallel.
+The item's own write-up said this in as many words when it was filed — "reachable with
+no concurrency" — so no new investigation was needed to move it, only a reading of what
+was already there. It keeps its severity and its three candidate fixes; only its label
+changed, to one describing addresses derived from things that can change.
+Worth noting what did NOT move. Two other members are about a background worker and a
+sync run writing over each other, and those stay, because each genuinely requires two
+writers and a window of time. An earlier attempt to split this group was rejected for
+drawing the line in the wrong place — it separated by who was racing rather than whether
+racing was involved at all. This split uses the second question, which is the one the
+newly written rule actually asks.
+Two unrelated items were also found claiming to be unfinished when their own notes say
+they were completed days ago — one still flagged at the second-highest priority, so anyone
+choosing work by urgency would have been pulled toward something already done. Both labels
+are corrected. There is an open item in the same group about exactly this kind of drift,
+and it is still open, so these were caught by reading rather than by any check.
+<!--tech-->
+Branch `bundle-membership`, off `6b18b13b`.
+
+**MOVED:** row **20** (*a title change orphans every dig blob*) `(concurrency safety)` →
+`(product / addressing)`, the tag row 52 already carries. Evidence is the row's own text,
+quoted into both the row and row 67: *"Consequence, reachable with **NO** concurrency"* and
+*"that is a race needing a second writer and a window, **this needs neither**, so the
+mechanisms differ."*
+
+**Bundle now: 17, 19, 67, 92, 103.**
+
+* **17 / 19 STAY** — worker persist vs `runSync`, and the `transferClassA` content race. Each
+  needs a second writer AND a window; both are races over shared mutable state.
+* **92 STAYS** — its root cause is that `dir_snapshot` cannot attribute a write, and *"dual
+  review guarantees a concurrent writer by construction"*. It is the mechanism behind
+  must-serialise hazard 3 in `review-method.md`.
+* **103 STAYS** — five monitors alive at once is a concurrency condition; the harm is duplicate
+  delivery rather than corruption.
+
+⚠ **This is NOT the split that was rejected.** That one was drawn on **who** races (agents vs
+pipeline) and would have moved 17 and 19 as well. This one is drawn on **whether concurrency is
+required at all** — the axis the classification merged in PR #275 actually uses.
+
+⚠ **THE ENUMERATION THAT FOUND THIS ALMOST GOT IT WRONG, and the near-miss is the reusable
+part.** My first pass read the tag as `awk` field `$6` and reported **five** members, silently
+omitting **103**. Cause: rows carry a literal `|` inside backticks — 103 holds a shell pipe
+(`tail -F … \| awk …`) and parses to **7** cells where the normal row has **6**; row 38 has
+**9**. So a fixed positive index reads the tag column for most rows and the wrong column for the
+rest, and reports a **short list with no error**. Re-done with **negative** indices (tag is
+second-from-last), all six appear. This is the recorded *positional read needs a verified shape*
+defect — the one where `cells[-2]` hit the wrong cell and closed two open items — and the
+handoff's standing advice to use negative indices on this file is what caught it.
+
+**⟳ FOLDED IN, same branch:** two `(comprehensibility)` rows wore an OPEN severity marker while
+their own status cell recorded completion — **99** (`🟠` / *"RESOLVED 2026-09-06 — PR #234"*) and
+**81** (`🟢` / *"CLOSED 2026-09-01 — tier 1 ADOPTED, tier 2 HELD by user decision"*). Both moved to
+`✅ (was X)`, the convention rows 83/87/95 already use. Bundle recount: **14 closed, 12 open** (50
+and 56 partial), was 12/14.
+
+⚠ **Row 98 of that same bundle is *"a backlog row can say OPEN about work that already MERGED, and
+no gate catches it"*, and it is still open** — so its own bundle accumulated two more instances
+while it waited. The 🟠 on 99 is the expensive half: severity is what a person scans to choose the
+next piece of work, so a stale one does not merely misreport, it misdirects.
+
+⚠ **Two false readings on the way to these two, both from matching prose instead of structure.**
+A keyword pass called row **82** closed on the phrase *"is CLOSED by the same-day fix"* — which
+describes a **different half** of that row — and called **99** open because its status says
+`RESOLVED`, a word the pattern did not list. The count above comes from the severity **marker**,
+cross-checked against every status head printed in full. Deciding state by grepping prose is the
+same class as the positional-index defect in this entry's other half: both return a confident
+answer with no error.
