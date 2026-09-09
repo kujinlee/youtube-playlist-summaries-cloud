@@ -19,7 +19,10 @@
         "        if rc == 99:\n            ok = False"
       ]
     ],
-    "expect": "...and the report says NOT CHECKED"
+    "expect": [
+      "a TIMED-OUT mutation is counted but is NOT a verdict",
+      "...and it is reported as a cannot-run, not as a catch"
+    ]
   },
   {
     "name": "an ambiguous anchor is tolerated",
@@ -30,7 +33,7 @@
         "            if src.count(find) > 99:"
       ]
     ],
-    "expect": "an anchor matching MORE THAN ONCE fails the check"
+    "expect": "run_mutations refuses an AMBIGUOUS anchor rather than taking the first"
   },
   {
     "name": "a missing anchor is tolerated",
@@ -41,7 +44,7 @@
         "            if find not in src and False:"
       ]
     ],
-    "expect": "...and says the anchor was NOT FOUND"
+    "expect": "run_mutations refuses a missing anchor"
   },
   {
     "name": "a mid-line FAIL marker is parsed as a case name",
@@ -96,7 +99,7 @@
         "        if isinstance(want, list) and not want and False:"
       ]
     ],
-    "expect": "an EMPTY expect list is refused"
+    "expect": "run_mutations refuses an EMPTY expect list — a declared-but-empty set"
   },
   {
     "name": "a repeated edit anchor measures nothing twice",

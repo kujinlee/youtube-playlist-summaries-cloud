@@ -2,7 +2,7 @@
 """A plan that contains code must ASSEMBLE into that code, and its evidence must be RUN.
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
-    python3 scripts/check-plan-code.py --self-test          # 74 cases
+    python3 scripts/check-plan-code.py --self-test          # 78 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -1369,6 +1369,58 @@ def _self_test() -> int:
              (_ok9, _evs9), (False, ["exits three"]))
         case("...and the report says it survived rather than naming a red case",
              any("mutation SURVIVED" in r for r in _rep9), True)
+
+        # ⛔ ⟳ 2026-09-09, THE DELETION SLICE — AND CI IS WHAT FOUND THIS, NOT ANY LOCAL GATE.
+        # Three mutations on THIS function had their only red case over in plan mode, which
+        # drove `run_mutations` end-to-end through `check(plan)`. Deleting the caller deleted
+        # the coverage while the guarded code stayed, so `--mutate .` reported them SURVIVED
+        # over a suite sitting at 74/74 green. The recorded shape *a refactor orphans the
+        # mutation guarding it*, inverted: here the deletion orphaned the CASE, not the anchor.
+        # ⚠ RETIRING them would have been wrong — their subject still ships. The properties
+        # are re-asserted against the function that owns them, which is where they belonged:
+        # a case that reaches a rule through two layers of someone else's parser is a case
+        # that dies when that parser does.
+        _amb = [{"name": "twice over", "file": "m.py",
+                 "edits": [["return 1", "return 2"]], "expect": "f returns one"}]
+        _ok4, _rep4, _, _ = run_mutations(_d, _amb, {"m.py"})
+        case("run_mutations refuses an AMBIGUOUS anchor rather than taking the first",
+             (_ok4, any("anchor matches 2 times" in r for r in _rep4)), (False, True))
+        _empty = [{"name": "expects nothing", "file": "m.py",
+                   "edits": [["def f():\n    return 1", "def f():\n    return 2"]],
+                   "expect": []}]
+        _ok5, _rep5, _, _ = run_mutations(_d, _empty, {"m.py"})
+        case("run_mutations refuses an EMPTY expect list — a declared-but-empty set",
+             (_ok5, any("EMPTY list" in r for r in _rep5)), (False, True))
+
+    # A `[FAIL] ` appearing MID-LINE is not a case name. Its own tree, because the fixture's
+    # suite must differ from the one above.
+    # ⚠ THE OFFSET IS THE WHOLE FIXTURE, and getting it wrong makes this case unfalsifiable
+    # rather than merely wrong — the first version left the mutation SURVIVING. The parser is
+    # `l.strip()[7:].rsplit(": got ", 1)[0].strip()`, so for the MUTATED reader to produce a
+    # name this `expect` can match, the marker must sit past a SEVEN-character prefix:
+    #     "> note: mid-line [FAIL] marker"   ->  [7:].strip()  ->  "mid-line [FAIL] marker"
+    # The original reader requires `startswith("[FAIL] ")`, so it never selects this line at
+    # all — which is what makes the two readers distinguishable here and nowhere else.
+    with tempfile.TemporaryDirectory() as _td:
+        _d2 = pathlib.Path(_td)
+        (_d2 / "m.py").write_text(
+            'def f():\n    return 1\n\n\n'
+            'def _self_test():\n'
+            '    if f() != 1:\n'
+            '        print("> note: mid-line [FAIL] marker")\n'
+            '        return 1\n'
+            '    print("1/1 passed")\n'
+            '    return 0\n\n\n'
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+        _mid = [{"name": "mid-line marker", "file": "m.py",
+                 "edits": [["def f():\n    return 1", "def f():\n    return 2"]],
+                 "expect": "mid-line [FAIL] marker"}]
+        _ok6, _rep6, _, _ = run_mutations(_d2, _mid, {"m.py"})
+        case("a mid-line [FAIL] is NOT parsed as a case name", _ok6, False)
+        case("...so the mutation is not credited to a case that does not exist",
+             any("matched 0 red case(s)" in r for r in _rep6), True)
 
     # ⟲ Backlog #70, Task 2. The manifest FILENAME names the target script, and an entry
     # whose `file` key disagrees is refused rather than silently believed.

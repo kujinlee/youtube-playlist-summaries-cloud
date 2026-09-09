@@ -5610,3 +5610,54 @@ check-ratchet-contract · check-docs · check-review-rounds · check-plan-file-t
 invocation exit 2 via redirect, never a pipe; `--mutate /nonexistent` exits 2 for its
 OWN reason, so the surviving mode is not swallowed by the refusal. `--mutate .` is left
 to CI, which is the run that measures the shipped code.
+
+## 2026-09-09
+The deletion above shipped to CI red, and what CI caught is the interesting part.
+Five of the sabotage-checks stopped working. Not because the code they watch was
+removed — it is still there and still running — but because the *test* that made each
+sabotage visible happened to live in the part being deleted. Those tests reached the
+code the long way round, through the machinery that has now gone, so removing the
+machinery quietly removed the alarm while leaving the thing it was guarding in place.
+Locally everything looked perfect: 74 of 74 tests passing, every other check green.
+The only instrument that could see the gap was the one I had chosen to leave to CI on
+the grounds that it is slow. That judgement was wrong and is worth remembering: the
+check you skip because it is expensive is often the only one measuring the thing you
+just changed.
+The repair adds four small tests that check the same five properties directly, against
+the code that owns them, instead of through two layers of something else. That is where
+they should always have been — a test that reaches a rule via someone else's parser is
+a test that dies when that parser does.
+<!--tech-->
+Branch `retire-plan-mode-pr2`, PR #271. CI run 34360995951: **3 survivors + 2 expects
+matching 0 red cases**, over a local suite sitting at 74/74 green.
+
+The five all had one cause: their only red case was a PLAN-MODE case driving
+`run_mutations` end-to-end through `check(plan)`. The guarded code (`run_mutations`,
+`run_suite`) survives; the caller did not. The recorded shape *a refactor orphans the
+mutation guarding it*, inverted — the deletion orphaned the CASE, not the anchor.
+
+⚠ **Retiring the five would have been wrong** and was the tempting move, since the
+slice was already retiring 20. Their subject still ships, so retirement would have
+shrunk real coverage inside a PR whose whole discipline is that coverage may only fall
+when its subject does.
+
+Repair: 2 `expect` fields retargeted onto surviving cases (one uses the LIST form,
+naming both legitimate observers rather than picking one), and 4 new cases driving
+`run_mutations` directly — ambiguous anchor refused, empty expect list refused, and the
+mid-line `[FAIL]` pair. Cases 74 → **78**; `EXPECTED_MUTATIONS` unchanged at 23.
+
+⚠ **The mid-line fixture is where an unfalsifiable case nearly shipped.** The parser is
+`l.strip()[7:].rsplit(": got ", 1)[0].strip()`, so the marker must sit past a SEVEN-char
+prefix for the mutated reader to yield a matching name. My first fixture had the offset
+wrong: the case passed, and the mutation still SURVIVED. Fixed, and the offset is now
+explained at the fixture rather than being a magic string.
+
+**MEASURED after the repair:** the five re-run through the real harness (`stage_tree` +
+`run_suite` + `run_mutations`, not a re-implementation) — control green at 78/78, then
+**5 caught, 0 survivors**. Full `--mutate .` locally: **33 file(s), 371 mutation(s),
+0 survivor(s), rc=0**. All seven doc/ratchet gates rc=0.
+
+⚠ **Also recorded: I read the first CI result through a pipe.** `gh pr checks --watch`
+was piped into `tail`, so the exit code reported was `tail`'s 0, not `gh`'s 1 — the
+"$? after a pipe is the pipe's" hazard already twice in project memory, hit while using
+it as a merge signal. The red was found by reading the checks again, not by the code.
