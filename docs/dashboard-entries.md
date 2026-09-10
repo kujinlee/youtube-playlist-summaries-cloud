@@ -6297,3 +6297,41 @@ modified files, which is how I noticed. Re-applied from the same patch script an
 
 **MEASURED:** 13 gates rc=0 · `gen-backlog-page --self-test` **86/86** (was 75) · `page_markup`
 74/74 · `gen-dashboard` 314/314 · page builds `109 rows, 69 open`.
+
+## 2026-09-09
+You told me I had stopped showing you the choices, and you were right.
+
+Over the last few turns the decisions had drifted out of my replies and into the places that record
+them — the status page's "what needs you" tray, and the pull-request description. Both are correct
+places to keep a decision. Neither is where one gets made. What actually reached you was one line
+saying two decisions were waiting somewhere else, which is a location, not a question.
+
+That is now written down as a practice, next to the existing rule about how an option list should be
+built. The rule used to describe what the options must contain; it now also says where they have to
+appear — in the message you are already reading, as well as in the record.
+
+While adding it I found the practices document had two sections numbered 13 and two numbered 14, so
+the new material would have been filed under a number that was already taken. Renumbered.
+<!--tech-->
+`docs/portable-practices.md` §19 (was the second §13) gains **"WHERE it appears is part of the rule
+— a routed decision has not been asked"**. The measured incident is this session: `**Decide:**`
+blocks written into `docs/dashboard-entries.md` and into the PR bodies for #278/#279/#280, surfaced
+in chat only as *"two decisions are waiting on the dashboard"*. The tell recorded for next time: if
+the words *"let me know"*, *"your call"* or *"waiting on the dashboard"* are about to be written
+without the options beside them, that is an option list that was not printed.
+
+⚠ **DUPLICATE SECTION NUMBERS, and no gate sees them.** The file carried `## 13.`/`## 14.` twice —
+the trailing pair (option list, checks table) was appended with numbers already in use. Renumbered
+to **§19/§20**; numbers now run 1–20 with no duplicates. Two references moved with them: the
+in-file anchor link (the slug is derived from the heading text, so it changes with the number) and
+`docs/process-checklists.md`'s `§13–§14` → `§19–§20`. `check-docs.py` validates ADR references and
+living-document links but has no rule about heading numbering, so it passed before and after.
+
+⚠ **The practice already half-existed, which is why it needed a grep before a draft.** §13-as-was
+(*"an option list must carry its own rationale and trade-off"*) already covered the CONTENT of an
+option list in detail. Only placement was missing. Writing a new section would have created a second
+statement of one rule — the failure this repo already tracks — so the clause was added inside the
+existing section instead.
+
+**MEASURED:** 10 gates rc=0 · section numbers 1–20, no duplicates · both cross-references updated
+and `check-docs` (which validates living-doc links) rc=0.

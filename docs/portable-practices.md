@@ -787,7 +787,7 @@ DOM and an agent that can execute one.
 
 ---
 
-## 13. An option list must carry its own rationale and trade-off — and every option must produce different work
+## 19. An option list must carry its own rationale and trade-off — and every option must produce different work
 
 **Measured 2026-09-04.** An agent presented a four-option choice about merging two pull requests.
 Options **A** ("merge both, in order") and **D** ("merge both, review after") were the *same action*.
@@ -820,6 +820,30 @@ Two structural additions:
 * **Name the axis in the question text** — *"A/B differ in whether X goes live now"* — because the
   axis is the thing actually being chosen.
 
+### ⛔ WHERE it appears is part of the rule — a routed decision has not been asked
+
+**Measured 2026-09-09, and the correction came from the human:** *"print selection cards … you used
+to do it but stopped."*
+
+Over several turns the option lists had migrated out of the reply and into durable artifacts — a
+`**Decide:**` block in a generated status page, and a section in the pull-request body. Both are
+correct places to *record* a decision. Neither is where it gets *made*. What reached the person
+accountable for the outcome was a single trailing line: *"two decisions are waiting on the
+dashboard."*
+
+That line looks like delivery and is not. It costs the reader a context switch — open the artifact,
+find the tray, reconstruct what the options were and why — for something that fits in ten lines of
+the message already in front of them. **The artifact is for durability; the reply is for the ask.**
+Write it in both: same options, same rationale, same recommendation, no pointer substituted for the
+content.
+
+The failure is easy to miss because every individual step is defensible: recording the decision is
+good practice, rendering it in a tray is good practice, and linking to it is normal. The drift is
+visible only in the aggregate — *the human never saw a choice, only a location.*
+
+**The tell:** if you are about to write *"let me know"*, *"your call"*, or *"waiting on the
+dashboard"* without the options beside it, that is an option list you have not printed.
+
 ### ⛔ The check the format cannot do for you
 
 **Verify that each option produces different work before presenting.** A menu whose entries collapse
@@ -836,7 +860,7 @@ a choice, say it is forced instead of dressing it as an option.
 
 ---
 
-## 14. End a job with a table of CHECKS AND RESULTS, not a paragraph saying it went well
+## 20. End a job with a table of CHECKS AND RESULTS, not a paragraph saying it went well
 
 **Measured 2026-09-04.** An agent reported filing three items and repairing a dangling reference.
 The human's reply was:
@@ -885,7 +909,7 @@ The related trap is the **mislabelled row**. Measured the same day: an agent pri
 data was right and the label was wrong — which is worse than no label, because the label is what
 gets remembered.
 
-### Why this is one family with [§13](#13-an-option-list-must-carry-its-own-rationale-and-trade-off--and-every-option-must-produce-different-work)
+### Why this is one family with [§19](#19-an-option-list-must-carry-its-own-rationale-and-trade-off--and-every-option-must-produce-different-work)
 
 Both are **comprehensibility affordances**, and they cover the two moments a human needs to act:
 
