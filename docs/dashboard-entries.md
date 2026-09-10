@@ -6076,3 +6076,86 @@ run does not mean every row is current.
 **MEASURED:** `--self-test` 20/20 · full `--mutate .` **34 file(s), 387 mutation(s), 0 survivor(s)**
 rc=0 · `check-ratchet-contract` rc=0 · `check-selftest-counts` rc=0 over 31 declaring scripts ·
 `check-docs` rc=0 with both spine budgets at exactly 220/220 and 260/260.
+
+## 2026-09-09 [needs-you] [resolved: 2026-09-08/15]
+Backlog #91's row said the work was built but still waiting on a review gate before it could merge,
+and that the design problem behind it was unfixed. Neither had been true since yesterday. It merged,
+the fix landed with it, and the row is now marked closed.
+
+The correction is small. What is worth your attention is that the row was wrong in three separate
+ways at the same time, and nothing automatic noticed any of them — a row can only disagree with
+reality quietly, because nothing reads it back.
+
+I am also clearing a question that was put to you yesterday and has been sitting on this page ever
+since: whether the planning-document feature should exist at all, given that nothing real used it.
+You answered it by retiring that feature the same day. The answer just never got recorded here, so
+the question stayed up.
+
+While making the edit I broke the table and a check caught it. That is written up below, because the
+way it broke is worth knowing about before anyone edits this file again.
+
+**Decide:** File the three loose ends from #91 as their own backlog items?
+- A — file all three; the "instrument, not the code" one is the most likely to shape a future refactor [recommended]
+- B — file only the orphaned-anchor detector, and leave the other two recorded on the row
+- C — file none; the row's own text is enough of a record
+
+**Decide:** Should the backlog closure check also read an item id at the START of a commit subject?
+- A — no; two subjects on master lead with an id and close nothing, so this would false-fire [recommended]
+- B — yes, but only after re-measuring the false-fire count across all 1,498 subjects first
+<!--tech-->
+`docs/backlog.md` row 91: marker `🔴` → `✅ (was 🔴)`, status cell replaced. Verified through
+`check-docs.py`'s OWN `CELL_SPLIT`, not a local re-implementation: **6 structural columns**, the
+shape the table header declares.
+
+**The three staleness defects, each checked against code rather than prose:**
+1. *"Post-Plan Gate OWED before merge"* — refuted by `307423f1` on `master` (PR #269).
+2. *"The underlying design defect is UNFIXED — `ev` still has seven keys and `trustworthy` is still
+   readable-past"* — refuted by `scripts/check-plan-code.py:278` (*"`verdicts_are_trustworthy`
+   STOOD HERE and is deleted, not moved-and-kept"*) plus `from coverage_verdict import Measured,
+   NotMeasured`. `ev["trustworthy"]` now appears only inside comments and self-test case names.
+3. The escalated plan-mode question — dissolved by #270/#271. `check-plan-code.py <plan>` exits
+   **2**: *"CANNOT RUN — plan mode was RETIRED … Treat this as NOT CHECKED."*
+
+⛔ **THE NEAR-MISS, AND IT IS A NEW INSTANCE OF A KNOWN CLASS.** The first edit split the row with
+`line.split("|")` and re-padded each cell as `" " + cell.strip() + " "`. Row 91's description
+contains an **escaped** pipe — `` `Measured \| NotMeasured` `` — which a naive split treats as a
+column boundary. Re-padding inserted a space between the backslash and the pipe, turning `\|` into
+`\ |` and **promoting a literal into a structural boundary**: 6 columns became 7.
+
+The guards I wrote did not see it. They asserted no newline, no bare pipe, exactly one row 91, and
+an unchanged row count — all true, all about the cells I *changed*, while the damage was in a cell I
+merely *reformatted*. `check-docs.py` caught it: *"item #91 has 7 columns but the table opened at
+line 30 declares 6."* Same shape as `a-mechanical-edit-damages-what-it-preserves`, and the local
+splitter was a second implementation of `CELL_SPLIT` that drifted from it.
+
+**The redo is surgical** — two string replacements on the raw line, no cell re-serialised — and
+carries the falsifier the first attempt lacked: `old.count("\|") == new.count("\|")` and
+`"\ |" not in new`.
+
+**Why no gate caught the staleness itself, and why that is not a gate defect.**
+`check-backlog-closure.py` returns rc=0 here. Its `CLOSING` pattern is
+`\(backlog #(\d+)\)(?:\s*\(#\d+\))?\s*$` — anchored at the subject TAIL — and #269's subject LEADS
+with `Backlog #91 —`. Yesterday's entry already recorded this as honest residue (*"a close whose
+subject does not end with the token is invisible to this check … a floor on detection, never a
+ceiling"*); this is that residue's first concrete instance, not a new finding.
+
+⚠ **The head form is NOT safely matchable, which is the evidence behind the second decision above.**
+`File backlog #85 (three fence scanners) …` and `File backlog #99 — a paused plan kept ticking …`
+both lead with an id and close nothing — they FILE. A head anchor would fire on both.
+
+⚠ **I re-implemented `CLOSING` from its docstring before reading it and got the opposite answer** —
+my grep omitted the optional `(#PR)` squash suffix, returned 0 matches against the script's 7, and
+would have been reported as *"the gate is broken"*. Reading the source corrected it. Twice in one
+change, then: predicting a parser instead of running it.
+
+**Numbers on the row are pinned to #269 and deliberately NOT refreshed** — self-test 207 → 231,
+`EXPECTED_MUTATIONS` 362 → 374, 32 files / 374 mutations / 0 survivors *at merge*. Master is now
+34 files / 387 mutations after later work; `check-plan-code.py`'s own `EXPECTED_MUTATIONS` fell
+44 → 23 when plan mode's code was deleted, the one sanctioned kind of fall.
+
+**MEASURED on this branch:** `check-docs` · `check-roadmap-consistency` · `check-producer-enumeration`
+· `check-anchors` · `check-ratchet-contract` · `check-review-rounds` · `check-selftest-counts` ·
+`check-dashboard-entry` · `check-arch-findings` · `check-backlog-closure` · `check-explainer-delivery`
+· `check-vocabulary-collisions` · `check-plan-file-tags` all rc=0. `check-test-counts` was **NOT
+run** — it has no freshness bound and would pass against a stale `jest-results.json`; treat test
+counts as NOT CHECKED. `--mutate .` not run locally: CI runs it, and this branch changes no script.
