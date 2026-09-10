@@ -6335,3 +6335,41 @@ existing section instead.
 
 **MEASURED:** 10 gates rc=0 · section numbers 1–20, no duplicates · both cross-references updated
 and `check-docs` (which validates living-doc links) rc=0.
+
+## 2026-09-09
+The six most serious items on the backlog page now say what they are, in plain words.
+
+Fifteen items were showing on the page as a bare row with no explanation, under a heading that
+admits nobody has described them yet. You chose to describe the serious ones and leave the rest
+visibly unfinished, which is what that heading is for. Six were serious, not seven — I said seven
+from memory earlier and it was wrong; the count comes from the file.
+
+Separately: you corrected me about what a selection card is. I had written the practice down as
+"print the options in the reply", which was the right diagnosis and the wrong remedy. You meant the
+interactive kind — options you can actually select, several in a row, with a free-form box for
+answering something the options did not anticipate. The practice now says so.
+<!--tech-->
+**`scripts/gen-backlog-page.py` GROUPS** gains six descriptions. Placement by subject, not by
+severity: **102, 103, 106** to *The reusable toolkit* (all three are the shared page harness);
+**93, 108, 109** to *Process, tooling and bookkeeping*. Undescribed count **15 → 9**, and the nine
+remaining are exactly the 🟡/🟢 rows — `[89, 90, 92, 94, 100, 101, 104, 105, 107]` — so no
+high-severity row is bare.
+
+⚠ **"Seven high-severity" was a recollection, and it was wrong.** Enumerated from the file:
+`[93, 102, 103, 106, 108, 109]` — **six**. Same class as the standing note about never writing a
+count from memory; it survived into a printed recommendation before being checked.
+
+⚠ **The first insertion did not compile.** I wrote the multi-line descriptions as bare continuation
+lines rather than adjacent string literals, so Python saw an unterminated string. Reverted and
+redone — after checking `git status` first, because a careless `git checkout` destroyed uncommitted
+work earlier in this same session.
+
+**`docs/portable-practices.md` §19** gains the correction: prose is the FALLBACK, not the form. The
+generalisation recorded with it is the part that travels — *an affordance degrades quietly into its
+own description*: a selectable card becomes a written list, a written list becomes a summary
+sentence, a summary sentence becomes a link, and each step is individually reasonable while the end
+state is that no decision is ever put in front of anyone. **Name the mechanism in the rule, not just
+the content.**
+
+**MEASURED:** 8 gates rc=0 · `gen-backlog-page --self-test` 86/86 · page builds `109 rows, 69 open`
+· undescribed 15 → 9 with zero high-severity remaining.
