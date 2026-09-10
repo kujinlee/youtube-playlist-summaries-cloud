@@ -1042,6 +1042,15 @@ def _self_test() -> int:
     case("bold works on the pre-comment head too",
          exemption_reason("**NO-ENTRY:** typo fix <!-- note -->"), "typo fix")
 
+    # ⛔ THE `marker` PARAMETER IS LOAD-BEARING, and this suite is where that must be visible.
+    # `check-review-recorded.py` shares this parser rather than copying it, so if `marker` were
+    # ignored the sibling gate would silently read `NO-ENTRY:` and every `NO-REVIEW:` declaration
+    # would be dropped — with BOTH suites green, because nothing here asked.
+    case("reads a NO-REVIEW declaration through the shared parser",
+         exemption_reason("NO-REVIEW: docs only", "NO-REVIEW:"), "docs only")
+    case("...on the pre-comment head too",
+         exemption_reason("NO-REVIEW: docs only <!-- x -->", "NO-REVIEW:"), "docs only")
+
     case("exemption_reason reads a real declaration", exemption_reason("NO-ENTRY: typo fix"), "typo fix")
     case("exemption_reason distinguishes empty from absent",
          (exemption_reason("NO-ENTRY:"), exemption_reason("nothing here")), ("", None))

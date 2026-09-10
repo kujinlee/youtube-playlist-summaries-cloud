@@ -57,8 +57,8 @@
     "file": "scripts/check-dashboard-entry.py",
     "edits": [
       [
-        "    if not rest.startswith(NO_ENTRY):",
-        "    if NO_ENTRY not in rest:"
+        "    if not rest.startswith(marker):",
+        "    if False:"
       ]
     ],
     "expect": "exemption_reason \u2014 blockquoted"
@@ -288,8 +288,8 @@
     "file": "scripts/check-dashboard-entry.py",
     "edits": [
       [
-        "    rest = rest[len(NO_ENTRY):]",
-        "    rest = rest[0:]"
+        "    rest = rest[len(marker):]",
+        "    rest = rest"
       ]
     ],
     "expect": "exemption_reason reads a real declaration"
@@ -299,8 +299,8 @@
     "file": "scripts/check-dashboard-entry.py",
     "edits": [
       [
-        "                if not _indented(head):\n                    r = _declaration_reason(head.strip())\n                    if r is not None:\n                        return r",
-        "                if not _indented(head) and head.strip().startswith(NO_ENTRY):\n                    return head.strip()[len(NO_ENTRY):].strip() or \"\""
+        "                    r = _declaration_reason(head.strip(), marker)",
+        "                    r = None"
       ]
     ],
     "expect": "bold works on the pre-comment head too"
@@ -541,5 +541,16 @@
       "prose mentioning <!-- does not swallow the NEXT entry",
       "...and both keep their ids"
     ]
+  },
+  {
+    "name": "the marker parameter is ignored, so a sibling gate silently reads NO-ENTRY:",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "def _declaration_reason(s: str, marker: str = NO_ENTRY) -> str | None:",
+        "def _declaration_reason(s: str, marker: str = NO_ENTRY) -> str | None:\n    marker = NO_ENTRY"
+      ]
+    ],
+    "expect": "reads a NO-REVIEW declaration through the shared parser"
   }
 ]

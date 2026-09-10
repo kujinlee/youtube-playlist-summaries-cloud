@@ -503,7 +503,7 @@ EXPECTED_MUTATIONS = {
     # video_artifacts (video_id)` PASSED — and no case arrived with the fix. Removing "idx" from
     # that tuple survived all 117 cases; the drift table now carries an INDEX row, so it does not.
     "scripts/check-live-schema.py": 12,
-    "scripts/check-dashboard-entry.py": 42,
+    "scripts/check-dashboard-entry.py": 43,
     # ⟳ backlog #91: check-plan-code 35 -> 30, and the FIVE did not disappear — they MOVED
     # to scripts/coverage_verdict.py with the clauses they guard. The sum below is unchanged
     # at 359, which is the point: a seam that relocates coverage must not be able to look
@@ -2031,7 +2031,7 @@ def _self_test() -> int:
     # that creates it, with 6 entries. A RISE, and the ordinary kind — new guard, new coverage.
     # The gate it adds exists because five PRs merged unreviewed while every check stayed green;
     # shipping its replacement as manifest debt would have repeated that shape at one remove.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 393)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 394)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
