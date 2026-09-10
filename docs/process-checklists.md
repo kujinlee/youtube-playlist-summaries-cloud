@@ -498,4 +498,4 @@ question. The user's framing: *"this kind of visible marker is important for com
 Three affordances, three moments: the **step banner** (`## ▶ STEP n of N`) for *what is happening
 now*; the **option list** with rationale and trade-offs for *what you must decide*; this table for
 *what was actually verified*. See *Presenting a DECISION to the human* above, and
-`docs/portable-practices.md` §13–§14.
+`docs/portable-practices.md` §19–§20.
