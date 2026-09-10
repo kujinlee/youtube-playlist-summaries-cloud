@@ -6200,3 +6200,100 @@ space**. Appending 6-column rows there would have been caught by `check-docs`, b
 write. The locator now finds the main table by its own header and bounds it at the next `## `
 heading, and the id-collision check scans **both** tables. Second time today that an assertion
 described the population I imagined rather than the one on disk — the first was the escaped pipe.
+
+## 2026-09-09 [needs-you]
+The backlog page had not refreshed since the 4th. You noticed; nothing else had.
+
+It was not a caching problem. The page is rebuilt by a script, and that script had been refusing to
+run since 13:32 on the 4th, because a hand-written list inside it still named three items that had
+just been closed. It refused rather than rebuild, printed its complaint to a terminal nobody was
+watching, and left the old page in place — which looks exactly like a current one. Twenty-one
+changes to the backlog went by in the meantime.
+
+You said refusing to refresh is not appropriate, and that is now how it behaves. A grouping problem
+can no longer stop the page: items the grouping has lost are shown under a "nobody has described
+them yet" heading, items it names that are already closed are dropped, and either way a notice at
+the top of the page says what drifted. The view is always current even when the prose around it is
+not.
+
+You also asked to see items by their tag. Every item now shows its tags, each tag is a button that
+filters to it, and there is a tag control above the list. Asking for "cloud" finds the money, test,
+UX, security, quality and frontend items too. Comprehensibility is 10 open of 26 total.
+
+While doing this I ran a command that discarded four uncommitted edits I had just made to the
+backlog, and had to redo them. Nothing was lost in the end, but it is recorded below because the
+command looked harmless.
+
+**Decide:** The rebuild only happens when a file is edited with the Edit or Write tool — should it also run after Bash edits?
+- A — leave it; the new staleness check means the next Edit/Write anywhere catches up [recommended]
+- B — register the hook on Bash too, so a Bash-only session still refreshes, at the cost of running it after every shell command
+
+**Decide:** Fifteen open items have no plain-English sentence in the grouping — should I write them?
+- A — yes, write all fifteen now; they are the newest items and the page currently shows them bare
+- B — write only the seven high-severity ones, leave the rest bare [recommended]
+- C — leave them; the bare rows are honest and the gap is deliberately visible
+<!--tech-->
+**ROOT CAUSE, dated.** `gen-backlog-page.py` raised `ShapeError: GROUPS does not cover the open set
+— GROUPS names items that are not open: [78, 83, 87]`. #83/#87 closed in PR #223 at **09-04 13:32**;
+the page's last successful write was **09-04 12:38**, 54 minutes earlier. #78 closed in #201.
+
+⛔ **THE GUARD EXISTED AND WORKED — NOTHING CALLED IT.** `--self-test` contains a live case,
+*"GROUPS covers the REAL backlog's open set exactly once"*. Measured by stashing the fix: it exits
+**1** naming exactly `[78, 83, 87]`. `gen-backlog-page.py` appears **0 times** in `ci.yml`. This is
+the class `check-ratchet-contract.py` enforces — *every guard has a caller or a written NO-CALLER
+reason* — but its population is `check-*` scripts, so a generator carrying a live guard sits outside
+it. The page did not lack a check. It lacked a caller.
+
+**A SECOND DEFECT WAS HIDING BEHIND THE FIRST.** With the coverage refusal cleared, the build died
+with `KeyError: 'done'`. Closed-ness is written in TWO cells — the Item marker (`✅ (was 🟡)`) and
+the Status cell (which `closed` reads, deliberately). Rows **81, 82, 98, 99** carried the marker
+while their Status cell did not, so each was *open with severity done*, and `order[r["sev"]]` has no
+such key. All four are genuinely closed (#199-era fold, #232, #277, #234) — the prose simply never
+caught up. Their Status cells now carry the ✅, and the sort uses `.get(..., len(order))` so a future
+contradiction sorts last instead of taking the page down.
+
+**THE REFUSALS ARE GONE, replaced by `sanitise_groups` + notes.**
+- a group naming a closed item → that item is dropped from the group, reported;
+- an item in two groups → kept in the first, reported;
+- `contradiction_errors` → reported, not raised;
+- `depends_errors` → **still runs, every check intact**; only its consequence changed. ⚠ My first
+  version replaced the call with a hand-rolled open-ness filter, which silently discarded its
+  cycle, unknown-relation and unknown-root checks — a predicate that nothing calls, the exact
+  pathology this file warns about. Caught on re-read, restored as a warning.
+- `coverage_errors` is **deleted** — superseded; its four cases moved to `sanitise_groups` rather
+  than being dropped, so the record shows the contract changed on purpose.
+
+**FALSIFIER, END TO END:** re-introduced the exact 09-04 defect (a closed id put back into GROUPS).
+Result `rc=0`, page written, `⚠ GROUPS still names 1 item(s) that are no longer open: [91] — dropped
+from their group for this build` on stdout **and** rendered on the page. Reverted, clean rebuild
+`rc=0`.
+
+**TAGS.** `bundle_tags` splits the Bundle cell on `/` and assigns the family *and* the leaf, so
+`(cloud/money)` carries `cloud` and `cloud / money`. `bundle_options` derives `(tag, open, total)`
+from the rows — never a hand-kept list, which is the mistake that caused all of this. Cards carry
+`data-tags`, show the leaf as a clickable chip, and the `<select>` is populated from the same
+function. ⚠ The label reads `10 open · 26 total` rather than `26`: the list defaults to open items,
+so a bare total sat above 10 visible rows — a count disagreeing with what the reader then sees.
+
+**DRIVEN IN CHROME:** default 69 visible; `comprehensibility` → 10, all carrying the tag; `cloud` →
+21 spanning 6 leaf tags; clear → 69; clicking the `concurrency safety` chip → 5. The filter bar was
+already `position:sticky` and was verified to pin at `top:0` from 7,758px down, so the control is
+reachable from anywhere in the list. ⚠ Screenshots of this tab went blank after programmatic
+scrolling while the DOM reported correct geometry — the image was the artifact, not the page; the
+mirror of the `document.hidden` trap in `explainer-delivery.md`.
+
+**THE HOOK'S TRIGGER WAS TOOL-SHAPED FOR A CONTENT-SHAPED QUESTION.** It fired only when
+`tool_input.file_path` was `docs/backlog.md` — and this whole session edited that file through Bash
+heredocs, which this project's auto-mode prefers, so `file_path` was empty every time and the hook
+**never ran once**. It now also regenerates when the page is simply older than the source. Both
+directions measured: stale + unrelated path → regenerates; not stale → silent; direct path → still
+regenerates.
+
+⚠ **`git checkout <file>` TO UNDO A `touch` DISCARDED FOUR UNCOMMITTED EDITS.** I had `touch`ed
+`docs/backlog.md` to test the staleness arm, then ran `git checkout docs/backlog.md` to tidy up —
+forgetting the same file held the four Status-cell reconciliations. `git status` showed only two
+modified files, which is how I noticed. Re-applied from the same patch script and re-verified.
+**`touch -r` restores an mtime; `git checkout` restores a file.**
+
+**MEASURED:** 13 gates rc=0 · `gen-backlog-page --self-test` **86/86** (was 75) · `page_markup`
+74/74 · `gen-dashboard` 314/314 · page builds `109 rows, 69 open`.

@@ -35,11 +35,18 @@ what the item IS rather than by how loud its severity marker is. Severity orderi
 the most important fact in the list — that six of the high-severity items are ONE problem wearing
 six numbers.
 
-Its COMPLETENESS, though, is mechanical. `coverage_errors` refuses to write the page unless the
-groups cover the derived open set exactly once. So a line here can be badly worded, but an open item
-can never go silently missing — which is the failure that matters when the page is answering "what
-is left?". When an item is filed or closed, this script FAILS until `GROUPS` is updated. That is the
-intended cost: a loud stop beats a quiet omission.
+Its COMPLETENESS, though, is mechanical. `sanitise_groups` + `undescribed` guarantee that every
+open item reaches the page exactly once — grouped where a sentence exists, and under "Filed, but
+nobody has described them yet" where none does. So a line here can be badly worded, but an open
+item can never go silently missing, which is the failure that matters when the page is answering
+"what is left?".
+
+⛔ THIS NO LONGER REFUSES, AND THAT REVERSES THE ORIGINAL TRADE (user's decision, 2026-09-09:
+*"refusing refresh is not appropriate"*). The old contract said "a loud stop beats a quiet
+omission". MEASURED: the stop was not loud. GROUPS named three items that closed on 2026-09-01/04,
+the build raised, and — because NOTHING CALLS THIS GENERATOR — the page simply stayed at its
+2026-09-04 12:38 state through 21 commits, looking exactly like a current one. A stale grouping now
+costs a ⚠ line and an on-page notice; the view is always rebuilt.
 
 A NOTE ON THE OPEN/CLOSED RULE
 ------------------------------
@@ -178,10 +185,6 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
         (5, "The colour palette is copy-pasted between two renderers; extract it once."),
         (6, "The gold “lead” line is over-emphasised and competes with the section heading."),
         (7, "Bold bullet labels usually just repeat the first words of the sentence. Drop them."),
-        (81, "Entries you have already answered still say “waiting on you” in their text. The "
-             "machinery to fix that was built and works — it has simply never been used, because "
-             "the asks were always written as ordinary sentences instead of in the form the page "
-             "understands. Costs nothing to start doing correctly."),
      ]),
     ("The reusable toolkit — the second deliverable",
      "Not about the product: about the development harness being reusable on a new project.", [
@@ -240,18 +243,6 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
         (73, "A superseded piece of that same inventory is still in the file, and the only thing "
              "that still runs it is its own test — so part of its reported coverage is of "
              "machinery nothing uses. Waiting on the decision above."),
-        (78, "The check that makes sure work gets written up cannot see a branch that ONLY writes "
-             "one up — the most common way an entry is added. One question is being answered by "
-             "one test: excusing a branch from owing an entry silently excuses the entry it added "
-             "from being well-formed. It also runs only when a pull request opens, by which time "
-             "you have already read the page."),
-        (82, "The same check reads the SHAPE of an entry's header but never asks whether the "
-             "thing it points at exists. An entry can say “this settles the question from "
-             "Tuesday” while naming a Tuesday that never happened, and it passes — the page is "
-             "left to say “could not parse this entry” after you have already opened it."),
-        (83, "A settled item tells you it was decided but never what was decided, and the card "
-             "carrying it still wears the styling of something live. Two small things, one "
-             "effect: you cannot tell from the page which questions are actually closed."),
         (85, "Three separate pieces of that same machinery each work out for themselves what a "
              "code block is, and only one of them is the shared version. Nothing is broken "
              "today and the part the page uses is the correct one — but these copies have "
@@ -261,10 +252,6 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
              "clean up” on a repository full of dead branches — and reads as success. The "
              "durable copy now lives in this repository; what is left is confirming whether it "
              "actually takes precedence over the plugin's own version."),
-        (87, "Sending a deliberately malformed web address to the local page server makes it hang up "
-             "instead of answering. Nothing a person would ever type, nothing reachable from another "
-             "machine, and it fails in the safe direction — but a connection that dies without saying "
-             "anything is the kind of thing that costs someone an afternoon one day."),
      ]),
 ]
 
@@ -431,7 +418,7 @@ DEPENDS: dict[int, tuple[str, str, str]] = {
 
 
 def depends_errors(depends: dict, roots: dict, open_nums: set[int]) -> list[str]:
-    """PURE. Same posture as `coverage_errors`: the prose may be wrong, the graph may not be
+    """PURE. Same posture as `sanitise_groups`: the prose may be wrong, the graph may not be
     incoherent. A dependency that says DO NOT START must not be pointing at nothing."""
     errors = []
     for item, (rel, root, _note) in sorted(depends.items()):
@@ -751,7 +738,7 @@ def attach_history(rows: list[dict], working_text: str) -> None:
 def undescribed(groups: list, open_nums: set[int]) -> list[int]:
     """Open items with no GROUPS sentence — RENDERED, not refused.
 
-    ⟳ 2026-09-02. This used to be folded into `coverage_errors` and it BLOCKED THE
+    ⟳ 2026-09-02. This used to be folded into the old `coverage_errors` and it BLOCKED THE
     BUILD. Measured cost, and the user is the one who found it: four items (#82-#85)
     were filed over two days, the generator refused every time, and the page silently
     stayed a day behind while looking current. The refusal was correct in intent —
@@ -762,7 +749,7 @@ def undescribed(groups: list, open_nums: set[int]) -> list[int]:
     ⛔ WHY THIS HALF AND NOT THE OTHERS. Missing means the reader LOSES information;
     extra and duplicate mean the page SHOWS SOMETHING UNTRUE (a description attached
     to an item that is not open, or one item claimed by two groups). Only the first is
-    safe to render through, so only the first moved. `coverage_errors` keeps the rest
+    safe to render through, so only the first moved. `sanitise_groups` now absorbs the rest
     and still refuses.
 
     The pressure to write the sentence does not disappear — it moves onto the page,
@@ -772,22 +759,108 @@ def undescribed(groups: list, open_nums: set[int]) -> list[int]:
     return sorted(open_nums - grouped)
 
 
-def coverage_errors(groups: list, open_nums: set[int]) -> list[str]:
-    """PURE. The grouping is prose; this is the part that cannot be wrong silently.
+def bundle_tags(raw: str) -> list[str]:
+    """PURE. The Bundle cell as the TAGS it assigns, broadest first.
 
-    ⚠ NO LONGER REPORTS MISSING ITEMS — see `undescribed`. What remains here is the
-    set of shapes that would make the page ASSERT something false, which is why these
-    still refuse rather than render.
+    The cell holds one hand-written value — `(cloud/money)`, `(comprehensibility)`, `A`, `—`.
+    A slash is a family, so `(cloud/money)` assigns BOTH `cloud` and `cloud/money`: asking for
+    `cloud` must find the money, test, UX, security, quality and frontend items too, which was
+    the whole complaint that prompted this ("I could not see backlogs in bundle such as
+    Comprehensibility"). An untagged row gets `untagged` rather than nothing, because a filter
+    option with no name cannot be chosen, and a row with no tag must still be reachable.
     """
-    grouped = [n for _, _, items in groups for n, _ in items]
-    errors = []
-    extra = sorted(n for n in grouped if n not in open_nums)
-    dupes = sorted({n for n in grouped if grouped.count(n) > 1})
-    if extra:
-        errors.append(f"GROUPS names items that are not open: {extra}")
-    if dupes:
-        errors.append(f"items appearing in more than one group: {dupes}")
-    return errors
+    s = (raw or "").strip().strip("()").strip()
+    if not s or s in {"—", "-", "Item"}:
+        return ["untagged"]
+    parts = [" ".join(x.lower().split()) for x in s.split("/")]
+    parts = [x for x in parts if x]
+    if not parts:
+        return ["untagged"]
+    return [" / ".join(parts[:k + 1]) for k in range(len(parts))]
+
+
+def bundle_options(rows: list[dict]) -> list[tuple[str, int, int]]:
+    """PURE. `(tag, open_count, total_count)`, commonest first then alphabetical.
+
+    DERIVED FROM THE ROWS, never a hand-kept list — the mistake `GROUPS` makes, and the one that
+    froze this page for five days. A tag that stops being used disappears from the control by
+    itself; a new one appears the first time it is written in the table.
+
+    ⚠ BOTH COUNTS, and that is not padding. The list defaults to showing OPEN items, so a label
+    reading `comprehensibility (26)` sits above 10 visible rows — measured 2026-09-09, and a count
+    that disagrees with what the reader then sees is the same class of quiet wrongness this page
+    exists to remove. Showing `10 open · 26 total` is true under either filter.
+    """
+    opens: dict[str, int] = {}
+    totals: dict[str, int] = {}
+    for r in rows:
+        for tag in bundle_tags(r.get("bundle", "")):
+            totals[tag] = totals.get(tag, 0) + 1
+            if not r.get("closed"):
+                opens[tag] = opens.get(tag, 0) + 1
+    return sorted(((k, opens.get(k, 0), v) for k, v in totals.items()),
+                  key=lambda kv: (-kv[1], -kv[2], kv[0]))
+
+
+def sanitise_groups(groups: list, open_nums: set[int]) -> tuple[list, list[str]]:
+    """PURE. GROUPS as it can safely be RENDERED, plus what had to be corrected to get there.
+
+    ⛔ THIS REPLACES A REFUSAL, BY THE USER'S DECISION 2026-09-09: *"refusing refresh is not
+    appropriate"*. The old behaviour raised `ShapeError` when GROUPS named an item that is no
+    longer open, or named one twice. Both are real drift and both are worth SAYING — but neither
+    makes the page assert anything false, because the remedy in each case is to show LESS:
+
+      * an item that is no longer open is dropped from its group (it still renders in the
+        closed list, from the row itself);
+      * an item claimed by two groups is kept in the first and dropped from the second.
+
+    The page always builds. A stale grouping now costs a warning, not the whole view — which is
+    the trade the five-day freeze settled: the page frozen at 2026-09-04 told its reader nothing,
+    while a page with one group slightly out of date would have told them almost everything.
+    """
+    notes, seen, out = [], set(), []
+    dropped_closed: list[int] = []
+    dropped_dupe: list[int] = []
+    for title, framing, items in groups:
+        kept = []
+        for n, desc in items:
+            if n not in open_nums:
+                dropped_closed.append(n); continue
+            if n in seen:
+                dropped_dupe.append(n); continue
+            seen.add(n); kept.append((n, desc))
+        out.append((title, framing, kept))
+    if dropped_closed:
+        notes.append(f"GROUPS still names {len(dropped_closed)} item(s) that are no longer open: "
+                     f"{sorted(set(dropped_closed))} — dropped from their group for this build")
+    if dropped_dupe:
+        notes.append(f"item(s) claimed by more than one group: {sorted(set(dropped_dupe))} — kept "
+                     f"in the first group only")
+    return out, notes
+
+
+def contradiction_errors(rows: list[dict]) -> list[str]:
+    """PURE. Rows whose two statements of closed-ness DISAGREE.
+
+    ⛔ THIS EXISTS BECAUSE THE DISAGREEMENT USED TO BE A `KeyError`. Closed-ness is written
+    in TWO cells — the Item cell's leading ✅ marker (which `SEVERITY` maps to "done") and the
+    Status cell (which `closed` reads, deliberately, see `parse`). When a row carries the marker
+    but the Status cell does not, the row is OPEN with severity "done", and the sort's
+    `order[r["sev"]]` has no such key. MEASURED 2026-09-09 on rows 81, 82, 98 and 99: a bare
+    `KeyError: 'done'` traceback, and — because nothing CALLS this generator — a page frozen
+    since 2026-09-04 with no reader able to tell.
+
+    A crash and a refusal are not the same thing. A refusal names the rows and says what to do;
+    a traceback says a dict lookup failed. This turns the one into the other. It does NOT pick
+    a winner between the two cells: which one is authoritative is a design question, and a
+    generator is the wrong place to settle it.
+    """
+    bad = sorted(r["num"] for r in rows if not r["closed"] and r["sev"] == "done")
+    if not bad:
+        return []
+    return [f"rows carry a ✅ marker while their Status cell does not, so they are open and done "
+            f"at once: {bad} — add the ✅ to the Status cell (the cell `closed` reads), or drop "
+            f"the marker"]
 
 
 # ─── rendering ──────────────────────────────────────────────────────────────────────────────────
@@ -798,9 +871,18 @@ def card(r: dict) -> str:
             'before trusting any summary of this item">&#9888; see status</span>') if r["warned"] else ""
     meta = "".join(
         f'<span class="chip"><b>{lbl}</b>{md(val)}</span>'
-        for lbl, val in (("was ", r["was"]), ("touches ", r["touches"]),
-                         ("size ", r["size"]), ("bundle ", r["bundle"]))
+        for lbl, val in (("was ", r["was"]), ("touches ", r["touches"]), ("size ", r["size"]))
         if val and val not in {"—", "-"})
+
+    # THE TAGS ARE SHOWN, not merely filterable — the user asked for both, and a filter over a
+    # value the card never displays is a control with no referent. Only the LEAF is drawn: an item
+    # tagged `cloud / money` shows one chip, while `data-tags` still carries `cloud` so the family
+    # filter finds it. Drawing both would put "cloud" on the card twice and say nothing extra.
+    tags = bundle_tags(r["bundle"])
+    tagchips = "".join(
+        f'<button class="tag" data-tag="{html.escape(tg)}" '
+        f'title="show every item tagged {html.escape(tg)}">{html.escape(tg)}</button>'
+        for tg in ([tags[-1]] if tags != ["untagged"] else []))
 
     h = r.get("hist")
     # ⚠ VISIBLE, not silent. An item whose history could not be reconstructed — renumbered, or the
@@ -830,11 +912,11 @@ def card(r: dict) -> str:
                 f'<div class="diff">{word_diff(h["prev"], h["raw"])}</div></details>')
 
     return f"""
-<article class="item" data-sev="{sev}" data-state="{'closed' if r['closed'] else 'open'}"{attrs} id="i{r['num']}">
+<article class="item" data-sev="{sev}" data-state="{'closed' if r['closed'] else 'open'}" data-tags="{html.escape('|'.join(tags))}"{attrs} id="i{r['num']}">
   <div class="num"><a href="#i{r['num']}">#{r['num']}</a></div>
   <div class="body">
     <div class="titleline"><span class="badge" hidden></span><h3>{md(r['title'])}</h3>{flag}</div>
-    <div class="meta">{meta}{stamp}</div>
+    <div class="meta">{tagchips}{meta}{stamp}</div>
     {dep}
     <details><summary>the full entry, as filed</summary>
       <div class="prose">{md(r['body'])}</div>
@@ -865,12 +947,26 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str,
     by_num = {r["num"]: r for r in rows}
 
     open_nums = {r["num"] for r in open_rows}
-    errors = coverage_errors(GROUPS, open_nums)
-    if errors:
-        raise ShapeError("GROUPS does not cover the open set — " + "; ".join(errors))
-    errors = depends_errors(DEPENDS, ROOTS, open_nums)
-    if errors:
-        raise ShapeError("DEPENDS is incoherent — " + "; ".join(errors))
+
+    # ⛔ NOTHING BELOW REFUSES ANY MORE — the user's decision, 2026-09-09: *"refusing refresh is
+    # not appropriate"*. Every one of these was a hand-kept list disagreeing with the table, and
+    # every one of them froze the whole page rather than the part it was about. MEASURED: GROUPS
+    # named three items that had closed on 2026-09-01/04, so the page stood at its 2026-09-04
+    # 12:38 state through 21 commits, and — because nothing CALLS this generator — no reader could
+    # tell. A view that is one group out of date beats a view that is five days out of date.
+    #
+    # Each drift is DROPPED from the render and REPORTED as a ⚠ line, which `_regenerate` already
+    # forwards to the Refresh button as "rebuilt WITH A WARNING". Showing less is always safe here;
+    # showing something false is not, and none of these can make the page assert anything false.
+    drift_notes = contradiction_errors(rows)
+    groups_ok, group_notes = sanitise_groups(GROUPS, open_nums)
+    drift_notes += group_notes
+    # ⚠ depends_errors STILL RUNS — every one of its checks (unknown relation, unknown root,
+    # self-edge, cycle, closed target) is preserved. Only its CONSEQUENCE changed, from raising to
+    # reporting. Dropping the call and keeping a hand-rolled open-ness filter was the first version
+    # of this change and it silently discarded the cycle and unknown-relation checks: a predicate
+    # that nothing calls, which is the exact pathology this file warns about two hundred lines down.
+    drift_notes += [f"DEPENDS: {e}" for e in depends_errors(DEPENDS, ROOTS, open_nums)]
 
     # ⟳ 2026-09-02. Items with no GROUPS sentence used to REFUSE the build. They now get
     # a group of their own, at the END, and the run reports a ⚠ line — which the serve
@@ -881,7 +977,7 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str,
     # because it IS, and the previous design's whole merit — pressure to write the
     # sentence — only survives if the gap is visible rather than comfortable.
     missing = undescribed(GROUPS, open_nums)
-    groups_for_page = list(GROUPS)
+    groups_for_page = list(groups_ok)
     if missing:
         groups_for_page.append((
             "Filed, but nobody has described them yet",
@@ -893,7 +989,10 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str,
         ))
 
     order = {"crit": 0, "high": 1, "med": 2, "low": 3, "none": 4}
-    open_rows.sort(key=lambda r: (order[r["sev"]], r["num"]))
+    # ⚠ `.get`, not `[]`. A row carrying a ✅ marker while its Status cell does not is OPEN with
+    # severity "done" — a real contradiction, reported in `drift_notes` — but it must not take the
+    # page down with a `KeyError`. It sorts last. MEASURED 2026-09-09 on rows 81, 82, 98, 99.
+    open_rows.sort(key=lambda r: (order.get(r["sev"], len(order)), r["num"]))
     closed_rows.sort(key=lambda r: r["num"])
 
     gate_of, groups_html = {}, ""
@@ -981,6 +1080,22 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str,
     # but at full length it pushed the actual backlog below the fold on every visit. A <details>
     # keeps both: the headline and the count are always visible, the evidence is one click away.
     # The count is the part that decides whether to look, so it must never be behind the click.
+    tagopts = "".join(
+        f'<option value="{html.escape(k)}">{html.escape(k)} — {op} open &middot; {tot} total</option>'
+        for k, op, tot in bundle_options(rows))
+
+    # ⚠ THE DRIFT IS ON THE PAGE, not only on a terminal nobody is watching. Every note here used
+    # to be a refusal, and the refusal's whole audience was a stdout stream — which is precisely
+    # how a five-day-old page kept looking current.
+    drift = ""
+    if drift_notes:
+        drift = ('<div class="drift"><b>&#9888; this view is built from a grouping that has '
+                 'drifted</b><ul>'
+                 + "".join(f"<li>{html.escape(n)}</li>" for n in drift_notes)
+                 + '</ul><p>The items themselves are current — every row on this page was read '
+                   'from <code>docs/backlog.md</code> in this run. What is out of date is the '
+                   'hand-written grouping in <code>scripts/gen-backlog-page.py</code>.</p></div>')
+
     callout = (f'<details class="callout"><summary><span class="warncount">{len(flagged)}</span>'
                f'rows carry a warning in their own Status cell'
                f'<span class="hint">read these before trusting any summary of them</span></summary>'
@@ -1226,6 +1341,18 @@ button.f[disabled]{{opacity:.4;cursor:default}}
 .chip b{{font-weight:600;text-transform:uppercase;letter-spacing:.06em;font-size:.62rem;
          color:var(--ink-faint)}}
 .chip code{{font-family:var(--mono);font-size:.88em}}
+/* A tag is a CONTROL, not decoration — it filters on click, so it must look pressable and keep a
+   visible focus ring. Sized like .chip on purpose: same row, same weight, one extra affordance. */
+.tag{{font-size:.72rem;font-family:inherit;color:var(--ink-2);background:var(--panel);
+  border:1px solid var(--line-2);border-radius:2px;padding:.1rem .4rem;margin-right:.3rem;
+  cursor:pointer;letter-spacing:.02em}}
+.tag:hover{{color:var(--ink);border-color:var(--ink-3)}}
+.tag:focus-visible{{outline:2px solid var(--measured);outline-offset:1px}}
+.drift{{border:1px solid var(--pending);border-left-width:3px;border-radius:2px;
+  padding:.6rem .8rem;margin:.8rem 0;font-size:.86rem;background:var(--pending-bg)}}
+.drift b{{display:block;margin-bottom:.3rem}}
+.drift ul{{margin:.3rem 0 .4rem 1.1rem}}
+.drift p{{margin:.3rem 0 0;color:var(--ink-2)}}
 details{{margin-top:.4rem}}
 summary{{font-size:.76rem;color:var(--ink-3);cursor:pointer;list-style:none;display:inline-block;
          border-bottom:1px dashed var(--line)}}
@@ -1294,9 +1421,11 @@ truth, which is why it is reproduced verbatim inside every card.</p>
 
 <h2>What these actually are</h2>
 <p class="dek">Grouped by what the item <em>is</em>, not by how loud its marker is. This is the one
-part of the page written by hand — but it refuses to build if the groups do not cover every open
-item exactly once, so an item can be described badly here and still never go missing. Each number
-opens its full entry below.</p>
+part of the page written by hand, and the only part that can go out of date — every item below was
+read from the file in this run. An open item can never go missing from it: anything the grouping
+does not name is listed under <em>Filed, but nobody has described them yet</em>, and anything the
+grouping names that is no longer open is dropped with a note at the top. Use the <b>tag</b> control
+to see one bundle at a time; the tags on each card are buttons. Each number opens its full entry.</p>
 
 <h3 class="mapo" id="order">The order to start in</h3>
 <p class="framing">Every dependency recorded, drawn from the same data as the markers beside each
@@ -1336,7 +1465,14 @@ could not be expressed by pointing at an item number.</p>
   <button class="f" data-k="sev" data-v="med" aria-pressed="false">medium</button>
   <button class="f" data-k="sev" data-v="low" aria-pressed="false">low</button>
   <button class="f" data-k="sev" data-v="all" aria-pressed="true">any</button>
+  <span style="flex:1"></span>
+  <b><label for="tagsel">tag</label></b>
+  <select id="tagsel" aria-label="Filter by tag">
+    <option value="all">any tag — {len(open_rows)} open &middot; {len(rows)} total</option>{tagopts}
+  </select>
+  <button class="f" id="tagclear" hidden>clear tag</button>
 </div>
+{drift}
 
 <div id="list">
 {''.join(card(r) for r in open_rows)}
@@ -1357,7 +1493,7 @@ high {by_sev['high']}, med {by_sev['med']}, low {by_sev['low']}, unmarked {by_se
 
 <script>
 (function(){{
-  var f = {{state:'open', sev:'all'}};
+  var f = {{state:'open', sev:'all', tag:'all'}};
   var items = [].slice.call(document.querySelectorAll('.item'));
   function apply(){{
     var n = 0;
@@ -1368,7 +1504,11 @@ high {by_sev['high']}, med {by_sev['med']}, low {by_sev['low']}, unmarked {by_se
         || (f.sev === 'high' && (sv === 'high' || sv === 'crit'))
         || (f.sev === 'med' && sv === 'med')
         || (f.sev === 'low' && (sv === 'low' || sv === 'none'));
-      var show = okS && okV;
+      // TAGS ARE A LIST, not a value: an item tagged `cloud / money` carries both `cloud` and
+      // `cloud / money`, so asking for the family finds the members.
+      var tg = (el.dataset.tags || '').split('|');
+      var okT = f.tag === 'all' || tg.indexOf(f.tag) !== -1;
+      var show = okS && okV && okT;
       el.hidden = !show;
       if (show) n++;
     }});
@@ -1384,6 +1524,26 @@ high {by_sev['high']}, med {by_sev['med']}, low {by_sev['low']}, unmarked {by_se
       apply();
     }});
   }});
+  var tagsel = document.getElementById('tagsel');
+  var tagclear = document.getElementById('tagclear');
+  function setTag(v){{
+    f.tag = v;
+    if (tagsel.value !== v) tagsel.value = v;
+    tagclear.hidden = (v === 'all');
+    apply();
+  }}
+  tagsel.addEventListener('change', function(){{ setTag(tagsel.value); }});
+  tagclear.addEventListener('click', function(){{ setTag('all'); }});
+  // Clicking a tag ON a card filters to it — the chip is the control, so the reader never has to
+  // find the same word again in a dropdown of 27.
+  document.addEventListener('click', function(ev){{
+    var b = ev.target.closest ? ev.target.closest('button.tag') : null;
+    if (!b) return;
+    ev.preventDefault();
+    setTag(b.dataset.tag);
+    window.scrollTo({{top: 0, behavior: 'smooth'}});
+  }});
+
   // A deep link (#i41) must win over the default filter, or the row it points at is hidden.
   if (location.hash && /^#i\\d+$/.test(location.hash)) {{
     var t = document.querySelector(location.hash);
@@ -1712,21 +1872,56 @@ def self_test() -> int:
     case("plain strips emphasis so a cut cannot land mid-marker",
          lambda: plain("**Loud** and `quiet`") == "Loud and quiet")
 
-    case("coverage passes when the groups match exactly",
-         lambda: coverage_errors([("g", "f", [(1, "x"), (2, "y")])], {1, 2}) == [])
-    # ⟳ 2026-09-02, REWRITTEN not deleted. This used to assert that an ungrouped open item
-    # made `coverage_errors` FAIL, which is the behaviour that kept the reader's page a day
-    # behind. The item is still detected — by `undescribed`, asserted below — but detection no
-    # longer blocks the build. Keeping the case and inverting it records that the change was
-    # deliberate; deleting it would have left no trace that the old contract ever existed.
-    case("coverage no longer refuses an ungrouped open item — `undescribed` renders it",
-         lambda: coverage_errors([("g", "f", [(1, "x")])], {1, 2}) == []
+    # ⟳ 2026-09-09. `coverage_errors` is GONE, superseded by `sanitise_groups`, which reports the
+    # same two drifts and then renders anyway. These cases moved with the behaviour rather than
+    # being deleted, so the record shows the contract was changed on purpose, not lost.
+    case("a matching grouping needs no correction",
+         lambda: sanitise_groups([("g", "f", [(1, "x"), (2, "y")])], {1, 2}) == (
+             [("g", "f", [(1, "x"), (2, "y")])], []))
+    case("an ungrouped open item is not a correction — `undescribed` renders it",
+         lambda: sanitise_groups([("g", "f", [(1, "x")])], {1, 2})[1] == []
          and undescribed([("g", "f", [(1, "x")])], {1, 2}) == [2])
-    case("coverage FAILS when a group names a closed item",
-         lambda: "not open" in " ".join(coverage_errors([("g", "f", [(1, "x"), (7, "z")])], {1})))
-    case("coverage FAILS on a duplicate across groups",
-         lambda: "more than one" in " ".join(
-             coverage_errors([("a", "f", [(1, "x")]), ("b", "f", [(1, "x")])], {1})))
+    case("a group naming a CLOSED item drops it and SAYS SO, instead of refusing",
+         lambda: sanitise_groups([("g", "f", [(1, "x"), (7, "z")])], {1}) == (
+             [("g", "f", [(1, "x")])], ["GROUPS still names 1 item(s) that are no longer open: "
+                                        "[7] — dropped from their group for this build"]))
+    case("a duplicate across groups is kept in the FIRST and reported",
+         lambda: sanitise_groups([("a", "f", [(1, "x")]), ("b", "f", [(1, "x")])], {1})[0]
+         == [("a", "f", [(1, "x")]), ("b", "f", [])]
+         and "more than one group" in " ".join(
+             sanitise_groups([("a", "f", [(1, "x")]), ("b", "f", [(1, "x")])], {1})[1]))
+    # ⛔ THE FALSIFIER FOR THE WHOLE CHANGE: the 2026-09-04 defect must no longer stop a build.
+    case("the drift that froze the page for five days now only WARNS",
+         lambda: sanitise_groups([("g", "f", [(78, "x"), (83, "y"), (87, "z"), (1, "live")])],
+                                 {1})[0] == [("g", "f", [(1, "live")])])
+
+    # ─ tags ─────────────────────────────────────────────────────────────────
+    case("a slash tag assigns the family AND the leaf",
+         lambda: bundle_tags("(cloud/money)") == ["cloud", "cloud / money"])
+    case("a plain tag assigns itself only",
+         lambda: bundle_tags("(comprehensibility)") == ["comprehensibility"])
+    case("an em dash and an empty cell are BOTH `untagged`, never nameless",
+         lambda: bundle_tags("—") == ["untagged"] and bundle_tags("") == ["untagged"])
+    case("tag options are derived from the rows, commonest first",
+         lambda: bundle_options([{"bundle": "(cloud/money)"}, {"bundle": "(cloud/test)"},
+                                 {"bundle": "(tooling)"}])[0] == ("cloud", 2, 2))
+    case("an item counts once per tag it carries, so the family total includes the leaves",
+         lambda: {k: (o, tt) for k, o, tt in bundle_options([{"bundle": "(cloud/money)"}])}
+         == {"cloud": (1, 1), "cloud / money": (1, 1)})
+    # ⚠ the label must not disagree with the default view: a CLOSED row counts in `total`, never
+    # in `open`. This is the 2026-09-09 "(26)" over 10 visible rows, pinned.
+    case("a closed row counts toward total but not toward open",
+         lambda: bundle_options([{"bundle": "(x)", "closed": True},
+                                 {"bundle": "(x)", "closed": False}]) == [("x", 1, 2)])
+
+    # ⟳ 2026-09-09. These pin a refusal that USED TO BE A `KeyError` — see `contradiction_errors`.
+    _row = lambda n, sev, closed: dict(num=n, sev=sev, closed=closed)
+    case("a ✅ marker with no ✅ in Status REFUSES, naming the rows",
+         lambda: "81" in " ".join(contradiction_errors([_row(81, "done", False)])))
+    case("...and a consistent set does not",
+         lambda: contradiction_errors([_row(1, "high", False), _row(2, "done", True)]) == [])
+    case("a CLOSED row without the marker is NOT a contradiction (the near-miss that would over-fire)",
+         lambda: contradiction_errors([_row(3, "med", True)]) == [])
 
     case("waiting_on reads the gate out of the Size cell",
          lambda: waiting_on("M + design")[0] == "design"
@@ -1936,9 +2131,21 @@ def self_test() -> int:
     # ⭐ The one case that measures the SHIPPED grouping rather than a fixture. If an item is filed
     # or closed and GROUPS is not updated, this fails here — before anyone opens the page.
     real = parse(BACKLOG.read_text().splitlines())
-    case("GROUPS covers the REAL backlog's open set exactly once",
-         lambda: coverage_errors(GROUPS, {r["num"] for r in real if not r["closed"]}) == [])
+    # ⭐ The invariant that must hold WHATEVER the grouping has drifted to: after sanitisation,
+    # every open item in the REAL backlog reaches the page exactly once — grouped, or under the
+    # "nobody has described them yet" bucket. Asserting GROUPS is pristine would re-create the
+    # coupling that froze the page: closing a row would fail the suite.
+    _open_real = {r["num"] for r in real if not r["closed"]}
+    _san, _ = sanitise_groups(GROUPS, _open_real)
+    _placed = [n for _, _, its in _san for n, _ in its]
+    case("every open item reaches the page exactly once, however GROUPS has drifted",
+         lambda: sorted(_placed + undescribed(GROUPS, _open_real)) == sorted(_open_real)
+         and len(_placed) == len(set(_placed)))
     case("the real file parses at all (fail-closed on a restructure)", lambda: len(real) > 20)
+    # ⭐ The live counterpart: the REAL backlog must not state closed-ness two ways at once.
+    # This is what a bare KeyError looked like on 2026-09-09 (rows 81, 82, 98, 99).
+    case("the REAL backlog does not contradict itself about what is closed",
+         lambda: contradiction_errors(real) == [])
 
     failed = 0
     for name, fn in cases:
@@ -2035,6 +2242,13 @@ def main() -> int:
     # warning qualifies it rather than replacing it. `explainer-serve._regenerate`
     # collects lines starting with ⚠ into the JSON `warning`, which the Refresh button
     # renders as "rebuilt WITH A WARNING: …" — the channel already exists.
+    # ⚠ RECOMPUTED, exactly as `undescribed` below already is — these are pure functions over the
+    # same rows, so a second call cannot disagree with the one `build` made. The ⚠ prefix is the
+    # existing channel: `_regenerate` collects those lines into the Refresh button's warning.
+    _open = {r["num"] for r in rows if not r["closed"]}
+    for _note in contradiction_errors(rows) + sanitise_groups(GROUPS, _open)[1]:
+        print(f"⚠  {_note}")
+
     still = undescribed(GROUPS, {r["num"] for r in rows if not r["closed"]})
     if still:
         print(f"⚠  {len(still)} open item(s) have no description in GROUPS: {still}")
