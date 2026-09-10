@@ -1,0 +1,57 @@
+[
+  {
+    "name": "the report gate narrows below the read gate (backlog #110's own defect)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "            if not header:\n                continue",
+        "            if not header or rows:\n                continue"
+      ]
+    ],
+    "expect": "wherever a plain row would be READ, a decorated one is REPORTED"
+  },
+  {
+    "name": "the unread list is emptied after parse (feature dead, proxies satisfied)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        attach_history(rows, text)",
+        "        attach_history(rows, text)\n        unread.clear()"
+      ]
+    ],
+    "expect": "main RUN end to end reports the unread row on the terminal"
+  },
+  {
+    "name": "only DEPENDS notes are qualified while a row is unread",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "            if (\"no longer open\" in n or \"is not an open item\" in n) else n",
+        "            if (\"is not an open item\" in n) else n"
+      ]
+    ],
+    "expect": "a GROUPS note is qualified while something is unread"
+  },
+  {
+    "name": "drift notes lose the ⚠ prefix the Refresh button collects",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        print(f\"⚠  {note}\")",
+        "        print(f\"   {note}\")"
+      ]
+    ],
+    "expect": "every drift note is marked ⚠, which is what the Refresh button collects"
+  },
+  {
+    "name": "a delimiter cell may trail anything (half-typed row swallowed)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "DELIMITER_CELL = re.compile(r\"^:?-+:?$\")",
+        "DELIMITER_CELL = re.compile(r\"^:?-+:?.*$\")"
+      ]
+    ],
+    "expect": "a cell that starts like a delimiter and continues is not one"
+  }
+]

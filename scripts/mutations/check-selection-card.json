@@ -1,0 +1,145 @@
+[
+  {
+    "name": "the letter prefix is not required",
+    "file": "scripts/check-selection-card.py",
+    "edits": [
+      [
+        "LETTER = re.compile(r\"^([A-Z])\\s*[—–-]\\s+\\S\")",
+        "LETTER = re.compile(r\"^([A-Za-z]?)\")"
+      ]
+    ],
+    "expect": "an unlettered option is refused"
+  },
+  {
+    "name": "a card with no recommendation is allowed through",
+    "file": "scripts/check-selection-card.py",
+    "edits": [
+      [
+        "        if not marked:\n            problems.append(",
+        "        if False:\n            problems.append("
+      ]
+    ],
+    "expect": "a missing recommendation is refused"
+  },
+  {
+    "name": "the recommendation may sit anywhere",
+    "file": "scripts/check-selection-card.py",
+    "edits": [
+      [
+        "        elif not multi and marked[0] != 0:",
+        "        elif False:"
+      ]
+    ],
+    "expect": "a recommendation that is not first is refused"
+  },
+  {
+    "name": "the question-shaped exit is optional",
+    "file": "scripts/check-selection-card.py",
+    "edits": [
+      [
+        "        if not QUESTION_EXIT.search(exit_label):",
+        "        if False and not QUESTION_EXIT.search(exit_label):"
+      ]
+    ],
+    "expect": "a missing question-exit is refused"
+  },
+  {
+    "name": "the description floor moves by one (the NUMBER is the claim)",
+    "file": "scripts/check-selection-card.py",
+    "edits": [
+      [
+        "MIN_DESCRIPTION = 15",
+        "MIN_DESCRIPTION = 14"
+      ]
+    ],
+    "expect": "the floor is 15 exactly — 14 is refused, 15 is accepted"
+  },
+  {
+    "name": "an unreadable payload returns empty instead of raising (fail-open)",
+    "file": "scripts/check-selection-card.py",
+    "edits": [
+      [
+        "    if not isinstance(questions, list):\n        raise ValueError(\"no `questions` list in the payload\")",
+        "    if not isinstance(questions, list):\n        return []"
+      ]
+    ],
+    "expect": "a payload with no questions list RAISES rather than passing"
+  },
+  {
+    "name": "the entry point returns 0 on problems (the only thing the hook can see)",
+    "file": "scripts/check-selection-card.py",
+    "edits": [
+      [
+        "    for p in problems:\n        print(f\"  ✗ {p}\", file=sys.stderr)\n    return 2",
+        "    for p in problems:\n        print(f\"  ✗ {p}\", file=sys.stderr)\n    return 0"
+      ]
+    ],
+    "expect": "a bad card EXITS 2 — the exit code is all the hook can see"
+  },
+  {
+    "name": "the exit advice ignores the tool's 4-option ceiling",
+    "file": "scripts/check-selection-card.py",
+    "edits": [
+      [
+        "                   if len(labels) < MAX_OPTIONS else",
+        "                   if True else"
+      ]
+    ],
+    "expect": "AT the ceiling the advice is to REPLACE, because the tool takes four options"
+  },
+  {
+    "name": "a negated recommendation counts as a recommendation",
+    "edits": [
+      [
+        "                  if RECOMMENDED.search(label) and not NOT_RECOMMENDED.search(label)]",
+        "                  if RECOMMENDED.search(label)]"
+      ]
+    ],
+    "expect": "but a NEGATED recommendation is not one",
+    "file": "scripts/check-selection-card.py"
+  },
+  {
+    "name": "the tool's option ceiling is not enforced",
+    "edits": [
+      [
+        "        if len(options) > MAX_OPTIONS:",
+        "        if False:"
+      ]
+    ],
+    "expect": "a card above the tool's ceiling is refused here, not by the tool",
+    "file": "scripts/check-selection-card.py"
+  },
+  {
+    "name": "a near-miss exit is told to ADD a second one",
+    "edits": [
+      [
+        "            near = NEAR_EXIT.search(exit_label)",
+        "            near = None"
+      ]
+    ],
+    "expect": "a near-miss exit is told to REWORD, not to add a second one",
+    "file": "scripts/check-selection-card.py"
+  },
+  {
+    "name": "the exit is looked for across ALL labels, not the last one",
+    "edits": [
+      [
+        "        exit_label = labels[-1]",
+        "        exit_label = \" \".join(labels)"
+      ]
+    ],
+    "expect": "an exit in the MIDDLE does not satisfy the last-option rule",
+    "file": "scripts/check-selection-card.py"
+  },
+  {
+    "name": "the payload handler stops covering a decode failure",
+    "edits": [
+      [
+        "        questions = payload_of(raw)\n    except Exception as exc:",
+        "        questions = payload_of(raw)\n    except json.JSONDecodeError as exc:"
+      ]
+    ],
+    "expect": "a payload that is valid JSON but the wrong SHAPE is a verdict too",
+    "file": "scripts/check-selection-card.py"
+  }
+]

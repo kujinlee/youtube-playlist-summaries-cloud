@@ -101,4 +101,25 @@ OUT=$(python3 "$REPO/scripts/gen-backlog-page.py" 2>&1) || {
 
 rm -f "$MARK"
 echo "↻ backlog view regenerated — http://127.0.0.1:7391/backlog-table"
+
+# ⭐ backlog #110, r1 finding M-1. The generator returns 0 when it reports an UNREAD row — the page
+# WAS written, minus that row — so everything it said went into $OUT and straight onto the floor.
+# This hook fires on an edit to docs/backlog.md, which is the exact moment the decorated row is
+# typed and by far the most timely channel the warning has. The ⚠ lines are reprinted here rather
+# than the whole of $OUT: the success path is otherwise a one-liner and should stay one.
+# ⚠ A ⚠ LINE PLUS ITS INDENTED CONTINUATIONS — not a grep for one note's prefix.
+#
+# The generator marks only the SUMMARY line of a warning with ⚠ and indents the detail, so that a
+# long note cannot spend explainer-serve's 400-char Refresh-button budget (backlog #110, r1 finding
+# M-2). Grepping ⚠ alone therefore shows this hook's reader a headline with nothing to act on, at
+# the one moment they are looking. Grepping ⚠ OR `   UNREAD:` was the first fix and it privileged
+# one note: the Ask-tray warning uses the same shape and lost its "missing token: …" line, which is
+# the only actionable part of it (r2 finding M4, Codex). This keeps the shape, not the vocabulary.
+#
+# ⚠ EXACTLY THREE SPACES THEN A NON-SPACE. `main` also prints a five-space URL line, which is
+# ordinary output and not the detail of any warning. ⛔ This program has a falsifier now, and it is
+# not in this file: gen-backlog-page's suite READS this line, extracts the awk, and runs it against
+# a fixture (r3 finding L-4 — before that, a shell one-liner nothing executes was the whole of the
+# fix for r2's M4). Edit this line and three cases go red.
+echo "$OUT" | awk '/^⚠/ {p=1; print; next} p && /^   [^ ]/ {print; next} {p=0}'
 exit 0
