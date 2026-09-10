@@ -1,0 +1,68 @@
+[
+  {
+    "name": "every branch is treated as unguarded, so the gate can never fire",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if not obliged:\n        return 0,",
+        "    if True:\n        return 0,"
+      ]
+    ],
+    "expect": "a code branch with no review FAILS"
+  },
+  {
+    "name": "an EMPTY NO-REVIEW: is accepted as a declaration",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if reason:\n        return 0, f\"{NO_REVIEW} {reason}\"",
+        "    if reason is not None:\n        return 0, f\"{NO_REVIEW} {reason}\""
+      ]
+    ],
+    "expect": "an EMPTY NO-REVIEW: is refused"
+  },
+  {
+    "name": "any file under docs/reviews/ counts as a review, not just .md",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "p.startswith(REVIEW_DIR) and p.endswith(\".md\")",
+        "p.startswith(REVIEW_DIR)"
+      ]
+    ],
+    "expect": "only .md counts as a review document"
+  },
+  {
+    "name": "prose swallows everything, so nothing is ever obliged",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return path.endswith(\".md\") and \"/\" not in path",
+        "    return True"
+      ]
+    ],
+    "expect": "middleware.ts is guarded"
+  },
+  {
+    "name": "a .md ANYWHERE counts as prose, not just at the root",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return path.endswith(\".md\") and \"/\" not in path",
+        "    return path.endswith(\".md\")"
+      ]
+    ],
+    "expect": "a .md inside a package is still guarded"
+  },
+  {
+    "name": "docs/ stops being prose, so a docs-only branch is obliged",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "PROSE_DIRS = (\"docs/\",)",
+        "PROSE_DIRS = ()"
+      ]
+    ],
+    "expect": "docs/backlog.md is prose"
+  }
+]

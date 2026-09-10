@@ -6657,3 +6657,66 @@ of *"every open item reaches the page exactly once"* derive from `parse()`, so a
 the expectation AND the page. The only completeness guard is `len(real) > 20` against an actual 109.
 Latent today (109 → 109, 0 skipped); High because always-building makes silent omission the failure
 mode, and the docstring states the guarantee unconditionally.
+
+## 2026-09-10
+There is now a check that refuses a change to the code if nobody reviewed it.
+
+This is the gap behind everything that happened this morning. A check already existed to make sure a
+review had *both* halves — but a change with *no* review at all sailed past it, because it had no
+halves to compare. Five changes went in that way in one night and every check stayed green.
+
+The new one asks a simple question of the change itself: did this branch add a review document? If
+it only touches documentation, nothing is required. If it touches code and no review was recorded,
+it stops and says so — or the author writes down, in the pull request, why one was not needed.
+
+Replayed against the five that slipped through: the three that changed code are caught, the two that
+were documentation-only are correctly left alone, and the one change that *was* reviewed passes by
+naming its review.
+
+It also had to pass its own rule before it could ship, which it does not do by itself: it was
+reviewed twice, both reviewers found real faults, and the fixes are in.
+<!--tech-->
+**`scripts/check-review-recorded.py`** — a branch that changes code must ADD a file under
+`docs/reviews/`, or declare `NO-REVIEW: <reason>` in the PR body. Closes the ZERO-round case that
+`check-review-rounds.py` cannot see: it audits rounds that EXIST, so a branch with none passes
+vacuously — **rc=0 across all six PRs of 2026-09-09**. Its own docstring says *"the absence of a
+reviewer looks exactly like the presence of a clean one"*; this is that missing half.
+
+**Replay over the six real merges:** #279, #280, #282 (code) FAIL · #278, #281 (docs) pass ·
+#283 passes naming its review docs. **3/3 true positives, 0 false positives.**
+
+⭐ **r1 found a Blocking in the SHAPE, not a missing entry.** The first version was an ALLOWLIST of
+code (`lib/ app/ … .claude/hooks/` plus five root files) and Codex walked through it with
+`middleware.ts`, `package-lock.json`, `Dockerfile`, `jest.config.ts`, `playwright.config.ts`,
+`postcss.config.mjs`, `tsconfig.worker.json`, `.claude/settings.json`, `.claude/commands/`. **An
+allowlist of everything that can change behaviour cannot be completed** — every new top-level file
+starts outside it, silently. It is now a DENYLIST of prose (`docs/` plus root Markdown), so the
+default is GUARDED and a new path is obliged the day it appears.
+
+**Other r1 findings, all folded:**
+- **Major/R3** — the docstring promised exit **2** for CANNOT RUN and `main()` let `RuntimeError`
+  escape as rc=1 with a traceback. All three paths now verified: no `.git` → 2, unresolvable base
+  → 2, genuinely shallow clone → 2.
+- **R4** — the shared `marker` parameter was pinned at ONE of `exemption_reason`'s two scan points.
+  Reverting the other left check-dashboard-entry at **146/146** AND this suite at **14/14**, while
+  `NO-REVIEW: docs only <!-- agreed -->` silently lost its declaration and `NO-ENTRY:` kept working.
+  That file's docstring records this divergence as one it has "already paid for twice".
+- **R2** — a stacked branch inherits its parent's review document. Correct whenever a PR targets its
+  true parent (CI passes `--base origin/$GITHUB_BASE_REF`), and this repo has already shipped a PR
+  that *"silently carried a whole other PR"*. The honest contract is *"a review was added in this
+  range"*, so the pass now NAMES the documents and says how to check they belong to this branch.
+- **R6** the empty-declaration refusal is pinned by MESSAGE, not just exit code · **R8** the CI step
+  writes its own body file instead of reading a sibling step's `/tmp` side effect.
+
+⚠ **A mutation survived and the CODE went, not a case.** `EXEMPT_PREFIXES = (REVIEW_DIR,)` could not
+change an outcome, because nothing under `docs/` was guarded — the denylist covers `docs/reviews/`
+for free. Third time this session that the honest answer to a surviving mutation was *delete the
+dead branch*.
+
+⚠ **One anchor orphaned in the rewrite** and was caught by checking anchors immediately, not at
+sweep time. Retargeted at the rule that replaced it, plus two for the inverted default.
+
+**MEASURED:** `--self-test` **31/31** · six mutations, every one killed **via the case it names**
+over a green control · `EXPECTED_MUTATIONS` 387 → **393** · `check-dashboard-entry` 146/146 + 13/13
+with `gen-dashboard` untouched · 9 gates rc=0 · **the branch passes its own gate**, naming both
+review halves.

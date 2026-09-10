@@ -166,8 +166,14 @@ def _indented(text: str) -> bool:
 EMPH = re.compile(r"^(\*{1,3}|_{1,3})")
 
 
-def _declaration_reason(s: str) -> str | None:
-    """The reason after a `NO-ENTRY:` marker at the START of `s`, else None.
+def _declaration_reason(s: str, marker: str = NO_ENTRY) -> str | None:
+    """The reason after a declaration marker at the START of `s`, else None.
+
+    ⟳ 2026-09-10. `marker` is a parameter so `check-review-recorded.py` can ask the same question
+    of `NO-REVIEW:` without owning a second copy of this parser. The rules below — which contexts
+    are inert, and that emphasis is NOT one of them — cost measured escapes to get right; a sibling
+    gate re-deriving them would drift, which is the divergence this file has already paid for twice.
+    The default keeps every existing caller, including `gen-dashboard.py`, unchanged.
 
     ONE definition, called from BOTH of `exemption_reason`'s scan points. They had
     the marker test written out twice and would have needed the same fix twice —
@@ -185,9 +191,9 @@ def _declaration_reason(s: str) -> str | None:
     m = EMPH.match(s)
     opener = m.group(1) if m else ""
     rest = s[len(opener):]
-    if not rest.startswith(NO_ENTRY):
+    if not rest.startswith(marker):
         return None
-    rest = rest[len(NO_ENTRY):]
+    rest = rest[len(marker):]
     if opener and rest.startswith(opener):
         rest = rest[len(opener):]
     return rest.strip()
@@ -279,8 +285,8 @@ def fenced_lines(text: str) -> set[int]:
     return out
 
 
-def exemption_reason(pr_body: str) -> str | None:
-    """The reason after a line-leading `NO-ENTRY:`, or None.
+def exemption_reason(pr_body: str, marker: str = NO_ENTRY) -> str | None:
+    """The reason after a line-leading declaration marker, or None.
 
     ONE DEFINITION, shared with scripts/gen-dashboard.py, so the page displays exactly
     the exemptions the gate granted (spec §7). An exemption must be DELIBERATE,
@@ -326,12 +332,12 @@ def exemption_reason(pr_body: str) -> str | None:
                 # did not, so an indented declaration exempted the moment the
                 # line also carried a comment — measured.
                 if not _indented(head):
-                    r = _declaration_reason(head.strip())
+                    r = _declaration_reason(head.strip(), marker)
                     if r is not None:
                         return r
         if in_comment or not probe or _indented(probe):
             continue
-        r = _declaration_reason(probe.strip())
+        r = _declaration_reason(probe.strip(), marker)
         if r is not None:
             return r
     return None

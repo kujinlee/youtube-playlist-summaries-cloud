@@ -559,6 +559,10 @@ EXPECTED_MUTATIONS = {
     # so the ratchet is the instrument — every new entry quotes a problem MESSAGE or a whole
     # statement, and `--mutate .` in CI is what will say if one stops resolving.
     "scripts/coverage_verdict.py": 6,
+    # ⟳ 2026-09-10: the zero-round gate joins the manifest in the SAME commit that adds it. Five
+    # PRs merged unreviewed on 2026-09-09 because a guard existed and nothing ran it; shipping its
+    # replacement as manifest debt would repeat the shape at one remove.
+    "scripts/check-review-recorded.py": 6,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
