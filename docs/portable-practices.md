@@ -827,6 +827,11 @@ Two structural additions:
 
 * **The last option is always "I have a question about these."** A decision form with no
   question-shaped exit converts every clarification into a fight with the form.
+  ⚠ **AND IT COSTS A SLOT, WHICH THE RULE MUST SAY OUT LOUD.** `AskUserQuestion` accepts 2–4
+  options, so a mandatory exit turns *"up to four options"* into **up to three real choices** — and
+  a two-option card becomes one choice plus an exit, i.e. a confirmation dialog wearing a selection
+  card. Measured 2026-09-10 over 49 real questions: **29 already used all four slots**, and a guard
+  that told them to *add* a fifth was prescribing something the schema refuses.
 * **Name the axis in the question text** — *"A/B differ in whether X goes live now"* — because the
   axis is the thing actually being chosen.
 

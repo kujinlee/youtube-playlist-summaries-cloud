@@ -471,7 +471,7 @@ EXPECTED_MUTATIONS = {
     # it `[R4_no_mutation_manifest]` the moment it hit disk, which is the ratchet doing its job. Six
     # entries, one per clause it decides, plus the fail-open path: a guard whose CANNOT-RUN branch
     # returns empty instead of raising is the failure this repo counts as worse than a red.
-    "scripts/check-selection-card.py": 6,
+    "scripts/check-selection-card.py": 8,
     "scripts/page_markup.py": 14,
     # ⟳ 2026-09-01, backlog #78: 18 -> 23. The entry gate now answers TWO questions
     # instead of one — "does this branch owe an entry?" (unchanged) and "is the entry
@@ -2063,7 +2063,10 @@ def _self_test() -> int:
     # kind — except that the file is not new: it is 3,000 lines that had been outside `--mutate .`
     # the whole time, which is why each round found unfalsifiable cases nobody's machine could see.
     # ⟳ 399 -> 405, 2026-09-10: `check-selection-card.py`, created and manifested in one commit.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 405)
+    # ⟳ 405 -> 407, same day: its own review round added the two fail-opens the first six missed —
+    # the ENTRY POINT returning 0 (the only thing the hook reads), and the block message ignoring
+    # the tool's 4-option ceiling. A rise bought by a review, which is the ordinary kind.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 407)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

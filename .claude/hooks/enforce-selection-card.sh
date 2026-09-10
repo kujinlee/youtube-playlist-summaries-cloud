@@ -29,18 +29,42 @@
 INPUT=$(cat)
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-IS_CARD=$(echo "$INPUT" | python3 -c '
+# ⛔ ABSENCE OF A NAME IS NOT "SOME OTHER TOOL" — r1 Blocking (Codex). The first version required
+# `tool_name == "AskUserQuestion"` and exited 0 otherwise, while the checker deliberately accepts a
+# BARE tool input (`{"questions": […]}`) with no envelope at all. Fed that shape it exited 0 on a
+# card the checker refuses with rc=2: fail-open, silently, on a payload the guard was written for.
+# `.claude/settings.json` already scopes this hook to AskUserQuestion, so detection only has one job
+# left — skip on a POSITIVE identification of a different tool, and check everything else.
+#
+# ⚠ AND A BROKEN INTERPRETER IS NOT A PASS — r1 H-3. Measured on the first version: malformed JSON,
+# a JSON array, empty stdin, a pyenv shim exiting 1, and a python that prints a banner ALL produced
+# `exit 0` with no message, disarming the guard for a whole session with nothing to see. The script
+# obeys "cannot run is a failure" scrupulously; four lines of shell threw the verdict away.
+# It warns and exits 1 rather than blocking: wedging every card because python is broken would be a
+# worse cure than the disease, but silence is not the alternative.
+DETECT=$(printf '%s' "$INPUT" | python3 -c '
 import json, sys
 try:
     d = json.load(sys.stdin)
+    name = d.get("tool_name") if isinstance(d, dict) else None
 except Exception:
-    print("no"); sys.exit()
-print("yes" if d.get("tool_name") == "AskUserQuestion" else "no")
-' 2>/dev/null) || IS_CARD="no"
+    print("unreadable"); sys.exit()
+print("other" if (name is not None and name != "AskUserQuestion") else "card")
+' 2>/dev/null)
+DETECT_RC=$?
 
-[[ "$IS_CARD" == "yes" ]] || exit 0
+if [[ $DETECT_RC -ne 0 || -z "$DETECT" ]]; then
+  echo "⚠ enforce-selection-card.sh: could not read the hook envelope (python3 rc=$DETECT_RC)." >&2
+  echo "  The §19 card check DID NOT RUN. Treat this card as NOT CHECKED, never as compliant." >&2
+  exit 1
+fi
 
-VERDICT_OUT=$(echo "$INPUT" | python3 "$REPO_ROOT/scripts/check-selection-card.py" 2>&1)
+# A different tool, named as such: not our business, silently.
+[[ "$DETECT" == "other" ]] && exit 0
+
+# "unreadable" falls through ON PURPOSE — python works, the payload does not parse, and the checker
+# says so in its own CANNOT-RUN grammar rather than this hook guessing.
+VERDICT_OUT=$(printf '%s' "$INPUT" | python3 "$REPO_ROOT/scripts/check-selection-card.py" 2>&1)
 VERDICT_RC=$?
 
 [[ $VERDICT_RC -eq 0 ]] && exit 0

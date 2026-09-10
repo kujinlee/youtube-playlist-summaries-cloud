@@ -26,7 +26,7 @@
     "file": "scripts/check-selection-card.py",
     "edits": [
       [
-        "        elif marked[0] != 0:",
+        "        elif not multi and marked[0] != 0:",
         "        elif False:"
       ]
     ],
@@ -44,15 +44,15 @@
     "expect": "a missing question-exit is refused"
   },
   {
-    "name": "a bare label passes the description floor",
+    "name": "the description floor moves by one (the NUMBER 40 is the claim)",
     "file": "scripts/check-selection-card.py",
     "edits": [
       [
         "MIN_DESCRIPTION = 40",
-        "MIN_DESCRIPTION = 0"
+        "MIN_DESCRIPTION = 39"
       ]
     ],
-    "expect": "a bare label is refused"
+    "expect": "the floor is 40 exactly — 39 is refused, 40 is accepted"
   },
   {
     "name": "an unreadable payload returns empty instead of raising (fail-open)",
@@ -64,5 +64,27 @@
       ]
     ],
     "expect": "a payload with no questions list RAISES rather than passing"
+  },
+  {
+    "name": "the entry point returns 0 on problems (the only thing the hook can see)",
+    "file": "scripts/check-selection-card.py",
+    "edits": [
+      [
+        "    for p in problems:\n        print(f\"  ✗ {p}\", file=sys.stderr)\n    return 2",
+        "    for p in problems:\n        print(f\"  ✗ {p}\", file=sys.stderr)\n    return 0"
+      ]
+    ],
+    "expect": "a bad card EXITS 2 — the exit code is all the hook can see"
+  },
+  {
+    "name": "the exit advice ignores the tool's 4-option ceiling",
+    "file": "scripts/check-selection-card.py",
+    "edits": [
+      [
+        "                   if len(labels) < MAX_OPTIONS else",
+        "                   if True else"
+      ]
+    ],
+    "expect": "AT the ceiling the advice is to REPLACE, because the tool takes four options"
   }
 ]

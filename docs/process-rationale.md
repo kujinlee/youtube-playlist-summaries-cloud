@@ -259,8 +259,12 @@ semantics.
 ## Evidence moved out of the spine (2026-08-08 restructure)
 
 `docs/dev-process.md` was split four ways. The *decisions* stayed there; the *evidence* for them is
-here, because it is read only when someone questions a rule. Nothing was retired — see
-*Rules flagged for review* at the end of the spine for the four candidates awaiting a decision.
+here, because it is read only when someone questions a rule. ⟳ **One row WAS retired, 2026-09-10**
+— the `gh` two-remotes footgun, whose full account is below — because the spine hit its 220-line
+budget and that was the one line the document's own text disowned (*"history occupying spine
+space"*). See *Rules flagged for review* at the end of the spine for the **three** candidates still
+awaiting a decision. ⚠ Both numbers in this paragraph were false for one commit; they were caught by
+a reviewer, not by a script, and nothing owns them.
 
 ### Why branch + PR has no size exemption (Phase 5)
 
