@@ -6550,3 +6550,54 @@ concluding the palette fix had not applied.
 **MEASURED:** `--self-test` 62 → **72** · five revert-mutations all caught (the last, dropping
 `SHIM` from `also_read`, needed a `--good` fixture because every other token is read by the chrome
 too) · all three generators rc=0 with the tray present · 9 gates rc=0.
+
+## 2026-09-10 [needs-you]
+Round three is folded, and for the first time a round introduced no serious defect.
+
+Nine more problems, none of them blocking. Both reviewers said the same thing in different words:
+the code I had written to read stylesheets was hand-rolled, and it disagreed with a real parser at
+the edges. It now uses Python's own HTML parser, which removes three of the findings outright.
+
+One finding is worth reading even though it is small. A comment I wrote to explain the four colours
+added to the backlog page asserted a fact about how stylesheets override each other — and it was
+backwards. The change itself was right, for a different reason, and the comment would have been
+believed: it was written in the same confident register as everything else around it.
+
+Three rounds, forty-three problems, on a change I originally described as done in a single commit.
+
+**Decide:** Round 3 introduced no Blocking and the findings are now edge cases. Stop here?
+- A — Stop and merge. Three rounds is past the cap you set, no Blocking is open, and the character has shifted from real defects to adversarial edges [recommended]
+- B — One more round on the r3 fold; the r3 reviewers have not seen these last nine fixes
+- C — Stop reviewing, but leave the PR open until the unreviewed merged PRs (#278-#282) are dealt with
+<!--tech-->
+**r3: Codex 2B/1H/1M · Claude 0B/1H/4M/3L, both NOT CONVERGED.** Filed under
+`docs/reviews/{coordinator,claude}/theme-half-live-102-r3-*.md`. Claude's summary is the convergence
+signal: *"the first fold that did not introduce a Blocking… all seven r2 findings I probed are
+genuinely dissolved, and the suite went from four surviving revert mutations to one."*
+
+**Both halves independently reached the same conclusion: a regex over HTML is not a parser.**
+`css_of`/`markup_of` now use `html.parser`, which dissolves three findings at once — script content
+is raw text, attribute values are never parsed as tags, and unquoted `style=` is handled natively.
+Two CSS-level fixes remained: a newline ends a bad string (CSS recovery), and brace counting skips
+strings.
+
+⭐ **R3-4 — MY COMMENT WAS BACKWARDS, and the change was right for a reason it did not give.** It
+claimed `SHIM`'s `body` paint WINS over the page's. It cannot: SHIM paints with
+`:where(html, body)` — **zero specificity** — and its own docstring says *"This one is always
+losable."* The page's `body{background:var(--ground)}` at (0,0,1) beats (0,0,0) regardless of source
+order. The real reason those four tokens are needed is that **the lifted Ask tray reads them with no
+fallback**. Corrected in place, keeping what made it false.
+
+⭐ **R3-5 — A CASE THAT COULD NOT OBSERVE THE PROPERTY IT NAMED.** Mutating `depth += 1` → `depth
++= 0` — exactly the one-level regex the fold replaced — passed **72/72**, because the fixture put the
+nested `:root` where any truncation removes it too. Moving it AFTER a sibling nested block makes it
+load-bearing; the mutation is now caught.
+
+⚠ **R3-3 — the third instance-not-class fix in this branch.** `markup_of` was added for r2's R2-8
+and applied at ONE of the two `has_control` sites. A fragment whose chrome block sits inside an HTML
+comment convinced `chrome_for` it already had a control, so none was added — the page shipped with a
+stamp and no theme button, silently. Both sites now ask the same helper.
+
+**MEASURED:** `--self-test` 77 → **84** · the `depth` mutation now caught · every finding from all
+three rounds re-verified closed · all three generators rc=0 with the Ask tray present ·
+`check-review-rounds` rc=0 with all six halves filed.

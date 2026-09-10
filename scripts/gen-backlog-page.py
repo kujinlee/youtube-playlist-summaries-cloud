@@ -1127,12 +1127,16 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str,
   --ground:#f7f6f3; --panel:#ffffff; --card:#ffffff; --line:#dfdcd5; --line-2:#eceae5;
   --measured:#0f7268; --problem:#ad3a22; --structural:#3d5a86;
   --pending:#a8690b; --pending-bg:#fdf4e3; --ink-soft:#39424f; --good:#0f7268;
-  /* ⚠ THE SHIM'S OWN VOCABULARY. `SHIM` is appended AFTER this stylesheet and paints
-     `body{{background:var(--bg)}}`, so it WINS over this page's `body{{background:var(--ground)}}`.
-     Without a light `--bg` the body kept the shim's DARK value on OS-dark + toggled-light —
-     the backlog #102 defect, on this page, found by the guard that closes it. `--rule` and
-     `--structure` are read by the shim and the chrome for the same reason. Mapped to this
-     page's own colours rather than invented. */
+  /* ⚠ THE SHIM'S OWN VOCABULARY, and these four are needed because THE LIFTED ASK TRAY READS
+     THEM, with no fallback — measured: --bg, --rule, --structure by the tray and SHIM, --defect
+     by the tray. Without a light value they keep the shim's DARK value on OS-dark + toggled-light,
+     which is backlog #102 on this page. Mapped onto this page's own colours, not invented.
+     ⛔ AN EARLIER VERSION OF THIS COMMENT SAID THE OPPOSITE AND WAS WRONG (r3 R3-4): it claimed
+     SHIM's `body` paint WINS over this page's. It cannot — SHIM paints with
+     `:where(html, body)`, which contributes ZERO specificity, and its own docstring says so:
+     "This one is always losable." The page's `body{{background:var(--ground)}}` at (0,0,1) beats
+     (0,0,0) whatever the source order. `--bg` does still reach `html`, whose background paints the
+     canvas, so it shows in overscroll and gutters — real, but not what the old comment claimed. */
   --bg:#f7f6f3; --rule:#dfdcd5; --structure:#3d5a86; --defect:#ad3a22;
   --serif:Georgia,'Iowan Old Style','Times New Roman',serif;
   --sans:ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;

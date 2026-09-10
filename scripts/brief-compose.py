@@ -42,6 +42,7 @@ import argparse
 import datetime as _dt
 import pathlib
 import re
+from html.parser import HTMLParser
 import sys
 import tempfile
 
@@ -131,26 +132,85 @@ def declared_vars(css: str) -> set[str]:
     return {m.group(1) for m in re.finditer(r"(--[\w-]+)\s*:", css)}
 
 
-def css_of(document: str) -> str:
-    """The CSS a browser will apply from `document`: every `<style>` body, every `style="…"`. PURE.
+class _DocScan(HTMLParser):
+    """Splits a document into the CSS a browser applies and the markup it renders.
 
-    ⛔ NEITHER THE WHOLE DOCUMENT NOR JUST THE HEAD — both are wrong, and r1/r2 paid for each.
-
-    Scanning only the text before the first `</style>` missed a second `<style>` block and every
-    inline `style=` attribute, which reach the browser (r1 F6, Blocking). The obvious repair —
-    scan the whole `content` — over-corrects into BODY PROSE: measured 2026-09-10 on the fold, a
-    page whose prose merely says *"the shim supplies var(--card)"*, or that shows
-    `.c{background:var(--card)}` in a `<pre><code>` sample, was REFUSED for a token it never uses.
-    An explainer page ABOUT backlog #102 could not be published — which is r1 F7 arriving through
-    the opposite side, and exactly the shape `portable-practices.md` §12 predicts: the repair adds
-    a branch, and the branch is the next defect.
-
-    So: the CSS, all of it, and nothing that is not CSS.
+    ⛔ A PARSER, NOT REGEXES — r3 found three defects that were all the same mistake. Regexes over
+    HTML claimed `<style>` text out of an ATTRIBUTE VALUE and out of a `<script>` string literal
+    (neither is a stylesheet), and missed `style=background:var(--x)` because it had no quotes,
+    which HTML permits. `html.parser` gets all three right for free: it treats script content as
+    raw text, never parses inside an attribute value, and hands back unquoted attributes normally.
     """
-    out = re.findall(r"<style[^>]*>(.*?)</style>", document, re.S | re.I)
-    out += re.findall(r'\sstyle\s*=\s*"([^"]*)"', document, re.I)
-    out += re.findall(r"\sstyle\s*=\s*'([^']*)'", document, re.I)
-    return "\n".join(out)
+
+    SKIP = ("style", "script", "pre", "code")
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.css: list[str] = []
+        self.markup: list[str] = []
+        self._depth = 0
+        self._in_style = 0
+
+    def handle_starttag(self, tag: str, attrs: list) -> None:
+        if tag == "style":
+            self._in_style += 1
+        for key, value in attrs:
+            if key and key.lower() == "style" and value:
+                self.css.append(value)
+        if tag in self.SKIP:
+            self._depth += 1
+        elif self._depth == 0:
+            rendered = "".join(f' {k}="{v}"' for k, v in attrs if v is not None)
+            self.markup.append(f"<{tag}{rendered}>")
+
+    def handle_startendtag(self, tag: str, attrs: list) -> None:
+        for key, value in attrs:
+            if key and key.lower() == "style" and value:
+                self.css.append(value)
+        if self._depth == 0:
+            rendered = "".join(f' {k}="{v}"' for k, v in attrs if v is not None)
+            self.markup.append(f"<{tag}{rendered}>")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "style" and self._in_style:
+            self._in_style -= 1
+        if tag in self.SKIP and self._depth:
+            self._depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self._in_style:
+            self.css.append(data)
+        elif self._depth == 0:
+            self.markup.append(data)
+
+
+def _scan(document: str) -> _DocScan:
+    scan = _DocScan()
+    scan.feed(document)
+    scan.close()
+    return scan
+
+
+def css_of(document: str) -> str:
+    """The CSS a browser will apply: every `<style>` body, every `style=` attribute. PURE.
+
+    ⛔ NEITHER THE WHOLE DOCUMENT NOR JUST THE HEAD — both were measured wrong. Scanning only the
+    text before the first `</style>` missed a second `<style>` block and inline styles (r1 F6,
+    Blocking). Scanning the whole document swept in BODY PROSE, so a page saying *"the shim supplies
+    var(--card)"* was refused for a token it never uses — an explainer about backlog #102 could not
+    be published (r2).
+    """
+    return "\n".join(_scan(document).css)
+
+
+def markup_of(document: str) -> str:
+    """The document's rendered markup — no `<style>`, `<script>`, `<pre>` or `<code>`. PURE.
+
+    The complement of `css_of`. `page_chrome.has_control` is a substring test for the button's id,
+    so a page that DISCUSSES the chrome — an explainer, or a code sample containing the button —
+    would otherwise claim to carry a live control.
+    """
+    return "".join(_scan(document).markup)
 
 
 def strip_css_comments(css: str) -> str:
@@ -187,10 +247,18 @@ def strip_css_comments(css: str) -> str:
             brackets += 1; out.append(ch); i += 1; continue
         if ch == "]":
             brackets = max(0, brackets - 1); out.append(ch); i += 1; continue
+        if ch == "}":
+            # ⚠ bracket depth is per-RULE. An unmatched `[` — `url(a[b.png)` is the realistic
+            # source — otherwise left every later string unblanked, re-enabling the prose-in-a-
+            # string false positive for the rest of the stylesheet (r3 R3-6).
+            brackets = 0; out.append(ch); i += 1; continue
         if ch in "\"'":
             quote, keep = ch, brackets > 0
             out.append(ch); i += 1
-            while i < n and css[i] != quote:
+            # ⚠ A NEWLINE ENDS A BAD STRING. CSS says an unterminated string is recovered at the
+            # end of the line, so everything after it is real CSS. Consuming to EOF instead made
+            # one stray quote blank an entire stylesheet — r3 Blocking.
+            while i < n and css[i] != quote and css[i] != "\n":
                 if css[i] == "\\" and i + 1 < n:
                     out.append(css[i:i + 2] if keep else "  "); i += 2; continue
                 out.append(css[i] if keep else " "); i += 1
@@ -233,8 +301,8 @@ def css_scan_truncated(css: str) -> bool:
             while i < n:
                 if css[i] == "\\" and i + 1 < n:
                     i += 2; continue
-                if css[i] == quote:
-                    i += 1; closed = True; break
+                if css[i] == quote or css[i] == "\n":
+                    i += 1; closed = True; break     # newline is CSS bad-string recovery
                 i += 1
             if not closed:
                 return True
@@ -261,9 +329,19 @@ def strip_scheme_media(css: str) -> str:
         out.append(css[i:m.start()])
         j, depth = m.end(), 1
         while j < n and depth:
-            if css[j] == "{":
+            ch = css[j]
+            # ⚠ SKIP STRINGS. A `{` inside an attribute-selector string — `[data-x="{"]` — is
+            # selector text, not a block opener. Counting it swallowed the REAL `:root[...light]`
+            # declaration that followed the media block (r3 Medium).
+            if ch in "\"'":
+                quote = ch; j += 1
+                while j < n and css[j] != quote and css[j] != "\n":
+                    j += 2 if css[j] == "\\" and j + 1 < n else 1
+                j += 1
+                continue
+            if ch == "{":
                 depth += 1
-            elif css[j] == "}":
+            elif ch == "}":
                 depth -= 1
             j += 1
         i = j
@@ -475,7 +553,12 @@ def chrome_for(content: str, generated_at: str) -> tuple[str, str, str]:
        prevent: a button that looks shipped and does nothing is worse than no button. The
        stamp still works, and it is the half that matters when a page might be stale.
     """
-    if page_chrome.has_control(content):
+    # ⚠ `markup_of`, THE SAME AS THE OTHER CALL SITE (r3 R3-3). These two disagreed: this one asked
+    # the raw document and the guard asked the markup, so a fragment whose chrome block sits inside
+    # an HTML comment convinced THIS site it brought its own control (so none was added) while the
+    # comment meant there was none — the page shipped with a stamp and no theme button, silently.
+    # Third instance-not-class fix in this branch; one helper, both sites.
+    if page_chrome.has_control(markup_of(content)):
         # ⚠ Codex High: this used to trust the button id alone, so a fragment carrying the
         # button but NO script composed to a page with one INERT control and no stamp —
         # the exact fail-silent this module exists for, reached through the composer.
@@ -761,6 +844,47 @@ def self_test() -> int:
     # `assert_shimmed` and wrong here; `vars_read_anywhere` is the one this rule needs.
     case("⛔ a var() WITH an inline fallback still counts as READ",
          not _c(".c{background:var(--card,#fff)}"))
+    # ⛔ r3 R3-3 — the two `has_control` sites disagreed, so a fragment whose chrome block is inside
+    # an HTML comment convinced `chrome_for` it already had a control while the guard saw none: the
+    # page shipped with a stamp and NO theme button, silently. Both sites ask `markup_of` now.
+    _commented = ('<title>x</title><style>' + _dark
+                  + ':root[data-theme="light"]{'
+                  + "".join(f"{n}:#fff;" for n in sorted(_shim_names)) + "}</style>"
+                  + "<!-- " + _ctrl + " --><div>x</div>")
+    case("a chrome block inside an HTML comment still gets a real control added",
+         'id="chrome-theme"' in compose(_commented, "T", css, markup, script).split("</style>", 1)[1])
+    # ⛔ r3 R3-6 — bracket depth is per-rule. An unmatched `[` used to leave every later string
+    # unblanked, re-enabling the prose-in-a-string false positive for the rest of the stylesheet.
+    case("an unmatched [ does not disable value-string blanking for the rest of the sheet",
+         vars_read_anywhere('.a{background:url(a[b.png)}.n::before{content:"var(--defect)"}') == set())
+
+    # ── r3 ADVERSARIAL REVIEW: 2 Blocking, 1 High, 1 Medium — every one saying the same thing,
+    # that a regex over HTML is not a parser. `css_of`/`markup_of` now use `html.parser`.
+    _L_but = lambda s: (':root[data-theme="light"]{'
+                        + "".join(f"{n}:#fff;" for n in sorted(_shim_names) if n != s) + "}")
+
+    case("⛔ a newline ends a bad string, so the CSS after it is still read",
+         not _composes("<title>x</title><style>" + _dark + _L_but("--structure-bg")
+                       + '\n.bad{content:"unterminated\n}\n.c{background:var(--structure-bg)}'
+                       + "</style><div class=\"c\">x</div>" + _ctrl))
+    case("⛔ an UNQUOTED style= attribute is CSS the browser applies",
+         not _composes("<title>x</title><style>" + _dark + _L_but("--structure-bg")
+                       + "</style><div style=background:var(--structure-bg)>x</div>" + _ctrl))
+    case("a <style> inside an ATTRIBUTE VALUE is not a stylesheet",
+         _composes("<title>x</title><style>" + _dark + _L_but("--structure-bg") + "</style>"
+                   + "<div data-example='<style>.c{background:var(--structure-bg)}</style>'>x</div>"
+                   + _ctrl))
+    case("...nor is one inside a <script> string literal",
+         _composes("<title>x</title><style>" + _dark + _L_but("--structure-bg") + "</style>"
+                   + '<script>const x = "<style>.c{background:var(--structure-bg)}</style>";'
+                     "</script>" + _ctrl))
+    case("a { inside an attribute-selector string is not a block opener",
+         _composes("<title>x</title><style>" + _dark
+                   + '@media (prefers-color-scheme: light){[data-x="{"]{color:red}}'
+                   + ':root[data-theme="light"]{'
+                   + "".join(f"{n}:#fff;" for n in sorted(_shim_names)) + "}"
+                   + ".c{background:var(--structure-bg)}</style><div class=\"c\">x</div>" + _ctrl))
+
     # ⛔ r3 SELF-FUZZ of the hand-written scanner the r2 fold introduced. Each of these blanked the
     # rest of the stylesheet, so BOTH the palette and the reads came back empty and the guard
     # compared nothing with nothing and passed. A scan that could not read its subject is CANNOT
@@ -802,10 +926,15 @@ def self_test() -> int:
                        + ':root[data-theme="light"]{}.c{background:var(--card)}</style>'
                        + '<div class="c">x</div>' + _ctrl))
     # Blocking — the media stripper was a regex handling ONE level of nesting.
-    case("⛔ a :root two levels deep inside @media(scheme) is not coverage",
+    # ⚠ THE :root SITS AFTER A SIBLING NESTED BLOCK, and that placement is the whole case (r3 R3-5).
+    # With it inside the nested block, `depth += 1` -> `depth += 0` — i.e. exactly the one-level
+    # regex this replaced — still passed 72/72, because any truncation removes the `:root` too. The
+    # case proved the token was stripped; it did not prove DEPTH COUNTING, which is the property.
+    case("⛔ a :root AFTER a nested block inside @media(scheme) is not coverage",
          not _composes('<title>x</title><style>' + _dark + _full_but("--structure-bg")
                        + "@media (prefers-color-scheme: light){@supports (display:grid)"
-                         "{:root{--structure-bg:#fff}}}.c{background:var(--structure-bg)}</style>"
+                         "{.a{color:red}} :root{--structure-bg:#fff}}"
+                         ".c{background:var(--structure-bg)}</style>"
                        + '<div class="c">x</div>' + _ctrl))
     # High — a var() inside a CSS STRING is not a read. No browser resolves it.
     case("a var() inside a CSS string is not a use",
