@@ -201,6 +201,48 @@ def strip_css_comments(css: str) -> str:
     return "".join(out)
 
 
+def css_scan_truncated(css: str) -> bool:
+    """Whether scanning `css` ends INSIDE a string or a comment. PURE.
+
+    ⛔ A SCAN THAT COULD NOT READ ITS SUBJECT HAS NOT PASSED. Found by fuzzing the scanner:
+    `:root[data-theme="light"]{--a:#fff;--b:"oops}` — one unterminated string — blanks everything
+    after it, so `light_palette_tokens` AND `vars_read_anywhere` both return the EMPTY set and the
+    guard compares nothing with nothing and is satisfied. A trailing backslash does the same.
+
+    The browser recovers from these differently than this scanner does, so the honest answer is not
+    a verdict at all. `assert_theme_complete` turns this into CANNOT RUN rather than a quiet pass —
+    the same posture the rest of this repo takes toward a check that cannot reach its subject.
+    """
+    i, n, brackets, in_comment = 0, len(css), 0, False
+    while i < n:
+        if in_comment:
+            if css.startswith("*/", i):
+                in_comment = False; i += 2
+            else:
+                i += 1
+            continue
+        if css.startswith("/*", i):
+            in_comment = True; i += 2; continue
+        ch = css[i]
+        if ch == "[":
+            brackets += 1; i += 1; continue
+        if ch == "]":
+            brackets = max(0, brackets - 1); i += 1; continue
+        if ch in "\"'":
+            quote = ch; i += 1; closed = False
+            while i < n:
+                if css[i] == "\\" and i + 1 < n:
+                    i += 2; continue
+                if css[i] == quote:
+                    i += 1; closed = True; break
+                i += 1
+            if not closed:
+                return True
+            continue
+        i += 1
+    return in_comment
+
+
 def strip_scheme_media(css: str) -> str:
     r"""CSS with every `@media (…prefers-color-scheme…)` block removed, at ANY nesting depth. PURE.
 
@@ -336,6 +378,12 @@ def assert_theme_complete(fragment_css: str, live_control: bool,
     """
     if not live_control:
         return
+    if css_scan_truncated(fragment_css):
+        raise SystemExit(
+            "brief-compose: CANNOT RUN — this page's CSS ends inside an unterminated string or "
+            "comment, so the half-live-toggle scan cannot read the rest of it and would compare an "
+            "empty palette against an empty set of reads. Treat this as NOT CHECKED, and close the "
+            "quote or comment.")
     read = vars_read_anywhere(fragment_css + "\n" + also_read)
     missing = sorted((shim_dark_tokens() & read) - light_palette_tokens(fragment_css))
     if missing:
@@ -483,10 +531,20 @@ def compose(content: str, title: str, css: str, markup: str, script: str,
     # ⚠ Asked of the MARKUP, not the document: `has_control` is a substring test for the button id,
     # so a page discussing the chrome would otherwise claim to carry one (r1 F7's shape).
     page_css = css_of(content)
-    declares_light = bool(light_palette_tokens(page_css))
-    live_control = page_chrome.has_control(markup_of(content)) or (
-        declares_light and not page_chrome.missing_palettes(
-            content + page_chrome.theme_control()))
+    # ⛔ THE GATE ASKS WHETHER THE BLOCKS EXIST IN CSS — not whether they PARSE, and not whether
+    # they are non-empty. Three shapes broke the earlier `declares_light` version, all found by
+    # fuzzing the hand-written scanner:
+    #   * an EMPTY `:root[data-theme="light"]{}` declares nothing (r2 R2-1, Blocking);
+    #   * an unterminated string or a trailing backslash makes the scanner return NOTHING for the
+    #     whole stylesheet, so a real palette reads as absent.
+    # In each case `declares_light` was False, the guard SKIPPED — and the composer then added a
+    # live control anyway, because its own `missing_palettes` test is a substring and was satisfied.
+    # That is a fail-OPEN reached by one stray quote. Asking for the selector text in the CSS (not
+    # in the document, which is r1 F7 — prose) survives all three.
+    scoped = strip_css_comments(page_css)
+    composer_adds_control = ('[data-theme="light"]' in scoped
+                             and '[data-theme="dark"]' in scoped)
+    live_control = page_chrome.has_control(markup_of(content)) or composer_adds_control
     # ⚠ SHIM IS PART OF THE READ CORPUS (r1 finding F3). It is appended to EVERY composed page and
     # reads tokens with no fallback of its own — `--bg` among them — so those are read by every
     # page whether or not the fragment names them. Omitting it made `--bg` required only when the
@@ -703,6 +761,25 @@ def self_test() -> int:
     # `assert_shimmed` and wrong here; `vars_read_anywhere` is the one this rule needs.
     case("⛔ a var() WITH an inline fallback still counts as READ",
          not _c(".c{background:var(--card,#fff)}"))
+    # ⛔ r3 SELF-FUZZ of the hand-written scanner the r2 fold introduced. Each of these blanked the
+    # rest of the stylesheet, so BOTH the palette and the reads came back empty and the guard
+    # compared nothing with nothing and passed. A scan that could not read its subject is CANNOT
+    # RUN, not a verdict.
+    for _label, _tail in (
+            ("an unterminated string", ':root[data-theme="light"]{--a:#fff;--b:"oops}'),
+            ("a trailing backslash", ':root[data-theme="light"]{--a:#fff;--b:"x\\'),
+            ("an unterminated comment", ':root[data-theme="light"]{--a:#fff} /* open')):
+        case(f"⛔ {_label} is CANNOT RUN, not a quiet pass",
+             not _composes("<title>x</title><style>" + _dark + _tail + "</style><div>x</div>"))
+    case("...and well-formed CSS with a complete palette still composes",
+         _composes("<title>x</title><style>" + _dark + ':root[data-theme="light"]{'
+                   + "".join(f"{n}:#fff;" for n in sorted(_shim_names)) + "}</style><div>x</div>"))
+    # ⚠ the gate must not depend on the palette PARSING or being non-empty — both were fail-opens.
+    case("the live-control gate asks whether the blocks EXIST, not whether they parse",
+         not _composes("<title>x</title><style>" + _dark
+                       + ':root[data-theme="light"]{}.c{background:var(--card)}</style>'
+                       + '<div class="c">x</div>' + _ctrl))
+
     # ⛔ r2 R2-3 residue — MEASURED: removing `SHIM` from `also_read` left the suite at 71/71,
     # because every other fixture's token is read by the CHROME too. `--good` is read by SHIM and
     # not by the chrome, so this case is the only thing standing between that argument and silence.
