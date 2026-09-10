@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 102 cases
+    python3 scripts/brief-compose.py --self-test  # 115 cases
 
 COMPOSING IS IDEMPOTENT (backlog #106, 2026-09-10)
 --------------------------------------------------
@@ -554,6 +554,27 @@ TRAY_BEGIN = "/* ---- Ask tray, extracted verbatim ---- */"
 TRAY_END = "/* ---- end Ask tray ---- */"
 
 
+def _tray_rules(css: str) -> list[str]:
+    """Rules whose SELECTOR names a tray part, normalised. PURE.
+
+    ⛔ A COMMENT IS NOT A SELECTOR. `([^{}]+\\{[^{}]*\\})` counts every character before the `{`
+    as the selector, so a rule was lifted for what its DOCUMENTATION said — SHIM's
+    `:where(h1,h2,h3,h4){position:relative}` matched `.askbtn` from its own comment. The strip
+    is applied to the selector region ONLY: `strip_css_comments` also blanks string VALUES,
+    which would rewrite the tray this module copies verbatim.
+
+    One normaliser, used for both the page being scanned and the fragment it is compared
+    against, so "the same rule" means the same thing on both sides.
+    """
+    out = []
+    for rule in re.findall(r"([^{}]+\{[^{}]*\})", css):
+        selector, _, block = rule.partition("{")
+        selector = re.sub(r"/\*.*?\*/", "", selector, flags=re.S).strip()
+        if re.search(r"#tray|\.askbtn|#qbox|#qt\b|#sentnote|#modechip", selector):
+            out.append(selector + "{" + block)
+    return out
+
+
 def _selector_scan(style: str) -> str:
     """The tray rules of a page composed BEFORE `TRAY_END` existed. MIGRATION ONLY.
 
@@ -573,17 +594,72 @@ def _selector_scan(style: str) -> str:
         is. Without this a legacy page freezes its duplicates inside the new markers forever
         (`backlog-table.html`: 109 copies of three rules, 34,881 bytes).
     """
-    keep = []
-    for rule in re.findall(r"([^{}]+\{[^{}]*\})", style):
-        selector, _, block = rule.partition("{")
-        selector = re.sub(r"/\*.*?\*/", "", selector, flags=re.S).strip()
-        if re.search(r"#tray|\.askbtn|#qbox|#qt\b|#sentnote|#modechip", selector):
-            keep.append(selector + "{" + block)
+    keep = _tray_rules(style)
     last = {rule: i for i, rule in enumerate(keep)}
     return "\n".join(rule for i, rule in enumerate(keep) if last[rule] == i)
 
 
-def extract_tray(html: str) -> tuple[str, str, str]:
+def _without_page_rules(css: str, fragment_css: str) -> str:
+    """Tray CSS minus the rules the FRAGMENT itself declares. PURE.
+
+    ⛔ A RULE THE PAGE DECLARES IS NOT PART OF THE TRAY (r1 Codex, Medium). Page-specific
+    `#tray …` overrides are not hypothetical, they are DELIBERATE: `gen-backlog-page.py:1480`
+    emits `#tray #qbox{…}` precisely because a plain `#qbox` loses the cascade to the lifted
+    tray. Lifting them back out makes a page's private override part of the canonical tray,
+    inherited by every page later composed from it.
+
+    ⚠ BOTH PATHS, NOT JUST THE MIGRATION, and that correction was bought by watching it happen.
+    The first version subtracted only inside `_selector_scan`. Meanwhile the `regen-backlog-page`
+    hook recomposed `~/explainers/backlog-table.html` for real (2,338,562 → 1,027,997 chars,
+    872 `</body>` → 1) using the code as it then stood — which froze three `#tray #qbox` rules
+    INTO the marked region. That page now has an end marker, so the scan will never run on it
+    again and the pollution would have been permanent. A one-shot migration cannot repair what
+    a previous run of the same migration got wrong.
+
+    ⛔ NEVER SUBTRACT THE TRAY AWAY ENTIRELY. A fragment CAN declare every rule the tray has —
+    the backlog #88 fixture composes from a page that IS the tray source, and a fragment
+    re-composed from a page's own `.fragment.html` sibling can do the same. Subtracting then
+    leaves `css` empty and `extract_tray` refuses: the fix becoming the outage the module exists
+    to prevent. Measured the moment it was written — the suite went `incomplete tray (css=False)`.
+
+    ⛔⛔ IT SUBTRACTS TEXT; IT NEVER REBUILDS THE REGION FROM A PARSED RULE LIST. r1's Blocking
+    was exactly that: the first version returned `"\n".join(kept)`, which silently discarded
+    anything `_tray_rules` does not select. MEASURED on the real tray:
+      * FOUR of the eight ids/classes in the tray's own markup — `sendbtn`, `closebtn`, `trow`,
+        `in` — are outside the selector regex. Styling the Send button is one ordinary CSS rule
+        away, and the rule would evaporate on the next recompose with no error;
+      * `@media (max-width:40rem){#tray{width:100%}}` came back as an UNCONDITIONAL
+        `#tray{width:100%}` — worse than deletion, because it still looks correct.
+    Removing substrings can only delete a rule the fragment itself declares. Everything else —
+    at-rules, comments, unselected rules, whitespace — survives byte-for-byte, which is what
+    `TRAY_BEGIN`/`TRAY_END` promised in the first place.
+
+    ⚠ RESIDUAL, stated rather than hidden: a fragment declaring a rule BYTE-IDENTICAL to a real
+    tray rule still drops it from the region. The page itself is unaffected (it declares the
+    rule), but a page composed FROM it would lose it. Implausible by construction — the overrides
+    that exist use two ids (`#tray #qbox`) exactly so they do NOT collide with the tray's
+    `#qbox`. Falsifier: compose a fragment containing a verbatim copy of a tray rule and check
+    the marked region still has it.
+    """
+    own = _tray_rules(fragment_css)
+    # ⚠ AN OPTIMISATION, NOT A DECISION — do not manifest it. With `own` empty the loop below
+    # never executes and `out` is `css` regardless, so mutating this line is unkillable BY
+    # CONSTRUCTION: measured as a SURVIVOR when it was briefly given a manifest entry. It was
+    # decisive in the r1 version, which rebuilt the region from a parsed rule list; the switch to
+    # subtracting TEXT made it redundant. A clause that stops deciding must lose its entry too.
+    if not own:
+        return css                       # nothing to subtract: keep the region byte-for-byte
+    out = css
+    for rule in own:
+        # Remove the rule TEXT, with one adjoining newline so no double blank line accumulates.
+        for candidate in (rule + "\n", "\n" + rule, rule):
+            if candidate in out:
+                out = out.replace(candidate, "", 1)
+                break
+    return out if out.strip() else css
+
+
+def extract_tray(html: str, fragment_css: str = "") -> tuple[str, str, str]:
     """(css, markup, script) — verbatim. Raises if any piece is missing.
 
     ⭐ EXTRACTION IS IDEMPOTENT: extracting from a page this script composed returns exactly
@@ -610,11 +686,12 @@ def extract_tray(html: str) -> tuple[str, str, str]:
     if not m:
         raise SystemExit("brief-compose: source has no <style> block")
     style = m.group(1)
-    begin, end = style.rfind(TRAY_BEGIN), style.rfind(TRAY_END)
-    if begin >= 0 and end > begin:
-        css = style[begin + len(TRAY_BEGIN):end].strip()      # the STATED boundary
+    begin, marked_end = style.rfind(TRAY_BEGIN), style.rfind(TRAY_END)
+    if begin >= 0 and marked_end > begin:
+        css = style[begin + len(TRAY_BEGIN):marked_end].strip()   # the STATED boundary
     else:
         css = _selector_scan(style)                            # pages composed before it existed
+    css = _without_page_rules(css, fragment_css)
     div = re.search(r'<div id="tray".*?</div>\s*</div>', html, re.S)
     idx = html.rfind("<script>")
     end = html.rfind("</script>")
@@ -760,8 +837,11 @@ def main(argv: list[str]) -> int:
         ROOT / f"{_dt.date.today():%Y-%m-%d}-brief-{a.slug}.html"
     )
     src = find_source(a.source, exclude=out)
-    css, markup, script = extract_tray(src.read_text(encoding="utf-8"))
+    # ⚠ The fragment is read BEFORE the tray is extracted: a legacy source is scanned by
+    # selector, and the scan needs the fragment's own CSS to tell a page-specific
+    # `#tray …` override from a real tray rule (r1 Codex, Medium).
     content = pathlib.Path(a.content).expanduser().read_text(encoding="utf-8")
+    css, markup, script = extract_tray(src.read_text(encoding="utf-8"), css_of(content))
     doc = compose(content, a.title, css, markup, script,
                   page_chrome.provenance(
                       _dt.datetime.now().strftime('%Y-%m-%d %H:%M'),
@@ -835,9 +915,50 @@ def _refusal_text() -> str:
     return ""
 
 
-def self_test() -> int:
-    cases: list[tuple[str, bool]] = []
+def _report_line(name: str, ok: bool) -> str:
+    """The ONE line `check-plan-code.attribute` parses, as code rather than as a convention.
 
+    It reads a red case with `startswith("[FAIL] ")` and slices `[7:]`, so this format is a
+    contract with another program. §22's *How to apply* asks for it to be pinned on the PRODUCER
+    side, and that half was missing: the format was previously an inline f-string with nothing
+    asserting it. A producer-side case has no false-positive class — it calls this function
+    instead of pattern-matching source text, which is what defeated the abandoned pre-flight in
+    `check-plan-code._self_test` (prose quoting the marker satisfied a test for the marker).
+    """
+    return f"  ok     {name}" if ok else f"  [FAIL] {name}"
+
+
+def self_test() -> int:
+    """Run the body, and REPORT whatever it managed to decide even if it raised.
+
+    ⛔ THE SUITE USED TO LOSE EVERY RESULT TO ONE EXCEPTION. Cases are accumulated and printed
+    at the end, so anything that raised mid-body killed the printing too — no `[FAIL] <case>`
+    line, which `check-plan-code`'s harness reads as "caught by something else" and cannot
+    attribute. MEASURED while reviewing r1: deleting the empty-subtraction guard in
+    `_selector_scan` makes the backlog #88 fixture refuse with `incomplete tray`, and the whole
+    108-case run printed NOTHING. A case that DIES from its defect is weaker than one that
+    REPORTS it — so the abort is now itself a named failing case.
+    """
+    cases: list[tuple[str, bool]] = []
+    why = ""
+    try:
+        _self_test_body(cases)
+    except BaseException as exc:                        # noqa: BLE001 - report, never hide
+        # ⚠ THE NAME STAYS ALONE ON THE `[FAIL]` LINE. `check-plan-code` extracts the case name
+        # with `[7:]`, so folding the exception into the name rewrites the very string an
+        # `expect` must equal — the mistake `gen-backlog-page.py` records at its own printer.
+        cases.append(("the suite runs to completion without raising", False))
+        why = repr(exc)
+    failed = [n for n, ok in cases if not ok]
+    for n, ok in cases:
+        print(_report_line(n, ok))
+    if why:
+        print(f"    raised: {why}")
+    print(f"\n{len(cases) - len(failed)}/{len(cases)} passed")
+    return 1 if failed else 0
+
+
+def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     def case(name: str, ok: bool) -> None:
         cases.append((name, ok))
 
@@ -850,6 +971,31 @@ def self_test() -> int:
     case("extracts only tray CSS rules", "#tray{a:1}" in css and "body{d:4}" not in css)
     case("extracts the tray markup", markup.startswith('<div id="tray"'))
     case("extracts the trailing script", "/questions" in script)
+
+    # ⛔ THE FAILURE LINE IS A CONTRACT WITH ANOTHER PROGRAM, pinned here on the PRODUCER side
+    # (r1 Claude, L2). This suite printed `❌ <name>` and so ALL EIGHT of its first manifest
+    # entries reported "matched 0 red case(s) — caught by something else: []" while every one
+    # WAS being killed by the case it named.
+    case("the failure line is exactly what check-plan-code parses",
+         _report_line("a case", False) == "  [FAIL] a case"
+         and _report_line("a case", False).strip()[7:] == "a case"
+         and not _report_line("a case", True).strip().startswith("[FAIL] "))
+
+    # ⛔ THE SUBTRACTION MUST NOT EMPTY THE TRAY (backlog #106, r1 Codex fix). A fragment CAN
+    # declare every rule the tray has: the backlog #88 fixture below composes from a page that
+    # IS the tray source. Measured — without the guard, `_selector_scan` returns "", the #88
+    # fixture refuses with `incomplete tray (css=False)`, and the run ABORTS.
+    # ⚠ IT LIVES HERE, FAR FROM THE REST OF ITS BLOCK, ON PURPOSE. Placed with its siblings at
+    # the end it sat AFTER the #88 fixture, so under the very mutation it exists to catch it
+    # never ran — the clause was pinned only by the generic "suite runs to completion" case.
+    # A case that cannot execute under its own defect is not coverage.
+    case("a fragment declaring the WHOLE tray does not subtract it away",
+         _without_page_rules(css, css) == css)
+    # ⚠ and the no-op path stays BYTE-EXACT: a fragment with no tray rules of its own must not
+    # have the region re-normalised underneath it.
+    case("a fragment with no tray rules leaves the region untouched",
+         _without_page_rules("#tray{a:1}\n  odd  {b:2}", "body{c:3}")
+         == "#tray{a:1}\n  odd  {b:2}")
 
     content = "<title>x</title><style>:root{--good:#0f0}</style><div>hello</div>"
     doc = compose(content, "T", css, markup, script)
@@ -1391,6 +1537,76 @@ def self_test() -> int:
     case("de-duplication keeps the LAST copy, so cascade order survives",
          extract_tray(_order)[0] == ".askbtn{c:3}\n#tray{a:1}\n#qbox{b:2}")
 
+    # ── r1 CODEX (Medium): A PAGE-SPECIFIC OVERRIDE MUST NOT MIGRATE INTO THE TRAY ──────────
+    # THE REVIEWER'S FALSIFIER, verbatim: "recompose a legacy begin-only source that contains
+    # the `gen-backlog-page.py` `#tray #qbox` rules; the newly marked tray region should not
+    # contain those three `#tray #qbox*` selectors, while a backlog page's own fragment should
+    # still contain them outside the tray markers."
+    # ⚠ Premise verified on the live corpus BEFORE acting, not taken on the reviewer's word:
+    # `~/explainers/goals.html` has 867 begin markers, ZERO end markers — so it takes the scan
+    # path — and 315 `#tray #qbox` occurrences.
+    # Without the fix the override is lifted once and FROZEN between the new markers, then
+    # inherited by every page later composed from this one: the stated boundary handed exactly
+    # the pollution it exists to exclude.
+    _OVERRIDE = "#tray #qbox{color:var(--ink)}"
+    _frag_o = ("<title>x</title><style>:root{--good:#0f0}\n" + _OVERRIDE
+               + "</style><div>hello</div>")
+    _legacy_src = compose(_frag_o, "T", css + "\n" + _OVERRIDE, markup, script,
+                          _fixed_at).replace(TRAY_END, "")
+    case("the fixture is genuinely begin-only, so the SCAN is what runs",
+         TRAY_BEGIN in _legacy_src and TRAY_END not in _legacy_src)
+    _mcss, _, _ = extract_tray(_legacy_src, css_of(_frag_o))
+    case("a page-specific #tray override does not migrate into the tray",
+         _OVERRIDE not in _mcss)
+    case("...while every genuine tray rule still does", _mcss == css)
+    _migrated = compose(_frag_o, "T", _mcss, markup, script, _fixed_at)
+    case("...so the marked region of the recomposed page is free of it",
+         _OVERRIDE not in _migrated.split(TRAY_BEGIN, 1)[1].split(TRAY_END, 1)[0])
+    case("...and the page still carries it once, from its own fragment",
+         _migrated.count(_OVERRIDE) == 1)
+
+    # ── r1 CLAUDE (B1, Blocking): THE MARKER PATH STAYS VERBATIM ────────────────────────────
+    # ⛔ THE BRANCH THIS PINS RAN ZERO TIMES. The reviewer instrumented the 109-case suite:
+    # `MARKER × fragment-declares-tray-rules` was executed by NO case, and reverting the
+    # subtraction to the scan path only left the suite 109/109 GREEN. The rule was right and the
+    # POPULATION was wrong (§21) — which is exactly how the Blocking got in unnoticed.
+    #
+    # The first fix rebuilt the region from `"\n".join(kept)`, discarding anything `_tray_rules`
+    # does not select. MEASURED on the real tray: FOUR of eight ids/classes in the tray's own
+    # markup (`sendbtn`, `closebtn`, `trow`, `in`) are outside the selector regex, and an
+    # `@media` wrapper was flattened to an unconditional rule — which is worse than deleting it,
+    # because it still looks correct. `#tray{a:1}\n@media (max-width:40rem){#tray{width:100%}}`
+    # came back as `#tray{a:1}\n#tray{width:100%}`.
+    _exotic = ("#tray{a:1}\n#sendbtn{background:#369;color:#fff}\n"
+               "@media (max-width:40rem){#tray{width:100%}}\n#qbox{b:2}")
+    _m1 = compose(_frag_o, "T", _exotic + "\n" + _OVERRIDE, markup, script, _fixed_at)
+    _mcss1, _, _ = extract_tray(_m1, css_of(_frag_o))
+    case("a marked region keeps a tray rule the selector regex does NOT cover",
+         "#sendbtn{background:#369;color:#fff}" in _mcss1)
+    case("...keeps an @media wrapper rather than flattening it to an unconditional rule",
+         "@media (max-width:40rem){#tray{width:100%}}" in _mcss1)
+    case("...while still dropping the fragment's own override", _OVERRIDE not in _mcss1)
+    _g2 = compose(_frag_o, "T", _mcss1, markup, script, _fixed_at)
+    case("...and a tray carrying those rules still composes twice byte-identically",
+         compose(_frag_o, "T", extract_tray(_g2, css_of(_frag_o))[0], markup, script,
+                 _fixed_at) == _g2)
+
+    # ── r1 CLAUDE (M1): THE **END** MARKER IS ALSO READ WITH `rfind`, AND NOTHING PINNED IT ──
+    # The begin marker had a case AND a manifest entry; the end marker had neither, though both
+    # were chosen in the same expression. A fragment quoting `TRAY_END` — a page explaining this
+    # very script — puts an earlier occurrence in `head`, so `find` would return it,
+    # `marked_end < begin`, and the page silently falls back to `_selector_scan` forever.
+    # ⚠ THE OBVIOUS FIXTURE DOES NOT BITE: with the subtraction in place both paths agree on a
+    # plain tray, so the case would pass under the mutation. It needs a tray the SCAN would
+    # damage — which is what `_exotic` is for. This is the "case that passes for the wrong
+    # reason" check applied before writing the case rather than after.
+    _quotes_end = ("<title>x</title><style>:root{--good:#0f0}\n"
+                   "/* a page quoting " + TRAY_END + " while explaining it */\n"
+                   "p{color:red}</style><div>hi</div>")
+    _qe1 = compose(_quotes_end, "T", _exotic, markup, script, _fixed_at)
+    case("a fragment quoting the END marker does not fall back to the lossy scan",
+         "#sendbtn{background:#369;color:#fff}" in extract_tray(_qe1, css_of(_quotes_end))[0])
+
     # ⛔ THE ACCUMULATOR THE FIRST FIX MISSED, and it was missed because the repro fragment
     # was too clean. `gen-backlog-page.py:1480` deliberately emits `#tray #qbox{…}` into its
     # OWN fragment, to win the cascade over the lifted tray without editing lifted code. A
@@ -1459,11 +1675,7 @@ def self_test() -> int:
     # same thing, and `portable-practices` §22 was written FROM that failure and did not prevent
     # this one. A convention catches what you read; the pre-flight in `check-plan-code._self_test`
     # catches what is there.
-    failed = [n for n, ok in cases if not ok]
-    for n, ok in cases:
-        print(f"  ok     {n}" if ok else f"  [FAIL] {n}")
-    print(f"\n{len(cases) - len(failed)}/{len(cases)} passed")
-    return 1 if failed else 0
+    # (reporting happens in `self_test`, which survives an abort in this body)
 
 
 if __name__ == "__main__":

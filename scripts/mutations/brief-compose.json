@@ -30,8 +30,8 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "    styled = (head + SHIM + \"\\n\" + TRAY_BEGIN + \"\\n\" + css + \"\\n\" + TRAY_END\n              + \"\\n\" + chrome_css + \"\\n</style>\")",
-        "    styled = (head + SHIM + \"\\n\" + TRAY_BEGIN + \"\\n\" + css\n              + \"\\n\" + chrome_css + \"\\n</style>\")"
+        "    styled = (head + SHIM + \"\\n\" + TRAY_BEGIN + \"\\n\" + css + \"\\n\" + TRAY_END",
+        "    styled = (head + SHIM + \"\\n\" + TRAY_BEGIN + \"\\n\" + css + \"\\n\" + \"\""
       ]
     ],
     "expect": [
@@ -39,16 +39,42 @@
     ]
   },
   {
-    "name": "the begin marker is read with find, so a fragment quoting it swallows the shim",
+    "name": "the BEGIN marker is read with find, so a fragment quoting it swallows the shim",
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "    begin, end = style.rfind(TRAY_BEGIN), style.rfind(TRAY_END)",
-        "    begin, end = style.find(TRAY_BEGIN), style.rfind(TRAY_END)"
+        "    begin, marked_end = style.rfind(TRAY_BEGIN), style.rfind(TRAY_END)",
+        "    begin, marked_end = style.find(TRAY_BEGIN), style.rfind(TRAY_END)"
       ]
     ],
     "expect": [
       "a fragment that quotes the begin marker does not swallow the shim"
+    ]
+  },
+  {
+    "name": "the END marker is read with find, so a page quoting it silently falls back to the scan",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    begin, marked_end = style.rfind(TRAY_BEGIN), style.rfind(TRAY_END)\n    if begin >= 0 and marked_end > begin:",
+        "    begin, marked_end = style.rfind(TRAY_BEGIN), style.find(TRAY_END)\n    if begin >= 0 and marked_end > begin:"
+      ]
+    ],
+    "expect": [
+      "a fragment quoting the END marker does not fall back to the lossy scan"
+    ]
+  },
+  {
+    "name": "the marker slice keeps its surrounding newlines, growing +2 bytes every generation",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        css = style[begin + len(TRAY_BEGIN):marked_end].strip()   # the STATED boundary",
+        "        css = style[begin + len(TRAY_BEGIN):marked_end]           # the STATED boundary"
+      ]
+    ],
+    "expect": [
+      "re-extracting a composed page returns the tray CSS unchanged"
     ]
   },
   {
@@ -101,6 +127,45 @@
     ],
     "expect": [
       "main lifts from the OTHER page, not the one it is overwriting"
+    ]
+  },
+  {
+    "name": "the fragment's own #tray overrides are lifted into the tray again (r1 Codex Medium)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        for candidate in (rule + \"\\n\", \"\\n\" + rule, rule):",
+        "        for candidate in ():"
+      ]
+    ],
+    "expect": [
+      "a page-specific #tray override does not migrate into the tray"
+    ]
+  },
+  {
+    "name": "the subtraction is allowed to empty the tray, so nothing composes at all",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    return out if out.strip() else css",
+        "    return out"
+      ]
+    ],
+    "expect": [
+      "a fragment declaring the WHOLE tray does not subtract it away"
+    ]
+  },
+  {
+    "name": "the region is rebuilt from a parsed rule list again, silently dropping what it cannot parse",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    out = css\n",
+        "    out = \"\\n\".join(_tray_rules(css))\n"
+      ]
+    ],
+    "expect": [
+      "a marked region keeps a tray rule the selector regex does NOT cover"
     ]
   }
 ]

@@ -474,7 +474,10 @@ EXPECTED_MUTATIONS = {
     # the fix decides. THREE are on wiring rather than logic — `main` passing `exclude`, the
     # end marker being written, and the begin marker being read with `rfind` — because the
     # extraction rules can each be perfectly correct and never reached.
-    "scripts/brief-compose.py": 8,
+    # ⟳ r1 Codex Medium: 8 -> 10. A page-specific `#tray …` override was migrating INTO the
+    # tray region and freezing there for every page later composed from it; the second entry
+    # guards the fix's own failure mode, which is subtracting the tray away entirely.
+    "scripts/brief-compose.py": 13,
     # ⟳ 2026-09-10. A guard created and manifested in ONE commit — `check-ratchet-contract` flagged
     # it `[R4_no_mutation_manifest]` the moment it hit disk, which is the ratchet doing its job. Six
     # entries, one per clause it decides, plus the fail-open path: a guard whose CANNOT-RUN branch
@@ -2141,7 +2144,7 @@ def _self_test() -> int:
     # itself gains 1 for the report-format diagnosis. A RISE, and the
     # file it covers is the one that composes every page the reader opens — it had cases and no
     # mutations, the same blind spot `gen-backlog-page.py` was in one branch ago.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 421)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 426)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
