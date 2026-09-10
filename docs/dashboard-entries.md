@@ -6373,3 +6373,63 @@ the content.**
 
 **MEASURED:** 8 gates rc=0 · `gen-backlog-page --self-test` 86/86 · page builds `109 rows, 69 open`
 · undescribed 15 → 9 with zero high-severity remaining.
+
+## 2026-09-10
+A page can no longer be published with a theme switch that only half works.
+
+Backlog #102 is closed. The problem it described: an agent-written page could define light colours
+for some of what it uses and not the rest, and the parts it missed kept their dark values while the
+page was in light mode. On the page that exposed this, body text ended up almost exactly the same
+colour as the background — technically visible, actually unreadable.
+
+The fix refuses that page at the moment it is assembled, rather than adding another checker that
+looks at one page after the fact. If a page has a working light/dark switch, it must supply light
+values for everything it actually uses, or it does not get written.
+
+Two things worth knowing. A page that defines NO light colours at all is left alone — its switch
+does nothing, and a switch that does nothing is harmless. And the first version of the rule was too
+strict: it refused the goals page over a colour nothing on it uses, which would have forced someone
+to write a value that changes nothing to make a check happy. It now only asks about colours the page
+genuinely reads.
+<!--tech-->
+**`scripts/brief-compose.py`** gains `assert_theme_complete()`, called from `compose()` beside
+`assert_shimmed()` — compose-time rejection, which is the shape row #102 specified after a Codex
+review refuted the original filing. **Not** a widening of `check-theme-token-coverage.py`; the row
+says explicitly that "the guard covers one page of five" is #80's framing and would be duplicate
+coordination vocabulary.
+
+**The mechanism, which is pure CSS specificity.** The shim declares 11 tokens at
+`@media (prefers-color-scheme: dark) { html { … } }` — `(0,0,1)`, and a media query contributes
+nothing. Any `:root` `(0,1,0)` or `:root[data-theme="light"]` `(0,2,0)` outranks it. So declaring
+PART of the set produces a half-live toggle, which is strictly worse than declaring none: an inert
+toggle stays readable (a 2026-09-05 page measured 15.22:1 in *both* themes — readable by accident).
+
+- `shim_dark_tokens()` reads the set out of `SHIM` rather than restating it, and exits 2 if the
+  block is missing rather than comparing against an empty set.
+- `light_palette_tokens()` reads BOTH selectors, because either outranks the shim.
+- **Live control** = the fragment brings its own wired one, OR the composer is about to add one —
+  which it does exactly when both `data-theme` palettes exist. Both routes reach a reader; the
+  2026-09-08 page came through the first.
+
+⭐ **NARROWED ON THE FIRST LIVE RUN.** The initial rule demanded every shim token and immediately
+refused `gen-goals-page` over `--structure-br` — which **nothing in the repo reads**; that page
+draws the border with `color-mix(var(--structure))`. Demanding a light value for a token with no
+consumer is a guard asking to be satisfied rather than describing a defect. It now fires only on
+tokens the composed page READS (fragment + lifted tray + chrome): supplied dark, read, no light
+value. All three generators compose rc=0 after the narrowing.
+
+⚠ **THE CONTROL REFUTED THE PREMISE TWICE.** Running the falsifier end-to-end under a redirected
+`HOME`: the first control/defect pair both failed on a missing Ask-tray source; the second pair both
+failed on an undeclared `--mono`. Neither run had reached the new guard, and *"defect → rc=1"* would
+have been a false conclusion both times. Third attempt, control FIRST: complete palette → **rc=0,
+page written**; identical page with a partial palette → **rc=1, page NOT written**, naming
+`--card, --defect, --ink-soft, --rule, --structure`.
+
+⚠ **Two self-test fixtures were wrong in ways that would have passed.** One omitted
+`:root[data-theme="dark"]`, so `assert_wired` refused it first — a fixture a different rule filters
+never tests this one. The other assumed "no control" meant "no button", when the composer ADDS a
+control whenever both palettes exist; a genuinely non-toggleable page declares no `data-theme`
+palettes at all.
+
+**MEASURED:** `brief-compose --self-test` **44 → 53** · `gen-dashboard`, `gen-backlog-page`,
+`gen-goals-page` all rc=0 · control/defect pair as above, reader's pages untouched.

@@ -131,6 +131,74 @@ def declared_vars(css: str) -> set[str]:
     return {m.group(1) for m in re.finditer(r"(--[\w-]+)\s*:", css)}
 
 
+def shim_dark_tokens(shim: str = "") -> set[str]:
+    """The tokens the OS-dark shim supplies, read from the shim ITSELF.
+
+    Read, never listed. A hand-kept copy of this set is a second statement of one fact, and the
+    shim is edited far more often than a guard is re-read.
+    """
+    src = shim or SHIM
+    m = re.search(r"@media \(prefers-color-scheme: dark\)\s*\{\s*html\s*\{(.*?)\}", src, re.S)
+    if not m:
+        raise SystemExit(
+            "brief-compose: CANNOT RUN — the OS-dark shim block was not found in SHIM, so the "
+            "half-live-toggle check has nothing to compare against. Treat this as NOT CHECKED.")
+    return {n for n in re.findall(r"(--[\w-]+)\s*:", m.group(1))}
+
+
+def light_palette_tokens(fragment_css: str) -> set[str]:
+    """Tokens a fragment declares that WIN IN LIGHT MODE.
+
+    ⛔ SPECIFICITY IS THE WHOLE MECHANISM, so this reads two selectors, not one. The shim lives at
+    `html` inside a media query — `(0,0,1)`, and a media query contributes NOTHING to specificity.
+    Both `:root` `(0,1,0)` and `:root[data-theme="light"]` `(0,2,0)` therefore beat it, so a token
+    declared in EITHER place is supplied in light mode and is covered.
+    """
+    out: set[str] = set()
+    for m in re.finditer(r':root(\[data-theme="light"\])?\s*\{([^}]*)\}', fragment_css):
+        out |= {n for n in re.findall(r"(--[\w-]+)\s*:", m.group(2))}
+    return out
+
+
+def assert_theme_complete(fragment_css: str, live_control: bool,
+                          also_read: str = "") -> None:
+    """A page with a WORKING theme toggle must not have a HALF-LIVE one.
+
+    ⛔ THE FAILURE THIS EXISTS FOR, measured 2026-09-08 in Chrome on a fork-built /brief page:
+    body text `rgb(20,25,32)` on `rgb(22,21,26)` = **1.03:1**. The fragment declared a light
+    palette for SOME of the shim's tokens. For the rest, the shim's DARK value stayed in force
+    while the page was in light mode — because a media query has zero specificity and loses to
+    any `:root`.
+
+    ⭐ A PARTIAL PALETTE IS WORSE THAN NONE, which is why the rule is shaped this way. A page that
+    declares nothing gets a fully inert toggle and stays readable — a 2026-09-05 page measured
+    15.22:1 in BOTH themes, i.e. readable by accident. Declaring half is what produces 1.03:1.
+
+    CONDITIONAL ON A LIVE CONTROL, deliberately. An unconditional rule would refuse the
+    deliberately non-toggleable pages, which today correctly compose with a stamp and no button.
+
+    ⛔ ONLY TOKENS THE PAGE ACTUALLY READS. Measured 2026-09-10, on the first live run: the goals
+    page was refused for `--structure-br`, which **nothing in the repo reads** — not the page, not
+    the chrome, not the tray. Demanding a light value for a token with no consumer forces a
+    declaration with no observable effect, which is a guard asking to be satisfied rather than a
+    guard describing a defect. The failure needs all three: the shim supplies it DARK, the page
+    READS it, and no light value overrides it.
+    """
+    if not live_control:
+        return
+    read = referenced_vars(fragment_css + "\n" + also_read)
+    missing = sorted((shim_dark_tokens() & read) - light_palette_tokens(fragment_css))
+    if missing:
+        raise SystemExit(
+            "brief-compose: this page has a WORKING theme toggle, but its light palette does not "
+            "cover every token the OS-dark shim supplies:\n  " + ", ".join(missing)
+            + "\n  In light mode those keep the shim's DARK value — a media query has no "
+              "specificity, so it loses to any `:root`, and the result is a HALF-LIVE toggle."
+              "\n  Measured 2026-09-08: exactly this produced body text at 1.03:1."
+              "\n  Declare them in the fragment's `:root[data-theme=\"light\"]` (or `:root`), or "
+              "remove the theme control so the toggle is inert and the page stays readable.")
+
+
 def assert_shimmed(tray_css: str, content_css: str) -> None:
     """Every name the tray reads must resolve, or the tray renders with pieces silently missing.
 
@@ -234,6 +302,12 @@ def compose(content: str, title: str, css: str, markup: str, script: str,
     head, body = content.split("</style>", 1)
     head = re.sub(r"<title>.*?</title>", "", head, flags=re.S)
     assert_shimmed(css, head)
+    # A control is LIVE if the fragment brings its own wired one, or if the composer is about to
+    # add one — which it does exactly when the palettes it needs are present. Both routes reach
+    # the same reader, so both are checked; the 2026-09-08 page came through the FIRST.
+    live_control = page_chrome.has_control(content) or not page_chrome.missing_palettes(
+        content + page_chrome.theme_control())
+    assert_theme_complete(head, live_control, css + "\n" + page_chrome.chrome_css())
     chrome_css, chrome_bar, chrome_js = chrome_for(content, generated_at)
     body = body + "\n" + chrome_bar + "\n" + chrome_js
     styled = (head + SHIM + "\n/* ---- Ask tray, extracted verbatim ---- */\n" + css
@@ -308,6 +382,20 @@ def main(argv: list[str]) -> int:
     return 0
 
 
+def _refusal_text() -> str:
+    """The message `assert_theme_complete` raises for a partial palette — used by `--self-test`.
+
+    ⚠ Asserting the MESSAGE, not just the exit. A refusal that does not name the missing tokens
+    sends the author back to diff two palettes by hand, which is the work the guard exists to do.
+    """
+    try:
+        assert_theme_complete(
+            ':root[data-theme="light"]{--ink:#111}.c{background:var(--card)}', True)
+    except SystemExit as exc:
+        return str(exc)
+    return ""
+
+
 def self_test() -> int:
     cases: list[tuple[str, bool]] = []
 
@@ -331,6 +419,72 @@ def self_test() -> int:
     case("composed doc carries the tray", has_tray(doc))
     case("composed doc has exactly one title", doc.count("<title>") == 1)
     case("shim defines --verified", "--verified" in doc)
+
+    # ── backlog #102: the HALF-LIVE toggle ──────────────────────────────────────────────────────
+    # ⛔ THE FALSIFIER THE ROW ASKED FOR, verbatim: "compose a Group-A page WITH a live theme
+    # control whose fragment declares a partial light palette; if brief-compose.py writes it, the
+    # gap is still open." These cases make that impossible.
+    _shim_names = shim_dark_tokens()
+    case("the shim's token set is read from the shim, and is not empty", len(_shim_names) >= 8)
+    case("a token declared in :root[data-theme=light] counts as covered",
+         "--card" in light_palette_tokens(':root[data-theme="light"]{--card:#fff}'))
+    # ⚠ plain `:root` counts too — (0,1,0) also beats the shim's `html` (0,0,1). Reading only the
+    # data-theme selector would refuse pages that are already correct.
+    case("...and so does a token declared in an unscoped :root",
+         "--card" in light_palette_tokens(":root{--card:#fff}"))
+    case("a token the fragment never declares is NOT covered",
+         "--card" not in light_palette_tokens(':root[data-theme="dark"]{--card:#111}'))
+
+    # ⚠ THE FIXTURE MUST READ THE TOKENS. The rule fires only on tokens the page consumes, so a
+    # fragment that declares a palette and reads nothing is correctly ignored — and a fixture like
+    # that would pass while proving the guard cannot fire. This one paints with them.
+    _reads = ("body{color:var(--ink);background:var(--bg)}"
+              ".c{background:var(--card);border-color:var(--rule);color:var(--ink-soft)}")
+
+    def _frag_with_control(palette: str) -> str:
+        """A fragment carrying its own WIRED control — the route the 2026-09-08 page came through."""
+        return ("<title>x</title><style>" + palette + _reads + "</style>"
+                + page_chrome.theme_control()
+                + "<script>" + page_chrome.chrome_script() + "</script>")
+
+    # ⚠ BOTH fixtures carry a dark palette, and that is not decoration. `assert_wired` refuses a
+    # control with no `:root[data-theme="dark"]` block — measured while writing these. Without the
+    # dark block the PARTIAL case would still be refused, but by the WRONG rule, and it would pass
+    # while proving nothing about `assert_theme_complete`. A fixture a different guard filters
+    # first is not a test of this one.
+    _dark = ':root[data-theme="dark"]{--ink:#eee;--bg:#111}'
+    _full = (_dark + ':root[data-theme="light"]{'
+             + "".join(f"{n}:#fff;" for n in sorted(_shim_names)) + "}")
+    _partial = _dark + ':root[data-theme="light"]{--ink:#111;--bg:#fff}'
+
+    def _composes(fragment: str) -> bool:
+        try:
+            compose(fragment, "T", css, markup, script)
+            return True
+        except SystemExit:
+            return False
+
+    case("a live toggle with a COMPLETE light palette composes", _composes(_frag_with_control(_full)))
+    case("⛔ a live toggle with a PARTIAL light palette is REFUSED",
+         not _composes(_frag_with_control(_partial)))
+    # ⭐ The conditional half. A partial palette is only a defect when the toggle WORKS; an inert
+    # toggle stays readable (a 2026-09-05 page measured 15.22:1 in both themes, by accident).
+    # ⚠ AND "NO CONTROL" IS NOT ACHIEVED BY OMITTING THE BUTTON — measured while writing this.
+    # The composer ADDS a control whenever both `data-theme` palettes are present, so a fragment
+    # with palettes and no button still ends up toggleable. A deliberately non-toggleable page is
+    # one that declares no `data-theme` palettes at all; that is the page this rule must not break,
+    # and it is the shape to test.
+    case("...but a partial palette on a page that gets NO control still composes",
+         _composes('<title>x</title><style>:root{--ink:#111;--bg:#fff}</style><div>hi</div>'))
+    # ⭐ THE NARROWING, pinned. Measured on the first live run: the goals page was refused for
+    # `--structure-br`, which NOTHING in the repo reads. A guard that demands a declaration with no
+    # observable effect is asking to be satisfied, not describing a defect.
+    case("a shim token the page never READS is not required",
+         _composes(_frag_with_control(_dark + ':root[data-theme="light"]{'
+                                      + "".join(f"{n}:#fff;" for n in
+                                                sorted(_shim_names - {"--structure-bg"})) + "}")))
+    case("the refusal names the tokens that are missing",
+         "--card" in _refusal_text() and "1.03:1" in _refusal_text())
 
     # ── the shim must give a fragment that declares NOTHING a correct page in BOTH themes ───────
     # MEASURED 2026-08-24: a brief fragment that set no `body` background composed to a page with
