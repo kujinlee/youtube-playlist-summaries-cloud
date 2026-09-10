@@ -934,3 +934,74 @@ Both are **comprehensibility affordances**, and they cover the two moments a hum
 Between them sits the **step banner** (`## ▶ STEP n of N`), which answers *what is happening right
 now*. Prose is the right medium for none of these three: it is unstructured exactly where the reader
 needs structure.
+
+---
+
+## 21. A check has two things that can be wrong — the RULE, and the POPULATION it runs over
+
+**Measured 2026-09-10.** Four defects, in four different components, reached the same diagnosis. An
+adversarial reviewer wrote the sentence that names it, about a subject none of the others touched:
+
+> *"the new code is right about its own subject and wrong about its population."*
+
+Every check contains two claims, and they fail independently:
+
+* **the rule** — the logic. *Does the light palette cover the tokens the page reads?*
+* **the population** — the set the rule runs over. *Which tokens? Read out of which text?*
+
+**A review attacks the rule, because the rule is what the code says.** The population is usually
+implicit — whatever the code happened to iterate — so it can be wrong while the logic is provably
+correct, the suite is green, and reading the diff tells you nothing.
+
+### The four, and what each got right
+
+| component | the rule — correct | the population — wrong |
+|---|---|---|
+| row insertion into a Markdown table | *"insert after the last table row"* | the last row **in the file** was in a SECOND table with a different column count, sharing one id space |
+| a CSS-coverage guard | *"every token the page reads needs a light value"* | scanned only the text before the first `</style>` — missing a second `<style>` block and every inline `style=`. Widened to the whole document, it then swept in body PROSE and refused a page for a token it merely mentioned |
+| a page-rebuild trigger | *"rebuild when the source is newer than the page"* | watched the data file; the page is equally built from the GENERATOR, so four new descriptions added there left it stale and the hook was silent |
+| a completeness invariant | *"every open item reaches the page exactly once"* | both sides derived from the same parser, so a row the parser silently skips leaves the expectation AND the page |
+
+### ⛔ The sharpest form: a check whose expectation and whose subject share a source
+
+The fourth is worth stating on its own, because it looks the most rigorous and is the most inert:
+
+```python
+open_items = {r["num"] for r in parse(FILE) if not r["closed"]}   # expectation
+placed     = [n for _, _, items in groups for n, _ in items]      # subject
+assert sorted(placed + undescribed) == sorted(open_items)
+```
+
+`parse()` skips a malformed line silently. A skipped row leaves `open_items` *and* the page, so the
+equation still balances. **The check cannot see the one failure it exists to prevent**, and it will
+never go red to tell you. The only completeness guard beneath it was a floor of `> 20` against an
+actual 109 — it tolerated losing 88 rows.
+
+This is the same shape as a record that agrees with itself: comparing a row's status marker against
+that row's own prose can only ever find typos, never staleness. **A guard must be anchored to
+something it does not produce.**
+
+### How to apply
+
+Ask the two questions **separately**, and in this order:
+
+1. **Is the rule right?** — the ordinary review question.
+2. **Does the set it runs over equal the set the rule is about?** — name the population out loud. If
+   the answer is "whatever that function returned", find out what that function drops.
+3. **Could the expectation and the subject come from the same place?** If so, the check is
+   self-referential and cannot see that place's omissions. Anchor one side to something external —
+   the file rather than the parser, git rather than the record, the delivered artifact rather than
+   the source that generates it.
+
+**The tell, for review:** when a finding is "the logic is fine, but it was looking at the wrong
+things", stop and ask what ELSE shares that population. Two of these four were found by widening a
+single finding into that question; the guard on the Markdown table and the rebuild trigger were
+found because someone asked it about a component nobody had complained about.
+
+### Why this is not [§1](#1-the-method-measurement-beats-assertion--and-a-script-can-be-either)
+
+§1 says measurement beats assertion, and a corpus rule sits under it: *a measurement is only as good
+as the SET it was taken over*. That entry is about **numbers** — you counted the wrong things. This
+one is about **guards**, and adds the failure that survives a correct rule, a green suite and a
+careful reading of the diff. A wrong number is visible the moment someone re-counts. A guard with the
+wrong population reports success forever.
