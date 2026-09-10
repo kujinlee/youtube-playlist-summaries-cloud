@@ -154,13 +154,92 @@ def css_of(document: str) -> str:
 
 
 def strip_css_comments(css: str) -> str:
-    """CSS with `/* … */` removed. PURE.
+    r"""CSS with comments removed AND value-string contents blanked. PURE.
 
-    Every scan in this module is a regex over CSS, and a comment can carry a brace, a `var(`, or a
-    `--token:` that no browser ever sees. The r1 review found two separate fail-opens that a comment
-    alone could reach.
+    ⛔ ONE PASS, NOT THREE REGEXES — r2 found three separate defects that all reduce to "a regex
+    over CSS does not know what a string is":
+
+      * `content:"var(--x)"` and `url("data:…var(--x)…")` were read as USES of `--x`, so a page was
+        refused for a token no browser resolves (r2 High);
+      * `--open:"/*"` … `--close:"*/"` let the naive `/\*.*?\*/` erase a REAL declaration between
+        them, so a complete light palette was refused as incomplete (r2 Medium);
+      * comments carrying a `}` truncated the shim scan (r1 Low).
+
+    ⚠ ATTRIBUTE-SELECTOR STRINGS ARE PRESERVED. Blanking every string would turn
+    `:root[data-theme="light"]` into `:root[data-theme=" "]`, and light would stop being
+    distinguishable from dark — the scan would then be reading the wrong palette while looking
+    green. Strings inside `[...]` are kept verbatim; only value strings are blanked.
     """
-    return re.sub(r"/\*.*?\*/", " ", css, flags=re.S)
+    out: list[str] = []
+    i, n, brackets, in_comment = 0, len(css), 0, False
+    while i < n:
+        if in_comment:
+            if css.startswith("*/", i):
+                in_comment = False; out.append("  "); i += 2
+            else:
+                out.append(" "); i += 1
+            continue
+        if css.startswith("/*", i):
+            in_comment = True; out.append("  "); i += 2
+            continue
+        ch = css[i]
+        if ch == "[":
+            brackets += 1; out.append(ch); i += 1; continue
+        if ch == "]":
+            brackets = max(0, brackets - 1); out.append(ch); i += 1; continue
+        if ch in "\"'":
+            quote, keep = ch, brackets > 0
+            out.append(ch); i += 1
+            while i < n and css[i] != quote:
+                if css[i] == "\\" and i + 1 < n:
+                    out.append(css[i:i + 2] if keep else "  "); i += 2; continue
+                out.append(css[i] if keep else " "); i += 1
+            if i < n:
+                out.append(css[i]); i += 1
+            continue
+        out.append(ch); i += 1
+    return "".join(out)
+
+
+def strip_scheme_media(css: str) -> str:
+    r"""CSS with every `@media (…prefers-color-scheme…)` block removed, at ANY nesting depth. PURE.
+
+    ⛔ BRACE COUNTING, NOT A REGEX. The first version was
+    `@media[^{]*prefers-color-scheme[^{]*\{(?:[^{}]|\{[^{}]*\})*\}`, which handles exactly one
+    level of nesting. r2 (Blocking) fed it
+    `@media (prefers-color-scheme: light){@supports (display:grid){:root{--x:#fff}}}` — two levels —
+    and the inner `:root` survived the strip and was counted as light coverage it can never provide.
+    """
+    opener = re.compile(r"@media[^{]*prefers-color-scheme[^{]*\{", re.I)
+    out, i, n = [], 0, len(css)
+    while True:
+        m = opener.search(css, i)
+        if not m:
+            out.append(css[i:]); return "".join(out)
+        out.append(css[i:m.start()])
+        j, depth = m.end(), 1
+        while j < n and depth:
+            if css[j] == "{":
+                depth += 1
+            elif css[j] == "}":
+                depth -= 1
+            j += 1
+        i = j
+
+
+def markup_of(document: str) -> str:
+    """The document's MARKUP — no `<style>`, `<script>`, `<pre>`, `<code>` or HTML comments. PURE.
+
+    The complement of `css_of`. `page_chrome.has_control` is a substring test for the button's id,
+    so a page that DISCUSSES the chrome — an explainer about it, or a code sample containing the
+    button — claimed to carry a live control. Asking the question of the markup alone keeps the
+    substring test honest without changing `page_chrome`, whose own reason for keying on the id is
+    that the word "theme" in prose must not count.
+    """
+    doc = re.sub(r"<!--.*?-->", " ", document, flags=re.S)
+    for tag in ("style", "script", "pre", "code"):
+        doc = re.sub(rf"<{tag}[^>]*>.*?</{tag}>", " ", doc, flags=re.S | re.I)
+    return doc
 
 
 def shim_dark_tokens(shim: str | None = None) -> set[str]:
@@ -205,8 +284,7 @@ def light_palette_tokens(fragment_css: str) -> set[str]:
     scan rather than matched-and-skipped, because the brace arithmetic of "which `:root` is inside
     which media block" is the part a regex gets wrong.
     """
-    css = strip_css_comments(fragment_css)
-    css = re.sub(r"@media[^{]*prefers-color-scheme[^{]*\{(?:[^{}]|\{[^{}]*\})*\}", " ", css, flags=re.S)
+    css = strip_scheme_media(strip_css_comments(fragment_css))
     out: set[str] = set()
     for m in re.finditer(r':root(\[data-theme="light"\])?\s*\{([^}]*)\}', css):
         out |= {n for n in re.findall(r"(--[\w-]+)\s*:", m.group(2))}
@@ -397,10 +475,18 @@ def compose(content: str, title: str, css: str, markup: str, script: str,
     # for exactly this reason; the second arm reintroduced the problem the first arm avoids.
     # Keying on a REAL parsed light palette also states the rule's intent exactly: this is about
     # pages that declare a light palette AND can be toggled.
+    # ⛔ THE `has_control` ARM IS BACK, and r1's argument for deleting it was WRONG. r2 produced
+    # the counterexample I claimed could not exist: `:root[data-theme="light"]{}` — an EMPTY light
+    # block. `missing_palettes` is satisfied (both selectors are present), `assert_wired` is
+    # satisfied (both blocks exist), and `declares_light` is FALSE because the block declares
+    # nothing. The page shipped with a real button and no light values at all.
+    # ⚠ Asked of the MARKUP, not the document: `has_control` is a substring test for the button id,
+    # so a page discussing the chrome would otherwise claim to carry one (r1 F7's shape).
     page_css = css_of(content)
     declares_light = bool(light_palette_tokens(page_css))
-    live_control = declares_light and not page_chrome.missing_palettes(
-        content + page_chrome.theme_control())
+    live_control = page_chrome.has_control(markup_of(content)) or (
+        declares_light and not page_chrome.missing_palettes(
+            content + page_chrome.theme_control()))
     # ⚠ SHIM IS PART OF THE READ CORPUS (r1 finding F3). It is appended to EVERY composed page and
     # reads tokens with no fallback of its own — `--bg` among them — so those are read by every
     # page whether or not the fragment names them. Omitting it made `--bg` required only when the
@@ -617,6 +703,48 @@ def self_test() -> int:
     # `assert_shimmed` and wrong here; `vars_read_anywhere` is the one this rule needs.
     case("⛔ a var() WITH an inline fallback still counts as READ",
          not _c(".c{background:var(--card,#fff)}"))
+    # ⛔ r2 R2-3 residue — MEASURED: removing `SHIM` from `also_read` left the suite at 71/71,
+    # because every other fixture's token is read by the CHROME too. `--good` is read by SHIM and
+    # not by the chrome, so this case is the only thing standing between that argument and silence.
+    case("⛔ a token read ONLY by the appended SHIM is still required",
+         not _composes('<title>x</title><style>' + _dark
+                       + ':root[data-theme="light"]{'
+                       + "".join(f"{n}:#fff;" for n in sorted(_shim_names) if n != "--good") + "}"
+                       + '</style><div>reads nothing of its own</div>' + _ctrl))
+
+    # ── r2 ADVERSARIAL REVIEW: 2 Blocking, 2 High, 1 Medium. Every one was introduced BY r1's own
+    # fixes, which is `portable-practices.md` §12 arriving exactly on schedule.
+    _full_but = lambda skip: (':root[data-theme="light"]{'
+                              + "".join(f"{n}:#fff;" for n in sorted(_shim_names) if n != skip) + "}")
+
+    # Blocking — the counterexample to r1's argument for DELETING the has_control arm. An EMPTY
+    # light block satisfies `missing_palettes` (the selector is present) and `assert_wired` (the
+    # block exists) while declaring nothing, so the page shipped a real button and no light values.
+    case("⛔ an EMPTY :root[data-theme=light]{} with a real control is refused",
+         not _composes('<title>x</title><style>' + _dark
+                       + ':root[data-theme="light"]{}.c{background:var(--card)}</style>'
+                       + '<div class="c">x</div>' + _ctrl))
+    # Blocking — the media stripper was a regex handling ONE level of nesting.
+    case("⛔ a :root two levels deep inside @media(scheme) is not coverage",
+         not _composes('<title>x</title><style>' + _dark + _full_but("--structure-bg")
+                       + "@media (prefers-color-scheme: light){@supports (display:grid)"
+                         "{:root{--structure-bg:#fff}}}.c{background:var(--structure-bg)}</style>"
+                       + '<div class="c">x</div>' + _ctrl))
+    # High — a var() inside a CSS STRING is not a read. No browser resolves it.
+    case("a var() inside a CSS string is not a use",
+         _composes('<title>x</title><style>' + _dark + _full_but("--structure-bg")
+                   + '.n::before{content:"var(--structure-bg)"}</style><div>x</div>' + _ctrl))
+    # Medium — `/*` and `*/` inside string VALUES let the comment stripper eat a real declaration.
+    case("a /* inside a CSS string does not erase the declarations after it",
+         _composes('<title>x</title><style>' + _dark
+                   + ':root[data-theme="light"]{--open:"/*";--structure-bg:#fff;--close:"*/";'
+                   + "".join(f"{n}:#fff;" for n in sorted(_shim_names) if n != "--structure-bg")
+                   + '}.c{background:var(--structure-bg)}</style><div class="c">x</div>' + _ctrl))
+    # ⚠ and the ATTRIBUTE-SELECTOR string must survive the blanking, or light stops being
+    # distinguishable from dark and every scan reads the wrong palette while looking green.
+    case("blanking value strings leaves [data-theme=\"light\"] intact",
+         "--y" in light_palette_tokens(':root[data-theme="light"]{--open:"/*";--y:#fff}'))
+
     # ⛔ r2 — THE r1 FIX OVER-CORRECTED, and this pins both edges of it. r1 F6 moved the scan from
     # `head` to the whole `content`, which swept in BODY PROSE: a page whose text merely said
     # "the shim supplies var(--x)", or that showed a CSS sample in `<pre><code>`, was refused for a

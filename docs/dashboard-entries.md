@@ -6490,3 +6490,63 @@ entirely. `ci.yml` now runs `brief-compose.py --self-test`.
 **MEASURED:** `--self-test` 44 → 53 (author) → **62** (post-review) · mutations M0, M1, M7, M8 all
 killed, M6 dissolved · `gen-dashboard`, `gen-backlog-page`, `gen-goals-page` rc=0 · 9 gates rc=0,
 and `check-review-rounds` went 1 → 0 once both halves were filed.
+
+## 2026-09-10 [needs-you]
+The second review round found that the first round's fixes had broken three more things — including
+the Ask button disappearing from the backlog page.
+
+Round 2 found seventeen more problems, five of them serious. Two of the serious ones were caused by
+the repairs I made in round one, which is the pattern this project measured a month ago and wrote
+down: late rounds mostly repair their own repairs.
+
+The one that mattered most to you: **the backlog page had silently lost its "ask a question" box.**
+The new safeguard was refusing to build that page, and the builder quietly fell back to writing it
+without the box — reporting success. The page really did have the problem the safeguard describes,
+so the fix was to give the page the four colours it was missing rather than to weaken the check. The
+box is back.
+
+Also worth knowing: the builder was printing only the first line of the failure, and the line that
+says *which* colours are missing is the second. So the reason was invisible for three runs.
+
+**Decide:** Round 2 is folded and green, but the round-2 reviewers have not seen the fold — should I run round 3?
+- A — Yes, one more round; two of round 2's five serious findings were caused by round 1's fixes, and round 3 is where that pattern usually shows [recommended]
+- B — No; merge now. The cap you approved is two rounds unless a Blocking is open, and none is open against the current code
+- C — Merge now and open a follow-up item for a later round
+<!--tech-->
+**r2: Codex 2B/2H/1M, Claude 3B/4H/3M/2L, both NOT CONVERGED.** Filed under
+`docs/reviews/{coordinator,claude}/theme-half-live-102-r2-*.md`. Both halves pinned their subject to
+`d4b54cfa` by `git archive` + `shasum`.
+
+⭐ **Two of the three Claude Blockings were introduced by r1's own fixes** — §12's prediction,
+on schedule:
+- **R2-1 / Codex-1** — deleting the `has_control` arm (r1's own resolution of M6) let
+  `:root[data-theme="light"]{}` — an EMPTY block — ship a page with a working button and 11 of 11
+  tokens uncovered at 1.02:1. `missing_palettes` (selector present) and `declares_light` (nothing
+  declared) disagree, and the arm was the only thing spanning the gap. **Restored, asked of
+  `markup_of(content)`.**
+- **R2-2** — r1's `@media` stripper meeting r1's corpus widening: one sentence of prose containing
+  `@media (prefers-color-scheme: …)` deleted everything after it, **107,485 characters on the real
+  `/backlog` page**, silently disabling the guard. Dissolved by `css_of()`.
+
+**Fixed this round:** `css_of` (CSS only — `<style>` bodies + `style=` attributes), a
+comment/string-aware `strip_css_comments` that preserves attribute-selector strings, brace-counting
+`strip_scheme_media` (nesting depth ≥ 2), `markup_of` for the control test, `has_control` arm
+restored, and the caller now prints the WHOLE refusal.
+
+⛔ **`/backlog` SHIPPED WITHOUT ITS ASK TRAY, exit 0** (R2-7) — a live regression from this slice.
+The page genuinely never declared `--bg`, `--rule`, `--structure` or `--defect`; `SHIM` is appended
+AFTER the page's stylesheet and paints `body{background:var(--bg)}`, so it wins over the page's own
+`body{background:var(--ground)}`. True positive. Fixed page-side by mapping the four to the page's
+existing colours (`--ground`, `--line`, `--structural`, `--problem`) in all four palette blocks.
+
+⚠ **A duplicated definition silently shadowed the fix for 20 minutes.** A splice with `j < i`
+re-inserted the OLD `css_of` and `strip_css_comments` after the new ones, so the later (old) copies
+won and two findings read as "still open" while the new code was correct and unreachable.
+
+⚠ **I diagnosed against a STALE artifact.** `backlog-table.fragment.html` is only written on
+success, so while compose was failing I was reading a fragment from the previous evening and
+concluding the palette fix had not applied.
+
+**MEASURED:** `--self-test` 62 → **72** · five revert-mutations all caught (the last, dropping
+`SHIM` from `also_read`, needed a `--good` fixture because every other token is read by the chrome
+too) · all three generators rc=0 with the tray present · 9 gates rc=0.

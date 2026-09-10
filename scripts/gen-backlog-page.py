@@ -205,9 +205,6 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
              "it can still change a decision."),
         (58, "Every gate in one place: what it is, what it last returned, and which have never "
              "failed — because a gate that cannot fail is the one to distrust."),
-        (102, "The rule that keeps the five generated pages readable in both light and dark is "
-              "enforced on ONE of them. The other four are correct today by hand, which is not "
-              "the same as being kept correct."),
         (103, "Ask a question on one of these pages and the answer comes from whichever session "
               "is running now, not the one that wrote the page. The listener outlives the session "
               "it belonged to, so a reader can be answered by a stranger."),
@@ -1130,6 +1127,13 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str,
   --ground:#f7f6f3; --panel:#ffffff; --card:#ffffff; --line:#dfdcd5; --line-2:#eceae5;
   --measured:#0f7268; --problem:#ad3a22; --structural:#3d5a86;
   --pending:#a8690b; --pending-bg:#fdf4e3; --ink-soft:#39424f; --good:#0f7268;
+  /* ⚠ THE SHIM'S OWN VOCABULARY. `SHIM` is appended AFTER this stylesheet and paints
+     `body{{background:var(--bg)}}`, so it WINS over this page's `body{{background:var(--ground)}}`.
+     Without a light `--bg` the body kept the shim's DARK value on OS-dark + toggled-light —
+     the backlog #102 defect, on this page, found by the guard that closes it. `--rule` and
+     `--structure` are read by the shim and the chrome for the same reason. Mapped to this
+     page's own colours rather than invented. */
+  --bg:#f7f6f3; --rule:#dfdcd5; --structure:#3d5a86; --defect:#ad3a22;
   --serif:Georgia,'Iowan Old Style','Times New Roman',serif;
   --sans:ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
   --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
@@ -1139,18 +1143,21 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str,
   --ground:#101318; --panel:#171b22; --card:#171b22; --line:#2a3039; --line-2:#20252d;
   --measured:#4fc9b8; --problem:#f0836a; --structural:#8fb0e0;
   --pending:#eab464; --pending-bg:#251d10; --ink-soft:#a9b2c0; --good:#4fc9b8;
+  --bg:#101318; --rule:#2a3039; --structure:#8fb0e0; --defect:#f0836a;
 }}}}
 :root[data-theme="dark"]{{
   --ink:#e7e9ee; --ink-2:#a9b2c0; --ink-3:#7a8494; --ink-faint:#7a8494;
   --ground:#101318; --panel:#171b22; --card:#171b22; --line:#2a3039; --line-2:#20252d;
   --measured:#4fc9b8; --problem:#f0836a; --structural:#8fb0e0;
   --pending:#eab464; --pending-bg:#251d10; --ink-soft:#a9b2c0; --good:#4fc9b8;
+  --bg:#101318; --rule:#2a3039; --structure:#8fb0e0; --defect:#f0836a;
 }}
 :root[data-theme="light"]{{
   --ink:#12161c; --ink-2:#39424f; --ink-3:#6b7686; --ink-faint:#6b7686;
   --ground:#f7f6f3; --panel:#ffffff; --card:#ffffff; --line:#dfdcd5; --line-2:#eceae5;
   --measured:#0f7268; --problem:#ad3a22; --structural:#3d5a86;
   --pending:#a8690b; --pending-bg:#fdf4e3; --ink-soft:#39424f; --good:#0f7268;
+  --bg:#f7f6f3; --rule:#dfdcd5; --structure:#3d5a86; --defect:#ad3a22;
 }}
 *{{box-sizing:border-box}}
 body{{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
@@ -2246,7 +2253,13 @@ def main() -> int:
         args.out.write_text(fragment)
         print(f"wrote {args.out}  ({len(rows)} rows, {open_n} open)")
         print("⚠  WITHOUT the Ask tray — brief-compose.py could not lift one:")
-        print("   " + (composed.stderr.strip() or composed.stdout.strip() or "no output").splitlines()[0])
+        # ⚠ THE WHOLE MESSAGE, not `.splitlines()[0]` (r2 finding R2-9). brief-compose puts its
+        # headline on line 1 and the ACTIONABLE part — which tokens are missing — on line 2, so
+        # printing one line told the reader a page had failed and never why. Measured 2026-09-10:
+        # the tray vanished from this page and the reason was invisible for three runs.
+        _msg = (composed.stderr.strip() or composed.stdout.strip() or "no output")
+        for _line in _msg.splitlines():
+            print("   " + _line)
         print("   The page renders and reloads; only the ask-a-question button is missing.")
         return 0
 
