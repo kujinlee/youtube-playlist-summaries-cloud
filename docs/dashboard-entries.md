@@ -6159,3 +6159,44 @@ change, then: predicting a parser instead of running it.
 · `check-vocabulary-collisions` · `check-plan-file-tags` all rc=0. `check-test-counts` was **NOT
 run** — it has no freshness bound and would pass against a stale `jest-results.json`; treat test
 counts as NOT CHECKED. `--mutate .` not run locally: CI runs it, and this branch changes no script.
+
+## 2026-09-09 [resolved: 2026-09-09/13]
+You answered both questions from earlier, so both are done and off the list.
+
+The three loose ends from item #91 are now items of their own, #107, #108 and #109, so they can be
+picked up without anyone having to read #91's history to find them.
+
+On the second question you agreed with the recommendation: the closure check will not learn to read
+an item id at the start of a commit subject. The reason is written into the check itself rather than
+only recorded here, because that file is where someone would go to propose it again.
+<!--tech-->
+**Filed — `docs/backlog.md` rows #107, #108, #109**, inserted into the MAIN table (bounded by its own
+`| # | Item | Touches |` header and `## Bundles`), all three verified through `check-docs`'s own
+`CELL_SPLIT` at **6 structural columns**. Row #91's status clause changed from *"Residue carried,
+NOT filed"* to naming the three ids.
+
+| id | sev | what |
+|---|---|---|
+| 107 | 🟢 | the two declaration-refusal causes share one sentence — and the obvious fix is the shape #91 spent three rounds deleting |
+| 108 | 🟠 | *"one line, one mutation" is a property of the INSTRUMENT* — the precedent, before a third refactor cites it |
+| 109 | 🟠 | the orphaned-anchor class has no cheap detector; `EXPECTED_MUTATIONS` cannot see it by construction |
+
+⭐ **#108 gained a sharper framing while being written, and it is the reason it is worth filing.**
+The record already holds **both** resolutions of the same collision, pointing opposite ways: #98's
+was fixed by retargeting the MUTATION to a distinct substring (the instrument yielded); #91's was
+fixed by splitting the CODE (the subject yielded). Nothing says which is correct when. That gap, not
+either instance, is the item.
+
+**Decision recorded in `check-backlog-closure.py`'s docstring**, immediately after the honest-residue
+paragraph: head-form matching proposed and REJECTED, with the two-line measurement that refuses it —
+`File backlog #85 (…)` and `File backlog #99 — …` both lead with an id and close nothing, the same
+56%-false direction the existing table already priced. Docstring-only; no behaviour change, no new
+mutation. `--self-test` **20/20**, live run rc=0 over **109 rows** (was 106).
+
+⚠ **A GUARD REFUSED THE FIRST ATTEMPT, AND IT WAS RIGHT.** My insertion point was "the last table row
+in the file", which is **row 11** — `docs/backlog.md` holds a SECOND table under *Found during
+testing* with a different shape (`| # | Item | Status |`, 3 columns) that **shares the same id
+space**. Appending 6-column rows there would have been caught by `check-docs`, but only after the
+write. The locator now finds the main table by its own header and bounds it at the next `## `
+heading, and the id-collision check scans **both** tables. Second time today that an assertion
+described the population I imagined rather than the one on disk — the first was the escaped pipe.
