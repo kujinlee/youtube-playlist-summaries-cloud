@@ -127,6 +127,9 @@ jobs:
       # backlog #102. Measured 2026-09-10 during the r1 review (finding F9): 62 cases, no CI step,
       # no mutation manifest. A guard nothing runs is the class that froze the backlog page for
       # five days.
+      - name: check-review-recorded self-test
+        run: python3 scripts/check-review-recorded.py --self-test
+
       - name: brief-compose self-test
         run: python3 scripts/brief-compose.py --self-test
 
@@ -372,3 +375,21 @@ jobs:
           printf '%s' "$BODY" > /tmp/pr-body.md
           python3 scripts/check-dashboard-entry.py \
             --base "origin/$GITHUB_BASE_REF" --pr-body-file /tmp/pr-body.md
+
+      # ⛔ THE ZERO-ROUND CASE. `check-review-rounds` audits rounds that EXIST; a branch with none
+      # passes it vacuously, which is how five PRs merged unreviewed on 2026-09-09 with every gate
+      # green. Same shape as the sibling above: a branch that changes CODE records a round, or says
+      # `NO-REVIEW: <reason>` in the PR body.
+      # ⚠ WRITES ITS OWN BODY FILE. The first version read `/tmp/pr-body.md` produced by the
+      # dashboard-entry step above — a side effect of a DIFFERENT step, which reordering, removing
+      # or short-circuiting that step would turn into a stale or missing read (r1 finding R8).
+      # Same `printf '%s' "$BODY"` for the same reason stated there: a PR body is attacker-
+      # controlled text full of backticks and quotes.
+      - name: check-review-recorded (PR only)
+        if: github.event_name == 'pull_request'
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf '%s' "$BODY" > /tmp/review-pr-body.md
+          python3 scripts/check-review-recorded.py \
+            --base "origin/$GITHUB_BASE_REF" --pr-body-file /tmp/review-pr-body.md

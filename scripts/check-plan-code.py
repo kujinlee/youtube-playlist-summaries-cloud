@@ -503,7 +503,7 @@ EXPECTED_MUTATIONS = {
     # video_artifacts (video_id)` PASSED — and no case arrived with the fix. Removing "idx" from
     # that tuple survived all 117 cases; the drift table now carries an INDEX row, so it does not.
     "scripts/check-live-schema.py": 12,
-    "scripts/check-dashboard-entry.py": 42,
+    "scripts/check-dashboard-entry.py": 43,
     # ⟳ backlog #91: check-plan-code 35 -> 30, and the FIVE did not disappear — they MOVED
     # to scripts/coverage_verdict.py with the clauses they guard. The sum below is unchanged
     # at 359, which is the point: a seam that relocates coverage must not be able to look
@@ -559,6 +559,10 @@ EXPECTED_MUTATIONS = {
     # so the ratchet is the instrument — every new entry quotes a problem MESSAGE or a whole
     # statement, and `--mutate .` in CI is what will say if one stops resolving.
     "scripts/coverage_verdict.py": 6,
+    # ⟳ 2026-09-10: the zero-round gate joins the manifest in the SAME commit that adds it. Five
+    # PRs merged unreviewed on 2026-09-09 because a guard existed and nothing ran it; shipping its
+    # replacement as manifest debt would repeat the shape at one remove.
+    "scripts/check-review-recorded.py": 6,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
@@ -1898,6 +1902,7 @@ def _self_test() -> int:
                                       "scripts/check-plan-progress.py",
                                       "scripts/check-plan-task-order.py",
                                       "scripts/check-producer-enumeration.py",
+                                      "scripts/check-review-recorded.py",
                                       "scripts/check-review-rounds.py",
                                       "scripts/check-roadmap-consistency.py",
                                       "scripts/check-selftest-counts.py",
@@ -2022,7 +2027,11 @@ def _self_test() -> int:
     # a target written ahead of the deletion it describes is a green check over code that
     # does not exist yet. Split by function and how the 21 was measured: see
     # EXPECTED_MUTATIONS' own comment.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 387)
+    # ⟳ 387 -> 393, 2026-09-10: `check-review-recorded.py` joins the manifest in the SAME commit
+    # that creates it, with 6 entries. A RISE, and the ordinary kind — new guard, new coverage.
+    # The gate it adds exists because five PRs merged unreviewed while every check stayed green;
+    # shipping its replacement as manifest debt would have repeated that shape at one remove.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 394)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
