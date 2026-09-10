@@ -2,7 +2,7 @@
 """Render `docs/backlog.md` as a browsable HTML page at a STABLE url.
 
     python3 scripts/gen-backlog-page.py          # → ~/explainers/backlog-table.html
-    python3 scripts/gen-backlog-page.py --self-test
+    python3 scripts/gen-backlog-page.py --self-test  # 165 cases
     open http://127.0.0.1:7391/backlog-table     # after scripts/explainer-serve.py
 
 WHY THIS EXISTS
@@ -61,7 +61,11 @@ from __future__ import annotations
 from typing import Callable, Sequence
 
 import argparse
+import contextlib
 import html
+import os
+import inspect
+import io
 import importlib.util
 import pathlib
 import re
@@ -476,7 +480,15 @@ def dependency_svg(by_num: dict) -> str:
     ROW, PAD, RX, RW, IX, IW = 46, 26, 14, 200, 392, 290
     out = []
     for rk, root in ROOTS.items():
-        kids = sorted((n for n, (_, r, _) in DEPENDS.items() if r == rk),
+        # ⚠ `n in by_num` — PRE-EXISTING, found 2026-09-10 while verifying backlog #110 end to end,
+        # and reproduced identically on master. A number DEPENDS names that is not among the rows
+        # crashed here with a bare `KeyError` inside `build`, so the page was not written at all and
+        # the reader got a traceback instead of this file's own refusal grammar. The way to make it
+        # happen is to decorate row #17 — a dependency root — which is exactly the failure #110 is
+        # filed about, and it silently made #110's own promise ("the page still builds and tells
+        # you") false for the three highest-severity items on it. Nothing goes unsaid by skipping:
+        # `depends_errors` already reports "#N has a dependency but is not an open item".
+        kids = sorted((n for n, (_, r, _) in DEPENDS.items() if r == rk and n in by_num),
                       key=lambda n: (dep_rank(n), n))
         if not kids:
             continue
@@ -531,7 +543,15 @@ def dependency_mermaid(by_num: dict) -> str:
     node labels on purpose: mermaid reads `#nnn;` as an entity, and a label is not worth the risk."""
     lines = ["flowchart LR"]
     for rk, root in ROOTS.items():
-        kids = sorted((n for n, (_, r, _) in DEPENDS.items() if r == rk),
+        # ⚠ `n in by_num` — PRE-EXISTING, found 2026-09-10 while verifying backlog #110 end to end,
+        # and reproduced identically on master. A number DEPENDS names that is not among the rows
+        # crashed here with a bare `KeyError` inside `build`, so the page was not written at all and
+        # the reader got a traceback instead of this file's own refusal grammar. The way to make it
+        # happen is to decorate row #17 — a dependency root — which is exactly the failure #110 is
+        # filed about, and it silently made #110's own promise ("the page still builds and tells
+        # you") false for the three highest-severity items on it. Nothing goes unsaid by skipping:
+        # `depends_errors` already reports "#N has a dependency but is not an open item".
+        kids = sorted((n for n, (_, r, _) in DEPENDS.items() if r == rk and n in by_num),
                       key=lambda n: (dep_rank(n), n))
         if not kids:
             continue
@@ -620,7 +640,20 @@ ROW = re.compile(r"^\|\s*(\d+)\s*\|(.*)$")
 
 
 def rows_of(text: str) -> dict[int, str]:
-    """Item number → its row's raw text, for one version of the file."""
+    """Item number → its row's raw text, for one version of the file.
+
+    ⚠ THIS IS A SECOND READING OF "WHAT IS A ROW", and `parse`'s own docstring argues at length
+    against exactly that — r2 finding M-4 (Claude) pointed out the argument sits ninety lines below
+    an unmentioned counter-example. Said plainly rather than quietly: this regex knows nothing of
+    sections, headers or table blocks, and it is deliberately kept that way, because its job is to
+    diff HISTORICAL versions of the file whose structure may not match today's. Its keys are only
+    ever read through `hist.get`, so a key `parse` does not produce is ignored rather than rendered.
+    ⛔ What it must NOT become is a second answer to "is this row on the page" — that question has
+    one owner, and it is `parse`. ⚠ THAT SENTENCE IS A CONVENTION, NOT A GUARD: nothing observes it,
+    and this project has measured what the difference is worth ("a convention catches what you READ;
+    a script catches what is THERE"). `scripts/check-vocabulary-collisions.py` exists for exactly
+    this class — one mechanism per concern — and teaching it about this pair is follow-up work,
+    named here so the gap is visible rather than implied away by the ⛔."""
     out = {}
     for line in text.splitlines():
         m = ROW.match(line)
@@ -679,23 +712,200 @@ class ShapeError(Exception):
     cell is how a closed marker written for something else once closed two open items."""
 
 
-def parse(lines: Sequence[str]) -> list[dict]:
+DELIMITER_CELL = re.compile(r"^:?-+:?$")
+
+
+def is_delimiter(line: str) -> bool:
+    r"""The `|---|---|` rule under a table header — decided CELL BY CELL.
+
+    ⚠ THREE SPELLINGS OF THIS HAVE BEEN WRONG, each in its own direction, so the rule is GFM's
+    rather than a regex over the whole line:
+      * `^\|[\s:|-]+\|$` accepted `| | | |` and `| : | : |` — a half-typed row read as a
+        delimiter and dropped in silence (r1 M-3);
+      * anchoring on `\|$` rejected `|---|---|---`, a valid delimiter with its outer pipe omitted,
+        and reported a healthy file (r2 M-1);
+      * one hyphen ANYWHERE in the line accepted `| : | - | : |`, whose first cell is not a
+        delimiter cell at all (r3, Codex).
+    ⛔ ONE hyphen per cell, not three. Three is a convention; GFM's delimiter cell is optional
+    colon, one or more hyphens, optional colon — so `|-|-|-|` and `| - | - | - |` are real
+    delimiters, and reporting them would be the cry-wolf failure backlog #92 is filed about."""
+    s = line.strip()
+    # ⚠ A PIPE IS REQUIRED. `---` on its own is a horizontal rule, and without this it satisfied
+    # every cell test and consumed a table's delimiter slot.
+    if "|" not in s:
+        return False
+    # ⚠ No `bool(cells)` guard: `str.split` never returns an empty list (verified over "", "|",
+    # "||", " | "), so it could not be False and read as a guarded case that was not one (r4 L-2).
+    return all(DELIMITER_CELL.match(c.strip()) for c in s.strip("|").split("|"))
+
+
+def row_ish(line: str) -> bool:
+    """Could a reader have meant this line as a row of the table it sits in?
+
+    ⛔ THE TEST IS THE PREFIX LENGTH, and both obvious alternatives are measured failures.
+    `startswith("|")` misses `⭐| 5 | … |` — a decoration one character to the LEFT of the one
+    #110 is filed about. "Contains a pipe" reports this file's own house style back at it:
+    `> paragraphs of literal `|` on GitHub …` is real prose in `docs/backlog.md` and was being
+    called a lost backlog item (r3, both halves).
+
+    A decoration on a number cell is a character or two — `⭐`, `#3`, `- `, an indent. Prose that
+    merely mentions a pipe has whole words in front of it. Three characters is the line between
+    them, and it is a JUDGEMENT — so BOTH SIDES OF THE BOUNDARY are pinned at 3 and at 4, not at 3
+    and at 24. r4 measured that sentence false in the upward direction: the negative case used a
+    whole sentence, so raising the limit to 20 changed nothing anyone could see."""
+    # ⚠ THE ORIGINAL LINE, not the stripped one (r4, Codex). Stripping first meant a four-space
+    # indented pipe line was reported — and four spaces in Markdown is a CODE BLOCK, so that line
+    # was never going to be a table row. The docstring and the code disagreed and the code was the
+    # wrong one of the two. One leading space, which IS one of #110's decorations, is index 1.
+    i = line.find("|")
+    return 0 <= i <= 3
+
+
+def report_run(rows: list[dict], unread: Sequence[str]) -> None:
+    """Everything a completed run says on the terminal, in one place, for BOTH success arms.
+
+    ⛔ IT EXISTS BECAUSE THE ARMS DISAGREED, and the case that caught it is in this file's own
+    suite. `main` succeeds two ways — with an Ask tray and without one — and the no-tray arm
+    returned before ANY of the drift notes were printed. So a run that had already gone wrong once
+    (no tray) also silently dropped the GROUPS, DEPENDS and undescribed warnings, and the reader
+    got the smaller half of the truth exactly when they needed the larger one. This is r1 finding
+    M-1's shape a third time; the answer is one function rather than a third copy of the block.
+
+    ⚠ The ⚠ prefix is the existing channel: `explainer-serve._regenerate` collects those lines into
+    the Refresh button's warning, and `.claude/hooks/regen-backlog-page.sh` keeps each ⚠ line with
+    its three-space continuations."""
+    report_unread(unread)
+    for note in drift_notes_for(rows, unread):
+        print(f"⚠  {note}")
+    still = undescribed(GROUPS, {r["num"] for r in rows if not r["closed"]})
+    if still:
+        print(f"⚠  {len(still)} open item(s) have no description in GROUPS: {still}")
+        print("   They render under \"Filed, but nobody has described them yet\" — the page is "
+              "complete, the prose is not.")
+        print("   Add them to GROUPS in scripts/gen-backlog-page.py.")
+
+
+def report_unread(unread: Sequence[str]) -> None:
+    """PRINT the unread report. One ⚠ line, then indented detail.
+
+    ⛔ MODULE LEVEL, not a closure inside `main`, and r2 finding H-2 is why: as a closure nothing
+    could call it, so a mutation that marked EVERY line with ⚠ — reverting r1's M-2 fix outright —
+    left the suite at 110/110. `explainer-serve` collects the ⚠ lines and cuts the join at 400
+    characters, so marking all of them spends the whole budget and pushes the other warnings out of
+    the Refresh button. The indent is the shape the Ask-tray failure above already uses, and
+    `.claude/hooks/regen-backlog-page.sh` keeps an indented line that follows any ⚠ line."""
+    for n, line in enumerate(unread_note(unread)):
+        print(f"⚠  UNREAD: {line}" if n == 0 else f"   UNREAD: {line}")
+
+
+def unread_note(unread: Sequence[str]) -> list[str]:
+    """Display lines for rows the parser could not read — EMPTY when there were none. Line 0 is a
+    SUMMARY that must stand alone; everything after it is detail.
+
+    ⚠ It QUOTES each line rather than counting them. A bare count tells a reader that something is
+    missing from the page and gives them no way to find it; this file has already paid for an
+    unactionable warning once (r2 finding R2-9, three runs before anyone learned why the Ask tray
+    had gone).
+
+    ⛔ WHY LINE 0 IS SHORT, AND WHY THE PREFIX IS NOT IN HERE — r1 finding M-2, MEASURED TWICE.
+    `explainer-serve` joins every line starting with ⚠ and cuts the join at 400 characters. The
+    first fix folded the remedy into the summary to save it from the cut; measured, that made the
+    summary 230 characters, took the note to 585, and left 2 of 6 warnings in the Refresh button —
+    the same displacement the finding was about, one round later. So the two channels get different
+    amounts: `main` marks ONLY line 0 with ⚠, the rest goes out indented, and the page box — which
+    has no budget at all — renders every line. The `UNREAD:` prefix is added by each channel, so
+    the string this returns is not a format anybody else has to parse."""
+    if not unread:
+        return []
+    shown, extra = unread[:3], len(unread) - 3
+    return [f"{len(unread)} line(s) in docs/backlog.md sit inside a table and were not read — "
+            f"no card here, and on no count"] + \
+           [ln.strip()[:110] + ("…" if len(ln.strip()) > 110 else "") for ln in shown] + \
+           ([f"… and {extra} more"] if extra > 0 else []) + \
+           ["a row must start with `|` and its number cell must be a bare integer — "
+            "no ⭐, no #, no leading space"]
+
+
+def parse(lines: Sequence[str], unread: list[str] | None = None) -> list[dict]:
+    """Rows, in file order. Pass `unread` to also collect the lines this REFUSED TO READ.
+
+    ⚠ AN OUT-PARAMETER, deliberately, and the alternative was measured against it: returning a
+    tuple would rewrite eleven call sites, and a separate walker that re-derived "am I inside a
+    table with a header" would be a second implementation of one rule — which this repo has
+    watched drift into fabricating text on a live page. There is ONE walk. What the caller gets is
+    the same walk's other half.
+
+    ⛔ WHAT MAKES THIS NOT SELF-REFERENTIAL (backlog #110, portable-practices §21). The dropped
+    lines are recognised from the FILE'S OWN TEXT — a line inside a table block that this walk did
+    not read, decided from the line itself and never from the parse result — so the expectation and
+    the subject no longer share a source. The completeness case in
+    the suite below was blind precisely because both of its sides came out of this function."""
     rows: list[dict] = []
     header: list[str] = []
     section = ""
+    # ⚠ NOT "the line after the header" — r3 finding M-2. A decorated row sitting between the
+    # header and the delimiter consumed that one-line window, so the GENUINE delimiter one line
+    # later was reported too, carrying a remedy ("the number cell must be a bare integer") that is
+    # nonsense about `|---|---|---`. A false warning stapled to a real one is how a reader learns
+    # to skim the box. The window is now "until this table has had its delimiter".
+    seen_delimiter = False
+    # ⛔ FENCE TRACKING WAS HERE IN r1 AND IS REVERTED (r2, Codex) — the reason is WHERE the fix
+    # lived. Skipping ``` regions was meant to stop a false POSITIVE in the report; implemented in
+    # this walk it also changed what `parse` READS, so its own bugs deleted real rows: `~~~` and
+    # indented fences were not recognised at all, and an UNCLOSED fence silently dropped 61 of 110
+    # rows. Trading "the warning is noisy" for "rows disappear" is a bad trade, and `docs/backlog.md`
+    # has 0 fences today, so the trade bought nothing. A fenced example table is therefore still
+    # READ as real rows — pre-existing, older and worse than the noise beside it, and its own slice.
     for line in lines:
         if line.startswith("## "):
+            # ⚠ `seen_delimiter` is NOT reset here (r4 L-3): `header` is emptied, and nothing is
+            # reported while `header` is falsy, so this reset could be removed with the suite
+            # green. The `| # |` branch below is the one that carries the rule, and the input
+            # that proves it is a file with TWO item tables — which `docs/backlog.md` is.
             section, header = line[3:].strip(), []
             continue
         if re.match(r"^\|\s*#\s*\|", line):
             header = [c.strip().lower() for c in CELL_SPLIT.split(line)[1:-1]]
+            seen_delimiter = False
             continue
         if not re.match(r"^\|\s*\d+\s*\|", line):
+            # ⭐ backlog #110. This branch used to be a bare `continue` — the ONE path out of this
+            # function that lost a row without saying so. Its sibling (a width that disagrees with
+            # the header) has raised since day one; this one dropped ⭐-, #- and space-decorated
+            # rows in silence, and the page's completeness invariant could not see it.
+            #
+            # ⛔ THE GATE IS `header`, WHICH IS THE GATE THE READ BRANCH BELOW USES, and r3's
+            # Blocking is why it has to be. r1 gated here on `header` too; r2 narrowed it to a
+            # contiguous block, to stop a legend table in the same section reporting healthy rows.
+            # MEASURED in r3: reading never narrowed with it. A row is read wherever `header` is
+            # live, so between the end of the block and the end of the section a plain
+            # `| 111 | … |` was READ ONTO THE PAGE while `| ⭐111 | … |` was dropped in silence —
+            # #110's defect verbatim, with this branch's own ratchet green over it.
+            #
+            # r1's false positives are answered by the FILTER instead. A legend row IS still
+            # reported, and that is right rather than noise: where `header` is live,
+            # `| 5 | Bundle E |` in a legend is read as item 5 or raises on its width, so a second
+            # table there is a hazard and saying so is the service.
+            if not header:
+                continue
+            if not seen_delimiter and is_delimiter(line):
+                seen_delimiter = True
+                continue
+            if unread is not None and row_ish(line):
+                unread.append(line)
             continue
         cells = [c.strip() for c in CELL_SPLIT.split(line)[1:-1]]
         if not header or len(cells) != len(header):
             raise ShapeError(f"row has {len(cells)} cells, header has {len(header)}: {line[:70]}")
         col = dict(zip(header, cells))
+        # ⚠ A THIRD OUTCOME, and until r4's L-6 this file's own docstring said there were two.
+        # A table whose width matches but whose column NAMES do not (`| # | Key | Note |`) reached
+        # `main` as a bare `KeyError` traceback rather than its `REFUSED:` grammar, because the
+        # handler catches `ShapeError` only. Raised as the sibling it is instead of widening the
+        # handler, so the message names the columns. Pre-existing — `master` has the same two lines.
+        missing = [c for c in ("#", "item", "status") if c not in col]
+        if missing:
+            raise ShapeError(f"header has no {', '.join(missing)} column: {line[:70]}")
         num, item, status = col["#"], col["item"], col["status"]
 
         sev, rest, was = "none", item, ""
@@ -846,6 +1056,10 @@ def sanitise_groups(groups: list, open_nums: set[int]) -> tuple[list, list[str]]
             seen.add(n); kept.append((n, desc))
         out.append((title, framing, kept))
     if dropped_closed:
+        # ⚠ "no longer open" is an INFERENCE from absence, and r2 finding H-1 measured it stating
+        # something false: three rows the parser could not read left `open_nums`, and this line
+        # then announced they had closed. `sanitise_groups` cannot see the unread list — it is pure
+        # over the numbers it is given — so the caller qualifies the sentence instead. See `build`.
         notes.append(f"GROUPS still names {len(dropped_closed)} item(s) that are no longer open: "
                      f"{sorted(set(dropped_closed))} — dropped from their group for this build")
     if dropped_dupe:
@@ -879,6 +1093,32 @@ def contradiction_errors(rows: list[dict]) -> list[str]:
 
 
 # ─── rendering ──────────────────────────────────────────────────────────────────────────────────
+
+def drift_notes_for(rows: list[dict], unread: Sequence[str] = ()) -> list[str]:
+    """Everything the page and the terminal both say about drift — ONE list, built once.
+
+    ⛔ IT EXISTS BECAUSE THE TWO CHANNELS DISAGREED (r3 finding H-3). `build` post-processed
+    `sanitise_groups`' output and `main` did not, so the page said *"…or could not be READ this
+    run"* and the terminal said the flat, false *"no longer open"* — about an item that is open.
+    The terminal is the channel `.claude/hooks/regen-backlog-page.sh` surfaces at the moment
+    someone types the decorated row, so the reader most likely to act got the wrong sentence and
+    the reader who may never open the page got the right one. That was exactly backwards.
+
+    ⚠ THE QUALIFICATION COVERS BOTH FAMILIES, not one (r3 finding H-1). `sanitise_groups` and
+    `depends_errors` BOTH decide from `open_nums`, and an unread row has already left it — so both
+    of them infer "closed" from an absence the unread row itself caused. Qualified rather than
+    suppressed: the drift underneath may be real, and hiding it would trade a false sentence for a
+    missing one."""
+    open_nums = {r["num"] for r in rows if not r["closed"]}
+    notes = contradiction_errors(rows)
+    notes += sanitise_groups(GROUPS, open_nums)[1]
+    notes += [f"DEPENDS: {e}" for e in depends_errors(DEPENDS, ROOTS, open_nums)]
+    if not unread:
+        return notes
+    return [n + " — or could not be READ this run; see the incomplete-view box"
+            if ("no longer open" in n or "is not an open item" in n) else n
+            for n in notes]
+
 
 def card(r: dict) -> str:
     sev = "done" if r["closed"] else r["sev"]
@@ -953,7 +1193,7 @@ def _ago(ts: int, now: int | None = None) -> str:
 
 
 def build(rows: list[dict], sha: str, edited: str, stamp: str,
-          generated_at: str = "") -> str:
+          generated_at: str = "", unread: Sequence[str] = ()) -> str:
     open_rows = [r for r in rows if not r["closed"]]
     closed_rows = [r for r in rows if r["closed"]]
     by_sev = {k: sum(1 for r in open_rows if r["sev"] == k)
@@ -973,15 +1213,16 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str,
     # Each drift is DROPPED from the render and REPORTED as a ⚠ line, which `_regenerate` already
     # forwards to the Refresh button as "rebuilt WITH A WARNING". Showing less is always safe here;
     # showing something false is not, and none of these can make the page assert anything false.
-    drift_notes = contradiction_errors(rows)
-    groups_ok, group_notes = sanitise_groups(GROUPS, open_nums)
-    drift_notes += group_notes
-    # ⚠ depends_errors STILL RUNS — every one of its checks (unknown relation, unknown root,
-    # self-edge, cycle, closed target) is preserved. Only its CONSEQUENCE changed, from raising to
-    # reporting. Dropping the call and keeping a hand-rolled open-ness filter was the first version
-    # of this change and it silently discarded the cycle and unknown-relation checks: a predicate
-    # that nothing calls, which is the exact pathology this file warns about two hundred lines down.
-    drift_notes += [f"DEPENDS: {e}" for e in depends_errors(DEPENDS, ROOTS, open_nums)]
+    # ⚠ ONE BUILDER, called here and by `main` — see `drift_notes_for`. The comment that used to
+    # stand at `main`'s copy said "a second call cannot disagree with the one `build` made"; it was
+    # true until this branch added post-processing on one side only (r3 finding H-3).
+    drift_notes = drift_notes_for(rows, unread)
+    groups_ok, _ = sanitise_groups(GROUPS, open_nums)
+    # ⚠ backlog #110's note is NOT folded in here — r1 finding H-2. This box is headed "built from
+    # a grouping that has drifted" and closes with "every row on this page was read from
+    # docs/backlog.md in this run", pointing the reader at the generator. All three sentences are
+    # false of an unread row, and the last two contradict the note directly above them. It gets its
+    # own box below, with its own heading and the right file named.
 
     # ⟳ 2026-09-02. Items with no GROUPS sentence used to REFUSE the build. They now get
     # a group of their own, at the END, and the run reports a ⚠ line — which the serve
@@ -1102,14 +1343,39 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str,
     # ⚠ THE DRIFT IS ON THE PAGE, not only on a terminal nobody is watching. Every note here used
     # to be a refusal, and the refusal's whole audience was a stdout stream — which is precisely
     # how a five-day-old page kept looking current.
+    # ⭐ backlog #110, and DELIBERATELY A SECOND BOX rather than a fifth kind of drift note. Every
+    # other note here is about a row that IS on the page and says something odd about itself; this
+    # one is about a row that is not on the page at all, and its remedy is in a different file. It
+    # reuses `.drift`'s styling because a new class would need its own light and dark values and
+    # the theme-token guard is right to demand them (backlog #102).
+    unread_box = ""
+    if unread:
+        unread_box = ('<div class="drift"><b>&#9888; this view is INCOMPLETE — '
+                      f'{len(unread)} line(s) in <code>docs/backlog.md</code> could not be read'
+                      '</b><ul>'
+                      # ⚠ `[1:]` — line 0 is the standalone SUMMARY the terminal needs, and
+                      # this box has a heading saying the same thing (r2 finding L-4).
+                      + "".join(f"<li>{html.escape(n)}</li>" for n in unread_note(unread)[1:])
+                      + '</ul><p>Each line above sits inside a table but is not a row this page '
+                        'can read, so it has no card here and is counted nowhere. Fix them in '
+                        '<code>docs/backlog.md</code> — a row must begin with <code>|</code> and '
+                        'its number cell must be a bare integer.</p></div>')
+
     drift = ""
     if drift_notes:
         drift = ('<div class="drift"><b>&#9888; this view is built from a grouping that has '
                  'drifted</b><ul>'
                  + "".join(f"<li>{html.escape(n)}</li>" for n in drift_notes)
-                 + '</ul><p>The items themselves are current — every row on this page was read '
-                   'from <code>docs/backlog.md</code> in this run. What is out of date is the '
-                   'hand-written grouping in <code>scripts/gen-backlog-page.py</code>.</p></div>')
+                 + '</ul><p>' + (
+                     'The items themselves are current — every row on this page was read from '
+                     '<code>docs/backlog.md</code> in this run. What is out of date is the '
+                     'hand-written grouping in <code>scripts/gen-backlog-page.py</code>.'
+                     if not unread else
+                     'Every row this page COULD read was read from <code>docs/backlog.md</code> in '
+                     'this run — see the box above for the ones it could not. What is out of date '
+                     'here is the hand-written grouping in '
+                     '<code>scripts/gen-backlog-page.py</code>.')
+                 + '</p></div>')
 
     callout = (f'<details class="callout"><summary><span class="warncount">{len(flagged)}</span>'
                f'rows carry a warning in their own Status cell'
@@ -1501,7 +1767,7 @@ could not be expressed by pointing at an item number.</p>
   </select>
   <button class="f" id="tagclear" hidden>clear tag</button>
 </div>
-{drift}
+{unread_box}{drift}
 
 <div id="list">
 {''.join(card(r) for r in open_rows)}
@@ -1702,6 +1968,21 @@ SAMPLE = """## Items
 """
 
 
+# ⚠ Every row below is one a HUMAN would call a row of this table, and every one of them is a
+# decoration this file's own house style already uses somewhere: a ⭐ headline marker, a `#` before
+# an id, an indent. `parse` reads none of them, and until backlog #110 it said nothing.
+DECORATED = """## Items
+
+| # | Item | Touches | Size | Bundle | Status |
+|---|------|---------|------|--------|--------|
+| 1 | 🟠 **Alpha** — read normally | a.ts | S | A | pending |
+| ⭐2 | 🟠 **Star** — a ⭐ ahead of the number | b.ts | S | A | pending |
+| #3 | 🟠 **Hash** — a # ahead of the number | c.ts | S | A | pending |
+ | 4 | 🟠 **Indent** — one leading space | d.ts | S | A | pending |
+⭐| 5 | 🟠 **Outside** — the ⭐ is before the pipe, so nothing about this line starts with one | e.ts | S | A | pending |
+"""
+
+
 # ── link contrast, MEASURED on the emitted stylesheet ───────────────────────────────────────────
 # ⟲ Added 2026-08-29. This page carried FIVE per-container link rules, every one of them correct,
 # and still served three links at the browser default #0000EE — 1.98:1 on the dark --ground, 1.84:1
@@ -1869,6 +2150,12 @@ def self_test() -> int:
     def case(name, fn):
         cases.append((name, fn))
 
+    def _unread_of(src: Sequence[str]) -> list[str]:
+        """Parse `src` for its DROPPED lines only. Called inside a lambda, never above one."""
+        seen: list[str] = []
+        parse(src, unread=seen)
+        return seen
+
     lines = SAMPLE.splitlines()
     rows = parse(lines)
     by = {r["num"]: r for r in rows}
@@ -1879,6 +2166,528 @@ def self_test() -> int:
         lambda: parse(["| # | Item | Status |", "|---|---|---|", "| 5 | x | y | z |"]), ShapeError))
     case("a row before any header RAISES rather than guessing", lambda: _raises(
         lambda: parse(["| 5 | x | y |"]), ShapeError))
+
+    # ── backlog #110 — a line inside a table that is NOT read must be REPORTED ──────────────────
+    # The sibling branch (a row whose width disagrees with its header) has raised since day one.
+    # This one was a bare `continue`, and the page's completeness invariant could not see it
+    # because expectation and subject both came out of `parse`.
+    #
+    # ⚠ Every case here calls through a FUNCTION rather than a value computed once above. A fixture
+    # evaluated at registration time takes the whole suite down with it, and a suite that dies emits
+    # no `FAIL <name>` line at all — which reads to a harness as "no case covered this", the exact
+    # report-format contract this repo measured on 2026-09-10.
+    def _dropped() -> list[str]:
+        return _unread_of(DECORATED.splitlines())
+
+    # ── THE RULE: inside a block, anything not read is reported, whatever it looks like ──────────
+    case("a ⭐ before the number is reported, not silently dropped",
+         lambda: any("⭐2" in ln for ln in _dropped()))
+    case("a # before the number is reported",
+         lambda: any("#3" in ln for ln in _dropped()))
+    case("one leading space is reported",
+         lambda: any(ln.strip().startswith("| 4 |") for ln in _dropped()))
+    # ⭐ r1 finding M-3 (Claude). A decoration OUTSIDE the leading pipe was a silent miss under the
+    # first rule, and worse than a miss: the line did not look like a table line, so it ended the
+    # block and switched the guard off for every row below it.
+    case("a ⭐ before the PIPE is reported — the rule is not a spelling test",
+         lambda: any(ln.startswith("⭐|") for ln in _dropped()))
+    case("all four decorations are caught, and the readable row still parses",
+         lambda: len(_dropped()) == 4
+         and [r["num"] for r in parse(DECORATED.splitlines())] == [1])
+    case("a line with a single pipe inside a block is reported",
+         lambda: _unread_of(["## Items", "| # | Item | Status |", "|---|---|---|",
+                             "| 5 | x | y |", "|⭐6"]) == ["|⭐6"])
+    # ⭐ r1 finding M-3 (Claude). `| | | |` is a half-typed row somebody is about to fill in.
+    # ⚠ THE POSITION IS THE WHOLE CASE, and the first version of it was unfalsifiable: written with
+    # the blank row in the BODY it passes whatever `SEPARATOR_ROW` says, because down there nothing
+    # consults the regex at all. Reverting the hyphen requirement killed 0 of 108 cases. It has to
+    # sit DIRECTLY under the header — the one position where the regex decides — or it is testing
+    # the premise instead of the branch.
+    case("an all-blank row DIRECTLY under the header is a row, not a delimiter",
+         lambda: _unread_of(["## Items", "| # | Item | Status |", "| | | |",
+                             "| 5 | x | y |"]) == ["| | | |"])
+    case("a colons-only row directly under the header is a row too",
+         lambda: _unread_of(["## Items", "| # | Item | Status |", "| : | : | : |",
+                             "| 5 | x | y |"]) == ["| : | : | : |"])
+    case("an all-blank row in the BODY is reported as well",
+         lambda: _unread_of(["## Items", "| # | Item | Status |", "|---|---|---|",
+                             "| 5 | x | y |", "| | | |"]) == ["| | | |"])
+    # ⭐ r1 finding M1 (Codex). The delimiter is a POSITION, not a spelling: the same text is a
+    # valid GFM delimiter under a header and an ordinary row three lines down, so these two cases
+    # MUST disagree about identical input.
+    case("a hyphen-only row in the BODY is reported, not mistaken for a delimiter",
+         lambda: _unread_of(["## Items", "| # | Item | Status |", "|---|---|---|",
+                             "| 5 | x | y |", "| - | - | - |"]) == ["| - | - | - |"])
+    case("the same text DIRECTLY under the header IS the delimiter, and is not reported",
+         lambda: _unread_of(["## Items", "| # | Item | Status |", "| - | - | - |",
+                             "| 5 | x | y |"]) == [])
+
+    # ── THE POPULATION, asserted separately from the rule (portable-practices §21) ───────────────
+    case("the delimiter under the header is not reported",
+         lambda: not any(set(ln.strip()) <= set("|-: ") for ln in _dropped()))
+    case("a table with no `| # |` header of its own reports nothing",
+         lambda: _unread_of(["## Items", "| Key | Meaning |", "|---|---|",
+                             "| A | Bundle A |"]) == [])
+    # ⛔ r1 finding H-1 was REVERSED by r3's Blocking, and this case records the reversal rather
+    # than quietly dropping it. r1 asked for a legend table in the Items section to report nothing;
+    # r2 delivered that by narrowing the report to a contiguous block, and r3 measured what the
+    # narrowing cost — a decorated row below the block vanished exactly where a plain one rendered.
+    # In a section where `header` is live, a legend row is NOT harmless: `| 5 | Bundle E |` there is
+    # read as item 5, or raises on its width. So it is reported, and the delimiter is not.
+    case("a legend table in the SAME section is reported — it is a hazard, not decoration",
+         lambda: _unread_of(["## Items", "| # | Item | Status |", "|---|---|---|",
+                             "| 5 | x | y |", "", "Markers used above:", "",
+                             "| Marker | Meaning |", "|---|---|", "| 🟠 | high |"])
+         == ["| Marker | Meaning |", "|---|---|", "| 🟠 | high |"])
+    # ⚠ r4 L-3. TWO `| # |` tables, which is what `docs/backlog.md` actually is — this is the
+    # input that makes the header branch's `seen_delimiter` reset load-bearing.
+    case("a second `| # |` table gets its own delimiter, not the first table's",
+         lambda: _unread_of(["## Items", "| # | Item | Status |", "|---|---|---|",
+                             "| 5 | x | y |", "",
+                             "## Found", "| # | Item | Status |", "|---|---|---|",
+                             "| 9 | a | b |"]) == [])
+    # ⚠ r4 L-6. Right width, wrong column names — the third outcome, which used to be a traceback.
+    case("a table whose columns are named differently REFUSES rather than crashing",
+         lambda: _raises(lambda: parse(["## Items", "| # | Key | Note |", "|---|---|---|",
+                                        "| 7 | a | b |"]), ShapeError))
+    case("a legend table in its OWN section reports nothing",
+         lambda: _unread_of(["## Items", "| # | Item | Status |", "|---|---|---|",
+                             "| 5 | x | y |", "", "## Markers", "",
+                             "| Marker | Meaning |", "|---|---|", "| 🟠 | high |"]) == [])
+
+    # ⭐⭐ THE BLOCKING FROM r3, AND ITS FALSIFIER. The two populations are asserted against EACH
+    # OTHER, not each alone — which is the only form that can catch a report gate drifting narrower
+    # than the read gate. Same context, same row, one character apart.
+    _CONTEXTS = [
+        [],                                                    # straight under the delimiter
+        ["", "some prose"],                                    # after a blank line and prose
+        ["### Notes"],                                         # after a sub-heading
+        ["<!-- note -->"],                                     # after an HTML comment
+        ["", "| Marker | Meaning |", "|---|---|", "| 🟠 | x |", ""],   # after a second table
+        ["## Something else"],                                 # a NEW section: neither, and that
+    ]                                                          # is what makes this non-vacuous
+
+    def _read_vs_reported(ctx: list[str]) -> tuple[bool, bool]:
+        head = ["## Items", "| # | Item | Status |", "|---|---|---|", "| 5 | x | y |"] + ctx
+        try:
+            # ⚠ A RAISE COUNTS AS "not read", and it is the honest reading: with no live header the
+            # plain row does not reach the page either — it stops the build LOUDLY, which is the
+            # pre-existing fail-closed sibling this whole item was filed next to.
+            read = any(r["num"] == 111 for r in parse(head + ["| 111 | new | pending |"]))
+        except ShapeError:
+            read = False
+        seen: list[str] = []
+        parse(head + ["| ⭐111 | new | pending |"], unread=seen)
+        return read, any("⭐111" in ln for ln in seen)
+
+    case("wherever a plain row would be READ, a decorated one is REPORTED",
+         lambda: all(_read_vs_reported(c)[0] == _read_vs_reported(c)[1] for c in _CONTEXTS))
+    case("…and the pairing is not vacuous — it covers both answers",
+         lambda: {_read_vs_reported(c)[0] for c in _CONTEXTS} == {True, False})
+
+    # ⚠ THE RESIDUE, PINNED SO IT IS VISIBLE. Where no `| # |` header is live, `parse` reads
+    # nothing, so a decorated row there is neither read nor reported. Its plain counterpart RAISES
+    # (`ShapeError`, "row has N cells, header has 0"), so the ordinary mistake is loud; the
+    # decorated one is not. Closing this needs a way to say "that first cell was MEANT to be a
+    # number", which is an allowlist of decorations — the shape this slice has already paid for
+    # twice. Stated, not hidden, and left as follow-up work.
+    case("a decorated row where NO item table is open is silent — the one stated gap",
+         lambda: _unread_of(["## Notes", "| ⭐111 | new | pending |"]) == []
+         and _raises(lambda: parse(["## Notes", "| 111 | new | pending |"]), ShapeError))
+
+    # ⭐ r3, both halves. `row_ish`'s three-character prefix is a judgement, so both sides of it are
+    # pinned: a decoration is short, prose that merely mentions a pipe is not.
+    case("a three-character prefix before the pipe still reads as a decorated row",
+         lambda: _unread_of(["## Items", "| # | Item | Status |", "|---|---|---|",
+                             "-- | 5 | x |"]) == ["-- | 5 | x |"])
+    case("prose that merely mentions a pipe is not a lost row",
+         lambda: _unread_of(["## Items", "| # | Item | Status |", "|---|---|---|",
+                             "| 5 | x | y |",
+                             "> paragraphs of literal `|` on GitHub. Both are enforced by a check"])
+         == [])
+
+    # ⭐ r3 finding M-2. A decorated row between the header and the delimiter used to consume the
+    # one-line window, so the genuine delimiter was reported too — a false warning stapled to a
+    # real one.
+    case("a decorated row before the delimiter does not make the delimiter a finding",
+         lambda: _unread_of(["## Items", "| # | Item | Status |", "| ⭐2 | x | y |",
+                             "|---|---|---|", "| 5 | x | y |"]) == ["| ⭐2 | x | y |"])
+    # ⭐ r3, Codex. GFM's delimiter cell is `:?-+:?`, per CELL. Three spellings of this have been
+    # wrong; these pin all three directions at once.
+    case("a one-hyphen-per-cell delimiter is a delimiter (GFM, not the 3-hyphen convention)",
+         lambda: is_delimiter("|-|-|-|") and is_delimiter("| - | - | - |")
+         and is_delimiter("|:--|:-:|--:|"))
+    # ⚠ `---|---` IS THE CASE, not `---|---|---`. Both spellings survive `.split("|")[1:-1]`,
+    # which drops the outer CELLS instead of the outer PIPES; only a two-cell delimiter with both
+    # outer pipes omitted tells them apart. Measured — the three-cell version left the mutant green.
+    case("a delimiter may omit its outer pipes",
+         lambda: is_delimiter("---|---") and is_delimiter("---|---|---")
+         and is_delimiter("| --- | ---"))
+    case("a horizontal rule is not a table delimiter",
+         lambda: not is_delimiter("---") and not is_delimiter("- - -"))
+    case("a cell that is not a delimiter cell makes it not a delimiter",
+         lambda: not is_delimiter("| : | - | : |") and not is_delimiter("| | | |")
+         and not is_delimiter("| 5 | x | y |"))
+    # ⚠ r4 finding M-2. Every negative above fails on its FIRST character, so none of them can see
+    # the end anchor: dropping the `$` survived 152/152. A cell that STARTS like a delimiter and
+    # then keeps going is the one that needs it — and it is a real half-typed row.
+    case("a cell that starts like a delimiter and continues is not one",
+         lambda: not is_delimiter("|--- draft, fill me in ---|---|")
+         and not is_delimiter("|---x|---|"))
+    # ⚠ r4 finding M-1, the boundary itself — 3 passes, 4 does not, and the negative is one
+    # character over rather than a whole sentence over.
+    case("the row_ish boundary is pinned on BOTH sides, at 3 and at 4",
+         lambda: row_ish("abc| 5 | x |") and not row_ish("abcd| 5 | x |"))
+    # ⚠ r2 finding L-1. The comment claimed a blank line AND `## ` both end the block; only the
+    # first was pinned, and deleting the `## ` reset killed 0 of 110 cases. Same class as r1's L-3.
+    case("a new `## ` section closes the block",
+         lambda: _unread_of(["## Items", "| # | Item | Status |", "|---|---|---|",
+                             "| 5 | x | y |", "## Notes", "| ⭐9 | x | y |"]) == [])
+    case("the block ends at a blank line",
+         lambda: _unread_of(["## Items", "| # | Item | Status |", "|---|---|---|",
+                             "| 5 | x | y |", "", "ordinary prose"]) == [])
+    # ⭐ r2 finding M3 (Codex). Healthy Markdown written directly under a table, with no blank line
+    # between, is not a lost backlog row.
+    case("a sub-heading straight after the table ends it, and is not reported",
+         lambda: _unread_of(["## Items", "| # | Item | Status |", "|---|---|---|",
+                             "| 5 | x | y |", "### Notes", "ordinary prose"]) == [])
+    case("an HTML comment straight after the table ends it, and is not reported",
+         lambda: _unread_of(["## Items", "| # | Item | Status |", "|---|---|---|",
+                             "| 5 | x | y |", "<!-- note -->"]) == [])
+    # ⭐ THE CONTROL. If this fires on well-formed input the ⚠ becomes noise, and a detector people
+    # learn to skip is the failure mode backlog #92 is filed about.
+    case("well-formed tables report nothing unread",
+         lambda: _unread_of(SAMPLE.splitlines()) == [])
+    # ⚠ r1 finding L-1 (Claude): the case that stood here passed with the whole feature deleted.
+    # This one cannot — `parse` without the parameter raises TypeError — and it pins the property
+    # that actually matters: collecting the dropped lines does not change what is read.
+    case("passing `unread` changes nothing about what is READ",
+         lambda: [r["num"] for r in parse(DECORATED.splitlines())]
+         == [r["num"] for r in parse(DECORATED.splitlines(), unread=[])] == [1])
+
+    # ── THE DELIVERY. r2 finding H-2: nine mutations reverting every channel round 1 added left
+    # the suite 110/110 green. The rule was well covered and nothing asserted that a human is ever
+    # told, which is this whole item's own failure mode wearing a different hat.
+    # ⚠ THE REAL ROWS, not SAMPLE. `build` renders GROUPS and DEPENDS, which name real item
+    # numbers, so a four-row fixture raises `KeyError(19)` before it can render anything. Memoised
+    # because each call renders the whole page.
+    _built_cache: dict[tuple, str] = {}
+
+    def _built(unread: list[str]) -> str:
+        if tuple(unread) not in _built_cache:
+            _built_cache[tuple(unread)] = build(
+                [dict(r, hist=None) for r in parse(BACKLOG.read_text().splitlines())],
+                "sha", "2026-01-01 00:00", "stamp", unread=list(unread))
+        return _built_cache[tuple(unread)]
+
+    def _box(page: str, opener: str) -> str:
+        """The one box, or "" — so a case cannot pass on a word that appears elsewhere on a
+        2 MB page. `"INCOMPLETE" not in page` was the first spelling of the case below and it
+        failed on a backlog ROW that happens to contain the word."""
+        i = page.find(opener)
+        return page[i:page.find("</div>", i) + 6] if i >= 0 else ""
+
+    _INC, _DRIFT = "&#9888; this view is INCOMPLETE", "&#9888; this view is built from a grouping"
+
+    # ⭐ PRE-EXISTING, and it falsified this change's own promise. `dependency_svg` indexed
+    # `by_num[n]` for every number DEPENDS names; an unread row that is a dependency child took the
+    # whole build down with a KeyError before any warning could print. Reproduced on master.
+    def _without_dep_row() -> list[dict]:
+        gone = next(iter(DEPENDS))
+        return [dict(r, hist=None) for r in parse(BACKLOG.read_text().splitlines())
+                if r["num"] != gone]
+
+    case("the dependency map survives a number DEPENDS names but the file does not carry",
+         lambda: isinstance(dependency_svg({r["num"]: r for r in _without_dep_row()}), str)
+         and isinstance(dependency_mermaid({r["num"]: r for r in _without_dep_row()}), str))
+    case("and so does the whole page — an unread dependency row does not take the build down",
+         lambda: "&#9888; this view is INCOMPLETE" in build(
+             _without_dep_row(), "sha", "2026-01-01 00:00", "stamp", unread=["| ⭐17 | x | y |"]))
+
+    # ── r3 H-1 / H-3 (Claude) and M3 (Codex): ONE drift list, both channels, both note families ──
+    def _rows_missing(num: int) -> list[dict]:
+        return [dict(r, hist=None) for r in parse(BACKLOG.read_text().splitlines())
+                if r["num"] != num]
+
+    _dep = next(iter(DEPENDS))
+
+    # ⚠ r4 L-5. `contradiction_errors(rows)` is [] on the real file, so folding it into
+    # `drift_notes_for` was unverified in either channel — `notes = []` survived. A synthetic row
+    # that says ✅ in its marker and stays open is the input that gives the family a population.
+    case("the contradiction family reaches the drift channel too",
+         lambda: any("contradict" in n.lower() or "✅" in n
+                     for n in drift_notes_for([dict(num=1, sev="done", closed=False, title="t",
+                                                    body="b", section="Items", was="", touches="",
+                                                    size="S", bundle="A", status="pending",
+                                                    warned=False, hist=None)], [])))
+    case("the GROUPS family reaches the drift channel at all",
+         lambda: any("no longer open" in n for n in drift_notes_for(_drifted_rows([]), [])))
+    case("a GROUPS note is qualified while something is unread",
+         lambda: any("no longer open" in n and "could not be READ this run" in n
+                     for n in drift_notes_for(_drifted_rows([]), ["| ⭐2 | x |"])))
+    case("a DEPENDS note is qualified too, not just a GROUPS one",
+         lambda: any("is not an open item" in n and "could not be READ this run" in n
+                     for n in drift_notes_for(_rows_missing(_dep), ["| ⭐%d | x |" % _dep])))
+    case("and neither is qualified when nothing is unread",
+         lambda: not any("could not be READ this run" in n
+                         for n in drift_notes_for(_rows_missing(_dep), [])))
+    case("the page renders exactly the notes the builder produced",
+         lambda: sorted(re.findall(r"<li>([^<]*)</li>",
+                                   _box(_drifted(["| ⭐2 | x |"]), _DRIFT)))
+         == sorted(html.escape(n) for n in drift_notes_for(_drifted_rows(["| ⭐2 | x |"]),
+                                                           ["| ⭐2 | x |"])))
+
+    case("the page carries an INCOMPLETE box when a row could not be read",
+         lambda: _INC in _built(["| ⭐2 | x | y |"]))
+    case("and carries none when every row was read",
+         lambda: _INC not in _built([]))
+    case("the box quotes the line, so the reader can find it",
+         lambda: "⭐2" in _box(_built(["| ⭐2 | x | y |"]), _INC))
+    # ⚠ r2 finding L-3. Arbitrary file text reaches a rendered page here.
+    case("the box escapes the line it quotes",
+         lambda: "&lt;script&gt;" in _box(_built(["| <script> | x |"]), _INC)
+         and "<script>" not in _box(_built(["| <script> | x |"]), _INC))
+
+    # ⚠ r1 finding H-2 named this case and r2 found it had not been written: the drift box's
+    # closing sentence reassured the reader that every row had been read, printed directly under a
+    # box saying three had not. ⚠ THE DRIFT BOX ONLY RENDERS WHEN SOMETHING HAS DRIFTED, and the
+    # real file has drifted in no way today — asserting on `_built` alone passed vacuously in BOTH
+    # directions. So one row GROUPS names is forced closed, which is what produces the box.
+    # ⚠ A NUMBER GROUPS NAMES AND `DEPENDS` DOES NOT — r4 finding H-1. The first GROUPS entry is
+    # 17, which is also a DEPENDS key, so forcing it closed produced BOTH notes and every
+    # GROUPS-side assertion was satisfied by the DEPENDS one. Deleting the whole GROUPS family from
+    # the drift channel survived 152/152.
+    _gnum = next(n for _, _, its in GROUPS for n, _ in its if n not in DEPENDS)
+
+    def _drifted_rows(_unread: list[str]) -> list[dict]:
+        return [dict(r, hist=None, closed=True) if r["num"] == _gnum else dict(r, hist=None)
+                for r in parse(BACKLOG.read_text().splitlines())]
+
+    def _drifted(unread: list[str]) -> str:
+        return build(_drifted_rows(unread), "sha", "2026-01-01 00:00", "stamp", unread=unread)
+
+    case("the drift box exists to be asserted about (the fixture is not vacuous)",
+         lambda: _DRIFT in _drifted([]) and _DRIFT in _drifted(["| ⭐2 | x |"]))
+    case("the page does not claim every row was read while one was not",
+         lambda: "every row on this page was read" in _box(_drifted([]), _DRIFT)
+         and "every row on this page was read" not in _box(_drifted(["| ⭐2 | x |"]), _DRIFT))
+    # ⚠ r2 finding H-1's other half: with a row unread, "no longer open" is a guess made from an
+    # absence the unread row itself caused, and it was measured announcing that two OPEN items had
+    # closed.
+    case("a `no longer open` note is qualified while anything is unread",
+         lambda: "could not be READ this run" in _box(_drifted(["| ⭐2 | x |"]), _DRIFT)
+         and "could not be READ this run" not in _box(_drifted([]), _DRIFT))
+
+    def _printed(unread: list[str]) -> list[str]:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            report_unread(unread)
+        return buf.getvalue().splitlines()
+
+    case("exactly one printed line is marked ⚠ — the rest are indented detail",
+         lambda: sum(1 for ln in _printed(["| ⭐2 | x |", "| ⭐3 | x |"]) if ln.startswith("⚠")) == 1
+         and all(ln.startswith("   UNREAD: ")
+                 for ln in _printed(["| ⭐2 | x |", "| ⭐3 | x |"])[1:]))
+    case("nothing is printed when nothing was unread",
+         lambda: _printed([]) == [])
+    # ⭐⭐ THE END-TO-END CASE, and r3 finding H-2 is why the two source-shape proxies that stood
+    # here are not enough on their own. They assert that two strings appear twice in `main`; they
+    # cannot see whether the list those calls receive still holds anything. One inserted line —
+    # `unread.clear()` after `attach_history` — killed the whole feature in production with both
+    # proxies satisfied and the suite green. So `main` is RUN, against a doctored copy of the real
+    # backlog, and both the terminal output and the written page are read back.
+    #
+    # ⚠ `attach_history` is stubbed: it shells out to `git show` once per historical version of
+    # docs/backlog.md, which is seconds of work irrelevant to this path. ⚠ `--out` and `$HOME` both
+    # point into a `TemporaryDirectory`, so nothing reaches `~/explainers/`. The one file written
+    # outside it is `main`'s intermediate fragment (`NamedTemporaryFile`, the system temp dir),
+    # which is unlinked in its own `finally` — named here because r4 read the previous wording as
+    # claiming otherwise.
+    _e2e_cache: dict[int, tuple[str, str]] = {}
+
+    def _main_end_to_end() -> tuple[str, str]:
+        if 0 in _e2e_cache:                      # ⚠ r4 L-8: called seven times, and each call
+            return _e2e_cache[0]                 # re-rendered the page and spawned brief-compose.
+        # ⚠ THE ROW MATTERS. Decorating an item nothing else mentions leaves `main`'s drift notes
+        # identical whether or not they were told about the unread list, so `drift_notes_for(rows,
+        # ())` passed 150/150 — r3 finding H-3 reopening itself. `_dep` is named by DEPENDS, so its
+        # absence changes what the other notes say.
+        doctored = BACKLOG.read_text().replace(f"\n| {_dep} |", f"\n| ⭐{_dep} |", 1)
+        with tempfile.TemporaryDirectory() as tmp:
+            src = pathlib.Path(tmp) / "backlog.md"
+            src.write_text(doctored)
+            out = pathlib.Path(tmp) / "page.html"
+            saved_backlog, saved_hist = globals()["BACKLOG"], globals()["attach_history"]
+            saved_argv, saved_home = sys.argv, os.environ.get("HOME")
+            buf = io.StringIO()
+            try:
+                globals()["BACKLOG"] = src
+                globals()["attach_history"] = lambda rows, text: None
+                sys.argv = ["gen-backlog-page.py", "--out", str(out)]
+                # ⚠ HOME REDIRECTED (r4 L-7). Without it, WHICH of `main`'s two success arms this
+                # exercises is decided by whether the developer happens to have `~/explainers/` —
+                # so the case asserted about the composed page on one machine and the fallback
+                # `write_text` on another, and its name said neither. Redirected, it is always the
+                # no-Ask-tray arm; the tray arm is covered by the source-shape proxy below, which
+                # is now a statement about a KNOWN gap rather than an unknown one. It is also the
+                # insurance this project has already paid for once: `DEFAULT_OUT` resolves
+                # `Path.home()` at import, so only the explicit `--out` keeps the reader's live
+                # page out of this.
+                os.environ["HOME"] = tmp
+                with contextlib.redirect_stdout(buf):
+                    main()
+            finally:
+                globals()["BACKLOG"] = saved_backlog
+                globals()["attach_history"] = saved_hist
+                sys.argv = saved_argv
+                if saved_home is None:
+                    os.environ.pop("HOME", None)
+                else:
+                    os.environ["HOME"] = saved_home
+            _e2e_cache[0] = buf.getvalue(), (out.read_text() if out.exists() else "")
+            return _e2e_cache[0]
+
+    case("main RUN end to end reports the unread row on the terminal",
+         lambda: any(ln.startswith("⚠  UNREAD: 1 line(s)") for ln in _main_end_to_end()[0].splitlines()))
+    case("…and the page it wrote carries the INCOMPLETE box naming that row",
+         lambda: "&#9888; this view is INCOMPLETE" in _main_end_to_end()[1]
+         and f"⭐{_dep}" in _main_end_to_end()[1])
+    case("…and the page was written at all — an unread row does not stop the build",
+         lambda: len(_main_end_to_end()[1]) > 100_000)
+    # ⭐ r3 finding H-3, end to end. The terminal is the channel the hook surfaces at the moment
+    # someone types the row; it was printing the flat, FALSE "no longer open" while the page — which
+    # they may never open — got the qualified, true one.
+    case("the terminal carries the SAME qualified notes the page does",
+         lambda: "could not be READ this run" in _main_end_to_end()[0]
+         and "could not be READ this run" in _main_end_to_end()[1])
+    # ⚠ The two proxies are KEPT beside the run above, and they are proxies: they cover the arm the
+    # end-to-end case did not happen to take (with or without the Ask tray), which no in-process
+    # run can force without adding a test-only branch to `main`.
+    case("both of main's success paths report — neither arm is silent",
+         lambda: inspect.getsource(main).count("report_run(rows, unread)") == 2)
+    case("main hands the unread list to BOTH parse and build — the box is wired",
+         lambda: inspect.getsource(main).count("unread=unread") == 2)
+
+    # ⭐ r4 finding H-2. `report_run`'s THIRD channel — the "no description in GROUPS" block — is
+    # the only one that fires on the real `docs/backlog.md` today (ten items, #110 among them), and
+    # three mutations deleting it left 152/152 green. It is asserted here through the same captured
+    # stdout the other two channels use.
+    def _run_printed(rows: list[dict], unread: list[str]) -> list[str]:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            report_run(rows, unread)
+        return buf.getvalue().splitlines()
+
+    # ⚠ Annotated: `dict(r, hist=None)`'s only typed keyword is `None`, so a checker infers
+    # `dict[str, None]` and then calls every `r["num"]` a `None`. The annotation says what the row
+    # actually is rather than what one keyword happens to look like.
+    _REAL_ROWS: list[dict] = [dict(r, hist=None) for r in parse(BACKLOG.read_text().splitlines())]
+
+    case("the undescribed block is printed, with its count and its remedy",
+         lambda: any(ln.startswith("⚠  ") and "no description in GROUPS" in ln
+                     for ln in _run_printed(_REAL_ROWS, []))
+         and any("Add them to GROUPS" in ln for ln in _run_printed(_REAL_ROWS, [])))
+    def _undescribed_count() -> int:
+        """Hoisted out of the f-string it lived in: a set comprehension nested inside a format
+        field parses, runs and reads as noise, and a type checker could not follow it either."""
+        return len(undescribed(GROUPS, {r["num"] for r in _REAL_ROWS if not r["closed"]}))
+
+    case("its count is the number of items with no sentence",
+         lambda: any(f"⚠  {_undescribed_count()} open item(s)" in ln
+                     for ln in _run_printed(_REAL_ROWS, [])))
+    # ⚠ r4 finding M-3. The ⚠ PREFIX is the delivery mechanism — `explainer-serve` collects only
+    # lines that start with it — and replacing it with three spaces survived 152/152 under both
+    # HOMEs. Every drift note must carry it.
+    case("every drift note is marked ⚠, which is what the Refresh button collects",
+         lambda: all(any(ln.startswith("⚠  ") and note[:40] in ln
+                         for ln in _run_printed(_drifted_rows([]), []))
+                     for note in drift_notes_for(_drifted_rows([]), [])))
+
+    # ⭐ r3 finding L-4. `.claude/hooks/regen-backlog-page.sh` is shell: no `--self-test`, not a
+    # `check-*` guard, in no mutation manifest. It is the channel that reaches the human at the
+    # moment they type the decorated row, and its awk was verified by hand and by nothing else.
+    # This RUNS the program out of the hook file, so an edit to that line reddens a case.
+    def _hook_awk(sample: str) -> str:
+        src = (REPO / ".claude/hooks/regen-backlog-page.sh").read_text()
+        prog = next(ln for ln in src.splitlines() if ln.lstrip().startswith("echo \"$OUT\" | awk"))
+        prog = prog.split("awk ", 1)[1].strip().strip("'")
+        return subprocess.run(["awk", prog], input=sample, capture_output=True,
+                              text=True).stdout
+
+    # ⚠ ORDINARY PROSE SITS BETWEEN A WARNING AND A LATER INDENTED LINE — r4 finding M-4. Without
+    # it the program is byte-identical to a two-pattern grep, so dropping `{p=0}` or the `p &&`
+    # guard (which together are the whole state machine) survived.
+    _SAMPLE_OUT = ("wrote /x  (110 rows)\n"
+                   "⚠  UNREAD: summary\n   UNREAD: detail\n   UNREAD: remedy\n"
+                   "an ordinary line that resets the run\n"
+                   "   an indented line that belongs to NOTHING\n"
+                   "⚠  WITHOUT the Ask tray:\n   missing token: --paper\n"
+                   "     http://127.0.0.1:7391/backlog-table\n")
+
+    case("the hook keeps every ⚠ line",
+         lambda: _hook_awk(_SAMPLE_OUT).count("⚠") == 2)
+    case("the hook keeps the indented detail of BOTH warnings, not just UNREAD's",
+         lambda: "UNREAD: remedy" in _hook_awk(_SAMPLE_OUT)
+         and "missing token: --paper" in _hook_awk(_SAMPLE_OUT))
+    case("the hook drops the ordinary output lines",
+         lambda: "110 rows" not in _hook_awk(_SAMPLE_OUT)
+         and "7391" not in _hook_awk(_SAMPLE_OUT))
+    case("an indented line after ordinary prose belongs to nothing and is dropped",
+         lambda: "belongs to NOTHING" not in _hook_awk(_SAMPLE_OUT))
+
+    # ── THE NOTE ────────────────────────────────────────────────────────────────────────────────
+    # ⚠ It NAMES the line. A bare count says a row is missing and not which one, and this file has
+    # already measured what an unactionable warning costs (r2 finding R2-9).
+    case("the note quotes the offending line rather than counting it",
+         lambda: any("⭐2" in ln for ln in unread_note(["| ⭐2 | x |"])))
+    case("no note at all when nothing was unread",
+         lambda: unread_note([]) == [])
+    # ⭐ r3 finding M-6. The COUNT is the number a reader acts on, and `len(unread) + 1` in either
+    # the note or the box heading passed 127/127. A box saying "2 line(s)" over one quoted line
+    # sends someone hunting for a row that does not exist.
+    case("the note's total is the number of unread lines",
+         lambda: unread_note(["| ⭐2 | x |", "| ⭐3 | x |"])[0].startswith("2 line(s)")
+         and unread_note(["| ⭐2 | x |"])[0].startswith("1 line(s)"))
+    case("the box's heading carries the same total",
+         lambda: "INCOMPLETE — 2 line(s)" in _box(_built(["| ⭐2 | x |", "| ⭐3 | x |"]), _INC))
+    # ⭐ r3 finding L-1. `[1:]` — dropping the duplicate summary from the box, which has a heading
+    # already — was reverted to `[0:]` at 127/127 green, and the box then said it twice.
+    case("the box lists the detail lines only, not its own heading again",
+         lambda: len(re.findall(r"<li>", _box(_built(["| ⭐2 | x |"]), _INC)))
+         == len(unread_note(["| ⭐2 | x |"])) - 1)
+    # ⭐ r3 finding L-2. Deleting the box's whole remedy paragraph passed 127/127 — the case that
+    # looked like it covered this tests `unread_note`, and the box's remedy is a separate literal.
+    case("the box says what to do, in the file the reader must edit",
+         lambda: "bare integer" in _box(_built(["| ⭐2 | x |"]), _INC)
+         and "docs/backlog.md" in _box(_built(["| ⭐2 | x |"]), _INC))
+    # ⭐ r1 finding M-2 (Claude). `explainer-serve` joins every ⚠ line and cuts at 400 characters,
+    # so an uncapped note spends the whole budget and pushes the other warnings out of the button.
+    # ⚠ FOUR, not nine (r4 L-4). With nine the tail reads "… and 6 more", which `extra > 1` also
+    # produces; only a fourth line distinguishes "say something about the one you did not quote"
+    # from "say nothing about it".
+    case("a fourth unread line is accounted for, not dropped in silence",
+         lambda: unread_note([f"| ⭐{n} | x |" for n in range(4)])[-2].endswith("1 more"))
+    case("the quote is cut at 110 characters, not merely cut somewhere",
+         lambda: len(unread_note(["| " + "x" * 200 + " |"])[1]) == 111
+         and unread_note(["| " + "x" * 105 + " |"])[1].endswith("|"))
+    case("the note quotes at most three lines and says how many more there are",
+         lambda: len(unread_note([f"| ⭐{n} | x |" for n in range(9)])) == 6
+         and any(ln.endswith("6 more") for ln in unread_note([f"| ⭐{n} | x |" for n in range(9)])))
+    # ⚠ r2 finding L-2. A quote cut mid-word with no mark cannot be searched for verbatim, and
+    # dropping `.strip()` or the cut killed 0 of 110 cases.
+    case("a quote longer than the cut is marked as cut",
+         lambda: unread_note(["| " + "x" * 200 + " |"])[1].endswith("…")
+         and not unread_note(["| short |"])[1].endswith("…"))
+    case("a quoted line is stripped, so an indented row still reads as a row",
+         lambda: unread_note(["    | ⭐2 | x |"])[1].startswith("| ⭐2"))
+    case("the remedy is said, whatever the count",
+         lambda: all(any("bare integer" in ln for ln in unread_note(u))
+                     for u in ([["| ⭐2 | x |"]] + [[f"| ⭐{n} | x |" for n in range(9)]])))
+    # ⭐ THE RATCHET ON M-2. Line 0 is the only line marked ⚠, so it is the only one that spends
+    # the Refresh button's 400-character budget. If it grows past a quarter of that budget the
+    # other warnings start losing their place, which is the finding itself.
+    case("the summary line stays well inside the Refresh button's budget",
+         lambda: len(unread_note([f"| ⭐{n} | x |" for n in range(9)])[0]) <= 100)
 
     case("closed iff the Status cell has a check mark",
          lambda: by[2]["closed"] and by[9]["closed"] and not by[1]["closed"] and not by[3]["closed"])
@@ -2171,18 +2980,39 @@ def self_test() -> int:
          lambda: sorted(_placed + undescribed(GROUPS, _open_real)) == sorted(_open_real)
          and len(_placed) == len(set(_placed)))
     case("the real file parses at all (fail-closed on a restructure)", lambda: len(real) > 20)
+    # ⭐ THE RATCHET the floor above only pretends to be. `> 20` tolerates losing 88 of 110 rows;
+    # this fails on the FIRST row the parser cannot read, and names it. Anchored to the file's own
+    # lines rather than to `parse`'s output, which is the whole of backlog #110.
+    case("the REAL backlog has no row the parser silently skips",
+         lambda: _unread_of(BACKLOG.read_text().splitlines()) == [])
     # ⭐ The live counterpart: the REAL backlog must not state closed-ness two ways at once.
     # This is what a bare KeyError looked like on 2026-09-09 (rows 81, 82, 98, 99).
     case("the REAL backlog does not contradict itself about what is closed",
          lambda: contradiction_errors(real) == [])
 
     failed = 0
+    # ⛔ THE FAILURE LINE IS A CONTRACT, and this suite was not keeping it. `check-plan-code`'s
+    # harness attributes a kill by `startswith("[FAIL] ")` then `[7:]` then
+    # `rsplit(": got ", 1)[0]`. This printed `  FAIL  <name>`, so when the file joined the mutation
+    # manifest all five of its entries reported *"matched 0 red case(s) — caught by something else:
+    # []"* while every one of them WAS being killed by the case it named. The empty list is the
+    # tell: nothing could see the kill, which is indistinguishable from no kill at all.
+    #
+    # ⚠ The name stays ALONE on the `[FAIL]` line. Appending `[raised …]` to it — which this did —
+    # rewrites the very string the harness extracts, so an `expect` naming the case would match
+    # nothing. The exception goes on its own line, where it is for a human and for nobody else.
     for name, fn in cases:
+        why = ""
         try:
             ok = bool(fn())
         except Exception as exc:                                   # noqa: BLE001 - report, not hide
-            ok, name = False, f"{name}  [raised {exc!r}]"
-        print(f"  {'ok  ' if ok else 'FAIL'}  {name}")
+            ok, why = False, repr(exc)
+        if ok:
+            print(f"  ok     {name}")
+        else:
+            print(f"  [FAIL] {name}")
+            if why:
+                print(f"    raised: {why}")
         failed += not ok
     print(f"\n{len(cases) - failed}/{len(cases)} passed")
     return 1 if failed else 0
@@ -2214,9 +3044,14 @@ def main() -> int:
 
     # A refusal here is a NORMAL outcome — filing an item causes it — so it reports as a message a
     # person can act on, not a traceback. The hook that surfaces this prints the last few lines.
+    # ⚠ Declared OUTSIDE the try, and reported on BOTH exit paths below. There are two ways this
+    # run can succeed — with the Ask tray and without it — and a warning printed on only one of
+    # them is a warning that disappears exactly when something else has already gone wrong.
+    unread: list[str] = []
+
     try:
         text = BACKLOG.read_text()
-        rows = parse(text.splitlines())
+        rows = parse(text.splitlines(), unread=unread)
         attach_history(rows, text)
         fragment = build(rows, git("rev-parse", "--short", "HEAD"),
                          git("log", "-1", "--format=%cI", "--",
@@ -2224,7 +3059,8 @@ def main() -> int:
                          subprocess.run(["date", "+%Y-%m-%d %H:%M %Z"],
                                         capture_output=True, text=True).stdout.strip(),
                          page_chrome.provenance(
-                             _dt.datetime.now().strftime("%Y-%m-%d %H:%M"), REPO))
+                             _dt.datetime.now().strftime("%Y-%m-%d %H:%M"), REPO),
+                         unread=unread)
         page_chrome.assert_wired(fragment, "gen-backlog-page.py")
     except ShapeError as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)
@@ -2265,6 +3101,7 @@ def main() -> int:
         for _line in _msg.splitlines():
             print("   " + _line)
         print("   The page renders and reloads; only the ask-a-question button is missing.")
+        report_run(rows, unread)
         return 0
 
     print(f"wrote {args.out}  ({len(rows)} rows, {open_n} open, Ask tray lifted)")
@@ -2277,19 +3114,14 @@ def main() -> int:
     # warning qualifies it rather than replacing it. `explainer-serve._regenerate`
     # collects lines starting with ⚠ into the JSON `warning`, which the Refresh button
     # renders as "rebuilt WITH A WARNING: …" — the channel already exists.
-    # ⚠ RECOMPUTED, exactly as `undescribed` below already is — these are pure functions over the
-    # same rows, so a second call cannot disagree with the one `build` made. The ⚠ prefix is the
-    # existing channel: `_regenerate` collects those lines into the Refresh button's warning.
-    _open = {r["num"] for r in rows if not r["closed"]}
-    for _note in contradiction_errors(rows) + sanitise_groups(GROUPS, _open)[1]:
-        print(f"⚠  {_note}")
-
-    still = undescribed(GROUPS, {r["num"] for r in rows if not r["closed"]})
-    if still:
-        print(f"⚠  {len(still)} open item(s) have no description in GROUPS: {still}")
-        print("   They render under \"Filed, but nobody has described them yet\" — the page is "
-              "complete, the prose is not.")
-        print("   Add them to GROUPS in scripts/gen-backlog-page.py.")
+    # ⚠ THE SAME FUNCTION `build` used, called a second time — not the same RULE written twice.
+    # The distinction is the whole of r3 finding H-3: the previous comment here claimed "a second
+    # call cannot disagree with the one `build` made", which was true when both sides called
+    # `sanitise_groups` raw and became false the moment one side post-processed it. A second CALL
+    # SITE of one implementation is safe; a second implementation is what this repo keeps paying
+    # for. The ⚠ prefix is the existing channel: `_regenerate` collects those lines into the
+    # Refresh button's warning.
+    report_run(rows, unread)
     print("     http://127.0.0.1:7391/backlog-table   (start: python3 scripts/explainer-serve.py)")
     return 0
 

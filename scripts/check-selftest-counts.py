@@ -89,6 +89,9 @@ POPULATION: frozenset[str] = frozenset({
     "check-banner-armed.py",
     "check-ci-watched.py",           # ⟳ 2026-09-04: CI ran unwatched on 2 of 3 pushes         # ⟳ 2026-09-04, task #224 residue (warn-only detector)
     "check-plan-code.py",
+    "gen-backlog-page.py",           # ⟳ 2026-09-10, backlog #110 r2 finding L-4. Not a `check-*`
+                                     # guard, so nothing else observes its number, and it moved
+                                     # 86 → 124 in one branch while the docstring said nothing.
     "check-plan-file-tags.py",       # ⟳ 2026-09-08, plan-mode retirement. It fences a rule that
                                      # NOTHING else reads any more, so an unpinned count is how
                                      # its cases would leave without a gate noticing.

@@ -1,0 +1,17 @@
+{
+  "attempts": [
+    "  gpt-5.6-sol: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.6-terra: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.6-luna: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.5: ok \u2014 4641 chars"
+  ],
+  "exit_code": 0,
+  "gate_ran": true,
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "note": "filed under this stem by hand: the run was invoked with --out codex-r1.md, whose generic stem OVERWROTE the committed verdict of an unrelated review. That file was restored from HEAD; this is the same run's evidence under a non-colliding name.",
+  "reason": "4641 chars",
+  "review": "backlog-110-parser-completeness-r1-codex.md",
+  "schema": 1,
+  "tool": "codex-review"
+}

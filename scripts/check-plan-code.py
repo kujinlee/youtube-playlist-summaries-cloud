@@ -175,6 +175,16 @@ HARNESS_TREE = (
     # typescript. That oracle refuses to fall back — DELIBERATELY, `:177` — so 20 of its 32 cases
     # report CANNOT RUN without this. 23 MB; the whole of `node_modules` would be 504 MB.
     "node_modules/typescript",
+    # ⟳ 2026-09-10, backlog #110 r3 finding L-4. `gen-backlog-page`'s suite reads the awk program
+    # out of `.claude/hooks/regen-backlog-page.sh` and RUNS it — that hook is the channel the
+    # warning reaches a human through, and it is shell with no `--self-test` of its own. Without
+    # this entry those four cases raise FileNotFoundError and the whole control goes red, which is
+    # this tuple's own recorded failure ("a scripts-only tree gave each a red control") happening
+    # again for a new subject. 64 KB; `.claude` whole is 232 KB and the rest of it is not a
+    # subject. ⚠ It is `.claude/hooks`, not `.claude`: `.claude` is a real git checkout whose
+    # `.gitignore` is a bare `*` (backlog #86), and copying a nested repo into the harness tree is
+    # a surprise nobody needs.
+    ".claude/hooks",
 )
 
 
@@ -447,6 +457,16 @@ EXPECTED_MUTATIONS = {
     #     test on the pattern text, so either copy could narrow while it stayed green.
     "scripts/check-catalog-coverage.py": 7,
     "scripts/gen-dashboard.py": 64,
+    # ⟳ 2026-09-10, backlog #110 review round 4. A SEED, not a full manifest, and the reason is
+    # measured: `gen-backlog-page.py` is 3,000 lines with 160 cases and had ZERO mutations, so
+    # `--mutate .` never touched it and no machine had ever asked whether any of those cases could
+    # go red. Four review rounds each found a fresh crop of unfalsifiable ones — 1, then 9, then 8,
+    # then 15 — every one found by a human reading, none by CI. These five revert THAT BRANCH'S OWN
+    # fixes: the report gate narrowing below the read gate (#110's defect verbatim), the unread list
+    # being emptied behind two source-shape proxies, half the drift qualification, the ⚠ prefix the
+    # Refresh button collects, and the delimiter cell's end anchor. Five that can only rise beats
+    # zero; the rest is its own slice.
+    "scripts/gen-backlog-page.py": 5,
     "scripts/page_markup.py": 14,
     # ⟳ 2026-09-01, backlog #78: 18 -> 23. The entry gate now answers TWO questions
     # instead of one — "does this branch owe an entry?" (unchanged) and "is the entry
@@ -1912,6 +1932,7 @@ def _self_test() -> int:
                                       "scripts/check-theme-token-coverage.py",
                                       "scripts/check-vocabulary-collisions.py",
                                       "scripts/coverage_verdict.py",
+                                      "scripts/gen-backlog-page.py",
                                       "scripts/gen-dashboard.py",
                                       "scripts/page_chrome.py",
                                       "scripts/page_markup.py"])
@@ -2031,7 +2052,11 @@ def _self_test() -> int:
     # that creates it, with 6 entries. A RISE, and the ordinary kind — new guard, new coverage.
     # The gate it adds exists because five PRs merged unreviewed while every check stayed green;
     # shipping its replacement as manifest debt would have repeated that shape at one remove.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 394)
+    # ⟳ 394 -> 399, 2026-09-10: `gen-backlog-page.py` joins the manifest with a SEED of 5, in the
+    # branch whose four review rounds are the evidence that it needed one. A rise, and the ordinary
+    # kind — except that the file is not new: it is 3,000 lines that had been outside `--mutate .`
+    # the whole time, which is why each round found unfalsifiable cases nobody's machine could see.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 399)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

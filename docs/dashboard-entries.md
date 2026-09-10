@@ -6768,3 +6768,73 @@ precedent in the other direction. Verified: `check-review-recorded --base origin
 guarded path changed"*.
 
 **MEASURED:** section numbers 1–21, no duplicates · `check-docs` rc=0 · 1,007 lines.
+
+## 2026-09-10
+An item on the backlog page could disappear without anyone being told, and the check that was
+supposed to notice could not see it. That is fixed, and the fixing is the story.
+
+The page is built by reading `docs/backlog.md`, a table of 110 rows. If a row's number cell carried
+any decoration — a star, a `#`, one leading space — the reader skipped that line in silence. The
+item then had no card on the page and was on no count. The suite had a case asserting *"every open
+item reaches the page exactly once"*, and it could never fail, because both halves of that sentence
+were built from the same reader: a row the reader dropped left the expectation as well as the page,
+and the equation still balanced.
+
+**Four rounds of adversarial review, and two of them found this same defect inside the fix for it.**
+Round two moved fenced-code handling into the reading path, where one stray triple-backtick anywhere
+in the file made 61 of the 110 rows invisible — no warning, page written, exit code zero. Round three
+found that the warning had been narrowed to the table block while reading still ran to the end of the
+section, so a decorated row vanished in exactly the place an ordinary one would have appeared, with
+the newly written check green over it.
+
+What ended it was giving up on describing what a broken row looks like. There is no finishable list
+of ways to misspell one. Instead the two questions are now tied together and tested against each
+other: take the same line twice, once ordinary and once decorated, and require that wherever the
+ordinary one would reach the page, the decorated one is reported. That is checked across six
+different positions in a file.
+
+Along the way a crash was found that has been on `master` all along: if the unreadable row happened
+to be one that other rows depend on, the whole page failed to build and you got a stack trace instead
+of a page. Reproduced on `master` to be sure it was not introduced here.
+
+When a row cannot be read you now get told three ways: on the page itself in its own box naming the
+line, on the terminal, and — new — in the editor hook that runs the moment you save the file, which
+previously threw the warning away whenever the run succeeded.
+
+<!--tech-->
+Backlog #110. `scripts/gen-backlog-page.py` + `.claude/hooks/regen-backlog-page.sh` +
+`scripts/check-selftest-counts.py` + `scripts/check-plan-code.py` +
+`scripts/mutations/gen-backlog-page.json` (new).
+
+**MEASURED:** suite `86 → 165` · `--mutate .` **36 files / 399 mutations / 0 survivors** ·
+`check-docs` `check-ratchet-contract` `check-selftest-counts` `check-anchors` `check-review-rounds`
+`check-backlog-closure` all rc=0 · control run on the real file: 110 rows, 0 unread, no box ·
+defect run with three decorations: 107 rows, all three named, page still written.
+
+`parse` gains `unread: list[str] | None` — one walk, not a second walker. The report gate IS the read
+gate (`header` live); the filter is `row_ish`, the first pipe within three characters of the start,
+which is what catches `⭐| 5 | … |` where `startswith("|")` cannot and prose containing a `` `|` ``
+where "contains a pipe" cannot. `is_delimiter` is cell-wise GFM (`:?-+:?`, outer pipes optional, a
+pipe required) recognised by POSITION; three earlier spellings were each wrong in a different
+direction. `drift_notes_for` and `report_run` exist because the page and the terminal had drifted
+apart — the terminal was printing "no longer open" about an item that was open and merely unreadable,
+and the no-Ask-tray arm returned before printing any drift note at all.
+
+⚠ **Two Blockings, both this row's own defect reintroduced by its own fix** (r2 fences in the read
+path; r3 report gate narrower than the read gate). `portable-practices.md` §12 arriving exactly as
+it predicts, twice in one branch.
+
+⚠ **The file was in no mutation manifest** — 3,000 lines, outside `--mutate .` entirely, which is why
+each round turned up a fresh crop of cases that could not fail: 1, then 9, then 8, then 15, every one
+found by a human reading. It now has a **5-entry seed** reverting this branch's own fixes;
+`EXPECTED_MUTATIONS` 394 → 399. ⛔ The seed FAILED ON ITS FIRST RUN, and instructively: all five
+reported *"matched 0 red case(s) — caught by something else: []"* while every one was being killed by
+the case it named, because this suite printed `  FAIL  <name>` and the harness attributes on
+`[FAIL] <name>`. Zero survivors and zero attribution look identical to a passing run. Format fixed;
+each entry re-verified through the harness's own parser. `.claude/hooks` joins `HARNESS_TREE` so the
+three cases that execute the hook's awk have their subject staged.
+
+**Reviews:** `docs/reviews/{claude,coordinator}/backlog-110-parser-completeness-r{1,2,3,4}-*.md`,
+eight halves, four verdict files. r4: Codex CONVERGED (2 Low, both taken); Claude NOT CONVERGED
+(0 Blocking / 3 High / 4 Medium / 8 Low) with its own note that none of them change what the branch
+does — all were folded anyway.
