@@ -20,7 +20,8 @@ So the tray is never retyped. It is lifted, verbatim, from a page where it is kn
 WHAT IT DOES
 ------------
   1. finds a SOURCE explainer that already contains a working tray (newest by default);
-  2. extracts its tray CSS rules, its `<div id="tray">` markup and its trailing `<script>`;
+  2. extracts its tray — CSS, `<div id="tray">` markup and trailing `<script>` — from the region
+     this script itself delimited when it composed that page (`TRAY_BEGIN`/`TRAY_END`);
   3. splices them into the supplied content fragment, with a small variable shim so the tray's
      palette hooks resolve against whatever palette the content uses;
   4. writes the result to ~/explainers/ so `explainer-serve.py` serves it and `/latest` finds it.
@@ -34,12 +35,21 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test
+    python3 scripts/brief-compose.py --self-test  # 102 cases
+
+COMPOSING IS IDEMPOTENT (backlog #106, 2026-09-10)
+--------------------------------------------------
+Composing twice from an unchanged fragment produces a byte-identical page. It did not, and the
+cost was not theoretical: every recompose added 1,515 bytes, `explainer-delivery.md` §6 requires
+a recompose for EVERY answered question, and the corpus reached composition generation **872**
+— `goals.html` was 95.5% duplicate bytes, ~12.4 MB dead across 44 pages. `extract_tray` carries
+the account of the three accumulators and how each is closed.
 """
 from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import os
 import pathlib
 import re
 from html.parser import HTMLParser
@@ -493,8 +503,28 @@ def assert_shimmed(tray_css: str, content_css: str) -> None:
         )
 
 
-def find_source(explicit: str | None, root: pathlib.Path = ROOT) -> pathlib.Path:
-    """The newest page that actually HAS a tray. Never guesses; raises if there is none."""
+def find_source(explicit: str | None, root: pathlib.Path | None = None,
+                exclude: pathlib.Path | None = None) -> pathlib.Path:
+    """The newest page that actually HAS a tray. Never guesses; raises if there is none.
+
+    `exclude` is the page about to be written. A page must never lift its tray from ITSELF:
+    it is the newest file the instant it exists, so every later recompose would re-lift its
+    own copy and no improvement to the tray could ever reach it again.
+
+    ⚠ THIS IS NOT WHAT BACKLOG #106 WAS ABOUT, and saying so is the point. The row proposed
+    exactly this as one of two candidate fixes for the page growing every recompose — but a
+    measured control in which no page EVER lifted from itself grew at precisely the same
+    +1,515 bytes/generation. The growth lived in `extract_tray`; this only stops a page
+    freezing its tray at whatever version it was born with. Two defects, one symptom.
+
+    An explicit `--source` is honoured even if it names the output: the caller stated it.
+
+    ⚠ `root` resolves at CALL time, not at `def` time. Binding `ROOT` as the default value
+    would freeze the reader's real `~/explainers` into the signature, and `--self-test` could
+    then never drive `main()` against a temp directory — the wiring that passes `exclude`
+    would be guarded by nothing.
+    """
+    root = ROOT if root is None else root
     if explicit:
         p = pathlib.Path(explicit).expanduser()
         if not p.is_file():
@@ -504,7 +534,10 @@ def find_source(explicit: str | None, root: pathlib.Path = ROOT) -> pathlib.Path
         return p
     if not root.is_dir():
         raise SystemExit(f"brief-compose: no explainer directory at {root} — run /explain-diff once first")
+    skip = exclude.resolve() if exclude else None
     for p in sorted(root.glob("*.html"), key=lambda f: f.stat().st_mtime, reverse=True):
+        if skip and p.resolve() == skip:
+            continue
         if has_tray(p.read_text(encoding="utf-8", errors="ignore")):
             return p
     raise SystemExit(
@@ -517,24 +550,80 @@ def has_tray(html: str) -> bool:
     return all(m in html for m in TRAY_MARKERS)
 
 
+TRAY_BEGIN = "/* ---- Ask tray, extracted verbatim ---- */"
+TRAY_END = "/* ---- end Ask tray ---- */"
+
+
+def _selector_scan(style: str) -> str:
+    """The tray rules of a page composed BEFORE `TRAY_END` existed. MIGRATION ONLY.
+
+    ⚠ Delete this once no unmarked page is anyone's `--source`. It is a second answer to
+    "what is the tray", and two answers to one question drift — it survives only because 44
+    pages already on disk have no marker to read.
+
+    Two things it must do that a plain filter does not:
+
+      * ⛔ A COMMENT IS NOT A SELECTOR. `([^{}]+\\{[^{}]*\\})` counts every character before
+        the `{` as the selector, so a rule was lifted for what its DOCUMENTATION said. The
+        strip is applied to the selector region only — `strip_css_comments` also blanks
+        string VALUES, which would rewrite the tray this function copies verbatim.
+      * ⛔ DE-DUPLICATE, KEEPING THE **LAST** COPY. Not the first: two identical rules with
+        an equal-specificity rule between them resolve to the later one, so keeping the
+        first can flip the cascade. Keeping the last cannot — whichever rule was last still
+        is. Without this a legacy page freezes its duplicates inside the new markers forever
+        (`backlog-table.html`: 109 copies of three rules, 34,881 bytes).
+    """
+    keep = []
+    for rule in re.findall(r"([^{}]+\{[^{}]*\})", style):
+        selector, _, block = rule.partition("{")
+        selector = re.sub(r"/\*.*?\*/", "", selector, flags=re.S).strip()
+        if re.search(r"#tray|\.askbtn|#qbox|#qt\b|#sentnote|#modechip", selector):
+            keep.append(selector + "{" + block)
+    last = {rule: i for i, rule in enumerate(keep)}
+    return "\n".join(rule for i, rule in enumerate(keep) if last[rule] == i)
+
+
 def extract_tray(html: str) -> tuple[str, str, str]:
-    """(css, markup, script) — verbatim. Raises if any piece is missing."""
+    """(css, markup, script) — verbatim. Raises if any piece is missing.
+
+    ⭐ EXTRACTION IS IDEMPOTENT: extracting from a page this script composed returns exactly
+    what was put in, so `compose(compose(x)) == compose(x)`. It was not, and backlog #106 is
+    the 12.4 MB that cost. Two independent accumulators, both fixed here:
+
+      * ⛔ A RULE WAS SELECTED BY WHAT ITS COMMENT SAID. `([^{}]+\\{[^{}]*\\})` treats every
+        character before a `{` as the selector, so SHIM's `:where(h1,h2,h3,h4){…}` — whose
+        preceding comment explains that the tray appends an absolutely positioned `.askbtn`
+        — matched `\\.askbtn` and was lifted as tray CSS. `compose` then re-added SHIM in
+        full beside the lifted copy: +1,489 bytes of pure comment per generation. The
+        comment is stripped from the SELECTOR REGION only. ⚠ NOT via `strip_css_comments`,
+        which also blanks string VALUES — that would rewrite the tray this function exists
+        to copy verbatim. Declarations inside `{…}` are never touched.
+      * ⛔ THE SCRIPT SLICE RAN TO END-OF-FILE, carrying the source's own `</body></html>`,
+        which `compose` then re-closed: +17 bytes per generation. It now ends at the last
+        `</script>`.
+
+    ⚠ Both fixes converge an already-accumulated page in ONE pass — pinned by a case. A fix
+    that shed one copy per recompose would need 872 of them to repair `backlog-table.html`,
+    which is indistinguishable from not fixing it.
+    """
     m = re.search(r"<style>(.*?)</style>", html, re.S)
     if not m:
         raise SystemExit("brief-compose: source has no <style> block")
-    rules = re.findall(r"([^{}]+\{[^{}]*\})", m.group(1))
-    css = "\n".join(
-        r.strip() for r in rules
-        if re.search(r"#tray|\.askbtn|#qbox|#qt\b|#sentnote|#modechip", r)
-    )
+    style = m.group(1)
+    begin, end = style.rfind(TRAY_BEGIN), style.rfind(TRAY_END)
+    if begin >= 0 and end > begin:
+        css = style[begin + len(TRAY_BEGIN):end].strip()      # the STATED boundary
+    else:
+        css = _selector_scan(style)                            # pages composed before it existed
     div = re.search(r'<div id="tray".*?</div>\s*</div>', html, re.S)
     idx = html.rfind("<script>")
-    if not css or not div or idx < 0:
+    end = html.rfind("</script>")
+    if not css or not div or idx < 0 or end < idx:
         raise SystemExit(
             f"brief-compose: incomplete tray in source "
-            f"(css={bool(css)} markup={bool(div)} script={idx >= 0})"
+            f"(css={bool(css)} markup={bool(div)} script={idx >= 0 and end > idx})"
         )
-    return css, div.group(0), html[idx:]
+    return css, div.group(0), html[idx:end + len("</script>")]
 
 
 def chrome_for(content: str, generated_at: str) -> tuple[str, str, str]:
@@ -636,7 +725,11 @@ def compose(content: str, title: str, css: str, markup: str, script: str,
                           css + "\n" + page_chrome.chrome_css() + "\n" + SHIM)
     chrome_css, chrome_bar, chrome_js = chrome_for(content, generated_at)
     body = body + "\n" + chrome_bar + "\n" + chrome_js
-    styled = (head + SHIM + "\n/* ---- Ask tray, extracted verbatim ---- */\n" + css
+    # ⭐ THE TRAY REGION IS DELIMITED AT BOTH ENDS (backlog #106). `extract_tray` reads back
+    # exactly what is written between these two comments, so a recompose cannot re-lift the
+    # fragment's own `#tray …` overrides — which is what `head` legitimately contains, and
+    # what a selector scan could never tell apart from the tray's own rules.
+    styled = (head + SHIM + "\n" + TRAY_BEGIN + "\n" + css + "\n" + TRAY_END
               + "\n" + chrome_css + "\n</style>")
     return (
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
@@ -661,7 +754,12 @@ def main(argv: list[str]) -> int:
     if not a.content or not a.slug:
         ap.error("--content and --slug are required (or use --self-test)")
 
-    src = find_source(a.source)
+    # ⚠ `out` is resolved BEFORE the source scan, because the scan needs to exclude it —
+    # a page that lifts from itself pins its tray to its own copy for good (backlog #106).
+    out = pathlib.Path(a.out).expanduser() if a.out else (
+        ROOT / f"{_dt.date.today():%Y-%m-%d}-brief-{a.slug}.html"
+    )
+    src = find_source(a.source, exclude=out)
     css, markup, script = extract_tray(src.read_text(encoding="utf-8"))
     content = pathlib.Path(a.content).expanduser().read_text(encoding="utf-8")
     doc = compose(content, a.title, css, markup, script,
@@ -669,9 +767,6 @@ def main(argv: list[str]) -> int:
                       _dt.datetime.now().strftime('%Y-%m-%d %H:%M'),
                       pathlib.Path(__file__).resolve().parent.parent))
 
-    out = pathlib.Path(a.out).expanduser() if a.out else (
-        ROOT / f"{_dt.date.today():%Y-%m-%d}-brief-{a.slug}.html"
-    )
     out.parent.mkdir(parents=True, exist_ok=True)
     # ⚠ Codex Low: this wrote BEFORE the check, so a page the next lines call unusable
     # was already on disk. Check first; a bad page is not written at all.
@@ -1220,9 +1315,153 @@ def self_test() -> int:
              main(["--content", str(_sib), "--slug", "x", "--source", str(_src),
                    "--out", str(_page2)]) == 0 and has_tray(_page2.read_text(encoding="utf-8")))
 
+    # ── BACKLOG #106: COMPOSING IS IDEMPOTENT ────────────────────────────────
+    # THE ROW'S OWN FALSIFIER, verbatim: "recompose any page twice from an unchanged
+    # fragment and diff the two outputs; if they differ, it is open."
+    #
+    # ⚠ MEASURED 2026-09-10 before the fix, under a redirected HOME: five recomposes from a
+    # BYTE-IDENTICAL fragment grew the page 1,357,682 → 1,363,742 bytes — **+1,515 every
+    # run, forever**. ⛔ THE CONTROL REFUTED THE ROW'S PREMISE: a chain in which no page
+    # ever lifted from ITSELF grew at exactly the same +1,515/generation. Self-lift is the
+    # fastest route to the next generation, not the cause — so NEITHER shape the row
+    # proposed (an explicit `--source`, or excluding the output from the newest-scan) would
+    # have removed a single byte.
+    #
+    # THE CAUSE is that `extract_tray` split rules on `([^{}]+\{[^{}]*\})`, in which every
+    # character before a `{` counts as the selector — INCLUDING the preceding comment. SHIM's
+    # `:where(h1,h2,h3,h4){position:relative}` is preceded by a comment that mentions
+    # `.askbtn`, so the rule was lifted because of its DOCUMENTATION; `compose` then re-added
+    # SHIM in full beside the lifted copy. +1,489 bytes of comment per generation, plus 17
+    # for the `</body>\n</html>` pair that slicing the script to EOF carried along.
+    #
+    # LIVE CORPUS when this was written: 44 tray-bearing pages in ~/explainers, the worst at
+    # generation 872. `goals.html` was 95.5% duplicate bytes — 1,291,862 of 1,353,043.
+    _fixed_at = "2026-01-02 03:04"
+    _gen1 = compose(content, "T", css, markup, script, _fixed_at)
+    _c2, _m2, _s2 = extract_tray(_gen1)
+    case("re-extracting a composed page returns the tray CSS unchanged", _c2 == css)
+    case("...the tray markup unchanged", _m2 == markup)
+    case("...and the tray script unchanged, with no </body> swept in", _s2 == script)
+    case("⭐ composing twice from an unchanged fragment is BYTE-IDENTICAL",
+         compose(content, "T", _c2, _m2, _s2, _fixed_at) == _gen1)
+
+    # The precise defect: a rule selected by what its COMMENT says.
+    _commented = (
+        "<style>/* the tray appends an absolutely positioned .askbtn to each heading */\n"
+        "h2{position:relative}\n#tray{a:1}\n#qbox{b:2}</style>"
+        '<div id="tray"><div class="inner"><textarea id="qbox"></textarea></div></div>'
+        "<script>fetch('/questions')</script>"
+    )
+    _ccss, _, _ = extract_tray(_commented)
+    case("a rule is NOT lifted because its comment names a tray selector",
+         "position:relative" not in _ccss)
+    case("...while a rule its SELECTOR names still is",
+         "#tray{a:1}" in _ccss and "#qbox{b:2}" in _ccss)
+
+    # ⭐ AN ALREADY-ACCUMULATED PAGE MUST CLEAN UP IN ONE PASS. A fix that shed one copy per
+    # recompose would need 872 recomposes to repair `backlog-table.html`, which is the same
+    # as not fixing it. Fixture built the way the defect builds one: repeated commented
+    # rules in the style, stacked closing pairs at the tail.
+    # ⚠ THE END MARKER IS REMOVED, or this fixture would take the marker path and the case
+    # would pass without ever running `_selector_scan` — green for the wrong reason, which
+    # is the failure the previous branch spent a round on. A pre-#106 page has no end marker.
+    _junk = ("/* the tray appends an absolutely positioned .askbtn to each heading */\n"
+             ":where(h1,h2,h3,h4){position:relative}\n") * 3
+    _legacy = _gen1.replace(TRAY_END, "").replace("<style>", "<style>" + _junk, 1)
+    _legacy = _legacy.replace("\n</body>\n</html>\n", "\n</body>\n</html>\n" * 4)
+    case("the legacy fixture really is unmarked, so the scan is what runs",
+         TRAY_END not in _legacy and TRAY_BEGIN in _legacy)
+    _lcss, _, _lscript = extract_tray(_legacy)
+    case("a page carrying 3 generations of junk extracts the SAME css as a clean one",
+         _lcss == css)
+    case("...and the same script, leaving 4 stacked </body></html> pairs behind",
+         _lscript == script)
+    # ⭐ Convergence in ONE pass. `backlog-table.html` carried 109 copies of three rules;
+    # shedding one per recompose would have needed 872 runs to repair it.
+    _dup = _legacy.replace("#tray{a:1}", "#tray{a:1}\n#tray{a:1}\n#tray{a:1}", 1)
+    case("...and repeated rules collapse to ONE copy in a single pass",
+         extract_tray(_dup)[0] == css)
+    # ⭐ WHICH copy survives is load-bearing, and a fixture of ADJACENT duplicates cannot
+    # tell the two policies apart — both leave the same order. This one separates them: with
+    # `.askbtn` between the copies, keeping the FIRST moves `#tray` ahead of it and reorders
+    # the cascade; keeping the LAST leaves every rule where it already won.
+    _order = ("<style>#tray{a:1}\n.askbtn{c:3}\n#tray{a:1}\n#qbox{b:2}</style>"
+              '<div id="tray"><div class="inner"><textarea id="qbox"></textarea></div></div>'
+              "<script>fetch('/questions')</script>")
+    case("de-duplication keeps the LAST copy, so cascade order survives",
+         extract_tray(_order)[0] == ".askbtn{c:3}\n#tray{a:1}\n#qbox{b:2}")
+
+    # ⛔ THE ACCUMULATOR THE FIRST FIX MISSED, and it was missed because the repro fragment
+    # was too clean. `gen-backlog-page.py:1480` deliberately emits `#tray #qbox{…}` into its
+    # OWN fragment, to win the cascade over the lifted tray without editing lifted code. A
+    # selector scan cannot tell that rule from the tray's own, so it was re-lifted every
+    # generation: MEASURED on `backlog-table.html`, 109 copies of each of three rules —
+    # 34,881 of the 46,476 bytes that survived the first fix.
+    #
+    # ⭐ The boundary is now STATED by `compose` and read back, rather than inferred from
+    # selectors. `_selector_scan` remains only for pages composed before the markers existed.
+    _override = ("<title>x</title><style>:root{--good:#0f0}\n"
+                 "#tray #qbox{color:var(--ink)}</style><div>hello</div>")
+    _o1 = compose(_override, "T", css, markup, script, _fixed_at)
+    _oc, _om, _os = extract_tray(_o1)
+    case("a fragment's OWN #tray rule is not lifted into the tray", _oc == css)
+    case("...so composing twice is byte-identical for a real fragment too",
+         compose(_override, "T", _oc, _om, _os, _fixed_at) == _o1)
+    case("...and the fragment keeps its override, which is the cascade it asked for",
+         _o1.count("#tray #qbox{color:var(--ink)}") == 1)
+
+    # ⚠ A FRAGMENT MAY LEGITIMATELY CONTAIN THE MARKER TEXT — an explainer page about this
+    # very script does, and one is composed roughly every week. The begin marker is therefore
+    # read with `rfind`: the page's prose cannot swallow the shim into the tray region.
+    _talks = ("<title>x</title><style>:root{--good:#0f0}\n"
+              "/* an explainer quoting " + TRAY_BEGIN + " in its own stylesheet */\n"
+              "p{color:red}</style><div>hello</div>")
+    case("a fragment that quotes the begin marker does not swallow the shim",
+         extract_tray(compose(_talks, "T", css, markup, script, _fixed_at))[0] == css)
+
+    # The determinism half. Growth is gone above; this is about a page pinning its tray to
+    # its own copy forever, which no upgrade could ever reach.
+    with tempfile.TemporaryDirectory() as _td:
+        _r = pathlib.Path(_td)
+        (_r / "other.html").write_text(good, encoding="utf-8")
+        _self = _r / "page.html"
+        _self.write_text(good, encoding="utf-8")
+        os.utime(_self, (2 ** 31, 2 ** 31))          # unambiguously the newest
+        case("find_source picks the newest tray page", find_source(None, root=_r) == _self)
+        case("...but never the page being written", find_source(None, root=_r, exclude=_self) != _self)
+
+        # ⭐ AND main() ACTUALLY PASSES IT. The two cases above pin `find_source`; neither
+        # would notice `main` calling it without `exclude`, which is the whole wiring. The
+        # two pages carry DELIBERATELY DIFFERENT trays so the output says which one was used
+        # — a case that only checked the exit code would pass either way.
+        _self.write_text(good.replace("#tray{a:1}", "#tray{zz:9}"), encoding="utf-8")
+        os.utime(_self, (2 ** 31, 2 ** 31))
+        _frag = _r / "f.html"
+        _frag.write_text(content, encoding="utf-8")
+        _saved = ROOT
+        globals()["ROOT"] = _r
+        try:
+            _rc = main(["--content", str(_frag), "--slug", "z", "--out", str(_self)])
+        finally:
+            globals()["ROOT"] = _saved
+        _written = _self.read_text(encoding="utf-8")
+        case("main lifts from the OTHER page, not the one it is overwriting",
+             _rc == 0 and "#tray{a:1}" in _written and "#tray{zz:9}" not in _written)
+
+    # ⛔ THE FAILURE LINE IS A CONTRACT, and this suite was not keeping it. `check-plan-code`'s
+    # harness attributes a kill with `startswith("[FAIL] ")` then `[7:]`. This printed
+    # `  ❌  <name>`, so the moment the file joined the mutation manifest all EIGHT entries
+    # reported *"matched 0 red case(s) — caught by something else: []"* while every one of them
+    # WAS being killed by the case it named. The empty list is the tell: nothing could see the
+    # kill, which is indistinguishable from no kill at all.
+    #
+    # ⚠ This is the SECOND file to pay for it in two branches — `gen-backlog-page.py` did the
+    # same thing, and `portable-practices` §22 was written FROM that failure and did not prevent
+    # this one. A convention catches what you read; the pre-flight in `check-plan-code._self_test`
+    # catches what is there.
     failed = [n for n, ok in cases if not ok]
     for n, ok in cases:
-        print(f"  {'✅' if ok else '❌'}  {n}")
+        print(f"  ok     {n}" if ok else f"  [FAIL] {n}")
     print(f"\n{len(cases) - len(failed)}/{len(cases)} passed")
     return 1 if failed else 0
 

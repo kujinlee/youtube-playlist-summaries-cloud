@@ -1,0 +1,106 @@
+[
+  {
+    "name": "a comment counts as a selector again, so a rule is lifted for what its docs say",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        selector = re.sub(r\"/\\*.*?\\*/\", \"\", selector, flags=re.S).strip()",
+        "        selector = selector.strip()"
+      ]
+    ],
+    "expect": [
+      "a rule is NOT lifted because its comment names a tray selector"
+    ]
+  },
+  {
+    "name": "the script slice runs to end-of-file again, sweeping in the source's </body></html>",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    return css, div.group(0), html[idx:end + len(\"</script>\")]",
+        "    return css, div.group(0), html[idx:]"
+      ]
+    ],
+    "expect": [
+      "...and the tray script unchanged, with no </body> swept in"
+    ]
+  },
+  {
+    "name": "compose stops writing the end marker, so the tray boundary is inferred again",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    styled = (head + SHIM + \"\\n\" + TRAY_BEGIN + \"\\n\" + css + \"\\n\" + TRAY_END\n              + \"\\n\" + chrome_css + \"\\n</style>\")",
+        "    styled = (head + SHIM + \"\\n\" + TRAY_BEGIN + \"\\n\" + css\n              + \"\\n\" + chrome_css + \"\\n</style>\")"
+      ]
+    ],
+    "expect": [
+      "a fragment's OWN #tray rule is not lifted into the tray"
+    ]
+  },
+  {
+    "name": "the begin marker is read with find, so a fragment quoting it swallows the shim",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    begin, end = style.rfind(TRAY_BEGIN), style.rfind(TRAY_END)",
+        "    begin, end = style.find(TRAY_BEGIN), style.rfind(TRAY_END)"
+      ]
+    ],
+    "expect": [
+      "a fragment that quotes the begin marker does not swallow the shim"
+    ]
+  },
+  {
+    "name": "de-duplication keeps the FIRST copy, which can flip the cascade",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    last = {rule: i for i, rule in enumerate(keep)}",
+        "    last = {rule: i for i, rule in reversed(list(enumerate(keep)))}"
+      ]
+    ],
+    "expect": [
+      "de-duplication keeps the LAST copy, so cascade order survives"
+    ]
+  },
+  {
+    "name": "de-duplication is dropped, so a legacy page freezes its duplicates in the markers",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    return \"\\n\".join(rule for i, rule in enumerate(keep) if last[rule] == i)",
+        "    return \"\\n\".join(keep)"
+      ]
+    ],
+    "expect": [
+      "...and repeated rules collapse to ONE copy in a single pass"
+    ]
+  },
+  {
+    "name": "find_source ignores exclude, so a page can lift its tray from itself",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    skip = exclude.resolve() if exclude else None",
+        "    skip = None"
+      ]
+    ],
+    "expect": [
+      "...but never the page being written"
+    ]
+  },
+  {
+    "name": "main stops passing exclude, so the guard exists and nothing reaches it",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    src = find_source(a.source, exclude=out)",
+        "    src = find_source(a.source)"
+      ]
+    ],
+    "expect": [
+      "main lifts from the OTHER page, not the one it is overwriting"
+    ]
+  }
+]

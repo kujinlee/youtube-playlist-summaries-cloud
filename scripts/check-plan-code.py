@@ -2,7 +2,7 @@
 """A plan that contains code must ASSEMBLE into that code, and its evidence must be RUN.
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
-    python3 scripts/check-plan-code.py --self-test          # 89 cases
+    python3 scripts/check-plan-code.py --self-test          # 93 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -467,6 +467,14 @@ EXPECTED_MUTATIONS = {
     # Refresh button collects, and the delimiter cell's end anchor. Five that can only rise beats
     # zero; the rest is its own slice.
     "scripts/gen-backlog-page.py": 5,
+    # ⟳ 2026-09-10, backlog #106. This file had NO manifest while composing every page the
+    # reader ever sees, and the cost was measurable rather than theoretical: it grew each page
+    # by 1,515 bytes on every recompose until `goals.html` was 95.5% duplicate bytes and
+    # `backlog-table.html` stood at composition generation 872. Eight entries, one per clause
+    # the fix decides. THREE are on wiring rather than logic — `main` passing `exclude`, the
+    # end marker being written, and the begin marker being read with `rfind` — because the
+    # extraction rules can each be perfectly correct and never reached.
+    "scripts/brief-compose.py": 8,
     # ⟳ 2026-09-10. A guard created and manifested in ONE commit — `check-ratchet-contract` flagged
     # it `[R4_no_mutation_manifest]` the moment it hit disk, which is the ratchet doing its job. Six
     # entries, one per clause it decides, plus the fail-open path: a guard whose CANNOT-RUN branch
@@ -570,7 +578,11 @@ EXPECTED_MUTATIONS = {
     # The ratchet offered to raise MANIFEST_BASELINE to 1 instead; taking that would be how
     # paid-down debt gets silently re-accrued, which is the thing the baseline exists to stop.
     "scripts/check-backlog-closure.py": 6,
-    "scripts/check-plan-code.py": 33,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    # ⟳ 2026-09-10, backlog #106: 33 -> 34. The harness always REFUSED a suite whose red could
+    # not be attributed to any case; what it did not do was say WHY, and that silence cost two
+    # branches in one day — both diagnosed by hand from an empty list at the bottom of a
+    # 420-mutation log. The new entry guards the DIAGNOSIS, not the refusal.
+    "scripts/check-plan-code.py": 34,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1031,12 +1043,29 @@ def run_mutations(d: pathlib.Path, muts: list[dict],
                           f"can fail for what it names")
         elif unnamed:
             ok = False
-            for w, m in unnamed:
+            # ⛔ RED WITH NOTHING READABLE IS A REPORT-FORMAT DEFECT, AND IT NOW SAYS SO.
+            # `caught` is True, so the suite DID go red — yet not one case name could be
+            # parsed out of it. That is never "caught by something else"; the something-else
+            # list is empty. It means this suite does not print `[FAIL] <case>`, so no kill
+            # in the whole file can ever be attributed. Measured twice on 2026-09-10 —
+            # `gen-backlog-page.py` (5 entries) and `brief-compose.py` (8) — and BOTH times
+            # it was diagnosed by hand, at the bottom of a 420-mutation log, from an empty
+            # list a reader had to know the meaning of. Said once here, per file, instead of
+            # once per entry: eight identical lines is how the signal got lost the first time.
+            if not fails:
                 report.append(
-                    f"mutation {name!r}: `expect` {w!r} matched {len(m)} red case(s) "
-                    f"{m or '— it was caught by something else: ' + str(fails)}. An "
-                    f"expect must name EXACTLY ONE, or it cannot show which case is "
-                    f"the guard")
+                    f"mutation {name!r}: the suite went RED but printed no `[FAIL] <case>` "
+                    f"line, so NOTHING COULD SEE THE KILL. This is a report-format defect in "
+                    f"{fname}, not a coverage gap — `attribute` reads a red case with "
+                    f"startswith('[FAIL] ') and slices [7:]. Fix that suite's failure printer "
+                    f"and re-run; every entry for this file is unattributable until you do")
+            else:
+                for w, m in unnamed:
+                    report.append(
+                        f"mutation {name!r}: `expect` {w!r} matched {len(m)} red case(s) "
+                        f"{m or '— it was caught by something else: ' + str(fails)}. An "
+                        f"expect must name EXACTLY ONE, or it cannot show which case is "
+                        f"the guard")
     return ok, report, ev_muts, ev_survivors
 
 
@@ -1495,8 +1524,45 @@ def _self_test() -> int:
                  "expect": "mid-line [FAIL] marker"}]
         _ok6, _rep6, _, _ = run_mutations(_d2, _mid, {"m.py"})
         case("a mid-line [FAIL] is NOT parsed as a case name", _ok6, False)
+        # ⟳ 2026-09-10: this asserted the wording `matched 0 red case(s)`. A mid-line marker
+        # yields NO parseable case name, so it now takes the report-format branch and gets the
+        # sharper message. The case is not weakened by re-pointing it: revert
+        # `startswith("[FAIL] ")` to `in` and the mid-line output IS parsed, `fails` is
+        # non-empty, the report-format branch is skipped, and this goes red again — which is
+        # the round-5 defect the fixture was built for.
         case("...so the mutation is not credited to a case that does not exist",
-             any("matched 0 red case(s)" in r for r in _rep6), True)
+             any("report-format defect" in r.lower() for r in _rep6), True)
+
+    # ⛔ RED, BUT NOTHING READABLE — the shape that cost two branches on 2026-09-10. The suite
+    # below goes red and reports it as `❌ <case>`, which is exactly what `gen-backlog-page.py`
+    # and `brief-compose.py` did. The harness has always refused these correctly; what it did
+    # NOT do was say why, and "caught by something else: []" was diagnosed by hand both times.
+    with tempfile.TemporaryDirectory() as _dfmt:
+        _dfmtp = pathlib.Path(_dfmt)
+        (_dfmtp / "n.py").write_text(
+            'def f():\n    return 1\n\n\n'
+            'def _self_test():\n'
+            '    if f() != 1:\n'
+            '        print("  ❌  the value is one")\n'
+            '        return 1\n'
+            '    print("1/1 passed")\n'
+            '    return 0\n\n\n'
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+        _fmt = [{"name": "decorated failure line", "file": "n.py",
+                 "edits": [["def f():\n    return 1", "def f():\n    return 2"]],
+                 "expect": "the value is one"}]
+        _okfmt, _repfmt, _, _ = run_mutations(_dfmtp, _fmt, {"n.py"})
+        case("a suite that goes red with no [FAIL] line is still refused", _okfmt, False)
+        case("...and the report names it a REPORT-FORMAT defect, not a coverage gap",
+             any("report-format defect" in r.lower() for r in _repfmt), True)
+        case("...names the file whose failure printer must change",
+             any("n.py" in r for r in _repfmt), True)
+        # ⚠ Not the generic message. Emitting both would leave the reader to pick, which is
+        # the state that already failed twice.
+        case("...and does NOT also claim it was caught by something else",
+             any("caught by something else" in r for r in _repfmt), False)
 
     # ⛔ ⟳ 2026-09-09, mutation-faithfulness round 1 (F1 HIGH + F2 MEDIUM). ONE fixture, because
     # the two rules it covers are the two halves of the same sentence — "the suite went red VIA
@@ -1899,6 +1965,7 @@ def _self_test() -> int:
         EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved)
     case("the declared counts name every manifest that ships",
          sorted(EXPECTED_MUTATIONS), ["scripts/begin-plan.py",
+                                      "scripts/brief-compose.py",
                                       "scripts/check-anchors.py",
                                       "scripts/check-anon-exposure.py",
                                       "scripts/check-arch-findings.py",
@@ -2070,7 +2137,11 @@ def _self_test() -> int:
     # ⟳ 405 -> 407, same day: its own review round added the two fail-opens the first six missed —
     # the ENTRY POINT returning 0 (the only thing the hook reads), and the block message ignoring
     # the tool's 4-option ceiling. A rise bought by a review, which is the ordinary kind.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 412)
+    # ⟳ 412 -> 421, backlog #106: `brief-compose.py` joins the manifest with 8, and check-plan-code
+    # itself gains 1 for the report-format diagnosis. A RISE, and the
+    # file it covers is the one that composes every page the reader opens — it had cases and no
+    # mutations, the same blind spot `gen-backlog-page.py` was in one branch ago.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 421)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
@@ -2080,6 +2151,34 @@ def _self_test() -> int:
     _repo = pathlib.Path(__file__).resolve().parent.parent
     case("every HARNESS_TREE entry is present in the tree this file lives in",
          [r for r in HARNESS_TREE if not (_repo / r).exists()], [])
+
+    # ─── A PRE-FLIGHT FOR THE FAILURE-LINE CONTRACT WAS ATTEMPTED HERE, AND ABANDONED ────
+    # ⛔ THE PROBLEM IS REAL AND HAS NOW COST TWO BRANCHES. `attribute` reads a red case with
+    # `startswith("[FAIL] ")` then `[7:]`, so a suite reporting failures any other way is one
+    # whose kills nobody can see: every entry reports "matched 0 red case(s) — caught by
+    # something else: []" while each one IS killed by the case it names. `gen-backlog-page.py`
+    # paid 5 entries on 2026-09-10; `brief-compose.py` paid 8 the same day, AFTER
+    # `portable-practices` §22 was written from the first one. A convention did not hold.
+    #
+    # ⛔ BUT THE PROPERTY IS BEHAVIOURAL AND SOURCE SHAPE CANNOT DECIDE IT. Two rules were
+    # tried and both were wrong, in opposite directions:
+    #   * `"[FAIL] " in source` — UNFALSIFIABLE. Reverting `brief-compose.py` to the broken
+    #     printer left it GREEN, because the comment explaining the contract QUOTES the
+    #     marker. Every file ever fixed for this defect now contains that prose. This is the
+    #     `check-plan-file-tags.py` hazard with its sign flipped: prose about a rule
+    #     satisfying a test for the rule.
+    #   * `print(...[FAIL] ...)` on a non-comment line — FALSE POSITIVE on FOUR manifested
+    #     files that all conform: `check-handoff-path.py:109` assembles the marker
+    #     (`f"[{'ok' if ok else 'FAIL'}]"`), `check-storage-grant-pin.py:151` has no trailing
+    #     space inside the literal, `page_markup.py:273` appends to `failures` instead of
+    #     printing, and `check-producer-enumeration.py` reports per row. Three of them carry
+    #     comments saying they were fixed FOR THIS CONTRACT.
+    # Every tightening moved the false positive somewhere else, which is this project's
+    # recorded tell that the RULE is wrong rather than the regex. A guard that blocks is
+    # judged on its false positives, and one that fires on four conforming files is worse
+    # than the 15 minutes it saves. What IS decidable is the diagnosis — see `attribute`,
+    # where an empty "caught by something else" list now names this cause instead of leaving
+    # it to be inferred at the bottom of a 420-mutation log.
     with tempfile.TemporaryDirectory() as _td:
         _dest = pathlib.Path(_td) / "staged"
         case("a complete stage reports no problems",

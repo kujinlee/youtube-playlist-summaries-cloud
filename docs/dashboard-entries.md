@@ -6838,3 +6838,43 @@ three cases that execute the hook's awk have their subject staged.
 eight halves, four verdict files. r4: Codex CONVERGED (2 Low, both taken); Claude NOT CONVERGED
 (0 Blocking / 3 High / 4 Medium / 8 Low) with its own note that none of them change what the branch
 does — all were folded anyway.
+
+## 2026-09-10
+Every page you open was growing a little each time it was rebuilt, and had been for months. Not the
+words on it — the same invisible block of styling was being copied in one more time on every single
+rebuild. The goals page had reached the point where **95% of the file was that one block, repeated
+867 times**. The backlog page had been rebuilt 872 times and was 2.3 MB, of which more than half was
+duplicate. Nothing looked wrong: the pages rendered correctly, the Ask box worked, and the only
+symptom was that they kept getting slower to load.
+
+This is now fixed, and the fix repairs the existing pages the first time each one is rebuilt rather
+than needing 872 rebuilds to unwind. The backlog page comes back at 1.0 MB instead of 2.3 MB with
+all 113 items, the tray, and the ask buttons exactly as they were. Rebuilding a page twice from the
+same source now produces two identical files, which is the property that was missing.
+
+Worth knowing about how this was found: the item describing the problem proposed two fixes, and a
+measurement showed **both of them would have removed nothing at all**. The suspected cause — a page
+copying from itself — turned out to be a bystander. Running the same experiment with that ruled out
+produced exactly the same growth, which is what sent the search somewhere else.
+<!--tech-->
+Backlog #106. Three independent accumulators in `scripts/brief-compose.py`, only one of which was
+in the filed row. (a) `extract_tray` split rules on `([^{}]+\{[^{}]*\})`, in which every character
+before the `{` is the selector — so SHIM's `:where(h1,h2,h3,h4){position:relative}` was lifted
+because its preceding **comment** mentions `.askbtn`, and `compose` then re-added SHIM beside the
+lifted copy: +1,489 bytes/generation. (b) the script slice ran to EOF, carrying the source's own
+`</body></html>` for `compose` to re-close: +17/generation. (c) the fragment's own `#tray #qbox`
+overrides — emitted deliberately by `gen-backlog-page.py:1480` to win the cascade — were re-lifted
+each generation, reaching 109 copies; invisible until the repro fragment was made realistic.
+
+Fix: `compose` delimits the tray with `TRAY_BEGIN`/`TRAY_END` and `extract_tray` reads back exactly
+that region, so the boundary is stated rather than inferred from selectors. `_selector_scan` remains
+only as a labelled one-time migration for the 44 pages already on disk, de-duplicating with the
+**last** copy kept — keeping the first can flip the cascade when an equal-specificity rule sits
+between two identical ones. `find_source` also gained `exclude`, which is the row's own suggestion
+kept for its real reason: a page that lifts from itself pins its tray to its own copy for good.
+
+Measured under a redirected `HOME` throughout: before, 5 recomposes 1,357,682 → 1,363,742 bytes;
+after, 5 recomposes all md5 `73a4979…`. Suite 86 → 102; count declared in the docstring and pinned
+in `check-selftest-counts` (its only previous count lived in a skill doc, at 30 against a suite of
+102). The file joins the mutation manifest with 8 entries, `EXPECTED_MUTATIONS` 412 → 420; three
+entries are on wiring, since each extraction rule can be correct and never reached.

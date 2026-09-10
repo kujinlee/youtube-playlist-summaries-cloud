@@ -366,5 +366,18 @@
       ]
     ],
     "expect": "count_drift is silent when the docstring matches"
+  },
+  {
+    "name": "the red-with-nothing-readable branch is dropped, so the diagnosis is generic again",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if not fails:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "...and the report names it a REPORT-FORMAT defect, not a coverage gap"
+    ]
   }
 ]
