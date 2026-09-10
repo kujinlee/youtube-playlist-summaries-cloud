@@ -205,6 +205,15 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
              "it can still change a decision."),
         (58, "Every gate in one place: what it is, what it last returned, and which have never "
              "failed — because a gate that cannot fail is the one to distrust."),
+        (102, "The rule that keeps the five generated pages readable in both light and dark is "
+              "enforced on ONE of them. The other four are correct today by hand, which is not "
+              "the same as being kept correct."),
+        (103, "Ask a question on one of these pages and the answer comes from whichever session "
+              "is running now, not the one that wrote the page. The listener outlives the session "
+              "it belonged to, so a reader can be answered by a stranger."),
+        (106, "Rebuilding a /brief page twice does not produce the same page twice: the second "
+              "build lifts its question tray from the first, so anything already there is copied "
+              "forward and can accumulate."),
      ]),
     ("Process, tooling and bookkeeping",
      "Instruments and habits. Cheap individually; they are what stops the expensive items above "
@@ -252,6 +261,15 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
              "clean up” on a repository full of dead branches — and reads as success. The "
              "durable copy now lives in this repository; what is left is confirming whether it "
              "actually takes precedence over the plugin's own version."),
+        (93, "Two checkers look near-identical and differ on purpose. Merging them — the obvious "
+             "tidy-up — silently reinstates a defect that was already fixed, and every gate still "
+             "passes, so the trap is laid for whoever cleans up next."),
+        (108, "The mutation harness required a piece of code to be split in two so it could be "
+              "measured. That split was an improvement, but next time it may not be, and “the "
+              "tool needed it” will read as a reason. Write down which of the two should yield."),
+        (109, "A test that guards a line of code is attached to that line BY ITS TEXT, so "
+              "improving the wording detaches it. The test still exists, still passes, and no "
+              "longer guards anything. Only a full sweep finds these; it has happened five times."),
      ]),
 ]
 

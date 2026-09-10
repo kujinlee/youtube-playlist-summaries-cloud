@@ -844,6 +844,19 @@ visible only in the aggregate — *the human never saw a choice, only a location
 **The tell:** if you are about to write *"let me know"*, *"your call"*, or *"waiting on the
 dashboard"* without the options beside it, that is an option list you have not printed.
 
+⛔ **And prose is the FALLBACK, not the form.** Corrected by the same human an hour later: the
+option list they meant is an **interactive** one — options that can actually be selected, several
+questions in sequence, `multiSelect` where the choices are not exclusive, and a **free-form escape**
+on every one so they can answer something the options did not anticipate. A prose list cannot be
+selected, cannot chain, and forces a typed reply; it is what you write when the harness has no such
+control, or when the decision is genuinely one line.
+
+The generalisation, which is the part that travels: **an affordance degrades quietly into its own
+description.** A selectable card becomes a written list, a written list becomes a summary sentence,
+a summary sentence becomes a link — and each step is individually reasonable while the end state is
+that no decision is ever put in front of anyone. Name the mechanism in the rule, not just the
+content, or the rule survives while the thing it asked for does not.
+
 ### ⛔ The check the format cannot do for you
 
 **Verify that each option produces different work before presenting.** A menu whose entries collapse
