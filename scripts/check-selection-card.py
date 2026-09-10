@@ -171,7 +171,13 @@ def card_problems(questions: Sequence[dict]) -> list[str]:
                 f"the reader meets the answer before the alternatives.")
 
         # ── the question-shaped exit ────────────────────────────────────────────────────────────
-        if not QUESTION_EXIT.search(labels[-1]):
+        # ⚠ NAMED, on its own line, so that "which label is the exit" and "is it an exit at all"
+        # are two statements a mutation can move independently. They were one line, and the
+        # manifest then wanted two entries with the same anchor — which `check-plan-code` refuses,
+        # correctly: it cannot tell two different mutations of one line from a duplicate that keeps
+        # the count while shrinking coverage. The fix is two lines, not a weaker rule.
+        exit_label = labels[-1]
+        if not QUESTION_EXIT.search(exit_label):
             # ⛔ THE ADVICE HAS TO BE POSSIBLE, and the first version's was not (r1 Blocking).
             # `AskUserQuestion` accepts 2–4 options. Measured over 49 real historical questions:
             # 29 already use all four slots, and 22 of those were being told to "add a fifth" — an
@@ -183,7 +189,7 @@ def card_problems(questions: Sequence[dict]) -> list[str]:
             # about these`, you get two options doing the same work — the defect §19 exists for, and
             # the one this guard's docstring admits it cannot see. So the advice would have created
             # a violation invisible to the machine that gave it.
-            near = NEAR_EXIT.search(labels[-1])
+            near = NEAR_EXIT.search(exit_label)
             last_letter = chr(ord("A") + len(labels) - 1)
             fix = (f"REWORD option {len(labels)} to '{last_letter} — I have a question about "
                    f"these' — it is already reaching for the exit, and adding a second one would "
@@ -195,7 +201,7 @@ def card_problems(questions: Sequence[dict]) -> list[str]:
                    f"'{last_letter} — I have a question about these' — the tool accepts "
                    f"{MAX_OPTIONS} options at most, so the exit costs you a choice")
             problems.append(
-                f"{where}: the last option is {labels[-1][:48]!r}, not a question-shaped exit. "
+                f"{where}: the last option is {exit_label[:48]!r}, not a question-shaped exit. "
                 f"§19: {fix}. "
                 f"A form with no way to ask turns every clarification into a rejected choice.")
 

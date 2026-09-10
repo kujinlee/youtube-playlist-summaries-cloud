@@ -37,8 +37,8 @@
     "file": "scripts/check-selection-card.py",
     "edits": [
       [
-        "        if not QUESTION_EXIT.search(labels[-1]):",
-        "        if False and not QUESTION_EXIT.search(labels[-1]):"
+        "        if not QUESTION_EXIT.search(exit_label):",
+        "        if False and not QUESTION_EXIT.search(exit_label):"
       ]
     ],
     "expect": "a missing question-exit is refused"
@@ -113,7 +113,7 @@
     "name": "a near-miss exit is told to ADD a second one",
     "edits": [
       [
-        "            near = NEAR_EXIT.search(labels[-1])",
+        "            near = NEAR_EXIT.search(exit_label)",
         "            near = None"
       ]
     ],
@@ -121,11 +121,11 @@
     "file": "scripts/check-selection-card.py"
   },
   {
-    "name": "the exit may sit anywhere, not only last",
+    "name": "the exit is looked for across ALL labels, not the last one",
     "edits": [
       [
-        "        if not QUESTION_EXIT.search(labels[-1]):",
-        "        if not any(QUESTION_EXIT.search(l) for l in labels):"
+        "        exit_label = labels[-1]",
+        "        exit_label = \" \".join(labels)"
       ]
     ],
     "expect": "an exit in the MIDDLE does not satisfy the last-option rule",
