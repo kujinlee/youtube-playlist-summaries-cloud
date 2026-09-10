@@ -813,6 +813,16 @@ Every option carries, in order: **a letter**, a short label, the **rationale**, 
 **trade-off** — what it costs or gives up. Exactly one is marked *Recommended*, with its reason.
 Withholding a recommendation is not neutrality; it is handing over an unfinished analysis.
 
+⟳ **2026-09-10: THIS RULE NOW HAS A MACHINE, because being written down three times was not enough.**
+Three cards in one session, one compliant, with §19 and two memory files all saying the same thing —
+the rule was reconstructed from recall at the moment of use instead of read. A PreToolUse hook now
+refuses a malformed card at the point it is offered
+(`scripts/check-selection-card.py` + `.claude/hooks/enforce-selection-card.sh`, 24 cases,
+6 mutations). ⚠ It checks the three clauses that are exactly decidable — the letters, the single
+leading *Recommended*, the question-shaped exit — and a floor against a bare label. **It cannot see
+whether two options are the same work**, which is the defect this entry was written about, so
+passing it is not satisfying §19. That is said in the block message too.
+
 Two structural additions:
 
 * **The last option is always "I have a question about these."** A decision form with no

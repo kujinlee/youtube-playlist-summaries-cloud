@@ -89,6 +89,10 @@ POPULATION: frozenset[str] = frozenset({
     "check-banner-armed.py",
     "check-ci-watched.py",           # ⟳ 2026-09-04: CI ran unwatched on 2 of 3 pushes         # ⟳ 2026-09-04, task #224 residue (warn-only detector)
     "check-plan-code.py",
+    "check-selection-card.py",       # ⟳ 2026-09-10. Pinned in the same commit that creates it —
+                                     # shipping a declared count nothing verifies is the drift this
+                                     # script exists to stop, and doing it on a NEW file would be
+                                     # that shape at one remove.
     "gen-backlog-page.py",           # ⟳ 2026-09-10, backlog #110 r2 finding L-4. Not a `check-*`
                                      # guard, so nothing else observes its number, and it moved
                                      # 86 → 124 in one branch while the docstring said nothing.

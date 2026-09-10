@@ -1,0 +1,68 @@
+[
+  {
+    "name": "the letter prefix is not required",
+    "file": "scripts/check-selection-card.py",
+    "edits": [
+      [
+        "LETTER = re.compile(r\"^([A-Z])\\s*[—–-]\\s+\\S\")",
+        "LETTER = re.compile(r\"^([A-Z]?)\")"
+      ]
+    ],
+    "expect": "an unlettered option is refused"
+  },
+  {
+    "name": "a card with no recommendation is allowed through",
+    "file": "scripts/check-selection-card.py",
+    "edits": [
+      [
+        "        if not marked:\n            problems.append(",
+        "        if False:\n            problems.append("
+      ]
+    ],
+    "expect": "a missing recommendation is refused"
+  },
+  {
+    "name": "the recommendation may sit anywhere",
+    "file": "scripts/check-selection-card.py",
+    "edits": [
+      [
+        "        elif marked[0] != 0:",
+        "        elif False:"
+      ]
+    ],
+    "expect": "a recommendation that is not first is refused"
+  },
+  {
+    "name": "the question-shaped exit is optional",
+    "file": "scripts/check-selection-card.py",
+    "edits": [
+      [
+        "        if not QUESTION_EXIT.search(labels[-1]):",
+        "        if False and not QUESTION_EXIT.search(labels[-1]):"
+      ]
+    ],
+    "expect": "a missing question-exit is refused"
+  },
+  {
+    "name": "a bare label passes the description floor",
+    "file": "scripts/check-selection-card.py",
+    "edits": [
+      [
+        "MIN_DESCRIPTION = 40",
+        "MIN_DESCRIPTION = 0"
+      ]
+    ],
+    "expect": "a bare label is refused"
+  },
+  {
+    "name": "an unreadable payload returns empty instead of raising (fail-open)",
+    "file": "scripts/check-selection-card.py",
+    "edits": [
+      [
+        "    if not isinstance(questions, list):\n        raise ValueError(\"no `questions` list in the payload\")",
+        "    if not isinstance(questions, list):\n        return []"
+      ]
+    ],
+    "expect": "a payload with no questions list RAISES rather than passing"
+  }
+]

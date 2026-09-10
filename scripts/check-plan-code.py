@@ -467,6 +467,11 @@ EXPECTED_MUTATIONS = {
     # Refresh button collects, and the delimiter cell's end anchor. Five that can only rise beats
     # zero; the rest is its own slice.
     "scripts/gen-backlog-page.py": 5,
+    # ⟳ 2026-09-10. A guard created and manifested in ONE commit — `check-ratchet-contract` flagged
+    # it `[R4_no_mutation_manifest]` the moment it hit disk, which is the ratchet doing its job. Six
+    # entries, one per clause it decides, plus the fail-open path: a guard whose CANNOT-RUN branch
+    # returns empty instead of raising is the failure this repo counts as worse than a red.
+    "scripts/check-selection-card.py": 6,
     "scripts/page_markup.py": 14,
     # ⟳ 2026-09-01, backlog #78: 18 -> 23. The entry gate now answers TWO questions
     # instead of one — "does this branch owe an entry?" (unchanged) and "is the entry
@@ -1925,6 +1930,7 @@ def _self_test() -> int:
                                       "scripts/check-review-recorded.py",
                                       "scripts/check-review-rounds.py",
                                       "scripts/check-roadmap-consistency.py",
+                                      "scripts/check-selection-card.py",
                                       "scripts/check-selftest-counts.py",
                                       "scripts/check-sentinel-meanings.py",
                                       "scripts/check-storage-grant-pin.py",
@@ -2056,7 +2062,8 @@ def _self_test() -> int:
     # branch whose four review rounds are the evidence that it needed one. A rise, and the ordinary
     # kind — except that the file is not new: it is 3,000 lines that had been outside `--mutate .`
     # the whole time, which is why each round found unfalsifiable cases nobody's machine could see.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 399)
+    # ⟳ 399 -> 405, 2026-09-10: `check-selection-card.py`, created and manifested in one commit.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 405)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
