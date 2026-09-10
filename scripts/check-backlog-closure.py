@@ -61,6 +61,21 @@ close whose subject does NOT end with the token is invisible here. That is the h
 the check is a floor on detection, never a ceiling. It is stated so nobody reads a clean run as
 "every row is current".
 
+⛔ EXTENDING THIS TO A HEAD-FORM SUBJECT WAS PROPOSED AND REJECTED — the user's decision, 2026-09-09.
+It is recorded HERE because this docstring is where the next person will propose it again, and the
+measurement that refuses it is two lines long.
+
+The gap above was first hit in practice by row #91: PR #269's subject LEADS with "Backlog #91 —",
+so this check returned rc=0 over a row that had been stale for two days (three ways over, in fact).
+The obvious repair is to ALSO match an id at the START of a subject. Measured against master, that
+fires on FILING commits, which is the same 56%-false direction the table above already priced:
+
+    "File backlog #85 (three fence scanners) — and repair a landmine PR #206 shipped …"   FILES
+    "File backlog #99 — a paused plan kept ticking, with the Stop guard disarmed"         FILES
+
+Both lead with an id and close nothing. So the residue stays a residue ON PURPOSE: an honest floor
+is worth more than a gate the reader learns to skip. Row #91 was corrected by hand in PR #278.
+
 FIRST LIVE RUN FOUND A REAL ONE. Applied to master 2026-09-09 the rule fired on exactly one id,
 #82, and it is a TRUE positive verified by hand: commit `3ec912f6` "The gate reads the store, not
 a patch — so it can finally judge a reference (backlog #82) (#232)", PR #232 MERGED 2026-09-06
