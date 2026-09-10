@@ -1,442 +1,363 @@
-# Adversarial review — backlog #102, "refuse a half-live theme toggle at compose time" (r1, Claude)
+# Adversarial review — backlog #102, "refuse a half-live theme toggle at compose time" (Claude)
 
-## PROOF OF SUBJECT
+## SUBJECT, and why this file has two rounds in it
 
-The working tree changed **during** this review (`scripts/brief-compose.py` mtime `2026-09-10
-06:08:36`, while I was mid-run), so every finding below was re-measured against the **committed**
-subject extracted with `git archive 0670e2f8` into a scratch directory outside the repo:
+**Round 1** reviewed commit `0670e2f8` (sha256 `0bd8da39…` of `scripts/brief-compose.py`, extracted
+with `git archive` outside the repo). 12 findings.
+
+**Round 2** — this document's substance — reviews the **fixes** applied on disk in response to the
+Codex half and to r1. The file moved four times while I worked. Final snapshot, everything below
+re-measured against it:
 
 ```
-$ git cat-file -p 0670e2f8:scripts/brief-compose.py | shasum -a 256
-0bd8da390cc461efc0e2bd1cc10b7a8715d47bce3ada28d793257061730df398  -
-$ shasum -a 256 <scratch>/subject/scripts/brief-compose.py
-0bd8da390cc461efc0e2bd1cc10b7a8715d47bce3ada28d793257061730df398
+$ shasum -a 256 scripts/brief-compose.py
+a1d76ab41dd377bfb457b5b6258f02081ebf236302c4a34b122cd15d965d7c80   (mtime 2026-09-10 06:15:13)
+$ python3 scripts/brief-compose.py --self-test
+62/62 passed
 ```
 
-All line numbers are `scripts/brief-compose.py` **at 0670e2f8**.
+Method throughout: **execute, don't reason.** Every claim below is a constructed input and its
+observed output.
 
-> **Note on the concurrent edit, which I did NOT review.** The dirty working tree adds
-> `strip_css_comments()`, `vars_read_anywhere()`, `_refusal_for()`, `_raises_exit()` (+125/−7). By
-> inspection of names alone it appears to address F4b (comments) and F1/F2/F3 (fallback reads). It
-> does **not** appear to touch F5 (untested conditional), F6 (`head` vs `content` corpus), F9 (no
-> CI step / no mutation entry), or F11. Those findings should be checked against whatever is
-> finally committed. This review's verdict is on `0670e2f8`.
+### r1 findings, current status
 
-Method: every claim below was produced by **executing** the functions on a constructed input, not
-by reading the regex.
+| r1 | Finding | Status at `a1d76ab4` |
+|---|---|---|
+| F1 | `referenced_vars` ignores `var(--x, y)` | **FIXED** — `vars_read_anywhere` |
+| F2 | `chrome_css()` contributed zero tokens | **FIXED** — now yields `--ink --ink-soft --rule --structural` |
+| F3 | `SHIM`'s own reads absent from `also_read` | **FIXED** — `SHIM` appended. ⚠ *and this fix is the cause of R2-1 and R2-5 below* |
+| F4/F4b | `:root` in a dark media query / in a comment credited as light | **FIXED** |
+| F5 | `live_control` conditional untested | **FIXED** — gutting it now fails the suite |
+| F6 | `head` vs `content` corpus | **FIXED** — *and this fix is the cause of R2-3 and R2-4* |
+| F7 | prose flips `live_control` | partially — see **R2-6**, **R2-7** |
+| F8 | vacuous no-control fixture | **FIXED** |
+| F9 | no CI step / no mutation manifest | **HALF** — CI step added at `ci.yml:130`; still **no mutation manifest** (**R2-10**) |
+| F10 | `shim_dark_tokens("")` fails open | **FIXED** |
+| F11 | second selector in the media query silently dropped | **OPEN** — **R2-11** |
+| F12 | refusal ordering vs `assert_wired` | **OPEN** — **R2-9** |
 
 ---
 
-## F1 — BLOCKING. `referenced_vars` ignores `var(--x, fallback)`, which is exactly how the measured defect read its token. The guard composes its own 1.02:1 page.
+# R2-1 — BLOCKING. All five self-test cases written for the five fixes are **vacuous**: each produces a missing-token list byte-identical to the empty control.
 
-**file:line** — `scripts/brief-compose.py:125-127` (the helper), `:236` (the use).
+**file:line** — `scripts/brief-compose.py`, the `r1 ADVERSARIAL REVIEW` block, cases
+`⛔ a var() WITH an inline fallback still counts as READ`, `⛔ a SECOND <style> block is seen by the
+guard`, `⛔ an inline style= attribute is seen by the guard`, `⛔ a :root inside
+@media(prefers-color-scheme) does NOT cover a token`, and `a control id mentioned only in a CSS
+COMMENT does not draw the half-live diagnosis`.
 
-```python
-def referenced_vars(css: str) -> set[str]:
-    """Custom properties the CSS reads with NO inline fallback — `var(--x)`, not `var(--x, y)`."""
-    return {m.group(1) for m in re.finditer(r"var\(\s*(--[\w-]+)\s*\)", css)}
-```
-
-`assert_theme_complete:236` narrows to "tokens the page READS" with this helper:
-
-```python
-    read = referenced_vars(fragment_css + "\n" + also_read)
-```
-
-That semantic is **correct for `assert_shimmed`** (a `var()` with a fallback still resolves, so it
-is not an orphan) and **inverted for this rule**. The question here is not *does the name resolve*
-but *does the token get a LIGHT value*. A fallback makes no difference to that, and `page_chrome`
-already says so in its own comment at `scripts/page_chrome.py:130-137`:
-
-> `A var(--card, transparent) fallback could never have saved it: the shim DEFINES --card, so the
-> fallback never fires.`
-
-The shim defines all 11 tokens in the dark media query, so for every one of them the fallback is
-dead code — and the guard treats the token as unread.
-
-**Trigger input** (the exact shape of backlog #79/#80: light ink on the shim's dark `--card`):
-
-```html
-<title>x</title><style>
-:root[data-theme="dark"]{--ink:#eceaf0;--bg:#16151a}
-:root[data-theme="light"]{--ink:#151b23;--bg:#ffffff}
-body{color:var(--ink);background:var(--bg)}
-.card{background:var(--card,#ffffff);color:var(--ink)}
-</style><!-- + page_chrome.theme_control() + chrome_script() -->
-<div class="card">every word of the brief lives in here</div>
-```
-
-**Observed:**
+Four of the five are `case(name, not _c(...))` — *"assert this fragment is REFUSED"*. **The control
+nobody ran is `_c()` with no feature at all**, and it is already refused:
 
 ```
-COMPOSED OK — guard did NOT fire
-shim dark --card = #1d1c22
-light-mode .card text #151b23 on shim-dark --card #1d1c22 -> 1.02:1
+V1 vacuous control (bare fixture, no feature): --card, --good, --ink-faint, --ink-soft, --rule, --structure
+V2 fallback case                             : --card, --good, --ink-faint, --ink-soft, --rule, --structure
+V3 second <style> case                       : --card, --good, --ink-faint, --ink-soft, --rule, --structure
+V4 inline style= case                        : --card, --good, --ink-faint, --ink-soft, --rule, --structure
+V5 media-query-coverage case                 : --card, --good, --ink-faint, --ink-soft, --rule, --structure
 ```
 
-**Expected:** refused. `--card` is supplied DARK by the shim, is READ by the page, and has no light
-value — all three conditions the docstring names are met. The docstring's own worked example is
-`.c{background:var(--card)}`; add four characters of fallback and the rule goes blind.
+Not merely "also refused" — **the same six tokens, in the same order**. The feature each case names
+contributes nothing to its own outcome.
 
-**What the reader sees:** the 1.03:1 page the row was filed for, one hundredth of a ratio away,
-past a green guard.
-
----
-
-## F2 — BLOCKING. `page_chrome.chrome_css()` contributes **zero** tokens to `also_read`. The chrome bar's own tokens can never be required.
-
-**file:line** — `scripts/brief-compose.py:361` (`compose`), `scripts/page_chrome.py:114-152`.
-
-```python
-    assert_theme_complete(head, live_control, css + "\n" + page_chrome.chrome_css())
-```
-
-Every single `var()` in `chrome_css()` carries a fallback, by that module's deliberate design
-(`page_chrome.py:120-122`: *"Every fallback is `currentColor` or `transparent`, never a hex"*):
+**Cause.** The fixture `_c(inner, tail)` builds a page whose light palette is
+`:root[data-theme="light"]{--ink:#111;--bg:#fff}` — two tokens. The F3 fix put `SHIM` into
+`also_read`, and `SHIM` reads six *other* shim tokens on every page. So the fixture is refused for
+`--card --good --ink-faint --ink-soft --rule --structure` before `inner` or `tail` is ever consulted.
+Each case is about `--card`, and `--card` is in that list unconditionally:
 
 ```
-var(--ink-soft,currentColor)   var(--rule,currentColor)
-var(--ink,inherit)             var(--structural,currentColor)
+>>> "--card" in vars_read_anywhere(SHIM)
+True
 ```
 
-**Observed:**
-
-```
->>> referenced_vars(page_chrome.chrome_css())
-set()
-```
-
-The chrome half of the third argument is a **no-op**. This is not a corner case — the chrome bar is
-the component backlog #79/#80 was filed about, and `--ink-soft` is the token #80 retuned.
-
-**Trigger input:** a fragment with both `data-theme` palettes whose light palette omits
-`--ink-soft` (a very ordinary omission — the shim defines it, most fragments do not).
-
-**Observed:**
-
-```
-page with NO light --ink-soft: COMPOSED OK; chrome bar present: True
-light mode: chrome label = shim dark --ink-soft #c8c5cf on page --bg #ffffff -> 1.70:1 (AA needs 4.5)
-```
-
-**Expected:** refused. The composer knowingly appends a bar that reads `--ink-soft`; the guard is
-handed that bar's CSS precisely so those tokens count; it extracts nothing from it.
-
-**Mutation confirmation** — the argument is not merely weak, it is dead in the self-test too:
+**Mutation confirmation.** Control `62/62 passed`. Each of these reverts the fix the case claims to
+pin, and the suite stays green:
 
 | mutation | result |
 |---|---|
-| M1 `assert_theme_complete(head, live_control, "")` — drop the whole third argument | **53/53 passed** |
-| M4 `read = referenced_vars(fragment_css)` — stop using `also_read` at all | **53/53 passed** |
+| N4 drop `SHIM` from `also_read` | **62/62 passed** |
+| N5 drop `chrome_css()` from `also_read` | **62/62 passed** |
+| N6 revert the scan corpus `content` → `head` (undoes Codex Blocking 2) | **62/62 passed** |
+| N7 make the media-query strip a no-op (undoes Codex High 3) | **62/62 passed** |
+| N3 stop comment-stripping `has_control` (undoes Codex Medium 4) | 61/62 — killed |
+| N1 gut `assert_theme_complete` (early `return`) | 54/62 — killed |
 
-(The tray half of `also_read` *does* carry weight on a live run — the real tray in
-`~/explainers/dashboard.html` reads `--bg --card --defect --ink --rule --structure` with no
-fallback. But the self-test's `css` fixture is `#tray{a:1}` etc., which reads nothing, so neither
-half is exercised by any case.)
+**Four of the five fixes can be reverted with the suite green.** The `⛔` markers assert coverage
+that does not exist.
 
----
-
-## F3 — HIGH. `SHIM`'s own no-fallback reads are absent from `also_read`, so `--bg` is required only when the fragment happens to name it — although every composed page reads it.
-
-**file:line** — `scripts/brief-compose.py:104` (in `SHIM`), `:361` (the call).
-
-```css
-  :where(html, body) { background: var(--bg); color: var(--fg); }
-```
-
-`SHIM` is concatenated into every page, so **every** composed page reads `var(--bg)` with no
-fallback. `also_read` is `css + "\n" + page_chrome.chrome_css()` — `SHIM` is not in it.
-
-**Observed:**
-
-```
-SHIM's own no-fallback reads: ['--bg', '--fg']   ...not passed to assert_theme_complete
-```
-
-**Trigger input:** a fragment that relies on the shim's paint rule (the documented, intended way —
-see the 2026-08-24 note at `:98-104`) and whose light palette omits `--bg`:
-
-```html
-<style>:root[data-theme="dark"]{--ink:#eee;--card:#111}
-:root[data-theme="light"]{--ink:#111;--card:#fff}
-.c{background:var(--card);color:var(--ink)}</style> + control
-```
-
-**Observed:**
-
-```
-page relying on SHIM's paint rule, light palette MISSING --bg: COMPOSED OK
-   shim paint rule present in doc: True
-   body text #111 on #16151a -> 1.04:1
-```
-
-**Expected:** refused — this is the headline defect (`--bg`, body text, ~1.03:1) reproduced through
-the shim's own rule.
-
----
-
-## F4 — HIGH. `light_palette_tokens` credits a `:root` nested inside `@media (prefers-color-scheme: dark)` as **light** coverage. Every generator in this repo writes exactly that block.
-
-**file:line** — `scripts/brief-compose.py:176-179`.
+**The fifth case** is a different vacuity — an absence assertion:
 
 ```python
-    for m in re.finditer(r':root(\[data-theme="light"\])?\s*\{([^}]*)\}', fragment_css):
+case("a control id mentioned only in a CSS COMMENT does not draw the half-live diagnosis",
+     "does not cover every token" not in _refusal_for(_comment_page))
 ```
 
-The pattern is unanchored and has no notion of enclosing context, so a `:root` inside a dark media
-query matches the optional-group-absent arm — the arm the docstring justifies as *"plain `:root`
-counts too — (0,1,0) also beats the shim's `html` (0,0,1)"*. That reasoning is sound for a
-top-level `:root` and **false** for one wrapped in `@media (prefers-color-scheme: dark)`, which is
-not in force in light mode at all.
-
-**Observed:**
+Under N1 (`assert_theme_complete` gutted so it can never speak) this case **passes**, verified:
 
 ```
->>> light_palette_tokens('@media (prefers-color-scheme:dark){:root{--card:#111;--ink:#eee}}')
-['--card', '--ink']
+✅  a control id mentioned only in a CSS COMMENT does not draw the half-live diagnosis
 ```
 
-This is not hypothetical shaping — it is the literal house style of every page that composes
-through this file:
+Deleting the subject satisfies the assertion. This is the project's recorded pattern *"the assertion
+is an ABSENCE that deleting the subject also satisfies"*.
 
-- `scripts/gen-goals-page.py:234` — `@media (prefers-color-scheme:dark){:root{--bg:#14151a;--card:#1c1e25;…}}`
-- `scripts/gen-backlog-page.py:1137` — same
-- `scripts/gen-dashboard.py:1104` — same
-
-**Trigger input** — `--card` declared *only* in the dark media query, so no light value exists
-anywhere:
-
-```html
-<style>@media (prefers-color-scheme:dark){:root{--card:#1c1e25}}
-:root[data-theme="dark"]{--ink:#eee;--bg:#111;--card:#1c1e25}
-:root[data-theme="light"]{--ink:#151b23;--bg:#fff}
-body{color:var(--ink);background:var(--bg)}.card{background:var(--card);color:var(--ink)}</style> + control
-```
-
-**Observed:** `light_palette_tokens credits --card? True` → `COMPOSED OK — guard did NOT fire`.
-
-**Expected:** refused. On the three real generators this is currently **latent** (each also emits a
-`:root[data-theme="light"]` covering the same names), so no page is broken today — but the guard is
-crediting the wrong block, and the moment one generator adds a token to its OS-dark block without
-adding it to the light one, the guard stays green on the exact defect it was written for.
-
-### F4b — same regex, same severity class: a `:root` inside a **CSS comment** is credited.
-
-```
->>> light_palette_tokens('/* :root{--card:#fff} */')
-['--card']
-```
-
-`check-theme-token-coverage.py`'s own self-test already pins *"a bare mention of a token name does
-not count as a declaration"*; this new implementation of the neighbouring rule does not hold that
-line. A commented-out palette — the normal way an author parks one — reads as coverage.
+**Fix shape:** every one of these needs a control/defect pair. Give the fixture a light palette
+covering all 11 shim tokens **except** the one under test, assert the bare fixture **composes**, then
+assert the feature-carrying variant is refused **and that the message names exactly that token**.
+`_refusal_for` already exists and returns the message; four of five cases discard it for a boolean.
 
 ---
 
-## F5 — HIGH. The `live_control` conditional, the half the docstring calls "CONDITIONAL ON A LIVE CONTROL, deliberately", has **no test coverage at all**. Five mutations survive.
+# R2-2 — BLOCKING. The real `/backlog` page fails this guard, silently ships **without its Ask tray**, and the generator exits **0**.
 
-**file:line** — `scripts/brief-compose.py:234-235` and `:358-360`.
+**file:line** — measured live; `scripts/gen-backlog-page.py:2245-2252` is the swallowing caller.
 
-Control: `python3 scripts/brief-compose.py --self-test` → `53/53 passed`.
+```
+$ python3 scripts/gen-backlog-page.py --out /tmp/bl.html   # current working tree
+wrote /tmp/bl.html  (109 rows, 68 open)
+⚠  WITHOUT the Ask tray — brief-compose.py could not lift one:
+   brief-compose: this page has a WORKING theme toggle, but its light palette does not cover…
+   The page renders and reloads; only the ask-a-question button is missing.
+$ echo $?
+0
+$ grep -c 'id="tray"' /tmp/bl.html
+0
+```
 
-| # | mutation | result |
-|---|---|---|
-| M0 | **delete `if not live_control: return` entirely** (`:234-235`) | **53/53 passed** |
-| M1 | `assert_theme_complete(head, live_control, "")` | **53/53 passed** |
-| M4 | `read = referenced_vars(fragment_css)` | **53/53 passed** |
-| M6 | `live_control = False or not page_chrome.missing_palettes(…)` — drop the `has_control` route | **53/53 passed** |
-| M7 | `live_control = page_chrome.has_control(content) or False and …` — drop the `missing_palettes` route | **53/53 passed** |
-| — | M2 (drop the unscoped `:root` arm) | 52/53 — killed |
-| — | M3 (credit any `data-theme` palette) | 52/53 — killed |
-| — | M5 (refusal stops naming the tokens) | 52/53 — killed |
+The full refusal, captured by spying on the subprocess:
 
-M0 is the significant one: **the entire conditional can be deleted and the suite stays green.** The
-`compose()` comment at `:358-360` claims *"Both routes reach the same reader, so both are checked"* —
-M6 and M7 show neither route is checked, because every `_frag_with_control` fixture satisfies both
-simultaneously and the one control-less fixture satisfies neither.
+```
+  --bg, --defect, --rule, --structure
+```
 
-There is no fixture at all for the route the comment says the composer actually takes (case 2 of
-`chrome_for`: **palettes present, no button**, composer adds one). I constructed it by hand and it
-behaves correctly — but nothing in the suite would notice if it stopped.
+**This is not a regression from the fixes.** Identical output, identical four tokens, at
+`0670e2f8`. So the shipped commit already broke a production page, and neither review round found
+it, because **neither ran a generator.** The docstring's *"Measured 2026-09-10, on the first live
+run"* refers to the goals page only. I ran all three: `gen-goals-page.py` OK, `gen-dashboard.py` OK,
+`gen-backlog-page.py` **degraded**.
+
+**Why it is Blocking rather than a palette chore.** `brief-compose.py`'s own module docstring:
+
+> *FAIL LOUD, NEVER SILENT — … A brief that renders without its Ask tray is the failure this script
+> exists to prevent, and it would be invisible — the page looks fine.*
+
+A new guard inside that script now **causes** exactly that outcome on a real page, through a caller
+that is designed to degrade rather than fail. The four tokens are genuinely read — by the lifted
+tray (`--bg --defect --rule --structure`, all no-fallback) — so the finding is not that the guard is
+wrong, it is that **the only consequence of being right is losing the tray, permanently and quietly.**
+
+Either the backlog page's light palette gains those four, or the guard must not be able to cost a
+page its tray. Shipping with it red is the state the project describes as *"a knowingly-red gate
+makes CI a thing people learn to ignore"*, one layer down.
 
 ---
 
-## F6 — HIGH. `live_control` reads `content`; the coverage check reads `head`. The two corpora disagree, producing both a false positive and false negatives.
+# R2-3 — HIGH. The corpus widening made the read scan parse **page prose and code samples as CSS**. Backlog row #102's own text is what breaks the backlog page's `--structure`.
 
-**file:line** — `scripts/brief-compose.py:353` (`head, body = content.split("</style>", 1)`), `:358-361`.
+**file:line** — `scripts/brief-compose.py`, `compose`: `assert_theme_complete(content, live_control, …)`.
+
+Scanning `content` instead of `head` correctly picked up second `<style>` blocks and `style=`
+attributes (Codex Blocking 2). It also picked up **every word of the page body**.
+
+**Isolated control/defect pair** — same page, complete light palette minus `--defect`, the only
+difference being one sentence of prose:
+
+```
+   no prose                              : COMPOSES
+   prose shows <code>var(--defect)</code>: --defect
+```
+
+**Live instance, self-referential.** Attributing each token the real backlog page is refused for:
+
+```
+  --bg         <- the lifted TRAY css, SHIM
+  --defect     <- the lifted TRAY css
+  --rule       <- fragment CSS, the lifted TRAY css, chrome_css(), SHIM
+  --structure  <- fragment BODY — prose/markup, the lifted TRAY css, SHIM
+```
+
+and the body site is backlog row #102 describing this very guard:
+
+```
+…nothing in the repo reads</strong> (the goals page draws that border with
+<code>color-mix(var(--structure))</code>). A guard demanding…
+```
+
+The guard reads its own backlog entry's prose as a stylesheet. Body-only shim tokens on that page
+are `--card` and `--structure`; `--card` escapes notice only because the backlog page happens to
+declare it.
+
+This class will grow, not shrink: `/brief`, `/explain-diff` and `/explain-topic` pages exist to
+*show CSS*, and they all compose through this file.
+
+**Fix shape:** extract `<style>` block contents and `style="…"` attribute values, and scan those —
+not the raw document. `extract_tray` already does `re.search(r"<style>(.*?)</style>")`.
+
+---
+
+# R2-4 — HIGH. Same root, opposite direction: a palette shown in a `<pre>` sample is accepted as real **coverage**.
+
+**file:line** — `light_palette_tokens(fragment_css)` is now called with the whole `content`.
+
+**Trigger:** page reads `var(--defect)`, its real light palette omits `--defect`, and a `<pre>` block
+displays `:root[data-theme="light"]{--defect:#a00}` as an example.
+
+```
+      -> COMPOSES (a <pre> sample accepted as coverage)
+```
+
+**Expected:** refused — nothing in that page declares a light `--defect`; the browser renders `<pre>`
+as text. R2-3 is the false positive, this is the false negative, and one corpus fix produced both.
+`check-theme-token-coverage.py`'s self-test already pins *"a bare mention of a token name does not
+count as a declaration"*; this implementation of the neighbouring rule does not hold that line.
+
+---
+
+# R2-5 — HIGH. Two individually-correct fixes collapsed the narrowing: **8 of 11** tokens are now demanded of every page unconditionally, while the docstring still describes the narrowing as live.
+
+**file:line** — `assert_theme_complete` docstring `⛔ ONLY TOKENS THE PAGE ACTUALLY READS`; `compose`'s
+`also_read`.
+
+```
+V6 unconditionally demanded 8 of 11 -> ['--bg','--card','--good','--ink','--ink-faint','--ink-soft','--rule','--structure']
+V7 still narrowed:                     ['--defect','--structure-bg','--structure-br']
+```
+
+`SHIM` is on every composed page and reads 9 of its own 11 tokens (mostly through its alias block:
+`--verified: var(--good,…)`, `--fg3: var(--ink-faint,…)`, `--line: var(--rule,…)`,
+`--structural: var(--structure,…)`). Once fallbacks count as reads (Codex Blocking 1) **and** `SHIM`
+joins the corpus (r1 F3), "tokens the page reads" is very nearly "all of them".
+
+The docstring still says:
+
+> *Measured 2026-09-10, on the first live run: the goals page was refused for `--structure-br`, which
+> nothing in the repo reads… Demanding a light value for a token with no consumer forces a
+> declaration with no observable effect.*
+
+That rationale now applies to only 3 tokens. The self-test case pinning the narrowing removes
+`--structure-bg` — one of the 3 survivors — so it still passes and cannot see the collapse.
+
+Note the alias subtlety this exposes: `SHIM` *declares* `--line`/`--structural` on `:root` (0,1,0),
+and pages like `/backlog` override those at `:root[data-theme="light"]` (0,2,0). For such a page the
+shim's read of `var(--rule)` is dead — its only consumer is an alias the page outranks — yet
+`--rule` is demanded anyway. Either accept that the narrowing is gone and say so, or exclude `SHIM`'s
+alias reads.
+
+---
+
+# R2-6 — MEDIUM. `has_control` strips **CSS** comments but not **HTML** comments — the actual way a button gets commented out.
+
+**file:line** — `compose`: `page_chrome.has_control(strip_css_comments(content))`;
+`strip_css_comments` is `re.sub(r"/\*.*?\*/", …)`.
+
+```
+>>> has_control(strip_css_comments('<!-- ' + page_chrome.theme_control() + ' -->'))
+True
+```
+
+Composing such a fragment: `REFUSED: --card, --good, --ink-faint, --ink-soft, --rule, --structure` —
+the half-live diagnosis, on a page whose only button is commented out.
+
+The Codex Medium fixed `/* id="chrome-theme" */` inside a stylesheet. `id="chrome-theme"` is HTML,
+so the comment syntax that actually surrounds it is `<!-- -->`. This is instance-not-class on that
+fix — the recorded pattern *"after fixing, SEARCH for the class"*.
+
+---
+
+# R2-7 — MEDIUM. The two arms of `live_control` are asymmetric: arm 1 is comment-stripped, arm 2 is not.
+
+**file:line** — `compose`:
 
 ```python
-    live_control = page_chrome.has_control(content) or not page_chrome.missing_palettes(
-        content + page_chrome.theme_control())
-    assert_theme_complete(head, live_control, css + "\n" + page_chrome.chrome_css())
+    live_control = page_chrome.has_control(strip_css_comments(content)) or not (
+        page_chrome.missing_palettes(content + page_chrome.theme_control()))
 ```
 
-`live_control` is decided over the **whole fragment**; `fragment_css` is only what precedes the
-**first** `</style>`.
+Arm 2 receives raw `content`. Trigger — both palettes present **only inside a CSS comment**, no
+button:
 
-**F6a — FALSE POSITIVE. A complete light palette in a second `<style>` block is refused, with a
-message naming tokens that are declared.**
-
-Trigger:
-
-```html
-<title>x</title><style>:root[data-theme="dark"]{--ink:#eee;--bg:#111;--card:#111}
-body{color:var(--ink);background:var(--bg)}.c{background:var(--card)}</style>
-<style>:root[data-theme="light"]{--ink:#111;--bg:#fff;--card:#fff}</style> + control
+```
+   arm1 has_control            = False     (comment stripped — correct)
+   arm2 not missing_palettes   = True      (comment NOT stripped)
+   -> REFUSED: --bg, --card, --good, --ink, --ink-faint, --ink-soft, --rule, --structure
 ```
 
-Observed: `REFUSED -> --bg, --card, --ink`. The identical palette in **one** block composes fine.
-
-What the author sees: *"Declare them in the fragment's `:root[data-theme="light"]` (or `:root`)"* —
-which they have already done, for all three named tokens. This is the failure mode the docstring
-itself warns against (*"a guard asking to be satisfied rather than a guard describing a defect"*),
-pointed the other way: the author's only route to green is to restructure correct CSS.
-
-**F6b — FALSE NEGATIVE. A token read after the first `</style>` is invisible.**
-
-- read from a second `<style>` block: `.c{background:var(--card)}` → `COMPOSED OK`
-- read from an inline attribute: `<div style="background:var(--card)">` → `COMPOSED OK`
-
-Both are CSS the browser applies and the guard never sees. Answering the brief's question directly:
-`referenced_vars` is **not** run over the CSS the browser receives.
+The fix was applied to the arm the finding named and not to its neighbour, so a comment still
+reaches the predicate by the other route. The same raw-substring exposure covers palettes shown in
+prose or a `<pre>` sample (r1 F7, still reachable this way).
 
 ---
 
-## F7 — MEDIUM. Prose that mentions both palette selectors flips `live_control` to true, and refuses a page that has no toggle with a message asserting it has a working one.
+# R2-8 — MEDIUM. The refusal's token list is on line 2, and the production caller prints line 1.
 
-**file:line** — `scripts/brief-compose.py:358-359`; `scripts/page_chrome.py:60-68` (`missing_palettes` is a substring test).
-
-**Trigger input** — a fragment with **no** control whose body discusses the selectors, i.e. exactly
-a `/brief` or `/explain-diff` page *about backlog #102*:
-
-```html
-<title>x</title><style>body{color:var(--ink);background:var(--bg)}
-.c{background:var(--card)}</style>
-<p>this page explains :root[data-theme="light"] and :root[data-theme="dark"]</p>
-```
-
-**Observed:** `live_control = True` → `REFUSED -> --bg, --card, --ink`.
-
-**Expected:** skipped. Per the docstring, a page that declares nothing gets an inert toggle and
-stays readable; that is the page this rule *must not break*. `page_chrome.has_control` is
-deliberately keyed on the button id rather than the word "theme" for precisely this reason
-(`page_chrome.py:71-77`); the second arm of the predicate reintroduces the substring problem the
-first arm was written to avoid.
-
----
-
-## F8 — MEDIUM. The self-test case for the conditional passes for a reason other than the property it names — its fixture contains no `var()` at all.
-
-**file:line** — `scripts/brief-compose.py:540-541`.
+**file:line** — `scripts/gen-backlog-page.py:2249`.
 
 ```python
-    case("...but a partial palette on a page that gets NO control still composes",
-         _composes('<title>x</title><style>:root{--ink:#111;--bg:#fff}</style><div>hi</div>'))
+        print("   " + (composed.stderr.strip() or composed.stdout.strip() or "no output").splitlines()[0])
 ```
 
-```
->>> referenced_vars('<title>x</title><style>:root{--ink:#111;--bg:#fff}')
-set()
-```
+Line 1 is `brief-compose: this page has a WORKING theme toggle, but its light palette does not cover
+every token the OS-dark shim supplies:` — it names **no tokens**. Line 2 is `--bg, --defect, --rule,
+--structure`. Observed in the live run above: the operator is told a page lost its tray and is not
+told which four tokens to declare.
 
-Direct check of what the case discriminates:
+`_refusal_text`'s own docstring is the falsifier for this:
 
-```
-live_control=False: PASSES
-live_control=True:  PASSES
-```
+> *⚠ Asserting the MESSAGE, not just the exit. A refusal that does not name the missing tokens sends
+> the author back to diff two palettes by hand, which is the work the guard exists to do.*
 
-It cannot distinguish the branch it names. This is the identical trap the author flagged eleven
-lines earlier at `:526-528` — *"a fragment that declares a palette and reads nothing is correctly
-ignored — and a fixture like that would pass while proving the guard cannot fire"* — and then built
-into this case. It is also the mechanism behind M0 in F5: this is the only case that touches the
-conditional, and it is vacuous.
-
-**Fix shape:** give the fixture the same `_reads` block the other fixtures use, so that removing
-the conditional makes it fail.
+The self-test asserts the tokens are in the message; the only real caller drops the line they are on.
+Put the token list on line 1, or have the caller print the whole message.
 
 ---
 
-## F9 — MEDIUM. A new guard shipped with no CI step, no mutation-manifest entry, and outside `check-ratchet-contract.py`'s population.
+# R2-9 — MEDIUM (r1 F12, still open). `assert_theme_complete` still runs before `assert_wired`, so an unwired button gets the wrong diagnosis.
 
-- `.github/workflows/ci.yml` runs `python3 scripts/page_chrome.py --self-test` (`:311-312`) and
-  **nothing** for `brief-compose.py`. Grep for `brief-compose` in `ci.yml`: no match.
-- No file in `scripts/mutations/*.json` (34 manifests, 30 files covered) names
-  `scripts/brief-compose.py`. `check-plan-code.py --mutate .` therefore cannot see any of this.
-- `check-ratchet-contract.py` discovers 30 guards by the `check-*.py` filename convention;
-  `brief-compose.py` now carries a real guard and is not among them.
+**file:line** — `compose`: `assert_theme_complete(...)` precedes `chrome_for(...)` → `assert_wired`.
 
-That is why the five mutations in F5 survive silently: this file is outside every mechanism the
-project uses to keep a guard load-bearing. `AGENTS.md`/`dev-process.md`'s ratchet row for
-`check-ratchet-contract.py` records the same class of miss ("the population is the FILESYSTEM;
-CI-step discovery saw 14 of 24").
+Trigger — button present, **no** palettes at all (`assert_wired`'s exact subject). First line of the
+refusal:
+
+```
+brief-compose: this page has a WORKING theme toggle, but its light palette does not cover every token…
+```
+
+The page's toggle is not working; it is unwired. The new self-test case acknowledges this
+(*"the half-live guard spoke FIRST and blamed a theme toggle the page does not have"*) and pins the
+symptom for one input via an absence assertion (R2-1) rather than moving the call. Moving
+`assert_theme_complete` after `chrome_for` fixes the class.
 
 ---
 
-## F10 — LOW. `shim_dark_tokens("")` answers confidently about a **different** subject instead of reporting CANNOT RUN.
+# R2-10 — LOW (r1 F9, half open). CI step added; **no mutation-manifest entry**, which is what the surviving mutations need.
 
-**file:line** — `scripts/brief-compose.py:149`.
-
-```python
-    src = shim or SHIM
-```
+`ci.yml:130-131` now runs `python3 scripts/brief-compose.py --self-test`. Good — but:
 
 ```
->>> shim_dark_tokens("")            # an empty shim
-['--bg','--card','--defect','--good','--ink','--ink-faint','--ink-soft','--rule',
- '--structure','--structure-bg','--structure-br']     # 11 tokens, from the real SHIM
->>> shim_dark_tokens(":root{--a:1}")  # a non-empty shim with no dark block
-CANNOT RUN — the OS-dark shim block was not found in SHIM
+$ grep -l "brief-compose" scripts/mutations/*.json
+(none)   # 34 manifests, 30 files covered
 ```
 
-A caller handing this an empty shim — a stripped fixture, an unread file, a failed extraction —
-gets a green, specific, wrong answer. The function has a CANNOT-RUN path and routes the emptiest
-input away from it. `""` is a *falsy subject*, not *no subject supplied*; use a `None` default.
-
-No self-test case exercises either branch of `:150-154`.
+A green self-test is exactly what N4/N5/N6/N7 in R2-1 return. `check-plan-code.py --mutate .` is the
+mechanism this project uses to prove a case is load-bearing, and this file is still outside it.
+`check-ratchet-contract.py` also cannot see it (population is `check-*.py`), which the new CI comment
+records honestly.
 
 ---
 
-## F11 — LOW. `shim_dark_tokens`'s `(.*?)\}` silently shrinks its subject if the media query ever gains a second selector.
+# R2-11 — LOW (r1 F11, still open). `shim_dark_tokens` silently shrinks its subject if the media query gains a second selector.
 
-**file:line** — `scripts/brief-compose.py:151`.
-
-Answering the brief's question directly: on the **current** `SHIM` the non-greedy `(.*?)\}` stops at
-the correct brace — the one closing `html { … }` — so it reads the whole block and returns 11
-tokens. It is right today. The failure is on edit:
+**file:line** — `shim_dark_tokens`, `(.*?)\}`.
 
 ```
->>> shim_dark_tokens("@media (prefers-color-scheme: dark) {\n"
-...                  "  html { --bg:#000; --ink:#fff; }\n  body { --card:#111; }\n}")
-['--bg', '--ink']          # --card silently dropped, no CANNOT RUN
->>> shim_dark_tokens("@media (prefers-color-scheme: dark) {\n html { --a:1; background:url(x{y}); --b:2; }\n}")
-['--a']                    # --b silently dropped
+>>> shim_dark_tokens("@media (prefers-color-scheme: dark) {\n html { --bg:#000; }\n body { --card:#111; }\n}")
+['--bg']
 ```
 
-The docstring's stated design goal is *"Read, never listed… the shim is edited far more often than
-a guard is re-read"* — but the read narrows silently under exactly the edit it anticipates. The
-guard would keep passing over a token it no longer knows about, which is indistinguishable from the
-token being covered.
-
----
-
-## F12 — LOW. `assert_theme_complete` runs before `assert_wired`, so an unwired control gets a message asserting the toggle works.
-
-**file:line** — `scripts/brief-compose.py:361` runs before `:362` → `chrome_for` → `page_chrome.assert_wired`.
-
-**Trigger:** a fragment with the button and **no** palettes at all — `assert_wired`'s exact subject.
-
-**Observed first line of the refusal:**
-
-```
-brief-compose: this page has a WORKING theme toggle, but its light palette does not cover
-every token the OS-dark shim supplies:
-```
-
-**Expected:** `assert_wired`'s message — *"the theme control is on the page but
-`:root[data-theme="dark"]`, `:root[data-theme="light"]` is not defined, so pressing it would change
-an attribute nothing styles."* The page's toggle is not working; it is unwired, which is a different
-defect with a different fix. Moving the `assert_theme_complete` call after `chrome_for` resolves it.
+Comments are now stripped and a zero-token parse is CANNOT RUN — both good — but a *partial* parse is
+still silent, and the docstring's premise is that the shim is edited often. One token short is
+indistinguishable from one token covered.
 
 ---
 
@@ -444,24 +365,27 @@ defect with a different fix. Moving the `assert_theme_complete` call after `chro
 
 | Severity | Count | Findings |
 |---|---|---|
-| Blocking | 2 | F1, F2 |
-| High | 4 | F3, F4 (+F4b), F5, F6 |
-| Medium | 3 | F7, F8, F9 |
-| Low | 3 | F10, F11, F12 |
+| Blocking | 2 | R2-1, R2-2 |
+| High | 3 | R2-3, R2-4, R2-5 |
+| Medium | 4 | R2-6, R2-7, R2-8, R2-9 |
+| Low | 2 | R2-10, R2-11 |
 
-The central problem is F1/F2/F3: **the "tokens the page READS" narrowing is implemented with a
-helper whose definition of "reads" is the inverse of what this rule needs.** A fallback is
-irrelevant to whether a token gets a light value — `page_chrome.py:130-137` already establishes
-that in writing — yet `referenced_vars` treats a fallback as sufficient. The consequence is not
-theoretical: I composed the 1.02:1 page (F1), the 1.04:1 page (F3) and the 1.70:1 chrome label (F2)
-straight through a green guard, all three being the exact defect class the row was filed for.
+The five fixes are individually correct and I reproduced each working. The problem is what they do
+as a set, which is the composition failure this project's Phase 6 exists for:
 
-F5 explains why none of this was caught: the conditional and the `also_read` argument survive
-deletion with 53/53 green, the one case covering the conditional is vacuous (F8), and the file sits
-outside CI, the mutation manifest, and the ratchet contract (F9).
+- **Adding `SHIM` to the read corpus** (r1 F3) made six shim tokens unconditionally demanded. That
+  silently hollowed out every fixture written for the *other four* fixes — the bare control now
+  produces the identical refusal, so four of five fixes can be reverted with `62/62 passed`
+  (**R2-1**), and the narrowing the docstring still advertises now covers 3 of 11 tokens
+  (**R2-5**).
+- **Widening the corpus from `head` to `content`** (Codex Blocking 2) correctly caught second
+  `<style>` blocks and `style=` attributes, and simultaneously started parsing prose as CSS in both
+  directions (**R2-3**, **R2-4**) — with the live instance being backlog row #102's own text.
+- Two fixes were applied to the instance named rather than the class: CSS comments but not HTML
+  comments (**R2-6**), and one arm of `live_control` but not the other (**R2-7**).
 
-The rule's shape is right and its narrowing is well-argued. Its implementation reads a smaller CSS
-corpus than the browser does (F6), credits blocks that are not in force in light mode (F4/F4b), and
-misses the reads that matter most (F1/F2/F3).
+Independent of the fixes, **R2-2** was true of the shipped commit and is true now: `/backlog` loses
+its Ask tray, exit 0, and neither review round ran a generator. That is the one finding that costs a
+reader something today.
 
 VERDICT: NOT CONVERGED

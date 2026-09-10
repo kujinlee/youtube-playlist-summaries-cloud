@@ -131,6 +131,28 @@ def declared_vars(css: str) -> set[str]:
     return {m.group(1) for m in re.finditer(r"(--[\w-]+)\s*:", css)}
 
 
+def css_of(document: str) -> str:
+    """The CSS a browser will apply from `document`: every `<style>` body, every `style="…"`. PURE.
+
+    ⛔ NEITHER THE WHOLE DOCUMENT NOR JUST THE HEAD — both are wrong, and r1/r2 paid for each.
+
+    Scanning only the text before the first `</style>` missed a second `<style>` block and every
+    inline `style=` attribute, which reach the browser (r1 F6, Blocking). The obvious repair —
+    scan the whole `content` — over-corrects into BODY PROSE: measured 2026-09-10 on the fold, a
+    page whose prose merely says *"the shim supplies var(--card)"*, or that shows
+    `.c{background:var(--card)}` in a `<pre><code>` sample, was REFUSED for a token it never uses.
+    An explainer page ABOUT backlog #102 could not be published — which is r1 F7 arriving through
+    the opposite side, and exactly the shape `portable-practices.md` §12 predicts: the repair adds
+    a branch, and the branch is the next defect.
+
+    So: the CSS, all of it, and nothing that is not CSS.
+    """
+    out = re.findall(r"<style[^>]*>(.*?)</style>", document, re.S | re.I)
+    out += re.findall(r'\sstyle\s*=\s*"([^"]*)"', document, re.I)
+    out += re.findall(r"\sstyle\s*=\s*'([^']*)'", document, re.I)
+    return "\n".join(out)
+
+
 def strip_css_comments(css: str) -> str:
     """CSS with `/* … */` removed. PURE.
 
@@ -375,14 +397,15 @@ def compose(content: str, title: str, css: str, markup: str, script: str,
     # for exactly this reason; the second arm reintroduced the problem the first arm avoids.
     # Keying on a REAL parsed light palette also states the rule's intent exactly: this is about
     # pages that declare a light palette AND can be toggled.
-    declares_light = bool(light_palette_tokens(content))
+    page_css = css_of(content)
+    declares_light = bool(light_palette_tokens(page_css))
     live_control = declares_light and not page_chrome.missing_palettes(
         content + page_chrome.theme_control())
     # ⚠ SHIM IS PART OF THE READ CORPUS (r1 finding F3). It is appended to EVERY composed page and
     # reads tokens with no fallback of its own — `--bg` among them — so those are read by every
     # page whether or not the fragment names them. Omitting it made `--bg` required only when the
     # fragment happened to mention it.
-    assert_theme_complete(content, live_control,
+    assert_theme_complete(page_css, live_control,
                           css + "\n" + page_chrome.chrome_css() + "\n" + SHIM)
     chrome_css, chrome_bar, chrome_js = chrome_for(content, generated_at)
     body = body + "\n" + chrome_bar + "\n" + chrome_js
@@ -594,6 +617,31 @@ def self_test() -> int:
     # `assert_shimmed` and wrong here; `vars_read_anywhere` is the one this rule needs.
     case("⛔ a var() WITH an inline fallback still counts as READ",
          not _c(".c{background:var(--card,#fff)}"))
+    # ⛔ r2 — THE r1 FIX OVER-CORRECTED, and this pins both edges of it. r1 F6 moved the scan from
+    # `head` to the whole `content`, which swept in BODY PROSE: a page whose text merely said
+    # "the shim supplies var(--x)", or that showed a CSS sample in `<pre><code>`, was refused for a
+    # token it never uses — an explainer ABOUT backlog #102 could not be published. `css_of()` now
+    # reads `<style>` bodies and `style=` attributes and nothing else.
+    # ⚠ THE PROBE TOKEN MUST BE ONE NEITHER `SHIM` NOR THE CHROME READS, or the refusal comes from
+    # `also_read` and the case proves nothing about prose. Measured: SHIM+chrome read 8 of the 11,
+    # leaving --defect, --structure-bg, --structure-br. The first fixture written here used --card
+    # and "failed" for that reason.
+    _probe = "--defect"
+    _partial_light = (':root[data-theme="light"]{'
+                      + "".join(f"{n}:#fff;" for n in sorted(_shim_names) if n != _probe) + "}")
+
+    def _with(tail: str) -> str:
+        return ("<title>x</title><style>" + _dark + _partial_light + "</style>" + tail)
+
+    case("prose that MENTIONS a token does not count as using it",
+         _composes(_with(f"<p>the shim supplies var({_probe}) in dark mode</p>")))
+    case("...nor does a CSS sample shown in a code block",
+         _composes(_with(f"<pre><code>.c{{background:var({_probe})}}</code></pre>")))
+    case("...but a second <style> that really uses it is still caught",
+         not _composes(_with(f"<style>.c{{background:var({_probe})}}</style>")))
+    case("...and so is an inline style= that really uses it",
+         not _composes(_with(f'<div style="background:var({_probe})">x</div>')))
+
     # ⛔ r1 F7/M8 — a page that merely TALKS about the selectors is not a page that has them. This
     # is an explainer about backlog #102 itself, and it was refused with a message asserting it had
     # a working toggle. Without this case the `declares_light` gate can be deleted unnoticed.
