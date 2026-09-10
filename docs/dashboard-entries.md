@@ -6433,3 +6433,60 @@ palettes at all.
 
 **MEASURED:** `brief-compose --self-test` **44 → 53** · `gen-dashboard`, `gen-backlog-page`,
 `gen-goals-page` all rc=0 · control/defect pair as above, reader's pages untouched.
+
+## 2026-09-10
+You asked whether PR #283 had been reviewed. It had not — and neither had the five before it.
+
+So I ran the review it should have had. Between them the two reviewers found **seventeen** problems
+in a change I had already convinced myself was correct: four of them serious enough to block, and
+every one of the serious ones was a way for the new safeguard to quietly do nothing at all.
+
+That is the answer to the question you asked next, about whether this kind of review is worth its
+time. My own checks — sixty test cases, a controlled before-and-after, three real page builds — all
+asked whether the safeguard works when it fires. None of them asked whether it could fail to fire.
+A reviewer asks that; the person who wrote it does not.
+
+All seventeen are fixed or accounted for, and each is now pinned by a test so it cannot come back
+quietly. The change also gained something it was missing: nothing in the automated build was running
+its tests at all, so they only ran when someone remembered.
+<!--tech-->
+**r1 dual adversarial review of `theme-half-live-102` (0670e2f8).** Codex: 2 Blocking, 1 High,
+1 Medium, 1 Low. Claude: 2 Blocking, 4 High, 3 Medium, 3 Low. Both **NOT CONVERGED**. Filed at
+`docs/reviews/{coordinator,claude}/theme-half-live-102-r1-*.md`; verdict JSON records
+`gate_ran=true`.
+
+⭐ **The Claude half pinned its SUBJECT and it mattered.** It noticed the working tree changed
+mid-run, re-extracted `0670e2f8` with `git archive`, proved it by `shasum` on both sides, and listed
+which findings it had NOT verified against the concurrent edit. Without that its verdict would have
+described a file that no longer existed.
+
+**Findings and disposition** (author reproduced every one before fixing):
+
+| # | sev | defect | fix |
+|---|---|---|---|
+| F1 | B | `var(--x, fb)` not counted as read — but the shim DEFINES `--x`, so the fallback never fires | new `vars_read_anywhere()` |
+| F2 | B | `chrome_css()` contributed **zero** tokens: every `var()` in it carries a fallback by that module's design | same fix; trigger now refused naming `--ink-soft, --rule` |
+| F6/B2 | B | only `head` scanned — a second `<style>` and every `style="…"` reached the browser unseen | scan `content` |
+| F3 | H | `SHIM` itself reads `--bg` with no fallback on every page, and was not in the read corpus | `SHIM` appended to `also_read` |
+| F4 | H | a `:root` inside `@media(prefers-color-scheme)` credited as light coverage | those blocks stripped first |
+| F5 | H | the conditional had **no coverage**: M0/M6/M7 all survived | M0, M7, M8 now killed; **M6's arm deleted instead** |
+| F7 | M | prose discussing `:root[data-theme="light"]` satisfied a substring test — an explainer about #102 refused itself | gate on a parsed `declares_light` |
+| F8 | M | a case passed for a reason other than its name (fixture had no `var()` at all) | fixture reads only via chrome/shim |
+| F9 | M | no CI step, no mutation manifest, outside `check-ratchet-contract`'s `check-*` population | **CI step added** |
+| F10 | L | `shim_dark_tokens("")` answered about a *different* subject — `shim or SHIM` | `None` default |
+| F11/L5 | L | a `}` in a comment truncated the scan to the EMPTY set | comments stripped; empty parse is CANNOT RUN |
+| F12 | L | ordering vs `assert_wired` | dissolved with the `has_control` arm |
+
+⭐ **One finding was resolved by DELETING code rather than testing it.** M6 (drop the `has_control`
+arm) survived a 61-case suite. Investigating why: a fragment with its own control *and* both
+palettes already satisfies the other arm, and one with a control but *without* both palettes is
+refused by `assert_wired` either way — the arm only changed which message arrived first. A case
+pinning a distinction that cannot be observed asserts nothing, so the arm went.
+
+⚠ **F9 is the same class as this week's five-day page freeze.** `check-ratchet-contract` discovers
+30 guards, all `check-*.py`; `brief-compose.py` is a composer, so its 62 cases sat outside CI
+entirely. `ci.yml` now runs `brief-compose.py --self-test`.
+
+**MEASURED:** `--self-test` 44 → 53 (author) → **62** (post-review) · mutations M0, M1, M7, M8 all
+killed, M6 dissolved · `gen-dashboard`, `gen-backlog-page`, `gen-goals-page` rc=0 · 9 gates rc=0,
+and `check-review-rounds` went 1 → 0 once both halves were filed.
