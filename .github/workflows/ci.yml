@@ -122,6 +122,14 @@ jobs:
       - name: check-backlog-closure self-test
         run: python3 scripts/check-backlog-closure.py --self-test
 
+      # ⛔ brief-compose is a COMPOSER, not a `check-*`, so `check-ratchet-contract`'s population
+      # (30 guards, all check-*) does not see it — yet it carries the half-live-toggle guard from
+      # backlog #102. Measured 2026-09-10 during the r1 review (finding F9): 62 cases, no CI step,
+      # no mutation manifest. A guard nothing runs is the class that froze the backlog page for
+      # five days.
+      - name: brief-compose self-test
+        run: python3 scripts/brief-compose.py --self-test
+
       # Ratchet on the 2026-07-30 architecture-review findings. Reports progress toward
       # each target; FAILS only when a metric gets worse than its baseline.
       #

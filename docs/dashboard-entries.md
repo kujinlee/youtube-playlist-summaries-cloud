@@ -6373,3 +6373,231 @@ the content.**
 
 **MEASURED:** 8 gates rc=0 · `gen-backlog-page --self-test` 86/86 · page builds `109 rows, 69 open`
 · undescribed 15 → 9 with zero high-severity remaining.
+
+## 2026-09-10
+A page can no longer be published with a theme switch that only half works.
+
+Backlog #102 is closed. The problem it described: an agent-written page could define light colours
+for some of what it uses and not the rest, and the parts it missed kept their dark values while the
+page was in light mode. On the page that exposed this, body text ended up almost exactly the same
+colour as the background — technically visible, actually unreadable.
+
+The fix refuses that page at the moment it is assembled, rather than adding another checker that
+looks at one page after the fact. If a page has a working light/dark switch, it must supply light
+values for everything it actually uses, or it does not get written.
+
+Two things worth knowing. A page that defines NO light colours at all is left alone — its switch
+does nothing, and a switch that does nothing is harmless. And the first version of the rule was too
+strict: it refused the goals page over a colour nothing on it uses, which would have forced someone
+to write a value that changes nothing to make a check happy. It now only asks about colours the page
+genuinely reads.
+<!--tech-->
+**`scripts/brief-compose.py`** gains `assert_theme_complete()`, called from `compose()` beside
+`assert_shimmed()` — compose-time rejection, which is the shape row #102 specified after a Codex
+review refuted the original filing. **Not** a widening of `check-theme-token-coverage.py`; the row
+says explicitly that "the guard covers one page of five" is #80's framing and would be duplicate
+coordination vocabulary.
+
+**The mechanism, which is pure CSS specificity.** The shim declares 11 tokens at
+`@media (prefers-color-scheme: dark) { html { … } }` — `(0,0,1)`, and a media query contributes
+nothing. Any `:root` `(0,1,0)` or `:root[data-theme="light"]` `(0,2,0)` outranks it. So declaring
+PART of the set produces a half-live toggle, which is strictly worse than declaring none: an inert
+toggle stays readable (a 2026-09-05 page measured 15.22:1 in *both* themes — readable by accident).
+
+- `shim_dark_tokens()` reads the set out of `SHIM` rather than restating it, and exits 2 if the
+  block is missing rather than comparing against an empty set.
+- `light_palette_tokens()` reads BOTH selectors, because either outranks the shim.
+- **Live control** = the fragment brings its own wired one, OR the composer is about to add one —
+  which it does exactly when both `data-theme` palettes exist. Both routes reach a reader; the
+  2026-09-08 page came through the first.
+
+⭐ **NARROWED ON THE FIRST LIVE RUN.** The initial rule demanded every shim token and immediately
+refused `gen-goals-page` over `--structure-br` — which **nothing in the repo reads**; that page
+draws the border with `color-mix(var(--structure))`. Demanding a light value for a token with no
+consumer is a guard asking to be satisfied rather than describing a defect. It now fires only on
+tokens the composed page READS (fragment + lifted tray + chrome): supplied dark, read, no light
+value. All three generators compose rc=0 after the narrowing.
+
+⚠ **THE CONTROL REFUTED THE PREMISE TWICE.** Running the falsifier end-to-end under a redirected
+`HOME`: the first control/defect pair both failed on a missing Ask-tray source; the second pair both
+failed on an undeclared `--mono`. Neither run had reached the new guard, and *"defect → rc=1"* would
+have been a false conclusion both times. Third attempt, control FIRST: complete palette → **rc=0,
+page written**; identical page with a partial palette → **rc=1, page NOT written**, naming
+`--card, --defect, --ink-soft, --rule, --structure`.
+
+⚠ **Two self-test fixtures were wrong in ways that would have passed.** One omitted
+`:root[data-theme="dark"]`, so `assert_wired` refused it first — a fixture a different rule filters
+never tests this one. The other assumed "no control" meant "no button", when the composer ADDS a
+control whenever both palettes exist; a genuinely non-toggleable page declares no `data-theme`
+palettes at all.
+
+**MEASURED:** `brief-compose --self-test` **44 → 53** · `gen-dashboard`, `gen-backlog-page`,
+`gen-goals-page` all rc=0 · control/defect pair as above, reader's pages untouched.
+
+## 2026-09-10
+You asked whether PR #283 had been reviewed. It had not — and neither had the five before it.
+
+So I ran the review it should have had. Between them the two reviewers found **seventeen** problems
+in a change I had already convinced myself was correct: four of them serious enough to block, and
+every one of the serious ones was a way for the new safeguard to quietly do nothing at all.
+
+That is the answer to the question you asked next, about whether this kind of review is worth its
+time. My own checks — sixty test cases, a controlled before-and-after, three real page builds — all
+asked whether the safeguard works when it fires. None of them asked whether it could fail to fire.
+A reviewer asks that; the person who wrote it does not.
+
+All seventeen are fixed or accounted for, and each is now pinned by a test so it cannot come back
+quietly. The change also gained something it was missing: nothing in the automated build was running
+its tests at all, so they only ran when someone remembered.
+<!--tech-->
+**r1 dual adversarial review of `theme-half-live-102` (0670e2f8).** Codex: 2 Blocking, 1 High,
+1 Medium, 1 Low. Claude: 2 Blocking, 4 High, 3 Medium, 3 Low. Both **NOT CONVERGED**. Filed at
+`docs/reviews/{coordinator,claude}/theme-half-live-102-r1-*.md`; verdict JSON records
+`gate_ran=true`.
+
+⭐ **The Claude half pinned its SUBJECT and it mattered.** It noticed the working tree changed
+mid-run, re-extracted `0670e2f8` with `git archive`, proved it by `shasum` on both sides, and listed
+which findings it had NOT verified against the concurrent edit. Without that its verdict would have
+described a file that no longer existed.
+
+**Findings and disposition** (author reproduced every one before fixing):
+
+| # | sev | defect | fix |
+|---|---|---|---|
+| F1 | B | `var(--x, fb)` not counted as read — but the shim DEFINES `--x`, so the fallback never fires | new `vars_read_anywhere()` |
+| F2 | B | `chrome_css()` contributed **zero** tokens: every `var()` in it carries a fallback by that module's design | same fix; trigger now refused naming `--ink-soft, --rule` |
+| F6/B2 | B | only `head` scanned — a second `<style>` and every `style="…"` reached the browser unseen | scan `content` |
+| F3 | H | `SHIM` itself reads `--bg` with no fallback on every page, and was not in the read corpus | `SHIM` appended to `also_read` |
+| F4 | H | a `:root` inside `@media(prefers-color-scheme)` credited as light coverage | those blocks stripped first |
+| F5 | H | the conditional had **no coverage**: M0/M6/M7 all survived | M0, M7, M8 now killed; **M6's arm deleted instead** |
+| F7 | M | prose discussing `:root[data-theme="light"]` satisfied a substring test — an explainer about #102 refused itself | gate on a parsed `declares_light` |
+| F8 | M | a case passed for a reason other than its name (fixture had no `var()` at all) | fixture reads only via chrome/shim |
+| F9 | M | no CI step, no mutation manifest, outside `check-ratchet-contract`'s `check-*` population | **CI step added** |
+| F10 | L | `shim_dark_tokens("")` answered about a *different* subject — `shim or SHIM` | `None` default |
+| F11/L5 | L | a `}` in a comment truncated the scan to the EMPTY set | comments stripped; empty parse is CANNOT RUN |
+| F12 | L | ordering vs `assert_wired` | dissolved with the `has_control` arm |
+
+⭐ **One finding was resolved by DELETING code rather than testing it.** M6 (drop the `has_control`
+arm) survived a 61-case suite. Investigating why: a fragment with its own control *and* both
+palettes already satisfies the other arm, and one with a control but *without* both palettes is
+refused by `assert_wired` either way — the arm only changed which message arrived first. A case
+pinning a distinction that cannot be observed asserts nothing, so the arm went.
+
+⚠ **F9 is the same class as this week's five-day page freeze.** `check-ratchet-contract` discovers
+30 guards, all `check-*.py`; `brief-compose.py` is a composer, so its 62 cases sat outside CI
+entirely. `ci.yml` now runs `brief-compose.py --self-test`.
+
+**MEASURED:** `--self-test` 44 → 53 (author) → **62** (post-review) · mutations M0, M1, M7, M8 all
+killed, M6 dissolved · `gen-dashboard`, `gen-backlog-page`, `gen-goals-page` rc=0 · 9 gates rc=0,
+and `check-review-rounds` went 1 → 0 once both halves were filed.
+
+## 2026-09-10 [needs-you]
+The second review round found that the first round's fixes had broken three more things — including
+the Ask button disappearing from the backlog page.
+
+Round 2 found seventeen more problems, five of them serious. Two of the serious ones were caused by
+the repairs I made in round one, which is the pattern this project measured a month ago and wrote
+down: late rounds mostly repair their own repairs.
+
+The one that mattered most to you: **the backlog page had silently lost its "ask a question" box.**
+The new safeguard was refusing to build that page, and the builder quietly fell back to writing it
+without the box — reporting success. The page really did have the problem the safeguard describes,
+so the fix was to give the page the four colours it was missing rather than to weaken the check. The
+box is back.
+
+Also worth knowing: the builder was printing only the first line of the failure, and the line that
+says *which* colours are missing is the second. So the reason was invisible for three runs.
+
+**Decide:** Round 2 is folded and green, but the round-2 reviewers have not seen the fold — should I run round 3?
+- A — Yes, one more round; two of round 2's five serious findings were caused by round 1's fixes, and round 3 is where that pattern usually shows [recommended]
+- B — No; merge now. The cap you approved is two rounds unless a Blocking is open, and none is open against the current code
+- C — Merge now and open a follow-up item for a later round
+<!--tech-->
+**r2: Codex 2B/2H/1M, Claude 3B/4H/3M/2L, both NOT CONVERGED.** Filed under
+`docs/reviews/{coordinator,claude}/theme-half-live-102-r2-*.md`. Both halves pinned their subject to
+`d4b54cfa` by `git archive` + `shasum`.
+
+⭐ **Two of the three Claude Blockings were introduced by r1's own fixes** — §12's prediction,
+on schedule:
+- **R2-1 / Codex-1** — deleting the `has_control` arm (r1's own resolution of M6) let
+  `:root[data-theme="light"]{}` — an EMPTY block — ship a page with a working button and 11 of 11
+  tokens uncovered at 1.02:1. `missing_palettes` (selector present) and `declares_light` (nothing
+  declared) disagree, and the arm was the only thing spanning the gap. **Restored, asked of
+  `markup_of(content)`.**
+- **R2-2** — r1's `@media` stripper meeting r1's corpus widening: one sentence of prose containing
+  `@media (prefers-color-scheme: …)` deleted everything after it, **107,485 characters on the real
+  `/backlog` page**, silently disabling the guard. Dissolved by `css_of()`.
+
+**Fixed this round:** `css_of` (CSS only — `<style>` bodies + `style=` attributes), a
+comment/string-aware `strip_css_comments` that preserves attribute-selector strings, brace-counting
+`strip_scheme_media` (nesting depth ≥ 2), `markup_of` for the control test, `has_control` arm
+restored, and the caller now prints the WHOLE refusal.
+
+⛔ **`/backlog` SHIPPED WITHOUT ITS ASK TRAY, exit 0** (R2-7) — a live regression from this slice.
+The page genuinely never declared `--bg`, `--rule`, `--structure` or `--defect`; `SHIM` is appended
+AFTER the page's stylesheet and paints `body{background:var(--bg)}`, so it wins over the page's own
+`body{background:var(--ground)}`. True positive. Fixed page-side by mapping the four to the page's
+existing colours (`--ground`, `--line`, `--structural`, `--problem`) in all four palette blocks.
+
+⚠ **A duplicated definition silently shadowed the fix for 20 minutes.** A splice with `j < i`
+re-inserted the OLD `css_of` and `strip_css_comments` after the new ones, so the later (old) copies
+won and two findings read as "still open" while the new code was correct and unreachable.
+
+⚠ **I diagnosed against a STALE artifact.** `backlog-table.fragment.html` is only written on
+success, so while compose was failing I was reading a fragment from the previous evening and
+concluding the palette fix had not applied.
+
+**MEASURED:** `--self-test` 62 → **72** · five revert-mutations all caught (the last, dropping
+`SHIM` from `also_read`, needed a `--good` fixture because every other token is read by the chrome
+too) · all three generators rc=0 with the tray present · 9 gates rc=0.
+
+## 2026-09-10 [needs-you]
+Round three is folded, and for the first time a round introduced no serious defect.
+
+Nine more problems, none of them blocking. Both reviewers said the same thing in different words:
+the code I had written to read stylesheets was hand-rolled, and it disagreed with a real parser at
+the edges. It now uses Python's own HTML parser, which removes three of the findings outright.
+
+One finding is worth reading even though it is small. A comment I wrote to explain the four colours
+added to the backlog page asserted a fact about how stylesheets override each other — and it was
+backwards. The change itself was right, for a different reason, and the comment would have been
+believed: it was written in the same confident register as everything else around it.
+
+Three rounds, forty-three problems, on a change I originally described as done in a single commit.
+
+**Decide:** Round 3 introduced no Blocking and the findings are now edge cases. Stop here?
+- A — Stop and merge. Three rounds is past the cap you set, no Blocking is open, and the character has shifted from real defects to adversarial edges [recommended]
+- B — One more round on the r3 fold; the r3 reviewers have not seen these last nine fixes
+- C — Stop reviewing, but leave the PR open until the unreviewed merged PRs (#278-#282) are dealt with
+<!--tech-->
+**r3: Codex 2B/1H/1M · Claude 0B/1H/4M/3L, both NOT CONVERGED.** Filed under
+`docs/reviews/{coordinator,claude}/theme-half-live-102-r3-*.md`. Claude's summary is the convergence
+signal: *"the first fold that did not introduce a Blocking… all seven r2 findings I probed are
+genuinely dissolved, and the suite went from four surviving revert mutations to one."*
+
+**Both halves independently reached the same conclusion: a regex over HTML is not a parser.**
+`css_of`/`markup_of` now use `html.parser`, which dissolves three findings at once — script content
+is raw text, attribute values are never parsed as tags, and unquoted `style=` is handled natively.
+Two CSS-level fixes remained: a newline ends a bad string (CSS recovery), and brace counting skips
+strings.
+
+⭐ **R3-4 — MY COMMENT WAS BACKWARDS, and the change was right for a reason it did not give.** It
+claimed `SHIM`'s `body` paint WINS over the page's. It cannot: SHIM paints with
+`:where(html, body)` — **zero specificity** — and its own docstring says *"This one is always
+losable."* The page's `body{background:var(--ground)}` at (0,0,1) beats (0,0,0) regardless of source
+order. The real reason those four tokens are needed is that **the lifted Ask tray reads them with no
+fallback**. Corrected in place, keeping what made it false.
+
+⭐ **R3-5 — A CASE THAT COULD NOT OBSERVE THE PROPERTY IT NAMED.** Mutating `depth += 1` → `depth
++= 0` — exactly the one-level regex the fold replaced — passed **72/72**, because the fixture put the
+nested `:root` where any truncation removes it too. Moving it AFTER a sibling nested block makes it
+load-bearing; the mutation is now caught.
+
+⚠ **R3-3 — the third instance-not-class fix in this branch.** `markup_of` was added for r2's R2-8
+and applied at ONE of the two `has_control` sites. A fragment whose chrome block sits inside an HTML
+comment convinced `chrome_for` it already had a control, so none was added — the page shipped with a
+stamp and no theme button, silently. Both sites now ask the same helper.
+
+**MEASURED:** `--self-test` 77 → **84** · the `depth` mutation now caught · every finding from all
+three rounds re-verified closed · all three generators rc=0 with the Ask tray present ·
+`check-review-rounds` rc=0 with all six halves filed.
