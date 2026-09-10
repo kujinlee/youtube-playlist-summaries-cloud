@@ -44,12 +44,12 @@
     "expect": "middleware.ts is guarded"
   },
   {
-    "name": "a .md ANYWHERE counts as prose, not just at the root",
+    "name": "the named-prose test widens to any .md, so a package README is prose",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "    return path.endswith(\".md\") and \"/\" not in path",
-        "    return path.endswith(\".md\")"
+        "    if path in PROSE_FILES:",
+        "    if path.endswith(\".md\"):"
       ]
     ],
     "expect": "a .md inside a package is still guarded"

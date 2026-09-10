@@ -276,11 +276,17 @@ def self_test() -> int:
     case("the marker is honoured on the pre-comment head too",
          _reason_of("NO-REVIEW: docs only <!-- agreed with the lead -->", NO_REVIEW), "docs only")
 
+    # ⛔ THE FAILURE LINE IS A CONTRACT, NOT A STYLE CHOICE. `check-plan-code`'s mutation harness
+    # attributes a kill by reading `l.strip().startswith("[FAIL] ")`, slicing `[7:]`, then
+    # `rsplit(": got ", 1)[0]` for the case name. This suite first printed `  FAIL  <name>` with the
+    # values on a second line, so ALL SIX mutations reported *"matched 0 red case(s) — caught by
+    # something else: []"* while every one of them was in fact being killed by the case it named.
+    # "The guard did not fire" and "nothing could see it fire" look identical from here.
     failed = 0
     for name, got, want in cases:
         ok = got == want
         failed += not ok
-        print(f"  {'ok  ' if ok else 'FAIL'}  {name}" + ("" if ok else f"\n        got {got!r} want {want!r}"))
+        print(f"  ok     {name}" if ok else f"  [FAIL] {name}: got {got!r} want {want!r}")
     print(f"\n{len(cases) - failed}/{len(cases)} passed")
     return 1 if failed else 0
 
