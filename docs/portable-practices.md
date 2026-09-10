@@ -1005,3 +1005,76 @@ as the SET it was taken over*. That entry is about **numbers** — you counted t
 one is about **guards**, and adds the failure that survives a correct rule, a green suite and a
 careful reading of the diff. A wrong number is visible the moment someone re-counts. A guard with the
 wrong population reports success forever.
+
+---
+
+## 22. A kill that attributes to nothing is a pass — the same output, two diseases, on the other side
+
+> The run said **0 survivors**. It also said, five times, *"caught by something else: `[]`"*.
+> Every one of those five mutations was being killed by exactly the case it named, and no instrument
+> in the system could tell that from a mutation nobody had guarded at all.
+
+**Measured twice in two days, on different subjects.** A mutation harness decides whether a guard is
+load-bearing by applying a named edit, running the guard's own suite, and reading which case went
+red. It attributes the kill by PARSING the suite's stdout:
+
+```python
+fails = [l.strip()[7:].rsplit(": got ", 1)[0].strip()
+         for l in out.split("\n") if l.strip().startswith("[FAIL] ")]
+```
+
+* **2026-09-10, subject A.** A suite printed `  FAIL  <name>`, with the values on a following line.
+  All **six** of its manifest entries reported *"matched 0 red case(s)"*. Every one was dying by the
+  case it named.
+* **2026-09-10, subject B**, hours later, by someone who had read the first incident. A 3,000-line
+  page generator joined the manifest with a five-entry seed. All **five** reported the same thing,
+  for the same reason, in a suite that had printed `  FAIL  <name>` since the day it was written.
+
+### Why this is not "just fix the format"
+
+Read the two lines of the report together:
+
+| the run says | true when |
+|---|---|
+| `0 survivors` | every mutation was killed — **and** when every kill was invisible |
+| `caught by something else: []` | the guard fired but nothing could see it — **and** nothing fired |
+
+**A passing ratchet and a completely inert one produce the same summary line.** The empty list is the
+only tell, and it appears in the middle of an otherwise green report. Subject B was written by
+someone who had the first incident in front of them in a handoff document and still shipped it,
+because the seed *looked* finished: the file was in the manifest, the count was pinned, the run said
+zero survivors.
+
+### The general form, which has nothing to do with mutation testing
+
+**Whenever tool A decides something by parsing tool B's output, a format mismatch is a silent wrong
+answer, not an error.** B's report is an interface, and it is the only one with no compiler, no type,
+and usually no test. The failure is always in the same direction: A concludes "nothing there", which
+is the shape of good news.
+
+This is **§10's structure on the opposite side of the ledger**. §10 is about a mutation that
+SURVIVES — "no test fails when I delete it" is true of an untested guard and of a guard that can
+never fire, and the instrument cannot tell the diseases apart. This entry is the same ambiguity on
+the mutation that DIES. Together they say: a mutation run reports four states, not two, and only one
+of the four is the one everybody reads it as.
+
+### How to apply
+
+1. **Make the report format an assertion, not a convention.** The producer should have a case pinning
+   the line it emits, named for the consumer that parses it.
+2. **Verify a new entry ATTRIBUTES, not merely that it exists.** Apply the mutation and check the
+   named case appears — running the consumer's own parser over the producer's real output, copied
+   verbatim rather than reimplemented:
+
+   ```
+   OK  the report gate narrows below the read gate    red cases seen: 13  expect matched: True
+   OK  the unread list is emptied after parse          red cases seen:  3  expect matched: True
+   ```
+3. **Treat an empty attribution as red, always.** "Killed, attributed to nothing" is CANNOT RUN
+   wearing a pass — §2 already governs it, and this is where §2 gets read as optional because the
+   surrounding line is green.
+
+⚠ **The tell to look for, in any report:** a count that went to zero *next to* a claim of success. A
+zero can mean "we checked and found none" or "we could not see any" — and the difference is invisible
+unless something asserts that the observation was possible. See §21: this is the population question
+asked of an instrument rather than of a guard.
