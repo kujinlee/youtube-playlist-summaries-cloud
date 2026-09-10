@@ -33,9 +33,27 @@ except Exception:
 print(d.get('tool_input', {}).get('file_path', '') or '')
 " 2>/dev/null) || exit 0
 
+# ⛔ THE TRIGGER IS THE SOURCE BEING NEWER, NOT WHICH TOOL WROTE IT (2026-09-09).
+# This used to fire ONLY when `tool_input.file_path` was docs/backlog.md — a TOOL-shaped trigger for
+# a CONTENT-shaped question. MEASURED: a whole session edited docs/backlog.md through Bash heredocs
+# (which this project's auto-mode actively prefers), so `file_path` was empty every time and the hook
+# never ran once. The page it maintains was five days stale and nothing said so.
+#
+# Now: regenerate if the named file IS the backlog, OR if the page is simply older than the backlog.
+# The second arm costs one `stat` and makes the hook self-healing — whatever wrote the file, the next
+# Edit/Write anywhere in the repo notices and catches up.
+PAGE="$HOME/explainers/backlog-table.html"
+SRC="$REPO/docs/backlog.md"
+
+stale() {
+  [ -f "$SRC" ] || return 1
+  [ -f "$PAGE" ] || return 0            # no page yet is the stalest case there is
+  [ "$SRC" -nt "$PAGE" ]
+}
+
 case "$FILE_PATH" in
   */docs/backlog.md|docs/backlog.md) ;;
-  *) exit 0 ;;
+  *) stale || exit 0 ;;
 esac
 
 OUT=$(python3 "$REPO/scripts/gen-backlog-page.py" 2>&1) || {
