@@ -1902,6 +1902,7 @@ def _self_test() -> int:
                                       "scripts/check-plan-progress.py",
                                       "scripts/check-plan-task-order.py",
                                       "scripts/check-producer-enumeration.py",
+                                      "scripts/check-review-recorded.py",
                                       "scripts/check-review-rounds.py",
                                       "scripts/check-roadmap-consistency.py",
                                       "scripts/check-selftest-counts.py",
@@ -2026,7 +2027,11 @@ def _self_test() -> int:
     # a target written ahead of the deletion it describes is a green check over code that
     # does not exist yet. Split by function and how the 21 was measured: see
     # EXPECTED_MUTATIONS' own comment.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 387)
+    # ⟳ 387 -> 393, 2026-09-10: `check-review-recorded.py` joins the manifest in the SAME commit
+    # that creates it, with 6 entries. A RISE, and the ordinary kind — new guard, new coverage.
+    # The gate it adds exists because five PRs merged unreviewed while every check stayed green;
+    # shipping its replacement as manifest debt would have repeated that shape at one remove.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 393)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
