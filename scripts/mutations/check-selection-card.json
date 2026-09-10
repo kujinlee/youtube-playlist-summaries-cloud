@@ -5,7 +5,7 @@
     "edits": [
       [
         "LETTER = re.compile(r\"^([A-Z])\\s*[—–-]\\s+\\S\")",
-        "LETTER = re.compile(r\"^([A-Z]?)\")"
+        "LETTER = re.compile(r\"^([A-Za-z]?)\")"
       ]
     ],
     "expect": "an unlettered option is refused"
@@ -44,15 +44,15 @@
     "expect": "a missing question-exit is refused"
   },
   {
-    "name": "the description floor moves by one (the NUMBER 40 is the claim)",
+    "name": "the description floor moves by one (the NUMBER is the claim)",
     "file": "scripts/check-selection-card.py",
     "edits": [
       [
-        "MIN_DESCRIPTION = 40",
-        "MIN_DESCRIPTION = 39"
+        "MIN_DESCRIPTION = 15",
+        "MIN_DESCRIPTION = 14"
       ]
     ],
-    "expect": "the floor is 40 exactly — 39 is refused, 40 is accepted"
+    "expect": "the floor is 15 exactly — 14 is refused, 15 is accepted"
   },
   {
     "name": "an unreadable payload returns empty instead of raising (fail-open)",
@@ -86,5 +86,60 @@
       ]
     ],
     "expect": "AT the ceiling the advice is to REPLACE, because the tool takes four options"
+  },
+  {
+    "name": "a negated recommendation counts as a recommendation",
+    "edits": [
+      [
+        "                  if RECOMMENDED.search(label) and not NOT_RECOMMENDED.search(label)]",
+        "                  if RECOMMENDED.search(label)]"
+      ]
+    ],
+    "expect": "but a NEGATED recommendation is not one",
+    "file": "scripts/check-selection-card.py"
+  },
+  {
+    "name": "the tool's option ceiling is not enforced",
+    "edits": [
+      [
+        "        if len(options) > MAX_OPTIONS:",
+        "        if False:"
+      ]
+    ],
+    "expect": "a card above the tool's ceiling is refused here, not by the tool",
+    "file": "scripts/check-selection-card.py"
+  },
+  {
+    "name": "a near-miss exit is told to ADD a second one",
+    "edits": [
+      [
+        "            near = NEAR_EXIT.search(labels[-1])",
+        "            near = None"
+      ]
+    ],
+    "expect": "a near-miss exit is told to REWORD, not to add a second one",
+    "file": "scripts/check-selection-card.py"
+  },
+  {
+    "name": "the exit may sit anywhere, not only last",
+    "edits": [
+      [
+        "        if not QUESTION_EXIT.search(labels[-1]):",
+        "        if not any(QUESTION_EXIT.search(l) for l in labels):"
+      ]
+    ],
+    "expect": "an exit in the MIDDLE does not satisfy the last-option rule",
+    "file": "scripts/check-selection-card.py"
+  },
+  {
+    "name": "the payload handler stops covering a decode failure",
+    "edits": [
+      [
+        "        questions = payload_of(raw)\n    except Exception as exc:",
+        "        questions = payload_of(raw)\n    except json.JSONDecodeError as exc:"
+      ]
+    ],
+    "expect": "a payload that is valid JSON but the wrong SHAPE is a verdict too",
+    "file": "scripts/check-selection-card.py"
   }
 ]

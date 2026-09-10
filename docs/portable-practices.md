@@ -817,8 +817,11 @@ Withholding a recommendation is not neutrality; it is handing over an unfinished
 Three cards in one session, one compliant, with §19 and two memory files all saying the same thing —
 the rule was reconstructed from recall at the moment of use instead of read. A PreToolUse hook now
 refuses a malformed card at the point it is offered
-(`scripts/check-selection-card.py` + `.claude/hooks/enforce-selection-card.sh`, 24 cases,
-6 mutations). ⚠ It checks the three clauses that are exactly decidable — the letters, the single
+(`scripts/check-selection-card.py` + `.claude/hooks/enforce-selection-card.sh`). ⚠ NO COUNTS
+QUOTED HERE ON PURPOSE — the first version of this sentence said "24 cases, 6 mutations" and both
+numbers were false within the hour, caught by a reviewer rather than by anything mechanical. The
+suite declares its own count and `check-selftest-counts` verifies it; the manifest total is pinned
+in `EXPECTED_MUTATIONS`. A number in prose has no owner. ⚠ It checks the three clauses that are exactly decidable — the letters, the single
 leading *Recommended*, the question-shaped exit — and a floor against a bare label. **It cannot see
 whether two options are the same work**, which is the defect this entry was written about, so
 passing it is not satisfying §19. That is said in the block message too.

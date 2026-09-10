@@ -26,45 +26,49 @@
 # the question text names the axis, nor whether a stated rationale is true. Those stay human. The
 # block message says so, so that passing this is never mistaken for satisfying §19.
 
-INPUT=$(cat)
+# ⛔ THE PAYLOAD NEVER ENTERS A SHELL VARIABLE — r2 Blocking (Codex). `INPUT=$(cat)` strips NUL
+# bytes, so a payload the checker correctly calls CANNOT RUN arrived here as valid JSON: measured
+# `direct=2 hook=0`. Command substitution also eats trailing newlines. A temp file carries the bytes
+# it was given, which is the only thing this hook is for.
+TMP="$(mktemp)" || { echo "⚠ enforce-selection-card.sh: mktemp failed; card NOT CHECKED." >&2; exit 1; }
+trap 'rm -f "$TMP"' EXIT
+cat > "$TMP"
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-# ⛔ ABSENCE OF A NAME IS NOT "SOME OTHER TOOL" — r1 Blocking (Codex). The first version required
-# `tool_name == "AskUserQuestion"` and exited 0 otherwise, while the checker deliberately accepts a
-# BARE tool input (`{"questions": […]}`) with no envelope at all. Fed that shape it exited 0 on a
-# card the checker refuses with rc=2: fail-open, silently, on a payload the guard was written for.
-# `.claude/settings.json` already scopes this hook to AskUserQuestion, so detection only has one job
-# left — skip on a POSITIVE identification of a different tool, and check everything else.
+# ⛔ AND THE VERDICT TRAVELS BY EXIT CODE, NOT STDOUT — r2 High (Codex) / H-1 (Claude). The previous
+# version compared a stdout string, so a `python3` that prints a banner (pyenv shim, conda
+# activation, a chatty sitecustomize) made DETECT `"banner\nother"`: neither empty nor "other", so
+# the cannot-run branch never fired, control fell through, and the hook rendered the §19 refusal
+# panel over a *Bash* payload. Exit codes cannot be prefixed.
 #
-# ⚠ AND A BROKEN INTERPRETER IS NOT A PASS — r1 H-3. Measured on the first version: malformed JSON,
-# a JSON array, empty stdin, a pyenv shim exiting 1, and a python that prints a banner ALL produced
-# `exit 0` with no message, disarming the guard for a whole session with nothing to see. The script
-# obeys "cannot run is a failure" scrupulously; four lines of shell threw the verdict away.
-# It warns and exits 1 rather than blocking: wedging every card because python is broken would be a
-# worse cure than the disease, but silence is not the alternative.
-DETECT=$(printf '%s' "$INPUT" | python3 -c '
+#   0 = an AskUserQuestion card, or an envelope with no tool_name (the checker accepts a bare tool
+#       input, and ABSENCE OF A NAME IS NOT "SOME OTHER TOOL" — that was r1's Blocking)
+#   3 = positively a different tool
+#   4 = unreadable; fall through so the CHECKER says so in its own CANNOT-RUN grammar
+#   * = the interpreter itself failed. Warn loudly and exit 1: wedging every card because python is
+#       broken is a worse cure than the disease, but silence is not the alternative.
+python3 - "$TMP" <<'PY' 2>/dev/null
 import json, sys
 try:
-    d = json.load(sys.stdin)
-    name = d.get("tool_name") if isinstance(d, dict) else None
+    with open(sys.argv[1], "rb") as fh:
+        data = json.loads(fh.read().decode("utf-8", "replace"))
+    name = data.get("tool_name") if isinstance(data, dict) else None
 except Exception:
-    print("unreadable"); sys.exit()
-print("other" if (name is not None and name != "AskUserQuestion") else "card")
-' 2>/dev/null)
+    sys.exit(4)
+sys.exit(3 if (name is not None and name != "AskUserQuestion") else 0)
+PY
 DETECT_RC=$?
 
-if [[ $DETECT_RC -ne 0 || -z "$DETECT" ]]; then
-  echo "⚠ enforce-selection-card.sh: could not read the hook envelope (python3 rc=$DETECT_RC)." >&2
-  echo "  The §19 card check DID NOT RUN. Treat this card as NOT CHECKED, never as compliant." >&2
-  exit 1
-fi
+case $DETECT_RC in
+  0|4) ;;
+  3)   exit 0 ;;
+  *)   echo "⚠ enforce-selection-card.sh: could not read the hook envelope (python3 rc=$DETECT_RC)." >&2
+       echo "  The §19 card check DID NOT RUN. Treat this card as NOT CHECKED, never as compliant." >&2
+       exit 1 ;;
+esac
 
-# A different tool, named as such: not our business, silently.
-[[ "$DETECT" == "other" ]] && exit 0
-
-# "unreadable" falls through ON PURPOSE — python works, the payload does not parse, and the checker
-# says so in its own CANNOT-RUN grammar rather than this hook guessing.
-VERDICT_OUT=$(printf '%s' "$INPUT" | python3 "$REPO_ROOT/scripts/check-selection-card.py" 2>&1)
+VERDICT_OUT=$(python3 "$REPO_ROOT/scripts/check-selection-card.py" < "$TMP" 2>&1)
 VERDICT_RC=$?
 
 [[ $VERDICT_RC -eq 0 ]] && exit 0
@@ -79,11 +83,14 @@ $VERDICT_OUT
 
 THE RECIPE, and it is in ONE place — docs/portable-practices.md §19:
 
-  * every option starts with a letter:  A — / B — / C —
-  * EXACTLY ONE is marked (Recommended), placed FIRST, with its reason in the description
+  * every option starts with a CAPITAL letter, running A, B, C in order
+  * exactly one advises — the word "recommend" in its label — and it goes FIRST
+    (on a multi-select card: at least one advises, in any position)
   * the LAST option is "<letter> — I have a question about these"
+  * 3 to 4 options. The tool accepts 4, and the exit spends one, so you get 3 real choices
   * every other option carries a RATIONALE and a TRADE-OFF — what it costs or gives up
-  * the question text names the AXIS: "A/B differ in whether X ships now"
+
+⚠ The last line is the one this hook CANNOT check. It sees only that something was written.
 
 MEASURED: three cards in one session, one compliant. The rule was not missing — it was
 read from memory instead of from the file. Open §19 rather than recalling it.

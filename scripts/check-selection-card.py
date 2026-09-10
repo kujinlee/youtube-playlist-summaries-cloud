@@ -2,7 +2,7 @@
 """Refuse an `AskUserQuestion` card that does not follow `docs/portable-practices.md` §19.
 
     python3 scripts/check-selection-card.py < tool-input.json
-    python3 scripts/check-selection-card.py --self-test  # 42 cases
+    python3 scripts/check-selection-card.py --self-test  # 59 cases
 
 WHY THIS FILE EXISTS
 --------------------
@@ -53,9 +53,12 @@ from typing import Any, Callable, Sequence
 
 import argparse
 import json
+import os
+import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 
 # One capital, one dash of any of the three spellings a person actually types, one space. Strict on
 # the letter and loose on the dash: blocking a card because someone typed a hyphen instead of an em
@@ -65,23 +68,40 @@ import sys
 # backwards (r1 M-3). Strict on the letter, loose on the dash: refusing a card over a hyphen would be
 # the cry-wolf failure this guard exists to avoid.
 LETTER = re.compile(r"^([A-Z])\s*[—–-]\s+\S")
-# ⚠ ANCHORED AT THE END, and the two halves of r1 wanted opposite things here. Codex: a bare
-# substring test made prose ABOUT the marker into a marker — `A — Explain what (Recommended) means`
-# was read as a recommendation. Claude: an exact-literal test refused §19's OWN phrasing, since §19
-# says "exactly one is marked Recommended, WITH ITS REASON", and `(Recommended — it is reversible)`
-# was reported as *no recommendation at all*. Requiring the parenthesis to CLOSE the label satisfies
-# both: a reason may ride inside it, prose in the middle of a label cannot pose as one. Trailing
-# markdown emphasis is tolerated because `**(Recommended)**` already passed and removing that would
-# be a regression nobody asked for.
-RECOMMENDED = re.compile(r"\(\s*recommended\b[^)]*\)[\s*_`]*$", re.I)
+# ⛔ THE PARENTHESIS IS NOT PARSED ANY MORE, and two rounds of trying is why. A bare substring test
+# read prose ABOUT the marker as a marker; an exact literal refused §19's own "with its reason"; an
+# end-anchored regex then refused `(Recommended) — it is reversible`, `(Recommended).`,
+# `(Recommended: see ADR-0010 (v2))`, and accepted `(Recommended against by CI)`. Every fold moved
+# the false positive somewhere else, which is the tell that the rule was wrong rather than the
+# regex: the question is not "is this parenthetical well-formed", it is "does this label advise me".
+#
+# So: the WORD, anywhere, minus the two negations that reverse it. A label that merely discusses the
+# term now counts as a marker — a false NEGATIVE of the guard's intent — and that is the cheaper
+# error by a wide margin, because this hook BLOCKS: a wrongly-refused card costs a real turn, a
+# wrongly-accepted one costs a card that says "recommend" twice and gets a clear message about it.
+RECOMMENDED = re.compile(r"\brecommend(?:ed|s)?\b", re.I)
+NOT_RECOMMENDED = re.compile(r"\b(?:not|never|against|avoid)\s+recommend|recommend(?:ed)?\s+against",
+                             re.I)
 QUESTION_EXIT = re.compile(r"i\s+have\s+a\s+question", re.I)
+# Reaching for the exit without landing on it — "I have questionS", "Ask me something first".
+NEAR_EXIT = re.compile(r"\b(?:questions?|ask|asking|clarif\w*|unclear|unsure)\b", re.I)
 # A floor against a BARE LABEL, not a test for rationale. §19's own argument is that an option with
 # no stated cost is either obviously right (so it should not have been asked) or not yet thought
 # through (so it should not have been offered). 40 characters cannot tell those apart from a real
 # rationale — it can only tell them from nothing at all, which is what it is for.
-MIN_DESCRIPTION = 40
-# The same floor for a description written without spaces — see `card_problems`.
-MIN_DESCRIPTION_DENSE = 15
+# ⛔ ONE FLOOR, SCRIPT-NEUTRAL, and deliberately low. It was 40 with a 15 "dense script" relaxation
+# keyed on `len(desc.split()) > 1` — which measured SPACES, not information. Korean is
+# space-delimited, so no Korean description could ever reach the relaxation; Japanese lost it the
+# moment a Latin product name or an ideographic space appeared; and a single 15-character token (a
+# bare URL) sailed past the 40. Wrong in both directions, for whole languages.
+#
+# §19's actual requirement — a rationale AND a trade-off — is not machine-checkable in any script,
+# and pretending otherwise is what produced two rounds of false positives. What IS checkable is
+# whether anything was written at all. This number rejects "", "ask", "short", "do it"; it never
+# fires on a real sentence in any language. The rest is the reader's job, and the block message and
+# the docstring both say so.
+REPO = pathlib.Path(__file__).resolve().parent.parent
+MIN_DESCRIPTION = 15
 # `AskUserQuestion` accepts 2–4 options. NOT a style choice: it is the tool's schema, and the block
 # message has to respect it or it prescribes a repair that fails (r1 Blocking).
 MAX_OPTIONS = 4
@@ -96,6 +116,15 @@ def card_problems(questions: Sequence[dict]) -> list[str]:
     for qi, q in enumerate(questions, 1):
         where = f"question {qi} ({str(q.get('header') or q.get('question', ''))[:40]!r})"
         options = q.get("options") or []
+        # ⚠ r2: `MAX_OPTIONS` shaped the ADVICE and enforced nothing, so a five-option card passed
+        # this guard clean and then failed the tool's own schema — the guard handing over a card it
+        # had just approved. The ceiling is the tool's, not a preference.
+        if len(options) > MAX_OPTIONS:
+            problems.append(
+                f"{where}: {len(options)} options; the tool accepts {MAX_OPTIONS}. Merge two, or "
+                f"drop the weakest — and remember the question-exit spends one of the four.")
+            continue
+
         # ⚠ THREE, not two (r1 M-1). The floor was written before the question-exit became
         # mandatory; with it, a two-option card offers exactly ONE course of action — a
         # confirmation dialog wearing a selection card, which is the defect §19 is about.
@@ -121,7 +150,8 @@ def card_problems(questions: Sequence[dict]) -> list[str]:
                 problems.append(f"{where}: letters run {''.join(got)}, expected {''.join(want)}.")
 
         # ── exactly one recommendation, and it goes FIRST ───────────────────────────────────────
-        marked = [i for i, label in enumerate(labels) if RECOMMENDED.search(label)]
+        marked = [i for i, label in enumerate(labels)
+                  if RECOMMENDED.search(label) and not NOT_RECOMMENDED.search(label)]
         multi = bool(q.get("multiSelect"))
         if not marked:
             problems.append(
@@ -149,11 +179,21 @@ def card_problems(questions: Sequence[dict]) -> list[str]:
             # the reader to work out unaided that the repair was to REPLACE, not append. A guard
             # that blocks correctly and then misdirects the repair is worse at the moment of use
             # than the prose it replaced, because prose never asserted a wrong next step.
-            fix = (f"add '{chr(ord('A') + len(labels))} — I have a question about these'"
+            # ⚠ A NEAR-MISS IS REWORDED (r2 H-3). Told to ADD an exit beside `C — I have questionS
+            # about these`, you get two options doing the same work — the defect §19 exists for, and
+            # the one this guard's docstring admits it cannot see. So the advice would have created
+            # a violation invisible to the machine that gave it.
+            near = NEAR_EXIT.search(labels[-1])
+            last_letter = chr(ord("A") + len(labels) - 1)
+            fix = (f"REWORD option {len(labels)} to '{last_letter} — I have a question about "
+                   f"these' — it is already reaching for the exit, and adding a second one would "
+                   f"give you two options doing the same work"
+                   if near else
+                   f"add '{chr(ord('A') + len(labels))} — I have a question about these'"
                    if len(labels) < MAX_OPTIONS else
                    f"REPLACE option {len(labels)} with "
-                   f"'{chr(ord('A') + len(labels) - 1)} — I have a question about these' — the tool "
-                   f"accepts {MAX_OPTIONS} options at most, so the exit costs you a choice")
+                   f"'{last_letter} — I have a question about these' — the tool accepts "
+                   f"{MAX_OPTIONS} options at most, so the exit costs you a choice")
             problems.append(
                 f"{where}: the last option is {labels[-1][:48]!r}, not a question-shaped exit. "
                 f"§19: {fix}. "
@@ -162,12 +202,7 @@ def card_problems(questions: Sequence[dict]) -> list[str]:
         # ── a floor against the bare label ──────────────────────────────────────────────────────
         for li, o in enumerate(options[:-1]):
             desc = str(o.get("description", "") or "").strip()
-            # ⚠ A DENSE SCRIPT CARRIES MORE PER CHARACTER (r1 M-4). 24 CJK characters hold roughly
-            # what 60 ASCII ones do, rationale and trade-off included, and were being refused. The
-            # floor's own claim is about INFORMATION, not `len()`, so a description with no spaces
-            # in it is measured against the lower floor rather than turned away.
-            floor = MIN_DESCRIPTION if len(desc.split()) > 1 else MIN_DESCRIPTION_DENSE
-            if len(desc) < floor:
+            if len(desc) < MIN_DESCRIPTION:
                 problems.append(
                     f"{where}: option {li + 1} carries {len(desc)} characters of "
                     f"description. §19: each option states its rationale AND its trade-off — what "
@@ -266,6 +301,35 @@ def self_test() -> int:
 
     case("below the ceiling the advice is to ADD the exit",
          lambda: "add 'D — I have a question" in _exit_advice(3))
+    # ⭐ r2, both halves: MAX_OPTIONS shaped the ADVICE and enforced nothing, so a five-option card
+    # passed this guard clean and then failed the tool's own schema.
+    # ⚠ ASSERT ON THE CEILING MESSAGE, not on a phrase two messages share. The first spelling of
+    # this case matched "the tool accepts 4", which the EXIT ADVICE also says at the ceiling — so
+    # deleting the ceiling check entirely left the case green. A substring case is satisfied by any
+    # message containing the substring, which is not the same as the one you meant.
+    case("a card above the tool's ceiling is refused here, not by the tool",
+         lambda: any("5 options; the tool accepts 4" in p for p in card_problems(
+             card([chr(ord("A") + i) + " — Option " + str(i) for i in range(5)]))))
+    # ⭐ r2 H-3. Telling a NEAR-MISS exit to add a second exit manufactures two options doing the
+    # same work — the defect §19 exists for, and the one this guard admits it cannot see. The advice
+    # would have created a violation invisible to the machine that gave it.
+    def _near_miss() -> list[str]:
+        return card_problems(card(["A — Ship it (Recommended)", "B — Wait",
+                                   "C — I have questions about these"]))
+
+    case("a near-miss exit is told to REWORD, not to add a second one",
+         lambda: any("REWORD option 3" in p for p in _near_miss())
+         and not any("add 'D" in p for p in _near_miss()))
+    # ⭐ r2, Codex: "any option contains the exit" survived, because no case put it in the middle.
+    case("an exit in the MIDDLE does not satisfy the last-option rule",
+         lambda: any("question-shaped exit" in p for p in card_problems(
+             card(["A — Ship it (Recommended)", "B — I have a question about these",
+                   "C — Wait a week"]))))
+    # ⭐ r2, Codex: `[A-Z]` was not pinned — a lowercase letter passed.
+    case("the letter must be a CAPITAL",
+         lambda: any("not lettered" in p for p in card_problems(
+             card(["a — Ship it (Recommended)", "b — Wait",
+                   "c — I have a question about these"]))))
     case("AT the ceiling the advice is to REPLACE, because the tool takes four options",
          lambda: "REPLACE option 4" in _exit_advice(4)
          and "add 'E" not in _exit_advice(4))
@@ -281,10 +345,29 @@ def self_test() -> int:
     case("markdown emphasis around the marker still counts",
          lambda: card_problems(card(["A — Ship it **(Recommended)**", "B — Wait",
                                      "C — I have a question about these"])) == [])
-    case("prose ABOUT the marker, mid-label, is not a recommendation",
-         lambda: any("nothing is marked" in p for p in card_problems(
-             card(["A — Explain what (Recommended) means to a reader", "B — Use plainer wording",
-                   "C — I have a question about these"]))))
+    # ⭐ r2 BLOCKING. Every natural rendering of "marked Recommended, WITH ITS REASON" must pass;
+    # two rounds of parenthesis-parsing refused a different one each time.
+    case("the reason may sit outside the parenthesis, after a full stop, or nest",
+         lambda: all(card_problems(card(["A — Ship it " + suffix, "B — Wait",
+                                         "C — I have a question about these"])) == []
+                     for suffix in ["(Recommended)", "(Recommended).", "(recommended)",
+                                    "(Recommended) — it is reversible",
+                                    "(Recommended — costs one review round)",
+                                    "(Recommended: see ADR-0010 (v2))",
+                                    "**(Recommended)**", "— recommended, it is reversible"]))
+    # ⚠ THE DELIBERATE TRADE, pinned so it reads as a decision and not an oversight: a label that
+    # merely DISCUSSES the word now counts as a marker. Refusing a compliant card costs a real turn;
+    # accepting one that says "recommend" twice costs a clear message. The second is cheaper, and
+    # this hook BLOCKS, so the direction of the cheaper error is the whole design question.
+    case("a label that merely discusses the word counts — the accepted false positive",
+         lambda: card_problems(card(["A — Explain what (Recommended) means to a reader",
+                                     "B — Use plainer wording",
+                                     "C — I have a question about these"])) == [])
+    case("but a NEGATED recommendation is not one",
+         lambda: all(any("nothing is marked" in problem for problem in card_problems(
+             card(["A — Delete the branch (" + neg + ")", "B — Keep it",
+                   "C — I have a question about these"])))
+             for neg in ["Recommended against by CI", "not recommended", "never recommended"]))
 
     # ⭐ r1 M-5. "First" exists so the reader meets the answer before the alternatives; that reason
     # does not survive an answer which is a SET.
@@ -307,10 +390,19 @@ def self_test() -> int:
     # ⭐ r1 L-2. The manifest mutated the floor to 0, which the 5-character fixture kills; the
     # NUMBER 40 — what §19's floor actually claims — was pinned only above 5. A boundary pair pins
     # it, and pins the `.strip()` at the same time.
-    case("the floor is 40 exactly — 39 is refused, 40 is accepted",
+    case("the floor is 15 exactly — 14 is refused, 15 is accepted",
          lambda: any("characters of description" in p
-                     for p in card_problems(card(GOOD, descs=["a b" + "x" * 36, "x" * 60, "ask"])))
-         and card_problems(card(GOOD, descs=["a b" + "x" * 37, "x" * 60, "ask"])) == [])
+                     for p in card_problems(card(GOOD, descs=["a b" + "x" * 11, "x" * 60, "ask"])))
+         and card_problems(card(GOOD, descs=["a b" + "x" * 12, "x" * 60, "ask"])) == [])
+    # ⭐ r2 H-4. The old floor had a "dense script" relaxation keyed on SPACES, so no Korean
+    # description could ever reach it and Japanese lost it to one Latin product name. One floor for
+    # every script, or the guard holds an opinion about languages it cannot defend.
+    case("a description in any script clears the floor",
+         lambda: all(card_problems(card(GOOD, descs=[d, "x" * 60, "ask"])) == []
+                     for d in ["지금 배포한다. 되돌릴 수 있다.",
+                               "今すぐ出荷する。巻き戻せるがレビューを一回失う。",
+                               "PR を今すぐマージする。巻き戻せるがレビュー一回分を失う。",
+                               "Fast, exact, costs 30s."]))
     case("whitespace does not count toward the floor",
          lambda: any("characters of description" in p for p in card_problems(
              card(GOOD, descs=["a b" + " " * 60, "x" * 60, "ask"]))))
@@ -349,9 +441,12 @@ def self_test() -> int:
     # executed `main()`. `return 2` -> `return 0` left 24/24 green, so the manifest was green, so CI
     # was green, while every malformed card was admitted. The fail-open one layer OUT of the one the
     # manifest already guarded.
-    def _rc_for(raw: str) -> int:
-        return subprocess.run([sys.executable, __file__], input=raw,
-                              capture_output=True, text=True).returncode
+    def _rc_for(raw) -> int:
+        # ⚠ BYTES, not str — r2 H-2's input cannot be expressed as valid UTF-8 text, and a helper
+        # that could not carry it is exactly how that path went unexercised.
+        data = raw if isinstance(raw, bytes) else raw.encode()
+        return subprocess.run([sys.executable, __file__], input=data,
+                              capture_output=True).returncode
 
     case("a bad card EXITS 2 — the exit code is all the hook can see",
          lambda: _rc_for(json.dumps({"questions": card(["A — One", "B — Two", "C — Three"])})) == 2)
@@ -361,8 +456,72 @@ def self_test() -> int:
          lambda: _rc_for("{not json") == 2 and _rc_for("") == 2)
     # ⭐ r1 L-5. A malformed option shape raised through `main` and rendered a Python traceback as
     # the body of the refusal panel. Still fail-closed, now with the CANNOT RUN sentence instead.
+    # ⭐ r2 H-2. `sys.stdin.read()` sat outside every handler, so undecodable bytes produced a
+    # Python traceback rendered inside the refusal panel AND rc=1 — neither of this script's two
+    # verdicts.
+    case("undecodable stdin is a verdict, not a traceback",
+         lambda: _rc_for(b"\xff\xfe garbage") == 2)
+    # ⚠ A JSON ARRAY raises `ValueError` from `payload_of`, not `JSONDecodeError` — which is what
+    # makes the handler's WIDTH observable. Without this, narrowing `except Exception` to
+    # `except json.JSONDecodeError` changed nothing any case could see, because `errors="replace"`
+    # means the decode itself never raises and every other bad input is a JSON error.
+    case("a payload that is valid JSON but the wrong SHAPE is a verdict too",
+         lambda: _rc_for("[]") == 2 and _rc_for('{"tool_input": {}}') == 2)
     case("a malformed option shape is CANNOT RUN, not a traceback",
          lambda: _rc_for(json.dumps({"questions": [{"header": "H", "options": "nope"}]})) == 2)
+
+    # ⭐⭐ THE HOOK ITSELF — r2 M-6. `.claude/hooks/enforce-selection-card.sh` is shell: no
+    # `--self-test`, not a `check-*` guard, and BOTH of r1's fixes lived in it while nothing
+    # executed it. r2 then found two defects there, one of them Blocking. These run the real file.
+    HOOK = REPO / ".claude/hooks/enforce-selection-card.sh"
+
+    def _hook_rc(payload: bytes, path_prefix: str = "") -> int:
+        env = dict(os.environ)
+        if path_prefix:
+            env["PATH"] = path_prefix + os.pathsep + env.get("PATH", "")
+        return subprocess.run(["bash", str(HOOK)], input=payload,
+                              capture_output=True, env=env).returncode
+
+    _GOOD_CARD = json.dumps({"tool_name": "AskUserQuestion", "tool_input": {"questions": card(GOOD)}})
+    _BARE_BAD = json.dumps({"questions": card(["A — One", "B — Two", "C — Three"])})
+    _OTHER_TOOL = json.dumps({"tool_name": "Bash", "tool_input": {"command": "ls"}})
+
+    case("the hook blocks a bad card",
+         lambda: _hook_rc(_BARE_BAD.encode()) == 2)
+    case("the hook passes a good card",
+         lambda: _hook_rc(_GOOD_CARD.encode()) == 0)
+    # ⚠ r1 Blocking: absence of a `tool_name` is not "some other tool" — the checker accepts a bare
+    # tool input, and treating that as none-of-my-business was a silent fail-open.
+    case("a bare tool input is CHECKED, not waved through",
+         lambda: _hook_rc(_BARE_BAD.encode()) == 2
+         and _hook_rc(json.dumps({"questions": card(GOOD)}).encode()) == 0)
+    case("the hook leaves a positively different tool alone",
+         lambda: _hook_rc(_OTHER_TOOL.encode()) == 0)
+    # ⚠ r2 Blocking: `INPUT=$(cat)` strips NUL, so bytes the checker refuses became valid JSON on
+    # the way in — measured `direct=2 hook=0`.
+    case("a NUL byte survives the trip to the checker",
+         lambda: _hook_rc(b'{"quest\x00ions":true}') == 2)
+    case("empty stdin is a verdict, not a pass",
+         lambda: _hook_rc(b"") == 2)
+
+    def _shim(script: str) -> str:
+        """A directory whose `python3` is `script`. Not a fixture of the hook — a fixture of the
+        ENVIRONMENT, which is where both of r2's hook defects actually lived."""
+        d = tempfile.mkdtemp()
+        exe = pathlib.Path(d) / "python3"
+        exe.write_text(script)
+        exe.chmod(0o755)
+        return d
+
+    # ⚠ r2 High: the detector reported through STDOUT, so a banner made the skip test fail and the
+    # hook rendered the §19 panel over a Bash payload. Exit codes cannot be prefixed.
+    case("a chatty interpreter does not make the hook block another tool",
+         lambda: _hook_rc(_OTHER_TOOL.encode(),
+                          _shim("#!/bin/sh\necho 'pyenv: shim banner'\nexec %s \"$@\"\n"
+                                % sys.executable)) == 0)
+    # ⚠ r1 H-3: a broken interpreter exited 0 in silence, disarming the guard for a whole session.
+    case("a broken interpreter warns and exits 1 — never a silent 0",
+         lambda: _hook_rc(_GOOD_CARD.encode(), _shim("#!/bin/sh\nexit 1\n")) == 1)
 
     failed = 0
     for name, fn in cases:
@@ -400,8 +559,13 @@ def main() -> int:
     if args.self_test:
         return self_test()
 
-    raw = sys.stdin.read()
     try:
+        # ⚠ INSIDE the try (r2 H-2). `sys.stdin.read()` sat outside every handler, so undecodable
+        # bytes produced a Python traceback rendered inside the refusal panel AND rc=1 — which is
+        # neither of this script's two verdicts. Read as bytes and decode leniently: the payload is
+        # arbitrary user text arriving through a shell, and mojibake in a label is the reader's
+        # problem, not a reason to refuse to look at the card at all.
+        raw = sys.stdin.buffer.read().decode("utf-8", errors="replace")
         questions = payload_of(raw)
     except Exception as exc:                                       # noqa: BLE001
         print(f"CANNOT RUN — {exc}. Treat this as NOT CHECKED, never as a pass.", file=sys.stderr)
