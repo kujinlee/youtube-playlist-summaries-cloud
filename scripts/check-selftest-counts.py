@@ -81,6 +81,7 @@ SCRIPTS = ROOT / "scripts"
 # separately verified against the real suites and were all ACCURATE — including the two that print
 # no total at all, whose case lines were counted by hand (10 and 11).
 POPULATION: frozenset[str] = frozenset({
+"check-backlog-closure.py",   # backlog #98 — the inverted row-vs-git check
     "begin-plan.py",                 # ⟳ 2026-09-04, task #224. Not a `check-*` guard, so the
                                      # ratchet contract's population never sees it — this is the
                                      # only outside observer of its declared count.
