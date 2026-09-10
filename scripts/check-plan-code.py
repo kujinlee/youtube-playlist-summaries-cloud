@@ -541,6 +541,10 @@ EXPECTED_MUTATIONS = {
     # and the match branch given its own entry. Measured by the reviewer on a staged copy: the
     # two directions are INDEPENDENTLY breakable, and breaking the match branch alone does NOT
     # fire 'count_drift reports a mismatch' — so this was two properties, not one with symptoms.
+    # ⟳ 2026-09-09, backlog #98: a NEW guard arrives with its manifest in the SAME commit.
+    # The ratchet offered to raise MANIFEST_BASELINE to 1 instead; taking that would be how
+    # paid-down debt gets silently re-accrued, which is the thing the baseline exists to stop.
+    "scripts/check-backlog-closure.py": 6,
     "scripts/check-plan-code.py": 33,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
@@ -1869,6 +1873,7 @@ def _self_test() -> int:
                                       "scripts/check-anchors.py",
                                       "scripts/check-anon-exposure.py",
                                       "scripts/check-arch-findings.py",
+                                      "scripts/check-backlog-closure.py",
                                       "scripts/check-banner-armed.py",
                                       "scripts/check-catalog-coverage.py",
                                       "scripts/check-ci-watched.py",
@@ -2017,7 +2022,7 @@ def _self_test() -> int:
     # a target written ahead of the deletion it describes is a green check over code that
     # does not exist yet. Split by function and how the 21 was measured: see
     # EXPECTED_MUTATIONS' own comment.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 381)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 387)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

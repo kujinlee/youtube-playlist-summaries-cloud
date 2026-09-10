@@ -1,0 +1,68 @@
+[
+  {
+    "name": "the closing token stops being anchored at the subject TAIL",
+    "file": "scripts/check-backlog-closure.py",
+    "edits": [
+      [
+        "CLOSING = re.compile(r\"\\(backlog #(\\d+)\\)(?:\\s*\\(#\\d+\\))?\\s*$\")",
+        "CLOSING = re.compile(r\"\\(backlog #(\\d+)\\)(?:\\s*\\(#\\d+\\))?\")"
+      ]
+    ],
+    "expect": "a FILING prefix does NOT match"
+  },
+  {
+    "name": "the squash suffix becomes MANDATORY, so a direct commit stops closing",
+    "file": "scripts/check-backlog-closure.py",
+    "edits": [
+      [
+        "(?:\\s*\\(#\\d+\\))?\\s*$\")",
+        "(?:\\s*\\(#\\d+\\))\\s*$\")"
+      ]
+    ],
+    "expect": "subject tail matches"
+  },
+  {
+    "name": "the marker is read from a fixed POSITIVE index further into the row",
+    "file": "scripts/check-backlog-closure.py",
+    "edits": [
+      [
+        "        out[m.group(1)] = cells[1][:1]",
+        "        out[m.group(1)] = cells[2][:1]"
+      ]
+    ],
+    "expect": "closed marker read"
+  },
+  {
+    "name": "an id with no row is counted as STALE instead of orphaned",
+    "file": "scripts/check-backlog-closure.py",
+    "edits": [
+      [
+        "            orphan.append(item)",
+        "            stale.append(item)"
+      ]
+    ],
+    "expect": "missing row is ORPHANED, not stale"
+  },
+  {
+    "name": "stale ids stop being ordered numerically, so 10 sorts before 9",
+    "file": "scripts/check-backlog-closure.py",
+    "edits": [
+      [
+        "    for item in sorted(closes, key=int):",
+        "    for item in sorted(closes):"
+      ]
+    ],
+    "expect": "stale ids come back in numeric order"
+  },
+  {
+    "name": "a row too short to carry a description is read anyway instead of skipped",
+    "file": "scripts/check-backlog-closure.py",
+    "edits": [
+      [
+        "        if len(cells) < 2:",
+        "        if len(cells) < 0:"
+      ]
+    ],
+    "expect": "a too-short row is skipped, not crashed"
+  }
+]

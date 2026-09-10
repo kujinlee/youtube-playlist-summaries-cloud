@@ -5998,3 +5998,81 @@ describes a **different half** of that row — and called **99** open because it
 cross-checked against every status head printed in full. Deciding state by grepping prose is the
 same class as the positional-index defect in this entry's other half: both return a confident
 answer with no error.
+
+## 2026-09-09
+The project can now notice, by itself, when its own to-do list claims something is
+unfinished that was actually completed and shipped days ago.
+This had happened five times. Each was caught by a person reading carefully — twice
+while choosing what to work on next, twice while answering a question about progress,
+and once today. On one of those occasions the work was nearly rebuilt from scratch
+because the list said it had never been started.
+The reason nothing caught it is worth stating plainly, because it is not laziness. A
+check did exist, and it ran, and it passed. But it compared each entry against ITSELF —
+its urgency label against its own progress note. When an entry is out of date, those two
+agree with each other perfectly; they disagree only with the actual project history. So
+the check was looking in the one place where the mistake can never appear.
+The new check looks outward instead: it reads the record of completed work and asks
+whether the entries that work closed say so. It reports; it does not block. That was
+decided by a previous measurement showing that a blocking check on a paperwork mismatch
+gets switched off, after which it is worse than having nothing, because its presence
+suggests something is being watched.
+Two things are worth knowing about how it went. The obvious version of the rule was
+wrong — it would have raised a false alarm more than half the time, which is exactly the
+outcome that teaches people to ignore an alarm. Narrowing it took measuring against the
+whole project history rather than reasoning about it. And on its very first run, before
+it was switched on anywhere, it found a real one: an entry saying "open" about work that
+shipped three days earlier. That has been corrected too.
+<!--tech-->
+Branch `backlog-98-closure-check`, off `02f422a4`. **Closes backlog #98.**
+
+**`scripts/check-backlog-closure.py`** — 20 self-test cases, 6 mutations, two CI steps (the live
+run and the self-test). `check-ratchet-contract.py` rc=0: R1 self-test, R2 no fail-open, R3 a
+caller, R4 a manifest. ⚠ The contract offered `MANIFEST_BASELINE = 1` instead of a manifest;
+taking that is how paid-down debt gets silently re-accrued, so the manifest ships in this commit.
+
+⭐ **THE ROW'S OWN PROPOSED RULE WAS WRONG, and only measurement showed it.** #98 says *"extract
+the item ids their messages name"*. Measured over **1,497** commits:
+
+    ANY occurrence of `(backlog #N)`     18 ids matched, would fire on 10   ← 56% FALSE
+    `(backlog #N)` at the SUBJECT TAIL    7 ids matched, would fire on  1   ← the real one
+
+The token means *touched*, not *closed*: `(backlog #17)` is a large open design item;
+`docs(backlog #53): …` is a FILING commit. Firing on those is precisely the *"false positive worse
+than the gap"* the row warns about in its own text. The discriminator is WHERE the token sits — a
+closing squash puts it at the end of the subject, optionally followed by ` (#PR)`.
+
+⭐ **FIRST LIVE RUN FOUND A TRUE POSITIVE, before the script was wired into anything.** Row **#82**
+— commit `3ec912f6` *"The gate reads the store, not a patch — so it can finally judge a reference
+(backlog #82) (#232)"*, PR #232 MERGED 2026-09-06, +412 lines into `check-dashboard-entry.py`
+whose `:1278` reads *"the referential half needs the STORE, not the patch (backlog #82)"* — while
+row 82 still said *"OPEN … this row is the referential half only"*. **Fifth measured instance of
+#98's defect and the FIRST found by a machine.** Row 82 is now closed; the check runs clean.
+
+**#98's OWN FALSIFIER, RUN END-TO-END** (not merely as a unit case), in a throwaway worktree:
+row 88's stale wording restored → fires naming **#88** and quotes the closing commit; corrected
+wording → `ok`. The row's words: *"a check that cannot be made to fire by re-introducing the exact
+defect that prompted it is not a gate."*
+
+**WARN-ONLY, and not by taste.** Backlog **#56** already measured this class: *"Do NOT rebuild the
+reconciliation as a gate: it fires on every docs-only commit and gets disabled."* Exit 0 with
+findings printed; exit **2** only on CANNOT RUN — backlog missing/unparseable, git absent, a
+**SHALLOW clone** (it would report a confident smaller answer), or **zero closing tokens**,
+because a zero over an empty corpus is not a finding.
+
+⚠ **TWO INSTRUMENTS CAUGHT ME WHILE BUILDING THIS, both worth recording.**
+*(1)* The manifest first carried **two entries editing the same anchor**; `--mutate .` refused it
+— *"repeats the edit anchors of an earlier entry — it measures nothing new"*. Retargeted to a
+distinct substring.
+*(2)* Then one entry was **caught but unattributably**: `len(cells) < 2` → `< 0` makes the parser
+RAISE, which kills the whole suite, so the harness reported *"matched 0 red cases"*. That is F1 —
+the attribution rule added earlier today — doing its job on the same day it shipped. The fix was
+not to drop the mutation but to let the case OBSERVE the crash instead of dying from it. **A case
+that dies from the defect it guards is weaker than one that reports it.**
+
+**Honest residue, stated in the script and not only here:** a close whose subject does NOT end
+with the token is invisible to this check. It is a floor on detection, never a ceiling — a clean
+run does not mean every row is current.
+
+**MEASURED:** `--self-test` 20/20 · full `--mutate .` **34 file(s), 387 mutation(s), 0 survivor(s)**
+rc=0 · `check-ratchet-contract` rc=0 · `check-selftest-counts` rc=0 over 31 declaring scripts ·
+`check-docs` rc=0 with both spine budgets at exactly 220/220 and 260/260.

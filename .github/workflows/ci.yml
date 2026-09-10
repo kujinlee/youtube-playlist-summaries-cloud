@@ -108,6 +108,20 @@ jobs:
       - name: Documentation integrity
         run: python3 scripts/check-docs.py
 
+      # backlog #98 — the INVERTED direction. Every other rule about a backlog row compares the
+      # row to ITSELF (severity marker vs status cell), so a row that is stale agrees with itself
+      # perfectly and disagrees only with GIT. Five instances shipped that way; none was caught by
+      # a machine. This one reads merged commit subjects and asks whether the rows they close say
+      # so. WARN-ONLY — exit 0 with findings printed — because backlog #56 measured that a
+      # blocking gate on a docs-only mismatch is the thing that gets switched off. It exits 2 only
+      # on CANNOT RUN (shallow clone, no git, zero closing tokens), which is a real failure.
+      # ⚠ Its findings live in THIS log; that is the warn-only mitigation, so do not silence it.
+      - name: Backlog rows vs merged commits (warn-only, backlog #98)
+        run: python3 scripts/check-backlog-closure.py
+
+      - name: check-backlog-closure self-test
+        run: python3 scripts/check-backlog-closure.py --self-test
+
       # Ratchet on the 2026-07-30 architecture-review findings. Reports progress toward
       # each target; FAILS only when a metric gets worse than its baseline.
       #
