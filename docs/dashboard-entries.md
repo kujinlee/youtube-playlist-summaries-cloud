@@ -6720,3 +6720,51 @@ sweep time. Retargeted at the rule that replaced it, plus two for the inverted d
 over a green control · `EXPECTED_MUTATIONS` 387 → **393** · `check-dashboard-entry` 146/146 + 13/13
 with `gen-dashboard` untouched · 9 gates rc=0 · **the branch passes its own gate**, naming both
 review halves.
+
+## 2026-09-10
+Four separate faults this week turned out to be the same fault, and it is now written down.
+
+In each case the code was correct about what it was checking and wrong about *what it was looking
+at*. A rule for inserting a row looked at the wrong table. A colour check looked at the wrong part of
+the page — twice, in opposite directions. A rebuild trigger watched one of the two files a page is
+built from. And a check guaranteeing "nothing goes missing" compared a list against itself, so
+anything dropped left both sides of the comparison and it balanced anyway.
+
+That last one is the one worth remembering: a check that gets its expectation and its subject from
+the same place cannot see what that place leaves out, and will never go red to say so.
+
+The wording came from one of the reviewers, about a change none of the others touched — which is
+part of why it earns a place: four arrivals, from different subjects, two of them found by someone
+other than the author.
+<!--tech-->
+**`docs/portable-practices.md` §21** — *a check has two things that can be wrong: the RULE, and the
+POPULATION it runs over*. The quoted diagnosis is the post-merge reviewer's:
+*"the new code is right about its own subject and wrong about its population."*
+
+The four, each with the rule correct:
+
+| component | population, wrong |
+|---|---|
+| row insertion into `docs/backlog.md` | the last row in the FILE was in a second table, 3 columns, shared id space |
+| `assert_theme_complete` | scanned only before the first `</style>`; widened to the whole document it then swept in body prose |
+| `regen-backlog-page.sh` | watched the data file; the page is equally built from the generator |
+| `gen-backlog-page.parse()` invariant | expectation and subject both derive from `parse()`, so a silently skipped row leaves both |
+
+⛔ **The sharpest form is recorded on its own:** a check whose expectation and whose subject share a
+source is inert against that source's omissions. `sorted(placed + undescribed) == sorted(open_items)`
+where both sides come from `parse()` — a dropped row leaves the expectation AND the page, and the
+equation balances. The only completeness guard beneath it was `len(real) > 20` against an actual 109.
+
+**Why it is not filed under §1.** The nearest neighbour is the corpus rule — *a measurement is only
+as good as the set it was taken over* — but that is about NUMBERS: you counted the wrong things, and
+it is visible the moment someone re-counts. §21 is about GUARDS, and names the failure that survives
+a correct rule, a green suite and a careful reading of the diff: **a guard with the wrong population
+reports success forever.**
+
+⚠ **Filed with NO review round, deliberately and by the rule shipped this morning.** #285's gate
+scopes review by blast radius; this branch changes `docs/` only, so `check-review-recorded` does not
+require one — and making an exception for the entry that argues about rigour would be the wrong
+precedent in the other direction. Verified: `check-review-recorded --base origin/master` → *"no
+guarded path changed"*.
+
+**MEASURED:** section numbers 1–21, no duplicates · `check-docs` rc=0 · 1,007 lines.
