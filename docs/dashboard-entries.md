@@ -6601,3 +6601,59 @@ stamp and no theme button, silently. Both sites now ask the same helper.
 **MEASURED:** `--self-test` 77 → **84** · the `depth` mutation now caught · every finding from all
 three rounds re-verified closed · all three generators rc=0 with the Ask tray present ·
 `check-review-rounds` rc=0 with all six halves filed.
+
+## 2026-09-10
+The five changes that shipped without review last night have now been reviewed, and three small
+faults in the page-rebuild hook are fixed.
+
+Nothing needed to be undone. The big one of the five — the change that made the backlog page stop
+refusing to refresh, and gave it tags — came out well: the reviewer could not make its tag counts
+disagree with what the page actually shows, in any state.
+
+What it did find was that the rebuild trigger I added was narrower than it looked. It watched the
+backlog file, but the page is also built from the script that draws it — so the very next change
+after it, which added four new group descriptions to that script, left the page stale and the hook
+said nothing. It also fell over entirely if a particular environment variable was missing, in a file
+whose own header promises it can never fail. And when the page build failed, it retried on every
+single edit anywhere in the repository, each time claiming the backlog had changed when it had not.
+
+One finding is filed rather than fixed, as item #110: an item could in principle disappear from the
+page without anything noticing, because the check that guarantees "everything appears" is measured
+against the reader of the file rather than the file. Nothing is missing today — measured, 109 of 109
+— but the guarantee cannot currently detect it.
+<!--tech-->
+**Post-merge review of #278–#282** (all merged 2026-09-09 with zero review), prioritising **#280**
+(`+364/−80` in `gen-backlog-page.py` plus the hook). Claude half only: **0 Blocking, 1 High, 3
+Medium, 3 Low**, verdict *NOT CONVERGED (no revert warranted)*. Filed at
+`docs/reviews/claude/post-merge-280-r1-claude.md` with a `REVIEW GAP:` line — this was an audit of
+merged work, not a gate on an open branch.
+
+⭐ **The reviewer's own summary of the cluster:** *"the new code is right about its own subject and
+wrong about its population"* — the same diagnosis as all three rounds on #283, from a different
+subject.
+
+**Fixed here, each verified by running it:**
+
+| # | defect | measured before → after |
+|---|---|---|
+| PM-2 | `$HOME` unset aborted the hook, against the "NEVER BLOCKS, NEVER FAILS" contract 11 lines above | rc=1 → **rc=0** with a stated reason |
+| PM-3 | trigger watched `docs/backlog.md` only; the GENERATOR is equally a source | generator edit → silent → **regenerates** |
+| PM-4 | on generator failure nothing is written, so every Edit/Write retried it and claimed the backlog had changed | 3 calls → 3 full runs → **1 warning, then silent** |
+| PM-5 | `-nt` is false on equal mtimes | now a numeric `-ge` over the newest source |
+
+PM-3 is not hypothetical: **#282 added four group descriptions to the generator and the
+freshly-installed hook was silent for every one of them.** The change had replaced a tool-shaped
+trigger with a content-shaped one and then named only one of the two contents.
+
+PM-4's fix keeps both behaviours the reviewer distinguished: the fresh-clone "no page yet" arm is
+self-limiting **on success** and stays; a failure now records a marker of the source mtimes it tried,
+so it does not retry until a source actually changes, and the marker is cleared on success.
+Recovery verified: touch the backlog → fresh attempt → rebuilt → marker gone.
+
+**Filed as #110 (PM-1, High).** `parse()` silently skips any line failing `^\|\s*\d+\s*\|` — a `⭐`
+after the number (house style in this file), a `#` before it, or one leading space each drop a row —
+while a cell-count mismatch correctly raises. The live completeness case cannot see it: both sides
+of *"every open item reaches the page exactly once"* derive from `parse()`, so a dropped row leaves
+the expectation AND the page. The only completeness guard is `len(real) > 20` against an actual 109.
+Latent today (109 → 109, 0 skipped); High because always-building makes silent omission the failure
+mode, and the docstring states the guarantee unconditionally.
