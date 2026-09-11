@@ -7329,3 +7329,106 @@ pinned; and arguments passed in bulk being attributed to the wrong parameter rat
 `EXPECTED_MUTATIONS` 431 → 513; `check-plan-code` suite 101 → 128; the debt-tracker 6 → 60 tests and
 6 → 42 falsifying changes, covering 432 parameters across 48 files, pinned by name, with 128 known
 gaps frozen and zero tests that check only an exit code.
+
+## 2026-09-11
+Twelve items on the backlog page had no description — just a bare row under a heading that said
+nobody had written them a sentence yet. All twelve now have one, and a thirteenth description that
+pointed at an item which had already closed was removed.
+
+Worth knowing *why* they were missing, because the answer is not carelessness. Writing that sentence
+is the only step in the whole backlog flow that nothing checks. It used to block the page from
+building at all — and two thirds of the twelve piled up *while that block was in force*, because the
+block's only complaint went to a log the human never reads. The gate was strong and inaudible. It was
+relaxed on 09-09 so the gap shows up on the page instead, which is exactly how this was spotted.
+
+Six of the twelve turned out to be the same problem wearing six numbers — a check whose failure looks
+just like a pass — so they are now grouped together under that heading rather than scattered.
+
+Fixing the data broke two tests, which is the interesting part. Both were pointed at the real backlog
+and only passed because it *happened* to have items missing descriptions. They were measuring today's
+data rather than the rule, so writing the sentences turned them red. Both now run against a fixture,
+and a third test was added for the case nobody had covered: staying quiet when nothing is missing.
+That case was proved to matter — before this change, a fault that made the warning fire constantly
+went completely undetected.
+
+A policy for when a grouping should be created or retired was written onto the backlog item that
+already owns this question, rather than opened as a new one.
+<!--tech-->
+Branch `describe-twelve-backlog-rows`, base `28532810`.
+
+`scripts/gen-backlog-page.py` — `GROUPS` gains descriptions for **#89, #90, #92, #94, #100, #101,
+#104, #105, #107, #111, #112, #113** and drops the entry for **#106** (closed; `sanitise_groups` was
+dropping it every build with a warning). New group *"Checks that can be wrong without looking wrong"*
+holds #92/#94/#101/#104/#111/#112. Generator now runs with **zero** drift warnings (was: `12 open
+item(s) have no description in GROUPS` + `GROUPS still names 1 item(s) that are no longer open`).
+
+**Self-test 165 → 167, and two cases re-anchored.** `the undescribed block is printed…` and `its
+count is the number of items with no sentence` ran against `_REAL_ROWS` unaltered and depended on the
+live corpus having a gap — r4's comment says so explicitly. Both now use `_rows_with_undescribed()`
+(real corpus + one synthetic open row numbered `max+1`) and the new negative arm uses
+`_rows_all_described()`. Added `the undescribed fixture is not vacuous — no group names the synthetic
+item`. This is `portable-practices` §21: the cases measured the POPULATION, not the RULE.
+
+**Verified against a green control** (`scripts`+`docs`+`.claude` staged — a scripts-only tree gives a
+red control, 163/167, because four cases resolve their subject from the repo root). Mutation
+`if still:` → `if False:` kills exactly the two named cases (167 → 165). Mutation `if still:` →
+`if True:` kills the new negative arm (167 → 166) and **survives 165/165 on `28532810`**, so the new
+case closes a measured gap rather than restating coverage.
+
+`docs/backlog.md` row **#90** gains the grouping create/retire policy. Enabling measurement: `build()`
+emits an `id="i<N>"` card for all 113 rows regardless of `GROUPS` — removing the `Sync` group left
+`#32`'s card and the card count unchanged — so groups are a narrative layer over a complete table and
+total coverage is a choice. Two mechanical alternatives were run over the corpus and both fail
+(tag-span blesses the 13-tag bin; a size ceiling has no clean line). Retire triggers fire today on
+`Sync` (1 open member) and on *"Small visual polish — extra-small items"* (holds an `S`).
+
+Gates: `check-docs`, `check-backlog-closure`, `check-selftest-counts` (35 scripts), `check-fixture-
+variation`, `check-ratchet-contract`, `check-review-rounds`, `check-anchors`, `check-plan-file-tags`
+all rc=0.
+
+## 2026-09-11
+Correction to the entry above, and it is the review doing its job rather than a slip being patched.
+
+That entry said six of the twelve newly-described items were "the same problem wearing six numbers".
+Three adversarial review rounds cut that to **three**. Two of the six were a guard whose description
+overclaims and a gate that cannot withdraw a failure; a third was a detector that raises false
+alarms. None of those is the thing the heading claims — a signal that fails while looking fine — so
+they were moved out rather than the heading being loosened to fit them.
+
+Worth saying why that mattered enough to spend three rounds on. The heading is a claim about the
+items underneath it, and a claim that gets widened every time something does not fit stops being a
+claim at all and becomes a bin with a nicer name. Two of the three removals were found by the
+reviewer, not by me — the second one after I had already fixed the first and concluded the group was
+sound.
+<!--tech-->
+Corrects `2026-09-11/1`. Branch `describe-twelve-backlog-rows`.
+
+Group *"Checks that can be wrong without looking wrong"*: **6 → 3** members. `#94` (docstring
+overclaims, guard behaves correctly) and `#104` (gate reports a failure it cannot retract) moved in
+round 1; `#92` (detector produces a FALSE POSITIVE — the inverse of a pass-looking failure) moved in
+round 2. All three went to *Process, tooling and bookkeeping*. Framing rewritten twice and **narrowed
+both times, never widened** — refusal is on the record in the group's own comment and in the
+create/retire policy on backlog row #90.
+
+Three rounds, all filed under `docs/reviews/coordinator/describe-twelve-r{1,2,3}-coordinator.md`,
+each carrying `REVIEW GAP: claude` — only the adversarial half ran. **r3: CONVERGED, zero findings at
+any severity**, and it was asked the sharp question first: had peeling two members left the framing a
+mere inventory of its own contents? It answered no in both directions.
+
+⚠ Severity ran **1 → 2 → 0**, not monotonically decaying, which alone is the thrashing shape. It is
+not: every finding in all three rounds named a member of the ORIGINAL six (`#94`/`#104` r1, `#92` r2),
+and **no round found a defect introduced by the previous round's fix** — `review-method.md:195`'s
+discriminator answering *no* three times.
+
+Two further prose defects caught by measuring rather than reading: `#90`'s description had copied
+`25 values including a bare question mark` from the row's dated 2026-09-03 measurement into
+present-tense prose (re-measured: **27**, and the `?` is gone — counts removed entirely); and `#104`'s
+said the related item was `above`, measured **false** because `ordered` sorts by `dep_rank` before the
+number. Now referenced by number, cross-reference verified true.
+
+Verdict files renamed `r<N>-coordinator` → `describe-twelve-r<N>-coordinator` — 6 generic-stem
+verdicts already sit in that directory and the namespace has no allocator, so a collision overwrites
+silently. Nothing was overwritten here (0 prior commits for all three stems, checked).
+
+Unchanged and re-verified after every round: self-test `167/167`, generator emits no drift warnings,
+both mutations killed by the cases that name them, `if True` still survives `165/165` on `28532810`.
