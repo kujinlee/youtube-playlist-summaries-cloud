@@ -96,6 +96,14 @@ POPULATION: frozenset[str] = frozenset({
     "gen-backlog-page.py",           # ⟳ 2026-09-10, backlog #110 r2 finding L-4. Not a `check-*`
                                      # guard, so nothing else observes its number, and it moved
                                      # 86 → 124 in one branch while the docstring said nothing.
+    "brief-compose.py",              # ⟳ 2026-09-10, backlog #106. Not a `check-*` guard, so the
+                                     # ratchet contract never sees it, and until now it declared
+                                     # no count at all — the only numbers anywhere were in
+                                     # `.agents/skills/brief/SKILL.md`, which handled it honestly
+                                     # (a dated "14 on that day", then "since grown to 30") and
+                                     # still went stale at 30 against a suite of 102. Honest prose
+                                     # about a moving number still drifts; the script declares it
+                                     # now and the skill cites the script.
     "check-plan-file-tags.py",       # ⟳ 2026-09-08, plan-mode retirement. It fences a rule that
                                      # NOTHING else reads any more, so an unpinned count is how
                                      # its cases would leave without a gate noticing.

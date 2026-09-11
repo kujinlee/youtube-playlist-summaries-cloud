@@ -6838,3 +6838,172 @@ three cases that execute the hook's awk have their subject staged.
 eight halves, four verdict files. r4: Codex CONVERGED (2 Low, both taken); Claude NOT CONVERGED
 (0 Blocking / 3 High / 4 Medium / 8 Low) with its own note that none of them change what the branch
 does — all were folded anyway.
+
+## 2026-09-10
+Every page you open was growing a little each time it was rebuilt, and had been for months. Not the
+words on it — the same invisible block of styling was being copied in one more time on every single
+rebuild. The goals page had reached the point where **95% of the file was that one block, repeated
+867 times**. The backlog page had been rebuilt 872 times and was 2.3 MB, of which more than half was
+duplicate. Nothing looked wrong: the pages rendered correctly, the Ask box worked, and the only
+symptom was that they kept getting slower to load.
+
+This is now fixed, and the fix repairs the existing pages the first time each one is rebuilt rather
+than needing 872 rebuilds to unwind. The backlog page comes back at 1.0 MB instead of 2.3 MB with
+all 113 items, the tray, and the ask buttons exactly as they were. Rebuilding a page twice from the
+same source now produces two identical files, which is the property that was missing.
+
+Worth knowing about how this was found: the item describing the problem proposed two fixes, and a
+measurement showed **both of them would have removed nothing at all**. The suspected cause — a page
+copying from itself — turned out to be a bystander. Running the same experiment with that ruled out
+produced exactly the same growth, which is what sent the search somewhere else.
+<!--tech-->
+Backlog #106. Three independent accumulators in `scripts/brief-compose.py`, only one of which was
+in the filed row. (a) `extract_tray` split rules on `([^{}]+\{[^{}]*\})`, in which every character
+before the `{` is the selector — so SHIM's `:where(h1,h2,h3,h4){position:relative}` was lifted
+because its preceding **comment** mentions `.askbtn`, and `compose` then re-added SHIM beside the
+lifted copy: +1,489 bytes/generation. (b) the script slice ran to EOF, carrying the source's own
+`</body></html>` for `compose` to re-close: +17/generation. (c) the fragment's own `#tray #qbox`
+overrides — emitted deliberately by `gen-backlog-page.py:1480` to win the cascade — were re-lifted
+each generation, reaching 109 copies; invisible until the repro fragment was made realistic.
+
+Fix: `compose` delimits the tray with `TRAY_BEGIN`/`TRAY_END` and `extract_tray` reads back exactly
+that region, so the boundary is stated rather than inferred from selectors. `_selector_scan` remains
+only as a labelled one-time migration for the 44 pages already on disk, de-duplicating with the
+**last** copy kept — keeping the first can flip the cascade when an equal-specificity rule sits
+between two identical ones. `find_source` also gained `exclude`, which is the row's own suggestion
+kept for its real reason: a page that lifts from itself pins its tray to its own copy for good.
+
+Measured under a redirected `HOME` throughout: before, 5 recomposes 1,357,682 → 1,363,742 bytes;
+after, 5 recomposes all md5 `73a4979…`. Suite 86 → 102; count declared in the docstring and pinned
+in `check-selftest-counts` (its only previous count lived in a skill doc, at 30 against a suite of
+102). The file joins the mutation manifest with 8 entries, `EXPECTED_MUTATIONS` 412 → 420; three
+entries are on wiring, since each extraction rule can be correct and never reached.
+
+## 2026-09-10
+Correction to the entry above, which described a fix that has since changed shape twice. Both
+reviewers found the same thing from different directions: the repair I wrote was doing permanent
+surgery on every page, forever, to fix a problem that exists on exactly one page.
+
+The page that stores the shared "ask" box now gets copied **exactly as it is**, with nothing
+applied to it — which was the whole promise of marking its boundaries in the first place. Two
+attempts at being clever there each broke something: the first silently deleted styling rules it
+did not recognise (and turned a phone-only rule into an always-on one, which is worse, because it
+still looks right), and the second could cut a rule in half and leave a fragment that swallows
+everything after it. Neither would have shown an error.
+
+The one page that was already damaged has been repaired by hand — a single deliberate command
+rather than a rule that runs on every page for the rest of time. Its 113 items, its title and the
+ask buttons are all intact; exactly four lines of duplicated styling were removed and nothing
+else. The other 43 pages were never affected and clean themselves up the first time each is
+rebuilt.
+
+That repair command now also **refuses to run on a page that does not need it**. Pointed at a
+healthy page it would quietly strip styling it cannot recognise and then report success, which is
+the same kind of failure that caused all of this in the first place. And composing a page that
+still carries the damage now says so, instead of saying nothing — the repair previously had no
+way of telling anyone it was needed, and the window to apply it closes silently the moment
+anyone edits the styling involved.
+<!--tech-->
+Backlog #106, review rounds 1 and 2. r1 Claude: Blocking — `_without_page_rules` rebuilt the
+marked region from a parsed rule list, dropping rules outside the selector regex (`#sendbtn`,
+`#closebtn`, `.trow`, `in` are all in the tray's own markup) and flattening `@media` wrappers to
+unconditional rules. r2 Codex: Blocking — the replacement removed rule TEXT, which is not
+whole-rule bounded; measured through the production path, `.x#tray{a:1}` → `.x`,
+`@media (…){#tray{a:1}}` → `@media (…){}`, and a fragment owning `#qbox{b:2}` turned the region's
+`#tray #qbox{b:2}` into a dangling `#tray `.
+
+Resolution, which both halves converged on independently: the marker path is a verbatim slice
+with NOTHING applied. Subtraction lives only in `_selector_scan`, where the input is a rule list
+the function just built, so removing a member cannot corrupt a neighbour. `--remigrate` re-derives
+a marked page's region by scanning, once, when a human asks — the finite migration problem gets a
+finite fix instead of a permanent transform in the hot path.
+
+r2 Claude added two Highs, both about the repair having no trigger and no guard, and one
+mechanism closes both: `pollution(region, fragment_css)` is the signature of a region written by
+the wrong migration. On the normal path it prints a ⚠ naming the rules (H2's missing trigger);
+under `--remigrate` it is required, and `remigration_risk(region)` refuses when re-deriving would
+also lose what the scan cannot see — `#sendbtn`-class rules or an at-rule wrapper (H1). Both
+refusals exit 1 and write nothing. Verified against the reviewer's own falsifier: it still repairs
+the real polluted page, and refuses on a marked page carrying `#sendbtn{…}`.
+
+Also r2: a FLOOR under partial subtraction (M1) — `subtracted or keep` guarded only the endpoint
+where everything is subtracted, so a fragment duplicating some tray rules yielded a tray missing
+`#tray`, `#qbox` and `.askbtn`, with no refusal. ⚠ A control found the floor was load-bearing for
+nothing — the suite stayed green with it deleted — which is r1's Blocking shape exactly, caught
+this time before it shipped. The consumer's `[FAIL]` parse is extracted as
+`check-plan-code.parse_fail_names` so both sides call one implementation (M2), which also makes
+the function named in three comments actually exist (L1). One case now separates two manifest
+entries that had identical kill sets (L2), and the two `rfind` calls are on separate lines so each
+marker's entry can anchor on its own (L3) — that anchor had already orphaned once mid-review.
+
+`~/explainers/backlog-table.html` repaired with that flag: 1,027,997 → 1,027,689 chars, 4 lines
+removed, 0 added, title and 113 items preserved, verified by diff before applying and kept at
+`scratchpad/backlog-table.BEFORE-REPAIR.html`. Corpus now: 1 marked page (verbatim), 43 unmarked
+(scan path). Suite 115 → 130; manifest 13 → 18 entries, all attributing; `EXPECTED_MUTATIONS` 431. `check-plan-code` 93 → 96 cases, 34 entries, all attributing.
+
+⚠ One entry was REMOVED rather than added in r1: after that round's change, `if not own: return
+css` became unkillable by construction and was measured surviving. A clause that stops deciding
+loses its entry too.
+
+## 2026-09-10
+Third correction, and this one removes code rather than adding it.
+
+Two independent reviewers found the same thing: the repair command from yesterday's entry would,
+in one ordinary situation, **delete the buttons that let you ask a question from a heading** — and
+the warning printed on every page was actively telling you to run it. Every safety check approved,
+because none of them could tell "this page's own styling override" from "a copy of the tray's own
+styling".
+
+So the repair machinery is gone entirely. It existed for one page, which was already fixed by hand,
+it could not detect the only way the problem could still spread, and it had caused a serious defect
+in each of the three review rounds. Deleting it removed 72 lines of code and 15 tests.
+
+What protects the ask buttons now is not a list of things to protect — lists get out of date, and a
+reviewer showed this one could be cut in half without any test noticing. It is a rule about shape:
+a page's own override is always written as two selectors together (`#tray #qbox`), because that is
+the only way it can win. Anything written as a single selector is the tray's own and is never
+touched. The ask button, the quoted-section header and the "sent" note are all covered by that one
+rule, without being named.
+
+**A correction to what the entry above said.** It claimed the other pages "clean themselves up the
+first time each is rebuilt". That is true of the bloat and false of one specific thing: **32 of the
+40** other pages carry three styling rules that were copied to them from the backlog page, and
+rebuilding is precisely what makes those permanent rather than removing them. Nothing looks wrong —
+the rules say sensible things — but those pages now carry styling nobody chose for them, and it
+outranks the styling their own generator sets, so changing it there will silently not reach them.
+It is one rule per page, once, and it does not grow.
+<!--tech-->
+Backlog #106 round 3. Claude half: 1 Blocking, 3 High, 2 Medium, 1 Low. Codex half: 1 Blocking,
+nothing at any other level — **the same Blocking**, reached independently and measured through
+production `main()`: a begin-only source plus a fragment declaring the same `.askbtn` rule left the
+tray region as `#tray{a:1}\n#qbox{b:2}`, rc=0, no warning.
+
+r1/r2/r3 Blockings were all in the pollution-repair subsystem; the idempotence fix itself has been
+stable since r2. User decision: delete it. `--remigrate`, `pollution()`, `remigration_risk()`,
+`_all_rules()` and the ⚠ are gone, with their 15 cases and 4 manifest entries — entries retired
+WITH their subject, which is the only sanctioned way the ratchet may fall.
+
+Replacement: `_is_page_override(rule)` — a descendant selector rooted at a tray part, per
+`gen-backlog-page.py:1480` ("two ids win without touching the lifted code"). Bare tray selectors are
+unsubtractable by construction, which closes r3 B1 and r3 H2 (the floor was a substring test over
+concatenated selectors, so one override rule satisfied it) in one move, and makes r3 H1's three
+surviving mutants moot — the token list they were about no longer exists.
+
+⚠ r3 H3 stands as a stated residual: `pollution()` saw SELF-pollution only, so INHERITED pollution
+was invisible and unrepairable. Confirmed live while verifying — `goals.html` carries the trio
+although `gen-goals-page.py` never declares it, inherited from `backlog-table`. With the machinery
+deleted this is an honest limitation rather than a subsystem claiming to cover it. De-duplication
+holds it at one copy; `assert_shimmed` refuses loudly if it ever reads an undefined token.
+
+Verified: Codex's exact repro now yields `#tray{a:1}\n#qbox{b:2}\n.askbtn{c:3}`. On the true
+migration input (real backlog fragment vs the pre-repair page, end marker stripped) the three
+self-declared overrides are removed and `#tray`, `#qbox`, `.askbtn`, `#qt`, `#sentnote`, `#modechip`
+all survive. Suite 130 → 119; manifest 18 → 13, all attributing; `EXPECTED_MUTATIONS` 433 → 428.
+`--mutate .`: 38 files, 428 mutations, 428 killed, 428 attributed, 0 survivors.
+
+⚠ Two measurement errors of my own during this round, both caught before they reached a conclusion:
+a fabricated `fragment_css` made the subtraction look broken on real pages (it was measuring
+inherited pollution, which is H3), and a double-escaped regex reported `askbtn_count: 0` next to a
+region that plainly contained `.askbtn`. Also: `pgrep -f codex` matched the editor's own 22-day-old
+ChatGPT app-server, so a finished review was reported as "still running" for an hour. Check the
+artifact, not the process — which is the codex wrapper's own documented rule.

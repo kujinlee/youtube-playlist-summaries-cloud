@@ -273,8 +273,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        fails = [l.strip()[7:].rsplit(\": got \", 1)[0].strip()",
-        "        fails = [l.strip()[7:].split(\":\", 1)[0].strip()"
+        "    return [l.strip()[7:].rsplit(\": got \", 1)[0].strip()",
+        "    return [l.strip()[7:].split(\":\", 1)[0].strip()"
       ]
     ],
     "expect": "a case name containing a COLON is matched whole, not truncated at the first one"
@@ -366,5 +366,44 @@
       ]
     ],
     "expect": "count_drift is silent when the docstring matches"
+  },
+  {
+    "name": "the red-with-nothing-readable branch is dropped, so the diagnosis is generic again",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if not fails:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "...and the report names it a REPORT-FORMAT defect, not a coverage gap"
+    ]
+  },
+  {
+    "name": "the tally goes back to reporting only the negative number",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "              f\"{len(verdict.mutations)} mutation(s), {killed} killed, \"\n              f\"{attributed} attributed to the case each names, \"\n",
+        "              f\"{len(verdict.mutations)} mutation(s), \"\n"
+      ]
+    ],
+    "expect": [
+      "the tally states how many were killed AND how many were attributed"
+    ]
+  },
+  {
+    "name": "attribution is not recorded per mutation, so the tally cannot report it",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "\"attributed\": caught and not unnamed, \"measured\": True})",
+        "\"attributed\": caught, \"measured\": True})"
+      ]
+    ],
+    "expect": [
+      "a kill with no readable case name is caught but NOT attributed"
+    ]
   }
 ]

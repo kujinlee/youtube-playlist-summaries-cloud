@@ -161,8 +161,10 @@ weak points, recorded so they are not rediscovered:
 
 - ~~No self-test~~ — **closed the same day**: `scripts/brief-compose.py --self-test`, 14 cases,
   including that it refuses to write when no tray can be lifted.
-  *(⟳ 2026-08-28: still 14 **on that day** — this is a record of what was done, not a live count. It
-  has since grown to 30. Run it rather than trusting either number.)*
+  *(⟳ 2026-08-28: still 14 **on that day** — this is a record of what was done, not a live count.)*
+  *(⟳ 2026-09-10: and "it has since grown to 30" had itself gone stale, at a suite of 102 — which
+  is the point. **The live count is declared in the script's own docstring and verified by
+  `check-selftest-counts.py`**; this line deliberately no longer carries one.)*
 - **The ground-truth command list is hardcoded** and will drift as the repo changes. Per
   `hardcode-only-what-fails-loudly`: a missing file fails loudly, a *renamed* one fails silently by
   returning nothing. Report empty results rather than skipping them.
