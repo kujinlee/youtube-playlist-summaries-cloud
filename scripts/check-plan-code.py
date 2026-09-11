@@ -2,7 +2,7 @@
 """A plan that contains code must ASSEMBLE into that code, and its evidence must be RUN.
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
-    python3 scripts/check-plan-code.py --self-test          # 93 cases
+    python3 scripts/check-plan-code.py --self-test          # 101 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -477,7 +477,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ r1 Codex Medium: 8 -> 10. A page-specific `#tray …` override was migrating INTO the
     # tray region and freezing there for every page later composed from it; the second entry
     # guards the fix's own failure mode, which is subtracting the tray away entirely.
-    "scripts/brief-compose.py": 13,
+    "scripts/brief-compose.py": 18,
     # ⟳ 2026-09-10. A guard created and manifested in ONE commit — `check-ratchet-contract` flagged
     # it `[R4_no_mutation_manifest]` the moment it hit disk, which is the ratchet doing its job. Six
     # entries, one per clause it decides, plus the fail-open path: a guard whose CANNOT-RUN branch
@@ -585,7 +585,7 @@ EXPECTED_MUTATIONS = {
     # not be attributed to any case; what it did not do was say WHY, and that silence cost two
     # branches in one day — both diagnosed by hand from an empty list at the bottom of a
     # 420-mutation log. The new entry guards the DIAGNOSIS, not the refusal.
-    "scripts/check-plan-code.py": 34,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 36,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -983,8 +983,7 @@ def run_mutations(d: pathlib.Path, muts: list[dict],
         # `l.strip()[7:]` assumes the line STARTS with "[FAIL] ". A line that
         # merely contains the marker (a log prefix, an ANSI escape) was sliced
         # blind and silently produced a wrong case name. Measured round 5.
-        fails = [l.strip()[7:].rsplit(": got ", 1)[0].strip()
-                 for l in out.split("\n") if l.strip().startswith("[FAIL] ")]
+        fails = parse_fail_names(out)
         # rc 2 is `run_suite`'s CANNOT RUN — a timeout. Reading it as red records
         # two minutes of NOT CHECKED as proof that a guard works, and prints
         # `caught <name>` into the evidence block. The comment on `run_suite`
@@ -1037,8 +1036,13 @@ def run_mutations(d: pathlib.Path, muts: list[dict],
         # were still asserting.
         unnamed = [(w, [f for f in fails if w == f]) for w in wants]
         unnamed = [(w, m) for w, m in unnamed if len(m) != 1]
+        # ⭐ ATTRIBUTION IS RECORDED PER MUTATION, not left to be inferred from the report.
+        # `caught` says the suite went red; `attributed` says it went red VIA THE CASE THIS
+        # ENTRY NAMES. They are different claims and the gap between them is where this
+        # branch lost a whole run: eight entries, every one killed, not one attributable,
+        # and a summary line byte-identical to success.
         ev_muts.append({"name": name, "caught": caught, "fails": fails,
-                        "measured": True})
+                        "attributed": caught and not unnamed, "measured": True})
         if not caught:
             ok = False
             ev_survivors.append(name)
@@ -1121,6 +1125,50 @@ def _entries_of(v) -> list:
     bug in coverage_verdict's `raises`. This is the reporting path, not the reading path.
     """
     return v.mutations if isinstance(v, Measured) else v.entries
+
+
+def tally_line(ok: bool, verdict) -> str:
+    """The one-line summary of a `--mutate` run. PURE.
+
+    ⛔ IT STATES THE AFFIRMATIVE NUMBERS, not only the negative one. It used to report
+    `N mutation(s), 0 survivor(s)` — and "0 survivors" is the complement of the thing a reader
+    actually wants to know. MEASURED on this very branch: a run printed `0 survivor(s)` while
+    ALL EIGHT new entries were unattributable. Every mutation died; nothing could see which case
+    killed it; the summary line was indistinguishable from real success, and the truth was only
+    visible by scrolling to the bottom of a 400-entry log.
+
+    `killed` and `attributed` are different claims — a mutation can die and still prove nothing —
+    so both are printed. On a `Measured` verdict a cannot-run cannot be present (clause 3), so
+    `killed` is exactly `mutations - survivors`.
+    """
+    killed = len(verdict.mutations) - len(verdict.survivors)
+    attributed = sum(1 for m in verdict.mutations if m.get("attributed") is True)
+    return (("OK — " if ok else "FAILED — ")
+            + f"delivered scripts mutated: {len(verdict.files)} file(s), "
+              f"{len(verdict.mutations)} mutation(s), {killed} killed, "
+              f"{attributed} attributed to the case each names, "
+              f"{len(verdict.survivors)} survivor(s)")
+
+
+def parse_fail_names(out: str) -> list[str]:
+    """The case names a suite reported as FAILING, exactly as attribution reads them. PURE.
+
+    ⛔ THIS IS THE CONSUMER HALF OF THE `[FAIL] <case>` CONTRACT, and it was inline until r2 M2
+    pointed out that `brief-compose.py`'s producer-side case re-typed HALF of it — the second
+    implementation of one rule, drifted on the day it was written. Both sides call this now.
+
+    Two clauses, and the second is easy to miss:
+      * only a line STARTING with `[FAIL] ` is a case name. A mid-line marker is not — measured
+        round 5, where slicing `[7:]` blind produced a confident, wrong name;
+      * the name is truncated at the LAST `": got "`, because the canonical line is
+        `[FAIL] {name}: got {got!r} want {want!r}` and a case name may itself contain a colon.
+
+    ⚠ SO A CASE NAME CONTAINING `": got "` IS TRUNCATED, and its manifest entry becomes
+    unattributable — §22's disease inside the machinery built to prevent it. Zero of the live
+    case names contain it today. This function is where that fact is visible.
+    """
+    return [l.strip()[7:].rsplit(": got ", 1)[0].strip()
+            for l in out.split("\n") if l.strip().startswith("[FAIL] ")]
 
 
 def _self_test() -> int:
@@ -1525,7 +1573,7 @@ def _self_test() -> int:
         _mid = [{"name": "mid-line marker", "file": "m.py",
                  "edits": [["def f():\n    return 1", "def f():\n    return 2"]],
                  "expect": "mid-line [FAIL] marker"}]
-        _ok6, _rep6, _, _ = run_mutations(_d2, _mid, {"m.py"})
+        _ok6, _rep6, _evm6, _ = run_mutations(_d2, _mid, {"m.py"})
         case("a mid-line [FAIL] is NOT parsed as a case name", _ok6, False)
         # ⟳ 2026-09-10: this asserted the wording `matched 0 red case(s)`. A mid-line marker
         # yields NO parseable case name, so it now takes the report-format branch and gets the
@@ -1535,6 +1583,13 @@ def _self_test() -> int:
         # the round-5 defect the fixture was built for.
         case("...so the mutation is not credited to a case that does not exist",
              any("report-format defect" in r.lower() for r in _rep6), True)
+        # ⭐ AND THE PER-MUTATION RECORD SAYS SO. `caught` and `attributed` are different
+        # claims; the tally can only report the second if the producer writes it down.
+        # ⚠ This case exists because the mutation for that line SURVIVED: the tally cases
+        # construct `Measured` by hand, so nothing exercised the append. Third time on this
+        # branch that a fix arrived guarded by nothing, and the third caught by a control.
+        case("a kill with no readable case name is caught but NOT attributed",
+             [(m["caught"], m["attributed"]) for m in _evm6], [(True, False)])
 
     # ⛔ RED, BUT NOTHING READABLE — the shape that cost two branches on 2026-09-10. The suite
     # below goes red and reports it as `❌ <case>`, which is exactly what `gen-backlog-page.py`
@@ -2144,7 +2199,38 @@ def _self_test() -> int:
     # itself gains 1 for the report-format diagnosis. A RISE, and the
     # file it covers is the one that composes every page the reader opens — it had cases and no
     # mutations, the same blind spot `gen-backlog-page.py` was in one branch ago.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 426)
+    # ── THE SUMMARY STATES THE AFFIRMATIVE NUMBERS ───────────────────────────────────────
+    # ⛔ THE SHAPE THIS EXISTS FOR, measured on this branch: eight entries, every one killed,
+    # NOT ONE attributable — and the old line said `8 mutation(s), 0 survivor(s)`, which is
+    # exactly what a perfect run says. The reader had to scroll a 400-entry log to find out.
+    _mk = lambda muts, surv: Measured(
+        files={"a.py": True}, declared=len(muts), mutations=muts, survivors=surv,
+        controls_green=True)
+    _all_ok = [{"name": "x", "measured": True, "attributed": True, "caught": True},
+               {"name": "y", "measured": True, "attributed": True, "caught": True}]
+    case("the tally states how many were killed AND how many were attributed",
+         tally_line(True, _mk(_all_ok, [])),
+         "OK — delivered scripts mutated: 1 file(s), 2 mutation(s), 2 killed, "
+         "2 attributed to the case each names, 0 survivor(s)")
+    # ⭐ killed-but-unattributable no longer reads as success.
+    _none_named = [dict(m, attributed=False) for m in _all_ok]
+    case("⭐ a run where everything died and nothing was attributed says so in the FIRST line",
+         "2 killed, 0 attributed" in tally_line(False, _mk(_none_named, [])), True)
+    case("...and that is visibly different from a clean run",
+         tally_line(False, _mk(_none_named, [])) != tally_line(True, _mk(_all_ok, [])), True)
+    case("a survivor is not counted as a kill",
+         "1 killed" in tally_line(False, _mk(_all_ok, ["y"])), True)
+
+    # ── THE CONSUMER'S PARSE, pinned where it lives (r2 M2 + L1) ─────────────────────────
+    case("the consumer reads a case name off a [FAIL] line",
+         parse_fail_names("  [FAIL] a case: got 1 want 2"), ["a case"])
+    case("...and ignores a marker that is not at the start of the line",
+         parse_fail_names("> note: mid-line [FAIL] marker"), [])
+    # ⚠ THE CLAUSE THE PRODUCER-SIDE CASE DID NOT MODEL. A name containing ": got " is truncated,
+    # so an `expect` naming it in full could never match and its entry would be unattributable.
+    case("⚠ a case name containing ': got ' is TRUNCATED by the consumer",
+         parse_fail_names("  [FAIL] the width: got the wrong value"), ["the width"])
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 433)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
@@ -2301,10 +2387,7 @@ def main(argv: list[str]) -> int:
         # rather than the gate: the gate is defended by the type; the refusal is the part a
         # one-line edit can still get wrong quietly.
         if isinstance(verdict, Measured):
-            print(("OK — " if ok else "FAILED — ")
-                  + f"delivered scripts mutated: {len(verdict.files)} file(s), "
-                    f"{len(verdict.mutations)} mutation(s), "
-                    f"{len(verdict.survivors)} survivor(s)")
+            print(tally_line(ok, verdict))
         else:
             # NO tally — and that includes the FILE count. On a control-failure run
             # `ev["files"]` holds the CONTROL runs, so "7 file(s)" asserts work that measured

@@ -35,7 +35,7 @@
       ]
     ],
     "expect": [
-      "a fragment's OWN #tray rule is not lifted into the tray"
+      "compose delimits the tray at BOTH ends"
     ]
   },
   {
@@ -43,8 +43,8 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "    begin, marked_end = style.rfind(TRAY_BEGIN), style.rfind(TRAY_END)",
-        "    begin, marked_end = style.find(TRAY_BEGIN), style.rfind(TRAY_END)"
+        "    begin = style.rfind(TRAY_BEGIN)",
+        "    begin = style.find(TRAY_BEGIN)"
       ]
     ],
     "expect": [
@@ -56,8 +56,8 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "    begin, marked_end = style.rfind(TRAY_BEGIN), style.rfind(TRAY_END)\n    if begin >= 0 and marked_end > begin:",
-        "    begin, marked_end = style.rfind(TRAY_BEGIN), style.find(TRAY_END)\n    if begin >= 0 and marked_end > begin:"
+        "    marked_end = style.rfind(TRAY_END)",
+        "    marked_end = style.find(TRAY_END)"
       ]
     ],
     "expect": [
@@ -134,8 +134,8 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "        for candidate in (rule + \"\\n\", \"\\n\" + rule, rule):",
-        "        for candidate in ():"
+        "    subtracted = [rule for rule in keep if rule not in own]",
+        "    subtracted = list(keep)"
       ]
     ],
     "expect": [
@@ -147,8 +147,8 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "    return out if out.strip() else css",
-        "    return out"
+        "    keep = subtracted if structure_survives else keep",
+        "    keep = subtracted"
       ]
     ],
     "expect": [
@@ -156,16 +156,81 @@
     ]
   },
   {
-    "name": "the region is rebuilt from a parsed rule list again, silently dropping what it cannot parse",
+    "name": "the marked region is re-derived by scanning instead of taken verbatim",
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "    out = css\n",
-        "    out = \"\\n\".join(_tray_rules(css))\n"
+        "    if not remigrate and begin >= 0 and marked_end > begin:",
+        "    if False and begin >= 0 and marked_end > begin:"
       ]
     ],
     "expect": [
-      "a marked region keeps a tray rule the selector regex does NOT cover"
+      "a marked region comes back VERBATIM even when the fragment overrides the tray"
+    ]
+  },
+  {
+    "name": "main stops passing --remigrate, so the repair flag reaches nothing",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    css, markup, script = extract_tray(src_text, frag_css, remigrate=a.remigrate)",
+        "    css, markup, script = extract_tray(src_text, frag_css, remigrate=False)"
+      ]
+    ],
+    "expect": [
+      "main --remigrate re-derives the region; without it the region is verbatim"
+    ]
+  },
+  {
+    "name": "the pollution warning is silenced, so the repair has no trigger again (r2 H2)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    elif polluted:",
+        "    elif False:"
+      ]
+    ],
+    "expect": [
+      "composing from a polluted region WARNS, and still succeeds"
+    ]
+  },
+  {
+    "name": "--remigrate stops checking what a re-derivation would lose (r2 H1)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        if risk:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "--remigrate refuses a page whose region holds what the scan cannot see"
+    ]
+  },
+  {
+    "name": "--remigrate runs on a page with nothing to repair, which can only lose information",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        if not polluted:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "--remigrate refuses a page with nothing to repair"
+    ]
+  },
+  {
+    "name": "the floor under partial subtraction is dropped, stripping the tray's structure (r2 M1)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    structure_survives = all(token in selectors for token in TRAY_STRUCTURE)",
+        "    structure_survives = bool(subtracted)"
+      ]
+    ],
+    "expect": [
+      "subtraction that would strip the tray's structure is refused outright"
     ]
   }
 ]

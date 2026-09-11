@@ -6878,3 +6878,69 @@ after, 5 recomposes all md5 `73a4979…`. Suite 86 → 102; count declared in th
 in `check-selftest-counts` (its only previous count lived in a skill doc, at 30 against a suite of
 102). The file joins the mutation manifest with 8 entries, `EXPECTED_MUTATIONS` 412 → 420; three
 entries are on wiring, since each extraction rule can be correct and never reached.
+
+## 2026-09-10
+Correction to the entry above, which described a fix that has since changed shape twice. Both
+reviewers found the same thing from different directions: the repair I wrote was doing permanent
+surgery on every page, forever, to fix a problem that exists on exactly one page.
+
+The page that stores the shared "ask" box now gets copied **exactly as it is**, with nothing
+applied to it — which was the whole promise of marking its boundaries in the first place. Two
+attempts at being clever there each broke something: the first silently deleted styling rules it
+did not recognise (and turned a phone-only rule into an always-on one, which is worse, because it
+still looks right), and the second could cut a rule in half and leave a fragment that swallows
+everything after it. Neither would have shown an error.
+
+The one page that was already damaged has been repaired by hand — a single deliberate command
+rather than a rule that runs on every page for the rest of time. Its 113 items, its title and the
+ask buttons are all intact; exactly four lines of duplicated styling were removed and nothing
+else. The other 43 pages were never affected and clean themselves up the first time each is
+rebuilt.
+
+That repair command now also **refuses to run on a page that does not need it**. Pointed at a
+healthy page it would quietly strip styling it cannot recognise and then report success, which is
+the same kind of failure that caused all of this in the first place. And composing a page that
+still carries the damage now says so, instead of saying nothing — the repair previously had no
+way of telling anyone it was needed, and the window to apply it closes silently the moment
+anyone edits the styling involved.
+<!--tech-->
+Backlog #106, review rounds 1 and 2. r1 Claude: Blocking — `_without_page_rules` rebuilt the
+marked region from a parsed rule list, dropping rules outside the selector regex (`#sendbtn`,
+`#closebtn`, `.trow`, `in` are all in the tray's own markup) and flattening `@media` wrappers to
+unconditional rules. r2 Codex: Blocking — the replacement removed rule TEXT, which is not
+whole-rule bounded; measured through the production path, `.x#tray{a:1}` → `.x`,
+`@media (…){#tray{a:1}}` → `@media (…){}`, and a fragment owning `#qbox{b:2}` turned the region's
+`#tray #qbox{b:2}` into a dangling `#tray `.
+
+Resolution, which both halves converged on independently: the marker path is a verbatim slice
+with NOTHING applied. Subtraction lives only in `_selector_scan`, where the input is a rule list
+the function just built, so removing a member cannot corrupt a neighbour. `--remigrate` re-derives
+a marked page's region by scanning, once, when a human asks — the finite migration problem gets a
+finite fix instead of a permanent transform in the hot path.
+
+r2 Claude added two Highs, both about the repair having no trigger and no guard, and one
+mechanism closes both: `pollution(region, fragment_css)` is the signature of a region written by
+the wrong migration. On the normal path it prints a ⚠ naming the rules (H2's missing trigger);
+under `--remigrate` it is required, and `remigration_risk(region)` refuses when re-deriving would
+also lose what the scan cannot see — `#sendbtn`-class rules or an at-rule wrapper (H1). Both
+refusals exit 1 and write nothing. Verified against the reviewer's own falsifier: it still repairs
+the real polluted page, and refuses on a marked page carrying `#sendbtn{…}`.
+
+Also r2: a FLOOR under partial subtraction (M1) — `subtracted or keep` guarded only the endpoint
+where everything is subtracted, so a fragment duplicating some tray rules yielded a tray missing
+`#tray`, `#qbox` and `.askbtn`, with no refusal. ⚠ A control found the floor was load-bearing for
+nothing — the suite stayed green with it deleted — which is r1's Blocking shape exactly, caught
+this time before it shipped. The consumer's `[FAIL]` parse is extracted as
+`check-plan-code.parse_fail_names` so both sides call one implementation (M2), which also makes
+the function named in three comments actually exist (L1). One case now separates two manifest
+entries that had identical kill sets (L2), and the two `rfind` calls are on separate lines so each
+marker's entry can anchor on its own (L3) — that anchor had already orphaned once mid-review.
+
+`~/explainers/backlog-table.html` repaired with that flag: 1,027,997 → 1,027,689 chars, 4 lines
+removed, 0 added, title and 113 items preserved, verified by diff before applying and kept at
+`scratchpad/backlog-table.BEFORE-REPAIR.html`. Corpus now: 1 marked page (verbatim), 43 unmarked
+(scan path). Suite 115 → 130; manifest 13 → 18 entries, all attributing; `EXPECTED_MUTATIONS` 431. `check-plan-code` 93 → 96 cases, 34 entries, all attributing.
+
+⚠ One entry was REMOVED rather than added in r1: after that round's change, `if not own: return
+css` became unkillable by construction and was measured surviving. A clause that stops deciding
+loses its entry too.

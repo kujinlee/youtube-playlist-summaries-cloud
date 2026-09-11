@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 115 cases
+    python3 scripts/brief-compose.py --self-test  # 130 cases
 
 COMPOSING IS IDEMPOTENT (backlog #106, 2026-09-10)
 --------------------------------------------------
@@ -48,6 +48,8 @@ the account of the three accumulators and how each is closed.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import datetime as _dt
 import os
 import pathlib
@@ -550,6 +552,9 @@ def has_tray(html: str) -> bool:
     return all(m in html for m in TRAY_MARKERS)
 
 
+# The selectors without which what survives is not a tray: its container and its input. Used as
+# the floor under scan-path subtraction — see `_selector_scan`.
+TRAY_STRUCTURE = ("#tray", "#qbox")
 TRAY_BEGIN = "/* ---- Ask tray, extracted verbatim ---- */"
 TRAY_END = "/* ---- end Ask tray ---- */"
 
@@ -575,7 +580,45 @@ def _tray_rules(css: str) -> list[str]:
     return out
 
 
-def _selector_scan(style: str) -> str:
+def _all_rules(css: str) -> list[str]:
+    """EVERY rule here, tray-selector or not — i.e. the population `_tray_rules` cannot see. PURE."""
+    out = []
+    for rule in re.findall(r"([^{}]+\{[^{}]*\})", css):
+        selector, _, block = rule.partition("{")
+        out.append(re.sub(r"/\*.*?\*/", "", selector, flags=re.S).strip() + "{" + block)
+    return out
+
+
+def pollution(region: str, fragment_css: str) -> list[str]:
+    """Rules in a MARKED region that the page's own fragment also declares. PURE.
+
+    This is the signature of a region written by the first, wrong migration: a page-specific
+    override lifted into the canonical tray, where it outranks the fragment's own copy at equal
+    specificity and silently wins. It is what `--remigrate` repairs — and, printed on the normal
+    path, it is the TRIGGER that repair previously had none of (r2 H2).
+    """
+    own = set(_tray_rules(fragment_css))
+    return [rule for rule in _tray_rules(region) if rule in own]
+
+
+def remigration_risk(region: str) -> list[str]:
+    """What re-deriving this region by SCANNING would silently lose. PURE.
+
+    ⛔ `--remigrate` routes a marked page through `_selector_scan`, which is precisely the
+    transform that produced r1's Blocking — four of the eight ids/classes in the tray's own
+    markup (`sendbtn`, `closebtn`, `trow`, `in`) are outside the selector regex, and at-rules are
+    flattened to unconditional rules. That is an acceptable price for a page that NEEDS repair.
+    It is not acceptable on a healthy one, and nothing checked which it was (r2 H1): the failure
+    is quiet, one-way, and ends with a success message.
+    """
+    seen = set(_tray_rules(region))
+    lost = [rule for rule in _all_rules(region) if rule not in seen]
+    if re.search(r"@[\w-]+[^{}]*\{", region):
+        lost.append("an at-rule wrapper — the scan flattens @media and friends")
+    return lost
+
+
+def _selector_scan(style: str, fragment_css: str = "") -> str:
     """The tray rules of a page composed BEFORE `TRAY_END` existed. MIGRATION ONLY.
 
     ⚠ Delete this once no unmarked page is anyone's `--source`. It is a second answer to
@@ -595,71 +638,40 @@ def _selector_scan(style: str) -> str:
         (`backlog-table.html`: 109 copies of three rules, 34,881 bytes).
     """
     keep = _tray_rules(style)
+    # ⛔ A RULE THE PAGE DECLARES IS NOT PART OF THE TRAY (r1 Codex). Page-specific `#tray …`
+    # overrides are DELIBERATE — `gen-backlog-page.py:1480` emits `#tray #qbox{…}` precisely
+    # because a plain `#qbox` loses the cascade to the lifted tray — and a scan cannot tell them
+    # from the tray's own rules by selector. Lifting them makes a page's private override part
+    # of the canonical tray, inherited by every page later composed from it.
+    #
+    # ⚠ THIS BELONGS HERE AND NOWHERE ELSE. r1 and r2 each produced a Blocking by also applying
+    # it to the MARKED region; see `extract_tray`. Here the input is a rule LIST this function
+    # just built, so removing a member cannot corrupt a neighbour — the whole class of defect
+    # that text removal has.
+    #
+    # ⛔ NEVER SUBTRACT THE TRAY AWAY ENTIRELY. A fragment CAN declare every rule the tray has:
+    # the backlog #88 fixture composes from a page that IS the tray source. Subtracting then
+    # leaves `css` empty and `extract_tray` refuses — the fix becoming the outage this module
+    # exists to prevent. Measured: the suite went `incomplete tray in source (css=False …)`.
+    # ⛔ AND A FLOOR UNDER PARTIAL SUBTRACTION (r2 M1). `subtracted or keep` guarded only the
+    # endpoint where EVERYTHING is subtracted; the middle of the continuum silently yielded a
+    # partial tray. MEASURED against the real `goals.html` tray with a fragment duplicating
+    # three of its rules: `['.askbtn', '#tray', '#qbox']` dropped — the container, the textarea
+    # and the ask button, i.e. the tray's load-bearing three — with `css` non-empty and no
+    # refusal. The floor asks whether what survives is still a tray at all.
+    own = set(_tray_rules(fragment_css))
+    subtracted = [rule for rule in keep if rule not in own]
+    selectors = " ".join(rule.partition("{")[0] for rule in subtracted)
+    # ⚠ TWO STATEMENTS, not one expression: the floor and the fallback are separate
+    # clauses with separate failures, and a single line cannot carry two mutation anchors.
+    structure_survives = all(token in selectors for token in TRAY_STRUCTURE)
+    keep = subtracted if structure_survives else keep
     last = {rule: i for i, rule in enumerate(keep)}
     return "\n".join(rule for i, rule in enumerate(keep) if last[rule] == i)
 
 
-def _without_page_rules(css: str, fragment_css: str) -> str:
-    """Tray CSS minus the rules the FRAGMENT itself declares. PURE.
-
-    ⛔ A RULE THE PAGE DECLARES IS NOT PART OF THE TRAY (r1 Codex, Medium). Page-specific
-    `#tray …` overrides are not hypothetical, they are DELIBERATE: `gen-backlog-page.py:1480`
-    emits `#tray #qbox{…}` precisely because a plain `#qbox` loses the cascade to the lifted
-    tray. Lifting them back out makes a page's private override part of the canonical tray,
-    inherited by every page later composed from it.
-
-    ⚠ BOTH PATHS, NOT JUST THE MIGRATION, and that correction was bought by watching it happen.
-    The first version subtracted only inside `_selector_scan`. Meanwhile the `regen-backlog-page`
-    hook recomposed `~/explainers/backlog-table.html` for real (2,338,562 → 1,027,997 chars,
-    872 `</body>` → 1) using the code as it then stood — which froze three `#tray #qbox` rules
-    INTO the marked region. That page now has an end marker, so the scan will never run on it
-    again and the pollution would have been permanent. A one-shot migration cannot repair what
-    a previous run of the same migration got wrong.
-
-    ⛔ NEVER SUBTRACT THE TRAY AWAY ENTIRELY. A fragment CAN declare every rule the tray has —
-    the backlog #88 fixture composes from a page that IS the tray source, and a fragment
-    re-composed from a page's own `.fragment.html` sibling can do the same. Subtracting then
-    leaves `css` empty and `extract_tray` refuses: the fix becoming the outage the module exists
-    to prevent. Measured the moment it was written — the suite went `incomplete tray (css=False)`.
-
-    ⛔⛔ IT SUBTRACTS TEXT; IT NEVER REBUILDS THE REGION FROM A PARSED RULE LIST. r1's Blocking
-    was exactly that: the first version returned `"\n".join(kept)`, which silently discarded
-    anything `_tray_rules` does not select. MEASURED on the real tray:
-      * FOUR of the eight ids/classes in the tray's own markup — `sendbtn`, `closebtn`, `trow`,
-        `in` — are outside the selector regex. Styling the Send button is one ordinary CSS rule
-        away, and the rule would evaporate on the next recompose with no error;
-      * `@media (max-width:40rem){#tray{width:100%}}` came back as an UNCONDITIONAL
-        `#tray{width:100%}` — worse than deletion, because it still looks correct.
-    Removing substrings can only delete a rule the fragment itself declares. Everything else —
-    at-rules, comments, unselected rules, whitespace — survives byte-for-byte, which is what
-    `TRAY_BEGIN`/`TRAY_END` promised in the first place.
-
-    ⚠ RESIDUAL, stated rather than hidden: a fragment declaring a rule BYTE-IDENTICAL to a real
-    tray rule still drops it from the region. The page itself is unaffected (it declares the
-    rule), but a page composed FROM it would lose it. Implausible by construction — the overrides
-    that exist use two ids (`#tray #qbox`) exactly so they do NOT collide with the tray's
-    `#qbox`. Falsifier: compose a fragment containing a verbatim copy of a tray rule and check
-    the marked region still has it.
-    """
-    own = _tray_rules(fragment_css)
-    # ⚠ AN OPTIMISATION, NOT A DECISION — do not manifest it. With `own` empty the loop below
-    # never executes and `out` is `css` regardless, so mutating this line is unkillable BY
-    # CONSTRUCTION: measured as a SURVIVOR when it was briefly given a manifest entry. It was
-    # decisive in the r1 version, which rebuilt the region from a parsed rule list; the switch to
-    # subtracting TEXT made it redundant. A clause that stops deciding must lose its entry too.
-    if not own:
-        return css                       # nothing to subtract: keep the region byte-for-byte
-    out = css
-    for rule in own:
-        # Remove the rule TEXT, with one adjoining newline so no double blank line accumulates.
-        for candidate in (rule + "\n", "\n" + rule, rule):
-            if candidate in out:
-                out = out.replace(candidate, "", 1)
-                break
-    return out if out.strip() else css
-
-
-def extract_tray(html: str, fragment_css: str = "") -> tuple[str, str, str]:
+def extract_tray(html: str, fragment_css: str = "",
+                 remigrate: bool = False) -> tuple[str, str, str]:
     """(css, markup, script) — verbatim. Raises if any piece is missing.
 
     ⭐ EXTRACTION IS IDEMPOTENT: extracting from a page this script composed returns exactly
@@ -686,12 +698,23 @@ def extract_tray(html: str, fragment_css: str = "") -> tuple[str, str, str]:
     if not m:
         raise SystemExit("brief-compose: source has no <style> block")
     style = m.group(1)
-    begin, marked_end = style.rfind(TRAY_BEGIN), style.rfind(TRAY_END)
-    if begin >= 0 and marked_end > begin:
+    # ⚠ ONE `rfind` PER LINE, so a mutation entry can anchor on the marker it is about. As a
+    # single expression the two shared an anchor, and the END entry had to pin the following
+    # `if` as context — which orphaned it the moment `--remigrate` edited that line (r2 L3).
+    begin = style.rfind(TRAY_BEGIN)
+    marked_end = style.rfind(TRAY_END)
+    if not remigrate and begin >= 0 and marked_end > begin:
+        # ⭐ VERBATIM. NOTHING IS APPLIED TO THIS SLICE — not a filter, not a substring removal.
+        # r1 and r2 each produced a Blocking by transforming it: r1 rebuilt it from a parsed rule
+        # list (dropping `#sendbtn`, flattening `@media`); r2 removed rule TEXT, which is not
+        # whole-rule bounded and MANGLES rather than deletes. Measured, through the production
+        # path: `.x#tray{a:1}` → `.x`, `@media (…){#tray{a:1}}` → `@media (…){}`, and worst,
+        # a fragment owning `#qbox{b:2}` turned the region's `#tray #qbox{b:2}` into a dangling
+        # `#tray ` — a selector with no block, which swallows every rule after it.
+        # The region contains only what `compose` wrote. It needs no inference, so it gets none.
         css = style[begin + len(TRAY_BEGIN):marked_end].strip()   # the STATED boundary
     else:
-        css = _selector_scan(style)                            # pages composed before it existed
-    css = _without_page_rules(css, fragment_css)
+        css = _selector_scan(style, fragment_css)              # pages composed before it existed
     div = re.search(r'<div id="tray".*?</div>\s*</div>', html, re.S)
     idx = html.rfind("<script>")
     end = html.rfind("</script>")
@@ -822,6 +845,9 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--slug", help="short slug for the filename, e.g. backlog-36")
     ap.add_argument("--title", default="Brief", help="document title")
     ap.add_argument("--source", help="explainer to lift the tray from (default: newest with one)")
+    ap.add_argument("--remigrate", action="store_true",
+                    help="ignore the source's end marker and re-derive its tray by scanning. "
+                         "One-off repair for a page migrated by an earlier, wrong migration")
     ap.add_argument("--out", help="output path (default: ~/explainers/<date>-brief-<slug>.html)")
     ap.add_argument("--self-test", action="store_true")
     a = ap.parse_args(argv)
@@ -837,11 +863,44 @@ def main(argv: list[str]) -> int:
         ROOT / f"{_dt.date.today():%Y-%m-%d}-brief-{a.slug}.html"
     )
     src = find_source(a.source, exclude=out)
-    # ⚠ The fragment is read BEFORE the tray is extracted: a legacy source is scanned by
-    # selector, and the scan needs the fragment's own CSS to tell a page-specific
-    # `#tray …` override from a real tray rule (r1 Codex, Medium).
+    # ⚠ The fragment is read BEFORE the tray is extracted: an UNMARKED source is scanned by
+    # selector, and the scan needs the fragment's own CSS to tell a page-specific `#tray …`
+    # override from a real tray rule (r1 Codex). A MARKED source ignores it — that region is
+    # taken verbatim, which is what `--remigrate` exists to override for a page whose region was
+    # written by an earlier, wrong migration.
     content = pathlib.Path(a.content).expanduser().read_text(encoding="utf-8")
-    css, markup, script = extract_tray(src.read_text(encoding="utf-8"), css_of(content))
+    src_text = src.read_text(encoding="utf-8")
+    frag_css = css_of(content)
+    # ⛔ THE REPAIR IS GUARDED AND THE HAZARD IS ANNOUNCED (r2 H1 + H2, one mechanism).
+    # `--remigrate` is a one-off repair, and a one-off repair that degrades a healthy artifact is
+    # the same class of hazard as the migration that created backlog #106 in the first place.
+    verbatim, _, _ = extract_tray(src_text, frag_css)
+    polluted = pollution(verbatim, frag_css)
+    if a.remigrate:
+        if not polluted:
+            raise SystemExit(
+                f"brief-compose: --remigrate refuses — {src.name}'s tray region carries none of "
+                f"this fragment's own rules, so there is nothing to repair. Re-deriving it by "
+                f"scanning could only lose information.")
+        risk = remigration_risk(verbatim)
+        if risk:
+            raise SystemExit(
+                "brief-compose: --remigrate refuses — re-deriving this region would ALSO lose "
+                "what the scan cannot see:\n  " + "\n  ".join(r[:110] for r in risk)
+                + "\n  Repair it by hand, or remove those rules from the region first.")
+        print(f"♻  --remigrate: re-deriving {src.name}'s tray region, dropping "
+              f"{len(polluted)} rule(s) this fragment declares itself:")
+        for rule in polluted:
+            print(f"     {' '.join(rule.split())[:100]}")
+    elif polluted:
+        # ⚠ NOT FATAL. This path generates the reader's pages; refusing here would take the
+        # dashboard down over a cosmetic duplicate. But it must not be silent either — the
+        # window in which the repair still works closes the moment the fragment's text changes.
+        print(f"⚠  {src.name}'s tray region carries {len(polluted)} rule(s) this fragment also "
+              f"declares — the lifted copy wins at equal specificity, so editing the fragment's "
+              f"copy has no effect. Repair with --remigrate (the match is on exact rule text, "
+              f"so do it BEFORE editing those declarations).")
+    css, markup, script = extract_tray(src_text, frag_css, remigrate=a.remigrate)
     doc = compose(content, a.title, css, markup, script,
                   page_chrome.provenance(
                       _dt.datetime.now().strftime('%Y-%m-%d %H:%M'),
@@ -916,7 +975,13 @@ def _refusal_text() -> str:
 
 
 def _report_line(name: str, ok: bool) -> str:
-    """The ONE line `check-plan-code.attribute` parses, as code rather than as a convention.
+    """The ONE line `check-plan-code.parse_fail_names` reads, as code rather than as a convention.
+
+    ⚠ THAT NAME IS NOW TRUE. It previously said `check-plan-code.attribute`, and no such function
+    existed — the parse was inline (r2 L1). It has been extracted, so a reader sent here lands on
+    the real consumer, and BOTH clauses of the contract live in one place rather than being
+    re-typed on this side (r2 M2: this case models the `[FAIL] ` prefix; the consumer ALSO
+    truncates at the last `": got "`, which no case here could see).
 
     It reads a red case with `startswith("[FAIL] ")` and slices `[7:]`, so this format is a
     contract with another program. §22's *How to apply* asks for it to be pinned on the PRODUCER
@@ -990,18 +1055,33 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     # never ran — the clause was pinned only by the generic "suite runs to completion" case.
     # A case that cannot execute under its own defect is not coverage.
     case("a fragment declaring the WHOLE tray does not subtract it away",
-         _without_page_rules(css, css) == css)
-    # ⚠ and the no-op path stays BYTE-EXACT: a fragment with no tray rules of its own must not
-    # have the region re-normalised underneath it.
-    case("a fragment with no tray rules leaves the region untouched",
-         _without_page_rules("#tray{a:1}\n  odd  {b:2}", "body{c:3}")
-         == "#tray{a:1}\n  odd  {b:2}")
+         _selector_scan("#tray{a:1}\n#qbox{b:2}", "#tray{a:1}\n#qbox{b:2}")
+         == "#tray{a:1}\n#qbox{b:2}")
+    # ⛔ AND THE FLOOR UNDER **PARTIAL** SUBTRACTION (r2 M1). The all-or-nothing guard above
+    # caught only the endpoint; the middle of the continuum yielded a tray missing its container
+    # and its input, with `css` non-empty and no refusal. MEASURED against the real `goals.html`
+    # tray with a fragment duplicating three of its rules: `['.askbtn', '#tray', '#qbox']` gone.
+    # ⚠ This case exists because a control found the floor was load-bearing for NOTHING — the
+    # suite stayed green with it deleted, which is the r1 Blocking's shape exactly.
+    case("subtraction that would strip the tray's structure is refused outright",
+         _selector_scan("#tray{a:1}\n#qbox{b:2}\n.askbtn{c:3}", "#tray{a:1}\n#qbox{b:2}")
+         == "#tray{a:1}\n#qbox{b:2}\n.askbtn{c:3}")
+    case("...while a subtraction that leaves the structure intact still happens",
+         _selector_scan("#tray{a:1}\n#qbox{b:2}\n#tray #qbox{c:3}", "#tray #qbox{c:3}")
+         == "#tray{a:1}\n#qbox{b:2}")
 
     content = "<title>x</title><style>:root{--good:#0f0}</style><div>hello</div>"
     doc = compose(content, "T", css, markup, script)
     case("composed doc has a doctype", doc.startswith("<!doctype html>"))
     case("composed doc keeps the content", "hello" in doc)
     case("composed doc carries the tray", has_tray(doc))
+    # ⚠ TWO MANIFEST ENTRIES HAD AN IDENTICAL KILL SET (r2 L2) — "compose stops writing the end
+    # marker" and "the marked region is re-derived instead of taken verbatim". Different clauses
+    # with different real failures (the marker is not WRITTEN vs it is not HONOURED), but no case
+    # told them apart, which is what an identical kill set means. This one asserts the write.
+    case("compose delimits the tray at BOTH ends",
+         TRAY_BEGIN in doc and TRAY_END in doc
+         and doc.index(TRAY_BEGIN) < doc.index(TRAY_END))
     case("composed doc has exactly one title", doc.count("<title>") == 1)
     case("shim defines --verified", "--verified" in doc)
 
@@ -1581,15 +1661,49 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
                "@media (max-width:40rem){#tray{width:100%}}\n#qbox{b:2}")
     _m1 = compose(_frag_o, "T", _exotic + "\n" + _OVERRIDE, markup, script, _fixed_at)
     _mcss1, _, _ = extract_tray(_m1, css_of(_frag_o))
-    case("a marked region keeps a tray rule the selector regex does NOT cover",
+    # ⭐ THE WHOLE CONTRACT IN ONE ASSERTION: byte-for-byte, with a fragment that DOES declare a
+    # tray override — the exact input both Blockings needed.
+    case("a marked region comes back VERBATIM even when the fragment overrides the tray",
+         _mcss1 == _exotic + "\n" + _OVERRIDE)
+    case("...so a tray rule outside the selector regex survives",
          "#sendbtn{background:#369;color:#fff}" in _mcss1)
-    case("...keeps an @media wrapper rather than flattening it to an unconditional rule",
+    case("...and an @media wrapper is not flattened to an unconditional rule",
          "@media (max-width:40rem){#tray{width:100%}}" in _mcss1)
-    case("...while still dropping the fragment's own override", _OVERRIDE not in _mcss1)
     _g2 = compose(_frag_o, "T", _mcss1, markup, script, _fixed_at)
     case("...and a tray carrying those rules still composes twice byte-identically",
          compose(_frag_o, "T", extract_tray(_g2, css_of(_frag_o))[0], markup, script,
                  _fixed_at) == _g2)
+
+    # ── THE REPAIR IS EXPLICIT, NOT AMBIENT (r2 Codex, Blocking) ───────────────────────────
+    # Both reviewers converged here: a permanent transform in the hot path is the wrong shape
+    # for a FINITE migration problem. Exactly one page on disk was migrated by the earlier,
+    # wrong migration. `--remigrate` re-derives that page's region by scanning, once, when a
+    # human asks — so the marked path stays verbatim for every other run, forever.
+    _re_css, _, _ = extract_tray(_m1, css_of(_frag_o), remigrate=True)
+    case("--remigrate re-derives the region by scanning, dropping the page's own override",
+         _OVERRIDE not in _re_css)
+    case("...and without it the very same input keeps that override", _OVERRIDE in _mcss1)
+    case("...while the genuine tray rules survive the re-derivation",
+         "#tray{a:1}" in _re_css and "#qbox{b:2}" in _re_css)
+
+    # ── r2 CLAUDE (H1 + H2): THE REPAIR GETS A TRIGGER AND A GUARD ─────────────────────────
+    # H1: `--remigrate` routes a marked page through the scan, which is r1's Blocking behaviour.
+    # Acceptable on a page that NEEDS repair; on a healthy one it silently loses whatever the
+    # scan cannot see, one-way, and ends with a success message.
+    # H2: the repair had no trigger at all, and the window closes silently — the match is on
+    # exact rule text, so editing one declaration in the fragment freezes the copy forever.
+    # ⚠ Measured for (b): `outline-offset:1px` → `2px` left `#tray #qbox:focus` STILL FROZEN.
+    case("pollution() sees a fragment's own rule sitting in a marked region",
+         pollution("#tray{a:1}\n" + _OVERRIDE, _OVERRIDE) == [_OVERRIDE])
+    case("...and does NOT flag a genuine tray rule the fragment never declares",
+         pollution("#tray{a:1}\n#qbox{b:2}", _OVERRIDE) == [])
+    case("remigration_risk() names a rule the scan cannot see",
+         any("#sendbtn" in r for r in remigration_risk("#tray{a:1}\n#sendbtn{b:2}")))
+    case("...and names an at-rule wrapper the scan would flatten",
+         any("at-rule" in r for r in
+             remigration_risk("@media (max-width:40rem){#tray{width:100%}}")))
+    case("...and is silent on a region holding only plain tray rules",
+         remigration_risk("#tray{a:1}\n#qbox{b:2}") == [])
 
     # ── r1 CLAUDE (M1): THE **END** MARKER IS ALSO READ WITH `rfind`, AND NOTHING PINNED IT ──
     # The begin marker had a case AND a manifest entry; the end marker had neither, though both
@@ -1663,6 +1777,58 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
         _written = _self.read_text(encoding="utf-8")
         case("main lifts from the OTHER page, not the one it is overwriting",
              _rc == 0 and "#tray{a:1}" in _written and "#tray{zz:9}" not in _written)
+
+        # ⭐ AND main() ACTUALLY PASSES --remigrate. The extraction-level cases pin the flag's
+        # behaviour; none of them would notice `main` never handing it over — the same wiring
+        # gap that `main stops passing exclude` exists for.
+        _ov = "#tray #qbox{color:var(--ink)}"
+        _rfrag = _r / "rf.html"
+        _rfrag.write_text("<title>x</title><style>:root{--good:#0f0}\n" + _ov
+                          + "</style><div>hello</div>", encoding="utf-8")
+        _marked = _r / "marked.html"
+        _marked.write_text(compose(_rfrag.read_text(encoding="utf-8"), "T",
+                                   "#tray{a:1}\n#qbox{b:2}\n" + _ov, markup, script,
+                                   "2026-01-02 03:04"), encoding="utf-8")
+        _plain, _fixed = _r / "plain.html", _r / "fixed.html"
+        main(["--content", str(_rfrag), "--slug", "p", "--source", str(_marked),
+              "--out", str(_plain)])
+        main(["--content", str(_rfrag), "--slug", "p", "--source", str(_marked),
+              "--out", str(_fixed), "--remigrate"])
+        _reg = lambda f: f.read_text(encoding="utf-8").split(TRAY_BEGIN, 1)[1].split(TRAY_END, 1)[0]
+        case("main --remigrate re-derives the region; without it the region is verbatim",
+             _ov in _reg(_plain) and _ov not in _reg(_fixed))
+
+        # ⛔ AND IT REFUSES RATHER THAN DEGRADING A HEALTHY PAGE (r2 H1). Both refusals must
+        # also WRITE NOTHING — a refusal that leaves a damaged page on disk is not a refusal.
+        _healthy = _r / "healthy.html"
+        _healthy.write_text(compose(_rfrag.read_text(encoding="utf-8"), "T",
+                                    "#tray{a:1}\n#sendbtn{b:2}\n#qbox{c:3}\n" + _ov,
+                                    markup, script, "2026-01-02 03:04"), encoding="utf-8")
+        _refused = _r / "refused.html"
+        try:
+            main(["--content", str(_rfrag), "--slug", "h", "--source", str(_healthy),
+                  "--out", str(_refused), "--remigrate"])
+            case("--remigrate refuses a page whose region holds what the scan cannot see", False)
+        except SystemExit as _exc:
+            case("--remigrate refuses a page whose region holds what the scan cannot see",
+                 "#sendbtn" in str(_exc))
+        case("...and writes nothing when it refuses", not _refused.is_file())
+        # nothing to repair is also a refusal — re-deriving could only lose information
+        try:
+            main(["--content", str(_rfrag), "--slug", "c", "--source", str(_fixed),
+                  "--out", str(_r / "noop.html"), "--remigrate"])
+            case("--remigrate refuses a page with nothing to repair", False)
+        except SystemExit as _exc2:
+            case("--remigrate refuses a page with nothing to repair",
+                 "nothing to repair" in str(_exc2))
+        # ⚠ and the NORMAL path is loud about it rather than silent — H2's missing trigger.
+        _buf = io.StringIO()
+        with contextlib.redirect_stdout(_buf):
+            _wrc = main(["--content", str(_rfrag), "--slug", "w", "--source", str(_marked),
+                         "--out", str(_r / "warned.html")])
+        _warned = _buf.getvalue()
+        case("composing from a polluted region WARNS, and still succeeds",
+             _wrc == 0 and "⚠" in _warned and "--remigrate" in _warned)
 
     # ⛔ THE FAILURE LINE IS A CONTRACT, and this suite was not keeping it. `check-plan-code`'s
     # harness attributes a kill with `startswith("[FAIL] ")` then `[7:]`. This printed
