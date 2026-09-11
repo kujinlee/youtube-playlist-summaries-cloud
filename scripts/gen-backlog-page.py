@@ -1404,13 +1404,16 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str,
     # print: the section that used to say "nobody has described them yet" is gone with the
     # `undescribed` function that computed it.
     #
-    # ⛔ THIS IS NOT THE BIN COMING BACK UNDER A NEW NAME, and the difference is stated so it can
-    # be checked. The retired bin carried a FRAMING — "Instruments and habits. Cheap individually"
-    # — which characterised its members and could not be false. This carries no claim at all and
-    # says so in its own dek. A group asserts; an index enumerates. The falsifier for that
-    # distinction: this entry has an EMPTY falsifier field, and `check-group-claims.py` requires a
-    # non-empty one of every real group — so the index cannot masquerade as a claim without
-    # failing the guard that polices claims.
+    # HOW THIS DIFFERS FROM THE BIN IT REPLACES: the retired group carried a FRAMING —
+    # "Instruments and habits. Cheap individually" — which characterised its members and could not
+    # be false. This carries no claim, and says so in its own dek. A group asserts; an index
+    # enumerates.
+    #
+    # ⛔ THAT IS A DESCRIPTION OF INTENT, NOT A GUARANTEE, and the previous version of this comment
+    # claimed otherwise twice before two review rounds measured it false. The empty falsifier field
+    # keeps this entry out of rule 1's reach, and rule 4 pins the two strings below so they cannot
+    # change silently — but NOTHING here stops prose elsewhere on the page from characterising
+    # these items, and nothing could. Full scope and residue: `check-group-claims.py`'s docstring.
     rest = sorted(open_nums - {n for _, _, _, ns in groups_ok for n in ns})
     groups_for_page = list(groups_ok)
     if rest:
