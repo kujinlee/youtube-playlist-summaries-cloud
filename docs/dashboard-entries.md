@@ -6967,7 +6967,7 @@ rule, without being named.
 
 **A correction to what the entry above said.** It claimed the other pages "clean themselves up the
 first time each is rebuilt". That is true of the bloat and false of one specific thing: **32 of the
-43** other pages carry three styling rules that were copied to them from the backlog page, and
+40** other pages carry three styling rules that were copied to them from the backlog page, and
 rebuilding is precisely what makes those permanent rather than removing them. Nothing looks wrong —
 the rules say sensible things — but those pages now carry styling nobody chose for them, and it
 outranks the styling their own generator sets, so changing it there will silently not reach them.

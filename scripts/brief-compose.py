@@ -585,9 +585,13 @@ def _tray_rules(css: str) -> list[str]:
 def _is_page_override(rule: str) -> bool:
     """Is this a PAGE's override of the tray, rather than a rule OF the tray? PURE.
 
-    A page override is a DESCENDANT selector rooted at a tray part — `#tray #qbox{…}` — and
-    `gen-backlog-page.py:1480` explains why it has to be: *"a plain `#qbox` rule here loses the
-    cascade; two ids win without touching the lifted code."* Its shape is the intent.
+    ⚠ THIS IS A CLAIM ABOUT THE OVERRIDES THIS PROJECT EMITS, NOT A DEFINITION OF "override"
+    (r4 M2, r5). They are DESCENDANT selectors qualifying one tray part by another —
+    `#tray #qbox{…}` — because `gen-backlog-page.py:1480` needs them to be: *"a plain `#qbox`
+    rule here loses the cascade; two ids win without touching the lifted code."* Shape is intent,
+    for the shapes we write. `body #qbox`, `#qbox.wide` and `#tray>#qbox` would also beat a bare
+    `#qbox` and are NOT recognised — all misses in the safe direction, since an unrecognised
+    override is lifted rather than destroyed. Do not read this as "what an override is".
 
     ⛔ SO A BARE TRAY SELECTOR IS NEVER SUBTRACTED, whatever the fragment declares. r3's Blocking
     was exactly that: a fragment duplicating `.askbtn{c:3}` — the heading ask path — and the
