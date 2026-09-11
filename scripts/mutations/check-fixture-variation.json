@@ -221,32 +221,6 @@
     "file": "scripts/check-fixture-variation.py"
   },
   {
-    "name": "the examined floor stops being enforced, so deleting the last case that drives a function makes this guard QUIETER instead of louder",
-    "edits": [
-      [
-        "        if floor is not None and n < floor:",
-        "        if False:"
-      ]
-    ],
-    "expect": [
-      "a file below its pinned examined floor fails"
-    ],
-    "file": "scripts/check-fixture-variation.py"
-  },
-  {
-    "name": "the floor comparison is inverted, so coverage GROWING is the thing reported and a collapse passes",
-    "edits": [
-      [
-        "        if floor is not None and n < floor:\n            all_findings.append(",
-        "        if floor is not None and n > floor:\n            all_findings.append("
-      ]
-    ],
-    "expect": [
-      "a file below its pinned examined floor fails"
-    ],
-    "file": "scripts/check-fixture-variation.py"
-  },
-  {
     "name": "the ratchet swallows every finding instead of only the known ones, so a NEW unvaried parameter joins 124 old ones in silence",
     "edits": [
       [
@@ -281,7 +255,7 @@
       ]
     ],
     "expect": [
-      "every discovered file has a pinned examined floor, and vice versa"
+      "every discovered file has a pinned key set, and vice versa"
     ],
     "file": "scripts/check-fixture-variation.py"
   },
@@ -302,8 +276,8 @@
     "name": "debt-paid is reported for entries that were never examined, collapsing the distinction between a parameter that started varying and one that disappeared",
     "edits": [
       [
-        "        for gone in sorted(known & keys - seen_known):",
-        "        for gone in sorted(known - seen_known):"
+        "known & keys - seen_known - exempted):\n            paid.append(",
+        "known - seen_known - exempted):\n            paid.append("
       ]
     ],
     "expect": [
@@ -347,6 +321,84 @@
     ],
     "expect": [
       "an exemption is judged only against the file it names"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "star-args parameters drop out of the formal set again, so a function whose only parameter is *items examines ZERO parameters and the gate passes",
+    "edits": [
+      [
+        "        vararg = fn.args.vararg.arg if fn.args.vararg else None",
+        "        vararg = None"
+      ]
+    ],
+    "expect": [
+      "a *args parameter is examined, not invisible"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "an unrecognised keyword is keyed by its own name instead of the **kwargs parameter, so a key names something that is not a formal parameter of anything",
+    "edits": [
+      [
+        "        kwarg = fn.args.kwarg.arg if fn.args.kwarg else None",
+        "        kwarg = None"
+      ]
+    ],
+    "expect": [
+      "an unrecognised keyword is attributed to the **kwargs parameter, not to itself"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "each extra positional is recorded as its own value, so ONE call site passing two arguments reads as a varied parameter \u2014 the rule's premise inverted",
+    "edits": [
+      [
+        "            seen.setdefault((fn.name, vararg), []).append(\"(\" + \", \".join(extra_pos) + \")\")",
+        "            seen.setdefault((fn.name, vararg), []).extend(extra_pos or [\"\"])"
+      ]
+    ],
+    "expect": [
+      "...and several values at ONE call site are one value, not several"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the per-file pin stops comparing key sets, so a key that left the field of view is not reported and coverage can be deleted silently",
+    "edits": [
+      [
+        "            for gone_key in sorted(pinned - keys):",
+        "            for gone_key in []:"
+      ]
+    ],
+    "expect": [
+      "a file missing a pinned examined key fails"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "an exempt key that is also ratcheted lands back in the paid bucket, earning a permanent false gold star for a parameter nobody ever examined a finding about",
+    "edits": [
+      [
+        "        for gone in sorted(known & keys - seen_known - exempted):",
+        "        for gone in sorted(known & keys - seen_known):"
+      ]
+    ],
+    "expect": [
+      "an exempt key that is also ratcheted earns no false gold star"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the deadness report stops naming the exemption, so the aggregation can be deleted and the case still passes on any unrelated finding from any of the 48 files",
+    "edits": [
+      [
+        "        out.append(f\"the exemption `{k}` is DEAD",
+        "        out.append(f\"an exemption is DEAD"
+      ]
+    ],
+    "expect": [
+      "main() surfaces a dead exemption as a failure"
     ],
     "file": "scripts/check-fixture-variation.py"
   }

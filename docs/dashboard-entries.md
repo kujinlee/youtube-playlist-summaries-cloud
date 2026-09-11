@@ -7266,6 +7266,36 @@ from version control, proved by content hash that the working copy was not what 
 review, and re-took every measurement. My error was inferring it had finished because it had no
 processes running — a check between measurements has none.
 
-`EXPECTED_MUTATIONS` 431 → 498; `check-plan-code` suite 101 → 128; the debt-tracker 6 → 44 tests and
-6 → 27 falsifying changes, covering 402 parameters across 48 files with 115 known gaps frozen by
-name.
+⭐ **Round 9 wrote the sentence this stretch of work deserves.** The previous round had diagnosed its
+own two faults correctly — *both were stand-ins for identity rather than identity itself* — and then
+shipped **two new stand-ins**: a per-file count, and a bare function name. A reviewer defeated each
+one the same way its predecessor had been defeated.
+
+⛔ **The name first.** Asking "is something still called `audit` with this parameter?" is not asking
+"is the function we were tracking still watched". Privatise the real function and add a three-line
+decoy under the vacated name, and the tracker prints gold stars while the headline number stays
+**byte-identical to the control**. ⛔ **Then the count.** Within a single file, a departure and an
+arrival cancel out exactly as they had at the whole-repo level — and **71% of the coverage** was held
+by nothing but that number.
+
+**So the fix was to stop pinning a stand-in and pin the thing itself:** the actual set of parameters
+examined, per file, by name. A parameter that stops being watched now names itself in the failure.
+Both defeats were re-run afterwards and both now fail loudly.
+
+⚠ **And the limit that remains is written into the code rather than claimed closed.** Identity here
+is a *name*. A replacement with the same name and the same shape is indistinguishable by anything
+this check has — and adding another name-shaped stand-in is precisely the move that failed twice.
+What is closed is every case where the shape differs.
+
+⛔ **Separately: functions that take open-ended arguments were invisible.** A function whose only
+parameter collects "everything else" examined **zero** parameters and passed — a real public
+parameter entering the tests with nothing looking at it. And an argument passed by a name the
+function doesn't declare was being filed under that name, which belongs to nothing.
+
+⚠ **The same fault was found for the third time, one level further in each round.** "This tracked
+parameter reported nothing" has three causes — it improved, it stopped being watched, or it was
+excused — and each round partitioned one more. The round before had called its partition complete.
+
+`EXPECTED_MUTATIONS` 431 → 502; `check-plan-code` suite 101 → 128; the debt-tracker 6 → 48 tests and
+6 → 31 falsifying changes, covering 402 parameters across 48 files, pinned by name, with 115 known
+gaps frozen.

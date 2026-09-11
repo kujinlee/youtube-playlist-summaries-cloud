@@ -2,7 +2,7 @@
 """Every parameter of a function under test must be VARIED by its cases, or be exempt in writing.
 
     python3 scripts/check-fixture-variation.py                 # the declared POPULATION
-    python3 scripts/check-fixture-variation.py --self-test     # 44 cases
+    python3 scripts/check-fixture-variation.py --self-test     # 48 cases
 
 ⛔ WHAT THIS EXISTS FOR, AND IT WAS BOUGHT WITH SIX ADVERSARIAL ROUNDS ON ONE FILE.
 Six rounds of review on `check-plan-code.py` produced six Blocking findings, and five of them are
@@ -93,7 +93,7 @@ def population_drift(found: "list[str]", pinned: "list[str]") -> "str | None":
     if new:
         parts.append(f"newly discovered and unpinned: {', '.join(new)}")
     return (f"CANNOT RUN — the population is not the pinned set ({'; '.join(parts)}). A count "
-            f"is preserved by substitution, so the SET is what is pinned. Update EXAMINED_FLOOR "
+            f"is preserved by substitution, so the SET is what is pinned. Update EXAMINED_KEYS "
             f"deliberately. NOT CHECKED.")
 
 
@@ -207,68 +207,214 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 }
 
 
-# ── THE FLOOR, BECAUSE THE RULE IS NON-MONOTONIC WITHOUT IT ──────────────────────────────
-# ⛔ r7 H1. A parameter with ONE call site is reported; a parameter with ZERO is not examined
-# at all — so DELETING the last case that drives a function UPGRADES the file from FAILED to
-# OK. Measured: removing both `stderr_progress(...)` call sites took the file from 29
-# parameters to 26 and rc 1 to rc 0, and renaming `progress_line` to `_progress_line` — one
-# token — made its whole signature invisible. Severity moving the wrong way with coverage is
-# the same perverse shape as a ratchet that can be satisfied by deleting the subject.
-# Reporting every never-called public function was considered and REJECTED: measured, that is
-# four functions in `check-plan-code.py` (`child_env`, `control_is_green`, `merged_output`,
-# `not_measured_line`), every one of them genuinely exercised through a caller. Four standing
-# false positives is how a guard gets switched off.
-# What is pinned instead is the COUNT, the way `EXPECTED_MUTATIONS` pins mutations: coverage
-# may grow, and a drop is a finding that names its own number.
-EXAMINED_FLOOR: dict[str, int] = {
-    'begin-plan.py': 18,
-    'brief-compose.py': 0,
-    'build-m4-schema.py': 4,
-    'check-anchors.py': 5,
-    'check-anon-exposure.py': 19,
-    'check-arch-findings.py': 3,
-    'check-backlog-closure.py': 4,
-    'check-banner-armed.py': 17,
-    'check-catalog-coverage.py': 3,
-    'check-ci-watched.py': 7,
-    'check-dashboard-entry.py': 19,
-    'check-docs.py': 0,
-    'check-explainer-delivery.py': 3,
-    'check-fixture-variation.py': 8,
-    'check-function-revokes.py': 3,
-    'check-gate-falsifiability.py': 5,
-    'check-guard-coverage.py': 5,
-    'check-handoff-path.py': 2,
-    'check-live-schema.py': 17,
-    'check-paid-caller-arrival.py': 3,
-    'check-plan-code.py': 29,
-    'check-plan-file-tags.py': 3,
-    'check-plan-progress.py': 9,
-    'check-plan-task-order.py': 5,
-    'check-producer-enumeration.py': 6,
-    'check-ratchet-contract.py': 11,
-    'check-review-recorded.py': 6,
-    'check-review-rounds.py': 7,
-    'check-roadmap-consistency.py': 1,
-    'check-selection-card.py': 2,
-    'check-selftest-counts.py': 6,
-    'check-sentinel-meanings.py': 3,
-    'check-storage-grant-pin.py': 2,
-    'check-test-counts.py': 8,
-    'check-theme-token-coverage.py': 6,
-    'check-vocabulary-collisions.py': 3,
-    'codex-review.py': 28,
-    'coverage_verdict.py': 3,
-    'explainer-serve.py': 17,
-    'gen-backlog-page.py': 39,
-    'gen-dashboard.py': 30,
-    'gen-goals-page.py': 6,
-    'gen-m4-manifest.py': 5,
-    'page_chrome.py': 10,
-    'page_markup.py': 4,
-    'prior-art.py': 2,
-    'subject_status.py': 5,
-    'verify-exclusion-reasons.py': 1,
+# ── WHAT WAS EXAMINED, PINNED BY NAME ───────────────────────────────────────────────────
+# ⛔ r7 H1 pinned a per-file COUNT, because the rule is non-monotonic: a parameter with ONE call
+# site is reported, one with ZERO is not examined at all, so deleting the last case that drives a
+# function made this guard quieter. r8 then widened that count from 2 files to 48.
+# ⟳ r9 B2 — AND A COUNT IS PRESERVED BY SUBSTITUTION, which r8's own commit message says in so
+# many words about the population-level count it had just replaced with a name set. Within one
+# file a departure and an arrival cancel out identically: measured, privatising a function and
+# adding a decoy left the headline `402 parameter(s) examined` byte-identical to the control.
+# 287 of the 402 keys — 71%, the healthy varied coverage this pin exists to protect — were held
+# by nothing but that number.
+# So the SET is pinned, as it already was at the population level. A key that stops being
+# examined is a finding that names itself.
+# ⚠ RESIDUAL, STATED RATHER THAN PAPERED OVER: identity here is `function.parameter`, a NAME. A
+# replacement function with the same name AND the same signature is indistinguishable from the
+# original by any means this guard has, and r9 B1 demonstrated exactly that construction. Name
+# identity cannot be repaired by adding another name-shaped proxy — that is the move r8 made
+# twice and r9 refuted twice. What is closed is every case where the signature differs, which
+# includes plain privatisation, renaming, and parameter changes.
+EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    'begin-plan.py': (
+        'cmd_begin.slug_raw', 'cmd_begin.step_args', 'cmd_pause.why',
+        'first_unticked.steps', 'normalise_slug.raw', 'parse_steps.plan_text',
+        'pp_count_drift.actual', 'pp_count_drift.doc', 'render_banner.index',
+        'render_banner.steps', 'render_plan.slug', 'render_plan.steps',
+        'render_plan.today', 'render_sentinel.now', 'render_sentinel.plan_rel',
+        'split_step.arg', 'tick.index', 'tick.plan_text',),
+    'brief-compose.py': (),
+    'build-m4-schema.py': (
+        'apply_edits.s03', 'apply_edits.s04', 'assert_end_state.sql',
+        'strip_comments.sql',),
+    'check-anchors.py': (
+        'audit.cutoff', 'audit.docs', 'audit.floor', 'audit.roots_text', 'audit.subdirs',),
+    'check-anon-exposure.py': (
+        'derive_no_session_access.relations', 'derive_no_session_access.spec_text',
+        'evaluate.allow', 'evaluate.baseline', 'evaluate.funcs', 'evaluate.money',
+        'evaluate_m4.expect_roles', 'evaluate_m4.m4rel', 'evaluate_m4.no_access',
+        'evaluate_m4_functions.expect_roles', 'evaluate_m4_functions.m4fn',
+        'evaluate_m4_reads.expect_roles', 'evaluate_m4_reads.m4rel',
+        'evaluate_m4_reads.no_access', 'm4_functions.manifest_text',
+        'm4_relations.manifest_text', 'parse_rows.stdout', 'pg_bool.s',
+        'session_readable.spec_text',),
+    'check-arch-findings.py': (
+        'line_counts.line', 'line_counts.rx', 'line_counts.skip_comments',),
+    'check-backlog-closure.py': (
+        'closing_ids.subjects', 'findings.closes', 'findings.markers',
+        'row_markers.text',),
+    'check-banner-armed.py': (
+        'assistant_texts_since_last_user.lines', 'decide.armed', 'decide.edited',
+        'decide.steps', 'decide.texts', 'edited_paths_of.records',
+        'highest_banner.texts', 'is_judgable.window', 'judged_window.wins',
+        'log_line.detail', 'log_line.reason', 'log_line.session', 'log_line.when',
+        'records_since_last_user.lines', 'run_decide.payload', 'texts_of.records',
+        'windows.records',),
+    'check-catalog-coverage.py': (
+        'classify.column', 'classify.digested', 'digested_columns.sql',),
+    'check-ci-watched.py': (
+        'decide.head_sha', 'decide.rows', 'decide.watching_sha', 'parse_sentinel.text',
+        'render_sentinel.sha', 'render_sentinel.when', 'unresolved_checks.rows',),
+    'check-dashboard-entry.py': (
+        'added_entry_problems.patch', 'added_reference_errors.base_text',
+        'added_reference_errors.head_text', 'decision_errors.category',
+        'decision_errors.plain', 'decisions.plain', 'exemption_reason.marker',
+        'exemption_reason.pr_body', 'fence_closes.open_run', 'fence_closes.rest',
+        'fence_closes.run', 'fenced_lines.text', 'header_error.line',
+        'parse_entries.text', 'verdict.added_entry', 'verdict.changed',
+        'verdict.entry_problems', 'verdict.pr_body', 'verdict.ref_problems',),
+    'check-docs.py': (),
+    'check-explainer-delivery.py': (
+        'audit.page_skills', 'audit.shared_rel', 'audit.skills_dir',),
+    'check-fixture-variation.py': (
+        'analyse.exempt', 'analyse.path', 'analyse.source', 'dead_exemptions.sources',
+        'main.argv', 'population.root', 'population_drift.found',
+        'population_drift.pinned',),
+    'check-function-revokes.py': (
+        'audit.allow', 'audit.files', 'migrations.d',),
+    'check-gate-falsifiability.py': (
+        'find_gate_defects.current_release', 'find_gate_defects.known_scripts',
+        'find_gate_defects.path', 'find_gate_defects.sections', 'find_gate_defects.text',),
+    'check-guard-coverage.py': (
+        'evaluate.covered_by', 'evaluate.exempt', 'evaluate.guards', 'evaluate.labels',
+        'evaluate.live',),
+    'check-handoff-path.py': (
+        'check_file.path', 'check_text.text',),
+    'check-live-schema.py': (
+        'ambiguous.live', 'ambiguous.manifest', 'forbidden.live', 'load_accepted.path',
+        'owned_relations.manifest', 'residue.live', 'residue.manifest', 'residue.mode',
+        'split_residue.live', 'split_residue.manifest', 'unexpected.accepted',
+        'unexpected.live', 'unexpected.manifest', 'verdict.accepted', 'verdict.live',
+        'verdict.manifest', 'verdict.mode',),
+    'check-paid-caller-arrival.py': (
+        'report.migrations_dir', 'report.root', 'report.use_live',),
+    'check-plan-code.py': (
+        'count_drift.actual', 'count_drift.doc', 'diagnostic_tail.stderr',
+        'diagnostic_tail.stdout', 'diagnostic_tail.window', 'home_escapes.src',
+        'load_manifests.root', 'main.argv', 'mutate_delivered.progress',
+        'mutate_delivered.root', 'parse_fail_names.out', 'progress_line.done',
+        'progress_line.label', 'progress_line.total', 'run_mutations.d',
+        'run_mutations.known', 'run_mutations.muts', 'run_mutations.progress',
+        'run_suite.d', 'run_suite.name', 'run_suite_parts.d', 'run_suite_parts.name',
+        'stage_tree.dest', 'stage_tree.root', 'stderr_progress.done',
+        'stderr_progress.label', 'stderr_progress.total', 'tally_line.ok',
+        'tally_line.verdict',),
+    'check-plan-file-tags.py': (
+        'audit.root', 'coverage_shortfall.docs_root', 'coverage_shortfall.seen',),
+    'check-plan-progress.py': (
+        'count_steps.plan_text', 'decide.plan_text', 'decide.prev_unticked',
+        'decide.sentinel_text', 'decide.stop_hook_active',
+        'next_pending_task.plan_text', 'parse_sentinel.text', 'strip_field.key',
+        'strip_field.text',),
+    'check-plan-task-order.py': (
+        'forward_refs.consumes', 'forward_refs.preexisting', 'forward_refs.produces',
+        'identifiers_in.line', 'parse_plan.text',),
+    'check-producer-enumeration.py': (
+        'bare_alias.expr', 'branches_in.expr', 'defining_expression.ident',
+        'defining_expression.line_no', 'defining_expression.path', 'find_table.lines',),
+    'check-ratchet-contract.py': (
+        'check_caller.caller_blob', 'check_caller.path', 'check_caller.text',
+        'check_contract.path', 'check_contract.text', 'discover_guards.script_paths',
+        'discover_ratchets.ci_yaml', 'discover_ratchets.script_texts',
+        'evaluate.caller_blob_for', 'evaluate.manifest_stems', 'evaluate.texts',),
+    'check-review-recorded.py': (
+        'guarded_changes.paths', 'review_added.paths', 'verdict.added',
+        'verdict.changed', 'verdict.pr_body', 'verdict.reason_of',),
+    'check-review-rounds.py': (
+        'audit.known', 'audit.reviews', 'has_gap_line.text', 'parse.name',
+        'read_verdicts.directory', 'verdict_problems.records',
+        'verdict_problems.review_names',),
+    'check-roadmap-consistency.py': (
+        'find_inconsistencies.sources',),
+    'check-selection-card.py': (
+        'card_problems.questions', 'payload_of.raw',),
+    'check-selftest-counts.py': (
+        'borrow_errors.mod', 'declares.count_drift', 'declares.src',
+        'population_errors.found', 'population_errors.pinned', 'printed_total.out',),
+    'check-sentinel-meanings.py': (
+        'evaluate.conjunction_ok', 'evaluate.live', 'evaluate.meanings',),
+    'check-storage-grant-pin.py': (
+        'digest.sql', 'extract_policy.text',),
+    'check-test-counts.py': (
+        'actual_counts.results', 'assert_describes_this_tree.config',
+        'assert_describes_this_tree.results', 'compare.actual', 'compare.documented',
+        'documented_counts.roadmap_text', 'load_results.path', 'test_sources.config',),
+    'check-theme-token-coverage.py': (
+        'audit.known_gap', 'audit.light', 'audit.shim', 'palette_tokens.name',
+        'palette_tokens.text', 'shim_tokens.text',),
+    'check-vocabulary-collisions.py': (
+        'evaluate.allowed', 'evaluate.cols', 'evaluate.stems',),
+    'codex-review.py': (
+        'classify.exit_code', 'classify.message', 'classify.min_chars',
+        'classify.out_path', 'classify.stdout', 'classify.timed_out',
+        'dir_snapshot.directory', 'intrusions.after', 'intrusions.before',
+        'intrusions.ours', 'prompt_demands_a_file.text', 'quarantine.created',
+        'quarantine.dest', 'unexpected_writes.after', 'unexpected_writes.before',
+        'unexpected_writes.written_by_us', 'verdict_path.out_path',
+        'verdict_path.override', 'verdict_record.attempts', 'verdict_record.exit_code',
+        'verdict_record.gate_ran', 'verdict_record.intrusions_seen',
+        'verdict_record.model', 'verdict_record.out_path', 'verdict_record.reason',
+        'watched_dirs.out_path', 'write_verdict.path', 'write_verdict.record',),
+    'coverage_verdict.py': (
+        'not_measured_reason.cause', 'not_measured_reason.declared',
+        'not_measured_reason.entries',),
+    'explainer-serve.py': (
+        'explainers.root', 'format_question_entry.now', 'format_question_entry.payload',
+        'index_html.root', 'is_fragment.p', 'is_standing.p', 'latest_target.root',
+        'md_render.text', 'pid_alive.pid', 'question_text.payload', 'resolve_page.root',
+        'resolve_page.url_path', 'revision.p', 'safe_path.root', 'safe_path.url_path',
+        'stale_verdict.built_ns', 'stale_verdict.newest_source_ns',),
+    'gen-backlog-page.py': (
+        'build.edited', 'build.generated_at', 'build.rows', 'build.sha', 'build.stamp',
+        'build.unread', 'bundle_options.rows', 'bundle_tags.raw',
+        'changes_from_versions.versions', 'contradiction_errors.rows', 'dep_rank.num',
+        'dependency_mermaid.by_num', 'dependency_svg.by_num', 'depends_errors.depends',
+        'depends_errors.open_nums', 'depends_errors.roots', 'drift_notes_for.rows',
+        'drift_notes_for.unread', 'is_delimiter.line', 'link_contrast_errors.minimum',
+        'link_contrast_errors.page', 'link_rule_drift.page', 'md.text', 'parse.lines',
+        'parse.unread', 'plain.text', 'report_run.rows', 'report_run.unread',
+        'report_unread.unread', 'row_ish.line', 'rows_of.text',
+        'sanitise_groups.groups', 'sanitise_groups.open_nums', 'undescribed.groups',
+        'undescribed.open_nums', 'unread_note.unread', 'waiting_on.size',
+        'word_diff.after', 'word_diff.before',),
+    'gen-dashboard.py': (
+        'badge_of.cleared', 'badge_of.entry', 'bucket_days.dates',
+        'bucket_days.entries', 'bucket_days.today', 'bucket_days.window', 'build.days',
+        'build.entries', 'build.exempt_error', 'build.exemptions', 'build.generated_at',
+        'build.git_error', 'build.pr_error', 'build.prs', 'build.store',
+        'build.store_error', 'build.window', 'cleared_ids.entries',
+        'commit_dates.window', 'contrast_failures.html', 'contrast_failures.minimum',
+        'contrast_ratio.bg', 'contrast_ratio.fg', 'main.argv', 'pr_state.budget',
+        'pr_state.cache', 'pr_state.n', 'scheme_palettes.css', 'unresolved.entries',
+        'unresolved_heads_up.entries',),
+    'gen-goals-page.py': (
+        'parse_adr.text', 'parse_header.head_lines', 'parse_header.text',
+        'parse_milestones.text', 'parse_registry.text', 'parse_roots.text',),
+    'gen-m4-manifest.py': (
+        'derive.source', 'has_m4.catalog', 'has_m4.manifest', 'psql.db', 'psql.sql',),
+    'page_chrome.py': (
+        'assert_wired.page', 'assert_wired.where', 'chrome_bar.refresh',
+        'chrome_bar.slug', 'chrome_bar.when', 'has_control.page',
+        'missing_palettes.page', 'provenance.now', 'provenance.root', 'stamp.when',),
+    'page_markup.py': (
+        'escape.s', 'safe_href.url', 'scan.s', 'trim_url_tail.url',),
+    'prior-art.py': (
+        'search.show_all', 'search.terms',),
+    'subject_status.py': (
+        'last_commit.path', 'runtime_references.tables', 'subject_banner.script',
+        'subject_banner.subject', 'subject_tables.subject',),
+    'verify-exclusion-reasons.py': (
+        'md5_payloads.sql',),
 }
 
 # ── EXEMPTIONS, EACH WITH ITS REASON ─────────────────────────────────────────────────────
@@ -355,15 +501,37 @@ def analyse(source: str, path: str,
         # r7 called kwonly "the other half of the signature grammar"; there is a third part.
         names = [a.arg for a in fn.args.posonlyargs] + [a.arg for a in fn.args.args]
         kwonly = [a.arg for a in fn.args.kwonlyargs]
-        given = set()
+        # ⛔ `*args` AND `**kwargs` ARE PARAMETERS — r9, Codex B1. Omitting them did not merely
+        # lose coverage, it made a whole function INVISIBLE: `def target(*items)` examined ZERO
+        # parameters and the gate passed. And `target(**options)` called as `target(mode=1)`
+        # recorded `target.mode` — a key naming something that is not a formal parameter at all.
+        # Extra positionals belong to the vararg; unrecognised keywords belong to the kwarg.
+        vararg = fn.args.vararg.arg if fn.args.vararg else None
+        kwarg = fn.args.kwarg.arg if fn.args.kwarg else None
+        given, extra_pos, extra_kw = set(), [], []
         for i, arg in enumerate(node.args):
             if i < len(names):
                 seen.setdefault((fn.name, names[i]), []).append(ast.unparse(arg))
                 given.add(names[i])
+            elif vararg:
+                extra_pos.append(ast.unparse(arg))
         for kw in node.keywords:
-            if kw.arg:
+            if kw.arg is None:                      # `**payload` at the call site
+                if kwarg:
+                    extra_kw.append("**" + ast.unparse(kw.value))
+            elif kw.arg in names or kw.arg in kwonly:
                 seen.setdefault((fn.name, kw.arg), []).append(ast.unparse(kw.value))
                 given.add(kw.arg)
+            elif kwarg:
+                extra_kw.append(f"{kw.arg}={ast.unparse(kw.value)}")
+        # ⚠ ONE VALUE PER CALL SITE, not one per element. A single `target(1, 2)` must not read as
+        # two differing values — one call site cannot vary anything, which is this rule's premise.
+        if vararg:
+            seen.setdefault((fn.name, vararg), []).append("(" + ", ".join(extra_pos) + ")")
+            given.add(vararg)
+        if kwarg:
+            seen.setdefault((fn.name, kwarg), []).append("{" + ", ".join(extra_kw) + "}")
+            given.add(kwarg)
         # ⛔ OMITTING A DEFAULTED ARGUMENT IS A VALUE, and the first version of this did not
         # count it. `mutate_delivered(root)` and `mutate_delivered(root, progress=…)` are the
         # two sides of the reporter seam that cost this branch its first Blocking — read as
@@ -452,6 +620,12 @@ def main(argv: list[str] | None = None) -> int:
         n = len(keys)
         # ⛔ THE RATCHET, APPLIED BY NAME. A known entry is filtered out; anything else fails.
         known = set(KNOWN_UNVARIED.get(t.name, ()))
+        # ⛔ THREE CAUSES, NOT TWO — r9 M1, and this is r8 B1's defect a third time. A ratcheted
+        # key produces no finding because (a) it started varying — paid; (b) it is no longer
+        # examined — lost; or (c) IT IS EXEMPT, suppressed before the finding is ever emitted.
+        # r8 partitioned (a) and (b) and left (c) landing in the paid bucket, where an
+        # exempt-and-ratcheted key would earn a permanent false gold star nobody can act on.
+        exempted = {k.split(":", 1)[1] for k in EXEMPT if k.startswith(f"{t.name}:")}
         fresh, seen_known = [], set()
         for x in f:
             if x.startswith("CANNOT RUN"):
@@ -466,7 +640,7 @@ def main(argv: list[str] | None = None) -> int:
         # This reported both as paid, so a one-token `audit` -> `_audit` refactor across 17 call
         # sites earned THREE GOLD STARS while three parameters went unwatched. The key set from
         # `analyse` is what tells them apart.
-        for gone in sorted(known & keys - seen_known):
+        for gone in sorted(known & keys - seen_known - exempted):
             paid.append(f"{t.name}: `{gone}` now varies — delete it from KNOWN_UNVARIED")
         for lost in sorted(known - keys):
             all_findings.append(
@@ -475,13 +649,13 @@ def main(argv: list[str] | None = None) -> int:
                 f"not debt being paid. Restore it, or delete the entry deliberately and say why.")
         examined += n
         sources.append((text, t.name))
-        floor = EXAMINED_FLOOR.get(t.name)
-        if floor is not None and n < floor:
-            all_findings.append(
-                f"{t.name}: {n} parameter(s) examined, below the pinned floor of {floor}. A "
-                f"parameter with no call site at all is not examined, so DELETING the last case "
-                f"that drives a function makes this guard quieter. Restore the coverage, or "
-                f"lower `EXAMINED_FLOOR` deliberately and say why in the commit.")
+        pinned = set(EXAMINED_KEYS.get(t.name, ()))
+        if t.name in EXAMINED_KEYS:
+            for gone_key in sorted(pinned - keys):
+                all_findings.append(
+                    f"{t.name}: `{gone_key}` was examined and is NOT any more — its function was "
+                    f"renamed, made private, or lost its last call site. Restore it, or update "
+                    f"EXAMINED_KEYS deliberately and say why in the commit.")
     # ⚠ AFTER the loop, and ONLY over a population that was actually read. Deadness is judged
     # across the whole set (see the docstring), so a member that could not be parsed makes every
     # verdict about it meaningless — reporting exemptions dead on the strength of a file nobody
@@ -503,7 +677,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {x}", file=sys.stderr)
         return 2
     short = None if a.paths else population_drift(sorted(t.name for t in targets),
-                                                   sorted(EXAMINED_FLOOR))
+                                                   sorted(EXAMINED_KEYS))
     if short:
         print(f"  {short}", file=sys.stderr)
         return 2
@@ -693,9 +867,15 @@ def _self_test():
             # deadness and the case passed with the deadness aggregation deleted.
             EXEMPT = dict(_sv)
             EXEMPT["check-plan-code.py:nosuchfunction.nosuchparam"] = "cannot fire anywhere"
-            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            # ⚠ ASSERT THE OUTPUT, NOT ONLY rc — r9 H1. `main` returns 1 whenever ANY file
+            # reports ANYTHING, so `rc == 1` distinguished the deadness aggregation from its
+            # absence only while every other script in the repo happened to be clean. r8 saw
+            # this hazard, fixed its own fixture, and left the class.
+            _dead_out = io.StringIO()
+            with contextlib.redirect_stdout(_dead_out), contextlib.redirect_stderr(io.StringIO()):
                 _rc_f = main([])
-            case("main() surfaces a dead exemption as a failure", _rc_f, 1)
+            case("main() surfaces a dead exemption as a failure",
+                 (_rc_f, "nosuchfunction.nosuchparam` is DEAD" in _dead_out.getvalue()), (1, True))
             # ...and the documented single-file override does NOT, which is r8 H1 itself.
             with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                 _rc_one = main([str(_f)])
@@ -745,18 +925,20 @@ def _self_test():
         # thing that can fail here, or the case is not about the floor.
         EXEMPT = {}
         with tempfile.TemporaryDirectory() as _td:
-            _fl = pathlib.Path(_td) / "check-plan-code.py"   # name matches a pinned floor entry
-            _fl.write_text(DEFAULTED.replace("g(1)", "g(1, b=9)"))  # 2 parameters, floor is 29
+            # ⟳ r9 B2 — the pin is a SET now, so the falsifier is a key that stopped being
+            # examined, not a number that fell. A count is preserved by substitution.
+            _fl = pathlib.Path(_td) / "check-plan-code.py"   # name matches a pinned entry
+            _fl.write_text(DEFAULTED.replace("g(1)", "g(1, b=9)"))
             with contextlib.redirect_stdout(io.StringIO()):
                 _rc_fl = main([str(_fl)])
-            case("a file below its pinned examined floor fails", _rc_fl, 1)
+            case("a file missing a pinned examined key fails", _rc_fl, 1)
             # ...and the same subject with no floor pinned for it passes, so the case above is
             # about the FLOOR and not about the file being small.
             _nf = pathlib.Path(_td) / "unpinned.py"
             _nf.write_text(DEFAULTED.replace("g(1)", "g(1, b=9)"))
             with contextlib.redirect_stdout(io.StringIO()):
                 _rc_nf = main([str(_nf)])
-            case("...while the same file with no pinned floor passes", _rc_nf, 0)
+            case("...while the same file with nothing pinned for it passes", _rc_nf, 0)
             # ⛔ AND A NEW UNVARIED PARAMETER STILL FAILS — the ratchet must filter only what is
             # named in KNOWN_UNVARIED. Its mutation (swallow everything) survived until this
             # case existed, because every other case reaches `analyse` and never the filter.
@@ -810,14 +992,14 @@ def _self_test():
 '''
     # The falsifier drives `main` over a real file whose ratcheted parameter has been
     # privatised: `known - keys` must be a FINDING, and `known & keys - fired` the gold star.
-    global KNOWN_UNVARIED, EXAMINED_FLOOR
-    _svK, _svF = dict(KNOWN_UNVARIED), dict(EXAMINED_FLOOR)
+    global KNOWN_UNVARIED, EXAMINED_KEYS
+    _svK, _svF = dict(KNOWN_UNVARIED), dict(EXAMINED_KEYS)
     try:
         with tempfile.TemporaryDirectory() as _lt:
             _lf = pathlib.Path(_lt) / "lost.py"
             _lf.write_text(_LOST.replace("def audit(", "def _audit(").replace("audit(1)", "_audit(1)"))
             KNOWN_UNVARIED = {"lost.py": ("audit.cutoff",)}
-            EXAMINED_FLOOR = {"lost.py": 0}
+            EXAMINED_KEYS = {"lost.py": ()}
             _eo = io.StringIO()
             with contextlib.redirect_stdout(_eo):
                 _rc_lost = main([str(_lf)])
@@ -830,14 +1012,14 @@ def _self_test():
             _lf2 = pathlib.Path(_lt) / "paid.py"
             _lf2.write_text(_LOST.replace("audit(1), 1)\n    case(\"y\", audit(1)", "audit(1), 1)\n    case(\"y\", audit(2)"))
             KNOWN_UNVARIED = {"paid.py": ("audit.cutoff",)}
-            EXAMINED_FLOOR = {"paid.py": 0}
+            EXAMINED_KEYS = {"paid.py": ("audit.cutoff",)}
             _po2 = io.StringIO()
             with contextlib.redirect_stdout(_po2):
                 _rc_paid = main([str(_lf2)])
             case("...while one that started varying is debt paid, not a finding",
                  (_rc_paid, "now varies" in _po2.getvalue()), (0, True))
     finally:
-        KNOWN_UNVARIED, EXAMINED_FLOOR = _svK, _svF
+        KNOWN_UNVARIED, EXAMINED_KEYS = _svK, _svF
 
     # ⟳ r8 L1 — a `/` shifts every positional mapping, so arguments land on the WRONG parameter.
     _PO = '''
@@ -882,8 +1064,60 @@ def _self_test():
     finally:
         EXEMPT = _sv3
 
-    case("every discovered file has a pinned examined floor, and vice versa",
-         sorted(EXAMINED_FLOOR) == sorted(f.name for f in _pop), True)
+    # ⛔ `*args` AND `**kwargs` ARE PARAMETERS — r9, Codex B1. Omitting them made a whole
+    # function INVISIBLE: `def target(*items)` examined zero parameters and the gate passed.
+    _STAR = '''
+def target(*items, **options):
+    return items
+
+def _self_test():
+    case("a", target(1, mode="x"), None)
+    case("b", target(1, mode="x"), None)
+'''
+    _fS2, _kS2 = analyse(_STAR, "t.py", exempt={})
+    case("a *args parameter is examined, not invisible",
+         (sorted(_kS2), sorted(x.split("`")[1] for x in _fS2)),
+         (["target.items", "target.options"], ["target(items=…)", "target(options=…)"]))
+    # ...and ONE call site cannot vary: `target(1, 2)` is one value, not two.
+    _ONE_CALL = _STAR.replace('target(1, mode="x"), None)\n    case("b", target(1, mode="x")',
+                              'target(1, 2, mode="x"), None)\n    case("b", target(1, 2, mode="x")')
+    case("...and several values at ONE call site are one value, not several",
+         sorted(x.split("`")[1] for x in analyse(_ONE_CALL, "t.py", exempt={})[0]),
+         ["target(items=…)", "target(options=…)"])
+    # ⛔ A KEY MUST NAME A FORMAL PARAMETER — r9 L1 / Codex's mis-key. `target(mode=1)` against
+    # `def target(**options)` recorded `target.mode`, which is not a parameter of anything.
+    _KWA = '''
+def target(**options):
+    return options
+
+def _self_test():
+    case("a", target(mode=1), None)
+    case("b", target(mode=2), None)
+'''
+    case("an unrecognised keyword is attributed to the **kwargs parameter, not to itself",
+         sorted(analyse(_KWA, "t.py", exempt={})[1]), ["target.options"])
+
+    # ⛔ AN EXEMPT-AND-RATCHETED KEY IS NOT DEBT PAID — r9 M1, the third cause of "no finding".
+    _svM = dict(EXEMPT); _svK2 = dict(KNOWN_UNVARIED); _svE2 = dict(EXAMINED_KEYS)
+    try:
+        with tempfile.TemporaryDirectory() as _mt:
+            _mf = pathlib.Path(_mt) / "exempt-and-ratcheted.py"
+            _mf.write_text(SRC)                       # progress_line.done/total are unvaried
+            EXEMPT = {"exempt-and-ratcheted.py:progress_line.done": "excused here"}
+            KNOWN_UNVARIED = {"exempt-and-ratcheted.py": ("progress_line.done",)}
+            EXAMINED_KEYS = {"exempt-and-ratcheted.py": ("progress_line.done",
+                                                         "progress_line.total",
+                                                         "progress_line.label")}
+            _mo = io.StringIO()
+            with contextlib.redirect_stdout(_mo), contextlib.redirect_stderr(io.StringIO()):
+                main([str(_mf)])
+            case("an exempt key that is also ratcheted earns no false gold star",
+                 "now varies" in _mo.getvalue(), False)
+    finally:
+        EXEMPT, KNOWN_UNVARIED, EXAMINED_KEYS = _svM, _svK2, _svE2
+
+    case("every discovered file has a pinned key set, and vice versa",
+         sorted(EXAMINED_KEYS) == sorted(f.name for f in _pop), True)
     case("...and every ratcheted file is one discovery returns",
          sorted(set(KNOWN_UNVARIED) - {f.name for f in _pop}), [])
     # ⚠ A SECOND ROOT, because this guard's own rule asked for one: `population(root=…)` had a
@@ -914,8 +1148,8 @@ def _self_test():
          main(["/nonexistent/nope.py"]), 2)
 
     print(f"\n{ok}/{ok + fail} passed")
-    if ok + fail != 44:
-        print(f"  [DRIFT] the docstring declares 44 cases; the suite ran {ok + fail}")
+    if ok + fail != 48:
+        print(f"  [DRIFT] the docstring declares 48 cases; the suite ran {ok + fail}")
         return 1
     return 1 if fail else 0
 

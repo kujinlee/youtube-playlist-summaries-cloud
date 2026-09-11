@@ -693,7 +693,11 @@ EXPECTED_MUTATIONS = {
     # orphaning the anchor that guarded it. An anchor binds by TEXT, so improving code breaks it
     # and the suite stays green; `--mutate .` refuses an unresolved anchor, which is the only
     # reason that was caught here rather than merged.
-    "scripts/check-fixture-variation.py": 27,
+    # ⟳ r9: 27 → 29. FOUR added for star-args, kwargs keying and the key-set pin;
+    # TWO retired with their subject — the per-file COUNT comparison they mutated was
+    # replaced by a key-set comparison, so their anchors named code that is gone. That
+    # is the one sanctioned kind of fall: recorded here with its count and its reason.
+    "scripts/check-fixture-variation.py": 31,
     "scripts/check-plan-code.py": 76,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
@@ -2872,7 +2876,7 @@ def _self_test() -> int:
     # so an `expect` naming it in full could never match and its entry would be unattributable.
     case("⚠ a case name containing ': got ' is TRUNCATED by the consumer",
          parse_fail_names("  [FAIL] the width: got the wrong value"), ["the width"])
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 498)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 502)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
