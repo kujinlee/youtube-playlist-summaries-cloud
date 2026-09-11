@@ -2,7 +2,7 @@
 """A plan that contains code must ASSEMBLE into that code, and its evidence must be RUN.
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
-    python3 scripts/check-plan-code.py --self-test          # 126 cases
+    python3 scripts/check-plan-code.py --self-test          # 128 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -430,6 +430,9 @@ def diagnostic_tail(stdout: str, stderr: str, window: int = DIAGNOSTIC_WINDOW) -
     # Asked separately, with the same experiment, they disagree:
     #     `if err_keep else ""`  removed -> 458 killed, 457 attributed   LOAD-BEARING
     #     `if out_keep else ""`  removed -> 466 killed, 466 attributed   DEAD
+    # ⚠ THOSE TWO WERE TAKEN AT DIFFERENT MANIFEST SIZES (458 and 466) and read as one
+    # experiment. Re-run at today's 466: the live arm gives 466 killed / 465 attributed —
+    # the SHORTFALL is the verdict, not the absolute number, and it is unchanged.
     # `err_keep` reaches 0 with `err` non-empty under the floor mutation; `out_keep` reaching 0
     # still requires `len(out) == 0`, which no mutation in the manifest produces.
     # ⭐ BOTH STAY — the dead one for symmetry and against the `s[-0:]` footgun, which costs
@@ -690,7 +693,8 @@ EXPECTED_MUTATIONS = {
     # orphaning the anchor that guarded it. An anchor binds by TEXT, so improving code breaks it
     # and the suite stays green; `--mutate .` refuses an unresolved anchor, which is the only
     # reason that was caught here rather than merged.
-    "scripts/check-plan-code.py": 71,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-fixture-variation.py": 6,
+    "scripts/check-plan-code.py": 75,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -978,9 +982,15 @@ def mutate_delivered(root: pathlib.Path,
         report = []
         # THE CONTROL, FIRST. Every 'caught' below claims the suite went red BECAUSE of
         # the mutation; that claim is empty unless the suite is green without it.
+        # SILENT UNLESS A CALLER ASKS — see `run_mutations`. The reporter belongs to the
+        # top-level entry point; this function is driven fourteen times by its own suite.
+        # ⟳ r6 L2 — THIS COMMENT SITS OUTSIDE THE LOOP ON PURPOSE. The two control loops have
+        # byte-identical `for` headers, so a manifest anchor could only tell them apart by the
+        # text between the header and the `progress(...)` call — which was this comment. Anchors
+        # bind by TEXT, so rewording a comment orphaned a mutation; that happened five times in
+        # one session. With the comment hoisted, both blocks are pure code and are distinguished
+        # by `control` vs `re-control`, which is what they actually differ by.
         for position, name in enumerate(targets, 1):
-            # SILENT UNLESS A CALLER ASKS — see `run_mutations`. The reporter belongs to the
-            # top-level entry point; this function is driven fourteen times by its own suite.
             if progress is not None:
                 progress(position, len(targets), f"control {name}")
             rc, so, se = run_suite_parts(d, name)
@@ -1294,9 +1304,10 @@ def progress_line(done: int, total: int, label: str) -> str:
     the same day with two reviews running beside it. A single number in prose would be wrong for
     most readers most of the time; the first draft of this docstring said "~25 minutes" from
     exactly that unmeasured recollection. What is stable, and what this function restores, is the
-    RATE: one line per mutation plus one per control and re-control — 534 at this writing, and
-    it moves whenever the manifest does, which is why the arithmetic is given instead of the
-    total. A gap much longer than `SUITE_TIMEOUT` is the signal.
+    RATE: one line per mutation plus one per control and re-control, so the total is derived
+    from `EXPECTED_MUTATIONS` and moves whenever the manifest does. ⚠ NO TOTAL IS QUOTED —
+    the first version of this sentence gave one and it was the PREVIOUS manifest's number
+    on the day it was written. A gap much longer than `SUITE_TIMEOUT` is the signal.
 
     ⟳ r1 M2 — BOUNDED TO ONE ROW, and the POSITION is never what gets cut. One rule, no special
     case: the head is always a prefix of the result, so an impossible budget costs the label and
@@ -1922,7 +1933,7 @@ def _self_test() -> int:
     # gen-dashboard.py loads check-dashboard-entry.py as a sibling at import time. MEASURED
     # 2026-08-29 — three separate hand-run harnesses reported a red or meaningless control
     # on first use for exactly this reason.
-    def _mini(root, val=1):
+    def _mini(root, val=1, second=False):
         # ⟳ 2026-09-07. Every HARNESS_TREE entry must EXIST or `stage_tree` refuses this root —
         # correctly: an incomplete tree is CANNOT RUN, not a quieter run. Scaffolded by iterating
         # the tuple rather than by listing the entries again, so adding one there cannot leave
@@ -1946,6 +1957,29 @@ def _self_test() -> int:
         (root / "scripts" / "mutations" / "thing.json").write_text(json.dumps(
             [{"name": "value is two", "file": "scripts/thing.py",
               "edits": [["VALUE != 1", "VALUE != 2"]], "expect": "value is one"}]))
+        # ⛔ A SECOND TARGET, ON REQUEST — r6 B2. With ONE target, `position`, `len(targets)` and
+        # the literal 1 are MUTUALLY INDISTINGUISHABLE in every control-loop observation, so
+        # `progress(position, len(targets), …)` → `progress(position, position, …)` survived at
+        # 126/126 on BOTH control loops. The identical mutation DIES on `run_mutations`' loop —
+        # and the only difference is that its fixture has TWO mutations (`for i in (1, 2)`), so
+        # position and total can disagree. The rule was already in this file; it was applied to
+        # one loop of three.
+        # ⚠ `progress_line`'s docstring states the purpose as "which subject, how far, OUT OF HOW
+        # MANY". A fixture of size one cannot observe the third of those.
+        if second:
+            (root / "scripts" / "other.py").write_text(
+                'import sys\n'
+                'def _self_test():\n'
+                '    if 2 != 2:\n'
+                '        print("  [FAIL] two is two")\n'
+                '        return 1\n'
+                '    print("1/1 passed")\n'
+                '    return 0\n'
+                'if __name__ == "__main__":\n'
+                '    sys.exit(_self_test())\n')
+            (root / "scripts" / "mutations" / "other.json").write_text(json.dumps(
+                [{"name": "two is three", "file": "scripts/other.py",
+                  "edits": [["if 2 != 2:", "if 2 != 3:"]], "expect": "two is two"}]))
 
     _saved = dict(EXPECTED_MUTATIONS)
     try:
@@ -1977,16 +2011,33 @@ def _self_test() -> int:
         # POINT OF THESE TWO CASES: the first pins every site that must report, the second
         # pins that none of them reports by default.
         with tempfile.TemporaryDirectory() as _td:
-            _r = pathlib.Path(_td); _mini(_r)
+            _r = pathlib.Path(_td); _mini(_r, second=True)
+            EXPECTED_MUTATIONS["scripts/other.py"] = 1
             _told: list = []
             mutate_delivered(_r, progress=lambda *a: _told.append(a))
             # Control, then the mutation, then re-control — the three phases a reader waits
             # through. Asserting the SEQUENCE, not a count: a count survives losing the
             # re-control loop and gaining a duplicate control.
+            # ⛔ TWO TARGETS, NOT ONE — r6 B2. At size one, `position`, `len(targets)` and the
+            # literal 1 are mutually indistinguishable, and `progress(position, position, …)`
+            # survived on BOTH control loops at 126/126 while dying instantly on the mutation
+            # loop, whose fixture has two entries. Now every tuple below has a position that
+            # differs from its total on at least one row, so the denominator is observable.
             case("every phase of --mutate reports its position when a caller asks",
-                 _told, [(1, 1, "control scripts/thing.py"),
-                         (1, 1, "value is two"),
-                         (1, 1, "re-control scripts/thing.py")])
+                 _told, [(1, 2, "control scripts/other.py"),
+                         (2, 2, "control scripts/thing.py"),
+                         (1, 2, "two is three"),
+                         (2, 2, "value is two"),
+                         (1, 2, "re-control scripts/other.py"),
+                         (2, 2, "re-control scripts/thing.py")])
+        # ⚠ POP IT HERE, not after the silence case below — r6, caught by the full harness.
+        # The silence case builds a ONE-target root, so leaving `scripts/other.py` declared made
+        # `mutate_delivered` refuse on a count mismatch and return BEFORE the control loop ran.
+        # The case then passed for the wrong reason, and the mutation that exists to prove the
+        # loop silent stopped being attributable to it: 476 killed, 475 ATTRIBUTED.
+        # A fixture's state leaking one case further than intended is the same shape as an
+        # anchor bound to a comment — invisible while everything stays green.
+        EXPECTED_MUTATIONS.pop("scripts/other.py", None)
         with tempfile.TemporaryDirectory() as _td:
             _r = pathlib.Path(_td); _mini(_r)
             _me = io.StringIO()
@@ -2365,6 +2416,7 @@ def _self_test() -> int:
                                       # the pinned-to-a-past-event counts elsewhere in this file,
                                       # which must NOT be "corrected" to today's number.
                                       "scripts/check-explainer-delivery.py",
+                                      "scripts/check-fixture-variation.py",
                                       "scripts/check-function-revokes.py",
                                       "scripts/check-gate-falsifiability.py",
                                       "scripts/check-guard-coverage.py",
@@ -2694,6 +2746,24 @@ def _self_test() -> int:
     case("...and one character more IS, back to exactly one row",
          (len(progress_line(164, 434, "z" * 70)), progress_line(164, 434, "z" * 70)[-1]),
          (79, "…"))
+    # ⛔ AND THE HEAD IS A VARIABLE, WHICH NO CASE HAD EVER TREATED AS ONE — r6 B1. Every case
+    # above passes `(164, 434)`, whose head `"[164/434] "` is exactly TEN characters, so
+    # `PROGRESS_WIDTH - len(head)` and `PROGRESS_WIDTH - 10` are INDISTINGUISHABLE and the second
+    # survives at 126/126. ⭐ r5 asked "what two inputs must this case tell apart?" of the LABEL
+    # and varied its magnitude and position; nobody asked it of the OTHER OPERAND, which is a
+    # fixture constant in every case. THE UNTESTED AXIS WAS NOT A PROPERTY OF THE INPUT — IT WAS
+    # A PARAMETER NOBODY VARIED.
+    # The harm is live: `run_mutations` reports `len(muts)` = 466, so production heads are 8, 9
+    # and 10 characters wide (true `room` 71, 70, 69). Frozen at 69, sixteen real manifest names
+    # get an ellipsis they did not earn — the exact harm another entry exists for. And past 1000
+    # mutations the head is 11, `room` is 68, and a 69-character label yields 80 columns: the
+    # bound this function exists to hold, broken.
+    # The falsifier is a PAIR at two head widths, with literal wants that cannot both hold for a
+    # frozen `room`.
+    case("a narrower head leaves more room, and a 73-char label fits exactly",
+         progress_line(1, 9, "w" * 73), "[1/9] " + "w" * 73)
+    case("...and a wider head leaves less, so a shorter label is truncated",
+         progress_line(4321, 9876, "w" * 68), "[4321/9876] " + "w" * 66 + "…")
     case("...and a label that already fits is left exactly alone",
          progress_line(164, 434, "y" * 40), "[164/434] " + "y" * 40)
     # ⚠ run_mutations must stay SILENT unless a caller asks. Its own suite drives it dozens of
@@ -2751,9 +2821,13 @@ def _self_test() -> int:
         _fh = open(_fp, "w")
         try:
             with contextlib.redirect_stderr(_fh):
-                stderr_progress(3, 9, "x.py")
+                # ⚠ DIFFERENT ARGUMENTS FROM THE CASE ABOVE, deliberately — r6, via
+                # `check-fixture-variation.py`. Both sites used to pass `(3, 9, "x.py")`, so
+                # `stderr_progress`'s three parameters were indistinguishable from constants and
+                # nothing could catch it forwarding the wrong one to `progress_line`.
+                stderr_progress(7, 38, "check-docs.py")
             case("a progress line reaches a block-buffered stream before the process exits",
-                 _fp.read_text(), "[3/9] x.py\n")
+                 _fp.read_text(), "[7/38] check-docs.py\n")
         finally:
             _fh.close()
 
@@ -2788,7 +2862,7 @@ def _self_test() -> int:
     # so an `expect` naming it in full could never match and its entry would be unattributable.
     case("⚠ a case name containing ': got ' is TRUNCATED by the consumer",
          parse_fail_names("  [FAIL] the width: got the wrong value"), ["the width"])
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 466)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 476)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -7176,4 +7176,33 @@ removed two guards that looked unreachable and lost an attribution, proving they
 ran the same experiment on a clause that looks the same and found it genuinely inert. They are not
 interchangeable, and the code now says so, because reading them tells you nothing.
 
-`EXPECTED_MUTATIONS` 431 → 466; `check-plan-code` suite 101 → 126.
+⭐ **Round 6 named the thing that had been going wrong for five rounds, and it turned out to be a
+question a script can ask.** Every round had found the same defect — a test that cannot fail for the
+thing it is named after — and each time the fix improved a different property of the *same* test
+input: first what it expected, then how large the input was, then whether the input could be told
+apart end-from-end. Round 6's finding was that the other two arguments had never been varied at all.
+Every test called the function with the same position numbers, so an expression reading their width
+was indistinguishable from a constant, and a one-word change to it passed the entire suite while
+mis-truncating sixteen real lines.
+
+**The generator was never any one of those properties. It was that the tests vary one argument, and
+five rounds of review had been improving that one argument.** Stated as a question a machine can
+ask: *for each parameter of each function under test, do at least two tests pass different values?*
+
+So that is now a check that runs in CI, rather than a lesson to remember. On the file that has had
+six adversarial rounds it immediately found four more parameters nobody had varied — including three
+in a function no round had looked at. It carries its own tests, its own falsifying mutations, and a
+written exemption list, because a parameter genuinely decided by one value is fine and an *unwritten*
+one is not.
+
+⚠ **And it says plainly what it cannot do.** It compares the text of arguments, so it proves a
+parameter was thought about and never that the values chosen are good ones — it would not have caught
+round 5's finding. A floor, not a ceiling, and the docstring says so rather than letting a green tick
+imply more.
+
+⚠ Two defects in the new check were found by its own mutations before it shipped: one test could not
+fail because the clause it named had no test at all, and another *crashed* instead of reporting when
+its defect was introduced — and a test that dies proves nothing, because nothing can attribute a
+crash.
+
+`EXPECTED_MUTATIONS` 431 → 476; `check-plan-code` suite 101 → 128.

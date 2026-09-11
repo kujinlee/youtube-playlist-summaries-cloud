@@ -634,8 +634,8 @@
     "name": "stdout's budget stops accounting for what stderr already took, so the diagnostic grows past the window it exists to bound",
     "edits": [
       [
-        "    out_keep = min(len(out), window - err_keep)\n    # \u26d4 THESE",
-        "    out_keep = min(len(out), window)\n    # \u26d4 THESE"
+        "out_keep = min(len(out), window - err_keep)",
+        "out_keep = min(len(out), window)"
       ]
     ],
     "expect": [
@@ -647,8 +647,8 @@
     "name": "a quiet stderr no longer hands its unused half back, so the ordinary case sees 200 characters of stdout where it used to see 400",
     "edits": [
       [
-        "    out_keep = min(len(out), window - err_keep)\n    # \u26d4 THESE TWO",
-        "    out_keep = min(len(out), window - half)\n    # \u26d4 THESE TWO"
+        "min(len(out), window - err_keep)",
+        "min(len(out), window - half)"
       ]
     ],
     "expect": [
@@ -790,8 +790,8 @@
     "name": "the floor's spare-budget term reads its own stream instead of the other, so a suite that crashes at import gets half the traceback and half the budget is discarded",
     "edits": [
       [
-        "max(half, window - len(out)))\n    # \u26a0 `min(len(out)",
-        "max(half, window - len(err)))\n    # \u26a0 `min(len(out)"
+        "min(len(err), max(half, window - len(out)))",
+        "min(len(err), max(half, window - len(err)))"
       ]
     ],
     "expect": [
@@ -829,8 +829,8 @@
     "name": "the before-control phase counts from zero, so the first subject is reported as 0 of N",
     "edits": [
       [
-        "        for position, name in enumerate(targets, 1):\n            # SILENT UNLESS A CALLER ASKS",
-        "        for position, name in enumerate(targets, 0):\n            # SILENT UNLESS A CALLER ASKS"
+        "        for position, name in enumerate(targets, 1):\n            if progress is not None:\n                progress(position, len(targets), f\"control {name}\")",
+        "        for position, name in enumerate(targets, 0):\n            if progress is not None:\n                progress(position, len(targets), f\"control {name}\")"
       ]
     ],
     "expect": [
@@ -861,6 +861,58 @@
     ],
     "expect": [
       "...and a whitespace-only stream is dropped rather than charged to the budget"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the room calculation freezes the head width at ten characters, so the bound is right only for a three-digit-over-three-digit position and sixteen real labels lose a character they had earned",
+    "edits": [
+      [
+        "    room = PROGRESS_WIDTH - len(head)",
+        "    room = PROGRESS_WIDTH - 10"
+      ]
+    ],
+    "expect": [
+      "a narrower head leaves more room, and a 73-char label fits exactly"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the before-control phase reports its position as its own total, so every line reads [n/n] and 'out of how many' \u2014 the third of the three things a reader needs \u2014 is gone",
+    "edits": [
+      [
+        "progress(position, len(targets), f\"control {name}\")",
+        "progress(position, position, f\"control {name}\")"
+      ]
+    ],
+    "expect": [
+      "every phase of --mutate reports its position when a caller asks"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the re-control phase reports its position as its own total, the same harm on the loop that turns the control from a prologue into an invariant",
+    "edits": [
+      [
+        "progress(position, len(targets), f\"re-control {name}\")",
+        "progress(position, position, f\"re-control {name}\")"
+      ]
+    ],
+    "expect": [
+      "every phase of --mutate reports its position when a caller asks"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the re-control loop counts from zero, so the phase that re-proves every suite green reports its first subject as 0 of N",
+    "edits": [
+      [
+        "        for position, name in enumerate(targets, 1):\n            if progress is not None:\n                progress(position, len(targets), f\"re-control {name}\")",
+        "        for position, name in enumerate(targets, 0):\n            if progress is not None:\n                progress(position, len(targets), f\"re-control {name}\")"
+      ]
+    ],
+    "expect": [
+      "every phase of --mutate reports its position when a caller asks"
     ],
     "file": "scripts/check-plan-code.py"
   }

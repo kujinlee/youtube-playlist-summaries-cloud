@@ -277,6 +277,18 @@ jobs:
       - name: check-selftest-counts self-test
         run: python3 scripts/check-selftest-counts.py --self-test
 
+      # ⛔ SIX ADVERSARIAL ROUNDS ON ONE FILE PRODUCED SIX BLOCKINGS, AND FIVE WERE ONE DEFECT:
+      # every case passed the SAME value for the parameter that decided the clause under test, so
+      # nothing could tell that parameter from a constant. Each round fixed the axis the previous
+      # round had been bitten by — the want, then the input's magnitude, then its position, then
+      # the two arguments nobody had varied at all. The generator is not any of those axes; it is
+      # that the fixtures vary ONE argument. This asks the question mechanically, per parameter.
+      - name: Every parameter of a function under test is varied by its cases
+        run: python3 scripts/check-fixture-variation.py
+
+      - name: check-fixture-variation self-test
+        run: python3 scripts/check-fixture-variation.py --self-test
+
       - name: Producer enumeration matches the defining expression
         run: python3 scripts/check-producer-enumeration.py
 

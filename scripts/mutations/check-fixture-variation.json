@@ -1,0 +1,80 @@
+[
+  {
+    "name": "the variation rule accepts a single distinct value, so a parameter passed one value at every call site stops being reported and the guard's whole subject is invisible",
+    "edits": [
+      [
+        "        if len(set(values)) < 2:",
+        "        if len(set(values)) < 1:"
+      ]
+    ],
+    "expect": [
+      "a parameter passed one value at every site is reported"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "an omitted defaulted argument stops counting as a value, so the reporter seam \u2014 two call sites, one passing None by omission \u2014 reads as unvaried",
+    "edits": [
+      [
+        "                seen.setdefault((fn.name, d), []).append(\"<omitted, default>\")",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "omitting a defaulted argument counts as a distinct value"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the exemption lookup is dropped, so a parameter with a written reason is reported anyway and the guard cries wolf until someone switches it off",
+    "edits": [
+      [
+        "        if f\"{fn}.{param}\" in EXEMPT:\n            continue",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "an exemption removes exactly its own finding"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "a file with no suite returns a clean bill instead of CANNOT RUN \u2014 a zero over an unread population, which this project has been burned by four times",
+    "edits": [
+      [
+        "        return ([f\"CANNOT RUN \u2014 {path} has no `_self_test`, so there are no cases to read. \"\n                 f\"NOT CHECKED.\"], 0)",
+        "        return ([], 0)"
+      ]
+    ],
+    "expect": [
+      "a file with no _self_test is CANNOT RUN, not a clean bill"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the case() helper is treated as a function under test, so the assertion machinery is audited instead of the code and every file reports findings about its own harness",
+    "edits": [
+      [
+        "        if fn is None or _is_case_arg(node):",
+        "        if fn is None:"
+      ]
+    ],
+    "expect": [
+      "the case() helper is not treated as a function under test"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "private helpers are audited as subjects, so test plumbing is reported as production coverage and the finding list fills with noise",
+    "edits": [
+      [
+        "        if isinstance(node, ast.FunctionDef) and not node.name.startswith(\"_\"):",
+        "        if isinstance(node, ast.FunctionDef):"
+      ]
+    ],
+    "expect": [
+      "a private helper is test plumbing, not a subject"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  }
+]
