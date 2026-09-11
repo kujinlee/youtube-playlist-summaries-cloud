@@ -1409,11 +1409,13 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str,
     # be false. This carries no claim, and says so in its own dek. A group asserts; an index
     # enumerates.
     #
-    # ⛔ THAT IS A DESCRIPTION OF INTENT, NOT A GUARANTEE, and the previous version of this comment
-    # claimed otherwise twice before two review rounds measured it false. The empty falsifier field
-    # keeps this entry out of rule 1's reach, and rule 4 pins the two strings below so they cannot
-    # change silently — but NOTHING here stops prose elsewhere on the page from characterising
-    # these items, and nothing could. Full scope and residue: `check-group-claims.py`'s docstring.
+    # ⛔ THAT IS A DESCRIPTION OF INTENT, NOT A GUARANTEE, and three review rounds each measured a
+    # broader version of it false. Exactly what holds, stated as a property rather than a promise:
+    # the empty falsifier keeps this entry out of rule 1's reach, and rule 4 makes rewording these
+    # two strings a TWO-FILE EDIT. ⚠ It does NOT prevent the rewording — measured: change both
+    # copies together and the guard exits 0, by design. What it buys is that the change appears in
+    # a diff as two files rather than one line. And NOTHING here touches prose elsewhere on the
+    # page. Full scope and residue: `check-group-claims.py`'s docstring.
     rest = sorted(open_nums - {n for _, _, _, ns in groups_ok for n in ns})
     groups_for_page = list(groups_ok)
     if rest:

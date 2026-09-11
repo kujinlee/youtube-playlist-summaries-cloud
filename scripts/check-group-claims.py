@@ -43,8 +43,13 @@ suite at 164/164 and this guard at exit 0. What stopped it was review discipline
 "mechanical".
 
 RULE 4 does ONE thing: this file holds its own copy of the index's title and dek and REFUSES when
-they diverge from the generator's. Rewording the index becomes a deliberate act touching two files
-and failing CI until both agree — the same two-sites-must-agree shape this repo uses elsewhere.
+they DIVERGE from the generator's.
+
+⚠ SAY WHAT THAT IS, PRECISELY, BECAUSE THE LOOSE VERSION HAS NOW BEEN WRONG THREE TIMES. It makes
+rewording the index a TWO-FILE EDIT. It does not prevent rewording: change both copies together and
+this guard exits 0 — measured, and by design. The property is that the change shows up in a diff as
+two files rather than one line, and that an asymmetric change (one copy only) fails CI. That is the
+whole of it.
 
 ⛔ THAT IS THE WHOLE OF THE CLAIM, AND IT IS NARROWER THAN "THE BIN CANNOT RETURN". Two review
 rounds each caught a broader version of this sentence being false, so here is the scope written
