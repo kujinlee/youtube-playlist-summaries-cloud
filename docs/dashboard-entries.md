@@ -7432,3 +7432,76 @@ silently. Nothing was overwritten here (0 prior commits for all three stems, che
 
 Unchanged and re-verified after every round: self-test `167/167`, generator emits no drift warnings,
 both mutations killed by the cases that name them, `if True` still survives `165/165` on `28532810`.
+
+## 2026-09-11
+The backlog page's groupings are now a rule rather than a habit, and every tag is a real word.
+
+You asked two things of this page today and they turned out to be the same thing. The headings
+that group items were hand-written with nothing deciding when one should exist, and the tag list
+was full of labels that said nothing — `A`, `B`, `C`, `D`, `untagged`. Both are now fixed, and a
+check in the build enforces the first so it cannot drift back.
+
+The rule for a heading: it has to be a **claim**, and a claim has to be able to be wrong. Each one
+now carries, in writing, the observation that would prove it false. If you cannot write that
+sentence, what you have is a tag, not a heading. Three headings failed the rule and were retired —
+one had a single item under it, one claimed its items were all tiny when one was not, and one held
+twenty-two unrelated items under a sentence nothing could contradict.
+
+The part that mattered most was refusing the easy fix. Every time an item did not fit a heading,
+the cheap move was to widen the sentence until it did. Do that a few times and the heading stops
+saying anything. Items moved instead; the sentences stayed narrow.
+
+Belonging to a heading is now **optional**, and that is what actually closes the problem you
+spotted this morning. Items that belong to none are simply listed, with no suggestion that anyone
+has failed to do something. The section that used to say "nobody has described them yet" is gone,
+along with the idea that a newly filed item creates a debt someone has to pay.
+
+Three words on that page meant three different things and looked like one. The page now says so
+where you meet them: a **tag** says what an item is about and cannot be wrong; a **group** asserts
+something about a set and can be; a **slice** is not a container at all — it is work that has to
+land first, and items hang off it by whether they survive it.
+<!--tech-->
+Branch `adopt-90-grouping-policy`, four commits on `e597a8e7`.
+
+**1 — `SUMMARIES` split out of `GROUPS`.** A group held `(number, sentence)` pairs, nesting a claim
+about a SET with a line about ONE ROW. Measured first: naive adoption would have left **27 open
+items with no sentence**, since a sentence's only home was inside a group. The 70 literals were
+GENERATED, not retyped, with a field-by-field round-trip control before splicing; four comment
+blocks were re-homed with the items they annotate (one was dropped by the splice because `repr()`
+emitted single quotes, and restored from git). **Falsifier: the rendered page was byte-identical**
+once the build timestamp and provenance stamp were normalised.
+
+**2 — bundles.** 27 → 20 distinct tags; `A`/`B`/`C`/`D`/`loose`/`infra`/`housekeeping`/`m5 prep`/
+`dev`/`dev / testing` all gone, 15 rows retagged into existing vocabulary, two new names both in
+the `product` family. The positional edit was FAIL-CLOSED and refused twice before writing:
+`#9/#10/#11` sit in the second table (`\| # \| Item \| Status \|` — no Bundle column at all) and
+`#65` splits into 12 cells because its content holds pipes. Verified after: 15 lines differ, and on
+every one the ONLY changed cell is Bundle.
+
+**3 — clause 0.** `undescribed()` deleted; `GROUPS` gained a fourth `FALSIFIER` field; three groups
+retired by named trigger. `Small visual polish` fell to two triggers at once — it claimed
+"extra-small" while `#7` is `S`, and after the bundle fix its membership `{4,5,6,7}` became exactly
+the tag `product / renderer`. Self-test 167 → 164: four cases retired WITH their subject, three of
+them written the same morning.
+
+**4 — `scripts/check-group-claims.py`**, 24 cases, 8 mutations, 2 CI steps. Rules: falsifier
+present, ≥2 open members, every member is a real row, no item claimed twice. ⚠ The column-evaluating
+clause row #90 proposes is deliberately NOT built — zero of six falsifiers name a column, so it
+would be a clause that cannot fire; its trigger is in the docstring.
+
+⭐ **First payment of the `EXAMINED_KEYS` cost PR #289 flagged as untested, and the message failed.**
+It promised "a finding carrying the command that fixes it"; it delivered `got False want True`. Rule
+untouched, message fixed to name the unpinned files and the remedy, verified by re-removing the
+entry and reading what the next person sees.
+
+⚠ **Two manifest defects found by RUNNING it, invisible to every gate:** one entry named a case that
+cannot catch its mutation; two mutations made the suite DIE rather than report, because an eager
+`claim_errors(...)[0]` is evaluated before `case` can catch it. Fixed as a class — all six indexing
+cases are lambdas. 8/8 now attribute to the case each names.
+
+⚠ **I committed once on a red `check-fixture-variation`** and amended. Deleting `undescribed`
+orphaned its two `EXAMINED_KEYS` entries; the guard was right and I read past it.
+
+`EXPECTED_MUTATIONS` 513 → 521. Gates green: check-docs, check-selftest-counts (36),
+check-fixture-variation, check-ratchet-contract, check-group-claims, check-backlog-closure,
+check-anchors, check-review-rounds, check-plan-file-tags, check-plan-code (128/128).

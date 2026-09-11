@@ -2,7 +2,7 @@
 """Render `docs/backlog.md` as a browsable HTML page at a STABLE url.
 
     python3 scripts/gen-backlog-page.py          # → ~/explainers/backlog-table.html
-    python3 scripts/gen-backlog-page.py --self-test  # 167 cases
+    python3 scripts/gen-backlog-page.py --self-test  # 165 cases
     open http://127.0.0.1:7391/backlog-table     # after scripts/explainer-serve.py
 
 WHY THIS EXISTS
@@ -35,11 +35,11 @@ what the item IS rather than by how loud its severity marker is. Severity orderi
 the most important fact in the list — that six of the high-severity items are ONE problem wearing
 six numbers.
 
-Its COMPLETENESS, though, is mechanical. `sanitise_groups` + `undescribed` guarantee that every
-open item reaches the page exactly once — grouped where a sentence exists, and under "Filed, but
-nobody has described them yet" where none does. So a line here can be badly worded, but an open
-item can never go silently missing, which is the failure that matters when the page is answering
-"what is left?".
+Its COMPLETENESS is not at stake, because GROUPS is not how an item reaches the reader — every
+row gets its own card from the table regardless. Measured 2026-09-11 by deleting a group and
+re-rendering: the member kept its card and the count did not move. That is what made backlog
+#90's clause 0 possible — grouping is OPT-IN, an ungrouped open item is NORMAL rather than a
+debt, and anything no group names is enumerated under "The rest, one line each".
 
 ⛔ THIS NO LONGER REFUSES, AND THAT REVERSES THE ORIGINAL TRADE (user's decision, 2026-09-09:
 *"refusing refresh is not appropriate"*). The old contract said "a loud stop beats a quiet
@@ -103,129 +103,351 @@ SEV_NAME = {"crit": "critical", "high": "high", "med": "medium", "low": "low",
 
 
 # ─── THE GROUPING — interpretation, checked for completeness but not for truth ───────────────────
-GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
+SUMMARIES: dict[int, str] = {
+    17:
+        'The background worker and the sync process can write at the same time with nothing '
+        'stopping them. On one path that destroys paid content, not just a pointer.',
+    19:
+        "When a video moves between playlists, a worker finishing late can overwrite the winner's "
+        'content with stale content.',
+    20:
+        'Renaming a video orphans all of its dig-deeper documents — only half the address is '
+        'protected.',
+    21:
+        'Dig-deeper writes have the same stale-address exposure but write somewhere else, so they '
+        'need their own fix.',
+    22:
+        'When a video is re-addressed, the “this was paid for” status does not reliably follow it — '
+        'the database row carries no stable identity to hang it on.',
+    25:
+        'Rendered pages and PDFs have no identity of their own either. Two designs for one have '
+        'already been refuted, so this needs a fresh pass.',
+    60:
+        'Corrections you type never reach a summary the background worker regenerates on its own — '
+        'and the row claims they were applied. Fixing it is blocked by the same overwrite problem '
+        'as the items above: the corrected version can be thrown away while the record still says '
+        'it exists.',
+    30:
+        'TRUNCATE — delete everything in a table — is granted to the anonymous and signed-in roles '
+        'on all five money tables. Row-level security does not cover that verb.',
+    33:
+        'Anonymous callers hold EXECUTE on nearly every database function. Each migration says '
+        '<code>revoke … from public</code>, which reads like “anonymous excluded” and is not.',
+    54:
+        'The durable fix. The detector half shipped on 2026-08-21; the half that revokes the '
+        'default changes production grants and is waiting on your go-ahead.',
+    26:
+        'Two different retry ceilings could govern a paid job — one attempt, or five. The function '
+        'that used to decide was deleted; nothing decides now.',
+    27:
+        'A summary that a paid dig was built from is currently pinned for the life of the '
+        'workspace. Decide whether cleanup is ever allowed to release it.',
+    28:
+        'If reserving budget times out, 6¢ is stranded permanently and an attempt is burned. '
+        'Introduced by the serve-path work this month.',
+    61:
+        'Cloud corrections will record what they spent <em>after</em> the call rather than '
+        'reserving it first — a deliberate choice to keep the first slice shippable. This adds the '
+        'reservation, and a check that the spending bound still covers everything the job pays for '
+        'once corrections run inside it.',
+    62:
+        'A correction that FAILS still pays Gemini, and nothing records it — so neither the '
+        'per-person daily limit nor the overall spending cap ever sees that money. Measured in '
+        'production: the spend table was empty after a real failed press. Corrections can be made '
+        'to fail on purpose, so this is a way to spend past a limit rather than an accounting '
+        'rounding error.',
+    63:
+        'When a correction fails, the person who was just charged sees the internal error text '
+        'rather than anything they can act on. The friendly-message mechanism already exists a few '
+        'lines away in the same function.',
+    32:
+        'Each local folder records which cloud it last synced with. Point it at a different cloud '
+        'and sync uploads nothing, forever, without complaining.',
+    1:
+        'Deep-dives serve a stale cached copy and silently always regenerate, with no progress '
+        'indicator. Bring them level with summaries.',
+    2:
+        'Re-summarising leaves the PDF stale. Decide: keep generating PDFs, or make the HTML '
+        'printable and drop them.',
+    3:
+        'Clickable timestamps inside deep-dives, jumping to the right moment in the video.',
+    8:
+        'Reframe the deep-dive from a separate document into an expandable detail view under each '
+        'summary section. Large, and explicitly “someday”.',
+    12:
+        'Share links currently carry the summary only — a dig-deeper cannot be shared.',
+    15:
+        'Generate the magazine-style rendering when a video is ingested rather than on first view, '
+        'so the first view is not slow and sharing always works.',
+    23:
+        'Corrections you write are handed to the model as free-form instructions, and a fresh '
+        'summarise can silently drop them while reporting success. Make them exact find-and-replace '
+        'pairs instead.',
+    24:
+        'Slide placeholders in cloud dig-deepers render as captions with no link. Make them '
+        'clickable timestamps.',
+    51:
+        'Feasibility study: summarise a single video without having to create a playlist first.',
+    52:
+        'Split a large playlist into focused smaller ones, with the same video allowed in several — '
+        'and decide whether they can share one paid summary.',
+    4:
+        'A markdown edge case: a closing code fence carrying a language name is accepted.',
+    5:
+        'The colour palette is copy-pasted between two renderers; extract it once.',
+    6:
+        'The gold “lead” line is over-emphasised and competes with the section heading.',
+    7:
+        'Bold bullet labels usually just repeat the first words of the sentence. Drop them.',
+    18:
+        '32 of the 42 installed skills have never once been used. Audit, trim, and find out why the '
+        'wanted ones never fire.',
+    40:
+        'Package the explainer tooling as an installable plugin so a new project gets it without '
+        'copying files.',
+    47:
+        'A knowledge graph over document fragments, so prior work is found rather than remembered.',
+    49:
+        'A checker that resolves every <code>file:line</code> a spec cites — eight were wrong in a '
+        'single document.',
+    50:
+        'Refine the <code>/brief</code> skill — the page this one is a sibling of.',
+    56:
+        'Render the launch roadmap as a standing page like this one, deriving its ticks from git '
+        'rather than trusting them, so “where are we overall” stops being a hand reconciliation.',
+    57:
+        'A page over the 690 review documents, surfacing the one number that predicts a runaway '
+        "review — how much of each round was caused by the last round's fixes — while it can still "
+        'change a decision.',
+    58:
+        'Every gate in one place: what it is, what it last returned, and which have never failed — '
+        'because a gate that cannot fail is the one to distrust.',
+    89:
+        'These pages exist so you can see what is going on, but building one costs the main '
+        'conversation dearly — nearly a megabyte of single-use scaffolding for one page, all of it '
+        'worthless once the link exists. Building them in a forked side-conversation instead is the '
+        "idea. What is undecided is who delivers the link, how a reader's question gets back to the "
+        'session that wrote the page, and what happens when the inherited context goes stale '
+        'mid-build. Only the four agent-written pages are candidates — the three rebuilt by hooks '
+        'already cost nothing.',
+    103:
+        'Ask a question on one of these pages and the answer comes from whichever session is '
+        'running now, not the one that wrote the page. The listener outlives the session it '
+        'belonged to, so a reader can be answered by a stranger.',
+    105:
+        'The dark-theme fallback in the page builder describes itself as supplying only what nobody '
+        'else supplied. That is true of any one colour and misleading about the set: declaring some '
+        'of them and not the rest gives a page a half-working theme switch, which measured as dark '
+        'text on a dark background — worse than declaring none at all. Declare the whole palette or '
+        'none of it, and the comment should say so rather than let the next author find out by '
+        'shipping it.',
+    101:
+        'A pull request based on another branch runs no checks at all, and the answer it gives — '
+        '“no checks reported” — sits in exactly the place a green tick would. Two such requests '
+        'were one keystroke from merging with nothing behind them; only the habit of treating '
+        '“cannot run” as a failure caught it.',
+    111:
+        'The hook that protects the session handoff decides whether to act by reading what an '
+        'interpreter prints. An interpreter that fails to start, or that prints a greeting first, '
+        'yields neither expected answer — and the hook then does nothing at all, silently, for the '
+        'rest of the session. Its sibling was repaired exactly this way ten days ago; this is the '
+        'copy that was left behind.',
+    # ⚠ "on every run", NOT "beneath a green verdict" — r2 finding. The gate DOES exit 1 when
+    # a round is genuinely incomplete (the reviewer demonstrated it), so tying the warning to
+    # a green verdict states something false on the runs that matter most. The durable claim
+    # is that the line prints every time and nobody acts on it.
+    112:
+        '569 files in the review folder carry no round number and sit outside the check that audits '
+        'review rounds, which says so on every single run, under whatever verdict it reached. '
+        'Nobody can currently say what fraction of the corpus it covers. Silencing the warning is a '
+        'legitimate outcome — the work is to classify the 569 and then decide, not to assume they '
+        'all need covering.',
+    16:
+        'After a deploy, a browser tab left open keeps running the old JavaScript with no “refresh '
+        'available” prompt.',
+    29:
+        'A guard-coverage checker only inspects the parked schema, so the guards in real migrations '
+        'are invisible to it.',
+    38:
+        "Extract the sidebar's load/refresh state machine into a hook — a reviewer, asked directly, "
+        'said the current version was not worth its complexity.',
+    39:
+        'Roadmap items are identified by their position, so renumbering silently changes what an '
+        'old reference means.',
+    41:
+        'The prod read-only smoke. Built and green on 2026-08-21 — this row has simply not been '
+        'closed yet.',
+    42:
+        'Next.js says <code>middleware</code> is deprecated on every startup. It is the '
+        'authentication gate, so this is read-the-guide-first work.',
+    45:
+        'Leftover medium and low findings from a review round, presented for your decision rather '
+        'than fixed.',
+    46:
+        'Normalise unusual Unicode in titles before building a filename, so characters that fold '
+        'into path syntax never reach the address.',
+    53:
+        'You can verify which release is live, but not which commit it was built from. Deliberately '
+        'dormant until its trigger fires.',
+    66:
+        'Ninety-two written notes from past work sessions exist on one machine, are excluded from '
+        'git, and have no backup. Nobody has decided whether they are worth keeping. The expensive '
+        'part of that folder was already reclaimed; this is the residue, and the decision is yours.',
+    67:
+        "Two helpers working at the same time can corrupt each other's results — measured twice, "
+        'once producing a false alarm that was filed as a blocking defect before anyone traced it, '
+        'and once nearly swallowing uncommitted work. Most of the danger has since been engineered '
+        'out. What is left is that the warning about it sits in a comment inside one script, names '
+        'two scripts that no longer exist, and is absent from the document where the decision to '
+        'run two helpers is actually made.',
+    72:
+        'The inventory that polices our safety checks cannot see one that is not NAMED like one. It '
+        'says in writing that it catches a check even before anyone wires it up; that second route '
+        'is unreachable, and was measured to be.',
+    73:
+        'A superseded piece of that same inventory is still in the file, and the only thing that '
+        'still runs it is its own test — so part of its reported coverage is of machinery nothing '
+        'uses. Waiting on the decision above.',
+    85:
+        'Three separate pieces of that same machinery each work out for themselves what a code '
+        'block is, and only one of them is the shared version. Nothing is broken today and the part '
+        'the page uses is the correct one — but these copies have already disagreed twice, once in '
+        'a way that made a real question invisible.',
+    86:
+        'The repair to the branch-cleanup command sits in files that a plugin update will quietly '
+        'stop reading, so one day the command goes back to reporting “nothing to clean up” on a '
+        'repository full of dead branches — and reads as success. The durable copy now lives in '
+        'this repository; what is left is confirming whether it actually takes precedence over the '
+        "plugin's own version.",
+    # ⚠ NO COUNTS IN THIS SENTENCE, ON PURPOSE. The first draft copied the row's dated
+    # measurement — "25 values including a bare question mark" — into prose that reads as
+    # present tense. Re-measured 2026-09-11: 27 values, and the question mark is gone. A
+    # number in prose has no owner and goes stale silently; a SHAPE claim ("letters are
+    # still being used as groupings") stays true until someone fixes it and is visibly
+    # false the moment they do.
+    90:
+        'One table holds goals, defects and one-line chores at once, and its grouping column has '
+        'decayed into values that are not groupings at all — single letters, and a bare dash. The '
+        'deeper cost is measured rather than argued: several reasonable ways of counting the same '
+        'rows disagree about how many items are open, because a status cell is append-only with its '
+        'verdict at the END, so a reader taking the first marker it meets gets the original filing '
+        'rather than the current state. Every headline count of open work is a range until that is '
+        'settled.',
+    94:
+        'A guard that stops a session mid-plan promises in writing that it can block at most once. '
+        'It relaxes only when the turn it interrupted was one it caused itself, so a turn beginning '
+        'after a background notification is blocked again — three times in one session, while '
+        'legitimately waiting on dispatched work. The behaviour is correct; the description of it '
+        'is not, and no escape is offered for the case that actually arose.',
+    92:
+        'The reviewer wrapper watches a folder for changes during a run and attributes whatever '
+        'appears to the reviewer it launched. It can see that the folder changed, never who changed '
+        'it — so when both review halves run at once, which is the documented way to run them, it '
+        "accuses one of writing the other's file. The false accusation is then written into the "
+        'verdict file the build reads. Note the direction: this is a check reporting a failure that '
+        'is not real, which is why it does not belong with the ones whose failures look like '
+        'passes.',
+    93:
+        'Two checkers look near-identical and differ on purpose. Merging them — the obvious tidy-up '
+        '— silently reinstates a defect that was already fixed, and every gate still passes, so the '
+        'trap is laid for whoever cleans up next.',
+    # ⚠ "item 100", not "the problem above". The first draft said ABOVE and it was measured
+    # FALSE: `ordered` sorts by `dep_rank` before the number, so #104 renders ahead of #100.
+    # A spatial word in a description is a claim about a layout the description does not
+    # control — reference the item by number, which the renderer cannot reorder away.
+    104:
+        'The gate that holds work until a plan has been reviewed can only be cleared by that review '
+        'converging. A plan that instead ships by a better route leaves the gate armed '
+        'indefinitely, blocking unrelated work and directing whoever trips it to go and review a '
+        "document that has explicitly disclaimed its own authority. Note the direction: this repo's "
+        'usual failure is a gate claiming success it has not earned, and this is a gate reporting a '
+        'failure it cannot withdraw. Decide first whether it is item 100 in this same group wearing '
+        'a second number.',
+    100:
+        'The small file recording which plan is running is written by one program and read by three '
+        'others, each carrying its own idea of the grammar, and nothing anywhere lists which '
+        'combinations of its fields are legal. Nothing is broken today — all three known failures '
+        'are fixed — but they were one cause wearing three faces, so this wants a design pass '
+        'rather than an edit.',
+    107:
+        'One message covers two different reasons the mutation harness withholds a coverage figure, '
+        'so a reader cannot tell which of them happened. The obvious way to separate them re-adds '
+        'the exact thing an earlier slice spent three rounds removing, so any proposal has to say '
+        'how it avoids that.',
+    108:
+        'The mutation harness required a piece of code to be split in two so it could be measured. '
+        'That split was an improvement, but next time it may not be, and “the tool needed it” will '
+        'read as a reason. Write down which of the two should yield.',
+    109:
+        'A test that guards a line of code is attached to that line BY ITS TEXT, so improving the '
+        'wording detaches it. The test still exists, still passes, and no longer guards anything. '
+        'Only a full sweep finds these; it has happened five times.',
+    113:
+        "The program that builds this page has five mutation tests to its sibling's sixty-four, and "
+        'that number came from what one branch happened to fix rather than from the file. What the '
+        'gap cost has been counted: four review rounds turned up 1, then 9, then 8, then 15 fresh '
+        'tests that could never fail — every one of them found by a person reading, none by a '
+        'machine.',
+}
+
+# ⛔ THE INDEX'S WORDS ARE PINNED, IN TWO FILES THAT MUST AGREE — and r1's High is why. The first
+# version of this claimed that keeping the index OUT of `GROUPS` was a mechanical barrier against
+# the retired bin returning as framed prose. The reviewer refuted it by measurement: rewriting this
+# dek into a catch-all framing claim left the suite at 164/164 and the guard at exit 0. What stopped
+# it was review discipline wearing the word "mechanical".
+#
+# Now `check-group-claims.py` holds its own copy of both strings and REFUSES when they diverge, so
+# changing them is a deliberate act touching two files.
+#
+# ⛔ THAT GUARDS THIS FIELD, NOT THE PAGE. r2 found the broader claim false too: prose emitted
+# ELSEWHERE — the preface above the groups, or new markup around this section — could characterise
+# the index without touching either string. No fourth mechanism is being added for it, because
+# nothing can stop prose from characterising something and each partial fix invites the same
+# finding again. The scope and the residue are written out in `check-group-claims.py`'s docstring.
+INDEX_TITLE = "The rest, one line each"
+INDEX_DEK = ("No claim here — these open items simply belong to no group, which is the normal "
+             "case. Anything with a summary shows it; anything without shows just the row. Both "
+             "are fine.")
+
+GROUPS: list[tuple[str, str, str, list[int]]] = [
+    # ⭐ FOUR FIELDS NOW: title, framing, FALSIFIER, members — the policy on backlog row #90,
+    # adopted 2026-09-11. The falsifier is a FIELD rather than a sentence buried in the prose so a
+    # script can check it exists and, where it names a column, evaluate it. The repo already uses
+    # this grammar (`NO-CALLER:`, `NO-ENTRY:`, `REVIEW GAP:`).
+    #
+    # ⛔ A GROUP IS A CLAIM, A TAG IS A LABEL. A tag ("what is this about?") is derived from the
+    # Bundle column and cannot be wrong, only useless. A group asserts something about a SET and
+    # CAN be wrong — that is the whole difference, and it is why groups are hand-written and
+    # OPT-IN. An item needs no group. It needs no summary either.
+    #
+    # ⚠ ANSWERS IS KEYED BY GROUP POSITION, so retiring a group above one that has answers moves
+    # them onto the wrong group in silence. Backlog #39's class exactly. Only position 1 carries
+    # answers today and it is still position 1; check this before reordering.
     ("Paid work can be lost when a video's address changes",
      "Every summary is filed under a name built from the video's title, so changing the title "
-     "changes the address — and not everything pointing at the old one follows. Summaries cost "
-     "real money, so losing one loses money. Six items, one root cause; they were split apart "
-     "during the addressing work when a single fix kept failing review.", [
-        (17, "The background worker and the sync process can write at the same time with nothing "
-             "stopping them. On one path that destroys paid content, not just a pointer."),
-        (19, "When a video moves between playlists, a worker finishing late can overwrite the "
-             "winner's content with stale content."),
-        (20, "Renaming a video orphans all of its dig-deeper documents — only half the address is "
-             "protected."),
-        (21, "Dig-deeper writes have the same stale-address exposure but write somewhere else, so "
-             "they need their own fix."),
-        (22, "When a video is re-addressed, the “this was paid for” status does not reliably "
-             "follow it — the database row carries no stable identity to hang it on."),
-        (25, "Rendered pages and PDFs have no identity of their own either. Two designs for one "
-             "have already been refuted, so this needs a fresh pass."),
-        (60, "Corrections you type never reach a summary the background worker regenerates on its "
-             "own — and the row claims they were applied. Fixing it is blocked by the same "
-             "overwrite problem as the items above: the corrected version can be thrown away while "
-             "the record still says it exists."),
-     ]),
-    ("Anonymous users hold more database access than intended",
-     "All measured in production, and none of it currently reachable through the web API — but the "
-     "grants are real, and the third item is about the next one arriving by accident.", [
-        (30, "TRUNCATE — delete everything in a table — is granted to the anonymous and signed-in "
-             "roles on all five money tables. Row-level security does not cover that verb."),
-        (33, "Anonymous callers hold EXECUTE on nearly every database function. Each migration says "
-             "<code>revoke … from public</code>, which reads like “anonymous excluded” and is not."),
-        (54, "The durable fix. The detector half shipped on 2026-08-21; the half that revokes the "
-             "default changes production grants and is waiting on your go-ahead."),
-     ]),
-    ("Money-path edge cases",
-     "Small, well understood, and each needs one decision before the code can be written.", [
-        (26, "Two different retry ceilings could govern a paid job — one attempt, or five. The "
-             "function that used to decide was deleted; nothing decides now."),
-        (27, "A summary that a paid dig was built from is currently pinned for the life of the "
-             "workspace. Decide whether cleanup is ever allowed to release it."),
-        (28, "If reserving budget times out, 6¢ is stranded permanently and an attempt is burned. "
-             "Introduced by the serve-path work this month."),
-        (61, "Cloud corrections will record what they spent <em>after</em> the call rather than "
-             "reserving it first — a deliberate choice to keep the first slice shippable. This "
-             "adds the reservation, and a check that the spending bound still covers everything "
-             "the job pays for once corrections run inside it."),
-        (62, "A correction that FAILS still pays Gemini, and nothing records it — so neither the "
-             "per-person daily limit nor the overall spending cap ever sees that money. Measured "
-             "in production: the spend table was empty after a real failed press. Corrections can "
-             "be made to fail on purpose, so this is a way to spend past a limit rather than an "
-             "accounting rounding error."),
-        (63, "When a correction fails, the person who was just charged sees the internal error "
-             "text rather than anything they can act on. The friendly-message mechanism already "
-             "exists a few lines away in the same function."),
-     ]),
-    ("Sync",
-     "One item, and its symptom is silence rather than an error.", [
-        (32, "Each local folder records which cloud it last synced with. Point it at a different "
-             "cloud and sync uploads nothing, forever, without complaining."),
-     ]),
-    ("Product features you might actually want",
-     "Nothing here is broken; this is the work that makes the product better.", [
-        (1,  "Deep-dives serve a stale cached copy and silently always regenerate, with no progress "
-             "indicator. Bring them level with summaries."),
-        (2,  "Re-summarising leaves the PDF stale. Decide: keep generating PDFs, or make the HTML "
-             "printable and drop them."),
-        (3,  "Clickable timestamps inside deep-dives, jumping to the right moment in the video."),
-        (8,  "Reframe the deep-dive from a separate document into an expandable detail view under "
-             "each summary section. Large, and explicitly “someday”."),
-        (12, "Share links currently carry the summary only — a dig-deeper cannot be shared."),
-        (15, "Generate the magazine-style rendering when a video is ingested rather than on first "
-             "view, so the first view is not slow and sharing always works."),
-        (23, "Corrections you write are handed to the model as free-form instructions, and a fresh "
-             "summarise can silently drop them while reporting success. Make them exact "
-             "find-and-replace pairs instead."),
-        (24, "Slide placeholders in cloud dig-deepers render as captions with no link. Make them "
-             "clickable timestamps."),
-        (51, "Feasibility study: summarise a single video without having to create a playlist first."),
-        (52, "Split a large playlist into focused smaller ones, with the same video allowed in "
-             "several — and decide whether they can share one paid summary."),
-     ]),
-    ("Small visual polish",
-     "Extra-small items, mostly in the renderer, all independent of everything above.", [
-        (4, "A markdown edge case: a closing code fence carrying a language name is accepted."),
-        (5, "The colour palette is copy-pasted between two renderers; extract it once."),
-        (6, "The gold “lead” line is over-emphasised and competes with the section heading."),
-        (7, "Bold bullet labels usually just repeat the first words of the sentence. Drop them."),
-     ]),
-    ("The reusable toolkit — the second deliverable",
-     "Not about the product: about the development harness being reusable on a new project.", [
-        (18, "32 of the 42 installed skills have never once been used. Audit, trim, and find out "
-             "why the wanted ones never fire."),
-        (40, "Package the explainer tooling as an installable plugin so a new project gets it "
-             "without copying files."),
-        (47, "A knowledge graph over document fragments, so prior work is found rather than "
-             "remembered."),
-        (49, "A checker that resolves every <code>file:line</code> a spec cites — eight were wrong "
-             "in a single document."),
-        (50, "Refine the <code>/brief</code> skill — the page this one is a sibling of."),
-        (56, "Render the launch roadmap as a standing page like this one, deriving its ticks from "
-             "git rather than trusting them, so “where are we overall” stops being a hand "
-             "reconciliation."),
-        (57, "A page over the 690 review documents, surfacing the one number that predicts a "
-             "runaway review — how much of each round was caused by the last round's fixes — while "
-             "it can still change a decision."),
-        (58, "Every gate in one place: what it is, what it last returned, and which have never "
-             "failed — because a gate that cannot fail is the one to distrust."),
-        (89, "These pages exist so you can see what is going on, but building one costs the main "
-             "conversation dearly — nearly a megabyte of single-use scaffolding for one page, all "
-             "of it worthless once the link exists. Building them in a forked side-conversation "
-             "instead is the idea. What is undecided is who delivers the link, how a reader's "
-             "question gets back to the session that wrote the page, and what happens when the "
-             "inherited context goes stale mid-build. Only the four agent-written pages are "
-             "candidates — the three rebuilt by hooks already cost nothing."),
-        (103, "Ask a question on one of these pages and the answer comes from whichever session "
-              "is running now, not the one that wrote the page. The listener outlives the session "
-              "it belonged to, so a reader can be answered by a stranger."),
-        (105, "The dark-theme fallback in the page builder describes itself as supplying only "
-              "what nobody else supplied. That is true of any one colour and misleading about the "
-              "set: declaring some of them and not the rest gives a page a half-working theme "
-              "switch, which measured as dark text on a dark background — worse than declaring "
-              "none at all. Declare the whole palette or none of it, and the comment should say "
-              "so rather than let the next author find out by shipping it."),
-     ]),
+     'changes the address — and not everything pointing at the old one follows. Summaries cost real '
+     'money, so losing one loses money. Six items, one root cause; they were split apart during the '
+     'addressing work when a single fix kept failing review.',
+     'a member whose root cause is not the address changing under paid work',
+     [17, 19, 20, 21, 22, 25, 60]),
+    ('Anonymous users hold more database access than intended',
+     'All measured in production, and none of it currently reachable through the web API — but the '
+     'grants are real, and the third item is about the next one arriving by accident.',
+     'a member that was not measured in production, or one reachable through the web API today',
+     [30, 33, 54]),
+    ('Money-path edge cases',
+     'Small, well understood, and each needs one decision before the code can be written.',
+     'a member that needs no decision before its code can be written',
+     [26, 27, 28, 61, 62, 63]),
+    ('Product features you might actually want',
+     'Nothing here is broken; this is the work that makes the product better.',
+     'a member that is a defect rather than an improvement',
+     [1, 2, 3, 8, 12, 15, 23, 24, 51, 52]),
+    ('The reusable toolkit — the second deliverable',
+     'Not about the product: about the development harness being reusable on a new project.',
+     'a member about the product rather than about the development harness',
+     [18, 40, 47, 49, 50, 56, 57, 58, 89, 103, 105]),
+
     # ⚠ THIS GROUP'S FRAMING IS ITS OWN FALSIFIER, AND IT FIRED TWICE ON THE DAY IT WAS WRITTEN.
     # The first draft listed SIX items. #104 — a gate reporting a failure it cannot RETRACT — is
     # neither thing this sentence claims, and #94 is a docstring that overclaims while the guard
@@ -237,139 +459,24 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
     # purpose: under the create/retire policy filed on backlog row #90, a framing widened to
     # admit a member has stopped being a claim and become a bin with a better name. The sentence
     # stayed narrow and the membership moved.
-    ("Checks that can be wrong without looking wrong",
-     "Three items, one shape: a signal that does not do its job. Two are failures "
-     "indistinguishable from a pass; the third is a warning printed on every single run that "
-     "nobody acts on. This is the class that lets a gap sit for a week in plain sight — "
-     "including, until today, the missing descriptions on this page.", [
-        (101, "A pull request based on another branch runs no checks at all, and the answer it "
-              "gives — “no checks reported” — sits in exactly the place a green tick would. Two "
-              "such requests were one keystroke from merging with nothing behind them; only the "
-              "habit of treating “cannot run” as a failure caught it."),
-        (111, "The hook that protects the session handoff decides whether to act by reading what "
-              "an interpreter prints. An interpreter that fails to start, or that prints a "
-              "greeting first, yields neither expected answer — and the hook then does nothing at "
-              "all, silently, for the rest of the session. Its sibling was repaired exactly this "
-              "way ten days ago; this is the copy that was left behind."),
-        # ⚠ "on every run", NOT "beneath a green verdict" — r2 finding. The gate DOES exit 1 when
-        # a round is genuinely incomplete (the reviewer demonstrated it), so tying the warning to
-        # a green verdict states something false on the runs that matter most. The durable claim
-        # is that the line prints every time and nobody acts on it.
-        (112, "569 files in the review folder carry no round number and sit outside the check "
-              "that audits review rounds, which says so on every single run, under whatever "
-              "verdict it reached. Nobody can currently say what fraction of the corpus it "
-              "covers. "
-              "Silencing the warning is a legitimate outcome — the work is to classify the 569 "
-              "and then decide, not to assume they all need covering."),
-     ]),
-    ("Process, tooling and bookkeeping",
-     "Instruments and habits. Cheap individually; they are what stops the expensive items above "
-     "from recurring.", [
-        (16, "After a deploy, a browser tab left open keeps running the old JavaScript with no "
-             "“refresh available” prompt."),
-        (29, "A guard-coverage checker only inspects the parked schema, so the guards in real "
-             "migrations are invisible to it."),
-        (38, "Extract the sidebar's load/refresh state machine into a hook — a reviewer, asked "
-             "directly, said the current version was not worth its complexity."),
-        (39, "Roadmap items are identified by their position, so renumbering silently changes what "
-             "an old reference means."),
-        (41, "The prod read-only smoke. Built and green on 2026-08-21 — this row has simply not "
-             "been closed yet."),
-        (42, "Next.js says <code>middleware</code> is deprecated on every startup. It is the "
-             "authentication gate, so this is read-the-guide-first work."),
-        (45, "Leftover medium and low findings from a review round, presented for your decision "
-             "rather than fixed."),
-        (46, "Normalise unusual Unicode in titles before building a filename, so characters that "
-             "fold into path syntax never reach the address."),
-        (53, "You can verify which release is live, but not which commit it was built from. "
-             "Deliberately dormant until its trigger fires."),
-        (66, "Ninety-two written notes from past work sessions exist on one machine, are excluded "
-             "from git, and have no backup. Nobody has decided whether they are worth keeping. "
-             "The expensive part of that folder was already reclaimed; this is the residue, and "
-             "the decision is yours."),
-        (67, "Two helpers working at the same time can corrupt each other's results — measured "
-             "twice, once producing a false alarm that was filed as a blocking defect before anyone "
-             "traced it, and once nearly swallowing uncommitted work. Most of the danger has since "
-             "been engineered out. What is left is that the warning about it sits in a comment "
-             "inside one script, names two scripts that no longer exist, and is absent from the "
-             "document where the decision to run two helpers is actually made."),
-        (72, "The inventory that polices our safety checks cannot see one that is not NAMED like "
-             "one. It says in writing that it catches a check even before anyone wires it up; that "
-             "second route is unreachable, and was measured to be."),
-        (73, "A superseded piece of that same inventory is still in the file, and the only thing "
-             "that still runs it is its own test — so part of its reported coverage is of "
-             "machinery nothing uses. Waiting on the decision above."),
-        (85, "Three separate pieces of that same machinery each work out for themselves what a "
-             "code block is, and only one of them is the shared version. Nothing is broken "
-             "today and the part the page uses is the correct one — but these copies have "
-             "already disagreed twice, once in a way that made a real question invisible."),
-        (86, "The repair to the branch-cleanup command sits in files that a plugin update will "
-             "quietly stop reading, so one day the command goes back to reporting “nothing to "
-             "clean up” on a repository full of dead branches — and reads as success. The "
-             "durable copy now lives in this repository; what is left is confirming whether it "
-             "actually takes precedence over the plugin's own version."),
-        # ⚠ NO COUNTS IN THIS SENTENCE, ON PURPOSE. The first draft copied the row's dated
-        # measurement — "25 values including a bare question mark" — into prose that reads as
-        # present tense. Re-measured 2026-09-11: 27 values, and the question mark is gone. A
-        # number in prose has no owner and goes stale silently; a SHAPE claim ("letters are
-        # still being used as groupings") stays true until someone fixes it and is visibly
-        # false the moment they do.
-        (90, "One table holds goals, defects and one-line chores at once, and its grouping column "
-             "has decayed into values that are not groupings at all — single letters, and a bare "
-             "dash. The deeper cost is measured rather than argued: several reasonable ways of "
-             "counting the same rows disagree about how many items are open, because a status "
-             "cell is append-only with its verdict at the END, so a reader taking the first "
-             "marker it meets gets the original filing rather than the current state. Every "
-             "headline count of open work is a range until that is settled."),
-        (94, "A guard that stops a session mid-plan promises in writing that it can block at most "
-             "once. It relaxes only when the turn it interrupted was one it caused itself, so a "
-             "turn beginning after a background notification is blocked again — three times in "
-             "one session, while legitimately waiting on dispatched work. The behaviour is "
-             "correct; the description of it is not, and no escape is offered for the case that "
-             "actually arose."),
-        (92, "The reviewer wrapper watches a folder for changes during a run and attributes "
-             "whatever appears to the reviewer it launched. It can see that the folder changed, "
-             "never who changed it — so when both review halves run at once, which is the "
-             "documented way to run them, it accuses one of writing the other's file. The false "
-             "accusation is then written into the verdict file the build reads. Note the "
-             "direction: this is a check reporting a failure that is not real, which is why it "
-             "does not belong with the ones whose failures look like passes."),
-        (93, "Two checkers look near-identical and differ on purpose. Merging them — the obvious "
-             "tidy-up — silently reinstates a defect that was already fixed, and every gate still "
-             "passes, so the trap is laid for whoever cleans up next."),
-        (104, "The gate that holds work until a plan has been reviewed can only be cleared by "
-              "that review converging. A plan that instead ships by a better route leaves the "
-              "gate armed indefinitely, blocking unrelated work and directing whoever trips it to "
-              "go and review a document that has explicitly disclaimed its own authority. Note "
-              "the direction: this repo's usual failure is a gate claiming success it has not "
-              "earned, and this is a gate reporting a failure it cannot withdraw. Decide first "
-              "whether it is item 100 in this same group wearing a second number."),
-        # ⚠ "item 100", not "the problem above". The first draft said ABOVE and it was measured
-        # FALSE: `ordered` sorts by `dep_rank` before the number, so #104 renders ahead of #100.
-        # A spatial word in a description is a claim about a layout the description does not
-        # control — reference the item by number, which the renderer cannot reorder away.
-        (100, "The small file recording which plan is running is written by one program and read "
-              "by three others, each carrying its own idea of the grammar, and nothing anywhere "
-              "lists which combinations of its fields are legal. Nothing is broken today — all "
-              "three known failures are fixed — but they were one cause wearing three faces, so "
-              "this wants a design pass rather than an edit."),
-        (107, "One message covers two different reasons the mutation harness withholds a coverage "
-              "figure, so a reader cannot tell which of them happened. The obvious way to "
-              "separate them re-adds the exact thing an earlier slice spent three rounds "
-              "removing, so any proposal has to say how it avoids that."),
-        (108, "The mutation harness required a piece of code to be split in two so it could be "
-              "measured. That split was an improvement, but next time it may not be, and “the "
-              "tool needed it” will read as a reason. Write down which of the two should yield."),
-        (109, "A test that guards a line of code is attached to that line BY ITS TEXT, so "
-              "improving the wording detaches it. The test still exists, still passes, and no "
-              "longer guards anything. Only a full sweep finds these; it has happened five times."),
-        (113, "The program that builds this page has five mutation tests to its sibling's "
-              "sixty-four, and that number came from what one branch happened to fix rather than "
-              "from the file. What the gap cost has been counted: four review rounds turned up 1, "
-              "then 9, then 8, then 15 fresh tests that could never fail — every one of them "
-              "found by a person reading, none by a machine."),
-     ]),
+    ('Checks that can be wrong without looking wrong',
+     'Three items, one shape: a signal that does not do its job. Two are failures indistinguishable '
+     'from a pass; the third is a warning printed on every single run that nobody acts on. This is '
+     'the class that lets a gap sit for a week in plain sight — including, until today, the missing '
+     'descriptions on this page.',
+     'a member whose failure is plainly visible AS a failure',
+     [101, 111, 112]),
 ]
+
+# ⛔ THREE GROUPS RETIRED 2026-09-11 under row #90's policy, each by a NAMED trigger, and their
+# members did not lose their summaries — that is what splitting SUMMARIES out bought:
+#   * `Sync` — trigger (2), fewer than two open members. One item is an item, not a group.
+#   * `Small visual polish` — triggers (1) AND (3). Its framing claimed "extra-small items" while
+#     #7 is sized S; and after the bundle cleanup its membership {4,5,6,7} became EXACTLY the tag
+#     `product / renderer`, so the tag already selects it and the group added only a false clause.
+#   * `Process, tooling and bookkeeping` — the CREATE test. 22 items across 13 tags framed as
+#     "Instruments and habits. Cheap individually", which nothing could make false. A bin.
+
 
 
 # ─── ANSWERS to questions asked FROM the page, keyed by group number ────────────────────────────
@@ -864,7 +971,7 @@ def report_run(rows: list[dict], unread: Sequence[str]) -> None:
     ⛔ IT EXISTS BECAUSE THE ARMS DISAGREED, and the case that caught it is in this file's own
     suite. `main` succeeds two ways — with an Ask tray and without one — and the no-tray arm
     returned before ANY of the drift notes were printed. So a run that had already gone wrong once
-    (no tray) also silently dropped the GROUPS, DEPENDS and undescribed warnings, and the reader
+    (no tray) also silently dropped the GROUPS and DEPENDS drift warnings, and the reader
     got the smaller half of the truth exactly when they needed the larger one. This is r1 finding
     M-1's shape a third time; the answer is one function rather than a third copy of the block.
 
@@ -874,12 +981,6 @@ def report_run(rows: list[dict], unread: Sequence[str]) -> None:
     report_unread(unread)
     for note in drift_notes_for(rows, unread):
         print(f"⚠  {note}")
-    still = undescribed(GROUPS, {r["num"] for r in rows if not r["closed"]})
-    if still:
-        print(f"⚠  {len(still)} open item(s) have no description in GROUPS: {still}")
-        print("   They render under \"Filed, but nobody has described them yet\" — the page is "
-              "complete, the prose is not.")
-        print("   Add them to GROUPS in scripts/gen-backlog-page.py.")
 
 
 def report_unread(unread: Sequence[str]) -> None:
@@ -1057,30 +1158,6 @@ def attach_history(rows: list[dict], working_text: str) -> None:
         r["hist"] = dict(h, raw=live.get(r["num"], "")) if h else None
 
 
-def undescribed(groups: list, open_nums: set[int]) -> list[int]:
-    """Open items with no GROUPS sentence — RENDERED, not refused.
-
-    ⟳ 2026-09-02. This used to be folded into the old `coverage_errors` and it BLOCKED THE
-    BUILD. Measured cost, and the user is the one who found it: four items (#82-#85)
-    were filed over two days, the generator refused every time, and the page silently
-    stayed a day behind while looking current. The refusal was correct in intent —
-    a bare row nobody wrote a sentence for is not really on the page — and wrong in
-    consequence: refusing to publish ANYTHING is worse for a reader than publishing a
-    row that is merely undescribed.
-
-    ⛔ WHY THIS HALF AND NOT THE OTHERS. Missing means the reader LOSES information;
-    extra and duplicate mean the page SHOWS SOMETHING UNTRUE (a description attached
-    to an item that is not open, or one item claimed by two groups). Only the first is
-    safe to render through, so only the first moved. `sanitise_groups` now absorbs the rest
-    and still refuses.
-
-    The pressure to write the sentence does not disappear — it moves onto the page,
-    where the reader can see it, instead of into a log line at the moment of the edit.
-    """
-    grouped = {n for _, _, items in groups for n, _ in items}
-    return sorted(open_nums - grouped)
-
-
 def bundle_tags(raw: str) -> list[str]:
     """PURE. The Bundle cell as the TAGS it assigns, broadest first.
 
@@ -1143,15 +1220,15 @@ def sanitise_groups(groups: list, open_nums: set[int]) -> tuple[list, list[str]]
     notes, seen, out = [], set(), []
     dropped_closed: list[int] = []
     dropped_dupe: list[int] = []
-    for title, framing, items in groups:
+    for title, framing, falsifier, nums in groups:
         kept = []
-        for n, desc in items:
+        for n in nums:
             if n not in open_nums:
                 dropped_closed.append(n); continue
             if n in seen:
                 dropped_dupe.append(n); continue
-            seen.add(n); kept.append((n, desc))
-        out.append((title, framing, kept))
+            seen.add(n); kept.append(n)
+        out.append((title, framing, falsifier, kept))
     if dropped_closed:
         # ⚠ "no longer open" is an INFERENCE from absence, and r2 finding H-1 measured it stating
         # something false: three rows the parser could not read left `open_nums`, and this line
@@ -1321,25 +1398,28 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str,
     # false of an unread row, and the last two contradict the note directly above them. It gets its
     # own box below, with its own heading and the right file named.
 
-    # ⟳ 2026-09-02. Items with no GROUPS sentence used to REFUSE the build. They now get
-    # a group of their own, at the END, and the run reports a ⚠ line — which the serve
-    # layer already forwards verbatim to the Refresh button as "rebuilt WITH A WARNING".
-    # No new channel: `_regenerate` has surfaced ⚠ lines since the Ask-tray case.
+    # ⭐ THE REST, AND IT IS AN INDEX RATHER THAN A GROUP — backlog #90's policy, adopted
+    # 2026-09-11. Under clause 0 grouping is OPT-IN, so an open item belonging to no group is
+    # NORMAL and not a debt. There is therefore nothing here to be ashamed of and no warning to
+    # print: the section that used to say "nobody has described them yet" is gone with the
+    # `undescribed` function that computed it.
     #
-    # The framing text is deliberately blunt. This section is meant to look unfinished,
-    # because it IS, and the previous design's whole merit — pressure to write the
-    # sentence — only survives if the gap is visible rather than comfortable.
-    missing = undescribed(GROUPS, open_nums)
+    # HOW THIS DIFFERS FROM THE BIN IT REPLACES: the retired group carried a FRAMING —
+    # "Instruments and habits. Cheap individually" — which characterised its members and could not
+    # be false. This carries no claim, and says so in its own dek. A group asserts; an index
+    # enumerates.
+    #
+    # ⛔ THAT IS A DESCRIPTION OF INTENT, NOT A GUARANTEE, and three review rounds each measured a
+    # broader version of it false. Exactly what holds, stated as a property rather than a promise:
+    # the empty falsifier keeps this entry out of rule 1's reach, and rule 4 makes rewording these
+    # two strings a TWO-FILE EDIT. ⚠ It does NOT prevent the rewording — measured: change both
+    # copies together and the guard exits 0, by design. What it buys is that the change appears in
+    # a diff as two files rather than one line. And NOTHING here touches prose elsewhere on the
+    # page. Full scope and residue: `check-group-claims.py`'s docstring.
+    rest = sorted(open_nums - {n for _, _, _, ns in groups_ok for n in ns})
     groups_for_page = list(groups_ok)
-    if missing:
-        groups_for_page.append((
-            "Filed, but nobody has described them yet",
-            "These are open items with no plain-English summary written for them, so all you get "
-            "here is the row. They are on the page rather than held back, because a page that "
-            "refuses to build tells you nothing at all — which is exactly how four of these went "
-            "unnoticed for a day. Someone should write them a sentence.",
-            [(n, "") for n in missing],
-        ))
+    if rest:
+        groups_for_page.append((INDEX_TITLE, INDEX_DEK, "", rest))
 
     order = {"crit": 0, "high": 1, "med": 2, "low": 3, "none": 4}
     # ⚠ `.get`, not `[]`. A row carrying a ✅ marker while its Status cell does not is OPEN with
@@ -1349,18 +1429,18 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str,
     closed_rows.sort(key=lambda r: r["num"])
 
     gate_of, groups_html = {}, ""
-    for gi, (title, framing, items) in enumerate(groups_for_page, 1):
+    for gi, (title, framing, _falsifier, items) in enumerate(groups_for_page, 1):
         # ORDERED, not as listed. Items that survive the root — or have no root — come first;
         # anything the root deletes sinks to the bottom, because that is work you should not start.
-        ordered = sorted(items, key=lambda it: (dep_rank(it[0]), it[0]))
+        ordered = sorted(items, key=lambda n: (dep_rank(n), n))
 
-        used_roots = {DEPENDS[n][1] for n, _ in ordered if n in DEPENDS}
+        used_roots = {DEPENDS[n][1] for n in ordered if n in DEPENDS}
         starthere = ""
         for rk in sorted(used_roots):
             if rk not in ROOTS:
                 continue
             tally = {}
-            for n, _ in ordered:
+            for n in ordered:
                 if n in DEPENDS and DEPENDS[n][1] == rk:
                     tally.setdefault(DEPENDS[n][0], []).append(n)
             bits = " · ".join(
@@ -1377,7 +1457,15 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str,
                           f' governs these — {bits}</p>')
 
         trs = ""
-        for n, line in ordered:
+        for n in ordered:
+            # ⭐ THE SUMMARY IS LOOKED UP, NOT CARRIED. Until 2026-09-11 a group held
+            # `(number, sentence)` pairs, which nested TWO independent things: a claim about a
+            # SET (the framing) and a plain-English line about ONE ROW. The nesting is why
+            # retiring a group would have deleted 22 perfectly good sentences along with a
+            # framing that asserted nothing — measured at 27 items before the split. Separated,
+            # a summary outlives any grouping and an ungrouped item can still have one.
+            # `.get`, not `[]`: a summary is OPTIONAL, which is the whole of clause 0.
+            line = SUMMARIES.get(n, "")
             r = by_num[n]
             cls, label = waiting_on(r["size"])
             gate_of[n] = cls
@@ -1812,12 +1900,23 @@ truth, which is why it is reproduced verbatim inside every card.</p>
 {callout}
 
 <h2>What these actually are</h2>
-<p class="dek">Grouped by what the item <em>is</em>, not by how loud its marker is. This is the one
-part of the page written by hand, and the only part that can go out of date — every item below was
-read from the file in this run. An open item can never go missing from it: anything the grouping
-does not name is listed under <em>Filed, but nobody has described them yet</em>, and anything the
-grouping names that is no longer open is dropped with a note at the top. Use the <b>tag</b> control
-to see one bundle at a time; the tags on each card are buttons. Each number opens its full entry.</p>
+<p class="dek">Grouped by what the item <em>is</em>, not by how loud its marker is. The group
+headings are the one part of this page written by hand and the only part that can go out of date —
+every item below was read from the file in this run. An open item can never go missing: anything no
+group names is listed under <em>The rest, one line each</em>, and anything a group names that is no
+longer open is dropped with a note at the top. Each number opens its full entry.</p>
+
+<p class="dek" id="vocab"><b>Three words on this page mean three different things, and it is worth
+thirty seconds to keep them apart.</b> A <b>tag</b> answers <em>what is this item about?</em> — it
+is read straight out of the file's Bundle column, it is how the filter above works, and it cannot
+be wrong, only useless. A <b>group</b> answers <em>what do these items have in common that is worth
+asserting?</em> — it is a <em>claim</em>, written by hand, and it <em>can</em> be wrong, which is
+why every group carries a stated falsifier and why belonging to one is optional. A <b>slice</b> is
+neither: it is a piece of work that has to land <em>first</em>, and items are not filed <em>in</em>
+it — they are joined <em>to</em> it by one of four edges, because the interesting question is not
+which bucket an item sits in but whether it still exists after the slice lands. Tags and groups
+both answer <em>which items?</em>; a slice answers <em>in what order, and does this survive?</em>
+See the map below.</p>
 
 <h3 class="mapo" id="order">The order to start in</h3>
 <p class="framing">Every dependency recorded, drawn from the same data as the markers beside each
@@ -2554,7 +2653,7 @@ def self_test() -> int:
     # 17, which is also a DEPENDS key, so forcing it closed produced BOTH notes and every
     # GROUPS-side assertion was satisfied by the DEPENDS one. Deleting the whole GROUPS family from
     # the drift channel survived 152/152.
-    _gnum = next(n for _, _, its in GROUPS for n, _ in its if n not in DEPENDS)
+    _gnum = next(n for *_, its in GROUPS for n in its if n not in DEPENDS)
 
     def _drifted_rows(_unread: list[str]) -> list[dict]:
         return [dict(r, hist=None, closed=True) if r["num"] == _gnum else dict(r, hist=None)
@@ -2680,48 +2779,20 @@ def self_test() -> int:
     # actually is rather than what one keyword happens to look like.
     _REAL_ROWS: list[dict] = [dict(r, hist=None) for r in parse(BACKLOG.read_text().splitlines())]
 
-    # ⭐ RE-ANCHORED 2026-09-11, and the reason is worth more than the fix. Both cases below used
-    # to run against `_REAL_ROWS` unaltered, and they passed only because the real backlog HAPPENED
-    # to contain undescribed items — ten when r4 wrote them. Writing the missing sentences turned
-    # them RED without touching a line of the rule they guard. That is a case measuring the
-    # POPULATION rather than the RULE (`portable-practices` §21), and it is the third instance in
-    # this repo of a fix hollowing out its own falsifier. Both arms are now forced by a fixture, so
-    # the rule is asserted whether or not today's backlog has a gap — and the negative arm, which
-    # never existed, is what proves the block is not simply always printed.
-    _FREE = max(r["num"] for r in _REAL_ROWS) + 1
-    _DESCRIBED = min(n for _, _, items in GROUPS for n, _ in items)
+    # ⛔ FOUR CASES RETIRED WITH THEIR SUBJECT, 2026-09-11 — the ONE sanctioned kind of coverage
+    # fall, recorded here with the count and the reason rather than left as a silent drop.
+    # `undescribed()` and `report_run`'s third channel are GONE: under backlog #90's clause 0 an
+    # ungrouped open item is normal, so "N open item(s) have no description" is no longer a
+    # finding to report. The cases were `the undescribed fixture is not vacuous`, `the
+    # undescribed block is printed`, `...and it is SILENT when every open item has a sentence`
+    # and `its count is the number of items with no sentence`.
+    #
+    # ⚠ THREE OF THOSE FOUR WERE WRITTEN THIS MORNING, to fix cases that measured the POPULATION
+    # instead of the RULE. They were correct and they are still being deleted, because the rule
+    # itself stopped existing — that is retirement-with-subject, not a ratchet fall. The
+    # distinction matters: a case deleted because its subject is gone costs nothing; a case
+    # deleted because it became inconvenient costs exactly the defect it used to catch.
 
-    # ⚠ The fixture's own falsifier. If a future GROUPS ever named `_FREE`, the positive arm below
-    # would assert about a block that no longer fires and would report a pass for the wrong reason.
-    case("the undescribed fixture is not vacuous — no group names the synthetic item",
-         lambda: _FREE not in {n for _, _, items in GROUPS for n, _ in items}
-         and _DESCRIBED in {n for _, _, items in GROUPS for n, _ in items})
-
-    def _rows_with_undescribed() -> list[dict]:
-        """The real corpus plus ONE open item no group names."""
-        return _REAL_ROWS + [dict(_REAL_ROWS[0], num=_FREE, closed=False)]
-
-    def _rows_all_described() -> list[dict]:
-        """One open item, and a group does name it — so nothing here is undescribed."""
-        return [dict(_REAL_ROWS[0], num=_DESCRIBED, closed=False)]
-
-    case("the undescribed block is printed, with its count and its remedy",
-         lambda: any(ln.startswith("⚠  ") and "no description in GROUPS" in ln
-                     for ln in _run_printed(_rows_with_undescribed(), []))
-         and any("Add them to GROUPS" in ln
-                 for ln in _run_printed(_rows_with_undescribed(), [])))
-    case("...and it is SILENT when every open item has a sentence",
-         lambda: not any("no description in GROUPS" in ln
-                         for ln in _run_printed(_rows_all_described(), [])))
-
-    def _undescribed_count(rows: list[dict]) -> int:
-        """Hoisted out of the f-string it lived in: a set comprehension nested inside a format
-        field parses, runs and reads as noise, and a type checker could not follow it either."""
-        return len(undescribed(GROUPS, {r["num"] for r in rows if not r["closed"]}))
-
-    case("its count is the number of items with no sentence",
-         lambda: any(f"⚠  {_undescribed_count(_rows_with_undescribed())} open item(s)" in ln
-                     for ln in _run_printed(_rows_with_undescribed(), [])))
     # ⚠ r4 finding M-3. The ⚠ PREFIX is the delivery mechanism — `explainer-serve` collects only
     # lines that start with it — and replacing it with three spaces survived 152/152 under both
     # HOMEs. Every drift note must carry it.
@@ -2734,8 +2805,22 @@ def self_test() -> int:
     # `check-*` guard, in no mutation manifest. It is the channel that reaches the human at the
     # moment they type the decorated row, and its awk was verified by hand and by nothing else.
     # This RUNS the program out of the hook file, so an edit to that line reddens a case.
+    # ⛔ THE POPULATION IS ASSERTED BEFORE IT IS READ, and three review rounds paid for this line.
+    # `_hook_awk` used to call `.read_text()` straight out, so a tree staged WITHOUT `.claude` —
+    # which is what every reviewer isolating this branch did — raised `FileNotFoundError` and
+    # killed the whole run. A suite that DIES reports nothing; r4 read that as a Blocking in the
+    # code when it was a red CONTROL in the briefing. Now the missing file is one NAMED failure
+    # saying what to stage, and the four cases below degrade to a readable mismatch.
+    _HOOK = REPO / ".claude/hooks/regen-backlog-page.sh"
+    case("the hook this suite reads is present — a missing one is CANNOT RUN, not a pass",
+         lambda: _HOOK.is_file())
+
     def _hook_awk(sample: str) -> str:
-        src = (REPO / ".claude/hooks/regen-backlog-page.sh").read_text()
+        if not _HOOK.is_file():
+            return ("CANNOT RUN: .claude/hooks/regen-backlog-page.sh is absent from this tree. "
+                    "Four cases read the awk program out of it and RUN it, so a tree staged "
+                    "without .claude is a RED CONTROL — stage scripts, docs AND .claude.")
+        src = _HOOK.read_text()
         prog = next(ln for ln in src.splitlines() if ln.lstrip().startswith("echo \"$OUT\" | awk"))
         prog = prog.split("awk ", 1)[1].strip().strip("'")
         return subprocess.run(["awk", prog], input=sample, capture_output=True,
@@ -2841,24 +2926,34 @@ def self_test() -> int:
     # same two drifts and then renders anyway. These cases moved with the behaviour rather than
     # being deleted, so the record shows the contract was changed on purpose, not lost.
     case("a matching grouping needs no correction",
-         lambda: sanitise_groups([("g", "f", [(1, "x"), (2, "y")])], {1, 2}) == (
-             [("g", "f", [(1, "x"), (2, "y")])], []))
-    case("an ungrouped open item is not a correction — `undescribed` renders it",
-         lambda: sanitise_groups([("g", "f", [(1, "x")])], {1, 2})[1] == []
-         and undescribed([("g", "f", [(1, "x")])], {1, 2}) == [2])
+         lambda: sanitise_groups([("g", "f", "x", [1, 2])], {1, 2}) == (
+             [("g", "f", "x", [1, 2])], []))
+    # ⟳ 2026-09-11. This used to read "an ungrouped open item is not a correction — `undescribed`
+    # renders it". Under backlog #90's clause 0 an ungrouped open item is NORMAL, not something
+    # to render specially, so the second half went with `undescribed`. The first half is the part
+    # that still says something: leaving an open item out of every group is not drift.
+    case("an ungrouped open item is not a correction",
+         lambda: sanitise_groups([("g", "f", "x", [1])], {1, 2})[1] == [])
     case("a group naming a CLOSED item drops it and SAYS SO, instead of refusing",
-         lambda: sanitise_groups([("g", "f", [(1, "x"), (7, "z")])], {1}) == (
-             [("g", "f", [(1, "x")])], ["GROUPS still names 1 item(s) that are no longer open: "
+         lambda: sanitise_groups([("g", "f", "x", [1, 7])], {1}) == (
+             [("g", "f", "x", [1])], ["GROUPS still names 1 item(s) that are no longer open: "
                                         "[7] — dropped from their group for this build"]))
     case("a duplicate across groups is kept in the FIRST and reported",
-         lambda: sanitise_groups([("a", "f", [(1, "x")]), ("b", "f", [(1, "x")])], {1})[0]
-         == [("a", "f", [(1, "x")]), ("b", "f", [])]
+         lambda: sanitise_groups([("a", "f", "x", [1]), ("b", "g", "y", [1])], {1})[0]
+         == [("a", "f", "x", [1]), ("b", "g", "y", [])]
          and "more than one group" in " ".join(
-             sanitise_groups([("a", "f", [(1, "x")]), ("b", "f", [(1, "x")])], {1})[1]))
+             sanitise_groups([("a", "f", "x", [1]), ("b", "g", "y", [1])], {1})[1]))
+    # ⚠ THE FALSIFIER FIELD IS CARRIED, NOT DROPPED. `sanitise_groups` rebuilds each tuple, so a
+    # fourth field is exactly the kind of thing a rebuild silently loses — and the guard that
+    # reads it would then report every group as having no falsifier, which looks like a finding
+    # about the DATA rather than about this function.
+    case("sanitise_groups carries the falsifier through untouched",
+         lambda: sanitise_groups([("g", "f", "the falsifier", [1])], {1})[0][0][2]
+         == "the falsifier")
     # ⛔ THE FALSIFIER FOR THE WHOLE CHANGE: the 2026-09-04 defect must no longer stop a build.
     case("the drift that froze the page for five days now only WARNS",
-         lambda: sanitise_groups([("g", "f", [(78, "x"), (83, "y"), (87, "z"), (1, "live")])],
-                                 {1})[0] == [("g", "f", [(1, "live")])])
+         lambda: sanitise_groups([("g", "f", "x", [78, 83, 87, 1])],
+                                 {1})[0] == [("g", "f", "x", [1])])
 
     # ─ tags ─────────────────────────────────────────────────────────────────
     case("a slash tag assigns the family AND the leaf",
@@ -2971,29 +3066,49 @@ def self_test() -> int:
              lambda d=_root["detail"]: _page.count(d) == 1)
     case("the dependency map is drawn exactly once", lambda: _page.count("<figure class=\"depmap\"") == 1)
 
-    # ── an undescribed item RENDERS rather than blocking the build (2026-09-02) ─────────────────
-    # ⛔ THE DEFECT THIS REPLACES, and the user is the one who hit it: the generator refused
-    # while four items sat unwritten, so the page stayed a day behind and looked current. The
-    # refusal's intent was right; refusing to publish anything was the wrong consequence.
-    case("an undescribed open item is reported",
-         lambda: undescribed([("t", "f", [(1, "x")])], {1, 2}) == [2])
-    case("a fully described set reports nothing",
-         lambda: undescribed([("t", "f", [(1, "x"), (2, "y")])], {1, 2}) == [])
+    # ── AN ITEM IN NO GROUP STILL REACHES THE READER — re-aimed 2026-09-11 ─────────────────────
+    # ⛔ THE DEFECT THIS LINE OF CASES REPLACES, and the user hit it twice. First the generator
+    # REFUSED while four items sat unwritten, so the page stayed a day behind and looked current.
+    # Then the replacement rendered them under "Filed, but nobody has described them yet", which
+    # made a normal state look like debt and accumulated twelve rows before anyone noticed.
+    # Under backlog #90's clause 0 neither happens: grouping is opt-in and the leftovers are an
+    # INDEX, not a bucket of shame.
+    #
     # ⚠ THE WIRING, not the predicate. This repo keeps finding a correct predicate that nothing
-    # calls — `undescribed` can be perfectly right and never reach the page. Built from the REAL
-    # backlog with one item's description withheld, so it exercises the actual render path.
-    _short = [g for g in GROUPS]
-    _short[-1] = (_short[-1][0], _short[-1][1], [it for it in _short[-1][2] if it[0] != 85])
-    _rows85 = [dict(r, hist=None) for r in parse(BACKLOG.read_text().splitlines())]
+    # calls, so this drives the REAL `build` over the REAL backlog with one item pulled out of a
+    # SURVIVING group — #17, which is group 1's first member — and asks whether it still reaches
+    # the page, with its summary intact.
+    _short = [(g[0], g[1], g[2], [n for n in g[3] if n != 17]) for g in GROUPS]
+    _rows17 = [dict(r, hist=None) for r in parse(BACKLOG.read_text().splitlines())]
     _saved, globals()["GROUPS"] = GROUPS, _short
     try:
-        _undesc_page = build(_rows85, "sha", "2026-01-01 00:00", "stamp")
+        _ungrouped_page = build(_rows17, "sha", "2026-01-01 00:00", "stamp")
     finally:
         globals()["GROUPS"] = _saved
-    case("an undescribed item still lands in a rendered group",
-         lambda: "Filed, but nobody has described them yet" in _undesc_page)
-    case("...and the page is still built, not refused",
-         lambda: len(_undesc_page) > 1000)
+    # ⚠ THE HEADING MARKUP, not the bare phrase — and the suite caught this the moment the page
+    # gained a paragraph explaining the index BY NAME. A phrase in prose and a rendered section
+    # are different claims; greping the phrase made "the section exists" true whenever the page
+    # merely mentioned it, and the negative arm below went red rather than silently passing.
+    case("an item in no group lands in the index instead of vanishing",
+         lambda: "<h3>The rest, one line each</h3>" in _ungrouped_page)
+    case("...and it keeps its summary there, rather than rendering as a bare row",
+         lambda: SUMMARIES[17][:40] in _ungrouped_page)
+    # ⚠ THE NEGATIVE ARM. Without it the case above passes on a page that shows the index
+    # ALWAYS — including when every open item is grouped, which is the state the index exists to
+    # stay out of. The real GROUPS covers less than every open item, so this drives a fixture
+    # where one group claims them all.
+    _allrows = [dict(r, hist=None) for r in parse(BACKLOG.read_text().splitlines())]
+    _every = [("all of it", "one group claims every open item", "x",
+               [r["num"] for r in _allrows if not r["closed"]])]
+    _saved2, globals()["GROUPS"] = GROUPS, _every
+    try:
+        _full_page = build(_allrows, "sha", "2026-01-01 00:00", "stamp")
+    finally:
+        globals()["GROUPS"] = _saved2
+    case("...and the index is ABSENT when every open item is grouped",
+         lambda: "<h3>The rest, one line each</h3>" not in _full_page)
+    case("the page is built either way, never refused",
+         lambda: len(_ungrouped_page) > 1000 and len(_full_page) > 1000)
 
     # ── links are READABLE, in every palette this page can be rendered under ────────────────────
     case("every link colour clears WCAG AA on every surface it lands on, all four palettes",
@@ -3096,16 +3211,34 @@ def self_test() -> int:
     # ⭐ The one case that measures the SHIPPED grouping rather than a fixture. If an item is filed
     # or closed and GROUPS is not updated, this fails here — before anyone opens the page.
     real = parse(BACKLOG.read_text().splitlines())
-    # ⭐ The invariant that must hold WHATEVER the grouping has drifted to: after sanitisation,
-    # every open item in the REAL backlog reaches the page exactly once — grouped, or under the
-    # "nobody has described them yet" bucket. Asserting GROUPS is pristine would re-create the
-    # coupling that froze the page: closing a row would fail the suite.
+    # ⭐ THE INVARIANT THAT MUST HOLD WHATEVER THE GROUPING HAS DRIFTED TO: every open item in the
+    # REAL backlog reaches the page exactly once — inside a group, or in the index. Asserting that
+    # GROUPS is pristine would re-create the coupling that froze the page for five days, because
+    # closing a row would then fail the suite.
+    #
+    # ⚠ READ OFF THE RENDERED PAGE, NOT RE-DERIVED. The obvious form — `placed + (open - placed)
+    # == open` — is a TAUTOLOGY: it is true of any `placed` whatsoever and would pass with the
+    # index section deleted outright. This repo has shipped that shape before under the name
+    # "a case that cannot fail". So the second half is parsed back out of the HTML the index
+    # actually produced, which fails the moment the section stops rendering what it claims.
     _open_real = {r["num"] for r in real if not r["closed"]}
     _san, _ = sanitise_groups(GROUPS, _open_real)
-    _placed = [n for _, _, its in _san for n, _ in its]
-    case("every open item reaches the page exactly once, however GROUPS has drifted",
-         lambda: sorted(_placed + undescribed(GROUPS, _open_real)) == sorted(_open_real)
-         and len(_placed) == len(set(_placed)))
+    _placed = [n for *_, its in _san for n in its]
+    _real_rows = [dict(r, hist=None) for r in real]
+    _real_page = build(_real_rows, "sha", "2026-01-01 00:00", "stamp")
+    # ⛔ BOUNDED AT THE NEXT HEADING, and the unbounded version is why this comment exists. The
+    # first draft was `split(...)[-1]`, which keeps everything AFTER the heading — including the
+    # full "Every row, as filed" table below it, where every open item appears. `_indexed` then
+    # collapsed to "all unplaced items" and the invariant became the tautology the paragraph
+    # above warns about. Written, then committed three lines later; caught by MEASURING the
+    # section and getting 113 items in a 27-item index.
+    _idx = (_real_page.split("<h3>The rest, one line each</h3>", 1)[-1].split("<h2", 1)[0]
+            if "<h3>The rest, one line each</h3>" in _real_page else "")
+    _indexed = {n for n in _open_real - set(_placed) if f'#i{n}">#{n}</a>' in _idx}
+    case("every open item reaches the page exactly once — in a group, or in the index",
+         lambda: len(_placed) == len(set(_placed))
+         and set(_placed).isdisjoint(_indexed)
+         and set(_placed) | _indexed == _open_real)
     case("the real file parses at all (fail-closed on a restructure)", lambda: len(real) > 20)
     # ⭐ THE RATCHET the floor above only pretends to be. `> 20` tolerates losing 88 of 110 rows;
     # this fails on the FIRST row the parser cannot read, and names it. Anchored to the file's own

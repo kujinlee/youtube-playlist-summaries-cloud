@@ -1,0 +1,15 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 2326 chars"
+  ],
+  "exit_code": 0,
+  "gate_ran": true,
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f872245b-d763-4621-9817-c63a543b2ef5/scratchpad/pr90.md: CREATED during the run (writer unattributed)"
+  ],
+  "model": "gpt-5.5",
+  "reason": "2326 chars",
+  "review": "g90-r2.md",
+  "schema": 1,
+  "tool": "codex-review"
+}
