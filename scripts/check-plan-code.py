@@ -2,7 +2,7 @@
 """A plan that contains code must ASSEMBLE into that code, and its evidence must be RUN.
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
-    python3 scripts/check-plan-code.py --self-test          # 105 cases
+    python3 scripts/check-plan-code.py --self-test          # 111 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -60,7 +60,12 @@ lives in the plan under review, where a reviewer reads it.
                   what CI runs (backlog #70, 2026-08-29), and it is the mode whose
                   green means something about the code that ships.
 
-The final line names the mode, so a CI log cannot be read as the wrong subject.
+The final line of STDOUT names the mode, so a CI log cannot be read as the wrong subject.
+
+⟳ r1 L2 — "of STDOUT" is load-bearing and was missing. Progress goes to stderr, so under
+`--mutate . 2>&1` the last line is a progress line, not the verdict. Nothing in-repo merges
+the streams (`ci.yml` runs the command bare and reads the exit code), but merging them is the
+ordinary way to read a log, and the sentence was stated as an invariant.
 
 """
 from __future__ import annotations
@@ -586,7 +591,12 @@ EXPECTED_MUTATIONS = {
     # not be attributed to any case; what it did not do was say WHY, and that silence cost two
     # branches in one day — both diagnosed by hand from an empty list at the bottom of a
     # 420-mutation log. The new entry guards the DIAGNOSIS, not the refusal.
-    "scripts/check-plan-code.py": 39,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    # ⟳ r1 of the progress round: 39 → 48. Nine, for the six new clauses plus the one whose case
+    # could not fail (B1) — and ONE RETARGET: bounding the line rewrote `progress_line`'s return,
+    # orphaning the anchor that guarded it. An anchor binds by TEXT, so improving code breaks it
+    # and the suite stays green; `--mutate .` refuses an unresolved anchor, which is the only
+    # reason that was caught here rather than merged.
+    "scripts/check-plan-code.py": 48,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -784,7 +794,8 @@ def load_manifests(root: pathlib.Path) -> tuple[list[dict], list[str]]:
     return out, problems
 
 
-def mutate_delivered(root: pathlib.Path) -> tuple[bool, list[str], "Measured | NotMeasured"]:
+def mutate_delivered(root: pathlib.Path,
+                     progress=None) -> tuple[bool, list[str], "Measured | NotMeasured"]:
     """Mutate the DELIVERED scripts, not a copy assembled from a document.
 
     The whole `scripts/` tree is copied because these scripts import each other as
@@ -874,7 +885,10 @@ def mutate_delivered(root: pathlib.Path) -> tuple[bool, list[str], "Measured | N
         # THE CONTROL, FIRST. Every 'caught' below claims the suite went red BECAUSE of
         # the mutation; that claim is empty unless the suite is green without it.
         for position, name in enumerate(targets, 1):
-            stderr_progress(position, len(targets), f"control {name}")
+            # SILENT UNLESS A CALLER ASKS — see `run_mutations`. The reporter belongs to the
+            # top-level entry point; this function is driven fourteen times by its own suite.
+            if progress is not None:
+                progress(position, len(targets), f"control {name}")
             rc, out = run_suite(d, name)
             ev_files[name] = {"rc": rc, "tail": (out.split("\n")[-1] if out else ""),
                               "blocks": None}
@@ -886,7 +900,7 @@ def mutate_delivered(root: pathlib.Path) -> tuple[bool, list[str], "Measured | N
         if report:
             return False, report, NotMeasured.from_counts([], None, ev_files)
         ok, m_report, m_muts, m_survivors = run_mutations(d, muts, set(targets),
-                                                        progress=stderr_progress)
+                                                          progress=progress)
         # EVERY declared mutation must have produced a verdict. A skipped one leaves the tally
         # looking complete — 161 of 162 with 0 survivors reads as coverage confirmed.
         declared = len(muts)
@@ -902,7 +916,8 @@ def mutate_delivered(root: pathlib.Path) -> tuple[bool, list[str], "Measured | N
         # because the predicate is where the whole contract now lives.
         controls_green = True
         for position, name in enumerate(targets, 1):
-            stderr_progress(position, len(targets), f"re-control {name}")
+            if progress is not None:
+                progress(position, len(targets), f"re-control {name}")
             rc, out = run_suite(d, name)
             if not control_is_green(rc, out):
                 ok = False
@@ -1160,8 +1175,13 @@ def tally_line(ok: bool, verdict) -> str:
               f"{len(verdict.survivors)} survivor(s)")
 
 
+# One terminal row, so an update cannot wrap. ⟳ r1 M2: labels are manifest names written for a
+# review document — measured across all 434, the longest is 232 characters and 81 exceed 100.
+PROGRESS_WIDTH = 79
+
+
 def progress_line(done: int, total: int, label: str) -> str:
-    """One line of "still moving" for a run that is otherwise silent for ~25 minutes. PURE.
+    """One line of "still moving" for a run that is otherwise silent from start to finish. PURE.
 
     ⛔ A SPINNER WOULD BE THEATRE. It spins just as happily over a wedged process, and what a
     reader needs is not motion but POSITION — which subject, how far, out of how many. A line
@@ -1179,18 +1199,34 @@ def progress_line(done: int, total: int, label: str) -> str:
     most readers most of the time; the first draft of this docstring said "~25 minutes" from
     exactly that unmeasured recollection. What is stable, and what this function restores, is the
     RATE: 510 lines over the run, so a gap much longer than `SUITE_TIMEOUT` is the signal.
+
+    ⟳ r1 M2 — BOUNDED TO ONE ROW, and the POSITION is never what gets cut. One rule, no special
+    case: the head is always a prefix of the result, so an impossible budget costs the label and
+    leaves the number. That branch is unreachable anyway — it needs a `done`/`total` pair of some
+    76 digits — and a clause no input can reach is a clause no case can kill.
     """
-    return f"[{done}/{total}] {label}"
+    head = f"[{done}/{total}] "
+    room = PROGRESS_WIDTH - len(head)
+    if len(label) <= room:
+        return head + label
+    return head + label[:max(room - 1, 0)] + "…"
 
 
 def stderr_progress(done: int, total: int, label: str) -> None:
     """Write a progress line where it cannot be mistaken for the verdict.
 
-    ⚠ STDERR, AND FLUSHED. Two separate reasons, both load-bearing:
+    ⚠ STDERR, AND FLUSHED. Two separate reasons — and the second one's stated mechanism was
+    WRONG until r1 L1, which is why it now carries its measurement:
       * the VERDICT is stdout and is parsed — by `tally_line`'s cases and by anyone reading a
         log's last line. Progress must not enter that stream;
-      * without `flush`, a pipe buffers this into oblivion and the whole point is lost: the
-        reader sees nothing until the process exits, which is the state being fixed.
+      * `flush` is what makes this visible BEFORE exit when `sys.stderr` has been REPLACED with
+        a block-buffered stream. ⛔ The original claim here — "a pipe buffers this into
+        oblivion" — is FALSE, and both reviewers caught it: measured on CPython 3.14.4,
+        `sys.stderr.line_buffering` is `True` piped to a file and captured by a child under
+        `capture_output=True`, as it has been since 3.9. Killing an unflushed process mid-write
+        lost nothing. Where it DOES differ is a replaced stream: `redirect_stderr(open(p,"w"))`
+        gives a TextIOWrapper over an 8 KiB BufferedWriter, and without `flush` the bytes are
+        invisible until close. That is the case below, and it is why the clause stays.
     """
     print(progress_line(done, total, label), file=sys.stderr, flush=True)
 
@@ -1800,6 +1836,58 @@ def _self_test() -> int:
                  any("control" in r.lower() for r in _rep), False)
             case("...and a complete run is TRUSTWORTHY, so the caller may print the tally",
                  isinstance(_ev, Measured), True)
+        # ── THE REPORTER IS INJECTED, AND THE DEFAULT IS SILENCE ──────────────────────────
+        # ⟳ r1 H1/H2/M1. `mutate_delivered` USED to call `stderr_progress` directly at both
+        # control loops, and `_self_test` drives it fourteen times — so the suite's own stderr
+        # carried 542 B of progress. Three consequences, and only the third was cosmetic:
+        #   * `run_suite` returns `(stdout + stderr)`, and every CANNOT RUN message prints
+        #     `out[-400:]`. 542 B of progress pushes the `[FAIL]` line out of that window
+        #     ENTIRELY — measured — so the harness's own control-failure diagnostic contained
+        #     none of the failure. That undid r1 F7 (2026-09-09) for the one subject that
+        #     matters most: the harness itself;
+        #   * `control_is_green` is `rc == 0 and "passed" in out`, so author-written labels
+        #     entered the stream whose substring decides greenness. Two of the 434 live
+        #     manifest names contain "passed". Not reachable then, held by a naming
+        #     coincidence rather than by anything;
+        #   * nested runs printed progress nobody asked for.
+        # The fix is the seam `run_mutations` already had. THE PROGRESS ARGUMENT IS THE WHOLE
+        # POINT OF THESE TWO CASES: the first pins every site that must report, the second
+        # pins that none of them reports by default.
+        with tempfile.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td); _mini(_r)
+            _told: list = []
+            mutate_delivered(_r, progress=lambda *a: _told.append(a))
+            # Control, then the mutation, then re-control — the three phases a reader waits
+            # through. Asserting the SEQUENCE, not a count: a count survives losing the
+            # re-control loop and gaining a duplicate control.
+            case("every phase of --mutate reports its position when a caller asks",
+                 _told, [(1, 1, "control scripts/thing.py"),
+                         (1, 1, "value is two"),
+                         (1, 1, "re-control scripts/thing.py")])
+        with tempfile.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td); _mini(_r)
+            _me = io.StringIO()
+            with contextlib.redirect_stderr(_me):
+                mutate_delivered(_r)
+            # ⚠ THE STREAM, NOT A LIST. A list that nothing is wired to asserts `[] == []`,
+            # which is r1 B1 — the sixth instance on this branch of a guard whose existence
+            # is cased and whose content is not. `stderr_progress` resolves `sys.stderr` at
+            # call time, and `run_suite` captures its CHILDREN's stderr through subprocess,
+            # so what this sees is exactly the parent's own writes.
+            case("...and the whole path is silent when nobody asked", _me.getvalue(), "")
+        # ⛔ ...AND THE ONE CALLER THAT DOES ASK. Everything below `main` now defaults to silence,
+        # which means a single deleted keyword argument turns the entire feature off and leaves
+        # every case above still green — H2's shape exactly, moved one level up by H2's own fix.
+        # This is the only case that reaches the real entry point's stderr.
+        with tempfile.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td); _mini(_r)
+            _mo, _mer = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(_mo), contextlib.redirect_stderr(_mer):
+                main(["--mutate", str(_r)])
+            case("--mutate itself supplies the reporter, so a real run is not silent",
+                 [l for l in _mer.getvalue().split("\n") if l.startswith("[1/1] ")],
+                 ["[1/1] control scripts/thing.py", "[1/1] value is two",
+                  "[1/1] re-control scripts/thing.py"])
         # The falsifier for the instrument: break the UNMUTATED script. Without a control
         # check every mutation 'goes red' and a full table of catches is reported over a
         # suite that never worked.
@@ -1952,7 +2040,12 @@ def _self_test() -> int:
                     "        return 1", 1))
                 _saved_out, sys.stdout = sys.stdout, io.StringIO()
                 try:
-                    main(["--mutate", str(_r7)])
+                    # ⚠ STDERR TOO. This drives the REAL entry point, which is the one place
+                    # that supplies `stderr_progress` — so without this the suite's own stderr
+                    # carries progress from a nested run, and `out[-400:]` diagnostics upstream
+                    # lose the failure they exist to show (r1 H1).
+                    with contextlib.redirect_stderr(io.StringIO()):
+                        main(["--mutate", str(_r7)])
                     _mut_out = sys.stdout.getvalue()
                 finally:
                     sys.stdout = _saved_out
@@ -1977,7 +2070,10 @@ def _self_test() -> int:
                 """`--mutate` mode's stdout for `root`. The real entry point, not a helper."""
                 _s, sys.stdout = sys.stdout, io.StringIO()
                 try:
-                    main(["--mutate", str(root)])
+                    # stderr discarded for the same reason as above: the real entry point is
+                    # the one place a reporter is supplied, and this is a NESTED run.
+                    with contextlib.redirect_stderr(io.StringIO()):
+                        main(["--mutate", str(root)])
                     return sys.stdout.getvalue()
                 finally:
                     sys.stdout = _s
@@ -2249,10 +2345,27 @@ def _self_test() -> int:
     # reader needs is POSITION, not motion: which subject, how far, out of how many. A line that
     # stops advancing is then stuck, and `SUITE_TIMEOUT` bounds how long not-advancing can
     # legitimately last, so the threshold is DERIVED rather than guessed.
-    # MEASURED before this existed: a full `--mutate .` run wrote 128 bytes in ~25 minutes, all
-    # of it at the end. "Working through file 31 of 38" and "hung" were the same observation.
+    # MEASURED before this existed: a full `--mutate .` run wrote 128 bytes, ALL OF IT AT THE END.
+    # "Working through file 31 of 38" and "hung" were the same observation.
+    # ⟳ This comment said "in ~25 minutes" until r1. The docstring four lines from here explains
+    # at length why no duration is quoted, and then this line quoted one — from the same
+    # recollection it was written to disown. A clean run is `real 312.06`.
     case("a progress line states position, not just motion",
          progress_line(7, 38, "check-docs.py"), "[7/38] check-docs.py")
+    # ⟳ r1 M2 — ONE LINE, ONE ROW. Labels are manifest names written for a review doc, not for a
+    # terminal: MEASURED across all 434, the longest is 232 chars and 81 exceed 100. At 80 columns
+    # one such update wraps to three rows, and "a line that stops advancing" — the entire signal
+    # this feature exists to give — stops being visible as one line.
+    # ⛔ AND THE POSITION IS NEVER WHAT GETS CUT — it is the whole payload; the label is only
+    # orientation. Asserted here as `startswith`, because that is the property. There is
+    # deliberately NO separate "no room for the position" branch: reaching it needs a `done`/
+    # `total` pair of some 76 digits, and a clause no input can reach is one no case can kill.
+    _pl_long = progress_line(164, 434, "x" * 300)
+    case("a label too long for one row is truncated, and says so",
+         (len(_pl_long), _pl_long[-1], _pl_long.startswith("[164/434] ")),
+         (PROGRESS_WIDTH, "…", True))
+    case("...and a label that already fits is left exactly alone",
+         progress_line(164, 434, "y" * 40), "[164/434] " + "y" * 40)
     # ⚠ run_mutations must stay SILENT unless a caller asks. Its own suite drives it dozens of
     # times, and the OUTER harness captures a suite's stderr into `control_is_green` — progress
     # leaking from a nested run would be read as part of that suite's output.
@@ -2276,9 +2389,19 @@ def _self_test() -> int:
         run_mutations(_dpp, _pm, {"p.py"}, progress=lambda *a: _seen.append(a))
         case("the caller is told once per mutation, with the running position",
              _seen, [(1, 2, "m1"), (2, 2, "m2")])
-        _quiet: list = []
-        run_mutations(_dpp, _pm, {"p.py"})
-        case("...and says NOTHING when no caller asked", _quiet, [])
+        # ⛔ CAPTURE THE STREAM, NEVER AN UNWIRED LIST. This case was
+        # `_quiet: list = []` / `run_mutations(...)` / `case(..., _quiet, [])` — and nothing in
+        # the program could append to `_quiet`, so it asserted `[] == []`. r1 B1, and the SIXTH
+        # instance on this branch of a guard whose existence is cased and whose content is not.
+        # MEASURED at the time: adding an `else: stderr_progress(...)` to `run_mutations` — the
+        # exact defect the case names — left the suite at `105/105 passed` while its own stderr
+        # grew 542 B → 766 B. ⭐ THE TELL GENERALISES: the commit that added it added FOUR cases
+        # and THREE manifest entries. A case for which no mutation can be written is usually one
+        # no production edit can reach. COUNT CASES AGAINST ENTRIES.
+        _qe = io.StringIO()
+        with contextlib.redirect_stderr(_qe):
+            run_mutations(_dpp, _pm, {"p.py"})
+        case("...and says NOTHING when no caller asked", _qe.getvalue(), "")
 
     # ⛔ THE STREAM IS THE POINT. The verdict is stdout and is parsed; progress on stdout would
     # put "[31/38] …" where a reader — and `tally_line`'s own cases — expect the tally.
@@ -2287,6 +2410,22 @@ def _self_test() -> int:
         stderr_progress(3, 9, "x.py")
     case("progress goes to stderr, never to the stream carrying the verdict",
          (_po.getvalue(), _pe.getvalue().strip()), ("", "[3/9] x.py"))
+    # ⛔ THE FLUSH CLAUSE, CASED — r1 L1, and both halves found it uncovered while disagreeing
+    # about why. It cannot be cased against a StringIO (`getvalue()` sees writes regardless), so
+    # the case constructs the environment where flush DECIDES: a real file stream, block-buffered
+    # at 8 KiB, READ BEFORE IT IS CLOSED. Without `flush=True` this reads `''`. MEASURED, both
+    # directions. The docstring above used to assert a mechanism (pipes) that does not exist;
+    # this asserts the one that does.
+    with tempfile.TemporaryDirectory() as _fd:
+        _fp = pathlib.Path(_fd) / "e.txt"
+        _fh = open(_fp, "w")
+        try:
+            with contextlib.redirect_stderr(_fh):
+                stderr_progress(3, 9, "x.py")
+            case("a progress line reaches a block-buffered stream before the process exits",
+                 _fp.read_text(), "[3/9] x.py\n")
+        finally:
+            _fh.close()
 
     # ── THE SUMMARY STATES THE AFFIRMATIVE NUMBERS ───────────────────────────────────────
     # ⛔ THE SHAPE THIS EXISTS FOR, measured on this branch: eight entries, every one killed,
@@ -2319,7 +2458,7 @@ def _self_test() -> int:
     # so an `expect` naming it in full could never match and its entry would be unattributable.
     case("⚠ a case name containing ': got ' is TRUNCATED by the consumer",
          parse_fail_names("  [FAIL] the width: got the wrong value"), ["the width"])
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 434)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 443)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
@@ -2442,7 +2581,9 @@ def main(argv: list[str]) -> int:
             print(f"CANNOT RUN — --mutate {mroot} is not a directory. NOT CHECKED.",
                   file=sys.stderr)
             return 2
-        ok, report, verdict = mutate_delivered(mroot)
+        # THE ONE PLACE THE REPORTER IS SUPPLIED. Everything below `mutate_delivered` defaults
+        # to silence, so a nested run cannot write into the stream its parent reads.
+        ok, report, verdict = mutate_delivered(mroot, progress=stderr_progress)
         for r in report:
             print(f"  \u2717 {r}")
         # BACKLOG #93, AND ITS ANSWER CHANGED - READ THIS BEFORE RE-ADDING A DIFFERENCE.

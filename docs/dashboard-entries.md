@@ -7023,10 +7023,7 @@ worth detecting.
 `check-plan-code.py --mutate .` emitted nothing until exit: 128 bytes of stdout for a whole run.
 `progress_line(done, total, label)` is pure and `stderr_progress` writes it to **stderr, flushed** —
 the verdict stays the only thing on stdout, so `tally_line`'s cases and anyone reading the last
-line are unaffected. Both control phases and the mutation loop report; `run_mutations` takes an
-OPTIONAL `progress` callable and stays silent unless a caller supplies one, because its own suite
-drives it dozens of times and the outer harness captures a nested suite's stderr into
-`control_is_green`.
+line are unaffected. Both control phases and the mutation loop report.
 
 Measured on a clean run with `/usr/bin/time -p`: `real 312.06`, 434 mutations, stdout 128 bytes,
 stderr 510 progress lines (38 controls + 434 mutations + 38 re-controls). ⚠ No duration is quoted
@@ -7035,10 +7032,41 @@ concurrent reviews, and the first draft of the docstring said "~25 minutes" from
 recollection. What is stable is the RATE — a gap much longer than `SUITE_TIMEOUT` (120s) is the
 signal.
 
-Three clauses, three cases, three manifest entries, each control-verified to go red alone: the
-stream (stdout would put progress where the verdict is), the wiring (a reporter accepted and never
-called), and the total (position without its denominator answers "moving" but not "how far").
-`EXPECTED_MUTATIONS` 431 → 434; `check-plan-code` suite 101 → 105.
+**Round 1 found seven things, and the first draft of this entry repeated two of them.** Both review
+halves came back NOT CONVERGED; the fixes are below, and what they have in common is that the
+feature was written as *emit progress* rather than *inject a reporter*.
 
-⚠ Stacked on `backlog-106-compose-idempotence` (PR #288), which this file is heavily modified by.
-Merge #288 first.
+⛔ **THE CASE DEFENDING THE MAIN RISK COULD NOT FAIL — the sixth instance on this line of work.**
+It read `_quiet: list = []`, then called `run_mutations` **without passing `_quiet` to anything**,
+then asserted `_quiet == []`. That is `assert [] == []` in the costume of a test. Measured: adding
+the exact defect it names left the suite at `105/105 passed` while the suite's own stderr grew
+542 B → 766 B. ⭐ **The tell generalises and is worth more than the fix: the commit added FOUR cases
+and THREE mutations. A case you cannot write a mutation for is usually one no production edit can
+reach. Count cases against entries.** It now captures the real stream with `redirect_stderr`.
+
+⛔ **AND THE HARNESS'S OWN FAILURE DIAGNOSTIC CONTAINED NONE OF THE FAILURE.** `run_suite` returns
+`stdout + stderr`, and every CANNOT RUN message prints `out[-400:]`. `mutate_delivered` called
+`stderr_progress` unconditionally and its own suite drives it fourteen times, so 542 B of progress
+pushed the `[FAIL]` line out of that 400-char window **entirely** — measured both ways. It bit
+exactly when a control was red, the only moment that message exists for, and it undid a fix made
+one day earlier for the one subject that matters most: the harness itself. Same root: author-written
+labels were entering the stream whose substring decides `control_is_green` (two of the 434 live
+names contain `"passed"` — not reachable, but held by a coincidence of naming rather than anything).
+`mutate_delivered` now takes the same optional reporter `run_mutations` has, and **`--mutate` is the
+one place that supplies it**. Nested stderr: 542 B → **0**.
+
+⚠ **A CLAIM IN THE DOCSTRING WAS SIMPLY FALSE.** It said a pipe buffers unflushed stderr "into
+oblivion". Measured on CPython 3.14.4: `sys.stderr.line_buffering` is `True` piped and captured, as
+since 3.9 — killing an unflushed process lost nothing. `flush` *is* load-bearing where the stream is
+**replaced** with a block-buffered one, and that is now the case: a real file stream read before
+close, `''` without the flush. The clause stays; the reason is now the true one.
+
+⚠ **And a 232-char label.** Across all 434 names, 81 exceed 100 characters; at 80 columns one update
+wrapped to three rows, destroying the one property the feature exists for — a line that visibly
+stops advancing. Bounded to one row, with the **position never** the part that gets cut.
+
+Nine manifest entries for six new cases, every one verified red **via the case it names** over a
+control proved green first. One of the nine is a **retarget**: bounding the line rewrote
+`progress_line`'s return and orphaned the anchor guarding it — anchors bind by text, so improving
+code breaks them silently, and only the harness's refusal to accept an unresolved anchor caught it.
+`EXPECTED_MUTATIONS` 431 → 443; `check-plan-code` suite 101 → 111.
