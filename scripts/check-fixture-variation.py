@@ -341,6 +341,9 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     'check-gate-falsifiability.py': (
         'find_gate_defects.current_release', 'find_gate_defects.known_scripts',
         'find_gate_defects.path', 'find_gate_defects.sections', 'find_gate_defects.text',),
+    'check-group-claims.py': (
+        'claim_errors.all_nums', 'claim_errors.groups', 'claim_errors.open_nums',
+        'duplicate_errors.groups', 'load_rows.text',),
     'check-guard-coverage.py': (
         'evaluate.covered_by', 'evaluate.exempt', 'evaluate.guards', 'evaluate.labels',
         'evaluate.live',),
@@ -1387,8 +1390,25 @@ def _self_test():
     case("an unpacked call site attributes nothing rather than attributing wrongly",
          sorted(analyse(_STARCALL, "t.py", exempt={})[1]), [])
 
+    # ⛔ THE MESSAGE NAMES THE FILE AND THE REMEDY, and it did not until 2026-09-11. This case
+    # asserted a bare equality, so the first person to add a script to this repo got
+    # `got False want True` — no filename, no command, no clue which direction the mismatch ran.
+    # PR #289's handoff predicted the cost would be paid one day and said *"if the first person to
+    # hit it finds it obstructive, the fix is the message, not the rule"*. I was that person, on
+    # this branch, and it was obstructive, so the message is fixed rather than the rule relaxed.
+    def _pin_gap() -> str:
+        have, want = set(EXAMINED_KEYS), {f.name for f in _pop}
+        bits = []
+        if want - have:
+            bits.append(f"discovered but NOT pinned: {sorted(want - have)} — add each to "
+                        f"EXAMINED_KEYS (run this file's `analyse()` on it to get its key set)")
+        if have - want:
+            bits.append(f"pinned but NOT discovered: {sorted(have - want)} — the file was deleted "
+                        f"or renamed; retire the entry and say why")
+        return "; ".join(bits)
+
     case("every discovered file has a pinned key set, and vice versa",
-         sorted(EXAMINED_KEYS) == sorted(f.name for f in _pop), True)
+         _pin_gap(), "")
     case("...and every ratcheted file is one discovery returns",
          sorted(set(KNOWN_UNVARIED) - {f.name for f in _pop}), [])
     # ⚠ A SECOND ROOT, because this guard's own rule asked for one: `population(root=…)` had a

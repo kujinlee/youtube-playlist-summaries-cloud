@@ -1,0 +1,90 @@
+[
+ {
+  "name": "rule 1 stops refusing a missing falsifier",
+  "file": "scripts/check-group-claims.py",
+  "edits": [
+   [
+    "        if not str(falsifier).strip():",
+    "        if False:"
+   ]
+  ],
+  "expect": "an EMPTY falsifier is refused"
+ },
+ {
+  "name": "the falsifier check stops stripping, so whitespace passes as a claim",
+  "file": "scripts/check-group-claims.py",
+  "edits": [
+   [
+    "        if not str(falsifier).strip():",
+    "        if not str(falsifier):"
+   ]
+  ],
+  "expect": "...and a whitespace-only falsifier is refused too — not just the empty string"
+ },
+ {
+  "name": "the group-size floor drops to one, so an item becomes a group",
+  "file": "scripts/check-group-claims.py",
+  "edits": [
+   [
+    "MIN_OPEN = 2",
+    "MIN_OPEN = 1"
+   ]
+  ],
+  "expect": "a group with one open member is refused"
+ },
+ {
+  "name": "the size floor counts MEMBERS rather than OPEN members",
+  "file": "scripts/check-group-claims.py",
+  "edits": [
+   [
+    "        live = [n for n in members if n in open_nums]",
+    "        live = list(members)"
+   ]
+  ],
+  "expect": "...and the count in the message is the OPEN count, not the member count"
+ },
+ {
+  "name": "rule 3 stops noticing a member that is not a row",
+  "file": "scripts/check-group-claims.py",
+  "edits": [
+   [
+    "            if n not in all_nums:",
+    "            if False:"
+   ]
+  ],
+  "expect": "a member that is not a row at all is refused"
+ },
+ {
+  "name": "one item claimed by two groups is no longer reported",
+  "file": "scripts/check-group-claims.py",
+  "edits": [
+   [
+    "            if n in seen:\n                dupes.append(f\"#{n} is claimed by both {seen[n]!r} and {title!r}\")",
+    "            if False:\n                dupes.append(f\"#{n} is claimed by both {seen[n]!r} and {title!r}\")"
+   ]
+  ],
+  "expect": "one item claimed by two groups is reported"
+ },
+ {
+  "name": "the status cell is read one column too far left, breaking the narrow table",
+  "file": "scripts/check-group-claims.py",
+  "edits": [
+   [
+    "        status = cells[-2] if len(cells) >= 3 else \"\"",
+    "        status = cells[-3] if len(cells) >= 3 else \"\""
+   ]
+  ],
+  "expect": "a six-column closed row is read as closed"
+ },
+ {
+  "name": "a three-field group crashes the rules instead of being reported",
+  "file": "scripts/check-group-claims.py",
+  "edits": [
+   [
+    "        if len(g) != 4:\n            out.append(f\"{_name(g)}: has {len(g)} field(s), not 4 — the shape is \"\n                       f\"(title, framing, falsifier, members)\")\n            continue",
+    "        if False:\n            out.append(f\"{_name(g)}: has {len(g)} field(s), not 4 — the shape is \"\n                       f\"(title, framing, falsifier, members)\")\n            continue"
+   ]
+  ],
+  "expect": "a three-field group is reported as a shape error, not an exception"
+ }
+]

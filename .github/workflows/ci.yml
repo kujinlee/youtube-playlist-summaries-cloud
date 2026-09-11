@@ -289,6 +289,14 @@ jobs:
       - name: check-fixture-variation self-test
         run: python3 scripts/check-fixture-variation.py --self-test
 
+      # backlog #90's adopted grouping policy. A group on the backlog page is a CLAIM; this
+      # refuses one with no falsifier, fewer than two open members, or a member that is not a row.
+      - name: Every grouping is a claim with a falsifier
+        run: python3 scripts/check-group-claims.py
+
+      - name: check-group-claims self-test
+        run: python3 scripts/check-group-claims.py --self-test
+
       - name: Producer enumeration matches the defining expression
         run: python3 scripts/check-producer-enumeration.py
 

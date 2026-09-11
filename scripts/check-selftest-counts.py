@@ -88,6 +88,9 @@ POPULATION: frozenset[str] = frozenset({
     "check-anchors.py",
     "check-banner-armed.py",
     "check-ci-watched.py",           # ⟳ 2026-09-04: CI ran unwatched on 2 of 3 pushes
+    "check-group-claims.py",         # ⟳ 2026-09-11. Pinned in the commit that creates it:
+                                     # a guard declaring a count nothing verifies is the
+                                     # drift this file exists to refuse.
     "check-fixture-variation.py",    # ⟳ 2026-09-11. Pinned in the same commit that creates
                                      # it, for the reason given on check-selection-card
                                      # below — and this guard REFUSED the file until it was,

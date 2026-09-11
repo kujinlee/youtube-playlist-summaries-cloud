@@ -586,6 +586,11 @@ EXPECTED_MUTATIONS = {
     # entries, one per clause it decides, plus the fail-open path: a guard whose CANNOT-RUN branch
     # returns empty instead of raising is the failure this repo counts as worse than a red.
     "scripts/check-selection-card.py": 13,
+    # ⟳ 2026-09-11: backlog #90's grouping policy gets its guard, and the guard gets its
+    # manifest in the SAME commit — a policy guard with no mutations is a rule nothing
+    # checks back, which is the shape `check-ratchet-contract` refuses by name (R4).
+    "scripts/check-group-claims.py": 8,
+
     "scripts/page_markup.py": 14,
     # ⟳ 2026-09-01, backlog #78: 18 -> 23. The entry gate now answers TWO questions
     # instead of one — "does this branch owe an entry?" (unchanged) and "is the entry
@@ -2436,6 +2441,7 @@ def _self_test() -> int:
                                       "scripts/check-fixture-variation.py",
                                       "scripts/check-function-revokes.py",
                                       "scripts/check-gate-falsifiability.py",
+                                      "scripts/check-group-claims.py",
                                       "scripts/check-guard-coverage.py",
                                       "scripts/check-handoff-path.py",
                                       "scripts/check-live-schema.py",
@@ -2879,7 +2885,11 @@ def _self_test() -> int:
     # so an `expect` naming it in full could never match and its entry would be unattributable.
     case("⚠ a case name containing ': got ' is TRUNCATED by the consumer",
          parse_fail_names("  [FAIL] the width: got the wrong value"), ["the width"])
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 513)
+    # ⟳ 2026-09-11: 513 -> 521. `check-group-claims.py` joins the manifest with EIGHT entries,
+    # all verified to ATTRIBUTE (each goes red via the case it names) before this number moved.
+    # A RISE is the ordinary direction; the sanctioned FALL is retirement-with-subject, and
+    # this is not one.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 521)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
