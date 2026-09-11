@@ -441,8 +441,14 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'link_contrast_errors.page', 'link_rule_drift.page', 'md.text', 'parse.lines',
         'parse.unread', 'plain.text', 'report_run.rows', 'report_run.unread',
         'report_unread.unread', 'row_ish.line', 'rows_of.text',
-        'sanitise_groups.groups', 'sanitise_groups.open_nums', 'undescribed.groups',
-        'undescribed.open_nums', 'unread_note.unread', 'waiting_on.size',
+        # ⛔ `undescribed.groups` and `undescribed.open_nums` REMOVED 2026-09-11, deliberately and
+        # with a reason, which is what this guard's message asks for. `undescribed()` is DELETED,
+        # not renamed and not made private: under backlog #90's adopted policy an open item that
+        # belongs to no group is normal rather than debt, so the question the function answered
+        # ("which open items has nobody described?") stopped being a question. Two keys retired
+        # WITH THEIR SUBJECT. `sanitise_groups` keeps both of its keys — it survived the change.
+        'sanitise_groups.groups', 'sanitise_groups.open_nums',
+        'unread_note.unread', 'waiting_on.size',
         'word_diff.after', 'word_diff.before',),
     'gen-dashboard.py': (
         'badge_of.cleared', 'badge_of.entry', 'bucket_days.dates',

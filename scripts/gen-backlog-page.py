@@ -2,7 +2,7 @@
 """Render `docs/backlog.md` as a browsable HTML page at a STABLE url.
 
     python3 scripts/gen-backlog-page.py          # → ~/explainers/backlog-table.html
-    python3 scripts/gen-backlog-page.py --self-test  # 167 cases
+    python3 scripts/gen-backlog-page.py --self-test  # 164 cases
     open http://127.0.0.1:7391/backlog-table     # after scripts/explainer-serve.py
 
 WHY THIS EXISTS
@@ -35,11 +35,11 @@ what the item IS rather than by how loud its severity marker is. Severity orderi
 the most important fact in the list — that six of the high-severity items are ONE problem wearing
 six numbers.
 
-Its COMPLETENESS, though, is mechanical. `sanitise_groups` + `undescribed` guarantee that every
-open item reaches the page exactly once — grouped where a sentence exists, and under "Filed, but
-nobody has described them yet" where none does. So a line here can be badly worded, but an open
-item can never go silently missing, which is the failure that matters when the page is answering
-"what is left?".
+Its COMPLETENESS is not at stake, because GROUPS is not how an item reaches the reader — every
+row gets its own card from the table regardless. Measured 2026-09-11 by deleting a group and
+re-rendering: the member kept its card and the count did not move. That is what made backlog
+#90's clause 0 possible — grouping is OPT-IN, an ungrouped open item is NORMAL rather than a
+debt, and anything no group names is enumerated under "The rest, one line each".
 
 ⛔ THIS NO LONGER REFUSES, AND THAT REVERSES THE ORIGINAL TRADE (user's decision, 2026-09-09:
 *"refusing refresh is not appropriate"*). The old contract said "a loud stop beats a quiet
@@ -390,32 +390,45 @@ SUMMARIES: dict[int, str] = {
         'machine.',
 }
 
-GROUPS: list[tuple[str, str, list[int]]] = [
+GROUPS: list[tuple[str, str, str, list[int]]] = [
+    # ⭐ FOUR FIELDS NOW: title, framing, FALSIFIER, members — the policy on backlog row #90,
+    # adopted 2026-09-11. The falsifier is a FIELD rather than a sentence buried in the prose so a
+    # script can check it exists and, where it names a column, evaluate it. The repo already uses
+    # this grammar (`NO-CALLER:`, `NO-ENTRY:`, `REVIEW GAP:`).
+    #
+    # ⛔ A GROUP IS A CLAIM, A TAG IS A LABEL. A tag ("what is this about?") is derived from the
+    # Bundle column and cannot be wrong, only useless. A group asserts something about a SET and
+    # CAN be wrong — that is the whole difference, and it is why groups are hand-written and
+    # OPT-IN. An item needs no group. It needs no summary either.
+    #
+    # ⚠ ANSWERS IS KEYED BY GROUP POSITION, so retiring a group above one that has answers moves
+    # them onto the wrong group in silence. Backlog #39's class exactly. Only position 1 carries
+    # answers today and it is still position 1; check this before reordering.
     ("Paid work can be lost when a video's address changes",
      "Every summary is filed under a name built from the video's title, so changing the title "
      'changes the address — and not everything pointing at the old one follows. Summaries cost real '
      'money, so losing one loses money. Six items, one root cause; they were split apart during the '
      'addressing work when a single fix kept failing review.',
+     'a member whose root cause is not the address changing under paid work',
      [17, 19, 20, 21, 22, 25, 60]),
     ('Anonymous users hold more database access than intended',
      'All measured in production, and none of it currently reachable through the web API — but the '
      'grants are real, and the third item is about the next one arriving by accident.',
+     'a member that was not measured in production, or one reachable through the web API today',
      [30, 33, 54]),
     ('Money-path edge cases',
      'Small, well understood, and each needs one decision before the code can be written.',
+     'a member that needs no decision before its code can be written',
      [26, 27, 28, 61, 62, 63]),
-    ('Sync',
-     'One item, and its symptom is silence rather than an error.',
-     [32]),
     ('Product features you might actually want',
      'Nothing here is broken; this is the work that makes the product better.',
+     'a member that is a defect rather than an improvement',
      [1, 2, 3, 8, 12, 15, 23, 24, 51, 52]),
-    ('Small visual polish',
-     'Extra-small items, mostly in the renderer, all independent of everything above.',
-     [4, 5, 6, 7]),
     ('The reusable toolkit — the second deliverable',
      'Not about the product: about the development harness being reusable on a new project.',
+     'a member about the product rather than about the development harness',
      [18, 40, 47, 49, 50, 56, 57, 58, 89, 103, 105]),
+
     # ⚠ THIS GROUP'S FRAMING IS ITS OWN FALSIFIER, AND IT FIRED TWICE ON THE DAY IT WAS WRITTEN.
     # The first draft listed SIX items. #104 — a gate reporting a failure it cannot RETRACT — is
     # neither thing this sentence claims, and #94 is a docstring that overclaims while the guard
@@ -432,13 +445,18 @@ GROUPS: list[tuple[str, str, list[int]]] = [
      'from a pass; the third is a warning printed on every single run that nobody acts on. This is '
      'the class that lets a gap sit for a week in plain sight — including, until today, the missing '
      'descriptions on this page.',
+     'a member whose failure is plainly visible AS a failure',
      [101, 111, 112]),
-    ('Process, tooling and bookkeeping',
-     'Instruments and habits. Cheap individually; they are what stops the expensive items above '
-     'from recurring.',
-     [16, 29, 38, 39, 41, 42, 45, 46, 53, 66, 67, 72, 73, 85, 86, 90, 94, 92, 93, 104, 100, 107,
-      108, 109, 113]),
 ]
+
+# ⛔ THREE GROUPS RETIRED 2026-09-11 under row #90's policy, each by a NAMED trigger, and their
+# members did not lose their summaries — that is what splitting SUMMARIES out bought:
+#   * `Sync` — trigger (2), fewer than two open members. One item is an item, not a group.
+#   * `Small visual polish` — triggers (1) AND (3). Its framing claimed "extra-small items" while
+#     #7 is sized S; and after the bundle cleanup its membership {4,5,6,7} became EXACTLY the tag
+#     `product / renderer`, so the tag already selects it and the group added only a false clause.
+#   * `Process, tooling and bookkeeping` — the CREATE test. 22 items across 13 tags framed as
+#     "Instruments and habits. Cheap individually", which nothing could make false. A bin.
 
 
 
@@ -934,7 +952,7 @@ def report_run(rows: list[dict], unread: Sequence[str]) -> None:
     ⛔ IT EXISTS BECAUSE THE ARMS DISAGREED, and the case that caught it is in this file's own
     suite. `main` succeeds two ways — with an Ask tray and without one — and the no-tray arm
     returned before ANY of the drift notes were printed. So a run that had already gone wrong once
-    (no tray) also silently dropped the GROUPS, DEPENDS and undescribed warnings, and the reader
+    (no tray) also silently dropped the GROUPS and DEPENDS drift warnings, and the reader
     got the smaller half of the truth exactly when they needed the larger one. This is r1 finding
     M-1's shape a third time; the answer is one function rather than a third copy of the block.
 
@@ -944,12 +962,6 @@ def report_run(rows: list[dict], unread: Sequence[str]) -> None:
     report_unread(unread)
     for note in drift_notes_for(rows, unread):
         print(f"⚠  {note}")
-    still = undescribed(GROUPS, {r["num"] for r in rows if not r["closed"]})
-    if still:
-        print(f"⚠  {len(still)} open item(s) have no description in GROUPS: {still}")
-        print("   They render under \"Filed, but nobody has described them yet\" — the page is "
-              "complete, the prose is not.")
-        print("   Add them to GROUPS in scripts/gen-backlog-page.py.")
 
 
 def report_unread(unread: Sequence[str]) -> None:
@@ -1127,30 +1139,6 @@ def attach_history(rows: list[dict], working_text: str) -> None:
         r["hist"] = dict(h, raw=live.get(r["num"], "")) if h else None
 
 
-def undescribed(groups: list, open_nums: set[int]) -> list[int]:
-    """Open items with no GROUPS sentence — RENDERED, not refused.
-
-    ⟳ 2026-09-02. This used to be folded into the old `coverage_errors` and it BLOCKED THE
-    BUILD. Measured cost, and the user is the one who found it: four items (#82-#85)
-    were filed over two days, the generator refused every time, and the page silently
-    stayed a day behind while looking current. The refusal was correct in intent —
-    a bare row nobody wrote a sentence for is not really on the page — and wrong in
-    consequence: refusing to publish ANYTHING is worse for a reader than publishing a
-    row that is merely undescribed.
-
-    ⛔ WHY THIS HALF AND NOT THE OTHERS. Missing means the reader LOSES information;
-    extra and duplicate mean the page SHOWS SOMETHING UNTRUE (a description attached
-    to an item that is not open, or one item claimed by two groups). Only the first is
-    safe to render through, so only the first moved. `sanitise_groups` now absorbs the rest
-    and still refuses.
-
-    The pressure to write the sentence does not disappear — it moves onto the page,
-    where the reader can see it, instead of into a log line at the moment of the edit.
-    """
-    grouped = {n for _, _, nums in groups for n in nums}
-    return sorted(open_nums - grouped)
-
-
 def bundle_tags(raw: str) -> list[str]:
     """PURE. The Bundle cell as the TAGS it assigns, broadest first.
 
@@ -1213,7 +1201,7 @@ def sanitise_groups(groups: list, open_nums: set[int]) -> tuple[list, list[str]]
     notes, seen, out = [], set(), []
     dropped_closed: list[int] = []
     dropped_dupe: list[int] = []
-    for title, framing, nums in groups:
+    for title, framing, falsifier, nums in groups:
         kept = []
         for n in nums:
             if n not in open_nums:
@@ -1221,7 +1209,7 @@ def sanitise_groups(groups: list, open_nums: set[int]) -> tuple[list, list[str]]
             if n in seen:
                 dropped_dupe.append(n); continue
             seen.add(n); kept.append(n)
-        out.append((title, framing, kept))
+        out.append((title, framing, falsifier, kept))
     if dropped_closed:
         # ⚠ "no longer open" is an INFERENCE from absence, and r2 finding H-1 measured it stating
         # something false: three rows the parser could not read left `open_nums`, and this line
@@ -1391,24 +1379,29 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str,
     # false of an unread row, and the last two contradict the note directly above them. It gets its
     # own box below, with its own heading and the right file named.
 
-    # ⟳ 2026-09-02. Items with no GROUPS sentence used to REFUSE the build. They now get
-    # a group of their own, at the END, and the run reports a ⚠ line — which the serve
-    # layer already forwards verbatim to the Refresh button as "rebuilt WITH A WARNING".
-    # No new channel: `_regenerate` has surfaced ⚠ lines since the Ask-tray case.
+    # ⭐ THE REST, AND IT IS AN INDEX RATHER THAN A GROUP — backlog #90's policy, adopted
+    # 2026-09-11. Under clause 0 grouping is OPT-IN, so an open item belonging to no group is
+    # NORMAL and not a debt. There is therefore nothing here to be ashamed of and no warning to
+    # print: the section that used to say "nobody has described them yet" is gone with the
+    # `undescribed` function that computed it.
     #
-    # The framing text is deliberately blunt. This section is meant to look unfinished,
-    # because it IS, and the previous design's whole merit — pressure to write the
-    # sentence — only survives if the gap is visible rather than comfortable.
-    missing = undescribed(GROUPS, open_nums)
+    # ⛔ THIS IS NOT THE BIN COMING BACK UNDER A NEW NAME, and the difference is stated so it can
+    # be checked. The retired bin carried a FRAMING — "Instruments and habits. Cheap individually"
+    # — which characterised its members and could not be false. This carries no claim at all and
+    # says so in its own dek. A group asserts; an index enumerates. The falsifier for that
+    # distinction: this entry has an EMPTY falsifier field, and `check-group-claims.py` requires a
+    # non-empty one of every real group — so the index cannot masquerade as a claim without
+    # failing the guard that polices claims.
+    rest = sorted(open_nums - {n for _, _, _, ns in groups_ok for n in ns})
     groups_for_page = list(groups_ok)
-    if missing:
+    if rest:
         groups_for_page.append((
-            "Filed, but nobody has described them yet",
-            "These are open items with no plain-English summary written for them, so all you get "
-            "here is the row. They are on the page rather than held back, because a page that "
-            "refuses to build tells you nothing at all — which is exactly how four of these went "
-            "unnoticed for a day. Someone should write them a sentence.",
-            list(missing),
+            "The rest, one line each",
+            "No claim here — these open items simply belong to no group, which is the normal "
+            "case. Anything with a summary shows it; anything without shows just the row. Both "
+            "are fine.",
+            "",
+            rest,
         ))
 
     order = {"crit": 0, "high": 1, "med": 2, "low": 3, "none": 4}
@@ -1419,7 +1412,7 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str,
     closed_rows.sort(key=lambda r: r["num"])
 
     gate_of, groups_html = {}, ""
-    for gi, (title, framing, items) in enumerate(groups_for_page, 1):
+    for gi, (title, framing, _falsifier, items) in enumerate(groups_for_page, 1):
         # ORDERED, not as listed. Items that survive the root — or have no root — come first;
         # anything the root deletes sinks to the bottom, because that is work you should not start.
         ordered = sorted(items, key=lambda n: (dep_rank(n), n))
@@ -1890,12 +1883,23 @@ truth, which is why it is reproduced verbatim inside every card.</p>
 {callout}
 
 <h2>What these actually are</h2>
-<p class="dek">Grouped by what the item <em>is</em>, not by how loud its marker is. This is the one
-part of the page written by hand, and the only part that can go out of date — every item below was
-read from the file in this run. An open item can never go missing from it: anything the grouping
-does not name is listed under <em>Filed, but nobody has described them yet</em>, and anything the
-grouping names that is no longer open is dropped with a note at the top. Use the <b>tag</b> control
-to see one bundle at a time; the tags on each card are buttons. Each number opens its full entry.</p>
+<p class="dek">Grouped by what the item <em>is</em>, not by how loud its marker is. The group
+headings are the one part of this page written by hand and the only part that can go out of date —
+every item below was read from the file in this run. An open item can never go missing: anything no
+group names is listed under <em>The rest, one line each</em>, and anything a group names that is no
+longer open is dropped with a note at the top. Each number opens its full entry.</p>
+
+<p class="dek" id="vocab"><b>Three words on this page mean three different things, and it is worth
+thirty seconds to keep them apart.</b> A <b>tag</b> answers <em>what is this item about?</em> — it
+is read straight out of the file's Bundle column, it is how the filter above works, and it cannot
+be wrong, only useless. A <b>group</b> answers <em>what do these items have in common that is worth
+asserting?</em> — it is a <em>claim</em>, written by hand, and it <em>can</em> be wrong, which is
+why every group carries a stated falsifier and why belonging to one is optional. A <b>slice</b> is
+neither: it is a piece of work that has to land <em>first</em>, and items are not filed <em>in</em>
+it — they are joined <em>to</em> it by one of four edges, because the interesting question is not
+which bucket an item sits in but whether it still exists after the slice lands. Tags and groups
+both answer <em>which items?</em>; a slice answers <em>in what order, and does this survive?</em>
+See the map below.</p>
 
 <h3 class="mapo" id="order">The order to start in</h3>
 <p class="framing">Every dependency recorded, drawn from the same data as the markers beside each
@@ -2632,7 +2636,7 @@ def self_test() -> int:
     # 17, which is also a DEPENDS key, so forcing it closed produced BOTH notes and every
     # GROUPS-side assertion was satisfied by the DEPENDS one. Deleting the whole GROUPS family from
     # the drift channel survived 152/152.
-    _gnum = next(n for _, _, its in GROUPS for n in its if n not in DEPENDS)
+    _gnum = next(n for *_, its in GROUPS for n in its if n not in DEPENDS)
 
     def _drifted_rows(_unread: list[str]) -> list[dict]:
         return [dict(r, hist=None, closed=True) if r["num"] == _gnum else dict(r, hist=None)
@@ -2758,48 +2762,20 @@ def self_test() -> int:
     # actually is rather than what one keyword happens to look like.
     _REAL_ROWS: list[dict] = [dict(r, hist=None) for r in parse(BACKLOG.read_text().splitlines())]
 
-    # ⭐ RE-ANCHORED 2026-09-11, and the reason is worth more than the fix. Both cases below used
-    # to run against `_REAL_ROWS` unaltered, and they passed only because the real backlog HAPPENED
-    # to contain undescribed items — ten when r4 wrote them. Writing the missing sentences turned
-    # them RED without touching a line of the rule they guard. That is a case measuring the
-    # POPULATION rather than the RULE (`portable-practices` §21), and it is the third instance in
-    # this repo of a fix hollowing out its own falsifier. Both arms are now forced by a fixture, so
-    # the rule is asserted whether or not today's backlog has a gap — and the negative arm, which
-    # never existed, is what proves the block is not simply always printed.
-    _FREE = max(r["num"] for r in _REAL_ROWS) + 1
-    _DESCRIBED = min(n for _, _, nums in GROUPS for n in nums)
+    # ⛔ FOUR CASES RETIRED WITH THEIR SUBJECT, 2026-09-11 — the ONE sanctioned kind of coverage
+    # fall, recorded here with the count and the reason rather than left as a silent drop.
+    # `undescribed()` and `report_run`'s third channel are GONE: under backlog #90's clause 0 an
+    # ungrouped open item is normal, so "N open item(s) have no description" is no longer a
+    # finding to report. The cases were `the undescribed fixture is not vacuous`, `the
+    # undescribed block is printed`, `...and it is SILENT when every open item has a sentence`
+    # and `its count is the number of items with no sentence`.
+    #
+    # ⚠ THREE OF THOSE FOUR WERE WRITTEN THIS MORNING, to fix cases that measured the POPULATION
+    # instead of the RULE. They were correct and they are still being deleted, because the rule
+    # itself stopped existing — that is retirement-with-subject, not a ratchet fall. The
+    # distinction matters: a case deleted because its subject is gone costs nothing; a case
+    # deleted because it became inconvenient costs exactly the defect it used to catch.
 
-    # ⚠ The fixture's own falsifier. If a future GROUPS ever named `_FREE`, the positive arm below
-    # would assert about a block that no longer fires and would report a pass for the wrong reason.
-    case("the undescribed fixture is not vacuous — no group names the synthetic item",
-         lambda: _FREE not in {n for _, _, nums in GROUPS for n in nums}
-         and _DESCRIBED in {n for _, _, nums in GROUPS for n in nums})
-
-    def _rows_with_undescribed() -> list[dict]:
-        """The real corpus plus ONE open item no group names."""
-        return _REAL_ROWS + [dict(_REAL_ROWS[0], num=_FREE, closed=False)]
-
-    def _rows_all_described() -> list[dict]:
-        """One open item, and a group does name it — so nothing here is undescribed."""
-        return [dict(_REAL_ROWS[0], num=_DESCRIBED, closed=False)]
-
-    case("the undescribed block is printed, with its count and its remedy",
-         lambda: any(ln.startswith("⚠  ") and "no description in GROUPS" in ln
-                     for ln in _run_printed(_rows_with_undescribed(), []))
-         and any("Add them to GROUPS" in ln
-                 for ln in _run_printed(_rows_with_undescribed(), [])))
-    case("...and it is SILENT when every open item has a sentence",
-         lambda: not any("no description in GROUPS" in ln
-                         for ln in _run_printed(_rows_all_described(), [])))
-
-    def _undescribed_count(rows: list[dict]) -> int:
-        """Hoisted out of the f-string it lived in: a set comprehension nested inside a format
-        field parses, runs and reads as noise, and a type checker could not follow it either."""
-        return len(undescribed(GROUPS, {r["num"] for r in rows if not r["closed"]}))
-
-    case("its count is the number of items with no sentence",
-         lambda: any(f"⚠  {_undescribed_count(_rows_with_undescribed())} open item(s)" in ln
-                     for ln in _run_printed(_rows_with_undescribed(), [])))
     # ⚠ r4 finding M-3. The ⚠ PREFIX is the delivery mechanism — `explainer-serve` collects only
     # lines that start with it — and replacing it with three spaces survived 152/152 under both
     # HOMEs. Every drift note must carry it.
@@ -2919,24 +2895,34 @@ def self_test() -> int:
     # same two drifts and then renders anyway. These cases moved with the behaviour rather than
     # being deleted, so the record shows the contract was changed on purpose, not lost.
     case("a matching grouping needs no correction",
-         lambda: sanitise_groups([("g", "f", [1, 2])], {1, 2}) == (
-             [("g", "f", [1, 2])], []))
-    case("an ungrouped open item is not a correction — `undescribed` renders it",
-         lambda: sanitise_groups([("g", "f", [1])], {1, 2})[1] == []
-         and undescribed([("g", "f", [1])], {1, 2}) == [2])
+         lambda: sanitise_groups([("g", "f", "x", [1, 2])], {1, 2}) == (
+             [("g", "f", "x", [1, 2])], []))
+    # ⟳ 2026-09-11. This used to read "an ungrouped open item is not a correction — `undescribed`
+    # renders it". Under backlog #90's clause 0 an ungrouped open item is NORMAL, not something
+    # to render specially, so the second half went with `undescribed`. The first half is the part
+    # that still says something: leaving an open item out of every group is not drift.
+    case("an ungrouped open item is not a correction",
+         lambda: sanitise_groups([("g", "f", "x", [1])], {1, 2})[1] == [])
     case("a group naming a CLOSED item drops it and SAYS SO, instead of refusing",
-         lambda: sanitise_groups([("g", "f", [1, 7])], {1}) == (
-             [("g", "f", [1])], ["GROUPS still names 1 item(s) that are no longer open: "
+         lambda: sanitise_groups([("g", "f", "x", [1, 7])], {1}) == (
+             [("g", "f", "x", [1])], ["GROUPS still names 1 item(s) that are no longer open: "
                                         "[7] — dropped from their group for this build"]))
     case("a duplicate across groups is kept in the FIRST and reported",
-         lambda: sanitise_groups([("a", "f", [1]), ("b", "f", [1])], {1})[0]
-         == [("a", "f", [1]), ("b", "f", [])]
+         lambda: sanitise_groups([("a", "f", "x", [1]), ("b", "g", "y", [1])], {1})[0]
+         == [("a", "f", "x", [1]), ("b", "g", "y", [])]
          and "more than one group" in " ".join(
-             sanitise_groups([("a", "f", [1]), ("b", "f", [1])], {1})[1]))
+             sanitise_groups([("a", "f", "x", [1]), ("b", "g", "y", [1])], {1})[1]))
+    # ⚠ THE FALSIFIER FIELD IS CARRIED, NOT DROPPED. `sanitise_groups` rebuilds each tuple, so a
+    # fourth field is exactly the kind of thing a rebuild silently loses — and the guard that
+    # reads it would then report every group as having no falsifier, which looks like a finding
+    # about the DATA rather than about this function.
+    case("sanitise_groups carries the falsifier through untouched",
+         lambda: sanitise_groups([("g", "f", "the falsifier", [1])], {1})[0][0][2]
+         == "the falsifier")
     # ⛔ THE FALSIFIER FOR THE WHOLE CHANGE: the 2026-09-04 defect must no longer stop a build.
     case("the drift that froze the page for five days now only WARNS",
-         lambda: sanitise_groups([("g", "f", [78, 83, 87, 1])],
-                                 {1})[0] == [("g", "f", [1])])
+         lambda: sanitise_groups([("g", "f", "x", [78, 83, 87, 1])],
+                                 {1})[0] == [("g", "f", "x", [1])])
 
     # ─ tags ─────────────────────────────────────────────────────────────────
     case("a slash tag assigns the family AND the leaf",
@@ -3049,29 +3035,49 @@ def self_test() -> int:
              lambda d=_root["detail"]: _page.count(d) == 1)
     case("the dependency map is drawn exactly once", lambda: _page.count("<figure class=\"depmap\"") == 1)
 
-    # ── an undescribed item RENDERS rather than blocking the build (2026-09-02) ─────────────────
-    # ⛔ THE DEFECT THIS REPLACES, and the user is the one who hit it: the generator refused
-    # while four items sat unwritten, so the page stayed a day behind and looked current. The
-    # refusal's intent was right; refusing to publish anything was the wrong consequence.
-    case("an undescribed open item is reported",
-         lambda: undescribed([("t", "f", [1])], {1, 2}) == [2])
-    case("a fully described set reports nothing",
-         lambda: undescribed([("t", "f", [1, 2])], {1, 2}) == [])
+    # ── AN ITEM IN NO GROUP STILL REACHES THE READER — re-aimed 2026-09-11 ─────────────────────
+    # ⛔ THE DEFECT THIS LINE OF CASES REPLACES, and the user hit it twice. First the generator
+    # REFUSED while four items sat unwritten, so the page stayed a day behind and looked current.
+    # Then the replacement rendered them under "Filed, but nobody has described them yet", which
+    # made a normal state look like debt and accumulated twelve rows before anyone noticed.
+    # Under backlog #90's clause 0 neither happens: grouping is opt-in and the leftovers are an
+    # INDEX, not a bucket of shame.
+    #
     # ⚠ THE WIRING, not the predicate. This repo keeps finding a correct predicate that nothing
-    # calls — `undescribed` can be perfectly right and never reach the page. Built from the REAL
-    # backlog with one item's description withheld, so it exercises the actual render path.
-    _short = [g for g in GROUPS]
-    _short[-1] = (_short[-1][0], _short[-1][1], [n for n in _short[-1][2] if n != 85])
-    _rows85 = [dict(r, hist=None) for r in parse(BACKLOG.read_text().splitlines())]
+    # calls, so this drives the REAL `build` over the REAL backlog with one item pulled out of a
+    # SURVIVING group — #17, which is group 1's first member — and asks whether it still reaches
+    # the page, with its summary intact.
+    _short = [(g[0], g[1], g[2], [n for n in g[3] if n != 17]) for g in GROUPS]
+    _rows17 = [dict(r, hist=None) for r in parse(BACKLOG.read_text().splitlines())]
     _saved, globals()["GROUPS"] = GROUPS, _short
     try:
-        _undesc_page = build(_rows85, "sha", "2026-01-01 00:00", "stamp")
+        _ungrouped_page = build(_rows17, "sha", "2026-01-01 00:00", "stamp")
     finally:
         globals()["GROUPS"] = _saved
-    case("an undescribed item still lands in a rendered group",
-         lambda: "Filed, but nobody has described them yet" in _undesc_page)
-    case("...and the page is still built, not refused",
-         lambda: len(_undesc_page) > 1000)
+    # ⚠ THE HEADING MARKUP, not the bare phrase — and the suite caught this the moment the page
+    # gained a paragraph explaining the index BY NAME. A phrase in prose and a rendered section
+    # are different claims; greping the phrase made "the section exists" true whenever the page
+    # merely mentioned it, and the negative arm below went red rather than silently passing.
+    case("an item in no group lands in the index instead of vanishing",
+         lambda: "<h3>The rest, one line each</h3>" in _ungrouped_page)
+    case("...and it keeps its summary there, rather than rendering as a bare row",
+         lambda: SUMMARIES[17][:40] in _ungrouped_page)
+    # ⚠ THE NEGATIVE ARM. Without it the case above passes on a page that shows the index
+    # ALWAYS — including when every open item is grouped, which is the state the index exists to
+    # stay out of. The real GROUPS covers less than every open item, so this drives a fixture
+    # where one group claims them all.
+    _allrows = [dict(r, hist=None) for r in parse(BACKLOG.read_text().splitlines())]
+    _every = [("all of it", "one group claims every open item", "x",
+               [r["num"] for r in _allrows if not r["closed"]])]
+    _saved2, globals()["GROUPS"] = GROUPS, _every
+    try:
+        _full_page = build(_allrows, "sha", "2026-01-01 00:00", "stamp")
+    finally:
+        globals()["GROUPS"] = _saved2
+    case("...and the index is ABSENT when every open item is grouped",
+         lambda: "<h3>The rest, one line each</h3>" not in _full_page)
+    case("the page is built either way, never refused",
+         lambda: len(_ungrouped_page) > 1000 and len(_full_page) > 1000)
 
     # ── links are READABLE, in every palette this page can be rendered under ────────────────────
     case("every link colour clears WCAG AA on every surface it lands on, all four palettes",
@@ -3174,16 +3180,34 @@ def self_test() -> int:
     # ⭐ The one case that measures the SHIPPED grouping rather than a fixture. If an item is filed
     # or closed and GROUPS is not updated, this fails here — before anyone opens the page.
     real = parse(BACKLOG.read_text().splitlines())
-    # ⭐ The invariant that must hold WHATEVER the grouping has drifted to: after sanitisation,
-    # every open item in the REAL backlog reaches the page exactly once — grouped, or under the
-    # "nobody has described them yet" bucket. Asserting GROUPS is pristine would re-create the
-    # coupling that froze the page: closing a row would fail the suite.
+    # ⭐ THE INVARIANT THAT MUST HOLD WHATEVER THE GROUPING HAS DRIFTED TO: every open item in the
+    # REAL backlog reaches the page exactly once — inside a group, or in the index. Asserting that
+    # GROUPS is pristine would re-create the coupling that froze the page for five days, because
+    # closing a row would then fail the suite.
+    #
+    # ⚠ READ OFF THE RENDERED PAGE, NOT RE-DERIVED. The obvious form — `placed + (open - placed)
+    # == open` — is a TAUTOLOGY: it is true of any `placed` whatsoever and would pass with the
+    # index section deleted outright. This repo has shipped that shape before under the name
+    # "a case that cannot fail". So the second half is parsed back out of the HTML the index
+    # actually produced, which fails the moment the section stops rendering what it claims.
     _open_real = {r["num"] for r in real if not r["closed"]}
     _san, _ = sanitise_groups(GROUPS, _open_real)
-    _placed = [n for _, _, its in _san for n in its]
-    case("every open item reaches the page exactly once, however GROUPS has drifted",
-         lambda: sorted(_placed + undescribed(GROUPS, _open_real)) == sorted(_open_real)
-         and len(_placed) == len(set(_placed)))
+    _placed = [n for *_, its in _san for n in its]
+    _real_rows = [dict(r, hist=None) for r in real]
+    _real_page = build(_real_rows, "sha", "2026-01-01 00:00", "stamp")
+    # ⛔ BOUNDED AT THE NEXT HEADING, and the unbounded version is why this comment exists. The
+    # first draft was `split(...)[-1]`, which keeps everything AFTER the heading — including the
+    # full "Every row, as filed" table below it, where every open item appears. `_indexed` then
+    # collapsed to "all unplaced items" and the invariant became the tautology the paragraph
+    # above warns about. Written, then committed three lines later; caught by MEASURING the
+    # section and getting 113 items in a 27-item index.
+    _idx = (_real_page.split("<h3>The rest, one line each</h3>", 1)[-1].split("<h2", 1)[0]
+            if "<h3>The rest, one line each</h3>" in _real_page else "")
+    _indexed = {n for n in _open_real - set(_placed) if f'#i{n}">#{n}</a>' in _idx}
+    case("every open item reaches the page exactly once — in a group, or in the index",
+         lambda: len(_placed) == len(set(_placed))
+         and set(_placed).isdisjoint(_indexed)
+         and set(_placed) | _indexed == _open_real)
     case("the real file parses at all (fail-closed on a restructure)", lambda: len(real) > 20)
     # ⭐ THE RATCHET the floor above only pretends to be. `> 20` tolerates losing 88 of 110 rows;
     # this fails on the FIRST row the parser cannot read, and names it. Anchored to the file's own
