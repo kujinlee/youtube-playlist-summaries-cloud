@@ -634,8 +634,8 @@
     "name": "stdout's budget stops accounting for what stderr already took, so the diagnostic grows past the window it exists to bound",
     "edits": [
       [
-        "    out_keep = min(len(out), window - err_keep)\n    return",
-        "    out_keep = min(len(out), window)\n    return"
+        "    out_keep = min(len(out), window - err_keep)\n    # \u26d4 THE",
+        "    out_keep = min(len(out), window)\n    # \u26d4 THE"
       ]
     ],
     "expect": [
@@ -679,6 +679,84 @@
     ],
     "expect": [
       "...and the recorded tail is the failure, not the noise"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the diagnostic's split point moves, so one stream's guaranteed half is not half \u2014 at one end of the band a real control crash shows stack frames and no exception",
+    "edits": [
+      [
+        "    half = window // 2\n    err_keep",
+        "    half = window // 4\n    err_keep"
+      ]
+    ],
+    "expect": [
+      "both streams flooded, and the stderr half is exactly half the window"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the split point is pushed to the far end, so stdout is cut to one character and a [FAIL] line \u2014 median 63 characters in this repo \u2014 cannot fit in the report",
+    "edits": [
+      [
+        "stderr.strip()\n    half = window // 2",
+        "stderr.strip()\n    half = window - 1"
+      ]
+    ],
+    "expect": [
+      "a flooded stderr cannot evict stdout's failure from the window"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the two kept halves are joined with no separator, fusing the last stderr line and the first stdout line into one sentence",
+    "edits": [
+      [
+        "    return \"\\n\".join(p for p in (err[-err_keep:] if err_keep else \"\",",
+        "    return \"\".join(p for p in (err[-err_keep:] if err_keep else \"\","
+      ]
+    ],
+    "expect": [
+      "...and the window never exceeds its budget, however much is offered"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the streams are no longer stripped, so trailing whitespace is charged against the budget and a whitespace-only stream opens the report with a blank line",
+    "edits": [
+      [
+        "    out, err = stdout.strip(), stderr.strip()",
+        "    out, err = stdout, stderr"
+      ]
+    ],
+    "expect": [
+      "...and a whitespace-only stream is dropped rather than charged to the budget"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the AFTER-control diagnostic goes back to slicing one merged string \u2014 the identical line to the before-control site, in the same function, and it had no entry",
+    "edits": [
+      [
+        "mutation. Treat this run as NOT \"\n                    f\"CHECKED.\\n    {diagnostic_tail(so, se)}\")",
+        "mutation. Treat this run as NOT \"\n                    f\"CHECKED.\\n    {out[-400:]}\")"
+      ]
+    ],
+    "expect": [
+      "...and the AFTER-control report shows the reason, not just the verdict"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the diagnostic window itself shrinks, so every CANNOT RUN report is cut without one case or entry noticing the budget moved \u2014 r4 L2's shape, found by the edge sweep",
+    "edits": [
+      [
+        "DIAGNOSTIC_WINDOW = 400",
+        "DIAGNOSTIC_WINDOW = 300"
+      ]
+    ],
+    "expect": [
+      "...and a quiet stderr gives its whole half back to stdout"
     ],
     "file": "scripts/check-plan-code.py"
   }

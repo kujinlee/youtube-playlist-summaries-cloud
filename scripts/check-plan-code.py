@@ -2,7 +2,7 @@
 """A plan that contains code must ASSEMBLE into that code, and its evidence must be RUN.
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
-    python3 scripts/check-plan-code.py --self-test          # 121 cases
+    python3 scripts/check-plan-code.py --self-test          # 124 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -415,6 +415,20 @@ def diagnostic_tail(stdout: str, stderr: str, window: int = DIAGNOSTIC_WINDOW) -
     half = window // 2
     err_keep = min(len(err), max(half, window - len(out)))
     out_keep = min(len(out), window - err_keep)
+    # ⛔ THE `if err_keep else ""` GUARDS STAY, AND r4 L1 SAID TO DELETE THEM. `s[-0:]` is
+    # `s[0:]` — THE WHOLE STRING — so without these, a keep count of 0 returns everything it
+    # was supposed to withhold. The finding's reasoning was that 0 requires an EMPTY stream,
+    # because the floor is `half` and `half` is positive; that is correct for every real input,
+    # and it is why both branches survived a mutation.
+    # ⟳ THEY WERE DELETED ON THAT BASIS, AND THE FULL `--mutate .` REFUTED IT IN ONE RUN:
+    # 458 killed, 457 ATTRIBUTED. The floor mutation — `max(half, …)` → `max(0, …)`, the entry
+    # that exists to prove the floor load-bearing — drives `err_keep` to 0 with `err` NON-empty.
+    # With the guards gone, `err[-0:]` handed back the entire traceback, the case named for
+    # that harm stayed GREEN, and the mutation was caught by two unrelated cases instead.
+    # ⭐ THE LESSON: "no input can reach this clause" is not the same as "nothing can". A guard
+    # can be unreachable under the arithmetic AS WRITTEN and be exactly what makes a MUTATION of
+    # that arithmetic visible. Reachability has to be asked of the mutation space too, and the
+    # harness is the only thing that answers it — reading the code says the opposite.
     return "\n".join(p for p in (err[-err_keep:] if err_keep else "",
                                  out[-out_keep:] if out_keep else "") if p)
 
@@ -656,7 +670,7 @@ EXPECTED_MUTATIONS = {
     # orphaning the anchor that guarded it. An anchor binds by TEXT, so improving code breaks it
     # and the suite stays green; `--mutate .` refuses an unresolved anchor, which is the only
     # reason that was caught here rather than merged.
-    "scripts/check-plan-code.py": 57,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 63,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1909,8 +1923,8 @@ def _self_test() -> int:
         # ⟳ r1 H1/H2/M1. `mutate_delivered` USED to call `stderr_progress` directly at both
         # control loops, and `_self_test` drives it fourteen times — so the suite's own stderr
         # carried 542 B of progress. Three consequences, and only the third was cosmetic:
-        #   * `run_suite` returns `(stdout + stderr)`, and every CANNOT RUN message prints
-        #     `out[-400:]`. 542 B of progress pushes the `[FAIL]` line out of that window
+        #   * `run_suite` returned `(stdout + stderr)` AT THE TIME, and every CANNOT RUN
+        #     message printed `out[-400:]`. 542 B of progress pushed the `[FAIL]` line out
         #     ENTIRELY — measured — so the harness's own control-failure diagnostic contained
         #     none of the failure. That undid r1 F7 (2026-09-09) for the one subject that
         #     matters most: the harness itself;
@@ -2110,13 +2124,27 @@ def _self_test() -> int:
                 "    _c = pathlib.Path(__file__).parent / 'runs.txt'\n"
                 "    _n = int(_c.read_text()) + 1 if _c.exists() else 1\n"
                 "    _c.write_text(str(_n))\n"
+                # ⟳ r4 H1 — 800 B OF STDOUT AND THE REASON ON STDERR, deliberately. The fixture
+                # used to print one short line, so `out[-400:]` and `diagnostic_tail` produced
+                # the same text and no case here could tell them apart. That is why the AFTER-
+                # control site could be reverted with the suite green while the BEFORE-control
+                # site — the identical line, in the same function, in the same diff hunk —
+                # was covered. After fixing, SEARCH for the class: here the class was two lines.
                 "    if _n >= 3:\n"
-                "        print('  [FAIL] the tree went bad underneath: got %r' % _n)\n"
+                "        import sys\n"
+                "        print('S' * 800)\n"
+                "        sys.stderr.write('the tree went bad underneath\\n')\n"
+                "        print('  [FAIL] a poisoned run')\n"
                 "        return 1", 1))
             _ok6, _rep6, _ev6 = mutate_delivered(_r)
             case("a tree that goes bad DURING the sequence invalidates the run",
                  (_ok6, any("no longer green AFTER the sequence" in r for r in _rep6)),
                  (False, True))
+            # ⛔ ...AND THE AFTER-CONTROL REPORT SAYS WHY, which is the half that had no case.
+            # The marker is on STDERR and 800 B of stdout sits after it, so a report built by
+            # slicing the merged string cannot contain it and this case fails.
+            case("...and the AFTER-control report shows the reason, not just the verdict",
+                 any("the tree went bad underneath" in r for r in _rep6), True)
             # ⚠ THE COUNTS ARE COMPLETE HERE and the run is still not a verdict — which is
             # why `trustworthy` cannot be derived from the tally, and why `ok` cannot carry
             # it either (a real survivor is also ok=False). Both were tried and refuted.
@@ -2539,10 +2567,35 @@ def _self_test() -> int:
                                                           "E" * 5000), True)
     case("...and a flooded stdout cannot evict stderr's traceback",
          "RuntimeError: boom" in diagnostic_tail("S" * 5000, "RuntimeError: boom"), True)
+    # ⛔ THE SPLIT POINT ITSELF — r4 B1, the NINTH instance, and in the code that fixed the eighth.
+    # The whole content of the fix is "each stream is guaranteed half the window", and nothing
+    # asserted the half. MEASURED over a green control, mutating only `half = window // 2`: every
+    # value in the open band 20 < half < 399 kept the suite at 121/121. At `half = 50` — green —
+    # a REAL control crash (`check-paid-caller-arrival.py`, 16,701 B of stdout) showed 50
+    # characters of stack frames and NEITHER the exception type NOR its message; at `half = 350`,
+    # also green, stdout was cut to 50 characters, shorter than most `[FAIL] <name>` lines here.
+    # ⭐ WHY THE EXISTING CASE COULD NOT SEE IT, and it is r3 B1's diagnosis exactly: the late.py
+    # fixture's exception line is 41 characters and a real one is 84, so the case proved `half ≳ 41`
+    # for a corpus that needs `half ≳ 84`. The input was an order of magnitude inside the boundary,
+    # on the safe side. r3 put its cases AT the boundary for `progress_line` — where the fix was —
+    # and nowhere near it for the function that fix introduced.
+    # The want is a LITERAL 200. `window // 2` on the right-hand side would move with the subject,
+    # which is r2's defect, and this file has now paid for each of those separately.
+    case("both streams flooded, and the stderr half is exactly half the window",
+         len(diagnostic_tail("S" * 5000, "E" * 5000).split("\n")[0]), 200)
     # ⚠ THE BUDGET IS A CEILING, so it is asserted as a LITERAL — r3's Blocking was a want that
     # moved with its subject, and `DIAGNOSTIC_WINDOW` on both sides would be exactly that again.
+    # ⟳ r4 M1: this was `<= 401`, and an inequality with slack asserts a HALF-SPACE, not a value —
+    # the separator lived in that one character of slack, so joining the halves with `""` (fusing
+    # the last stderr line and the first stdout line into one sentence, in the report a reader
+    # consults precisely when they cannot trust anything) gave 400 and passed.
     case("...and the window never exceeds its budget, however much is offered",
-         len(diagnostic_tail("S" * 5000, "E" * 5000)) <= 401, True)
+         len(diagnostic_tail("S" * 5000, "E" * 5000)), 401)
+    # ⟳ r4 M2 — `.strip()` was a behaviour this commit chose with no case that could fail for it.
+    # Unstripped, a stderr of just "\n" is charged against the budget AND survives the `if p`
+    # filter, so the report opens with a blank line.
+    case("...and a whitespace-only stream is dropped rather than charged to the budget",
+         diagnostic_tail("done\n", "  \n"), "done")
     # ...while a silent stderr costs the reader nothing: the unused half goes to stdout, so the
     # common case keeps the full 400 characters it had before any of this.
     case("...and a quiet stderr gives its whole half back to stdout",
@@ -2670,7 +2723,7 @@ def _self_test() -> int:
     # so an `expect` naming it in full could never match and its entry would be unattributable.
     case("⚠ a case name containing ': got ' is TRUNCATED by the consumer",
          parse_fail_names("  [FAIL] the width: got the wrong value"), ["the width"])
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 452)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 458)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

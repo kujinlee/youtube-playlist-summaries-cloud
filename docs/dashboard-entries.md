@@ -7123,7 +7123,31 @@ value production actually produces.
 `EXPECTED_MUTATIONS` 431 → 452; `check-plan-code` suite 101 → 121. Every case this branch adds is
 named by a manifest entry, audited mechanically rather than from memory.
 
-⚠ **Three rounds, three Blockings, and each was the previous round's fix.** The feature itself has
-been correct since round 1 and is measurably working; what keeps bleeding is the diagnostic-window
-machinery underneath it, which predates this work. Recorded here because the project's rule is that
-four such rounds stop being a patching problem and become a design one.
+⛔ **Round 4 found the same mistake a third time, in the code written to fix the second one — and
+it corrected the explanation above, which was mine and was wrong.** The new split-point constant was
+guarded only within a seventeen-fold band: every value from 21 to 398 passed the whole suite. At the
+low end of that band, a *real* control crash reports fifty characters of stack frames and neither the
+exception type nor its message — the exact harm two earlier rounds were spent on, reachable by
+changing one number, with nothing able to fail for it. The guarding case used a fixture whose error
+line is 41 characters where real ones are 84, so it sat an order of magnitude inside the boundary,
+on the safe side.
+
+⭐ **And the correction, which matters more than the fix.** The claim above — that the recurring
+defect lived in the machinery underneath the feature — was checked against the four rounds' filed
+findings and is false. Two of the three were in the feature itself. **They are the same defect in
+three different functions: a fixture placed comfortably inside the boundary it claims to pin.** It
+follows the method, not the module, so redesigning any one component would have moved it into the
+next. That is why this went back for coverage rather than to an architecture review — a decision
+taken by the human, on the reviewer's evidence rather than on the round count.
+
+Closed with an exhaustiveness pass rather than one more patch: every numeric edge this work
+introduced or touched — seven of them — now has a case sitting **at** the boundary with a literal
+expected value, and a mutation that moves the constant and dies. One of the seven was found by that
+sweep and by neither reviewer.
+
+⚠ **The honest limit: the mutation harness cannot find this class by construction**, because its
+manifest only ever contains mutations someone thought to write. A generic "±1 and ×2 on every
+integer literal" sweep would have caught three of this round's findings in one pass. Noted, not
+built — it is its own piece of work.
+
+`EXPECTED_MUTATIONS` 431 → 458; `check-plan-code` suite 101 → 124.
