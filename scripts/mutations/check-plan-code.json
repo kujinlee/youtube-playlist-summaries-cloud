@@ -634,8 +634,8 @@
     "name": "stdout's budget stops accounting for what stderr already took, so the diagnostic grows past the window it exists to bound",
     "edits": [
       [
-        "    out_keep = min(len(out), window - err_keep)\n    # \u26d4 THE",
-        "    out_keep = min(len(out), window)\n    # \u26d4 THE"
+        "    out_keep = min(len(out), window - err_keep)\n    # \u26d4 THESE",
+        "    out_keep = min(len(out), window)\n    # \u26d4 THESE"
       ]
     ],
     "expect": [
@@ -647,8 +647,8 @@
     "name": "a quiet stderr no longer hands its unused half back, so the ordinary case sees 200 characters of stdout where it used to see 400",
     "edits": [
       [
-        "max(half, window - len(out)))\n    out_keep = min(len(out), window - err_keep)",
-        "max(half, window - len(out)))\n    out_keep = min(len(out), window - half)"
+        "    out_keep = min(len(out), window - err_keep)\n    # \u26d4 THESE TWO",
+        "    out_keep = min(len(out), window - half)\n    # \u26d4 THESE TWO"
       ]
     ],
     "expect": [
@@ -757,6 +757,110 @@
     ],
     "expect": [
       "...and a quiet stderr gives its whole half back to stdout"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the stdout half is sliced from the FRONT, so a control's report shows what it printed first and never the [FAIL] line it died on \u2014 no fixture could see this for five rounds",
+    "edits": [
+      [
+        "                                 out[-out_keep:] if out_keep else \"\") if p)",
+        "                                 out[:out_keep] if out_keep else \"\") if p)"
+      ]
+    ],
+    "expect": [
+      "...and it is the END of each stream that is kept, never the start"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the stderr half is sliced from the FRONT, so a traceback is reported by its opening frames instead of the exception that ended it",
+    "edits": [
+      [
+        "    return \"\\n\".join(p for p in (err[-err_keep:] if err_keep else \"\",\n                                 out[-out_keep:]",
+        "    return \"\\n\".join(p for p in (err[:err_keep] if err_keep else \"\",\n                                 out[-out_keep:]"
+      ]
+    ],
+    "expect": [
+      "...and it is the END of each stream that is kept, never the start"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the floor's spare-budget term reads its own stream instead of the other, so a suite that crashes at import gets half the traceback and half the budget is discarded",
+    "edits": [
+      [
+        "max(half, window - len(out)))\n    # \u26a0 `min(len(out)",
+        "max(half, window - len(err)))\n    # \u26a0 `min(len(out)"
+      ]
+    ],
+    "expect": [
+      "...and a quiet stdout gives its whole half back to stderr"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the ellipsis stops paying for its own character, so a truncated line is one column over the row it is bounded to",
+    "edits": [
+      [
+        "        return head + label\n    return head + label[:max(room - 1, 0)] + \"\u2026\"",
+        "        return head + label\n    return head + label[:max(room, 0)] + \"\u2026\""
+      ]
+    ],
+    "expect": [
+      "...and one character more IS, back to exactly one row"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the stderr cap is dropped, so a short stderr is asked for more characters than it has",
+    "edits": [
+      [
+        "    half = window // 2\n    err_keep = min(len(err), max(half, window - len(out)))",
+        "    half = window // 2\n    err_keep = max(half, window - len(out))"
+      ]
+    ],
+    "expect": [
+      "...and a quiet stderr gives its whole half back to stdout"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the before-control phase counts from zero, so the first subject is reported as 0 of N",
+    "edits": [
+      [
+        "        for position, name in enumerate(targets, 1):\n            # SILENT UNLESS A CALLER ASKS",
+        "        for position, name in enumerate(targets, 0):\n            # SILENT UNLESS A CALLER ASKS"
+      ]
+    ],
+    "expect": [
+      "every phase of --mutate reports its position when a caller asks"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the mutation loop counts from zero, so the last mutation is reported as N-1 of N and a reader watching the tail never sees the run reach its total",
+    "edits": [
+      [
+        "    for position, mut in enumerate(muts, 1):",
+        "    for position, mut in enumerate(muts, 0):"
+      ]
+    ],
+    "expect": [
+      "the caller is told once per mutation, with the running position"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the empty-half filter is dropped, so a stream that contributed nothing still costs a line and the report opens with a blank one",
+    "edits": [
+      [
+        "out[-out_keep:] if out_keep else \"\") if p)",
+        "out[-out_keep:] if out_keep else \"\"))"
+      ]
+    ],
+    "expect": [
+      "...and a whitespace-only stream is dropped rather than charged to the budget"
     ],
     "file": "scripts/check-plan-code.py"
   }

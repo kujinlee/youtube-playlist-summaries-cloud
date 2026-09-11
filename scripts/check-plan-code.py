@@ -2,7 +2,7 @@
 """A plan that contains code must ASSEMBLE into that code, and its evidence must be RUN.
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
-    python3 scripts/check-plan-code.py --self-test          # 124 cases
+    python3 scripts/check-plan-code.py --self-test          # 126 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -414,8 +414,28 @@ def diagnostic_tail(stdout: str, stderr: str, window: int = DIAGNOSTIC_WINDOW) -
     out, err = stdout.strip(), stderr.strip()
     half = window // 2
     err_keep = min(len(err), max(half, window - len(out)))
+    # ⚠ `min(len(out), …)` IS INERT, AND THAT IS MEASURED RATHER THAN ARGUED — r5 M3. An
+    # `out_keep` larger than `len(out)` slices to the whole string anyway, so removing the cap
+    # changes no output: 60,000 input pairs differ on 0 (reviewer), and a full `--mutate .` with
+    # the cap deleted AND the two anchors bound to this line retargeted returns 466 killed / 466
+    # attributed — identical to the baseline. Kept because it states the intent and costs
+    # nothing; it carries no case because none can be written, and this is the artefact that
+    # says so. ⛔ Do NOT generalise from it: `if err_keep else ""` two lines down reads the same
+    # way and the SAME experiment found it LOAD-BEARING (r4 L1, 458 killed / 457 attributed).
     out_keep = min(len(out), window - err_keep)
-    # ⛔ THE `if err_keep else ""` GUARDS STAY, AND r4 L1 SAID TO DELETE THEM. `s[-0:]` is
+    # ⛔ THESE TWO GUARDS ARE NOT THE SAME GUARD, AND THE COMMENT BELOW ONCE CLAIMED THEY WERE.
+    # ⟳ r5 L3. What follows measured `if err_keep else ""` and then kept BOTH on that one
+    # result — the twin was load-bearing BY ASSOCIATION, which is the identical reasoning that
+    # made r4 L1 wrong ("the guards cannot matter", established once and applied to the pair).
+    # Asked separately, with the same experiment, they disagree:
+    #     `if err_keep else ""`  removed -> 458 killed, 457 attributed   LOAD-BEARING
+    #     `if out_keep else ""`  removed -> 466 killed, 466 attributed   DEAD
+    # `err_keep` reaches 0 with `err` non-empty under the floor mutation; `out_keep` reaching 0
+    # still requires `len(out) == 0`, which no mutation in the manifest produces.
+    # ⭐ BOTH STAY — the dead one for symmetry and against the `s[-0:]` footgun, which costs
+    # nothing — but a reader must not take the live measurement as covering the pair. r4's
+    # lesson cuts BOTH ways: do not reason from the reachable clause to its twin either.
+    # ⛔ THE `if err_keep else ""` GUARD STAYS, AND r4 L1 SAID TO DELETE IT. `s[-0:]` is
     # `s[0:]` — THE WHOLE STRING — so without these, a keep count of 0 returns everything it
     # was supposed to withhold. The finding's reasoning was that 0 requires an EMPTY stream,
     # because the floor is `half` and `half` is positive; that is correct for every real input,
@@ -670,7 +690,7 @@ EXPECTED_MUTATIONS = {
     # orphaning the anchor that guarded it. An anchor binds by TEXT, so improving code breaks it
     # and the suite stays green; `--mutate .` refuses an unresolved anchor, which is the only
     # reason that was caught here rather than merged.
-    "scripts/check-plan-code.py": 63,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 71,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1274,12 +1294,32 @@ def progress_line(done: int, total: int, label: str) -> str:
     the same day with two reviews running beside it. A single number in prose would be wrong for
     most readers most of the time; the first draft of this docstring said "~25 minutes" from
     exactly that unmeasured recollection. What is stable, and what this function restores, is the
-    RATE: 510 lines over the run, so a gap much longer than `SUITE_TIMEOUT` is the signal.
+    RATE: one line per mutation plus one per control and re-control — 534 at this writing, and
+    it moves whenever the manifest does, which is why the arithmetic is given instead of the
+    total. A gap much longer than `SUITE_TIMEOUT` is the signal.
 
     ⟳ r1 M2 — BOUNDED TO ONE ROW, and the POSITION is never what gets cut. One rule, no special
     case: the head is always a prefix of the result, so an impossible budget costs the label and
     leaves the number. That branch is unreachable anyway — it needs a `done`/`total` pair of some
     76 digits — and a clause no input can reach is a clause no case can kill.
+    ⚠ THAT LAST SENTENCE IS TRUE AND IS NOT THE WHOLE RULE, which r4 L1 established by costing an
+    attribution. "No case can kill it" does NOT follow from "no input reaches it": a clause can be
+    unreachable under the arithmetic as written and still be what makes a MUTATION of that
+    arithmetic visible. The full form is: a clause no input can reach needs the MUTATION-space
+    question asked separately, and the answer is a run, not a reading. Both answers have now been
+    observed on clauses that read identically — see below.
+
+    ⟳ r5 H2 — AND THE `max(…, 0)` FLOOR WAS ASKED r4 L1's QUESTION, WITH A RUN RATHER THAN AN
+    ARGUMENT. r4 L1 established that "no input reaches it" and "nothing reaches it" are different
+    claims: two guards that looked dead turned out to be what made a mutation attributable, and
+    deleting them cost an attribution (458 killed, 457 attributed). The same experiment on THIS
+    floor — delete it, retarget the one manifest anchor that binds to the line by text, run the
+    full harness — returns **458 killed, 458 attributed, 0 survivors**. UNCHANGED.
+    So this floor is dead in the mutation space too, and that is a MEASUREMENT, not the reading
+    that was wrong last time. It stays because it costs nothing and a later refactor can make the
+    branch reachable; it carries no case because none can be written, and this paragraph is the
+    artefact that says so. ⚠ The two clauses are NOT the same: one was measured live, one
+    measured dead, by the identical experiment. Do not reason from one to the other.
     """
     head = f"[{done}/{total}] "
     room = PROGRESS_WIDTH - len(head)
@@ -2581,8 +2621,33 @@ def _self_test() -> int:
     # and nowhere near it for the function that fix introduced.
     # The want is a LITERAL 200. `window // 2` on the right-hand side would move with the subject,
     # which is r2's defect, and this file has now paid for each of those separately.
+    # ⟳ r5 L2: the want was `len(...) == 200` — a LENGTH, when the property is about a SIDE. Both
+    # streams were `"S"`/`"E"` of equal size, so emitting them in the wrong order passed too.
+    # Asserting the content costs nothing and pins both at once.
     case("both streams flooded, and the stderr half is exactly half the window",
-         len(diagnostic_tail("S" * 5000, "E" * 5000).split("\n")[0]), 200)
+         diagnostic_tail("S" * 5000, "E" * 5000).split("\n")[0], "E" * 200)
+    # ⛔ AND IT IS THE END OF EACH STREAM THAT IS KEPT, NEVER THE START — r5 B1, found by BOTH
+    # review halves, and the ninth consecutive round in which the guard was written and the
+    # fixture could not see it. MEASURED: `out[-out_keep:]` → `out[:out_keep]` left the suite at
+    # 124/124, and against the real CANNOT RUN path a control emitting 700 B of stdout ending in
+    # `[FAIL] final case` reported none of it.
+    # ⭐ THE REASON NO CASE COULD SEE IT, and this is the sharpest lesson of the five rounds:
+    # every fixture above is `"S" * 5000` — a string at the boundary of MAGNITUDE with no
+    # POSITION, so its first 200 characters and its last 200 are byte-identical. It can pin a
+    # length and can NEVER pin a direction. r4 asked "is the input at the edge?"; the question
+    # that catches this is **"what two inputs would this case have to tell apart, and can it?"**
+    # A FIXTURE MUST DIFFER FROM ITSELF ALONG THE AXIS THE PROPERTY IS ABOUT.
+    _dt_ends = diagnostic_tail("FIRST" + "S" * 5000 + "LAST", "OPEN" + "E" * 5000 + "SHUT")
+    case("...and it is the END of each stream that is kept, never the start",
+         (_dt_ends.endswith("LAST"), _dt_ends.split("\n")[0].endswith("SHUT"),
+          "FIRST" in _dt_ends, "OPEN" in _dt_ends), (True, True, False, False))
+    # ⟳ r5 H1 — THE MIRROR OF THE GIVE-BACK, which existed in one direction only. The floor's
+    # spare-budget term reads `len(out)`, and swapping it for `len(err)` was green: a suite that
+    # raises at import (no stdout, traceback on stderr — the shape this file uses as a fixture)
+    # would get 200 characters of traceback instead of 400, discarding half the budget for the
+    # failure shape where the traceback is the ONLY evidence there is.
+    case("...and a quiet stdout gives its whole half back to stderr",
+         len(diagnostic_tail("", "E" * 5000)), 400)
     # ⚠ THE BUDGET IS A CEILING, so it is asserted as a LITERAL — r3's Blocking was a want that
     # moved with its subject, and `DIAGNOSTIC_WINDOW` on both sides would be exactly that again.
     # ⟳ r4 M1: this was `<= 401`, and an inequality with slack asserts a HALF-SPACE, not a value —
@@ -2723,7 +2788,7 @@ def _self_test() -> int:
     # so an `expect` naming it in full could never match and its entry would be unattributable.
     case("⚠ a case name containing ': got ' is TRUNCATED by the consumer",
          parse_fail_names("  [FAIL] the width: got the wrong value"), ["the width"])
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 458)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 466)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

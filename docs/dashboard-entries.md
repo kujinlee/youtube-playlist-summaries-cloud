@@ -7150,4 +7150,30 @@ manifest only ever contains mutations someone thought to write. A generic "±1 a
 integer literal" sweep would have caught three of this round's findings in one pass. Noted, not
 built — it is its own piece of work.
 
-`EXPECTED_MUTATIONS` 431 → 458; `check-plan-code` suite 101 → 124.
+⛔ **Round 5 found the sharpest version of the recurring mistake, and both reviewers found it
+independently.** The report is supposed to show the END of a failed run's output. Slicing it from
+the *start* instead passed the entire suite — so a control that died after printing would be
+reported by what it printed first, never by the failure it died on. It had gone unnoticed for five
+rounds.
+
+⭐ **The reason is worth more than the fix, and it explains all five rounds at once.** Every test
+input written for this function was a single character repeated — five thousand `S`s. Such a string
+sits at the extreme of *size* and has no *position at all*: its first two hundred characters and its
+last two hundred are identical. It can prove how much was kept and can never prove which end.
+Round 4 had asked "is the input at the edge?" and fixed that. The question that catches this one is
+**"what two inputs would this test have to tell apart — and can it?"** A test input must differ from
+itself along the axis the property is about.
+
+⚠ **And the audit that was supposed to prevent this had the same flaw, one level down.** It asked
+"is there a check registered for this line?" — which answers *yes* whenever a check happens to
+mention the line while testing something else on it. Six of the seven lines it marked healthy were
+in exactly that position. The question that separates them is not whether the line is mentioned but
+whether anything actually **changes** it; re-run that way, two genuine gaps appeared in rows this
+page had already called covered.
+
+⚠ **One clause was measured live and its twin measured dead, by the identical experiment.** Round 4
+removed two guards that looked unreachable and lost an attribution, proving they mattered. Round 5
+ran the same experiment on a clause that looks the same and found it genuinely inert. They are not
+interchangeable, and the code now says so, because reading them tells you nothing.
+
+`EXPECTED_MUTATIONS` 431 → 466; `check-plan-code` suite 101 → 126.
