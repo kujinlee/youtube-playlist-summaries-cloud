@@ -589,7 +589,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-09-11: backlog #90's grouping policy gets its guard, and the guard gets its
     # manifest in the SAME commit — a policy guard with no mutations is a rule nothing
     # checks back, which is the shape `check-ratchet-contract` refuses by name (R4).
-    "scripts/check-group-claims.py": 8,
+    "scripts/check-group-claims.py": 11,
 
     "scripts/page_markup.py": 14,
     # ⟳ 2026-09-01, backlog #78: 18 -> 23. The entry gate now answers TWO questions
@@ -2885,11 +2885,11 @@ def _self_test() -> int:
     # so an `expect` naming it in full could never match and its entry would be unattributable.
     case("⚠ a case name containing ': got ' is TRUNCATED by the consumer",
          parse_fail_names("  [FAIL] the width: got the wrong value"), ["the width"])
-    # ⟳ 2026-09-11: 513 -> 521. `check-group-claims.py` joins the manifest with EIGHT entries,
+    # ⟳ 2026-09-11: 513 -> 524. `check-group-claims.py` joins the manifest with ELEVEN entries,
     # all verified to ATTRIBUTE (each goes red via the case it names) before this number moved.
     # A RISE is the ordinary direction; the sanctioned FALL is retirement-with-subject, and
     # this is not one.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 521)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 524)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

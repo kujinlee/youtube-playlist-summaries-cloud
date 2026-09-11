@@ -390,6 +390,22 @@ SUMMARIES: dict[int, str] = {
         'machine.',
 }
 
+# ⛔ THE INDEX'S WORDS ARE PINNED, IN TWO FILES THAT MUST AGREE — and r1's High is why. The first
+# version of this claimed that keeping the index OUT of `GROUPS` was a mechanical barrier against
+# the retired bin returning as framed prose. The reviewer refuted it by measurement: rewriting this
+# dek into a catch-all framing claim left the suite at 164/164 and the guard at exit 0. What stopped
+# it was review discipline wearing the word "mechanical".
+#
+# Now `check-group-claims.py` holds its own copy of both strings and REFUSES when they diverge. That
+# is not a rule about prose — no script can judge whether a sentence is a claim — it is a rule that
+# CHANGING these words is a deliberate act touching two files, which is the most a machine can
+# honestly offer here. The distinction is stated rather than glossed, because overclaiming it once
+# already cost a High.
+INDEX_TITLE = "The rest, one line each"
+INDEX_DEK = ("No claim here — these open items simply belong to no group, which is the normal "
+             "case. Anything with a summary shows it; anything without shows just the row. Both "
+             "are fine.")
+
 GROUPS: list[tuple[str, str, str, list[int]]] = [
     # ⭐ FOUR FIELDS NOW: title, framing, FALSIFIER, members — the policy on backlog row #90,
     # adopted 2026-09-11. The falsifier is a FIELD rather than a sentence buried in the prose so a
@@ -1395,14 +1411,7 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str,
     rest = sorted(open_nums - {n for _, _, _, ns in groups_ok for n in ns})
     groups_for_page = list(groups_ok)
     if rest:
-        groups_for_page.append((
-            "The rest, one line each",
-            "No claim here — these open items simply belong to no group, which is the normal "
-            "case. Anything with a summary shows it; anything without shows just the row. Both "
-            "are fine.",
-            "",
-            rest,
-        ))
+        groups_for_page.append((INDEX_TITLE, INDEX_DEK, "", rest))
 
     order = {"crit": 0, "high": 1, "med": 2, "low": 3, "none": 4}
     # ⚠ `.get`, not `[]`. A row carrying a ✅ marker while its Status cell does not is OPEN with

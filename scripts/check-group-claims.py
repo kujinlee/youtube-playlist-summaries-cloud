@@ -2,7 +2,7 @@
 """Every grouping on the backlog page is a CLAIM, and a claim has to be able to be wrong.
 
     python3 scripts/check-group-claims.py            # check the shipped GROUPS
-    python3 scripts/check-group-claims.py --self-test  # 24 cases
+    python3 scripts/check-group-claims.py --self-test  # 30 cases
 
 WHY THIS EXISTS, and it is a policy guard rather than a defect guard. Adopted from
 `docs/backlog.md` row #90 on 2026-09-11. A backlog page carries three things that all look like
@@ -32,11 +32,21 @@ that cannot fire over the real population, which is the unfalsifiable-guard shap
 paid for repeatedly. ⭐ ITS TRIGGER IS EXPLICIT: the first falsifier written in the form
 `<column> <op> <value>`. Add the evaluator then, with that group as its first case.
 
-WHY THE INDEX IS NOT CAUGHT BY THIS, and it is the mechanical half of "the bin is not coming
-back". `build()` appends a section called "The rest, one line each" for items no group names. That
-section carries an EMPTY falsifier on purpose and is NOT in `GROUPS`, so it never reaches this
-guard. An index that wanted to become a claim would have to be added to `GROUPS`, where rule 1
-would demand a falsifier of it.
+THE INDEX, AND AN OVERCLAIM THIS PARAGRAPH USED TO MAKE. `build()` appends a section — "The
+rest, one line each" — for items no group names. It carries an EMPTY falsifier and is not in
+`GROUPS`, so rule 1 never reaches it.
+
+⛔ THAT IS NOT, BY ITSELF, A BARRIER AGAINST THE RETIRED BIN COMING BACK AS FRAMED PROSE, and the
+first version of this docstring said it was. The r1 reviewer refuted it by measurement: rewriting
+the index's dek into a catch-all framing claim, while leaving it outside `GROUPS`, left the page
+suite at 164/164 and this guard at exit 0. What stopped it was review discipline wearing the word
+"mechanical".
+
+RULE 4 is what the machine can honestly offer instead: this file holds its own copy of the index's
+title and dek and REFUSES when they diverge from the generator's. It cannot judge whether a
+sentence is a claim — nothing can. It makes rewording the index a DELIBERATE act that touches two
+files and fails CI until both agree, which is the same two-sites-must-agree shape this repo uses
+elsewhere. Stated precisely because overclaiming it once already cost a High.
 """
 from __future__ import annotations
 
@@ -69,7 +79,13 @@ def claim_errors(groups: list, open_nums: set[int], all_nums: set[int]) -> list[
             continue
         title, _framing, falsifier, members = g
         # RULE 1 — a claim states how it could be wrong.
-        if not str(falsifier).strip():
+        # ⚠ TWO LINES ON PURPOSE. Normalising and testing on one line gave the two mutations that
+        # guard this rule — "the clause is gone" and "the clause stops stripping" — the SAME edit
+        # anchor, and `check-plan-code --mutate .` refuses a manifest whose entries share anchors:
+        # NOT MEASURED, no verdict for the whole file. Found by the r1 reviewer running the real
+        # harness after my stand-in, which did not implement that rule, reported 8/8.
+        stated = str(falsifier).strip()
+        if not stated:
             out.append(f"{title!r}: no falsifier. A group is a claim; state the observation that "
                        f"would make it FAIL, or make this a tag instead")
         # RULE 2 — a group of one is an item with extra words.
@@ -82,6 +98,44 @@ def claim_errors(groups: list, open_nums: set[int], all_nums: set[int]) -> list[
             if n not in all_nums:
                 out.append(f"{title!r}: names #{n}, which is not a row in the backlog")
     return out
+
+
+INDEX_TITLE = "The rest, one line each"
+INDEX_DEK = ("No claim here — these open items simply belong to no group, which is the normal "
+             "case. Anything with a summary shows it; anything without shows just the row. Both "
+             "are fine.")
+
+
+def index_errors(words: tuple[str, str]) -> list[str]:
+    """RULE 4 — the index's words must be the ones pinned here. PURE.
+
+    ⚠ This does NOT judge the prose. It cannot. It asserts that the generator and this guard say
+    the same thing, so rewording the index costs a second edit and a reviewer rather than being a
+    one-line change nobody sees.
+    """
+    title, dek = words
+    out = []
+    if title != INDEX_TITLE:
+        out.append(f"the index title is {title!r}, pinned here as {INDEX_TITLE!r} — if the change "
+                   f"is intended, update this guard in the same commit")
+    # ⚠ TWO LINES, for the same reason RULE 1 is two lines: the "clause is gone" mutation and the
+    # "clause stops normalising" mutation must not share an edit anchor, or the harness refuses the
+    # whole manifest and measures NOTHING. I made that exact mistake twice in one hour.
+    same_words = " ".join(dek.split()) == " ".join(INDEX_DEK.split())
+    if not same_words:
+        out.append("the index dek has been reworded. It is pinned because an index that starts "
+                   "CHARACTERISING its members has become the leftovers bin again, which is what "
+                   "backlog #90 retired. Update this guard in the same commit, deliberately")
+    return out
+
+
+def _index_words() -> tuple[str, str]:
+    spec = importlib.util.spec_from_file_location("_gbp_idx", GEN)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot import {GEN}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.INDEX_TITLE, mod.INDEX_DEK
 
 
 def _name(g) -> str:
@@ -170,7 +224,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"CANNOT RUN: parsed 0 rows from {BACKLOG} — the format moved")
         return 2
 
-    problems = claim_errors(groups, open_nums, all_nums) + duplicate_errors(groups)
+    problems = (claim_errors(groups, open_nums, all_nums) + duplicate_errors(groups)
+                + index_errors(_index_words()))
     if problems:
         print(f"FAILED — {len(problems)} grouping problem(s) (policy: docs/backlog.md row #90):")
         for p in problems:
@@ -272,6 +327,28 @@ def self_test() -> int:
     case("distinct membership is silent",
          duplicate_errors([G("a", "f", "x", [1]), G("b", "g", "y", [2])]), [])
 
+    # ── rule 4: the index's words are pinned in two files ──────────────────────────────────
+    # ⚠ THIS RULE EXISTS BECAUSE r1 REFUTED THE CLAIM IT REPLACES. "The index is outside GROUPS,
+    # therefore the bin cannot return" was measured false: rewriting the dek into a framing claim
+    # left every check green. This cannot judge the prose either — it makes rewording cost a
+    # second edit, which is the honest limit and is said out loud in the docstring.
+    case("matching index words are silent",
+         index_errors((INDEX_TITLE, INDEX_DEK)), [])
+    case("a retitled index is refused",
+         len(index_errors(("Everything else", INDEX_DEK))), 1)
+    case("a REWORDED dek is refused — this is the bin-returns-as-prose case",
+         len(index_errors((INDEX_TITLE, "Instruments and habits, cheap individually."))), 1)
+    case("...and the message says WHY it is pinned, not merely that it changed",
+         lambda: "leftovers bin"
+         in index_errors((INDEX_TITLE, "Instruments and habits."))[0])
+    # ⚠ WHITESPACE IS NORMALISED. The dek is a wrapped implicit-concatenation literal, so a
+    # re-wrap changes the newlines and nothing else. Failing on that would train people to
+    # ignore this rule, which is the cry-wolf failure backlog #92 is filed about.
+    case("a re-WRAPPED dek with identical words is NOT refused",
+         index_errors((INDEX_TITLE, "  ".join(INDEX_DEK.split()))), [])
+    case("both halves can fail at once, and both are reported",
+         len(index_errors(("Other stuff", "Instruments and habits."))), 2)
+
     # ── the row reader: two tables, different widths ───────────────────────────────────────
     SIX = "| 5 | item | touches | S | (tag) | **OPEN** |"
     SIX_DONE = "| 6 | item | touches | S | (tag) | ✅ **DONE** |"
@@ -284,8 +361,8 @@ def self_test() -> int:
          load_rows(THREE), ({7}, set()))
 
     print(f"\n{ok}/{ok + fail} passed")
-    if ok + fail != 24:
-        print(f"  [DRIFT] the docstring declares 24 cases; the suite ran {ok + fail}")
+    if ok + fail != 30:
+        print(f"  [DRIFT] the docstring declares 30 cases; the suite ran {ok + fail}")
         return 1
     return 1 if fail else 0
 

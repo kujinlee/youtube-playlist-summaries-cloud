@@ -4,7 +4,7 @@
   "file": "scripts/check-group-claims.py",
   "edits": [
    [
-    "        if not str(falsifier).strip():",
+    "        if not stated:",
     "        if False:"
    ]
   ],
@@ -15,8 +15,8 @@
   "file": "scripts/check-group-claims.py",
   "edits": [
    [
-    "        if not str(falsifier).strip():",
-    "        if not str(falsifier):"
+    "        stated = str(falsifier).strip()",
+    "        stated = str(falsifier)"
    ]
   ],
   "expect": "...and a whitespace-only falsifier is refused too — not just the empty string"
@@ -86,5 +86,38 @@
    ]
   ],
   "expect": "a three-field group is reported as a shape error, not an exception"
+ },
+ {
+  "name": "rule 4 stops noticing a retitled index",
+  "file": "scripts/check-group-claims.py",
+  "edits": [
+   [
+    "    if title != INDEX_TITLE:",
+    "    if False:"
+   ]
+  ],
+  "expect": "a retitled index is refused"
+ },
+ {
+  "name": "rule 4 stops noticing a reworded dek, so the bin returns as prose",
+  "file": "scripts/check-group-claims.py",
+  "edits": [
+   [
+    "    if not same_words:",
+    "    if False:"
+   ]
+  ],
+  "expect": "a REWORDED dek is refused — this is the bin-returns-as-prose case"
+ },
+ {
+  "name": "rule 4 compares the dek RAW, so a re-wrap is a false alarm",
+  "file": "scripts/check-group-claims.py",
+  "edits": [
+   [
+    "    same_words = \" \".join(dek.split()) == \" \".join(INDEX_DEK.split())",
+    "    same_words = dek == INDEX_DEK"
+   ]
+  ],
+  "expect": "a re-WRAPPED dek with identical words is NOT refused"
  }
 ]
