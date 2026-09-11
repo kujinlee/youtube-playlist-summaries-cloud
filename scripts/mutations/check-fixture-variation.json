@@ -55,25 +55,12 @@
     "name": "the case() helper is treated as a function under test, so the assertion machinery is audited instead of the code and every file reports findings about its own harness",
     "edits": [
       [
-        "        if fn is None or _is_case_arg(node):",
-        "        if fn is None:"
+        "        if fn is None or _is_case_arg(node) or node in dead:\n            continue",
+        "        if fn is None or node in dead:\n            continue"
       ]
     ],
     "expect": [
       "the case() helper is not treated as a function under test"
-    ],
-    "file": "scripts/check-fixture-variation.py"
-  },
-  {
-    "name": "private helpers are audited as subjects, so test plumbing is reported as production coverage and the finding list fills with noise",
-    "edits": [
-      [
-        "        if (isinstance(node, ast.FunctionDef) and not node.name.startswith(\"_\")\n                and node not in inner):",
-        "        if isinstance(node, ast.FunctionDef) and node not in inner:"
-      ]
-    ],
-    "expect": [
-      "a private helper is test plumbing, not a subject"
     ],
     "file": "scripts/check-fixture-variation.py"
   },
@@ -237,12 +224,12 @@
     "name": "population drift stops being reported, so a departure and an arrival cancel out and the guard reports OK over a different set than it was pinned to",
     "edits": [
       [
-        "    gone, new = sorted(set(pinned) - set(found)), sorted(set(found) - set(pinned))\n    if not gone and not new:\n        return None",
-        "    gone, new = sorted(set(pinned) - set(found)), sorted(set(found) - set(pinned))\n    if True:\n        return None"
+        "    cannot = None\n    if gone:",
+        "    cannot = None\n    if False:"
       ]
     ],
     "expect": [
-      "a population that swapped one file for another is CANNOT RUN"
+      "a DEPARTURE from the pinned set is CANNOT RUN"
     ],
     "file": "scripts/check-fixture-variation.py"
   },
@@ -399,6 +386,162 @@
     ],
     "expect": [
       "main() surfaces a dead exemption as a failure"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "an arrival is escalated back to CANNOT RUN, so adding an ordinary script halts the gate with a refusal instead of a finding that carries its own fix",
+    "edits": [
+      [
+        "    findings = [f\"{n}: newly discovered and not pinned.",
+        "    cannot = cannot or 'CANNOT RUN \u2014 arrival'\n    findings = [f\"{n}: newly discovered and not pinned."
+      ]
+    ],
+    "expect": [
+      "...while an ARRIVAL alone is a finding, not a refusal"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the arrival message drops the command that fixes it, leaving a reader with a failure and no next step \u2014 which is how a correct gate gets switched off",
+    "edits": [
+      [
+        "                f\"EXAMINED_KEYS \u2014 run `python3 scripts/check-fixture-variation.py {n}` to see \"",
+        "                f\"EXAMINED_KEYS. \""
+      ]
+    ],
+    "expect": [
+      "...and the arrival's message carries the command that fixes it"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "arrivals are computed and never joined to the findings, so an unpinned script is examined by nothing and the run still reports OK",
+    "edits": [
+      [
+        "    all_findings += drift_findings",
+        "    pass"
+      ]
+    ],
+    "expect": [
+      "main() reports an unpinned arrival as a finding, and exits 1 not 2"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "calls in a statically dead branch count as coverage again, so a parameter called zero times reads as varied by two calls that never execute",
+    "edits": [
+      [
+        "        if fn is None or _is_case_arg(node) or node in dead:",
+        "        if fn is None or _is_case_arg(node):"
+      ]
+    ],
+    "expect": [
+      "calls inside a statically dead branch are not coverage"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "TYPE_CHECKING blocks stop being treated as dead, which is the construction that arises by accident rather than by evasion",
+    "edits": [
+      [
+        "                isinstance(t, ast.Name) and t.id == \"TYPE_CHECKING\") or (",
+        "                isinstance(t, ast.Name) and t.id == \"__never__\") or ("
+      ]
+    ],
+    "expect": [
+      "...and a TYPE_CHECKING block is dead for the same reason"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "every conditional body is treated as dead, so live coverage silently stops being counted \u2014 the other way to be wrong, and the quiet one",
+    "edits": [
+      [
+        "            if never:\n                for b in node.body:",
+        "            if True:\n                for b in node.body:"
+      ]
+    ],
+    "expect": [
+      "...while a live branch still counts"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the per-file pin is TRANSPOSED, so a key that left is silent and 287 keys held by nothing else can be deleted while the guard reports OK",
+    "edits": [
+      [
+        "        if t.name in EXAMINED_KEYS:\n            for gone_key in sorted(pinned - keys):",
+        "        if t.name in EXAMINED_KEYS:\n            for gone_key in sorted(keys - pinned):"
+      ]
+    ],
+    "expect": [
+      "a pinned key that is no longer examined names itself"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "extra positional arguments are collected and thrown away, so a starred parameter can never be seen to vary and is reported unvaried forever",
+    "edits": [
+      [
+        "            elif vararg:\n                extra_pos.append(ast.unparse(arg))",
+        "            elif vararg:\n                pass"
+      ]
+    ],
+    "expect": [
+      "a starred parameter given DIFFERENT values at two sites is varied"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "unrecognised keyword arguments are collected and thrown away, the same blind spot on the **kwargs half",
+    "edits": [
+      [
+        "                extra_kw.append(f\"{kw.arg}={ast.unparse(kw.value)}\")",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "a starred parameter given DIFFERENT values at two sites is varied"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the suite's field of view collapses back to one function, so a file routing its tests through a private helper examines nothing and is pinned over nothing",
+    "edits": [
+      [
+        "                if h is not None and h.name.startswith(\"_\") and id(h) not in seen_scope:",
+        "                if False:"
+      ]
+    ],
+    "expect": [
+      "a suite that routes through a private helper is still the suite"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "following the suite also drags its private helpers in as SUBJECTS, so test plumbing is audited as production code",
+    "edits": [
+      [
+        "    inner = {n for s_ in scope for n in ast.walk(s_) if isinstance(n, ast.FunctionDef)}",
+        "    inner = {n for s_ in ([suite] if suite else []) for n in ast.walk(s_) if isinstance(n, ast.FunctionDef)}"
+      ]
+    ],
+    "expect": [
+      "...and a function defined inside that helper is not audited"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "an unpacked call site is matched by index again, binding the unpacked value to the first parameter and erasing every parameter after it",
+    "edits": [
+      [
+        "            if starred:\n                continue          # positions after an unpack cannot be matched by index",
+        "            if False:\n                continue          # positions after an unpack cannot be matched by index"
+      ]
+    ],
+    "expect": [
+      "an unpacked call site attributes nothing rather than attributing wrongly"
     ],
     "file": "scripts/check-fixture-variation.py"
   }

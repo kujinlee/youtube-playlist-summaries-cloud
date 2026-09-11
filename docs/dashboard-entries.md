@@ -7296,6 +7296,36 @@ function doesn't declare was being filed under that name, which belongs to nothi
 parameter reported nothing" has three causes — it improved, it stopped being watched, or it was
 excused — and each round partitioned one more. The round before had called its partition complete.
 
-`EXPECTED_MUTATIONS` 431 → 502; `check-plan-code` suite 101 → 128; the debt-tracker 6 → 48 tests and
-6 → 31 falsifying changes, covering 402 parameters across 48 files, pinned by name, with 115 known
-gaps frozen.
+⭐ **Round 10 was asked a question as well as for defects — is this converging, or will it always
+yield one more? — and the answer was worth more than the findings.** After eight named attacks on
+the newest mechanism, all of which it withstood, the reviewer's verdict:
+
+> Rounds six through ten each found the *previous round's fix* defective, and every time the fault
+> was in the **test or its falsifying change, not in the rule.** The rules have converged; the
+> evidence written alongside each fix has not — and it fails the same way each time.
+
+**Two forms, both mechanical.** A test that checks *whether* something failed rather than *what it
+said* — which cannot notice a comparison written backwards. And a falsifying change aimed at the
+line the fix's **comment** is about rather than the line the fix **added**.
+
+⛔ **The first form had just cost a real defect.** The newest check — the one protecting 71% of the
+coverage — could have its comparison reversed and the entire test suite still passed. Deleting the
+same line was caught three ways; reversing it, none, because the only test beside it asked *did this
+fail?* and a reversal fails nothing. Reversed, it silently restored two faults from earlier rounds.
+
+⭐ **So the recommendation was to stop reviewing and write the rule instead:** *a test that drives
+the program asserts something it said, never just its exit code.* Five tests still did; all five are
+fixed, and the rule is stated where the next reader meets it. **That is a search, not a review
+round** — and it is the difference between fixing an instance and closing a class.
+
+⚠ **The diagnosis was confirmed immediately: two of my own new falsifying changes were the second
+form**, written while fixing the first. Both aimed at the line I had just commented rather than the
+line doing the work, and a second guard quietly masked one of them.
+
+Also this round: a check that only ever looked one function deep, so two files routed their tests
+through a helper and examined **none** of their thirty-nine functions while appearing correctly
+pinned; and arguments passed in bulk being attributed to the wrong parameter rather than to none.
+
+`EXPECTED_MUTATIONS` 431 → 513; `check-plan-code` suite 101 → 128; the debt-tracker 6 → 60 tests and
+6 → 42 falsifying changes, covering 432 parameters across 48 files, pinned by name, with 128 known
+gaps frozen and zero tests that check only an exit code.

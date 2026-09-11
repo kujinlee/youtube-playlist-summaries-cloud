@@ -697,7 +697,10 @@ EXPECTED_MUTATIONS = {
     # TWO retired with their subject — the per-file COUNT comparison they mutated was
     # replaced by a key-set comparison, so their anchors named code that is gone. That
     # is the one sanctioned kind of fall: recorded here with its count and its reason.
-    "scripts/check-fixture-variation.py": 31,
+    # ⟳ r10: 43 → 42. One RETIRED WITH ITS SUBJECT — widening the suite's scope made the
+    # underscore test unable to decide anything, measured by its mutation surviving a full
+    # suite. The clause stays as a defence; the entry cannot fire, so it goes.
+    "scripts/check-fixture-variation.py": 42,
     "scripts/check-plan-code.py": 76,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
@@ -2876,7 +2879,7 @@ def _self_test() -> int:
     # so an `expect` naming it in full could never match and its entry would be unattributable.
     case("⚠ a case name containing ': got ' is TRUNCATED by the consumer",
          parse_fail_names("  [FAIL] the width: got the wrong value"), ["the width"])
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 502)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 513)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
