@@ -87,7 +87,12 @@ POPULATION: frozenset[str] = frozenset({
                                      # only outside observer of its declared count.
     "check-anchors.py",
     "check-banner-armed.py",
-    "check-ci-watched.py",           # ⟳ 2026-09-04: CI ran unwatched on 2 of 3 pushes         # ⟳ 2026-09-04, task #224 residue (warn-only detector)
+    "check-ci-watched.py",           # ⟳ 2026-09-04: CI ran unwatched on 2 of 3 pushes
+    "check-fixture-variation.py",    # ⟳ 2026-09-11. Pinned in the same commit that creates
+                                     # it, for the reason given on check-selection-card
+                                     # below — and this guard REFUSED the file until it was,
+                                     # which is the population half of §21 doing its job on
+                                     # a file added an hour earlier.         # ⟳ 2026-09-04, task #224 residue (warn-only detector)
     "check-plan-code.py",
     "check-selection-card.py",       # ⟳ 2026-09-10. Pinned in the same commit that creates it —
                                      # shipping a declared count nothing verifies is the drift this

@@ -1,0 +1,548 @@
+[
+  {
+    "name": "the variation rule accepts a single distinct value, so a parameter passed one value at every call site stops being reported and the guard's whole subject is invisible",
+    "edits": [
+      [
+        "        if len(set(values)) < 2:",
+        "        if len(set(values)) < 1:"
+      ]
+    ],
+    "expect": [
+      "a parameter passed one value at every site is reported"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "an omitted defaulted argument stops counting as a value, so the reporter seam \u2014 two call sites, one passing None by omission \u2014 reads as unvaried",
+    "edits": [
+      [
+        "                seen.setdefault((fn.name, d), []).append(\"<omitted, default>\")",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "omitting a defaulted argument counts as a distinct value"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the exemption lookup is dropped, so a parameter with a written reason is reported anyway and the guard cries wolf until someone switches it off",
+    "edits": [
+      [
+        "        if f\"{path}:{fn}.{param}\" in (EXEMPT if exempt is None else exempt):\n            continue",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "an exemption removes exactly its own finding"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "a file with no suite returns a clean bill instead of CANNOT RUN \u2014 a zero over an unread population, which this project has been burned by four times",
+    "edits": [
+      [
+        "        return ([f\"CANNOT RUN \u2014 {path} defines no self-test, so there are no cases to read. \"\n                 f\"NOT CHECKED.\"], set())",
+        "        return ([], set())"
+      ]
+    ],
+    "expect": [
+      "a file with no _self_test is CANNOT RUN, not a clean bill"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the case() helper is treated as a function under test, so the assertion machinery is audited instead of the code and every file reports findings about its own harness",
+    "edits": [
+      [
+        "        if fn is None or _is_case_arg(node) or node in dead:\n            continue",
+        "        if fn is None or node in dead:\n            continue"
+      ]
+    ],
+    "expect": [
+      "the case() helper is not treated as a function under test"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "a dead exemption stops being reported, so an entry that guards nothing today silently masks its parameter the moment that parameter stops varying \u2014 r7 H1's defect, restored",
+    "edits": [
+      [
+        "        if not needed:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "an exemption the rule does not need is reported as DEAD"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the deadness probe keeps the exemption it is testing, so every exemption looks load-bearing and the check can never fire",
+    "edits": [
+      [
+        "        trimmed = {kk: vv for kk, vv in EXEMPT.items() if kk != k}",
+        "        trimmed = dict(EXEMPT)"
+      ]
+    ],
+    "expect": [
+      "...while a load-bearing exemption is not reported"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "dead exemptions are computed and dropped instead of joining the findings, so the check runs and its result never reaches the exit code",
+    "edits": [
+      [
+        "        all_findings += dead_exemptions(sources)",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "main() surfaces a dead exemption as a failure"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the findings gate is short-circuited, so the guard prints OK and exits 0 with a non-empty finding list in hand \u2014 in a script wired into CI",
+    "edits": [
+      [
+        "    if all_findings:\n        print(f\"FAILED",
+        "    if False:\n        print(f\"FAILED"
+      ]
+    ],
+    "expect": [
+      "main() surfaces a dead exemption as a failure"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the FAILED branch returns 0, so every finding is printed and the exit code says the run was clean \u2014 the shape a CI step reads and nothing else does",
+    "edits": [
+      [
+        "            print(f\"  \u2717 {x}\")\n        return 1",
+        "            print(f\"  \u2717 {x}\")\n        return 0"
+      ]
+    ],
+    "expect": [
+      "main() surfaces a dead exemption as a failure"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the clean branch returns 1, so a subject with nothing to report fails and the guard becomes the thing someone switches off",
+    "edits": [
+      [
+        "f\"{len(EXEMPT)} exempt with a written reason\")\n    return 0",
+        "f\"{len(EXEMPT)} exempt with a written reason\")\n    return 1"
+      ]
+    ],
+    "expect": [
+      "...and a subject with nothing to report exits 0"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "an unreadable population returns 1 instead of 2, so CANNOT RUN is indistinguishable from a real finding and a missing subject reads as a measured one",
+    "edits": [
+      [
+        "              f\"A zero over nothing is not a pass. NOT CHECKED.\", file=sys.stderr)\n        return 2",
+        "              f\"A zero over nothing is not a pass. NOT CHECKED.\", file=sys.stderr)\n        return 1"
+      ]
+    ],
+    "expect": [
+      "main() refuses an unreadable population with rc 2"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "deadness is judged one file at a time, so an exemption needed by any single member of the population is reported dead the moment a second file joins",
+    "edits": [
+      [
+        "        needed = any(any(f\"`{fn}({param}=\" in x for x in analyse(src, name, exempt=trimmed)[0])\n                     for src, name in sources if name == kfile)",
+        "        needed = all(any(f\"`{fn}({param}=\" in x for x in analyse(src, name, exempt=trimmed)[0])\n                     for src, name in sources if name == kfile)"
+      ]
+    ],
+    "expect": [
+      "...and an exemption needed by only ONE file in the population survives"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "an unparseable subject is reported as a rule finding rather than CANNOT RUN, so a population failure takes the exit code a real finding uses",
+    "edits": [
+      [
+        "        return ([f\"CANNOT RUN \u2014 {path} does not parse",
+        "        return ([f\"{path} does not parse"
+      ]
+    ],
+    "expect": [
+      "a subject that does not parse is CANNOT RUN, not a rule finding"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "keyword-only parameters drop out of the default synthesis, so one given at a single site is reported unvaried \u2014 the false positive the omitted-default clause prevents",
+    "edits": [
+      [
+        "        defaulted += [a for a, d in zip(kwonly, fn.args.kw_defaults) if d is not None]",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "a keyword-only parameter omitted at one site counts as varied"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "deadness is judged even when a member of the population could not be read, so exemptions are declared dead on the strength of a file nobody parsed",
+    "edits": [
+      [
+        "    if not cannot and not a.paths:\n        all_findings +=",
+        "    if True:\n        all_findings +="
+      ]
+    ],
+    "expect": [
+      "an unreadable member says CANNOT RUN and nothing about exemptions"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the ratchet swallows every finding instead of only the known ones, so a NEW unvaried parameter joins 124 old ones in silence",
+    "edits": [
+      [
+        "            (seen_known.add(key) if key in known else fresh.append(x))",
+        "            seen_known.add(key)"
+      ]
+    ],
+    "expect": [
+      "a NEW unvaried parameter is not swallowed by the ratchet"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "population drift stops being reported, so a departure and an arrival cancel out and the guard reports OK over a different set than it was pinned to",
+    "edits": [
+      [
+        "    cannot = None\n    if gone:",
+        "    cannot = None\n    if False:"
+      ]
+    ],
+    "expect": [
+      "a DEPARTURE from the pinned set is CANNOT RUN"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "discovery accepts only one spelling of the suite again, so the 32 scripts that write `self_test` drop out of the population entirely",
+    "edits": [
+      [
+        "SUITE_NAMES = (\"_self_test\", \"self_test\")",
+        "SUITE_NAMES = (\"_self_test\",)"
+      ]
+    ],
+    "expect": [
+      "every discovered file has a pinned key set, and vice versa"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "a ratcheted parameter that has LEFT the field of view is reported as debt paid again, so privatising a function earns gold stars while three parameters go unwatched",
+    "edits": [
+      [
+        "        for lost in sorted(known - keys):\n            all_findings.append(",
+        "        for lost in []:\n            all_findings.append("
+      ]
+    ],
+    "expect": [
+      "a ratcheted entry whose parameter is no longer examined is a finding"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "debt-paid is reported for entries that were never examined, collapsing the distinction between a parameter that started varying and one that disappeared",
+    "edits": [
+      [
+        "known & keys - seen_known - exempted):\n            paid.append(",
+        "known - seen_known - exempted):\n            paid.append("
+      ]
+    ],
+    "expect": [
+      "a ratcheted entry whose parameter is no longer examined is a finding"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "positional-only parameters drop out of the name list, so every positional argument after a `/` is recorded against the WRONG parameter",
+    "edits": [
+      [
+        "        names = [a.arg for a in fn.args.posonlyargs] + [a.arg for a in fn.args.args]",
+        "        names = [a.arg for a in fn.args.args]"
+      ]
+    ],
+    "expect": [
+      "a positional-only parameter is matched to its own name, not its neighbour's"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "exemptions lose their file scope, so an excuse written about one script silences the same function.parameter in all 48",
+    "edits": [
+      [
+        "        if f\"{path}:{fn}.{param}\" in (EXEMPT if exempt is None else exempt):",
+        "        if f\"{fn}.{param}\" in (EXEMPT if exempt is None else exempt):"
+      ]
+    ],
+    "expect": [
+      "an exemption removes exactly its own finding"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "deadness is judged over every file rather than the one its exemption names, so an exemption needed by its own subject reads as dead because other files do not need it",
+    "edits": [
+      [
+        "                     for src, name in sources if name == kfile)",
+        "                     for src, name in sources)"
+      ]
+    ],
+    "expect": [
+      "an exemption is judged only against the file it names"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "star-args parameters drop out of the formal set again, so a function whose only parameter is *items examines ZERO parameters and the gate passes",
+    "edits": [
+      [
+        "        vararg = fn.args.vararg.arg if fn.args.vararg else None",
+        "        vararg = None"
+      ]
+    ],
+    "expect": [
+      "a *args parameter is examined, not invisible"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "an unrecognised keyword is keyed by its own name instead of the **kwargs parameter, so a key names something that is not a formal parameter of anything",
+    "edits": [
+      [
+        "        kwarg = fn.args.kwarg.arg if fn.args.kwarg else None",
+        "        kwarg = None"
+      ]
+    ],
+    "expect": [
+      "an unrecognised keyword is attributed to the **kwargs parameter, not to itself"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "each extra positional is recorded as its own value, so ONE call site passing two arguments reads as a varied parameter \u2014 the rule's premise inverted",
+    "edits": [
+      [
+        "            seen.setdefault((fn.name, vararg), []).append(\"(\" + \", \".join(extra_pos) + \")\")",
+        "            seen.setdefault((fn.name, vararg), []).extend(extra_pos or [\"\"])"
+      ]
+    ],
+    "expect": [
+      "...and several values at ONE call site are one value, not several"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the per-file pin stops comparing key sets, so a key that left the field of view is not reported and coverage can be deleted silently",
+    "edits": [
+      [
+        "            for gone_key in sorted(pinned - keys):",
+        "            for gone_key in []:"
+      ]
+    ],
+    "expect": [
+      "a file missing a pinned examined key fails"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "an exempt key that is also ratcheted lands back in the paid bucket, earning a permanent false gold star for a parameter nobody ever examined a finding about",
+    "edits": [
+      [
+        "        for gone in sorted(known & keys - seen_known - exempted):",
+        "        for gone in sorted(known & keys - seen_known):"
+      ]
+    ],
+    "expect": [
+      "an exempt key that is also ratcheted earns no false gold star"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the deadness report stops naming the exemption, so the aggregation can be deleted and the case still passes on any unrelated finding from any of the 48 files",
+    "edits": [
+      [
+        "        out.append(f\"the exemption `{k}` is DEAD",
+        "        out.append(f\"an exemption is DEAD"
+      ]
+    ],
+    "expect": [
+      "main() surfaces a dead exemption as a failure"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "an arrival is escalated back to CANNOT RUN, so adding an ordinary script halts the gate with a refusal instead of a finding that carries its own fix",
+    "edits": [
+      [
+        "    findings = [f\"{n}: newly discovered and not pinned.",
+        "    cannot = cannot or 'CANNOT RUN \u2014 arrival'\n    findings = [f\"{n}: newly discovered and not pinned."
+      ]
+    ],
+    "expect": [
+      "...while an ARRIVAL alone is a finding, not a refusal"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the arrival message drops the command that fixes it, leaving a reader with a failure and no next step \u2014 which is how a correct gate gets switched off",
+    "edits": [
+      [
+        "                f\"EXAMINED_KEYS \u2014 run `python3 scripts/check-fixture-variation.py {n}` to see \"",
+        "                f\"EXAMINED_KEYS. \""
+      ]
+    ],
+    "expect": [
+      "...and the arrival's message carries the command that fixes it"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "arrivals are computed and never joined to the findings, so an unpinned script is examined by nothing and the run still reports OK",
+    "edits": [
+      [
+        "    all_findings += drift_findings",
+        "    pass"
+      ]
+    ],
+    "expect": [
+      "main() reports an unpinned arrival as a finding, and exits 1 not 2"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "calls in a statically dead branch count as coverage again, so a parameter called zero times reads as varied by two calls that never execute",
+    "edits": [
+      [
+        "        if fn is None or _is_case_arg(node) or node in dead:",
+        "        if fn is None or _is_case_arg(node):"
+      ]
+    ],
+    "expect": [
+      "calls inside a statically dead branch are not coverage"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "TYPE_CHECKING blocks stop being treated as dead, which is the construction that arises by accident rather than by evasion",
+    "edits": [
+      [
+        "                isinstance(t, ast.Name) and t.id == \"TYPE_CHECKING\") or (",
+        "                isinstance(t, ast.Name) and t.id == \"__never__\") or ("
+      ]
+    ],
+    "expect": [
+      "...and a TYPE_CHECKING block is dead for the same reason"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "every conditional body is treated as dead, so live coverage silently stops being counted \u2014 the other way to be wrong, and the quiet one",
+    "edits": [
+      [
+        "            if never:\n                for b in node.body:",
+        "            if True:\n                for b in node.body:"
+      ]
+    ],
+    "expect": [
+      "...while a live branch still counts"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the per-file pin is TRANSPOSED, so a key that left is silent and 287 keys held by nothing else can be deleted while the guard reports OK",
+    "edits": [
+      [
+        "        if t.name in EXAMINED_KEYS:\n            for gone_key in sorted(pinned - keys):",
+        "        if t.name in EXAMINED_KEYS:\n            for gone_key in sorted(keys - pinned):"
+      ]
+    ],
+    "expect": [
+      "a pinned key that is no longer examined names itself"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "extra positional arguments are collected and thrown away, so a starred parameter can never be seen to vary and is reported unvaried forever",
+    "edits": [
+      [
+        "            elif vararg:\n                extra_pos.append(ast.unparse(arg))",
+        "            elif vararg:\n                pass"
+      ]
+    ],
+    "expect": [
+      "a starred parameter given DIFFERENT values at two sites is varied"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "unrecognised keyword arguments are collected and thrown away, the same blind spot on the **kwargs half",
+    "edits": [
+      [
+        "                extra_kw.append(f\"{kw.arg}={ast.unparse(kw.value)}\")",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "a starred parameter given DIFFERENT values at two sites is varied"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the suite's field of view collapses back to one function, so a file routing its tests through a private helper examines nothing and is pinned over nothing",
+    "edits": [
+      [
+        "                if h is not None and h.name.startswith(\"_\") and id(h) not in seen_scope:",
+        "                if False:"
+      ]
+    ],
+    "expect": [
+      "a suite that routes through a private helper is still the suite"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "following the suite also drags its private helpers in as SUBJECTS, so test plumbing is audited as production code",
+    "edits": [
+      [
+        "    inner = {n for s_ in scope for n in ast.walk(s_) if isinstance(n, ast.FunctionDef)}",
+        "    inner = {n for s_ in ([suite] if suite else []) for n in ast.walk(s_) if isinstance(n, ast.FunctionDef)}"
+      ]
+    ],
+    "expect": [
+      "...and a function defined inside that helper is not audited"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "an unpacked call site is matched by index again, binding the unpacked value to the first parameter and erasing every parameter after it",
+    "edits": [
+      [
+        "            if starred:\n                continue          # positions after an unpack cannot be matched by index",
+        "            if False:\n                continue          # positions after an unpack cannot be matched by index"
+      ]
+    ],
+    "expect": [
+      "an unpacked call site attributes nothing rather than attributing wrongly"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  }
+]

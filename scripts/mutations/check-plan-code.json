@@ -4,8 +4,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        return 2, (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \"",
-        "        return 1, (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \""
+        "        return 2, \"\", (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \"",
+        "        return 1, \"\", (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \""
       ]
     ],
     "expect": "a hung suite is rc 2, distinct from both pass and fail"
@@ -339,11 +339,13 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "(r.stdout + r.stderr).strip()",
-        "r.stdout.strip()"
+        "    return (stderr + stdout).strip()",
+        "    return stdout.strip()"
       ]
     ],
-    "expect": "run_suite keeps BOTH halves, so a control's traceback survives into the report"
+    "expect": [
+      "run_suite keeps BOTH halves, so a control's traceback survives into the report"
+    ]
   },
   {
     "name": "count_drift's declaration anchor is widened to any 'N cases' (r1 F8)",
@@ -405,5 +407,526 @@
     "expect": [
       "a kill with no readable case name is caught but NOT attributed"
     ]
+  },
+  {
+    "name": "progress is written to stdout, where the verdict lives",
+    "edits": [
+      [
+        "    print(progress_line(done, total, label), file=sys.stderr, flush=True)",
+        "    print(progress_line(done, total, label), flush=True)"
+      ]
+    ],
+    "expect": [
+      "progress goes to stderr, never to the stream carrying the verdict"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the progress reporter is accepted and never called",
+    "edits": [
+      [
+        "        if progress is not None:\n            progress(position, len(muts), name)",
+        "        if False:\n            progress(position, len(muts), name)"
+      ]
+    ],
+    "expect": [
+      "the caller is told once per mutation, with the running position"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "a progress line reports position without its total, so 'how far' is unanswerable",
+    "edits": [
+      [
+        "    head = f\"[{done}/{total}] \"",
+        "    head = f\"[{done}] \""
+      ]
+    ],
+    "expect": [
+      "a progress line states position, not just motion"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "run_mutations reports even when no caller asked, so a nested run writes into the stream its parent reads as suite output",
+    "edits": [
+      [
+        "        if progress is not None:\n            progress(position, len(muts), name)\n",
+        "        if progress is not None:\n            progress(position, len(muts), name)\n        else:\n            stderr_progress(position, len(muts), name)\n"
+      ]
+    ],
+    "expect": [
+      "...and says NOTHING when no caller asked"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the control loop stops reporting, so --mutate goes silent for the whole first control phase and a reader cannot tell it from a hang",
+    "edits": [
+      [
+        "            if progress is not None:\n                progress(position, len(targets), f\"control {name}\")\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "every phase of --mutate reports its position when a caller asks"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the control loop reports unconditionally, which is what put 542 B of progress into the suite's own stderr and emptied the out[-400:] diagnostic",
+    "edits": [
+      [
+        "            if progress is not None:\n                progress(position, len(targets), f\"control {name}\")",
+        "            stderr_progress(position, len(targets), f\"control {name}\")"
+      ]
+    ],
+    "expect": [
+      "...and the whole path is silent when nobody asked"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the re-control loop stops reporting, so the phase that turns the control from a prologue into an invariant runs invisibly",
+    "edits": [
+      [
+        "            if progress is not None:\n                progress(position, len(targets), f\"re-control {name}\")\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "every phase of --mutate reports its position when a caller asks"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "mutate_delivered keeps the reporter to itself instead of passing it down, so the 434-mutation phase \u2014 the long one \u2014 is the one with no progress",
+    "edits": [
+      [
+        "progress=progress)",
+        "progress=None)"
+      ]
+    ],
+    "expect": [
+      "every phase of --mutate reports its position when a caller asks"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "--mutate stops supplying the reporter, so every default-silent layer below it stays silent and the feature is off while all its other cases still pass",
+    "edits": [
+      [
+        "mutate_delivered(mroot, progress=stderr_progress)",
+        "mutate_delivered(mroot)"
+      ]
+    ],
+    "expect": [
+      "--mutate itself supplies the reporter, so a real run is not silent"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the label is emitted unbounded again, so a 232-char manifest name wraps to three rows and the line that should visibly stop advancing is no longer one line",
+    "edits": [
+      [
+        "    return head + label[:max(room - 1, 0)] + \"\u2026\"",
+        "    return head + label"
+      ]
+    ],
+    "expect": [
+      "a label too long for one row is truncated, and says so"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "truncation is applied to every label, so a name that already fits is mangled and given an ellipsis it did not earn",
+    "edits": [
+      [
+        "    if len(label) <= room:\n        return head + label\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "...and a label that already fits is left exactly alone"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "flush is dropped from the progress write, so a replaced block-buffered stderr holds every line until close and the reader sees nothing until the run ends",
+    "edits": [
+      [
+        "file=sys.stderr, flush=True)",
+        "file=sys.stderr)"
+      ]
+    ],
+    "expect": [
+      "a progress line reaches a block-buffered stream before the process exits"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "PROGRESS_WIDTH is widened past one terminal row, restoring in full the wrap r1 M2 was filed for, while every truncation case stays green",
+    "edits": [
+      [
+        "PROGRESS_WIDTH = 79",
+        "PROGRESS_WIDTH = 200"
+      ]
+    ],
+    "expect": [
+      "a label too long for one row is truncated, and says so"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the merged output goes back to stdout-first, so the tail recorded in the durable evidence object is whatever a child last wrote to stderr, not the failure",
+    "edits": [
+      [
+        "which is also what they want.\n    \u26a0 The DIAGNOSTIC does not ride on this \u2014 see `diagnostic_tail`. Two rounds were spent\n    choosing an order for it; both orders lose, because the order was never the question.\n    \"\"\"\n    return (stderr + stdout).strip()",
+        "which is also what they want.\n    \u26a0 The DIAGNOSTIC does not ride on this \u2014 see `diagnostic_tail`. Two rounds were spent\n    choosing an order for it; both orders lose, because the order was never the question.\n    \"\"\"\n    return (stdout + stderr).strip()"
+      ]
+    ],
+    "expect": [
+      "...and the recorded tail is the failure, not the noise"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the fits/truncate comparison gains an off-by-one, so six real labels emit an 80-column line and wrap on a standard terminal",
+    "edits": [
+      [
+        "    if len(label) <= room:\n        return head + label",
+        "    if len(label) <= room + 1:\n        return head + label"
+      ]
+    ],
+    "expect": [
+      "...and one character more IS, back to exactly one row"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the fits/truncate comparison turns strict, so a label that exactly fills the row is truncated for no reason",
+    "edits": [
+      [
+        "    room = PROGRESS_WIDTH - len(head)\n    if len(label) <= room:",
+        "    room = PROGRESS_WIDTH - len(head)\n    if len(label) < room:"
+      ]
+    ],
+    "expect": [
+      "a label of exactly the remaining width is NOT truncated"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "a flooded stdout is allowed to starve stderr of its half, so a suite that crashes AFTER printing loses its traceback \u2014 the regression measured across 28 of 38 suites",
+    "edits": [
+      [
+        "    err_keep = min(len(err), max(half, window - len(out)))",
+        "    err_keep = min(len(err), max(0, window - len(out)))"
+      ]
+    ],
+    "expect": [
+      "...and a flooded stdout cannot evict stderr's traceback",
+      "a suite that crashes AFTER 800 B of stdout still shows its traceback"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "stdout's budget stops accounting for what stderr already took, so the diagnostic grows past the window it exists to bound",
+    "edits": [
+      [
+        "out_keep = min(len(out), window - err_keep)",
+        "out_keep = min(len(out), window)"
+      ]
+    ],
+    "expect": [
+      "...and the window never exceeds its budget, however much is offered"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "a quiet stderr no longer hands its unused half back, so the ordinary case sees 200 characters of stdout where it used to see 400",
+    "edits": [
+      [
+        "min(len(out), window - err_keep)",
+        "min(len(out), window - half)"
+      ]
+    ],
+    "expect": [
+      "...and a quiet stderr gives its whole half back to stdout"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the before-control diagnostic goes back to slicing one merged string, so whichever stream is longer owns the window and the report stops saying why the control died",
+    "edits": [
+      [
+        "                              f\"CHECKED.\\n    {diagnostic_tail(so, se)}\")",
+        "                              f\"CHECKED.\\n    {out[-400:]}\")"
+      ]
+    ],
+    "expect": [
+      "a CANNOT RUN report says WHY the control died, not just that it did"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the durable evidence tail records the FIRST line of a control's output instead of the last, so the field r1 listed as not-measured silently stays that way",
+    "edits": [
+      [
+        "\"tail\": (out.split(\"\\n\")[-1] if out else \"\")",
+        "\"tail\": (out.split(\"\\n\")[0] if out else \"\")"
+      ]
+    ],
+    "expect": [
+      "...and the recorded tail is the failure, not the noise"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the diagnostic's split point moves, so one stream's guaranteed half is not half \u2014 at one end of the band a real control crash shows stack frames and no exception",
+    "edits": [
+      [
+        "    half = window // 2\n    err_keep",
+        "    half = window // 4\n    err_keep"
+      ]
+    ],
+    "expect": [
+      "both streams flooded, and the stderr half is exactly half the window"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the split point is pushed to the far end, so stdout is cut to one character and a [FAIL] line \u2014 median 63 characters in this repo \u2014 cannot fit in the report",
+    "edits": [
+      [
+        "stderr.strip()\n    half = window // 2",
+        "stderr.strip()\n    half = window - 1"
+      ]
+    ],
+    "expect": [
+      "a flooded stderr cannot evict stdout's failure from the window"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the two kept halves are joined with no separator, fusing the last stderr line and the first stdout line into one sentence",
+    "edits": [
+      [
+        "    return \"\\n\".join(p for p in (err[-err_keep:] if err_keep else \"\",",
+        "    return \"\".join(p for p in (err[-err_keep:] if err_keep else \"\","
+      ]
+    ],
+    "expect": [
+      "...and the window never exceeds its budget, however much is offered"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the streams are no longer stripped, so trailing whitespace is charged against the budget and a whitespace-only stream opens the report with a blank line",
+    "edits": [
+      [
+        "    out, err = stdout.strip(), stderr.strip()",
+        "    out, err = stdout, stderr"
+      ]
+    ],
+    "expect": [
+      "...and a whitespace-only stream is dropped rather than charged to the budget"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the AFTER-control diagnostic goes back to slicing one merged string \u2014 the identical line to the before-control site, in the same function, and it had no entry",
+    "edits": [
+      [
+        "mutation. Treat this run as NOT \"\n                    f\"CHECKED.\\n    {diagnostic_tail(so, se)}\")",
+        "mutation. Treat this run as NOT \"\n                    f\"CHECKED.\\n    {out[-400:]}\")"
+      ]
+    ],
+    "expect": [
+      "...and the AFTER-control report shows the reason, not just the verdict"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the diagnostic window itself shrinks, so every CANNOT RUN report is cut without one case or entry noticing the budget moved \u2014 r4 L2's shape, found by the edge sweep",
+    "edits": [
+      [
+        "DIAGNOSTIC_WINDOW = 400",
+        "DIAGNOSTIC_WINDOW = 300"
+      ]
+    ],
+    "expect": [
+      "...and a quiet stderr gives its whole half back to stdout"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the stdout half is sliced from the FRONT, so a control's report shows what it printed first and never the [FAIL] line it died on \u2014 no fixture could see this for five rounds",
+    "edits": [
+      [
+        "                                 out[-out_keep:] if out_keep else \"\") if p)",
+        "                                 out[:out_keep] if out_keep else \"\") if p)"
+      ]
+    ],
+    "expect": [
+      "...and it is the END of each stream that is kept, never the start"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the stderr half is sliced from the FRONT, so a traceback is reported by its opening frames instead of the exception that ended it",
+    "edits": [
+      [
+        "    return \"\\n\".join(p for p in (err[-err_keep:] if err_keep else \"\",\n                                 out[-out_keep:]",
+        "    return \"\\n\".join(p for p in (err[:err_keep] if err_keep else \"\",\n                                 out[-out_keep:]"
+      ]
+    ],
+    "expect": [
+      "...and it is the END of each stream that is kept, never the start"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the floor's spare-budget term reads its own stream instead of the other, so a suite that crashes at import gets half the traceback and half the budget is discarded",
+    "edits": [
+      [
+        "min(len(err), max(half, window - len(out)))",
+        "min(len(err), max(half, window - len(err)))"
+      ]
+    ],
+    "expect": [
+      "...and a quiet stdout gives its whole half back to stderr"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the ellipsis stops paying for its own character, so a truncated line is one column over the row it is bounded to",
+    "edits": [
+      [
+        "        return head + label\n    return head + label[:max(room - 1, 0)] + \"\u2026\"",
+        "        return head + label\n    return head + label[:max(room, 0)] + \"\u2026\""
+      ]
+    ],
+    "expect": [
+      "...and one character more IS, back to exactly one row"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the stderr cap is dropped, so a short stderr is asked for more characters than it has",
+    "edits": [
+      [
+        "    half = window // 2\n    err_keep = min(len(err), max(half, window - len(out)))",
+        "    half = window // 2\n    err_keep = max(half, window - len(out))"
+      ]
+    ],
+    "expect": [
+      "...and a quiet stderr gives its whole half back to stdout"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the before-control phase counts from zero, so the first subject is reported as 0 of N",
+    "edits": [
+      [
+        "        for position, name in enumerate(targets, 1):\n            if progress is not None:\n                progress(position, len(targets), f\"control {name}\")",
+        "        for position, name in enumerate(targets, 0):\n            if progress is not None:\n                progress(position, len(targets), f\"control {name}\")"
+      ]
+    ],
+    "expect": [
+      "every phase of --mutate reports its position when a caller asks"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the mutation loop counts from zero, so the last mutation is reported as N-1 of N and a reader watching the tail never sees the run reach its total",
+    "edits": [
+      [
+        "    for position, mut in enumerate(muts, 1):",
+        "    for position, mut in enumerate(muts, 0):"
+      ]
+    ],
+    "expect": [
+      "the caller is told once per mutation, with the running position"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the empty-half filter is dropped, so a stream that contributed nothing still costs a line and the report opens with a blank one",
+    "edits": [
+      [
+        "out[-out_keep:] if out_keep else \"\") if p)",
+        "out[-out_keep:] if out_keep else \"\"))"
+      ]
+    ],
+    "expect": [
+      "...and a whitespace-only stream is dropped rather than charged to the budget"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the room calculation freezes the head width at ten characters, so the bound is right only for a three-digit-over-three-digit position and sixteen real labels lose a character they had earned",
+    "edits": [
+      [
+        "    room = PROGRESS_WIDTH - len(head)",
+        "    room = PROGRESS_WIDTH - 10"
+      ]
+    ],
+    "expect": [
+      "a narrower head leaves more room, and a 73-char label fits exactly"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the before-control phase reports its position as its own total, so every line reads [n/n] and 'out of how many' \u2014 the third of the three things a reader needs \u2014 is gone",
+    "edits": [
+      [
+        "progress(position, len(targets), f\"control {name}\")",
+        "progress(position, position, f\"control {name}\")"
+      ]
+    ],
+    "expect": [
+      "every phase of --mutate reports its position when a caller asks"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the re-control phase reports its position as its own total, the same harm on the loop that turns the control from a prologue into an invariant",
+    "edits": [
+      [
+        "progress(position, len(targets), f\"re-control {name}\")",
+        "progress(position, position, f\"re-control {name}\")"
+      ]
+    ],
+    "expect": [
+      "every phase of --mutate reports its position when a caller asks"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the re-control loop counts from zero, so the phase that re-proves every suite green reports its first subject as 0 of N",
+    "edits": [
+      [
+        "        for position, name in enumerate(targets, 1):\n            if progress is not None:\n                progress(position, len(targets), f\"re-control {name}\")",
+        "        for position, name in enumerate(targets, 0):\n            if progress is not None:\n                progress(position, len(targets), f\"re-control {name}\")"
+      ]
+    ],
+    "expect": [
+      "every phase of --mutate reports its position when a caller asks"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the two-target declaration outlives its block again, so the silence case's root fails a count check and mutate_delivered returns BEFORE the control loop \u2014 an empty stream produced by refusing at the door rather than by running quietly",
+    "edits": [
+      [
+        "        EXPECTED_MUTATIONS.pop(\"scripts/other.py\", None)\n        with tempfile.TemporaryDirectory() as _td:\n            _r = pathlib.Path(_td); _mini(_r)\n            _me = io.StringIO()",
+        "        with tempfile.TemporaryDirectory() as _td:\n            _r = pathlib.Path(_td); _mini(_r)\n            _me = io.StringIO()"
+      ]
+    ],
+    "expect": [
+      "...and the whole path is silent when nobody asked"
+    ],
+    "file": "scripts/check-plan-code.py"
   }
 ]

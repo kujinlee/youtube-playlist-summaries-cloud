@@ -7007,3 +7007,325 @@ inherited pollution, which is H3), and a double-escaped regex reported `askbtn_c
 region that plainly contained `.askbtn`. Also: `pgrep -f codex` matched the editor's own 22-day-old
 ChatGPT app-server, so a finished review was reported as "still running" for an hour. Check the
 artifact, not the process — which is the codex wrapper's own documented rule.
+
+## 2026-09-10
+The check that verifies the other checks used to run for minutes in complete silence and then
+print one line. While it was running there was no way — for you or for me — to tell "it is working
+through item 164 of 434" from "it has hung". That cost two wrong status reports in one day: I said
+a job was still running when it had finished an hour earlier.
+
+It now says where it is, about eight times a second, on a separate channel from its verdict. A
+line that stops advancing is stuck; nothing else needs interpreting.
+
+Deliberately not a spinner. A spinner keeps spinning over a wedged process, which is the one case
+worth detecting.
+<!--tech-->
+`check-plan-code.py --mutate .` emitted nothing until exit: 128 bytes of stdout for a whole run.
+`progress_line(done, total, label)` is pure and `stderr_progress` writes it to **stderr, flushed** —
+the verdict stays the only thing on stdout, so `tally_line`'s cases and anyone reading the last
+line are unaffected. Both control phases and the mutation loop report.
+
+Measured on a clean run with `/usr/bin/time -p`: `real 312.06`, 434 mutations, stdout 128 bytes,
+stderr 510 progress lines (38 controls + 434 mutations + 38 re-controls). ⚠ No duration is quoted
+in the code: the same suite took roughly 4× that earlier the same day under load from two
+concurrent reviews, and the first draft of the docstring said "~25 minutes" from unmeasured
+recollection. What is stable is the RATE — a gap much longer than `SUITE_TIMEOUT` (120s) is the
+signal.
+
+**Round 1 found seven things, and the first draft of this entry repeated two of them.** Both review
+halves came back NOT CONVERGED; the fixes are below, and what they have in common is that the
+feature was written as *emit progress* rather than *inject a reporter*.
+
+⛔ **THE CASE DEFENDING THE MAIN RISK COULD NOT FAIL — the sixth instance on this line of work.**
+It read `_quiet: list = []`, then called `run_mutations` **without passing `_quiet` to anything**,
+then asserted `_quiet == []`. That is `assert [] == []` in the costume of a test. Measured: adding
+the exact defect it names left the suite at `105/105 passed` while the suite's own stderr grew
+542 B → 766 B. ⭐ **The tell generalises and is worth more than the fix: the commit added FOUR cases
+and THREE mutations. A case you cannot write a mutation for is usually one no production edit can
+reach. Count cases against entries.** It now captures the real stream with `redirect_stderr`.
+
+⛔ **AND THE HARNESS'S OWN FAILURE DIAGNOSTIC CONTAINED NONE OF THE FAILURE.** `run_suite` returns
+`stdout + stderr`, and every CANNOT RUN message prints `out[-400:]`. `mutate_delivered` called
+`stderr_progress` unconditionally and its own suite drives it fourteen times, so 542 B of progress
+pushed the `[FAIL]` line out of that 400-char window **entirely** — measured both ways. It bit
+exactly when a control was red, the only moment that message exists for, and it undid a fix made
+one day earlier for the one subject that matters most: the harness itself. Same root: author-written
+labels were entering the stream whose substring decides `control_is_green` (two of the 434 live
+names contain `"passed"` — not reachable, but held by a coincidence of naming rather than anything).
+`mutate_delivered` now takes the same optional reporter `run_mutations` has, and **`--mutate` is the
+one place that supplies it**. Nested stderr: 542 B → **0**.
+
+⚠ **A CLAIM IN THE DOCSTRING WAS SIMPLY FALSE.** It said a pipe buffers unflushed stderr "into
+oblivion". Measured on CPython 3.14.4: `sys.stderr.line_buffering` is `True` piped and captured, as
+since 3.9 — killing an unflushed process lost nothing. `flush` *is* load-bearing where the stream is
+**replaced** with a block-buffered one, and that is now the case: a real file stream read before
+close, `''` without the flush. The clause stays; the reason is now the true one.
+
+⚠ **And a 232-char label.** Across all 434 names, 81 exceed 100 characters; at 80 columns one update
+wrapped to three rows, destroying the one property the feature exists for — a line that visibly
+stops advancing. Bounded to one row, with the **position never** the part that gets cut.
+
+Nine manifest entries for six new cases, every one verified red **via the case it names** over a
+control proved green first. One of the nine is a **retarget**: bounding the line rewrote
+`progress_line`'s return and orphaned the anchor guarding it — anchors bind by text, so improving
+code breaks them silently, and only the harness's refusal to accept an unresolved anchor caught it.
+
+**Round 2 split: one half said CONVERGED with nothing, the other found a Blocking.** That is the
+fourth time here that the half reporting a finding was the right one, out of four. A single
+CONVERGED is not proof, and this is the record of why.
+
+⛔ **THE FIX ABOVE HAD A FLOOR AND NO CEILING, AND THE CEILING WAS THE WHOLE POINT.** Bounding the
+line to one row was cased as `want = (PROGRESS_WIDTH, …)` — **the expected value derived from the
+subject**. Both sides move together, so it asserts "the line is as wide as the constant says",
+which is true of every constant that truncates at all. Measured, changing only the constant: at
+**80, 90, 100, 120 and 200 the suite stayed green**. At 200 the wrapping this was filed to stop is
+back in full. The want is now the literal `79`, which cannot move with the subject.
+
+⭐ **And the lesson from the round before did not prevent it, which is the part worth keeping.**
+That commit's own headline was *count cases against entries* — and the count balanced: two
+truncation cases, two truncation entries. The defect was one level in, at the **threshold**,
+guarded only by a case that could not disagree with it. **Counting is not enough. Ask whether the
+want can differ from the subject.**
+
+⛔ **The other finding: the earlier fix treated the emitter, not the mechanism.** Deleting the
+progress that was stealing the harness's 400-character failure diagnostic fixed that instance and
+left the converter that lets any future writer do it again — `run_suite` put stderr **last**, so
+whichever stream goes last owns the window. A synthetic child writing 600 B of stderr beside a real
+failure reproduced it at will, and also corrupted the durable evidence record, which the original
+finding had listed as unmeasured. Now stderr goes first: one token, both consequences, and the
+class instead of the instance — verified not to undo the 2026-09-09 fix that put stderr in the
+merge, because a crash before any output leaves stdout empty and the window still reaches it.
+
+⚠ That swap orphaned **that very fix's own mutation anchor** — the second anchor a refactor here
+has silently orphaned in one sitting.
+
+**Round 3 found that fix had the same shape one level in, and both halves found it.** Pinning the
+constant to a literal gave the *constant* a ceiling. The *comparison* still had none, because the
+case fed it a 300-character label — true of every threshold from 1 to 299. Three edits to the
+boundary survived at 114/114; under the mildest, six real labels emit an 80-column line. ⭐ **The
+lesson that did not transfer: round 2 asked whether the WANT moves with the subject and fixed that.
+The INPUT constrains just as much, and an input far from the edge locates nothing. Test at the edge.**
+
+⛔ **And the other round-2 fix was measured to be the worse trade.** Choosing which stream goes last
+was supposed to stop a noisy child evicting the failure from the harness's 400-character diagnostic.
+Measured across the real corpus: only **2 of 38** suites write any stderr on a green run — and both
+are green, so their diagnostic never prints — while **28 of 38** already exceed the window in stdout
+alone. The fixture that motivated the fix **has no counterpart in the real code**, and the fix
+regressed 28 suites to lose their traceback. Both orders lose, because the order was never the
+question: each stream now gets half the window, and an unused half goes to the other.
+
+⚠ **Three of the cases written this round asserted on copies of the code rather than the code.** One
+recomputed the production line and compared against its own result, so swapping the real one changed
+nothing — it survived a mutation designed to kill it. That is the same defect as keeping two
+implementations of one rule, and the fix is the same: extract it once, and have the case consume the
+value production actually produces.
+
+`EXPECTED_MUTATIONS` 431 → 452; `check-plan-code` suite 101 → 121. Every case this branch adds is
+named by a manifest entry, audited mechanically rather than from memory.
+
+⛔ **Round 4 found the same mistake a third time, in the code written to fix the second one — and
+it corrected the explanation above, which was mine and was wrong.** The new split-point constant was
+guarded only within a seventeen-fold band: every value from 21 to 398 passed the whole suite. At the
+low end of that band, a *real* control crash reports fifty characters of stack frames and neither the
+exception type nor its message — the exact harm two earlier rounds were spent on, reachable by
+changing one number, with nothing able to fail for it. The guarding case used a fixture whose error
+line is 41 characters where real ones are 84, so it sat an order of magnitude inside the boundary,
+on the safe side.
+
+⭐ **And the correction, which matters more than the fix.** The claim above — that the recurring
+defect lived in the machinery underneath the feature — was checked against the four rounds' filed
+findings and is false. Two of the three were in the feature itself. **They are the same defect in
+three different functions: a fixture placed comfortably inside the boundary it claims to pin.** It
+follows the method, not the module, so redesigning any one component would have moved it into the
+next. That is why this went back for coverage rather than to an architecture review — a decision
+taken by the human, on the reviewer's evidence rather than on the round count.
+
+Closed with an exhaustiveness pass rather than one more patch: every numeric edge this work
+introduced or touched — seven of them — now has a case sitting **at** the boundary with a literal
+expected value, and a mutation that moves the constant and dies. One of the seven was found by that
+sweep and by neither reviewer.
+
+⚠ **The honest limit: the mutation harness cannot find this class by construction**, because its
+manifest only ever contains mutations someone thought to write. A generic "±1 and ×2 on every
+integer literal" sweep would have caught three of this round's findings in one pass. Noted, not
+built — it is its own piece of work.
+
+⛔ **Round 5 found the sharpest version of the recurring mistake, and both reviewers found it
+independently.** The report is supposed to show the END of a failed run's output. Slicing it from
+the *start* instead passed the entire suite — so a control that died after printing would be
+reported by what it printed first, never by the failure it died on. It had gone unnoticed for five
+rounds.
+
+⭐ **The reason is worth more than the fix, and it explains all five rounds at once.** Every test
+input written for this function was a single character repeated — five thousand `S`s. Such a string
+sits at the extreme of *size* and has no *position at all*: its first two hundred characters and its
+last two hundred are identical. It can prove how much was kept and can never prove which end.
+Round 4 had asked "is the input at the edge?" and fixed that. The question that catches this one is
+**"what two inputs would this test have to tell apart — and can it?"** A test input must differ from
+itself along the axis the property is about.
+
+⚠ **And the audit that was supposed to prevent this had the same flaw, one level down.** It asked
+"is there a check registered for this line?" — which answers *yes* whenever a check happens to
+mention the line while testing something else on it. Six of the seven lines it marked healthy were
+in exactly that position. The question that separates them is not whether the line is mentioned but
+whether anything actually **changes** it; re-run that way, two genuine gaps appeared in rows this
+page had already called covered.
+
+⚠ **One clause was measured live and its twin measured dead, by the identical experiment.** Round 4
+removed two guards that looked unreachable and lost an attribution, proving they mattered. Round 5
+ran the same experiment on a clause that looks the same and found it genuinely inert. They are not
+interchangeable, and the code now says so, because reading them tells you nothing.
+
+⭐ **Round 6 named the thing that had been going wrong for five rounds, and it turned out to be a
+question a script can ask.** Every round had found the same defect — a test that cannot fail for the
+thing it is named after — and each time the fix improved a different property of the *same* test
+input: first what it expected, then how large the input was, then whether the input could be told
+apart end-from-end. Round 6's finding was that the other two arguments had never been varied at all.
+Every test called the function with the same position numbers, so an expression reading their width
+was indistinguishable from a constant, and a one-word change to it passed the entire suite while
+mis-truncating sixteen real lines.
+
+**The generator was never any one of those properties. It was that the tests vary one argument, and
+five rounds of review had been improving that one argument.** Stated as a question a machine can
+ask: *for each parameter of each function under test, do at least two tests pass different values?*
+
+So that is now a check that runs in CI, rather than a lesson to remember. On the file that has had
+six adversarial rounds it immediately found four more parameters nobody had varied — including three
+in a function no round had looked at. It carries its own tests, its own falsifying mutations, and a
+written exemption list, because a parameter genuinely decided by one value is fine and an *unwritten*
+one is not.
+
+⚠ **And it says plainly what it cannot do.** It compares the text of arguments, so it proves a
+parameter was thought about and never that the values chosen are good ones — it would not have caught
+round 5's finding. A floor, not a ceiling, and the docstring says so rather than letting a green tick
+imply more.
+
+⚠ Two defects in the new check were found by its own mutations before it shipped: one test could not
+fail because the clause it named had no test at all, and another *crashed* instead of reporting when
+its defect was introduced — and a test that dies proves nothing, because nothing can attribute a
+crash.
+
+**Round 7 attacked the new check itself, and it failed in the way it was built to detect.** Its rule
+was sound and its *verdict* was not: four separate one-word changes to the code that decides its exit
+status all passed, so it could print "OK", exit successfully, and throw away a list of findings it
+was holding. It was wired into CI in that state. ⭐ **And running the check on itself predicted
+exactly this** — it reported that the function producing the verdict had only ever been called one
+way, which is the same fact as the four surviving changes, seen from the other side. It could not be
+added to its own watch-list until that was fixed; now it is.
+
+⛔ **A worse habit was caught too: an exemption that forgave nothing.** One parameter had been
+excused from the rule with a written reason — and measured, the rule passed it without any excuse at
+all. So the entry changed nothing today while silently pre-authorising the exact regression two
+earlier rounds had been spent on. **An unneeded exemption is a promise nobody re-examines.** The
+check now tests its own exemption list the same way it tests everything else: remove one and see. If
+nothing changes, it is dead and gets deleted.
+
+⭐ **And the honest scope question got the honest answer.** The check watched two files while its
+rule could already read forty-eight; a green tick was implying twenty-four times what it covered.
+Widening it surfaces **124 parameters across 35 files** that were never varied. Fixing those is not
+this work's job — so they are frozen by name, visible, unable to grow, and reported as *paid* the
+moment one starts varying. That is this project's usual answer to inherited debt: make it countable
+rather than either invisible or blocking.
+
+⚠ **The check audited its author throughout.** Every widening it received, it immediately reported
+something back — a parameter in its own new code called only one way, a helper that hid variation by
+wrapping three varied calls into one, a floor value passed identically at three sites. Each was real.
+
+⛔ **Round 8 found four serious faults, and all four were in the debt-tracker added the round
+before — none in the feature.** The sharpest: **it congratulated you for deleting its subject.** The
+tracker lists parameters that are known to be untested, and when an entry stops firing it prints a
+gold star saying the gap is closed. But an entry stops firing for two reasons that it could not tell
+apart — the gap really was closed, or *the code left its field of view entirely*. Renaming one
+function to make it private, an ordinary tidy-up across seventeen call sites, removed three
+parameters from anything's watch and earned three gold stars and a clean exit.
+
+⭐ **That is the previous round's own rule broken by the previous round's own code.** Round 7
+established that a check for the *absence* of something needs a partner proving the thing was ever
+there; the debt-tracker asserted a cause it had never measured. The fix is to return the set of
+things actually examined rather than a count — with a number the two causes are the same
+observation, and with the set they are different questions.
+
+⛔ **And the same mistake at a second level, found independently by the other reviewer.** The tracker
+pinned how many files it watches. A count survives *substitution* — make one file unreadable, add
+another, and the total is unchanged while the set is not; measured, it reported OK over a different
+set of files than it was pinned to. The companion fault: a file rewritten under an old name, whose
+only untested parameter is one already on the list, is swallowed as old debt.
+
+⚠ **My own planned fix was half of it, and that is the lesson worth keeping.** I had reasoned my way
+to per-file limits, which closes the substitution and *not* the rewrite. **Both a count and a key are
+stand-ins for identity, and each is preserved by a different kind of change.**
+
+Also closed: an excuse written about one script silenced the same parameter in all forty-eight; a
+sixth of the "parameters examined" were the tests' own scaffolding, counted because the exclusion was
+spelled as a naming convention rather than as *where the thing is defined*; and arguments after a
+certain kind of separator were being recorded against the **wrong parameter** — misfiled, not merely
+missed.
+
+⚠ **A reviewer caught me editing the code under it** and did the right thing: it rebuilt the subject
+from version control, proved by content hash that the working copy was not what it had been asked to
+review, and re-took every measurement. My error was inferring it had finished because it had no
+processes running — a check between measurements has none.
+
+⭐ **Round 9 wrote the sentence this stretch of work deserves.** The previous round had diagnosed its
+own two faults correctly — *both were stand-ins for identity rather than identity itself* — and then
+shipped **two new stand-ins**: a per-file count, and a bare function name. A reviewer defeated each
+one the same way its predecessor had been defeated.
+
+⛔ **The name first.** Asking "is something still called `audit` with this parameter?" is not asking
+"is the function we were tracking still watched". Privatise the real function and add a three-line
+decoy under the vacated name, and the tracker prints gold stars while the headline number stays
+**byte-identical to the control**. ⛔ **Then the count.** Within a single file, a departure and an
+arrival cancel out exactly as they had at the whole-repo level — and **71% of the coverage** was held
+by nothing but that number.
+
+**So the fix was to stop pinning a stand-in and pin the thing itself:** the actual set of parameters
+examined, per file, by name. A parameter that stops being watched now names itself in the failure.
+Both defeats were re-run afterwards and both now fail loudly.
+
+⚠ **And the limit that remains is written into the code rather than claimed closed.** Identity here
+is a *name*. A replacement with the same name and the same shape is indistinguishable by anything
+this check has — and adding another name-shaped stand-in is precisely the move that failed twice.
+What is closed is every case where the shape differs.
+
+⛔ **Separately: functions that take open-ended arguments were invisible.** A function whose only
+parameter collects "everything else" examined **zero** parameters and passed — a real public
+parameter entering the tests with nothing looking at it. And an argument passed by a name the
+function doesn't declare was being filed under that name, which belongs to nothing.
+
+⚠ **The same fault was found for the third time, one level further in each round.** "This tracked
+parameter reported nothing" has three causes — it improved, it stopped being watched, or it was
+excused — and each round partitioned one more. The round before had called its partition complete.
+
+⭐ **Round 10 was asked a question as well as for defects — is this converging, or will it always
+yield one more? — and the answer was worth more than the findings.** After eight named attacks on
+the newest mechanism, all of which it withstood, the reviewer's verdict:
+
+> Rounds six through ten each found the *previous round's fix* defective, and every time the fault
+> was in the **test or its falsifying change, not in the rule.** The rules have converged; the
+> evidence written alongside each fix has not — and it fails the same way each time.
+
+**Two forms, both mechanical.** A test that checks *whether* something failed rather than *what it
+said* — which cannot notice a comparison written backwards. And a falsifying change aimed at the
+line the fix's **comment** is about rather than the line the fix **added**.
+
+⛔ **The first form had just cost a real defect.** The newest check — the one protecting 71% of the
+coverage — could have its comparison reversed and the entire test suite still passed. Deleting the
+same line was caught three ways; reversing it, none, because the only test beside it asked *did this
+fail?* and a reversal fails nothing. Reversed, it silently restored two faults from earlier rounds.
+
+⭐ **So the recommendation was to stop reviewing and write the rule instead:** *a test that drives
+the program asserts something it said, never just its exit code.* Five tests still did; all five are
+fixed, and the rule is stated where the next reader meets it. **That is a search, not a review
+round** — and it is the difference between fixing an instance and closing a class.
+
+⚠ **The diagnosis was confirmed immediately: two of my own new falsifying changes were the second
+form**, written while fixing the first. Both aimed at the line I had just commented rather than the
+line doing the work, and a second guard quietly masked one of them.
+
+Also this round: a check that only ever looked one function deep, so two files routed their tests
+through a helper and examined **none** of their thirty-nine functions while appearing correctly
+pinned; and arguments passed in bulk being attributed to the wrong parameter rather than to none.
+
+`EXPECTED_MUTATIONS` 431 → 513; `check-plan-code` suite 101 → 128; the debt-tracker 6 → 60 tests and
+6 → 42 falsifying changes, covering 432 parameters across 48 files, pinned by name, with 128 known
+gaps frozen and zero tests that check only an exit code.
