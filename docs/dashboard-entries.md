@@ -7385,3 +7385,50 @@ total coverage is a choice. Two mechanical alternatives were run over the corpus
 Gates: `check-docs`, `check-backlog-closure`, `check-selftest-counts` (35 scripts), `check-fixture-
 variation`, `check-ratchet-contract`, `check-review-rounds`, `check-anchors`, `check-plan-file-tags`
 all rc=0.
+
+## 2026-09-11
+Correction to the entry above, and it is the review doing its job rather than a slip being patched.
+
+That entry said six of the twelve newly-described items were "the same problem wearing six numbers".
+Three adversarial review rounds cut that to **three**. Two of the six were a guard whose description
+overclaims and a gate that cannot withdraw a failure; a third was a detector that raises false
+alarms. None of those is the thing the heading claims — a signal that fails while looking fine — so
+they were moved out rather than the heading being loosened to fit them.
+
+Worth saying why that mattered enough to spend three rounds on. The heading is a claim about the
+items underneath it, and a claim that gets widened every time something does not fit stops being a
+claim at all and becomes a bin with a nicer name. Two of the three removals were found by the
+reviewer, not by me — the second one after I had already fixed the first and concluded the group was
+sound.
+<!--tech-->
+Corrects `2026-09-11/1`. Branch `describe-twelve-backlog-rows`.
+
+Group *"Checks that can be wrong without looking wrong"*: **6 → 3** members. `#94` (docstring
+overclaims, guard behaves correctly) and `#104` (gate reports a failure it cannot retract) moved in
+round 1; `#92` (detector produces a FALSE POSITIVE — the inverse of a pass-looking failure) moved in
+round 2. All three went to *Process, tooling and bookkeeping*. Framing rewritten twice and **narrowed
+both times, never widened** — refusal is on the record in the group's own comment and in the
+create/retire policy on backlog row #90.
+
+Three rounds, all filed under `docs/reviews/coordinator/describe-twelve-r{1,2,3}-coordinator.md`,
+each carrying `REVIEW GAP: claude` — only the adversarial half ran. **r3: CONVERGED, zero findings at
+any severity**, and it was asked the sharp question first: had peeling two members left the framing a
+mere inventory of its own contents? It answered no in both directions.
+
+⚠ Severity ran **1 → 2 → 0**, not monotonically decaying, which alone is the thrashing shape. It is
+not: every finding in all three rounds named a member of the ORIGINAL six (`#94`/`#104` r1, `#92` r2),
+and **no round found a defect introduced by the previous round's fix** — `review-method.md:195`'s
+discriminator answering *no* three times.
+
+Two further prose defects caught by measuring rather than reading: `#90`'s description had copied
+`25 values including a bare question mark` from the row's dated 2026-09-03 measurement into
+present-tense prose (re-measured: **27**, and the `?` is gone — counts removed entirely); and `#104`'s
+said the related item was `above`, measured **false** because `ordered` sorts by `dep_rank` before the
+number. Now referenced by number, cross-reference verified true.
+
+Verdict files renamed `r<N>-coordinator` → `describe-twelve-r<N>-coordinator` — 6 generic-stem
+verdicts already sit in that directory and the namespace has no allocator, so a collision overwrites
+silently. Nothing was overwritten here (0 prior commits for all three stems, checked).
+
+Unchanged and re-verified after every round: self-test `167/167`, generator emits no drift warnings,
+both mutations killed by the cases that name them, `if True` still survives `165/165` on `28532810`.

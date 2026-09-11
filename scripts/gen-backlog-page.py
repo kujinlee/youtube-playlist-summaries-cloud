@@ -226,38 +226,39 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
               "none at all. Declare the whole palette or none of it, and the comment should say "
               "so rather than let the next author find out by shipping it."),
      ]),
+    # ⚠ THIS GROUP'S FRAMING IS ITS OWN FALSIFIER, AND IT FIRED TWICE ON THE DAY IT WAS WRITTEN.
+    # The first draft listed SIX items. #104 — a gate reporting a failure it cannot RETRACT — is
+    # neither thing this sentence claims, and #94 is a docstring that overclaims while the guard
+    # behaves correctly, which is also neither. Both moved to the bookkeeping group; #104 sits
+    # beside #100, which its own row names as the likelier home. ⛔ THE SECOND ONE WAS FOUND BY
+    # THE r1 REVIEWER, NOT BY ME, after I had already "fixed" the first and believed the group
+    # sound — instance, not class, exactly as this repo keeps recording.
+    # ⚠ The tempting repair was to WIDEN the sentence until all six fitted. That is refused on
+    # purpose: under the create/retire policy filed on backlog row #90, a framing widened to
+    # admit a member has stopped being a claim and become a bin with a better name. The sentence
+    # stayed narrow and the membership moved.
     ("Checks that can be wrong without looking wrong",
-     "Six items, one shape: a check whose failure is indistinguishable from a pass, or a warning "
-     "that is emitted correctly and reaches nobody. This is the class that lets a gap sit for a "
-     "week in plain sight — including, until today, the missing descriptions on this page.", [
-        (92, "The reviewer wrapper watches a folder for changes during a run and attributes "
-             "whatever appears to the reviewer it launched. It can see that the folder changed, "
-             "never who changed it — so when both review halves run at once, which is the "
-             "documented way to run them, it accuses one of writing the other's file. The false "
-             "accusation is then written into the verdict file the build reads."),
-        (94, "A guard that stops a session mid-plan promises in writing that it can block at most "
-             "once. It relaxes only when the turn it interrupted was one it caused itself, so a "
-             "turn beginning after a background notification is blocked again — three times in "
-             "one session, while legitimately waiting on dispatched work. The behaviour is right; "
-             "the description of it is not, and there is no escape offered for the case that "
-             "actually arose."),
+     "Three items, one shape: a signal that does not do its job. Two are failures "
+     "indistinguishable from a pass; the third is a warning printed on every single run that "
+     "nobody acts on. This is the class that lets a gap sit for a week in plain sight — "
+     "including, until today, the missing descriptions on this page.", [
         (101, "A pull request based on another branch runs no checks at all, and the answer it "
               "gives — “no checks reported” — sits in exactly the place a green tick would. Two "
               "such requests were one keystroke from merging with nothing behind them; only the "
               "habit of treating “cannot run” as a failure caught it."),
-        (104, "The gate that holds work until a plan has been reviewed can only be cleared by "
-              "that review converging. A plan that instead ships by a better route leaves the "
-              "gate armed indefinitely, blocking unrelated work and directing whoever trips it to "
-              "go and review a document that has explicitly disclaimed its own authority. Decide "
-              "first whether this is the state-file problem below wearing a second number."),
         (111, "The hook that protects the session handoff decides whether to act by reading what "
               "an interpreter prints. An interpreter that fails to start, or that prints a "
               "greeting first, yields neither expected answer — and the hook then does nothing at "
               "all, silently, for the rest of the session. Its sibling was repaired exactly this "
               "way ten days ago; this is the copy that was left behind."),
+        # ⚠ "on every run", NOT "beneath a green verdict" — r2 finding. The gate DOES exit 1 when
+        # a round is genuinely incomplete (the reviewer demonstrated it), so tying the warning to
+        # a green verdict states something false on the runs that matter most. The durable claim
+        # is that the line prints every time and nobody acts on it.
         (112, "569 files in the review folder carry no round number and sit outside the check "
-              "that audits review rounds, which says so beneath a green verdict on every single "
-              "run. Nobody can currently say what fraction of the corpus that check covers. "
+              "that audits review rounds, which says so on every single run, under whatever "
+              "verdict it reached. Nobody can currently say what fraction of the corpus it "
+              "covers. "
               "Silencing the warning is a legitimate outcome — the work is to classify the 569 "
               "and then decide, not to assume they all need covering."),
      ]),
@@ -307,15 +308,46 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
              "clean up” on a repository full of dead branches — and reads as success. The "
              "durable copy now lives in this repository; what is left is confirming whether it "
              "actually takes precedence over the plugin's own version."),
+        # ⚠ NO COUNTS IN THIS SENTENCE, ON PURPOSE. The first draft copied the row's dated
+        # measurement — "25 values including a bare question mark" — into prose that reads as
+        # present tense. Re-measured 2026-09-11: 27 values, and the question mark is gone. A
+        # number in prose has no owner and goes stale silently; a SHAPE claim ("letters are
+        # still being used as groupings") stays true until someone fixes it and is visibly
+        # false the moment they do.
         (90, "One table holds goals, defects and one-line chores at once, and its grouping column "
-             "has decayed to 25 values including a bare question mark. The cost is now measured "
-             "rather than argued: three reasonable ways of counting the same rows returned 59, 61 "
-             "and 63 open items, because a status cell is append-only with the verdict at the end "
-             "and a reader that takes the first marker gets the original filing. Every headline "
-             "count of open work on these pages is currently a range, not a number."),
+             "has decayed into values that are not groupings at all — single letters, and a bare "
+             "dash. The deeper cost is measured rather than argued: several reasonable ways of "
+             "counting the same rows disagree about how many items are open, because a status "
+             "cell is append-only with its verdict at the END, so a reader taking the first "
+             "marker it meets gets the original filing rather than the current state. Every "
+             "headline count of open work is a range until that is settled."),
+        (94, "A guard that stops a session mid-plan promises in writing that it can block at most "
+             "once. It relaxes only when the turn it interrupted was one it caused itself, so a "
+             "turn beginning after a background notification is blocked again — three times in "
+             "one session, while legitimately waiting on dispatched work. The behaviour is "
+             "correct; the description of it is not, and no escape is offered for the case that "
+             "actually arose."),
+        (92, "The reviewer wrapper watches a folder for changes during a run and attributes "
+             "whatever appears to the reviewer it launched. It can see that the folder changed, "
+             "never who changed it — so when both review halves run at once, which is the "
+             "documented way to run them, it accuses one of writing the other's file. The false "
+             "accusation is then written into the verdict file the build reads. Note the "
+             "direction: this is a check reporting a failure that is not real, which is why it "
+             "does not belong with the ones whose failures look like passes."),
         (93, "Two checkers look near-identical and differ on purpose. Merging them — the obvious "
              "tidy-up — silently reinstates a defect that was already fixed, and every gate still "
              "passes, so the trap is laid for whoever cleans up next."),
+        (104, "The gate that holds work until a plan has been reviewed can only be cleared by "
+              "that review converging. A plan that instead ships by a better route leaves the "
+              "gate armed indefinitely, blocking unrelated work and directing whoever trips it to "
+              "go and review a document that has explicitly disclaimed its own authority. Note "
+              "the direction: this repo's usual failure is a gate claiming success it has not "
+              "earned, and this is a gate reporting a failure it cannot withdraw. Decide first "
+              "whether it is item 100 in this same group wearing a second number."),
+        # ⚠ "item 100", not "the problem above". The first draft said ABOVE and it was measured
+        # FALSE: `ordered` sorts by `dep_rank` before the number, so #104 renders ahead of #100.
+        # A spatial word in a description is a claim about a layout the description does not
+        # control — reference the item by number, which the renderer cannot reorder away.
         (100, "The small file recording which plan is running is written by one program and read "
               "by three others, each carrying its own idea of the grammar, and nothing anywhere "
               "lists which combinations of its fields are legal. Nothing is broken today — all "
