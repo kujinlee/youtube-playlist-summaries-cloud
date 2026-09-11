@@ -405,5 +405,44 @@
     "expect": [
       "a kill with no readable case name is caught but NOT attributed"
     ]
+  },
+  {
+    "name": "progress is written to stdout, where the verdict lives",
+    "edits": [
+      [
+        "    print(progress_line(done, total, label), file=sys.stderr, flush=True)",
+        "    print(progress_line(done, total, label), flush=True)"
+      ]
+    ],
+    "expect": [
+      "progress goes to stderr, never to the stream carrying the verdict"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the progress reporter is accepted and never called",
+    "edits": [
+      [
+        "        if progress is not None:\n            progress(position, len(muts), name)",
+        "        if False:\n            progress(position, len(muts), name)"
+      ]
+    ],
+    "expect": [
+      "the caller is told once per mutation, with the running position"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "a progress line reports position without its total, so 'how far' is unanswerable",
+    "edits": [
+      [
+        "    return f\"[{done}/{total}] {label}\"",
+        "    return f\"[{done}] {label}\""
+      ]
+    ],
+    "expect": [
+      "a progress line states position, not just motion"
+    ],
+    "file": "scripts/check-plan-code.py"
   }
 ]

@@ -7007,3 +7007,38 @@ inherited pollution, which is H3), and a double-escaped regex reported `askbtn_c
 region that plainly contained `.askbtn`. Also: `pgrep -f codex` matched the editor's own 22-day-old
 ChatGPT app-server, so a finished review was reported as "still running" for an hour. Check the
 artifact, not the process — which is the codex wrapper's own documented rule.
+
+## 2026-09-10
+The check that verifies the other checks used to run for minutes in complete silence and then
+print one line. While it was running there was no way — for you or for me — to tell "it is working
+through item 164 of 434" from "it has hung". That cost two wrong status reports in one day: I said
+a job was still running when it had finished an hour earlier.
+
+It now says where it is, about eight times a second, on a separate channel from its verdict. A
+line that stops advancing is stuck; nothing else needs interpreting.
+
+Deliberately not a spinner. A spinner keeps spinning over a wedged process, which is the one case
+worth detecting.
+<!--tech-->
+`check-plan-code.py --mutate .` emitted nothing until exit: 128 bytes of stdout for a whole run.
+`progress_line(done, total, label)` is pure and `stderr_progress` writes it to **stderr, flushed** —
+the verdict stays the only thing on stdout, so `tally_line`'s cases and anyone reading the last
+line are unaffected. Both control phases and the mutation loop report; `run_mutations` takes an
+OPTIONAL `progress` callable and stays silent unless a caller supplies one, because its own suite
+drives it dozens of times and the outer harness captures a nested suite's stderr into
+`control_is_green`.
+
+Measured on a clean run with `/usr/bin/time -p`: `real 312.06`, 434 mutations, stdout 128 bytes,
+stderr 510 progress lines (38 controls + 434 mutations + 38 re-controls). ⚠ No duration is quoted
+in the code: the same suite took roughly 4× that earlier the same day under load from two
+concurrent reviews, and the first draft of the docstring said "~25 minutes" from unmeasured
+recollection. What is stable is the RATE — a gap much longer than `SUITE_TIMEOUT` (120s) is the
+signal.
+
+Three clauses, three cases, three manifest entries, each control-verified to go red alone: the
+stream (stdout would put progress where the verdict is), the wiring (a reporter accepted and never
+called), and the total (position without its denominator answers "moving" but not "how far").
+`EXPECTED_MUTATIONS` 431 → 434; `check-plan-code` suite 101 → 105.
+
+⚠ Stacked on `backlog-106-compose-idempotence` (PR #288), which this file is heavily modified by.
+Merge #288 first.

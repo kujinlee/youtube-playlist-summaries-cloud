@@ -2,7 +2,7 @@
 """A plan that contains code must ASSEMBLE into that code, and its evidence must be RUN.
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
-    python3 scripts/check-plan-code.py --self-test          # 101 cases
+    python3 scripts/check-plan-code.py --self-test          # 105 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -66,6 +66,7 @@ The final line names the mode, so a CI log cannot be read as the wrong subject.
 from __future__ import annotations
 import argparse
 import dataclasses
+import contextlib
 import io
 import json
 import os
@@ -585,7 +586,7 @@ EXPECTED_MUTATIONS = {
     # not be attributed to any case; what it did not do was say WHY, and that silence cost two
     # branches in one day — both diagnosed by hand from an empty list at the bottom of a
     # 420-mutation log. The new entry guards the DIAGNOSIS, not the refusal.
-    "scripts/check-plan-code.py": 36,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 39,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -872,7 +873,8 @@ def mutate_delivered(root: pathlib.Path) -> tuple[bool, list[str], "Measured | N
         report = []
         # THE CONTROL, FIRST. Every 'caught' below claims the suite went red BECAUSE of
         # the mutation; that claim is empty unless the suite is green without it.
-        for name in targets:
+        for position, name in enumerate(targets, 1):
+            stderr_progress(position, len(targets), f"control {name}")
             rc, out = run_suite(d, name)
             ev_files[name] = {"rc": rc, "tail": (out.split("\n")[-1] if out else ""),
                               "blocks": None}
@@ -883,7 +885,8 @@ def mutate_delivered(root: pathlib.Path) -> tuple[bool, list[str], "Measured | N
                               f"CHECKED.\n    {out[-400:]}")
         if report:
             return False, report, NotMeasured.from_counts([], None, ev_files)
-        ok, m_report, m_muts, m_survivors = run_mutations(d, muts, set(targets))
+        ok, m_report, m_muts, m_survivors = run_mutations(d, muts, set(targets),
+                                                        progress=stderr_progress)
         # EVERY declared mutation must have produced a verdict. A skipped one leaves the tally
         # looking complete — 161 of 162 with 0 survivors reads as coverage confirmed.
         declared = len(muts)
@@ -898,7 +901,8 @@ def mutate_delivered(root: pathlib.Path) -> tuple[bool, list[str], "Measured | N
         # clear it. It is passed to the predicate rather than overwriting its result,
         # because the predicate is where the whole contract now lives.
         controls_green = True
-        for name in targets:
+        for position, name in enumerate(targets, 1):
+            stderr_progress(position, len(targets), f"re-control {name}")
             rc, out = run_suite(d, name)
             if not control_is_green(rc, out):
                 ok = False
@@ -926,8 +930,8 @@ def mutate_delivered(root: pathlib.Path) -> tuple[bool, list[str], "Measured | N
         return ok, m_report, verdict
 
 
-def run_mutations(d: pathlib.Path, muts: list[dict],
-                  known: set[str]) -> tuple[bool, list[str], list[dict], list[str]]:
+def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
+                  progress=None) -> tuple[bool, list[str], list[dict], list[str]]:
     """Apply each mutation to a file in `d`, run its suite, require red via the named case.
 
     `d` holds runnable scripts — assembled from a plan, or copied from the delivered
@@ -940,8 +944,14 @@ def run_mutations(d: pathlib.Path, muts: list[dict],
     43 mutations / 0 survivors before and after.
     """
     ok, report, ev_muts, ev_survivors = True, [], [], []
-    for mut in muts:
+    for position, mut in enumerate(muts, 1):
         name, fname = mut.get("name", "?"), mut.get("file", "")
+        # ⚠ SILENT UNLESS A CALLER ASKS. This function is driven dozens of times by its own
+        # suite, and the OUTER harness captures a suite's stderr into `control_is_green` — so
+        # progress leaking out of a nested run would be read as part of that suite's output.
+        # The reporter is the top-level caller's to supply.
+        if progress is not None:
+            progress(position, len(muts), name)
         if fname not in known:
             ok = False
             report.append(f"mutation {name!r} targets unknown file {fname!r}")
@@ -1148,6 +1158,41 @@ def tally_line(ok: bool, verdict) -> str:
               f"{len(verdict.mutations)} mutation(s), {killed} killed, "
               f"{attributed} attributed to the case each names, "
               f"{len(verdict.survivors)} survivor(s)")
+
+
+def progress_line(done: int, total: int, label: str) -> str:
+    """One line of "still moving" for a run that is otherwise silent for ~25 minutes. PURE.
+
+    ⛔ A SPINNER WOULD BE THEATRE. It spins just as happily over a wedged process, and what a
+    reader needs is not motion but POSITION — which subject, how far, out of how many. A line
+    that stops advancing is then stuck, and `SUITE_TIMEOUT` bounds how long not-advancing can
+    legitimately last, so the stuck threshold is DERIVED rather than guessed.
+
+    MEASURED before this existed: a full `--mutate .` run wrote **128 bytes, all of it at the
+    end**. "Working through mutation 164 of 434" and "hung" were the same observation — for the
+    reader and for the agent. It cost two wrong status reports in one session, one of them from
+    matching a `pgrep` pattern against an unrelated 22-day-old process.
+
+    ⚠ NO DURATION IS QUOTED HERE, AND THAT IS DELIBERATE. A clean run is `real 312.06` (5m12s,
+    `/usr/bin/time -p`, 434 mutations) — but the same suite took roughly four times that earlier
+    the same day with two reviews running beside it. A single number in prose would be wrong for
+    most readers most of the time; the first draft of this docstring said "~25 minutes" from
+    exactly that unmeasured recollection. What is stable, and what this function restores, is the
+    RATE: 510 lines over the run, so a gap much longer than `SUITE_TIMEOUT` is the signal.
+    """
+    return f"[{done}/{total}] {label}"
+
+
+def stderr_progress(done: int, total: int, label: str) -> None:
+    """Write a progress line where it cannot be mistaken for the verdict.
+
+    ⚠ STDERR, AND FLUSHED. Two separate reasons, both load-bearing:
+      * the VERDICT is stdout and is parsed — by `tally_line`'s cases and by anyone reading a
+        log's last line. Progress must not enter that stream;
+      * without `flush`, a pipe buffers this into oblivion and the whole point is lost: the
+        reader sees nothing until the process exits, which is the state being fixed.
+    """
+    print(progress_line(done, total, label), file=sys.stderr, flush=True)
 
 
 def parse_fail_names(out: str) -> list[str]:
@@ -2199,6 +2244,50 @@ def _self_test() -> int:
     # itself gains 1 for the report-format diagnosis. A RISE, and the
     # file it covers is the one that composes every page the reader opens — it had cases and no
     # mutations, the same blind spot `gen-backlog-page.py` was in one branch ago.
+    # ── PROGRESS: THE RUN SAYS WHERE IT IS ───────────────────────────────────────────────
+    # ⛔ A SPINNER WOULD BE THEATRE — it spins just as happily over a wedged process. What a
+    # reader needs is POSITION, not motion: which subject, how far, out of how many. A line that
+    # stops advancing is then stuck, and `SUITE_TIMEOUT` bounds how long not-advancing can
+    # legitimately last, so the threshold is DERIVED rather than guessed.
+    # MEASURED before this existed: a full `--mutate .` run wrote 128 bytes in ~25 minutes, all
+    # of it at the end. "Working through file 31 of 38" and "hung" were the same observation.
+    case("a progress line states position, not just motion",
+         progress_line(7, 38, "check-docs.py"), "[7/38] check-docs.py")
+    # ⚠ run_mutations must stay SILENT unless a caller asks. Its own suite drives it dozens of
+    # times, and the OUTER harness captures a suite's stderr into `control_is_green` — progress
+    # leaking from a nested run would be read as part of that suite's output.
+    with tempfile.TemporaryDirectory() as _dp:
+        _dpp = pathlib.Path(_dp)
+        (_dpp / "p.py").write_text(
+            'def f():\n    return 1\n\n\n'
+            'def _self_test():\n'
+            '    if f() != 1:\n'
+            '        print("  [FAIL] the value is one")\n'
+            '        return 1\n'
+            '    print("1/1 passed")\n'
+            '    return 0\n\n\n'
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+        _pm = [{"name": f"m{i}", "file": "p.py",
+                "edits": [["def f():\n    return 1", f"def f():\n    return {i + 1}"]],
+                "expect": ["the value is one"]} for i in (1, 2)]
+        _seen: list = []
+        run_mutations(_dpp, _pm, {"p.py"}, progress=lambda *a: _seen.append(a))
+        case("the caller is told once per mutation, with the running position",
+             _seen, [(1, 2, "m1"), (2, 2, "m2")])
+        _quiet: list = []
+        run_mutations(_dpp, _pm, {"p.py"})
+        case("...and says NOTHING when no caller asked", _quiet, [])
+
+    # ⛔ THE STREAM IS THE POINT. The verdict is stdout and is parsed; progress on stdout would
+    # put "[31/38] …" where a reader — and `tally_line`'s own cases — expect the tally.
+    _po, _pe = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(_po), contextlib.redirect_stderr(_pe):
+        stderr_progress(3, 9, "x.py")
+    case("progress goes to stderr, never to the stream carrying the verdict",
+         (_po.getvalue(), _pe.getvalue().strip()), ("", "[3/9] x.py"))
+
     # ── THE SUMMARY STATES THE AFFIRMATIVE NUMBERS ───────────────────────────────────────
     # ⛔ THE SHAPE THIS EXISTS FOR, measured on this branch: eight entries, every one killed,
     # NOT ONE attributable — and the old line said `8 mutation(s), 0 survivor(s)`, which is
@@ -2230,7 +2319,7 @@ def _self_test() -> int:
     # so an `expect` naming it in full could never match and its entry would be unattributable.
     case("⚠ a case name containing ': got ' is TRUNCATED by the consumer",
          parse_fail_names("  [FAIL] the width: got the wrong value"), ["the width"])
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 431)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 434)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
