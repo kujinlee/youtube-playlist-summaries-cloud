@@ -7205,4 +7205,31 @@ fail because the clause it named had no test at all, and another *crashed* inste
 its defect was introduced — and a test that dies proves nothing, because nothing can attribute a
 crash.
 
-`EXPECTED_MUTATIONS` 431 → 476; `check-plan-code` suite 101 → 128.
+**Round 7 attacked the new check itself, and it failed in the way it was built to detect.** Its rule
+was sound and its *verdict* was not: four separate one-word changes to the code that decides its exit
+status all passed, so it could print "OK", exit successfully, and throw away a list of findings it
+was holding. It was wired into CI in that state. ⭐ **And running the check on itself predicted
+exactly this** — it reported that the function producing the verdict had only ever been called one
+way, which is the same fact as the four surviving changes, seen from the other side. It could not be
+added to its own watch-list until that was fixed; now it is.
+
+⛔ **A worse habit was caught too: an exemption that forgave nothing.** One parameter had been
+excused from the rule with a written reason — and measured, the rule passed it without any excuse at
+all. So the entry changed nothing today while silently pre-authorising the exact regression two
+earlier rounds had been spent on. **An unneeded exemption is a promise nobody re-examines.** The
+check now tests its own exemption list the same way it tests everything else: remove one and see. If
+nothing changes, it is dead and gets deleted.
+
+⭐ **And the honest scope question got the honest answer.** The check watched two files while its
+rule could already read forty-eight; a green tick was implying twenty-four times what it covered.
+Widening it surfaces **124 parameters across 35 files** that were never varied. Fixing those is not
+this work's job — so they are frozen by name, visible, unable to grow, and reported as *paid* the
+moment one starts varying. That is this project's usual answer to inherited debt: make it countable
+rather than either invisible or blocking.
+
+⚠ **The check audited its author throughout.** Every widening it received, it immediately reported
+something back — a parameter in its own new code called only one way, a helper that hid variation by
+wrapping three varied calls into one, a floor value passed identically at three sites. Each was real.
+
+`EXPECTED_MUTATIONS` 431 → 493; `check-plan-code` suite 101 → 128; the new check 6 → 38 tests and
+6 → 22 falsifying changes, covering 484 parameters across 48 files.

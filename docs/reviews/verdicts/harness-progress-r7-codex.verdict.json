@@ -1,0 +1,13 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 4870 chars"
+  ],
+  "exit_code": 0,
+  "gate_ran": true,
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "reason": "4870 chars",
+  "review": "harness-progress-r7-codex.md",
+  "schema": 1,
+  "tool": "codex-review"
+}

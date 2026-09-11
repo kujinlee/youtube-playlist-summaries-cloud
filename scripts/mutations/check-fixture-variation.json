@@ -29,7 +29,7 @@
     "name": "the exemption lookup is dropped, so a parameter with a written reason is reported anyway and the guard cries wolf until someone switches it off",
     "edits": [
       [
-        "        if f\"{fn}.{param}\" in EXEMPT:\n            continue",
+        "        if f\"{fn}.{param}\" in (EXEMPT if exempt is None else exempt):\n            continue",
         "        pass"
       ]
     ],
@@ -42,7 +42,7 @@
     "name": "a file with no suite returns a clean bill instead of CANNOT RUN \u2014 a zero over an unread population, which this project has been burned by four times",
     "edits": [
       [
-        "        return ([f\"CANNOT RUN \u2014 {path} has no `_self_test`, so there are no cases to read. \"\n                 f\"NOT CHECKED.\"], 0)",
+        "        return ([f\"CANNOT RUN \u2014 {path} defines no self-test, so there are no cases to read. \"\n                 f\"NOT CHECKED.\"], 0)",
         "        return ([], 0)"
       ]
     ],
@@ -74,6 +74,214 @@
     ],
     "expect": [
       "a private helper is test plumbing, not a subject"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "a dead exemption stops being reported, so an entry that guards nothing today silently masks its parameter the moment that parameter stops varying \u2014 r7 H1's defect, restored",
+    "edits": [
+      [
+        "        if not needed:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "an exemption the rule does not need is reported as DEAD"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the deadness probe keeps the exemption it is testing, so every exemption looks load-bearing and the check can never fire",
+    "edits": [
+      [
+        "        trimmed = {kk: vv for kk, vv in EXEMPT.items() if kk != k}",
+        "        trimmed = dict(EXEMPT)"
+      ]
+    ],
+    "expect": [
+      "...while a load-bearing exemption is not reported"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "dead exemptions are computed and dropped instead of joining the findings, so the check runs and its result never reaches the exit code",
+    "edits": [
+      [
+        "    all_findings += dead_exemptions(sources)",
+        "    pass"
+      ]
+    ],
+    "expect": [
+      "main() surfaces a dead exemption as a failure"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the findings gate is short-circuited, so the guard prints OK and exits 0 with a non-empty finding list in hand \u2014 in a script wired into CI",
+    "edits": [
+      [
+        "    if all_findings:\n        print(f\"FAILED",
+        "    if False:\n        print(f\"FAILED"
+      ]
+    ],
+    "expect": [
+      "main() surfaces a dead exemption as a failure"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the FAILED branch returns 0, so every finding is printed and the exit code says the run was clean \u2014 the shape a CI step reads and nothing else does",
+    "edits": [
+      [
+        "            print(f\"  \u2717 {x}\")\n        return 1",
+        "            print(f\"  \u2717 {x}\")\n        return 0"
+      ]
+    ],
+    "expect": [
+      "main() surfaces a dead exemption as a failure"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the clean branch returns 1, so a subject with nothing to report fails and the guard becomes the thing someone switches off",
+    "edits": [
+      [
+        "f\"{len(EXEMPT)} exempt with a written reason\")\n    return 0",
+        "f\"{len(EXEMPT)} exempt with a written reason\")\n    return 1"
+      ]
+    ],
+    "expect": [
+      "...and a subject with nothing to report exits 0"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "an unreadable population returns 1 instead of 2, so CANNOT RUN is indistinguishable from a real finding and a missing subject reads as a measured one",
+    "edits": [
+      [
+        "              f\"A zero over nothing is not a pass. NOT CHECKED.\", file=sys.stderr)\n        return 2",
+        "              f\"A zero over nothing is not a pass. NOT CHECKED.\", file=sys.stderr)\n        return 1"
+      ]
+    ],
+    "expect": [
+      "main() refuses an unreadable population with rc 2"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "deadness is judged one file at a time, so an exemption needed by any single member of the population is reported dead the moment a second file joins",
+    "edits": [
+      [
+        "        needed = any(any(f\"`{fn}({param}=\" in x for x in analyse(src, name, exempt=trimmed)[0])\n                     for src, name in sources)",
+        "        needed = all(any(f\"`{fn}({param}=\" in x for x in analyse(src, name, exempt=trimmed)[0])\n                     for src, name in sources)"
+      ]
+    ],
+    "expect": [
+      "...and an exemption needed by only ONE file in the population survives"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "an unparseable subject is reported as a rule finding rather than CANNOT RUN, so a population failure takes the exit code a real finding uses",
+    "edits": [
+      [
+        "        return ([f\"CANNOT RUN \u2014 {path} does not parse",
+        "        return ([f\"{path} does not parse"
+      ]
+    ],
+    "expect": [
+      "a subject that does not parse is CANNOT RUN, not a rule finding"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "keyword-only parameters drop out of the default synthesis, so one given at a single site is reported unvaried \u2014 the false positive the omitted-default clause prevents",
+    "edits": [
+      [
+        "        defaulted += [a for a, d in zip(kwonly, fn.args.kw_defaults) if d is not None]",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "a keyword-only parameter omitted at one site counts as varied"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "deadness is judged even when a member of the population could not be read, so exemptions are declared dead on the strength of a file nobody parsed",
+    "edits": [
+      [
+        "    if not cannot:\n        all_findings += dead_exemptions(sources)",
+        "    all_findings += dead_exemptions(sources)"
+      ]
+    ],
+    "expect": [
+      "an unreadable member says CANNOT RUN and nothing about exemptions"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the examined floor stops being enforced, so deleting the last case that drives a function makes this guard QUIETER instead of louder",
+    "edits": [
+      [
+        "        if floor is not None and n < floor:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "a file below its pinned examined floor fails"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the floor comparison is inverted, so coverage GROWING is the thing reported and a collapse passes",
+    "edits": [
+      [
+        "        if floor is not None and n < floor:\n            all_findings.append(",
+        "        if floor is not None and n > floor:\n            all_findings.append("
+      ]
+    ],
+    "expect": [
+      "a file below its pinned examined floor fails"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the ratchet swallows every finding instead of only the known ones, so a NEW unvaried parameter joins 124 old ones in silence",
+    "edits": [
+      [
+        "            (seen_known.add(key) if key in known else fresh.append(x))",
+        "            seen_known.add(key)"
+      ]
+    ],
+    "expect": [
+      "a NEW unvaried parameter is not swallowed by the ratchet"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "the population floor stops being enforced, so discovery finding fewer scripts than pinned reads as a cleaner repo rather than a shrunken subject",
+    "edits": [
+      [
+        "    if found >= floor:\n        return None",
+        "    if True:\n        return None"
+      ]
+    ],
+    "expect": [
+      "a population below its pinned floor is CANNOT RUN"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "discovery accepts only one spelling of the suite again, so the 32 scripts that write `self_test` drop out of the population entirely",
+    "edits": [
+      [
+        "SUITE_NAMES = (\"_self_test\", \"self_test\")",
+        "SUITE_NAMES = (\"_self_test\",)"
+      ]
+    ],
+    "expect": [
+      "discovery finds at least the pinned floor of scripts with a suite"
     ],
     "file": "scripts/check-fixture-variation.py"
   }

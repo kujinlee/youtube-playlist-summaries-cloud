@@ -693,8 +693,8 @@ EXPECTED_MUTATIONS = {
     # orphaning the anchor that guarded it. An anchor binds by TEXT, so improving code breaks it
     # and the suite stays green; `--mutate .` refuses an unresolved anchor, which is the only
     # reason that was caught here rather than merged.
-    "scripts/check-fixture-variation.py": 6,
-    "scripts/check-plan-code.py": 75,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-fixture-variation.py": 22,
+    "scripts/check-plan-code.py": 76,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -2042,13 +2042,23 @@ def _self_test() -> int:
             _r = pathlib.Path(_td); _mini(_r)
             _me = io.StringIO()
             with contextlib.redirect_stderr(_me):
-                mutate_delivered(_r)
+                _ok_s, _rep_s, _ev_s = mutate_delivered(_r)
             # ⚠ THE STREAM, NOT A LIST. A list that nothing is wired to asserts `[] == []`,
             # which is r1 B1 — the sixth instance on this branch of a guard whose existence
             # is cased and whose content is not. `stderr_progress` resolves `sys.stderr` at
             # call time, and `run_suite` captures its CHILDREN's stderr through subprocess,
             # so what this sees is exactly the parent's own writes.
-            case("...and the whole path is silent when nobody asked", _me.getvalue(), "")
+            # ⛔ SILENT **AND** IT RAN — r7 H2. This asserted only the empty stream, and an
+            # empty stream is produced identically by "drove all three phases and said nothing"
+            # and by "refused at the door and did nothing at all". MEASURED by the reviewer:
+            # reintroducing r6's own bug — the `EXPECTED_MUTATIONS` pop moved back below this
+            # block, so `mutate_delivered` bailed on a count mismatch before the control loop —
+            # left the suite at 128/128. The instance was fixed and the CLASS was not.
+            # An absence assertion needs a presence partner ON THE SAME FIXTURE: the sibling at
+            # `run_mutations` is safe for exactly that reason, and this one was not, because its
+            # partner drives a different root.
+            case("...and the whole path is silent when nobody asked",
+                 (_me.getvalue(), _ok_s, isinstance(_ev_s, Measured)), ("", True, True))
         # ⛔ ...AND THE ONE CALLER THAT DOES ASK. Everything below `main` now defaults to silence,
         # which means a single deleted keyword argument turns the entire feature off and leaves
         # every case above still green — H2's shape exactly, moved one level up by H2's own fix.
@@ -2862,7 +2872,7 @@ def _self_test() -> int:
     # so an `expect` naming it in full could never match and its entry would be unattributable.
     case("⚠ a case name containing ': got ' is TRUNCATED by the consumer",
          parse_fail_names("  [FAIL] the width: got the wrong value"), ["the width"])
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 476)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 493)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

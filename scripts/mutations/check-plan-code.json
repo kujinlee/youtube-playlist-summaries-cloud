@@ -915,5 +915,18 @@
       "every phase of --mutate reports its position when a caller asks"
     ],
     "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the two-target declaration outlives its block again, so the silence case's root fails a count check and mutate_delivered returns BEFORE the control loop \u2014 an empty stream produced by refusing at the door rather than by running quietly",
+    "edits": [
+      [
+        "        EXPECTED_MUTATIONS.pop(\"scripts/other.py\", None)\n        with tempfile.TemporaryDirectory() as _td:\n            _r = pathlib.Path(_td); _mini(_r)\n            _me = io.StringIO()",
+        "        with tempfile.TemporaryDirectory() as _td:\n            _r = pathlib.Path(_td); _mini(_r)\n            _me = io.StringIO()"
+      ]
+    ],
+    "expect": [
+      "...and the whole path is silent when nobody asked"
+    ],
+    "file": "scripts/check-plan-code.py"
   }
 ]
