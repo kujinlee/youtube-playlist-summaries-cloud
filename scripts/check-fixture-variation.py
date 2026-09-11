@@ -2,7 +2,7 @@
 """Every parameter of a function under test must be VARIED by its cases, or be exempt in writing.
 
     python3 scripts/check-fixture-variation.py                 # the declared POPULATION
-    python3 scripts/check-fixture-variation.py --self-test     # 38 cases
+    python3 scripts/check-fixture-variation.py --self-test     # 44 cases
 
 ⛔ WHAT THIS EXISTS FOR, AND IT WAS BOUGHT WITH SIX ADVERSARIAL ROUNDS ON ONE FILE.
 Six rounds of review on `check-plan-code.py` produced six Blocking findings, and five of them are
@@ -72,21 +72,29 @@ import tempfile
 # files that spell it `self_test` — a refusal, not a pass, so nothing was claimed falsely; but it
 # read as "this guard cannot see those" when in fact it could not see their SPELLING.
 SUITE_NAMES = ("_self_test", "self_test")
-POPULATION_FLOOR = 48
 
 
-def population_shortfall(found: int, floor: int) -> "str | None":
-    """The CANNOT-RUN line when discovery returns fewer scripts than pinned, else None. PURE.
+def population_drift(found: "list[str]", pinned: "list[str]") -> "str | None":
+    """The CANNOT-RUN line when discovery returns a DIFFERENT SET than pinned, else None. PURE.
 
-    ⚠ Extracted so a case can reach it — r7. Inline in `main`, the only way to exercise it was
-    to shrink the real repository, so the clause had no case and its mutation survived. A
-    shrunken subject is not a cleaner one, and this is the sentence that says so.
+    ⛔ IDENTITY, NOT CARDINALITY — r8, Codex B1, measured. This pinned a COUNT, and a count is
+    preserved by SUBSTITUTION: making `check-docs.py` unparseable while adding one new script
+    kept the total at 48 and the guard reported OK **over a different set**. A departure and an
+    arrival cancelled out. Comparing the names cannot be satisfied that way.
+    ⚠ Both directions are reported. An arrival is not a failure of the subject, but it IS a file
+    nobody pinned a floor for, so it would be examined with nothing ratcheting its coverage.
     """
-    if found >= floor:
+    gone, new = sorted(set(pinned) - set(found)), sorted(set(found) - set(pinned))
+    if not gone and not new:
         return None
-    return (f"CANNOT RUN — {found} script(s) define a readable self-test, below the pinned "
-            f"floor of {floor}. The population shrank; a smaller subject is not a cleaner "
-            f"one. NOT CHECKED.")
+    parts = []
+    if gone:
+        parts.append(f"no longer discovered: {', '.join(gone)}")
+    if new:
+        parts.append(f"newly discovered and unpinned: {', '.join(new)}")
+    return (f"CANNOT RUN — the population is not the pinned set ({'; '.join(parts)}). A count "
+            f"is preserved by substitution, so the SET is what is pinned. Update EXAMINED_FLOOR "
+            f"deliberately. NOT CHECKED.")
 
 
 def population(root: pathlib.Path) -> "list[pathlib.Path]":
@@ -105,7 +113,7 @@ def population(root: pathlib.Path) -> "list[pathlib.Path]":
 
 
 # ── THE RATCHET ─────────────────────────────────────────────────────────────────────────
-# ⛔ 126 PARAMETERS ACROSS 35 FILES ARE ALREADY UNVARIED, and this branch is not the place to
+# ⛔ THE PARAMETERS LISTED BELOW ARE ALREADY UNVARIED, and this branch is not the place to
 # fix them — it is seven rounds deep on a progress line. They are frozen here BY NAME, not by
 # count: a count alone is satisfied by fixing one and adding another. A new unvaried parameter
 # fails; a fixed one is reported so the entry can be deleted, which is how the debt shrinks.
@@ -125,9 +133,7 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
     'check-arch-findings.py': (
         'line_counts.rx',),
     'check-banner-armed.py': (
-        'asst_toolonly.path', 'edit.path', 'log_line.detail', 'log_line.reason',
-        'log_line.session', 'log_line.when', 'meta.text', 'notif.text', 'use_nb.path',
-        'use_nb.tid',),
+        'log_line.detail', 'log_line.reason', 'log_line.session', 'log_line.when',),
     'check-catalog-coverage.py': (
         'classify.digested', 'digested_columns.sql',),
     'check-ci-watched.py': (
@@ -144,9 +150,7 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
     'check-live-schema.py': (
         'residue.manifest', 'split_residue.manifest', 'verdict.manifest',),
     'check-paid-caller-arrival.py': (
-        'ck.got', 'report.migrations_dir', 'report.root', 'report.use_live',),
-    'check-plan-code.py': (
-        ),
+        'report.migrations_dir', 'report.root', 'report.use_live',),
     'check-plan-progress.py': (
         'next_pending_task.plan_text', 'strip_field.key',),
     'check-producer-enumeration.py': (
@@ -163,8 +167,6 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
         'audit.reviews',),
     'check-roadmap-consistency.py': (
         'find_inconsistencies.sources',),
-    'check-selection-card.py': (
-        'card.question',),
     'check-selftest-counts.py': (
         'declares.count_drift', 'population_errors.pinned',),
     'check-test-counts.py': (
@@ -193,7 +195,7 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
     'gen-m4-manifest.py': (
         'has_m4.catalog', 'has_m4.manifest', 'psql.db',),
     'page_chrome.py': (
-        'assert_wired.page', 'assert_wired.where', 'raises.where',),
+        'assert_wired.page', 'assert_wired.where',),
     'page_markup.py': (
         'escape.s', 'scan.s',),
     'prior-art.py': (
@@ -219,18 +221,69 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 # What is pinned instead is the COUNT, the way `EXPECTED_MUTATIONS` pins mutations: coverage
 # may grow, and a drop is a finding that names its own number.
 EXAMINED_FLOOR: dict[str, int] = {
-    "scripts/check-plan-code.py": 29,
-    "scripts/check-fixture-variation.py": 8,
+    'begin-plan.py': 18,
+    'brief-compose.py': 0,
+    'build-m4-schema.py': 4,
+    'check-anchors.py': 5,
+    'check-anon-exposure.py': 19,
+    'check-arch-findings.py': 3,
+    'check-backlog-closure.py': 4,
+    'check-banner-armed.py': 17,
+    'check-catalog-coverage.py': 3,
+    'check-ci-watched.py': 7,
+    'check-dashboard-entry.py': 19,
+    'check-docs.py': 0,
+    'check-explainer-delivery.py': 3,
+    'check-fixture-variation.py': 8,
+    'check-function-revokes.py': 3,
+    'check-gate-falsifiability.py': 5,
+    'check-guard-coverage.py': 5,
+    'check-handoff-path.py': 2,
+    'check-live-schema.py': 17,
+    'check-paid-caller-arrival.py': 3,
+    'check-plan-code.py': 29,
+    'check-plan-file-tags.py': 3,
+    'check-plan-progress.py': 9,
+    'check-plan-task-order.py': 5,
+    'check-producer-enumeration.py': 6,
+    'check-ratchet-contract.py': 11,
+    'check-review-recorded.py': 6,
+    'check-review-rounds.py': 7,
+    'check-roadmap-consistency.py': 1,
+    'check-selection-card.py': 2,
+    'check-selftest-counts.py': 6,
+    'check-sentinel-meanings.py': 3,
+    'check-storage-grant-pin.py': 2,
+    'check-test-counts.py': 8,
+    'check-theme-token-coverage.py': 6,
+    'check-vocabulary-collisions.py': 3,
+    'codex-review.py': 28,
+    'coverage_verdict.py': 3,
+    'explainer-serve.py': 17,
+    'gen-backlog-page.py': 39,
+    'gen-dashboard.py': 30,
+    'gen-goals-page.py': 6,
+    'gen-m4-manifest.py': 5,
+    'page_chrome.py': 10,
+    'page_markup.py': 4,
+    'prior-art.py': 2,
+    'subject_status.py': 5,
+    'verify-exclusion-reasons.py': 1,
 }
 
 # ── EXEMPTIONS, EACH WITH ITS REASON ─────────────────────────────────────────────────────
 # `"<function>.<parameter>": "<why one value is right>"`. A parameter genuinely decided by one
 # value is not a defect; an UNWRITTEN one is. Prose here is the artefact that says the question
 # was asked and answered, which is what r4 L1 proved is needed.
+# ⛔ KEYED `file:function.parameter` — r8 H2. `KNOWN_UNVARIED` was keyed by file and this was
+# not, so an exemption written for one script silenced the same `function.parameter` in EVERY
+# script. r7 widened the population from 2 files to 48 and gave only one of the two ratchets a
+# file dimension; a brand-new script defining a function called `run_suite_parts` would have
+# inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
-    "diagnostic_tail.window": "the budget is a module constant with its own boundary cases and "
+    "check-plan-code.py:diagnostic_tail.window": "the budget is a module constant with its own boundary cases and "
                               "its own manifest entry; callers never pass it",
-    "run_suite_parts.d": "the staging directory is the fixture's own temp dir; what varies "
+    "check-plan-code.py:run_suite_parts.d": "the staging directory is the fixture's own temp dir; what varies "
                          "between its call sites is `name`, which is the parameter that "
                          "selects the suite. A second directory would test the tempfile "
                          "module, not this function",
@@ -242,11 +295,19 @@ def _is_case_arg(node: ast.AST) -> bool:
     return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "case"
 
 
-def analyse(source: str, path: str, exempt: dict | None = None) -> tuple[list[str], int]:
-    """(findings, parameters examined). PURE — no filesystem, no argv.
+def analyse(source: str, path: str,
+            exempt: dict | None = None) -> "tuple[list[str], set[str]]":
+    """(findings, the set of `fn.param` keys EXAMINED). PURE — no filesystem, no argv.
 
-    A parameter is EXAMINED when its function is defined in this module and called at least
-    twice from the suite. Called once is reported too: one call site cannot vary anything.
+    A parameter is EXAMINED when its function is defined at module level and called from
+    the suite. Called once is reported too: one call site cannot vary anything.
+
+    ⛔ THE SECOND RETURN VALUE IS A SET, NOT A COUNT — r8 B1, and the count was why the
+    ratchet could be satisfied by deleting the subject. With only a number, "this entry
+    did not fire" and "this parameter is no longer examined at all" are the same
+    observation, and the caller reported both as DEBT PAID: renaming one public function
+    to `_private` took three parameters out of the guard's field of view and earned three
+    gold stars. The set makes the two distinguishable, which is the whole fix.
     """
     # ⚠ A SUBJECT THAT DOES NOT PARSE IS A POPULATION FAILURE, NOT A RULE FAILURE — r7 L2.
     # Unguarded, `ast.parse` raised and the traceback took rc 1, which is the code this guard
@@ -255,17 +316,24 @@ def analyse(source: str, path: str, exempt: dict | None = None) -> tuple[list[st
         tree = ast.parse(source)
     except SyntaxError as exc:
         return ([f"CANNOT RUN — {path} does not parse ({exc.msg} at line {exc.lineno}), so no "
-                 f"case can be read from it. NOT CHECKED."], 0)
-    defs: dict[str, ast.FunctionDef] = {}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and not node.name.startswith("_"):
-            defs.setdefault(node.name, node)
-
+                 f"case can be read from it. NOT CHECKED."], set())
     suite = next((n for n in ast.walk(tree)
                   if isinstance(n, ast.FunctionDef) and n.name in SUITE_NAMES), None)
+    # ⛔ PLUMBING IS DISTINGUISHED BY LOCATION, NOT BY A NAMING CONVENTION — r8 M1. The leading
+    # underscore was a proxy: measured, 82 of the 484 "parameters examined" across 22 files
+    # belonged to helpers DEFINED INSIDE the suite, and 9 of the 124 ratcheted findings were
+    # about them. A fixture builder is plumbing whether or not someone remembered the underscore.
+    inner = {n for s_ in ([suite] if suite else [])
+             for n in ast.walk(s_) if isinstance(n, ast.FunctionDef)}
+    defs: dict[str, ast.FunctionDef] = {}
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.FunctionDef) and not node.name.startswith("_")
+                and node not in inner):
+            defs.setdefault(node.name, node)
+
     if suite is None:
         return ([f"CANNOT RUN — {path} defines no self-test, so there are no cases to read. "
-                 f"NOT CHECKED."], 0)
+                 f"NOT CHECKED."], set())
 
     # arg source text per (function, parameter), across every call site inside the suite
     seen: dict[tuple[str, str], list[str]] = {}
@@ -281,7 +349,11 @@ def analyse(source: str, path: str, exempt: dict | None = None) -> tuple[list[st
         # unvaried: the exact false positive that clause exists to prevent, on the other half of
         # the grammar. Latent when found (no public function here has one) — fixed before the
         # population widened into one.
-        names = [a.arg for a in fn.args.args]
+        # ⛔ POSITIONAL-ONLY FIRST — r8 L1, and this one fails WORSE than the kwonly gap above.
+        # Positional arguments are matched to `names` BY INDEX, so a `/` in the signature shifted
+        # every mapping: arguments were recorded against the WRONG parameter, not merely dropped.
+        # r7 called kwonly "the other half of the signature grammar"; there is a third part.
+        names = [a.arg for a in fn.args.posonlyargs] + [a.arg for a in fn.args.args]
         kwonly = [a.arg for a in fn.args.kwonlyargs]
         given = set()
         for i, arg in enumerate(node.args):
@@ -305,7 +377,7 @@ def analyse(source: str, path: str, exempt: dict | None = None) -> tuple[list[st
 
     findings = []
     for (fn, param), values in sorted(seen.items()):
-        if f"{fn}.{param}" in (EXEMPT if exempt is None else exempt):
+        if f"{path}:{fn}.{param}" in (EXEMPT if exempt is None else exempt):
             continue
         if len(set(values)) < 2:
             only = values[0] if values else "?"
@@ -314,7 +386,7 @@ def analyse(source: str, path: str, exempt: dict | None = None) -> tuple[list[st
                 f"suite ({len(values)}x `{only[:40]}`). No case can tell that parameter apart "
                 f"from a constant, so any clause that reads it is unguarded. Vary it, or add "
                 f"`{fn}.{param}` to EXEMPT with the reason one value is right.")
-    return findings, len(seen)
+    return findings, {f"{fn}.{param}" for fn, param in seen}
 
 
 def dead_exemptions(sources: "list[tuple[str, str]]") -> list[str]:
@@ -334,12 +406,20 @@ def dead_exemptions(sources: "list[tuple[str, str]]") -> list[str]:
     as dead by the very commit that widened it. An exemption earns its place if it is needed
     SOMEWHERE; it is dead only if it is needed NOWHERE.
     """
+    # ⚠ AN EMPTY POPULATION IS CANNOT RUN, NOT "EVERY EXEMPTION IS DEAD" — r8 L2. `any(... for
+    # ... in [])` is False, so with no sources every exemption read as needed-nowhere and was
+    # reported dead. A zero over nothing is the shape §21 exists to refuse, and this function is
+    # public and called from two places.
+    if not sources:
+        return ["CANNOT RUN — deadness was judged over an EMPTY population, so every exemption "
+                "would read as needed nowhere. NOT CHECKED."]
     out = []
     for k in EXEMPT:
         trimmed = {kk: vv for kk, vv in EXEMPT.items() if kk != k}
-        fn, _, param = k.partition(".")
+        kfile, _, rest = k.partition(":")
+        fn, _, param = rest.partition(".")
         needed = any(any(f"`{fn}({param}=" in x for x in analyse(src, name, exempt=trimmed)[0])
-                     for src, name in sources)
+                     for src, name in sources if name == kfile)
         if not needed:
             out.append(f"the exemption `{k}` is DEAD — the rule passes without it anywhere in the "
                        f"population, so it guards nothing today and will mask that parameter the "
@@ -368,7 +448,8 @@ def main(argv: list[str] | None = None) -> int:
     all_findings, examined, sources, paid = [], 0, [], []
     for t in targets:
         text = t.read_text()
-        f, n = analyse(text, t.name)
+        f, keys = analyse(text, t.name)
+        n = len(keys)
         # ⛔ THE RATCHET, APPLIED BY NAME. A known entry is filtered out; anything else fails.
         known = set(KNOWN_UNVARIED.get(t.name, ()))
         fresh, seen_known = [], set()
@@ -379,13 +460,22 @@ def main(argv: list[str] | None = None) -> int:
             key = x.split("`")[1].replace("(", ".").replace("=…)", "")
             (seen_known.add(key) if key in known else fresh.append(x))
         all_findings += fresh
-        # ...and a known entry that no longer fires is DEBT PAID: say so, so the list shrinks
-        # instead of outliving its subject. Reported, not failed — tightening is a deliberate act.
-        for gone in sorted(known - seen_known):
+        # ⛔ PAID versus LOST, and they are NOT the same observation — r8 B1. A ratcheted entry
+        # stops firing either because the parameter started varying (paid) or because it left the
+        # guard's field of view entirely (lost: renamed, privatised, its last call site deleted).
+        # This reported both as paid, so a one-token `audit` -> `_audit` refactor across 17 call
+        # sites earned THREE GOLD STARS while three parameters went unwatched. The key set from
+        # `analyse` is what tells them apart.
+        for gone in sorted(known & keys - seen_known):
             paid.append(f"{t.name}: `{gone}` now varies — delete it from KNOWN_UNVARIED")
+        for lost in sorted(known - keys):
+            all_findings.append(
+                f"{t.name}: `{lost}` is ratcheted but NO LONGER EXAMINED — its function was "
+                f"renamed, made private, or lost its last call site. That is coverage leaving, "
+                f"not debt being paid. Restore it, or delete the entry deliberately and say why.")
         examined += n
         sources.append((text, t.name))
-        floor = EXAMINED_FLOOR.get(str(pathlib.Path("scripts") / t.name))
+        floor = EXAMINED_FLOOR.get(t.name)
         if floor is not None and n < floor:
             all_findings.append(
                 f"{t.name}: {n} parameter(s) examined, below the pinned floor of {floor}. A "
@@ -397,7 +487,11 @@ def main(argv: list[str] | None = None) -> int:
     # verdict about it meaningless — reporting exemptions dead on the strength of a file nobody
     # could read is a zero over nothing, which is the shape §21 exists to refuse.
     cannot = [x for x in all_findings if x.startswith("CANNOT RUN")]
-    if not cannot:
+    # ⚠ ONLY OVER THE FULL POPULATION — r8 H1. `--help` documents `paths` as an override, and
+    # running the guard on ONE file made every exemption read as dead, so the documented
+    # single-file invocation emitted two standing false positives. Deadness is a property of the
+    # whole set; a subset cannot judge it.
+    if not cannot and not a.paths:
         all_findings += dead_exemptions(sources)
     if cannot:
         # ⚠ `all_findings`, NOT `cannot` — deliberately. Printing only the CANNOT-RUN lines
@@ -408,7 +502,8 @@ def main(argv: list[str] | None = None) -> int:
         for x in all_findings:
             print(f"  {x}", file=sys.stderr)
         return 2
-    short = None if a.paths else population_shortfall(len(targets), POPULATION_FLOOR)
+    short = None if a.paths else population_drift(sorted(t.name for t in targets),
+                                                   sorted(EXAMINED_FLOOR))
     if short:
         print(f"  {short}", file=sys.stderr)
         return 2
@@ -450,7 +545,8 @@ def _self_test():
     case("a parameter passed one value at every site is reported",
          sorted(x.split("`")[1] for x in f), ["progress_line(done=…)", "progress_line(total=…)"])
     case("...and a parameter that DOES vary is not", any("label" in x for x in f), False)
-    case("...and the count of examined parameters is reported, not just the failures", n, 3)
+    case("...and the examined keys are returned, not just the failures",
+         sorted(n), ["progress_line.done", "progress_line.label", "progress_line.total"])
 
     VARIED = SRC.replace('progress_line(164, 434, "y")', 'progress_line(7, 38, "y")')
     f2, _ = analyse(VARIED, "t.py")
@@ -497,16 +593,17 @@ def _self_test():
     case("y", g(2, b=3), None)
 '''
     fD, nD = analyse(DEFAULTED, "t.py")
-    case("omitting a defaulted argument counts as a distinct value", (fD, nD), ([], 2))
+    case("omitting a defaulted argument counts as a distinct value",
+         (fD, sorted(nD)), ([], ["g.a", "g.b"]))
 
     # An exemption is honoured, and ONLY for the named function+parameter.
     # ⚠ PASSED, NOT PATCHED — r7. These drove the rule by swapping the global `EXEMPT`, so the
     # `exempt=` parameter was omitted at all twelve call sites and the guard's own rule reported
     # it unvaried. Using the parameter is both what the rule asks for and less stateful.
-    f5, _ = analyse(SRC, "t.py", exempt={"progress_line.done": "test"})
+    f5, _ = analyse(SRC, "t.py", exempt={"t.py:progress_line.done": "test"})
     case("an exemption removes exactly its own finding",
          [x.split("`")[1] for x in f5], ["progress_line(total=…)"])
-    f6, _ = analyse(SRC, "t.py", exempt={"progress_line.nonexistent": "test"})
+    f6, _ = analyse(SRC, "t.py", exempt={"t.py:progress_line.nonexistent": "test"})
     case("...and an exemption for a parameter that does not exist changes nothing",
          len(f6), 2)
 
@@ -518,7 +615,7 @@ def _self_test():
     # this case's own mutation produces, so the suite would DIE rather than report. A case that
     # dies from its defect attributes nothing; a case that reports it names the guard.
     case("a file with no _self_test is CANNOT RUN, not a clean bill",
-         (any(x.startswith("CANNOT RUN") for x in f7), n7), (True, 0))
+         (any(x.startswith("CANNOT RUN") for x in f7), n7), (True, set()))
 
     # `case(...)` itself is the assertion, never a subject.
     CASECALL = '''
@@ -543,7 +640,7 @@ def _self_test():
     case("a", 1, 1)
 '''
     f9, n9 = analyse(UNCALLED, "t.py")
-    case("a function the suite never calls is not examined", (f9, n9), ([], 0))
+    case("a function the suite never calls is not examined", (f9, n9), ([], set()))
 
     # Private helpers (leading underscore) are test plumbing, not the subject.
     PRIV = '''
@@ -555,42 +652,54 @@ def _self_test():
     _mini(1, 2)
 '''
     f10, n10 = analyse(PRIV, "t.py")
-    case("a private helper is test plumbing, not a subject", (f10, n10), ([], 0))
+    case("a private helper is test plumbing, not a subject", (f10, n10), ([], set()))
 
     # ⛔ A DEAD EXEMPTION IS A FINDING — r7 H1, found by a reviewer and not by this guard.
     # `progress_line.label` was exempted here while the rule passed without it, so the entry did
     # nothing today and would have masked the label axis the moment it regressed.
     _sv = dict(EXEMPT)
     try:
-        EXEMPT = {"g.b": "this parameter already varies, so the exemption guards nothing"}
+        EXEMPT = {"t.py:g.b": "this parameter already varies, so the exemption guards nothing"}
         case("an exemption the rule does not need is reported as DEAD",
              len(dead_exemptions([(DEFAULTED, "t.py")])), 1)
         case("...and the message names the exemption so it can be deleted",
-             "`g.b`" in dead_exemptions([(DEFAULTED, "t.py")])[0], True)
+             "`t.py:g.b`" in dead_exemptions([(DEFAULTED, "t.py")])[0], True)
         # ...and one that IS load-bearing is silent: `a` is passed 1 and 2, `b` only 3.
         ONEVAL = DEFAULTED.replace("g(1)", "g(1, b=3)")
-        EXEMPT = {"g.b": "needed — b is one value at every site"}
+        EXEMPT = {"t.py:g.b": "needed — b is one value at every site"}
         case("...while a load-bearing exemption is not reported",
              dead_exemptions([(ONEVAL, "t.py")]), [])
         # ⛔ NEEDED SOMEWHERE IS NOT DEAD: the same exemption, with the file that needs it SECOND
         # in the population. The first version judged each file alone and reported this as dead.
         case("...and an exemption needed by only ONE file in the population survives",
-             dead_exemptions([(DEFAULTED, "a.py"), (ONEVAL, "b.py")]), [])
+             dead_exemptions([(DEFAULTED, "t.py"), (ONEVAL, "t.py")]), [])
         # ⛔ AND main() MUST SURFACE IT, not merely compute it. Without this case, deleting
         # `+ dead_exemptions(...)` from the findings leaves the check running and its result
         # unreachable — a guard that reaches a correct verdict and drops it on the floor.
         with tempfile.TemporaryDirectory() as _td:
             _f = pathlib.Path(_td) / "t.py"
             _f.write_text(DEFAULTED)
-            EXEMPT = {"g.b": "dead — b already varies at its two call sites"}
+            EXEMPT = {"t.py:g.b": "dead — b already varies at its two call sites"}
             # ⚠ CALLED DIRECTLY, output captured inline. A `_quiet_main(...)` helper was tried
             # and this guard rejected it in one run: three varied call sites collapsed into one
             # passing `argv`, so `main.argv` read as unvaried. INDIRECTION HIDES VARIATION FROM
             # A RULE THAT READS CALL SITES — a true limit of the rule, recorded rather than
             # worked around, and the reason these three lines are shaped the way they are.
-            with contextlib.redirect_stdout(io.StringIO()):
-                _rc_f = main([str(_f)])
+            # ⛔ A FULL-POPULATION RUN — r8 H1 made deadness a whole-set judgement, so a path
+            # override deliberately does NOT judge it. Driving this with `[str(_f)]` would now
+            # assert the opposite of what it is named for.
+            # ⚠ THE REAL EXEMPTIONS STAY. Replacing them outright made their parameters fire as
+            # ordinary findings, so `main` returned 1 for a reason that had nothing to do with
+            # deadness and the case passed with the deadness aggregation deleted.
+            EXEMPT = dict(_sv)
+            EXEMPT["check-plan-code.py:nosuchfunction.nosuchparam"] = "cannot fire anywhere"
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                _rc_f = main([])
             case("main() surfaces a dead exemption as a failure", _rc_f, 1)
+            # ...and the documented single-file override does NOT, which is r8 H1 itself.
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                _rc_one = main([str(_f)])
+            case("...while a single-file override does not judge deadness at all", _rc_one, 0)
             # ⛔ ...AND THE CLEAN PATH, which is the other half of the verdict — r7 B1. Four
             # mutations of `main`'s gate survived at 21/21 because NO case ever drove it to
             # rc 0 or rc 1: `if all_findings:` → `if False:` printed "OK", exited 0 and threw
@@ -610,7 +719,7 @@ def _self_test():
     # ⟳ r7 L2 — a subject that does not parse is a POPULATION failure with its own exit code.
     fS, nS = analyse("def f(\n", "broken.py")
     case("a subject that does not parse is CANNOT RUN, not a rule finding",
-         (any(x.startswith("CANNOT RUN") for x in fS), nS), (True, 0))
+         (any(x.startswith("CANNOT RUN") for x in fS), nS), (True, set()))
 
     # ⟳ r7 L1 — keyword-only parameters are half the signature grammar. Given at one site and
     # omitted at another, they must read as TWO values, exactly like a positional default.
@@ -623,7 +732,8 @@ def _self_test():
     case("y", h(2, b=3), None)
 '''
     fK, nK = analyse(KWONLY, "t.py")
-    case("a keyword-only parameter omitted at one site counts as varied", (fK, nK), ([], 2))
+    case("a keyword-only parameter omitted at one site counts as varied",
+         (fK, sorted(nK)), ([], ["h.a", "h.b"]))
 
     # ⟳ r7 H1 — the floor, driven through the real entry point. A file whose coverage has been
     # DELETED must fail, not go quiet.
@@ -673,18 +783,107 @@ def _self_test():
     # real set and that every pinned floor names a file discovery actually returns.
     _root = pathlib.Path(__file__).resolve().parent.parent
     _pop = population(_root)
-    case("a population below its pinned floor is CANNOT RUN",
-         (population_shortfall(47, 48) or "").startswith("CANNOT RUN"), True)
-    # ⚠ A SECOND FLOOR VALUE — the guard's own rule again: three call sites all passing 48 left
-    # `floor` indistinguishable from a constant, so `found >= floor` could have been `found >= 48`.
-    case("...and one at or above it is not reported",
-         (population_shortfall(48, 48), population_shortfall(99, 7)), (None, None))
+    # ⛔ IDENTITY, NOT CARDINALITY — r8. The pair below is the measurement Codex made: a
+    # DEPARTURE and an ARRIVAL cancel out under a count and cannot under a set.
+    case("a population that swapped one file for another is CANNOT RUN",
+         (population_drift(["a.py", "c.py"], ["a.py", "b.py"]) or "").startswith("CANNOT RUN"),
+         True)
+    case("...and the message names both directions",
+         [w in (population_drift(["a.py", "c.py"], ["a.py", "b.py"]) or "")
+          for w in ("no longer discovered: b.py", "newly discovered and unpinned: c.py")],
+         [True, True])
+    # ⚠ A THIRD PINNED SET, because the guard's own rule asked: the two cases above both passed
+    # `["a.py", "b.py"]`, so `pinned` was indistinguishable from a constant and `set(pinned)`
+    # could have been a literal.
+    case("...while the same set in a different order is not drift",
+         population_drift(["z.py", "y.py"], ["y.py", "z.py"]), None)
 
-    case("discovery finds at least the pinned floor of scripts with a suite",
-         len(_pop) >= POPULATION_FLOOR, True)
-    case("...and every pinned examined-floor names a file discovery returns",
-         all(any(str(pathlib.Path("scripts") / f.name) == k for f in _pop)
-             for k in EXAMINED_FLOOR), True)
+    # ⛔ LOST IS NOT PAID — r8 B1. The falsifier is a one-token privatisation: the parameter
+    # stops being examined, the ratchet entry stops firing, and the old code called that success.
+    _LOST = '''
+def audit(cutoff):
+    return cutoff
+
+def _self_test():
+    case("x", audit(1), 1)
+    case("y", audit(1), 1)
+'''
+    # The falsifier drives `main` over a real file whose ratcheted parameter has been
+    # privatised: `known - keys` must be a FINDING, and `known & keys - fired` the gold star.
+    global KNOWN_UNVARIED, EXAMINED_FLOOR
+    _svK, _svF = dict(KNOWN_UNVARIED), dict(EXAMINED_FLOOR)
+    try:
+        with tempfile.TemporaryDirectory() as _lt:
+            _lf = pathlib.Path(_lt) / "lost.py"
+            _lf.write_text(_LOST.replace("def audit(", "def _audit(").replace("audit(1)", "_audit(1)"))
+            KNOWN_UNVARIED = {"lost.py": ("audit.cutoff",)}
+            EXAMINED_FLOOR = {"lost.py": 0}
+            _eo = io.StringIO()
+            with contextlib.redirect_stdout(_eo):
+                _rc_lost = main([str(_lf)])
+            # ⛔ AND NO GOLD STAR. Asserting only the finding let `known & keys` -> `known`
+            # through: the entry is reported lost AND congratulated in the same run.
+            case("a ratcheted entry whose parameter is no longer examined is a finding",
+                 (_rc_lost, "NO LONGER EXAMINED" in _eo.getvalue(),
+                  "now varies" in _eo.getvalue()), (1, True, False))
+            # ...and one that IS still examined and now varies is a gold star, not a finding.
+            _lf2 = pathlib.Path(_lt) / "paid.py"
+            _lf2.write_text(_LOST.replace("audit(1), 1)\n    case(\"y\", audit(1)", "audit(1), 1)\n    case(\"y\", audit(2)"))
+            KNOWN_UNVARIED = {"paid.py": ("audit.cutoff",)}
+            EXAMINED_FLOOR = {"paid.py": 0}
+            _po2 = io.StringIO()
+            with contextlib.redirect_stdout(_po2):
+                _rc_paid = main([str(_lf2)])
+            case("...while one that started varying is debt paid, not a finding",
+                 (_rc_paid, "now varies" in _po2.getvalue()), (0, True))
+    finally:
+        KNOWN_UNVARIED, EXAMINED_FLOOR = _svK, _svF
+
+    # ⟳ r8 L1 — a `/` shifts every positional mapping, so arguments land on the WRONG parameter.
+    _PO = '''
+def f(a, /, b):
+    return a
+
+def _self_test():
+    case("x", f(1, 2), 1)
+    case("y", f(1, 3), 1)
+'''
+    _f_p, _k_p = analyse(_PO, "t.py")
+    case("a positional-only parameter is matched to its own name, not its neighbour's",
+         (sorted(_k_p), [x.split("`")[1] for x in _f_p]), (["f.a", "f.b"], ["f(a=…)"]))
+
+    # ⟳ r8 H2 — an exemption is an excuse about ONE file.
+    _SH = '''
+def run_suite_parts(d, name):
+    return d
+
+def _self_test():
+    case("x", run_suite_parts(TMP, "a"), TMP)
+    case("y", run_suite_parts(TMP, "b"), TMP)
+'''
+    case("an exemption is scoped to its file and does not silence another",
+         [x.split("`")[1] for x in analyse(_SH, "other.py",
+                                           exempt={"t.py:run_suite_parts.d": "elsewhere"})[0]],
+         ["run_suite_parts(d=…)"])
+    # ⛔ SCOPED DEADNESS: the exemption names a.py, where the parameter VARIES (so the exemption
+    # is dead), while b.py has the same `function.parameter` unvaried. Judged against every file,
+    # b.py's finding would keep a.py's exemption alive — an excuse kept by a different script's
+    # debt. Only the scoped form can tell them apart.
+    _A = DEFAULTED.replace("g(1)", "g(1, b=7)")          # b varies -> no finding here
+    _B = DEFAULTED.replace("g(2, b=3)", "g(2, b=3)\n    case(\"z\", g(4, b=3), None)")
+    _sv3 = dict(EXEMPT)
+    try:
+        EXEMPT = {"a.py:g.b": "claims b needs no variation in a.py"}
+        # b.py must REPORT `g.b`, or both arms agree and the case sees nothing. DEFAULTED has
+        # b varying; stripping the second call site makes it constant.
+        _Bc = "def g(a, b=None):\n    return None\n\ndef _self_test():\n    case(\"x\", g(1, b=3), None)\n    case(\"y\", g(2, b=3), None)\n"
+        case("an exemption is judged only against the file it names",
+             len(dead_exemptions([(_A, "a.py"), (_Bc, "b.py")])), 1)
+    finally:
+        EXEMPT = _sv3
+
+    case("every discovered file has a pinned examined floor, and vice versa",
+         sorted(EXAMINED_FLOOR) == sorted(f.name for f in _pop), True)
     case("...and every ratcheted file is one discovery returns",
          sorted(set(KNOWN_UNVARIED) - {f.name for f in _pop}), [])
     # ⚠ A SECOND ROOT, because this guard's own rule asked for one: `population(root=…)` had a
@@ -696,7 +895,8 @@ def _self_test():
     case("...and every exemption carries a non-empty reason",
          all(isinstance(v, str) and v.strip() for v in EXEMPT.values()), True)
     case("...and every exemption names a function and a parameter",
-         all(len(k.split(".")) == 2 and all(k.split(".")) for k in EXEMPT), True)
+         all(len(k.split(":")) == 2 and len(k.split(":")[1].split(".")) == 2
+             for k in EXEMPT), True)
 
     # The real subject, read from disk — the guard must be able to run on what it ships for.
     root = pathlib.Path(__file__).resolve().parent.parent
@@ -706,7 +906,7 @@ def _self_test():
     # of the file is its own case; the reads below assume it and fail loudly if wrong.
     case("the declared population exists on disk", live.is_file(), True)
     f11, n11 = analyse(live.read_text() if live.is_file() else "", live.name)
-    case("...and reading it examines a non-zero number of parameters", n11 > 0, True)
+    case("...and reading it examines a non-zero number of parameters", len(n11) > 0, True)
     case("...and it reports no CANNOT RUN on the live file",
          any(x.startswith("CANNOT RUN") for x in f11), False)
 
@@ -714,8 +914,8 @@ def _self_test():
          main(["/nonexistent/nope.py"]), 2)
 
     print(f"\n{ok}/{ok + fail} passed")
-    if ok + fail != 38:
-        print(f"  [DRIFT] the docstring declares 38 cases; the suite ran {ok + fail}")
+    if ok + fail != 44:
+        print(f"  [DRIFT] the docstring declares 44 cases; the suite ran {ok + fail}")
         return 1
     return 1 if fail else 0
 

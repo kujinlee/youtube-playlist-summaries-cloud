@@ -29,7 +29,7 @@
     "name": "the exemption lookup is dropped, so a parameter with a written reason is reported anyway and the guard cries wolf until someone switches it off",
     "edits": [
       [
-        "        if f\"{fn}.{param}\" in (EXEMPT if exempt is None else exempt):\n            continue",
+        "        if f\"{path}:{fn}.{param}\" in (EXEMPT if exempt is None else exempt):\n            continue",
         "        pass"
       ]
     ],
@@ -42,8 +42,8 @@
     "name": "a file with no suite returns a clean bill instead of CANNOT RUN \u2014 a zero over an unread population, which this project has been burned by four times",
     "edits": [
       [
-        "        return ([f\"CANNOT RUN \u2014 {path} defines no self-test, so there are no cases to read. \"\n                 f\"NOT CHECKED.\"], 0)",
-        "        return ([], 0)"
+        "        return ([f\"CANNOT RUN \u2014 {path} defines no self-test, so there are no cases to read. \"\n                 f\"NOT CHECKED.\"], set())",
+        "        return ([], set())"
       ]
     ],
     "expect": [
@@ -68,8 +68,8 @@
     "name": "private helpers are audited as subjects, so test plumbing is reported as production coverage and the finding list fills with noise",
     "edits": [
       [
-        "        if isinstance(node, ast.FunctionDef) and not node.name.startswith(\"_\"):",
-        "        if isinstance(node, ast.FunctionDef):"
+        "        if (isinstance(node, ast.FunctionDef) and not node.name.startswith(\"_\")\n                and node not in inner):",
+        "        if isinstance(node, ast.FunctionDef) and node not in inner:"
       ]
     ],
     "expect": [
@@ -107,8 +107,8 @@
     "name": "dead exemptions are computed and dropped instead of joining the findings, so the check runs and its result never reaches the exit code",
     "edits": [
       [
-        "    all_findings += dead_exemptions(sources)",
-        "    pass"
+        "        all_findings += dead_exemptions(sources)",
+        "        pass"
       ]
     ],
     "expect": [
@@ -172,8 +172,8 @@
     "name": "deadness is judged one file at a time, so an exemption needed by any single member of the population is reported dead the moment a second file joins",
     "edits": [
       [
-        "        needed = any(any(f\"`{fn}({param}=\" in x for x in analyse(src, name, exempt=trimmed)[0])\n                     for src, name in sources)",
-        "        needed = all(any(f\"`{fn}({param}=\" in x for x in analyse(src, name, exempt=trimmed)[0])\n                     for src, name in sources)"
+        "        needed = any(any(f\"`{fn}({param}=\" in x for x in analyse(src, name, exempt=trimmed)[0])\n                     for src, name in sources if name == kfile)",
+        "        needed = all(any(f\"`{fn}({param}=\" in x for x in analyse(src, name, exempt=trimmed)[0])\n                     for src, name in sources if name == kfile)"
       ]
     ],
     "expect": [
@@ -211,8 +211,8 @@
     "name": "deadness is judged even when a member of the population could not be read, so exemptions are declared dead on the strength of a file nobody parsed",
     "edits": [
       [
-        "    if not cannot:\n        all_findings += dead_exemptions(sources)",
-        "    all_findings += dead_exemptions(sources)"
+        "    if not cannot and not a.paths:\n        all_findings +=",
+        "    if True:\n        all_findings +="
       ]
     ],
     "expect": [
@@ -260,15 +260,15 @@
     "file": "scripts/check-fixture-variation.py"
   },
   {
-    "name": "the population floor stops being enforced, so discovery finding fewer scripts than pinned reads as a cleaner repo rather than a shrunken subject",
+    "name": "population drift stops being reported, so a departure and an arrival cancel out and the guard reports OK over a different set than it was pinned to",
     "edits": [
       [
-        "    if found >= floor:\n        return None",
-        "    if True:\n        return None"
+        "    gone, new = sorted(set(pinned) - set(found)), sorted(set(found) - set(pinned))\n    if not gone and not new:\n        return None",
+        "    gone, new = sorted(set(pinned) - set(found)), sorted(set(found) - set(pinned))\n    if True:\n        return None"
       ]
     ],
     "expect": [
-      "a population below its pinned floor is CANNOT RUN"
+      "a population that swapped one file for another is CANNOT RUN"
     ],
     "file": "scripts/check-fixture-variation.py"
   },
@@ -281,7 +281,72 @@
       ]
     ],
     "expect": [
-      "discovery finds at least the pinned floor of scripts with a suite"
+      "every discovered file has a pinned examined floor, and vice versa"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "a ratcheted parameter that has LEFT the field of view is reported as debt paid again, so privatising a function earns gold stars while three parameters go unwatched",
+    "edits": [
+      [
+        "        for lost in sorted(known - keys):\n            all_findings.append(",
+        "        for lost in []:\n            all_findings.append("
+      ]
+    ],
+    "expect": [
+      "a ratcheted entry whose parameter is no longer examined is a finding"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "debt-paid is reported for entries that were never examined, collapsing the distinction between a parameter that started varying and one that disappeared",
+    "edits": [
+      [
+        "        for gone in sorted(known & keys - seen_known):",
+        "        for gone in sorted(known - seen_known):"
+      ]
+    ],
+    "expect": [
+      "a ratcheted entry whose parameter is no longer examined is a finding"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "positional-only parameters drop out of the name list, so every positional argument after a `/` is recorded against the WRONG parameter",
+    "edits": [
+      [
+        "        names = [a.arg for a in fn.args.posonlyargs] + [a.arg for a in fn.args.args]",
+        "        names = [a.arg for a in fn.args.args]"
+      ]
+    ],
+    "expect": [
+      "a positional-only parameter is matched to its own name, not its neighbour's"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "exemptions lose their file scope, so an excuse written about one script silences the same function.parameter in all 48",
+    "edits": [
+      [
+        "        if f\"{path}:{fn}.{param}\" in (EXEMPT if exempt is None else exempt):",
+        "        if f\"{fn}.{param}\" in (EXEMPT if exempt is None else exempt):"
+      ]
+    ],
+    "expect": [
+      "an exemption removes exactly its own finding"
+    ],
+    "file": "scripts/check-fixture-variation.py"
+  },
+  {
+    "name": "deadness is judged over every file rather than the one its exemption names, so an exemption needed by its own subject reads as dead because other files do not need it",
+    "edits": [
+      [
+        "                     for src, name in sources if name == kfile)",
+        "                     for src, name in sources)"
+      ]
+    ],
+    "expect": [
+      "an exemption is judged only against the file it names"
     ],
     "file": "scripts/check-fixture-variation.py"
   }

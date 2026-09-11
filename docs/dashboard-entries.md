@@ -7231,5 +7231,41 @@ rather than either invisible or blocking.
 something back — a parameter in its own new code called only one way, a helper that hid variation by
 wrapping three varied calls into one, a floor value passed identically at three sites. Each was real.
 
-`EXPECTED_MUTATIONS` 431 → 493; `check-plan-code` suite 101 → 128; the new check 6 → 38 tests and
-6 → 22 falsifying changes, covering 484 parameters across 48 files.
+⛔ **Round 8 found four serious faults, and all four were in the debt-tracker added the round
+before — none in the feature.** The sharpest: **it congratulated you for deleting its subject.** The
+tracker lists parameters that are known to be untested, and when an entry stops firing it prints a
+gold star saying the gap is closed. But an entry stops firing for two reasons that it could not tell
+apart — the gap really was closed, or *the code left its field of view entirely*. Renaming one
+function to make it private, an ordinary tidy-up across seventeen call sites, removed three
+parameters from anything's watch and earned three gold stars and a clean exit.
+
+⭐ **That is the previous round's own rule broken by the previous round's own code.** Round 7
+established that a check for the *absence* of something needs a partner proving the thing was ever
+there; the debt-tracker asserted a cause it had never measured. The fix is to return the set of
+things actually examined rather than a count — with a number the two causes are the same
+observation, and with the set they are different questions.
+
+⛔ **And the same mistake at a second level, found independently by the other reviewer.** The tracker
+pinned how many files it watches. A count survives *substitution* — make one file unreadable, add
+another, and the total is unchanged while the set is not; measured, it reported OK over a different
+set of files than it was pinned to. The companion fault: a file rewritten under an old name, whose
+only untested parameter is one already on the list, is swallowed as old debt.
+
+⚠ **My own planned fix was half of it, and that is the lesson worth keeping.** I had reasoned my way
+to per-file limits, which closes the substitution and *not* the rewrite. **Both a count and a key are
+stand-ins for identity, and each is preserved by a different kind of change.**
+
+Also closed: an excuse written about one script silenced the same parameter in all forty-eight; a
+sixth of the "parameters examined" were the tests' own scaffolding, counted because the exclusion was
+spelled as a naming convention rather than as *where the thing is defined*; and arguments after a
+certain kind of separator were being recorded against the **wrong parameter** — misfiled, not merely
+missed.
+
+⚠ **A reviewer caught me editing the code under it** and did the right thing: it rebuilt the subject
+from version control, proved by content hash that the working copy was not what it had been asked to
+review, and re-took every measurement. My error was inferring it had finished because it had no
+processes running — a check between measurements has none.
+
+`EXPECTED_MUTATIONS` 431 → 498; `check-plan-code` suite 101 → 128; the debt-tracker 6 → 44 tests and
+6 → 27 falsifying changes, covering 402 parameters across 48 files with 115 known gaps frozen by
+name.
