@@ -1,0 +1,13 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 1665 chars"
+  ],
+  "exit_code": 0,
+  "gate_ran": true,
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "reason": "1665 chars",
+  "review": "g90-r4.md",
+  "schema": 1,
+  "tool": "codex-review"
+}

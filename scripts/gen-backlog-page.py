@@ -2,7 +2,7 @@
 """Render `docs/backlog.md` as a browsable HTML page at a STABLE url.
 
     python3 scripts/gen-backlog-page.py          # → ~/explainers/backlog-table.html
-    python3 scripts/gen-backlog-page.py --self-test  # 164 cases
+    python3 scripts/gen-backlog-page.py --self-test  # 165 cases
     open http://127.0.0.1:7391/backlog-table     # after scripts/explainer-serve.py
 
 WHY THIS EXISTS
@@ -2805,8 +2805,22 @@ def self_test() -> int:
     # `check-*` guard, in no mutation manifest. It is the channel that reaches the human at the
     # moment they type the decorated row, and its awk was verified by hand and by nothing else.
     # This RUNS the program out of the hook file, so an edit to that line reddens a case.
+    # ⛔ THE POPULATION IS ASSERTED BEFORE IT IS READ, and three review rounds paid for this line.
+    # `_hook_awk` used to call `.read_text()` straight out, so a tree staged WITHOUT `.claude` —
+    # which is what every reviewer isolating this branch did — raised `FileNotFoundError` and
+    # killed the whole run. A suite that DIES reports nothing; r4 read that as a Blocking in the
+    # code when it was a red CONTROL in the briefing. Now the missing file is one NAMED failure
+    # saying what to stage, and the four cases below degrade to a readable mismatch.
+    _HOOK = REPO / ".claude/hooks/regen-backlog-page.sh"
+    case("the hook this suite reads is present — a missing one is CANNOT RUN, not a pass",
+         lambda: _HOOK.is_file())
+
     def _hook_awk(sample: str) -> str:
-        src = (REPO / ".claude/hooks/regen-backlog-page.sh").read_text()
+        if not _HOOK.is_file():
+            return ("CANNOT RUN: .claude/hooks/regen-backlog-page.sh is absent from this tree. "
+                    "Four cases read the awk program out of it and RUN it, so a tree staged "
+                    "without .claude is a RED CONTROL — stage scripts, docs AND .claude.")
+        src = _HOOK.read_text()
         prog = next(ln for ln in src.splitlines() if ln.lstrip().startswith("echo \"$OUT\" | awk"))
         prog = prog.split("awk ", 1)[1].strip().strip("'")
         return subprocess.run(["awk", prog], input=sample, capture_output=True,
