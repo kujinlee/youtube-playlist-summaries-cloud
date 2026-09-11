@@ -42,11 +42,27 @@ the index's dek into a catch-all framing claim, while leaving it outside `GROUPS
 suite at 164/164 and this guard at exit 0. What stopped it was review discipline wearing the word
 "mechanical".
 
-RULE 4 is what the machine can honestly offer instead: this file holds its own copy of the index's
-title and dek and REFUSES when they diverge from the generator's. It cannot judge whether a
-sentence is a claim — nothing can. It makes rewording the index a DELIBERATE act that touches two
-files and fails CI until both agree, which is the same two-sites-must-agree shape this repo uses
-elsewhere. Stated precisely because overclaiming it once already cost a High.
+RULE 4 does ONE thing: this file holds its own copy of the index's title and dek and REFUSES when
+they diverge from the generator's. Rewording the index becomes a deliberate act touching two files
+and failing CI until both agree — the same two-sites-must-agree shape this repo uses elsewhere.
+
+⛔ THAT IS THE WHOLE OF THE CLAIM, AND IT IS NARROWER THAN "THE BIN CANNOT RETURN". Two review
+rounds each caught a broader version of this sentence being false, so here is the scope written
+exactly once, with the residue named rather than buried:
+
+  * GUARDED — the index's FRAMING FIELD, which is the slot that structurally played the role the
+    retired bin's framing played. Changing it silently is what rule 4 makes impossible.
+  * NOT GUARDED — prose ANYWHERE ELSE on the page. r2's observation, and it is correct: someone
+    could emit "Instruments and habits, cheap individually" in the preface above the groups, or in
+    conditional markup around the index section, and rule 4 would not see it. The page dek at
+    `gen-backlog-page.py`'s "What these actually are" block already names the index by title.
+
+⚠ AND NO FOURTH MECHANISM IS BEING ADDED FOR IT, deliberately. Pinning the preface would close that
+one vector and leave the vocabulary paragraph, the callout, and every paragraph written next year;
+the next reviewer would be equally right. NOTHING CAN STOP PROSE FROM CHARACTERISING SOMETHING —
+that is a review question, and pretending otherwise is the exact error the previous two versions of
+this paragraph made. What is defensible is that the FIELD the policy governs is pinned, and that
+the limit is stated where someone reading this guard will meet it.
 """
 from __future__ import annotations
 

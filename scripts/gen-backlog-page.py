@@ -396,11 +396,14 @@ SUMMARIES: dict[int, str] = {
 # dek into a catch-all framing claim left the suite at 164/164 and the guard at exit 0. What stopped
 # it was review discipline wearing the word "mechanical".
 #
-# Now `check-group-claims.py` holds its own copy of both strings and REFUSES when they diverge. That
-# is not a rule about prose — no script can judge whether a sentence is a claim — it is a rule that
-# CHANGING these words is a deliberate act touching two files, which is the most a machine can
-# honestly offer here. The distinction is stated rather than glossed, because overclaiming it once
-# already cost a High.
+# Now `check-group-claims.py` holds its own copy of both strings and REFUSES when they diverge, so
+# changing them is a deliberate act touching two files.
+#
+# ⛔ THAT GUARDS THIS FIELD, NOT THE PAGE. r2 found the broader claim false too: prose emitted
+# ELSEWHERE — the preface above the groups, or new markup around this section — could characterise
+# the index without touching either string. No fourth mechanism is being added for it, because
+# nothing can stop prose from characterising something and each partial fix invites the same
+# finding again. The scope and the residue are written out in `check-group-claims.py`'s docstring.
 INDEX_TITLE = "The rest, one line each"
 INDEX_DEK = ("No claim here — these open items simply belong to no group, which is the normal "
              "case. Anything with a summary shows it; anything without shows just the row. Both "
