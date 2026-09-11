@@ -6944,3 +6944,58 @@ removed, 0 added, title and 113 items preserved, verified by diff before applyin
 ⚠ One entry was REMOVED rather than added in r1: after that round's change, `if not own: return
 css` became unkillable by construction and was measured surviving. A clause that stops deciding
 loses its entry too.
+
+## 2026-09-10
+Third correction, and this one removes code rather than adding it.
+
+Two independent reviewers found the same thing: the repair command from yesterday's entry would,
+in one ordinary situation, **delete the buttons that let you ask a question from a heading** — and
+the warning printed on every page was actively telling you to run it. Every safety check approved,
+because none of them could tell "this page's own styling override" from "a copy of the tray's own
+styling".
+
+So the repair machinery is gone entirely. It existed for one page, which was already fixed by hand,
+it could not detect the only way the problem could still spread, and it had caused a serious defect
+in each of the three review rounds. Deleting it removed 72 lines of code and 15 tests.
+
+What protects the ask buttons now is not a list of things to protect — lists get out of date, and a
+reviewer showed this one could be cut in half without any test noticing. It is a rule about shape:
+a page's own override is always written as two selectors together (`#tray #qbox`), because that is
+the only way it can win. Anything written as a single selector is the tray's own and is never
+touched. The ask button, the quoted-section header and the "sent" note are all covered by that one
+rule, without being named.
+<!--tech-->
+Backlog #106 round 3. Claude half: 1 Blocking, 3 High, 2 Medium, 1 Low. Codex half: 1 Blocking,
+nothing at any other level — **the same Blocking**, reached independently and measured through
+production `main()`: a begin-only source plus a fragment declaring the same `.askbtn` rule left the
+tray region as `#tray{a:1}\n#qbox{b:2}`, rc=0, no warning.
+
+r1/r2/r3 Blockings were all in the pollution-repair subsystem; the idempotence fix itself has been
+stable since r2. User decision: delete it. `--remigrate`, `pollution()`, `remigration_risk()`,
+`_all_rules()` and the ⚠ are gone, with their 15 cases and 4 manifest entries — entries retired
+WITH their subject, which is the only sanctioned way the ratchet may fall.
+
+Replacement: `_is_page_override(rule)` — a descendant selector rooted at a tray part, per
+`gen-backlog-page.py:1480` ("two ids win without touching the lifted code"). Bare tray selectors are
+unsubtractable by construction, which closes r3 B1 and r3 H2 (the floor was a substring test over
+concatenated selectors, so one override rule satisfied it) in one move, and makes r3 H1's three
+surviving mutants moot — the token list they were about no longer exists.
+
+⚠ r3 H3 stands as a stated residual: `pollution()` saw SELF-pollution only, so INHERITED pollution
+was invisible and unrepairable. Confirmed live while verifying — `goals.html` carries the trio
+although `gen-goals-page.py` never declares it, inherited from `backlog-table`. With the machinery
+deleted this is an honest limitation rather than a subsystem claiming to cover it. De-duplication
+holds it at one copy; `assert_shimmed` refuses loudly if it ever reads an undefined token.
+
+Verified: Codex's exact repro now yields `#tray{a:1}\n#qbox{b:2}\n.askbtn{c:3}`. On the true
+migration input (real backlog fragment vs the pre-repair page, end marker stripped) the three
+self-declared overrides are removed and `#tray`, `#qbox`, `.askbtn`, `#qt`, `#sentnote`, `#modechip`
+all survive. Suite 130 → 119; manifest 18 → 13, all attributing; `EXPECTED_MUTATIONS` 433 → 428.
+`--mutate .`: 38 files, 428 mutations, 428 killed, 428 attributed, 0 survivors.
+
+⚠ Two measurement errors of my own during this round, both caught before they reached a conclusion:
+a fabricated `fragment_css` made the subtraction look broken on real pages (it was measuring
+inherited pollution, which is H3), and a double-escaped regex reported `askbtn_count: 0` next to a
+region that plainly contained `.askbtn`. Also: `pgrep -f codex` matched the editor's own 22-day-old
+ChatGPT app-server, so a finished review was reported as "still running" for an hour. Check the
+artifact, not the process — which is the codex wrapper's own documented rule.

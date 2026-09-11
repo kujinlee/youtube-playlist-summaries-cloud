@@ -1,0 +1,20 @@
+{
+  "attempts": [
+    "  gpt-5.6-sol: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.6-terra: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.6-luna: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-5.5: ok \u2014 6153 chars"
+  ],
+  "exit_code": 0,
+  "gate_ran": true,
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/24bed3bc-51b2-4b47-b1fe-a488b2d3db19/scratchpad/codex-r3.log: OVERWRITTEN during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/24bed3bc-51b2-4b47-b1fe-a488b2d3db19/scratchpad/pr-body.md: OVERWRITTEN during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/24bed3bc-51b2-4b47-b1fe-a488b2d3db19/scratchpad/sweep.py: CREATED during the run (writer unattributed)"
+  ],
+  "model": "gpt-5.5",
+  "reason": "6153 chars",
+  "review": "backlog-106-idempotence-r3-codex.md",
+  "schema": 1,
+  "tool": "codex-review"
+}

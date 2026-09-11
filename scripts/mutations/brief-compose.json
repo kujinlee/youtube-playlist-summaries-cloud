@@ -134,8 +134,8 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "    subtracted = [rule for rule in keep if rule not in own]",
-        "    subtracted = list(keep)"
+        "                  if not (rule in own and _is_page_override(rule))]",
+        "                  if not (rule in own and False)]"
       ]
     ],
     "expect": [
@@ -143,25 +143,12 @@
     ]
   },
   {
-    "name": "the subtraction is allowed to empty the tray, so nothing composes at all",
-    "file": "scripts/brief-compose.py",
-    "edits": [
-      [
-        "    keep = subtracted if structure_survives else keep",
-        "    keep = subtracted"
-      ]
-    ],
-    "expect": [
-      "a fragment declaring the WHOLE tray does not subtract it away"
-    ]
-  },
-  {
     "name": "the marked region is re-derived by scanning instead of taken verbatim",
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "    if not remigrate and begin >= 0 and marked_end > begin:",
-        "    if False and begin >= 0 and marked_end > begin:"
+        "    if begin >= 0 and marked_end > begin:",
+        "    if False and marked_end > begin:"
       ]
     ],
     "expect": [
@@ -169,68 +156,16 @@
     ]
   },
   {
-    "name": "main stops passing --remigrate, so the repair flag reaches nothing",
+    "name": "a bare tray rule counts as a page override, so .askbtn can be subtracted (r3 B1)",
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "    css, markup, script = extract_tray(src_text, frag_css, remigrate=a.remigrate)",
-        "    css, markup, script = extract_tray(src_text, frag_css, remigrate=False)"
+        "    if \",\" in selector:\n        return False\n    parts = selector.split(\" \")\n    return len(parts) >= 2 and re.search(TRAY_SELECTOR, parts[0]) is not None",
+        "    if \",\" in selector:\n        return False\n    parts = selector.split(\" \")\n    return True"
       ]
     ],
     "expect": [
-      "main --remigrate re-derives the region; without it the region is verbatim"
-    ]
-  },
-  {
-    "name": "the pollution warning is silenced, so the repair has no trigger again (r2 H2)",
-    "file": "scripts/brief-compose.py",
-    "edits": [
-      [
-        "    elif polluted:",
-        "    elif False:"
-      ]
-    ],
-    "expect": [
-      "composing from a polluted region WARNS, and still succeeds"
-    ]
-  },
-  {
-    "name": "--remigrate stops checking what a re-derivation would lose (r2 H1)",
-    "file": "scripts/brief-compose.py",
-    "edits": [
-      [
-        "        if risk:",
-        "        if False:"
-      ]
-    ],
-    "expect": [
-      "--remigrate refuses a page whose region holds what the scan cannot see"
-    ]
-  },
-  {
-    "name": "--remigrate runs on a page with nothing to repair, which can only lose information",
-    "file": "scripts/brief-compose.py",
-    "edits": [
-      [
-        "        if not polluted:",
-        "        if False:"
-      ]
-    ],
-    "expect": [
-      "--remigrate refuses a page with nothing to repair"
-    ]
-  },
-  {
-    "name": "the floor under partial subtraction is dropped, stripping the tray's structure (r2 M1)",
-    "file": "scripts/brief-compose.py",
-    "edits": [
-      [
-        "    structure_survives = all(token in selectors for token in TRAY_STRUCTURE)",
-        "    structure_survives = bool(subtracted)"
-      ]
-    ],
-    "expect": [
-      "subtraction that would strip the tray's structure is refused outright"
+      "a fragment duplicating a BARE tray rule never subtracts it"
     ]
   }
 ]
