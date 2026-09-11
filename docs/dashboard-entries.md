@@ -7069,4 +7069,35 @@ Nine manifest entries for six new cases, every one verified red **via the case i
 control proved green first. One of the nine is a **retarget**: bounding the line rewrote
 `progress_line`'s return and orphaned the anchor guarding it — anchors bind by text, so improving
 code breaks them silently, and only the harness's refusal to accept an unresolved anchor caught it.
-`EXPECTED_MUTATIONS` 431 → 443; `check-plan-code` suite 101 → 111.
+
+**Round 2 split: one half said CONVERGED with nothing, the other found a Blocking.** That is the
+fourth time here that the half reporting a finding was the right one, out of four. A single
+CONVERGED is not proof, and this is the record of why.
+
+⛔ **THE FIX ABOVE HAD A FLOOR AND NO CEILING, AND THE CEILING WAS THE WHOLE POINT.** Bounding the
+line to one row was cased as `want = (PROGRESS_WIDTH, …)` — **the expected value derived from the
+subject**. Both sides move together, so it asserts "the line is as wide as the constant says",
+which is true of every constant that truncates at all. Measured, changing only the constant: at
+**80, 90, 100, 120 and 200 the suite stayed green**. At 200 the wrapping this was filed to stop is
+back in full. The want is now the literal `79`, which cannot move with the subject.
+
+⭐ **And the lesson from the round before did not prevent it, which is the part worth keeping.**
+That commit's own headline was *count cases against entries* — and the count balanced: two
+truncation cases, two truncation entries. The defect was one level in, at the **threshold**,
+guarded only by a case that could not disagree with it. **Counting is not enough. Ask whether the
+want can differ from the subject.**
+
+⛔ **The other finding: the earlier fix treated the emitter, not the mechanism.** Deleting the
+progress that was stealing the harness's 400-character failure diagnostic fixed that instance and
+left the converter that lets any future writer do it again — `run_suite` put stderr **last**, so
+whichever stream goes last owns the window. A synthetic child writing 600 B of stderr beside a real
+failure reproduced it at will, and also corrupted the durable evidence record, which the original
+finding had listed as unmeasured. Now stderr goes first: one token, both consequences, and the
+class instead of the instance — verified not to undo the 2026-09-09 fix that put stderr in the
+merge, because a crash before any output leaves stdout empty and the window still reaches it.
+
+⚠ That swap orphaned **that very fix's own mutation anchor** — the second anchor a refactor here
+has silently orphaned in one sitting.
+
+`EXPECTED_MUTATIONS` 431 → 445; `check-plan-code` suite 101 → 114. Every case this branch adds is
+named by a manifest entry, audited mechanically rather than from memory.

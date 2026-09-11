@@ -2,7 +2,7 @@
 """A plan that contains code must ASSEMBLE into that code, and its evidence must be RUN.
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
-    python3 scripts/check-plan-code.py --self-test          # 111 cases
+    python3 scripts/check-plan-code.py --self-test          # 114 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -398,7 +398,20 @@ def run_suite(d: pathlib.Path, name: str) -> tuple[int, str]:
     except subprocess.TimeoutExpired:
         return 2, (f"CANNOT RUN — {name} --self-test did not finish in "
                    f"{SUITE_TIMEOUT}s. NOT CHECKED.")
-    return r.returncode, (r.stdout + r.stderr).strip()
+    # ⛔ STDERR FIRST, STDOUT LAST — and the ORDER is the guard, not a formatting choice.
+    # Every CANNOT RUN message prints `out[-400:]`, and `ev_files[name]["tail"]` records
+    # `out.split("\n")[-1]`. Both therefore show whichever stream is CONCATENATED LAST.
+    # The failure evidence a reader needs is `[FAIL] <case>`, which suites write to STDOUT.
+    # ⟳ r2 M1. With stdout first, ANY child that writes to stderr steals the whole window:
+    # measured, a child emitting 600 B of stderr alongside a real failure gave
+    # `"[FAIL]" in out[-400:] -> False` and recorded a tail of 60 `N`s. r1 H1 was the same
+    # harm from one specific emitter (`mutate_delivered`'s own progress); deleting that emitter
+    # fixed the INSTANCE and left the converter that makes any future emitter do it again.
+    # ⚠ AND THIS DOES NOT UNDO r1 F7 (2026-09-09), which restored the stderr half because "a
+    # control that dies on a TRACEBACK says so only on stderr". That case is a crash BEFORE the
+    # suite prints — stdout is empty or short, so the window still reaches into stderr and shows
+    # the traceback's end. Both cases are pinned below; neither stream can empty the other's.
+    return r.returncode, (r.stderr + r.stdout).strip()
 
 
 
@@ -596,7 +609,7 @@ EXPECTED_MUTATIONS = {
     # orphaning the anchor that guarded it. An anchor binds by TEXT, so improving code breaks it
     # and the suite stays green; `--mutate .` refuses an unresolved anchor, which is the only
     # reason that was caught here rather than merged.
-    "scripts/check-plan-code.py": 48,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 50,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1226,7 +1239,14 @@ def stderr_progress(done: int, total: int, label: str) -> None:
         `capture_output=True`, as it has been since 3.9. Killing an unflushed process mid-write
         lost nothing. Where it DOES differ is a replaced stream: `redirect_stderr(open(p,"w"))`
         gives a TextIOWrapper over an 8 KiB BufferedWriter, and without `flush` the bytes are
-        invisible until close. That is the case below, and it is why the clause stays.
+        invisible until close. That is the case below.
+    ⚠ AND THE HONEST LIMIT OF THAT — r2 L1. NO PRODUCTION PATH IN THIS REPO REPLACES `sys.stderr`;
+    every `redirect_stderr` is inside `_self_test`, and the real `--mutate` path writes to the
+    process's own line-buffered stream. So the flush is BELT-AND-BRACES, not a live requirement,
+    and the environment that makes it decide is one the test creates. It stays because it costs
+    nothing and is correct against a caller that does replace the stream — which is a different
+    sentence from "it is why the clause stays", and the difference is the whole of r1 L1: the
+    mechanism is now measured, but its relevance to any real caller would still be asserted.
     """
     print(progress_line(done, total, label), file=sys.stderr, flush=True)
 
@@ -2058,6 +2078,12 @@ def _self_test() -> int:
             # ⟳ r5 H1 — THE OTHER TWO REFUSAL PATHS. The case above drives ONE of the three ways
             # `--mutate` reaches its refusal branch (after-control failure: counts complete, every
             # entry measured). `grep -n 'main(["--mutate"'` returned exactly one hit, and r5 showed
+            # ⟳ r2 L2 — THAT COUNT IS HISTORY, NOT TODAY'S INVENTORY, and it was already stale
+            # before this branch: 3 hits on master, 4 now (this round added the entry-point
+            # reporter case). Recorded rather than corrected, because the sentence is past tense
+            # and describes what r5 measured — but a reader scanning for an inventory would take
+            # it for one. The project's own rule: a manual count records the build it was taken
+            # against.
             # that FOUR weakenings of the gate survived at 183/183 because nothing exercised the
             # other two paths.
             #
@@ -2360,10 +2386,57 @@ def _self_test() -> int:
     # orientation. Asserted here as `startswith`, because that is the property. There is
     # deliberately NO separate "no room for the position" branch: reaching it needs a `done`/
     # `total` pair of some 76 digits, and a clause no input can reach is one no case can kill.
+    # ── THE DIAGNOSTIC WINDOW BELONGS TO THE FAILURE ─────────────────────────────────────
+    # ⟳ r2 M1. `run_suite` merges the child's two streams and every CANNOT RUN prints the last
+    # 400 characters, so whichever stream goes LAST owns that window. These two cases pin BOTH
+    # ends of that trade, because fixing either one alone is how r1 H1 happened: `[FAIL]` is on
+    # stdout, a crash-before-output is on stderr, and a guard for one silently permits losing
+    # the other.
+    with tempfile.TemporaryDirectory() as _wd:
+        _wdp = pathlib.Path(_wd)
+        # A suite that FAILS while a noisy child floods stderr — r1 H1's harm, from any emitter.
+        (_wdp / "flooder.py").write_text(
+            'import sys\n'
+            'def _self_test():\n'
+            '    sys.stderr.write("N" * 600 + "\\n")\n'
+            # ⚠ NO `": got "` IN THIS FIXTURE'S OUTPUT, and that is not cosmetic. When the
+            # case below fails, its own report line is `[FAIL] <name>: got <got> want <want>`,
+            # and `parse_fail_names` truncates at the LAST `": got "` so that a case NAME may
+            # contain a colon. A `": got "` inside the VALUE therefore lands after the real
+            # one and swallows half the line into the name. MEASURED on the first
+            # `--mutate .` of this round: 445 killed, 444 attributed — the one unattributable
+            # entry was this case, whose want used to be `'[FAIL] the value is one: got 99'`.
+            '    print("  [FAIL] the value is one")\n'
+            '    return 1\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+        _nrc, _nout = run_suite(_wdp, "flooder.py")
+        case("600 B of child stderr cannot push the failure out of the 400-char window",
+             (_nrc, "[FAIL] the value is one" in _nout[-400:]), (1, True))
+        # ...and the tail recorded in the durable evidence object is the FAILURE's line, not
+        # the last thing some child happened to write to stderr.
+        case("...and the recorded tail is the failure, not the noise",
+             _nout.split("\n")[-1].strip(), "[FAIL] the value is one")
+        # THE OTHER END — r1 F7's case, which is why stderr is kept at all. A suite that dies
+        # BEFORE printing anything says so only on stderr; stdout is empty, so the window still
+        # reaches it. Deleting the stderr half passes the two cases above and fails this one.
+        (_wdp / "broken.py").write_text('raise RuntimeError("the tree went bad underneath")\n')
+        _brc, _bout = run_suite(_wdp, "broken.py")
+        case("a suite that dies before printing still shows its traceback in the window",
+             (_brc, "the tree went bad underneath" in _bout[-400:]), (1, True))
+
+    # ⛔ THE WANT IS THE LITERAL 79, NOT `PROGRESS_WIDTH` — r2 B1, and the SEVENTH instance of this
+    # class on this line of work, introduced by the fix to the sixth. Written as
+    # `want=(PROGRESS_WIDTH, …)` the expected value is DERIVED FROM THE SUBJECT: both sides move
+    # together, so the case says "the line is as wide as the constant says", which is true of every
+    # constant that truncates at all. MEASURED: at 80, 90, 100, 120 and 200 the suite stayed
+    # 111/111 — a guard with a floor and no ceiling, when the ceiling is the entire point. A
+    # literal cannot move with the subject, and the manifest entry that widens the constant dies
+    # here.
     _pl_long = progress_line(164, 434, "x" * 300)
     case("a label too long for one row is truncated, and says so",
          (len(_pl_long), _pl_long[-1], _pl_long.startswith("[164/434] ")),
-         (PROGRESS_WIDTH, "…", True))
+         (79, "…", True))
     case("...and a label that already fits is left exactly alone",
          progress_line(164, 434, "y" * 40), "[164/434] " + "y" * 40)
     # ⚠ run_mutations must stay SILENT unless a caller asks. Its own suite drives it dozens of
@@ -2458,7 +2531,7 @@ def _self_test() -> int:
     # so an `expect` naming it in full could never match and its entry would be unattributable.
     case("⚠ a case name containing ': got ' is TRUNCATED by the consumer",
          parse_fail_names("  [FAIL] the width: got the wrong value"), ["the width"])
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 443)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 445)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

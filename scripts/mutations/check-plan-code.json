@@ -339,11 +339,14 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "(r.stdout + r.stderr).strip()",
+        "(r.stderr + r.stdout).strip()",
         "r.stdout.strip()"
       ]
     ],
-    "expect": "run_suite keeps BOTH halves, so a control's traceback survives into the report"
+    "expect": [
+      "run_suite keeps BOTH halves, so a control's traceback survives into the report",
+      "a suite that dies before printing still shows its traceback in the window"
+    ]
   },
   {
     "name": "count_drift's declaration anchor is widened to any 'N cases' (r1 F8)",
@@ -559,6 +562,33 @@
     ],
     "expect": [
       "a progress line reaches a block-buffered stream before the process exits"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "PROGRESS_WIDTH is widened past one terminal row, restoring in full the wrap r1 M2 was filed for, while every truncation case stays green",
+    "edits": [
+      [
+        "PROGRESS_WIDTH = 79",
+        "PROGRESS_WIDTH = 200"
+      ]
+    ],
+    "expect": [
+      "a label too long for one row is truncated, and says so"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "run_suite goes back to concatenating stdout first, so any child that writes to stderr owns the 400-char diagnostic window and the failure is not in it",
+    "edits": [
+      [
+        "return r.returncode, (r.stderr + r.stdout).strip()",
+        "return r.returncode, (r.stdout + r.stderr).strip()"
+      ]
+    ],
+    "expect": [
+      "600 B of child stderr cannot push the failure out of the 400-char window",
+      "...and the recorded tail is the failure, not the noise"
     ],
     "file": "scripts/check-plan-code.py"
   }
