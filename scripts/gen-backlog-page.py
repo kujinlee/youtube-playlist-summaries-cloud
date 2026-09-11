@@ -2,7 +2,7 @@
 """Render `docs/backlog.md` as a browsable HTML page at a STABLE url.
 
     python3 scripts/gen-backlog-page.py          # → ~/explainers/backlog-table.html
-    python3 scripts/gen-backlog-page.py --self-test  # 165 cases
+    python3 scripts/gen-backlog-page.py --self-test  # 167 cases
     open http://127.0.0.1:7391/backlog-table     # after scripts/explainer-serve.py
 
 WHY THIS EXISTS
@@ -209,12 +209,57 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
              "it can still change a decision."),
         (58, "Every gate in one place: what it is, what it last returned, and which have never "
              "failed — because a gate that cannot fail is the one to distrust."),
+        (89, "These pages exist so you can see what is going on, but building one costs the main "
+             "conversation dearly — nearly a megabyte of single-use scaffolding for one page, all "
+             "of it worthless once the link exists. Building them in a forked side-conversation "
+             "instead is the idea. What is undecided is who delivers the link, how a reader's "
+             "question gets back to the session that wrote the page, and what happens when the "
+             "inherited context goes stale mid-build. Only the four agent-written pages are "
+             "candidates — the three rebuilt by hooks already cost nothing."),
         (103, "Ask a question on one of these pages and the answer comes from whichever session "
               "is running now, not the one that wrote the page. The listener outlives the session "
               "it belonged to, so a reader can be answered by a stranger."),
-        (106, "Rebuilding a /brief page twice does not produce the same page twice: the second "
-              "build lifts its question tray from the first, so anything already there is copied "
-              "forward and can accumulate."),
+        (105, "The dark-theme fallback in the page builder describes itself as supplying only "
+              "what nobody else supplied. That is true of any one colour and misleading about the "
+              "set: declaring some of them and not the rest gives a page a half-working theme "
+              "switch, which measured as dark text on a dark background — worse than declaring "
+              "none at all. Declare the whole palette or none of it, and the comment should say "
+              "so rather than let the next author find out by shipping it."),
+     ]),
+    ("Checks that can be wrong without looking wrong",
+     "Six items, one shape: a check whose failure is indistinguishable from a pass, or a warning "
+     "that is emitted correctly and reaches nobody. This is the class that lets a gap sit for a "
+     "week in plain sight — including, until today, the missing descriptions on this page.", [
+        (92, "The reviewer wrapper watches a folder for changes during a run and attributes "
+             "whatever appears to the reviewer it launched. It can see that the folder changed, "
+             "never who changed it — so when both review halves run at once, which is the "
+             "documented way to run them, it accuses one of writing the other's file. The false "
+             "accusation is then written into the verdict file the build reads."),
+        (94, "A guard that stops a session mid-plan promises in writing that it can block at most "
+             "once. It relaxes only when the turn it interrupted was one it caused itself, so a "
+             "turn beginning after a background notification is blocked again — three times in "
+             "one session, while legitimately waiting on dispatched work. The behaviour is right; "
+             "the description of it is not, and there is no escape offered for the case that "
+             "actually arose."),
+        (101, "A pull request based on another branch runs no checks at all, and the answer it "
+              "gives — “no checks reported” — sits in exactly the place a green tick would. Two "
+              "such requests were one keystroke from merging with nothing behind them; only the "
+              "habit of treating “cannot run” as a failure caught it."),
+        (104, "The gate that holds work until a plan has been reviewed can only be cleared by "
+              "that review converging. A plan that instead ships by a better route leaves the "
+              "gate armed indefinitely, blocking unrelated work and directing whoever trips it to "
+              "go and review a document that has explicitly disclaimed its own authority. Decide "
+              "first whether this is the state-file problem below wearing a second number."),
+        (111, "The hook that protects the session handoff decides whether to act by reading what "
+              "an interpreter prints. An interpreter that fails to start, or that prints a "
+              "greeting first, yields neither expected answer — and the hook then does nothing at "
+              "all, silently, for the rest of the session. Its sibling was repaired exactly this "
+              "way ten days ago; this is the copy that was left behind."),
+        (112, "569 files in the review folder carry no round number and sit outside the check "
+              "that audits review rounds, which says so beneath a green verdict on every single "
+              "run. Nobody can currently say what fraction of the corpus that check covers. "
+              "Silencing the warning is a legitimate outcome — the work is to classify the 569 "
+              "and then decide, not to assume they all need covering."),
      ]),
     ("Process, tooling and bookkeeping",
      "Instruments and habits. Cheap individually; they are what stops the expensive items above "
@@ -262,15 +307,35 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
              "clean up” on a repository full of dead branches — and reads as success. The "
              "durable copy now lives in this repository; what is left is confirming whether it "
              "actually takes precedence over the plugin's own version."),
+        (90, "One table holds goals, defects and one-line chores at once, and its grouping column "
+             "has decayed to 25 values including a bare question mark. The cost is now measured "
+             "rather than argued: three reasonable ways of counting the same rows returned 59, 61 "
+             "and 63 open items, because a status cell is append-only with the verdict at the end "
+             "and a reader that takes the first marker gets the original filing. Every headline "
+             "count of open work on these pages is currently a range, not a number."),
         (93, "Two checkers look near-identical and differ on purpose. Merging them — the obvious "
              "tidy-up — silently reinstates a defect that was already fixed, and every gate still "
              "passes, so the trap is laid for whoever cleans up next."),
+        (100, "The small file recording which plan is running is written by one program and read "
+              "by three others, each carrying its own idea of the grammar, and nothing anywhere "
+              "lists which combinations of its fields are legal. Nothing is broken today — all "
+              "three known failures are fixed — but they were one cause wearing three faces, so "
+              "this wants a design pass rather than an edit."),
+        (107, "One message covers two different reasons the mutation harness withholds a coverage "
+              "figure, so a reader cannot tell which of them happened. The obvious way to "
+              "separate them re-adds the exact thing an earlier slice spent three rounds "
+              "removing, so any proposal has to say how it avoids that."),
         (108, "The mutation harness required a piece of code to be split in two so it could be "
               "measured. That split was an improvement, but next time it may not be, and “the "
               "tool needed it” will read as a reason. Write down which of the two should yield."),
         (109, "A test that guards a line of code is attached to that line BY ITS TEXT, so "
               "improving the wording detaches it. The test still exists, still passes, and no "
               "longer guards anything. Only a full sweep finds these; it has happened five times."),
+        (113, "The program that builds this page has five mutation tests to its sibling's "
+              "sixty-four, and that number came from what one branch happened to fix rather than "
+              "from the file. What the gap cost has been counted: four review rounds turned up 1, "
+              "then 9, then 8, then 15 fresh tests that could never fail — every one of them "
+              "found by a person reading, none by a machine."),
      ]),
 ]
 
@@ -2583,18 +2648,48 @@ def self_test() -> int:
     # actually is rather than what one keyword happens to look like.
     _REAL_ROWS: list[dict] = [dict(r, hist=None) for r in parse(BACKLOG.read_text().splitlines())]
 
+    # ⭐ RE-ANCHORED 2026-09-11, and the reason is worth more than the fix. Both cases below used
+    # to run against `_REAL_ROWS` unaltered, and they passed only because the real backlog HAPPENED
+    # to contain undescribed items — ten when r4 wrote them. Writing the missing sentences turned
+    # them RED without touching a line of the rule they guard. That is a case measuring the
+    # POPULATION rather than the RULE (`portable-practices` §21), and it is the third instance in
+    # this repo of a fix hollowing out its own falsifier. Both arms are now forced by a fixture, so
+    # the rule is asserted whether or not today's backlog has a gap — and the negative arm, which
+    # never existed, is what proves the block is not simply always printed.
+    _FREE = max(r["num"] for r in _REAL_ROWS) + 1
+    _DESCRIBED = min(n for _, _, items in GROUPS for n, _ in items)
+
+    # ⚠ The fixture's own falsifier. If a future GROUPS ever named `_FREE`, the positive arm below
+    # would assert about a block that no longer fires and would report a pass for the wrong reason.
+    case("the undescribed fixture is not vacuous — no group names the synthetic item",
+         lambda: _FREE not in {n for _, _, items in GROUPS for n, _ in items}
+         and _DESCRIBED in {n for _, _, items in GROUPS for n, _ in items})
+
+    def _rows_with_undescribed() -> list[dict]:
+        """The real corpus plus ONE open item no group names."""
+        return _REAL_ROWS + [dict(_REAL_ROWS[0], num=_FREE, closed=False)]
+
+    def _rows_all_described() -> list[dict]:
+        """One open item, and a group does name it — so nothing here is undescribed."""
+        return [dict(_REAL_ROWS[0], num=_DESCRIBED, closed=False)]
+
     case("the undescribed block is printed, with its count and its remedy",
          lambda: any(ln.startswith("⚠  ") and "no description in GROUPS" in ln
-                     for ln in _run_printed(_REAL_ROWS, []))
-         and any("Add them to GROUPS" in ln for ln in _run_printed(_REAL_ROWS, [])))
-    def _undescribed_count() -> int:
+                     for ln in _run_printed(_rows_with_undescribed(), []))
+         and any("Add them to GROUPS" in ln
+                 for ln in _run_printed(_rows_with_undescribed(), [])))
+    case("...and it is SILENT when every open item has a sentence",
+         lambda: not any("no description in GROUPS" in ln
+                         for ln in _run_printed(_rows_all_described(), [])))
+
+    def _undescribed_count(rows: list[dict]) -> int:
         """Hoisted out of the f-string it lived in: a set comprehension nested inside a format
         field parses, runs and reads as noise, and a type checker could not follow it either."""
-        return len(undescribed(GROUPS, {r["num"] for r in _REAL_ROWS if not r["closed"]}))
+        return len(undescribed(GROUPS, {r["num"] for r in rows if not r["closed"]}))
 
     case("its count is the number of items with no sentence",
-         lambda: any(f"⚠  {_undescribed_count()} open item(s)" in ln
-                     for ln in _run_printed(_REAL_ROWS, [])))
+         lambda: any(f"⚠  {_undescribed_count(_rows_with_undescribed())} open item(s)" in ln
+                     for ln in _run_printed(_rows_with_undescribed(), [])))
     # ⚠ r4 finding M-3. The ⚠ PREFIX is the delivery mechanism — `explainer-serve` collects only
     # lines that start with it — and replacing it with three spaces survived 152/152 under both
     # HOMEs. Every drift note must carry it.
