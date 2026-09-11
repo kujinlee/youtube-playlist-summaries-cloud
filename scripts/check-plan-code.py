@@ -477,7 +477,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ r1 Codex Medium: 8 -> 10. A page-specific `#tray …` override was migrating INTO the
     # tray region and freezing there for every page later composed from it; the second entry
     # guards the fix's own failure mode, which is subtracting the tray away entirely.
-    "scripts/brief-compose.py": 13,
+    "scripts/brief-compose.py": 16,
     # ⟳ 2026-09-10. A guard created and manifested in ONE commit — `check-ratchet-contract` flagged
     # it `[R4_no_mutation_manifest]` the moment it hit disk, which is the ratchet doing its job. Six
     # entries, one per clause it decides, plus the fail-open path: a guard whose CANNOT-RUN branch
@@ -2230,7 +2230,7 @@ def _self_test() -> int:
     # so an `expect` naming it in full could never match and its entry would be unattributable.
     case("⚠ a case name containing ': got ' is TRUNCATED by the consumer",
          parse_fail_names("  [FAIL] the width: got the wrong value"), ["the width"])
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 428)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 431)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

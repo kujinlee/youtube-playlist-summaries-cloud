@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 119 cases
+    python3 scripts/brief-compose.py --self-test  # 125 cases
 
 COMPOSING IS IDEMPOTENT (backlog #106, 2026-09-10)
 --------------------------------------------------
@@ -603,7 +603,18 @@ def _is_page_override(rule: str) -> bool:
     if "," in selector:
         return False
     parts = selector.split(" ")
-    return len(parts) >= 2 and re.search(TRAY_SELECTOR, parts[0]) is not None
+    # ⛔ BOTH ENDS MUST NAME A TRAY PART (r4 Codex B1 / r4 Claude L1). Rooting alone was not
+    # enough: `#tray .in` styles the tray's own inner wrapper and is descendant-rooted, so the
+    # first version classified the ONE genuine descendant rule in the live 18-rule region as
+    # subtractable. `gen-backlog-page.py:1480` says "two IDS win" — the overrides that exist
+    # qualify one tray part BY ANOTHER, and `.in` is not one.
+    # ⚠ NO `len(parts) >= 2` TEST — the qualifier clause below already implies it: a bare
+    # selector has no `parts[1:]`, so `any()` is False. It was measured SURVIVING as a mutation
+    # once the qualifier landed, which is the tell for a redundant clause rather than an
+    # unguarded one. THIRD clause on this branch to stop deciding; the first two were kept and
+    # marked, this one is deleted because it says nothing the next line does not.
+    return (re.search(TRAY_SELECTOR, parts[0]) is not None
+            and any(re.search(TRAY_SELECTOR, p) for p in parts[1:]))
 
 
 def _selector_scan(style: str, fragment_css: str = "") -> str:
@@ -650,14 +661,14 @@ def _selector_scan(style: str, fragment_css: str = "") -> str:
     own = set(_tray_rules(fragment_css))
     subtracted = [rule for rule in keep
                   if not (rule in own and _is_page_override(rule))]
-    # ⚠ A BACKSTOP, NOT A DECISION — do not manifest it. Since r3 B1 only a PAGE OVERRIDE can
-    # be subtracted, and a tray always has at least one bare rule, so `subtracted` can never be
-    # empty and mutating this line is unkillable BY CONSTRUCTION: measured as a SURVIVOR when it
-    # briefly kept its entry. It was decisive while subtraction could remove any matching rule.
-    # Second clause on this branch to stop deciding and lose its entry; the other is `if not own`
-    # in a previous shape. The line stays, because it costs one branch and its premise
-    # (`_is_page_override` refusing bare selectors) is one edit away from changing.
-    keep = subtracted or keep
+    # ⛔ THERE IS NO `or keep` FALLBACK, and removing it was r4 M1. It defended a state
+    # `_is_page_override` made unreachable — a fragment declaring EVERY tray rule now requires a
+    # "tray" whose every rule is descendant-rooted and tray-qualified, i.e. not a tray. Measured
+    # SURVIVING as a mutation, and measured again as never asserted: the one place it executed
+    # was the no-tray fixture, where `keep` is already empty and `extract_tray` raises either
+    # way. On that degenerate input, silently returning the unsubtracted set is FAIL-SILENT;
+    # letting `css` go empty makes `extract_tray` refuse, which is this module's stated contract.
+    keep = subtracted
     last = {rule: i for i, rule in enumerate(keep)}
     return "\n".join(rule for i, rule in enumerate(keep) if last[rule] == i)
 
@@ -1035,6 +1046,35 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     case("a fragment duplicating a BARE tray rule never subtracts it",
          _selector_scan("#tray{a:1}\n#qbox{b:2}\n.askbtn{c:3}", ".askbtn{c:3}")
          == "#tray{a:1}\n#qbox{b:2}\n.askbtn{c:3}")
+    # ⛔ r4 CODEX B1 / r4 CLAUDE L1 — A GENUINE TRAY RULE CAN ITSELF BE DESCENDANT-ROOTED.
+    # `#tray .in` styles the tray's inner wrapper (`max-width:53rem;margin:0 auto`), and it is
+    # the ONE rule in the live 18-rule region the first version of this predicate classified as
+    # subtractable. The halves split on severity — Codex Blocking, Claude Low — and both were
+    # right: no generator emits it and no fragment on disk declares it (measured), so it is
+    # latent; but the RULE was wrong, and wrong about the only rule it could damage.
+    # THE QUALIFIER MUST ALSO BE A TRAY PART. `gen-backlog-page.py:1480` says "two IDS win";
+    # `#tray #qbox` qualifies one tray part by another, `#tray .in` does not.
+    case("a genuine tray rule that is descendant-rooted is NOT a page override",
+         not _is_page_override("#tray .in{max-width:53rem;margin:0 auto}"))
+    case("...so a fragment duplicating it byte-identically cannot remove it",
+         "#tray .in{m:1}" in _selector_scan("#tray{a:1}\n#qbox{b:2}\n#tray .in{m:1}",
+                                            "#tray .in{m:1}"))
+    # ⛔ A CASE PER CLAUSE (r4 H2 + r4 Codex M1). Both halves mutated the new function clause by
+    # clause and found the SAME hole: two manifest entries attacked it wholesale, pinning only
+    # "bare vs descendant" and the wiring, while whitespace normalisation, the grouped-selector
+    # return and the ROOT POSITION — the function's central claim — were covered by nothing.
+    # ⚠ THE DIAGNOSIS IS ABOUT METHOD, NOT THIS FUNCTION: "the guard's existence is cased; its
+    # content is not… four rounds, four instances. That is the default outcome of writing the
+    # case from the FIX rather than from the CLAUSE."
+    case("the selector is whitespace-normalised before it is split",
+         _is_page_override("#tray\t#qbox{c:3}") and _is_page_override("#tray\n  #qbox{c:3}"))
+    case("a GROUPED selector is one rule for several parts, not an override",
+         not _is_page_override("#tray #qbox, #tray #qt{c:3}"))
+    case("an override must be ROOTED at a tray part, not merely mention one",
+         not _is_page_override("body #qbox{c:3}"))
+    case("...while a tray part qualified by another tray part still IS an override",
+         _is_page_override("#tray #qbox{c:3}")
+         and _is_page_override("#tray #qbox::placeholder{c:3}"))
     case("...and that holds for every bare selector the tray styles",
          all(_selector_scan("#tray{a:1}\n#qbox{b:2}\n" + r, r).endswith(r)
              for r in ("#qt{d:4}", "#sentnote{e:5}", "#modechip{f:6}", ".askbtn:hover{g:7}")))

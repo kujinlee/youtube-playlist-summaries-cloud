@@ -156,16 +156,55 @@
     ]
   },
   {
-    "name": "a bare tray rule counts as a page override, so .askbtn can be subtracted (r3 B1)",
-    "file": "scripts/brief-compose.py",
+    "name": "the selector is not whitespace-normalised, so a tab classifies differently (r4 H2)",
     "edits": [
       [
-        "    if \",\" in selector:\n        return False\n    parts = selector.split(\" \")\n    return len(parts) >= 2 and re.search(TRAY_SELECTOR, parts[0]) is not None",
-        "    if \",\" in selector:\n        return False\n    parts = selector.split(\" \")\n    return True"
+        "    selector = \" \".join(rule.partition(\"{\")[0].split())",
+        "    selector = rule.partition(\"{\")[0].strip()"
       ]
     ],
     "expect": [
-      "a fragment duplicating a BARE tray rule never subtracts it"
-    ]
+      "the selector is whitespace-normalised before it is split"
+    ],
+    "file": "scripts/brief-compose.py"
+  },
+  {
+    "name": "the grouped-selector early return is dropped (r4 H2)",
+    "edits": [
+      [
+        "    if \",\" in selector:\n        return False\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "a GROUPED selector is one rule for several parts, not an override"
+    ],
+    "file": "scripts/brief-compose.py"
+  },
+  {
+    "name": "an override may be rooted ANYWHERE, not at a tray part (r4 H2, the central claim)",
+    "edits": [
+      [
+        "    return (re.search(TRAY_SELECTOR, parts[0]) is not None",
+        "    return (re.search(TRAY_SELECTOR, selector) is not None"
+      ]
+    ],
+    "expect": [
+      "an override must be ROOTED at a tray part, not merely mention one"
+    ],
+    "file": "scripts/brief-compose.py"
+  },
+  {
+    "name": "the qualifier need not be a tray part, so #tray .in is subtractable again (r4 B1)",
+    "edits": [
+      [
+        "            and any(re.search(TRAY_SELECTOR, p) for p in parts[1:]))",
+        "            and True)"
+      ]
+    ],
+    "expect": [
+      "a genuine tray rule that is descendant-rooted is NOT a page override"
+    ],
+    "file": "scripts/brief-compose.py"
   }
 ]
