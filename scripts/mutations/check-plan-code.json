@@ -4,8 +4,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        return 2, (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \"",
-        "        return 1, (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \""
+        "        return 2, \"\", (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \"",
+        "        return 1, \"\", (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \""
       ]
     ],
     "expect": "a hung suite is rc 2, distinct from both pass and fail"
@@ -339,13 +339,12 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "(r.stderr + r.stdout).strip()",
-        "r.stdout.strip()"
+        "    return (stderr + stdout).strip()",
+        "    return stdout.strip()"
       ]
     ],
     "expect": [
-      "run_suite keeps BOTH halves, so a control's traceback survives into the report",
-      "a suite that dies before printing still shows its traceback in the window"
+      "run_suite keeps BOTH halves, so a control's traceback survives into the report"
     ]
   },
   {
@@ -579,15 +578,106 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "run_suite goes back to concatenating stdout first, so any child that writes to stderr owns the 400-char diagnostic window and the failure is not in it",
+    "name": "the merged output goes back to stdout-first, so the tail recorded in the durable evidence object is whatever a child last wrote to stderr, not the failure",
     "edits": [
       [
-        "return r.returncode, (r.stderr + r.stdout).strip()",
-        "return r.returncode, (r.stdout + r.stderr).strip()"
+        "which is also what they want.\n    \u26a0 The DIAGNOSTIC does not ride on this \u2014 see `diagnostic_tail`. Two rounds were spent\n    choosing an order for it; both orders lose, because the order was never the question.\n    \"\"\"\n    return (stderr + stdout).strip()",
+        "which is also what they want.\n    \u26a0 The DIAGNOSTIC does not ride on this \u2014 see `diagnostic_tail`. Two rounds were spent\n    choosing an order for it; both orders lose, because the order was never the question.\n    \"\"\"\n    return (stdout + stderr).strip()"
       ]
     ],
     "expect": [
-      "600 B of child stderr cannot push the failure out of the 400-char window",
+      "...and the recorded tail is the failure, not the noise"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the fits/truncate comparison gains an off-by-one, so six real labels emit an 80-column line and wrap on a standard terminal",
+    "edits": [
+      [
+        "    if len(label) <= room:\n        return head + label",
+        "    if len(label) <= room + 1:\n        return head + label"
+      ]
+    ],
+    "expect": [
+      "...and one character more IS, back to exactly one row"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the fits/truncate comparison turns strict, so a label that exactly fills the row is truncated for no reason",
+    "edits": [
+      [
+        "    room = PROGRESS_WIDTH - len(head)\n    if len(label) <= room:",
+        "    room = PROGRESS_WIDTH - len(head)\n    if len(label) < room:"
+      ]
+    ],
+    "expect": [
+      "a label of exactly the remaining width is NOT truncated"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "a flooded stdout is allowed to starve stderr of its half, so a suite that crashes AFTER printing loses its traceback \u2014 the regression measured across 28 of 38 suites",
+    "edits": [
+      [
+        "    err_keep = min(len(err), max(half, window - len(out)))",
+        "    err_keep = min(len(err), max(0, window - len(out)))"
+      ]
+    ],
+    "expect": [
+      "...and a flooded stdout cannot evict stderr's traceback",
+      "a suite that crashes AFTER 800 B of stdout still shows its traceback"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "stdout's budget stops accounting for what stderr already took, so the diagnostic grows past the window it exists to bound",
+    "edits": [
+      [
+        "    out_keep = min(len(out), window - err_keep)\n    return",
+        "    out_keep = min(len(out), window)\n    return"
+      ]
+    ],
+    "expect": [
+      "...and the window never exceeds its budget, however much is offered"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "a quiet stderr no longer hands its unused half back, so the ordinary case sees 200 characters of stdout where it used to see 400",
+    "edits": [
+      [
+        "max(half, window - len(out)))\n    out_keep = min(len(out), window - err_keep)",
+        "max(half, window - len(out)))\n    out_keep = min(len(out), window - half)"
+      ]
+    ],
+    "expect": [
+      "...and a quiet stderr gives its whole half back to stdout"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the before-control diagnostic goes back to slicing one merged string, so whichever stream is longer owns the window and the report stops saying why the control died",
+    "edits": [
+      [
+        "                              f\"CHECKED.\\n    {diagnostic_tail(so, se)}\")",
+        "                              f\"CHECKED.\\n    {out[-400:]}\")"
+      ]
+    ],
+    "expect": [
+      "a CANNOT RUN report says WHY the control died, not just that it did"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "the durable evidence tail records the FIRST line of a control's output instead of the last, so the field r1 listed as not-measured silently stays that way",
+    "edits": [
+      [
+        "\"tail\": (out.split(\"\\n\")[-1] if out else \"\")",
+        "\"tail\": (out.split(\"\\n\")[0] if out else \"\")"
+      ]
+    ],
+    "expect": [
       "...and the recorded tail is the failure, not the noise"
     ],
     "file": "scripts/check-plan-code.py"

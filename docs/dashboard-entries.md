@@ -7099,5 +7099,31 @@ merge, because a crash before any output leaves stdout empty and the window stil
 ⚠ That swap orphaned **that very fix's own mutation anchor** — the second anchor a refactor here
 has silently orphaned in one sitting.
 
-`EXPECTED_MUTATIONS` 431 → 445; `check-plan-code` suite 101 → 114. Every case this branch adds is
+**Round 3 found that fix had the same shape one level in, and both halves found it.** Pinning the
+constant to a literal gave the *constant* a ceiling. The *comparison* still had none, because the
+case fed it a 300-character label — true of every threshold from 1 to 299. Three edits to the
+boundary survived at 114/114; under the mildest, six real labels emit an 80-column line. ⭐ **The
+lesson that did not transfer: round 2 asked whether the WANT moves with the subject and fixed that.
+The INPUT constrains just as much, and an input far from the edge locates nothing. Test at the edge.**
+
+⛔ **And the other round-2 fix was measured to be the worse trade.** Choosing which stream goes last
+was supposed to stop a noisy child evicting the failure from the harness's 400-character diagnostic.
+Measured across the real corpus: only **2 of 38** suites write any stderr on a green run — and both
+are green, so their diagnostic never prints — while **28 of 38** already exceed the window in stdout
+alone. The fixture that motivated the fix **has no counterpart in the real code**, and the fix
+regressed 28 suites to lose their traceback. Both orders lose, because the order was never the
+question: each stream now gets half the window, and an unused half goes to the other.
+
+⚠ **Three of the cases written this round asserted on copies of the code rather than the code.** One
+recomputed the production line and compared against its own result, so swapping the real one changed
+nothing — it survived a mutation designed to kill it. That is the same defect as keeping two
+implementations of one rule, and the fix is the same: extract it once, and have the case consume the
+value production actually produces.
+
+`EXPECTED_MUTATIONS` 431 → 452; `check-plan-code` suite 101 → 121. Every case this branch adds is
 named by a manifest entry, audited mechanically rather than from memory.
+
+⚠ **Three rounds, three Blockings, and each was the previous round's fix.** The feature itself has
+been correct since round 1 and is measurably working; what keeps bleeding is the diagnostic-window
+machinery underneath it, which predates this work. Recorded here because the project's rule is that
+four such rounds stop being a patching problem and become a design one.

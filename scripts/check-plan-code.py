@@ -2,7 +2,7 @@
 """A plan that contains code must ASSEMBLE into that code, and its evidence must be RUN.
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
-    python3 scripts/check-plan-code.py --self-test          # 114 cases
+    python3 scripts/check-plan-code.py --self-test          # 121 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -388,7 +388,62 @@ class RunContext:
     compare_requested: bool = False
 
 
-def run_suite(d: pathlib.Path, name: str) -> tuple[int, str]:
+DIAGNOSTIC_WINDOW = 400
+
+
+def diagnostic_tail(stdout: str, stderr: str, window: int = DIAGNOSTIC_WINDOW) -> str:
+    """The end of a failed child's output, where NEITHER stream can evict the other. PURE.
+
+    ⛔ THIS EXISTS BECAUSE THE ORDERING QUESTION HAS NO RIGHT ANSWER, AND TWO ROUNDS WERE SPENT
+    ANSWERING IT. The diagnostic used to be `out[-400:]` over a single concatenation, so whichever
+    stream went last owned the window:
+      * `stdout + stderr` (to r2) — a child writing to stderr evicts the `[FAIL]` line. Measured
+        with a 600 B flooder: the failure was not in the window;
+      * `stderr + stdout` (r2's fix) — a child that crashes AFTER printing evicts the traceback.
+        Measured: 28 of the 38 real suites already exceed 400 B of stdout on a GREEN run
+        (`check-paid-caller-arrival.py` 16,701 B), so the traceback lands 9–16 KB outside it.
+    ⚠ AND THE SECOND IS THE WORSE TRADE, which is the part that had to be measured rather than
+    argued: only **2 of 38** suites write any stderr at all on a green run, and both are green, so
+    the window is never printed for them. The flooder that motivated r2's swap HAS NO COUNTERPART
+    IN THE REAL CORPUS — it optimised for a fixture and regressed the population.
+
+    So the budget is split instead of the order being chosen. Each stream is guaranteed half the
+    window; whatever a quiet stream does not use goes to the other, so the common case (silent
+    stderr) still gets the full 400 characters of stdout it had before any of this.
+    """
+    out, err = stdout.strip(), stderr.strip()
+    half = window // 2
+    err_keep = min(len(err), max(half, window - len(out)))
+    out_keep = min(len(out), window - err_keep)
+    return "\n".join(p for p in (err[-err_keep:] if err_keep else "",
+                                 out[-out_keep:] if out_keep else "") if p)
+
+
+def merged_output(stdout: str, stderr: str) -> str:
+    """A child's two streams as ONE string, STDOUT LAST. PURE.
+
+    ⛔ ONE RULE, ONE IMPLEMENTATION — r3 H2's lesson, applied to the fix for r3 H2. When the
+    control loops moved to `run_suite_parts` to budget the streams separately, they each grew
+    their own `(se + so).strip()` beside the one still inside `run_suite`. Three copies of a
+    rule that decides what the durable evidence records, and MEASURED: the manifest entry that
+    swapped `run_suite`'s copy went green, because the copy it edited was no longer the one
+    `ev_files[...]["tail"]` reads.
+
+    The order decides exactly one live thing: `ev_files[name]["tail"]`, which is
+    `out.split("\\n")[-1]`. A reader wants the tally line or the last `[FAIL]` there — both on
+    stdout — and when stdout is empty (a crash before printing) the last line is stderr's,
+    which is also what they want.
+    ⚠ The DIAGNOSTIC does not ride on this — see `diagnostic_tail`. Two rounds were spent
+    choosing an order for it; both orders lose, because the order was never the question.
+    """
+    return (stderr + stdout).strip()
+
+
+def run_suite_parts(d: pathlib.Path, name: str) -> tuple[int, str, str]:
+    """`(rc, stdout, stderr)` — the RAW halves, for the one caller that must budget them.
+
+    The only producer. `run_suite` is the merged view every other consumer wants.
+    """
     # A hung suite is a CANNOT RUN, not a traceback. rc 2 is distinct from both the
     # green 0 and the red 1, so a caller cannot read a timeout as either verdict.
     try:
@@ -396,22 +451,14 @@ def run_suite(d: pathlib.Path, name: str) -> tuple[int, str]:
                            capture_output=True, text=True, timeout=SUITE_TIMEOUT,
                            env=child_env(d))
     except subprocess.TimeoutExpired:
-        return 2, (f"CANNOT RUN — {name} --self-test did not finish in "
-                   f"{SUITE_TIMEOUT}s. NOT CHECKED.")
-    # ⛔ STDERR FIRST, STDOUT LAST — and the ORDER is the guard, not a formatting choice.
-    # Every CANNOT RUN message prints `out[-400:]`, and `ev_files[name]["tail"]` records
-    # `out.split("\n")[-1]`. Both therefore show whichever stream is CONCATENATED LAST.
-    # The failure evidence a reader needs is `[FAIL] <case>`, which suites write to STDOUT.
-    # ⟳ r2 M1. With stdout first, ANY child that writes to stderr steals the whole window:
-    # measured, a child emitting 600 B of stderr alongside a real failure gave
-    # `"[FAIL]" in out[-400:] -> False` and recorded a tail of 60 `N`s. r1 H1 was the same
-    # harm from one specific emitter (`mutate_delivered`'s own progress); deleting that emitter
-    # fixed the INSTANCE and left the converter that makes any future emitter do it again.
-    # ⚠ AND THIS DOES NOT UNDO r1 F7 (2026-09-09), which restored the stderr half because "a
-    # control that dies on a TRACEBACK says so only on stderr". That case is a crash BEFORE the
-    # suite prints — stdout is empty or short, so the window still reaches into stderr and shows
-    # the traceback's end. Both cases are pinned below; neither stream can empty the other's.
-    return r.returncode, (r.stderr + r.stdout).strip()
+        return 2, "", (f"CANNOT RUN — {name} --self-test did not finish in "
+                       f"{SUITE_TIMEOUT}s. NOT CHECKED.")
+    return r.returncode, r.stdout, r.stderr
+
+
+def run_suite(d: pathlib.Path, name: str) -> tuple[int, str]:
+    rc, out, err = run_suite_parts(d, name)
+    return rc, merged_output(out, err)
 
 
 
@@ -609,7 +656,7 @@ EXPECTED_MUTATIONS = {
     # orphaning the anchor that guarded it. An anchor binds by TEXT, so improving code breaks it
     # and the suite stays green; `--mutate .` refuses an unresolved anchor, which is the only
     # reason that was caught here rather than merged.
-    "scripts/check-plan-code.py": 50,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 57,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -902,14 +949,15 @@ def mutate_delivered(root: pathlib.Path,
             # top-level entry point; this function is driven fourteen times by its own suite.
             if progress is not None:
                 progress(position, len(targets), f"control {name}")
-            rc, out = run_suite(d, name)
+            rc, so, se = run_suite_parts(d, name)
+            out = merged_output(so, se)
             ev_files[name] = {"rc": rc, "tail": (out.split("\n")[-1] if out else ""),
                               "blocks": None}
             if not control_is_green(rc, out):
                 report.append(f"CANNOT RUN — control run of {name} did not prove the suite "
                               f"works (exit {rc}) BEFORE any mutation was applied. Every "
                               f"verdict below would be an artefact. Treat this as NOT "
-                              f"CHECKED.\n    {out[-400:]}")
+                              f"CHECKED.\n    {diagnostic_tail(so, se)}")
         if report:
             return False, report, NotMeasured.from_counts([], None, ev_files)
         ok, m_report, m_muts, m_survivors = run_mutations(d, muts, set(targets),
@@ -931,7 +979,8 @@ def mutate_delivered(root: pathlib.Path,
         for position, name in enumerate(targets, 1):
             if progress is not None:
                 progress(position, len(targets), f"re-control {name}")
-            rc, out = run_suite(d, name)
+            rc, so, se = run_suite_parts(d, name)
+            out = merged_output(so, se)
             if not control_is_green(rc, out):
                 ok = False
                 # The tree changed underneath the run, so every 'caught' above may be an
@@ -941,7 +990,7 @@ def mutate_delivered(root: pathlib.Path,
                     f"CANNOT RUN — {name} is no longer green AFTER the sequence (exit "
                     f"{rc}), so the tree changed underneath it. Any 'caught' above may be "
                     f"an artefact of that, not of its mutation. Treat this run as NOT "
-                    f"CHECKED.\n    {out[-400:]}")
+                    f"CHECKED.\n    {diagnostic_tail(so, se)}")
         # ONE assignment, AFTER both controls, holding all three clauses. r2 computed this
         # BEFORE the after-control and then overwrote it, which worked but split one rule
         # across two statements — and the split is what let `check()` reproduce the bug
@@ -1908,6 +1957,44 @@ def _self_test() -> int:
                  [l for l in _mer.getvalue().split("\n") if l.startswith("[1/1] ")],
                  ["[1/1] control scripts/thing.py", "[1/1] value is two",
                   "[1/1] re-control scripts/thing.py"])
+        # ⛔ AND THE PRODUCTION PATH, which every case above misses. The three cases on
+        # `diagnostic_tail` are pure, and the two on `run_suite_parts` stop at the helper —
+        # NONE of them would notice `mutate_delivered` going back to slicing one merged string.
+        # That is the gap r3 H1 was: a property proved about a helper, and asserted about the
+        # caller. This drives the real caller and reads the real report.
+        with tempfile.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td); _mini(_r)
+            (_r / "scripts" / "thing.py").write_text(
+                'import sys\n'
+                'def _self_test():\n'
+                '    print("S" * 800)\n'
+                '    raise RuntimeError("the tree went bad underneath")\n'
+                'if __name__ == "__main__":\n'
+                '    sys.exit(_self_test())\n')
+            _okL, _repL, _ = mutate_delivered(_r)
+            case("a CANNOT RUN report says WHY the control died, not just that it did",
+                 (_okL, any("the tree went bad underneath" in r for r in _repL)), (False, True))
+        # ⛔ AND THE DURABLE EVIDENCE OBJECT, READ WHERE IT IS PRODUCED — r3 H2. The case for
+        # this used to recompute `(stderr + stdout).split("\n")[-1]` from halves it had fetched
+        # itself: a SECOND IMPLEMENTATION of the production line, asserting on its own copy.
+        # MEASURED — it survived the merge order being swapped in production, because its own
+        # merge was unaffected; and `out.split("\n")[-1] -> [0]` at the production site survived
+        # too, leaving the field in exactly the state r1 recorded it: not measured. Reading
+        # `ev.files[...]` is what makes both edits visible. This is why `parse_fail_names` was
+        # extracted in r2 — one rule, one implementation, and the case consumes it.
+        with tempfile.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td); _mini(_r)
+            (_r / "scripts" / "thing.py").write_text(
+                'import sys\n'
+                'def _self_test():\n'
+                '    sys.stderr.write("N" * 600 + "\\n")\n'
+                '    print("  [FAIL] the value is one")\n'
+                '    return 1\n'
+                'if __name__ == "__main__":\n'
+                '    sys.exit(_self_test())\n')
+            _okT, _repT, _evT = mutate_delivered(_r)
+            case("...and the recorded tail is the failure, not the noise",
+                 _evT.files["scripts/thing.py"]["tail"].strip(), "[FAIL] the value is one")
         # The falsifier for the instrument: break the UNMUTATED script. Without a control
         # check every mutation 'goes red' and a full table of catches is reported over a
         # suite that never worked.
@@ -2158,17 +2245,21 @@ def _self_test() -> int:
         # run only, so both controls are genuinely green and the run reaches :663 normally.
         with tempfile.TemporaryDirectory() as _td:
             _r = pathlib.Path(_td); _mini(_r)
-            _real_run_suite, _calls = run_suite, []
+            _real_run_suite, _calls = run_suite_parts, []
+            # ⟳ r3: this stubbed `run_suite`, which STOPPED being the single funnel when the
+            # control loops moved to `run_suite_parts` to budget the two streams separately.
+            # The stub then missed both controls, the call indices shifted by two, and the case
+            # went red — correctly. Stub the PRODUCER, which every path still goes through.
             def _timeout_on_the_mutated_run(_d, _name):
                 _calls.append(_name)
                 if len(_calls) == 2:          # 1 = before-control, 2 = the mutation, 3 = after
-                    return 2, "CANNOT RUN — stub timeout. NOT CHECKED."
+                    return 2, "", "CANNOT RUN — stub timeout. NOT CHECKED."
                 return _real_run_suite(_d, _name)
-            globals()["run_suite"] = _timeout_on_the_mutated_run
+            globals()["run_suite_parts"] = _timeout_on_the_mutated_run
             try:
                 _ok8, _rep8, _ev8 = mutate_delivered(_r)
             finally:
-                globals()["run_suite"] = _real_run_suite
+                globals()["run_suite_parts"] = _real_run_suite
             case("a TIMED-OUT mutation is counted but is NOT a verdict",
                  (len(_entries_of(_ev8)) == _ev8.declared, isinstance(_ev8, Measured)),
                  (True, False))
@@ -2410,20 +2501,52 @@ def _self_test() -> int:
             '    return 1\n'
             'if __name__ == "__main__":\n'
             '    sys.exit(_self_test())\n')
-        _nrc, _nout = run_suite(_wdp, "flooder.py")
+        _nrc, _nso, _nse = run_suite_parts(_wdp, "flooder.py")
+        # ⟳ r3: this read `run_suite(...)[1][-400:]`, which STOPPED being the production window
+        # when the diagnostic moved to `diagnostic_tail`. A case that outlives the path it was
+        # written for keeps passing and guards nothing.
         case("600 B of child stderr cannot push the failure out of the 400-char window",
-             (_nrc, "[FAIL] the value is one" in _nout[-400:]), (1, True))
-        # ...and the tail recorded in the durable evidence object is the FAILURE's line, not
-        # the last thing some child happened to write to stderr.
-        case("...and the recorded tail is the failure, not the noise",
-             _nout.split("\n")[-1].strip(), "[FAIL] the value is one")
-        # THE OTHER END — r1 F7's case, which is why stderr is kept at all. A suite that dies
-        # BEFORE printing anything says so only on stderr; stdout is empty, so the window still
-        # reaches it. Deleting the stderr half passes the two cases above and fails this one.
-        (_wdp / "broken.py").write_text('raise RuntimeError("the tree went bad underneath")\n')
-        _brc, _bout = run_suite(_wdp, "broken.py")
-        case("a suite that dies before printing still shows its traceback in the window",
-             (_brc, "the tree went bad underneath" in _bout[-400:]), (1, True))
+             (_nrc, "[FAIL] the value is one" in diagnostic_tail(_nso, _nse)), (1, True))
+        # (The evidence-object tail is asserted where it is PRODUCED — see the case reading
+        #  `ev.files[...]["tail"]`. Recomputing it here is what r3 H2 caught.)
+        # ⛔ THE CASE THAT USED TO SIT HERE WAS BLIND TO THE THING IT WAS NAMED FOR — r3 H1. It
+        # ran a fixture that raises at import, so stdout was EMPTY and `stderr + stdout` and
+        # `stdout + stderr` produced the identical string: green under both orders, and unable
+        # to fail for the reason it claimed to guard. It died only when the stderr half was
+        # DELETED, which the r1 F7 entry already covers. A premise fixed without the branch
+        # being covered — write the case from the CLAUSE.
+        # What replaces it drives the real hazard: a suite that crashes AFTER printing, which is
+        # 28 of the 38 real suites (their GREEN stdout already exceeds the window;
+        # `check-paid-caller-arrival.py` is 16,701 B).
+        (_wdp / "late.py").write_text(
+            'import sys\n'
+            'def _self_test():\n'
+            '    print("S" * 800)\n'
+            '    raise RuntimeError("the tree went bad underneath")\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+        _lrc, _lso, _lse = run_suite_parts(_wdp, "late.py")
+        _ltail = diagnostic_tail(_lso, _lse)
+        case("a suite that crashes AFTER 800 B of stdout still shows its traceback",
+             (_lrc, "the tree went bad underneath" in _ltail), (1, True))
+
+    # ── THE WINDOW, AS A PURE FUNCTION ───────────────────────────────────────────────────
+    # ⛔ NEITHER STREAM MAY EVICT THE OTHER. Two rounds were spent choosing a concatenation
+    # order; both orders lose, because the order was never the question. These assert the
+    # PROPERTY — both halves reach the reader — rather than any particular arrangement.
+    case("a flooded stderr cannot evict stdout's failure from the window",
+         "[FAIL] the one that matters" in diagnostic_tail("[FAIL] the one that matters",
+                                                          "E" * 5000), True)
+    case("...and a flooded stdout cannot evict stderr's traceback",
+         "RuntimeError: boom" in diagnostic_tail("S" * 5000, "RuntimeError: boom"), True)
+    # ⚠ THE BUDGET IS A CEILING, so it is asserted as a LITERAL — r3's Blocking was a want that
+    # moved with its subject, and `DIAGNOSTIC_WINDOW` on both sides would be exactly that again.
+    case("...and the window never exceeds its budget, however much is offered",
+         len(diagnostic_tail("S" * 5000, "E" * 5000)) <= 401, True)
+    # ...while a silent stderr costs the reader nothing: the unused half goes to stdout, so the
+    # common case keeps the full 400 characters it had before any of this.
+    case("...and a quiet stderr gives its whole half back to stdout",
+         len(diagnostic_tail("S" * 5000, "")), 400)
 
     # ⛔ THE WANT IS THE LITERAL 79, NOT `PROGRESS_WIDTH` — r2 B1, and the SEVENTH instance of this
     # class on this line of work, introduced by the fix to the sixth. Written as
@@ -2437,6 +2560,22 @@ def _self_test() -> int:
     case("a label too long for one row is truncated, and says so",
          (len(_pl_long), _pl_long[-1], _pl_long.startswith("[164/434] ")),
          (79, "…", True))
+    # ⛔ AND THE THRESHOLD ITSELF, WHICH THE TWO CASES AROUND IT DO NOT REACH — r3 B1, the EIGHTH
+    # instance, inside the fix to the seventh. Pinning the constant to a literal gave it a ceiling;
+    # the COMPARISON on `len(label) <= room` kept none, because the inputs are 4, 13, 40 and 300
+    # characters and the boundary is at 69/70. MEASURED as survivors over a green control:
+    #     `<= room + 1`   -> 114/114 passed      (6 real labels then emit an 80-column line)
+    #     `<= room + 20`  -> 114/114 passed      (82 of 445 real labels wrap, up to 99 columns)
+    #     `<  room`       -> 114/114 passed
+    # ⭐ THE LESSON THAT DID NOT TRANSFER: r2 asked whether the WANT moves with the subject, and
+    # fixed that. The INPUT matters just as much — `"x" * 300` is true of every threshold from 1
+    # to 299, so it pins the far side and says nothing about where the edge is. Test AT the edge.
+    # `room` is 79 - len("[164/434] ") = 69. Both wants are literals for the reason above.
+    case("a label of exactly the remaining width is NOT truncated",
+         progress_line(164, 434, "z" * 69), "[164/434] " + "z" * 69)
+    case("...and one character more IS, back to exactly one row",
+         (len(progress_line(164, 434, "z" * 70)), progress_line(164, 434, "z" * 70)[-1]),
+         (79, "…"))
     case("...and a label that already fits is left exactly alone",
          progress_line(164, 434, "y" * 40), "[164/434] " + "y" * 40)
     # ⚠ run_mutations must stay SILENT unless a caller asks. Its own suite drives it dozens of
@@ -2531,7 +2670,7 @@ def _self_test() -> int:
     # so an `expect` naming it in full could never match and its entry would be unattributable.
     case("⚠ a case name containing ': got ' is TRUNCATED by the consumer",
          parse_fail_names("  [FAIL] the width: got the wrong value"), ["the width"])
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 445)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 452)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
