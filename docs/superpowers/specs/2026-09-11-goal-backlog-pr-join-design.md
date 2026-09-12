@@ -4,7 +4,8 @@
 > **Goal:** A person who was away can see the current state, what changed, and what needs them —
 > without reading the chat transcript.
 
-**v1, 2026-09-11.** Raised by the user from the live pages: *"current goal list isn't very coherent
+**v2, 2026-09-11** (v1 same day; §3.2a and the §5 card revised — the flat PR list became a
+`spec → plan → shipped` chain, on the user's refinement). Raised by the user from the live pages: *"current goal list isn't very coherent
 with backlog groups or tags"* and *"current dashboard just lists activities without expressing
 progress of each goal."* Their framing is the spec's thesis — **backlog, goals and dashboard should
 express different aspects of the same project activity**, and they are currently three separate
@@ -138,6 +139,43 @@ requires that the remainder is *displayed as unattributed*, not silently dropped
 ⚠ **A zero here means the deriver is broken, not that a goal is idle.** The distinction is the
 subject of falsifier F4.
 
+### 3.2a The implementation chain — spec → plan → shipped
+
+⟳ **Added v2, 2026-09-11**, on the user's refinement: *"goals lists many docs: spec → plan →
+implementation (commits → PRs). Currently it only lists spec and plan doc. I hope related
+implementations can be found."*
+
+A flat per-goal PR list satisfies "findable" and **throws away the lineage**, which is the part worth
+having. The chain is derivable from three signals that already exist:
+
+| Link | Derivation | Measured 2026-09-11 |
+|---|---|---|
+| spec ↔ plan | shared stem — `<date>-<stem>-design.md` ↔ `<date>-<stem>.md` | **60 pairs** (94 specs, 92 plans) |
+| document → PR | `git log --follow -- <path>`, taking `(#N)` from subjects | **45 of 46 (98%)** anchor-declaring docs |
+| document → goal | the declared `Anchor:` header | 46 documents |
+
+The single document recovering no PR is this spec, which is unmerged — **correct behaviour, not a
+gap**, and it is the natural falsifier fixture for F7.
+
+⭐ **The PR is the atomic implementation unit here, not a commit range.** This repo squash-merges, so
+a branch's whole history collapses to one commit on `master`. Chasing individual commits would
+reconstruct something `master` does not contain; the `(#N)` suffix is the durable identity.
+
+**Two work shapes, and the card must distinguish them.** Only **57 of 283** merged PRs have a
+document behind them. The rest are direct work — a backlog fix, a guard, a page repair — with no spec
+and no plan, and they are not lesser work. So:
+
+* **Document-led work** renders as a chain: `spec → plan → shipped PR`, with any stage that does not
+  exist shown as absent rather than omitted. A plan with no shipped PR is *in flight*; a spec with no
+  plan is *not started*. Both are states worth seeing.
+* **Direct work** renders as a plain PR line, attributed by §3.2's path rules.
+
+⚠ **Coverage is bounded by the anchor requirement, and the page must say so.** `check-anchors.py`
+requires a header only for documents dated 2026-08-25 or later, so of 186 documents under
+`docs/superpowers/`, **46 declare an anchor** and the remainder are invisible to this page. That is
+the registry's deliberate living/dead split, not an error — but an unstated denominator is how a
+partial view gets read as a complete one, so the count of excluded documents is rendered.
+
 ### 3.3 item → goal — the one new declared field
 
 **The `Bundle` / tag column becomes a controlled vocabulary of goal names.** It already carries 18
@@ -210,7 +248,15 @@ one of the three without it.
   stable-blob-addressing          ⚠ 7 open · 4 HIGH · idle 34 days
   <goal sentence>
   DECISIONS  [ ADR 0006 ] [ ADR 0007 ]
-  ▸ BACKLOG 7 open · 9 closed   ▸ PULL REQUESTS 28   ▸ DOCUMENTS 7
+  ▸ BACKLOG 7 open · 9 closed   ▾ WORK 7 threads · 28 PRs
+      mutation-manifest-retarget                          ✅ shipped
+         spec  2026-08-29-…-design.md   plan  2026-08-29-….md
+         PR #176  2026-08-29  Retire the plan-as-CI-dependency…
+      blob-addressing-reservation                      ⏸ in flight
+         spec  2026-08-07-…-design.md   plan  —  (none written)
+         no PR yet
+      ── direct work, no document ──────────────────────────────
+         PR #67   2026-08-14  Serve-path deadline
   MILESTONES  <spine, where one exists>
 
   DONE ─────────────────────────────────────────────────────────
@@ -218,9 +264,13 @@ one of the three without it.
 ```
 
 - **Expanded BACKLOG** lists `#num`, severity marker, title, linked to the backlog page.
-- **Expanded PULL REQUESTS** lists number, merge date, title, and **how it was attributed**
-  (anchor / path / backlog-ref), so a reader can judge the attribution rather than trust it.
-- **Expanded DOCUMENTS** lists name, kind and date. **The repeated goal sentence is removed** (§1c).
+- **Expanded WORK replaces the flat PR list** (§3.2a). Document-led work renders as a
+  `spec → plan → PR` thread with a state — **shipped**, **in flight**, **not started** — and a
+  missing stage is drawn as absent, not omitted. Direct work follows under its own rule, with the
+  **attribution method shown** (anchor / path / backlog-ref) so a reader can judge it rather than
+  trust it. The count of documents excluded for having no anchor is rendered here too.
+- **DOCUMENTS as a separate section disappears** — every document now appears inside the thread it
+  belongs to, which is what the user asked for and also kills §1c's twenty repeated goal sentences.
 - **DONE goals collapse to a single line** — findable, not competing for attention.
 
 ---
@@ -288,6 +338,14 @@ Each states an observation that makes the design **fail**, not a box to tick.
   a backlog row's goal does not rebuild the page.
 - **F6 — "Idle N days" is a claim about git.** Fails if the rendered idle figure disagrees with the
   last merge touching that goal.
+- **F7 — A thread's state is a claim about what shipped.** Fails if a thread marked *shipped* names
+  a PR that `git log --follow` on its own documents does not reach, or if a thread marked *in
+  flight* has a merged PR touching it. ⚠ **The fixture exists already and is not synthetic:** this
+  spec is the one document of 46 that recovers no PR, so it must render as *in flight* today and
+  flip to *shipped* on merge. A falsifier that cannot be observed changing is not one.
+- **F8 — Excluded documents must be counted, not hidden.** Fails if the page shows anchor-declaring
+  documents without stating how many were excluded for lacking an anchor. Measured 2026-09-11: 46 of
+  186. A partial view with an unstated denominator reads as a complete one.
 
 ---
 

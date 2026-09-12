@@ -7558,3 +7558,39 @@ Recorded in §1 rather than quietly corrected.
 Gates green on the branch: `check-anchors` rc=0 (11 anchors, floor 22 held), `check-docs` rc=0,
 `check-review-rounds` rc=0, `check-selftest-counts` rc=0. No review round yet — this is a spec
 awaiting the user's approval, and the review gate applies when it becomes a plan.
+
+## 2026-09-11
+Correction to the entry above, and it is the design getting sharper rather than a slip being
+patched. The goals page was going to list each goal's pull requests as a flat list. It will now show
+the lineage instead — which specification led to which plan, and which pull request shipped it.
+
+The user's point was that a goal's work has a shape: a spec becomes a plan, and a plan becomes an
+implementation. Listing the specs and plans but not the implementations, which is what the page does
+today, breaks the chain at its last and most interesting link. A flat list of pull requests
+technically makes them findable and still loses the shape.
+
+Checking whether the chain could be rebuilt from what already exists: it can. Forty-five of the
+forty-six documents that declare a goal recover the pull request that shipped them straight out of
+git history. The one that does not is this design itself, which has not merged — the right answer,
+and now the test fixture for the rule, since it must read as *in flight* today and flip to *shipped*
+when it lands.
+
+Two things this surfaced that the design now has to state rather than gloss. Because every branch
+here is squash-merged, a pull request is the smallest unit of implementation that master actually
+contains; hunting for individual commits would reconstruct something that is not there. And only
+fifty-seven of two hundred and eighty-three merged pull requests have a document behind them at all
+— the rest are direct work with no spec and no plan, which is not lesser work and needs its own
+place on the card rather than being quietly dropped.
+<!--tech-->
+Branch `goal-join-spec`, base `a298df4e`. Second commit. Still spec-only — no code, no page changes.
+
+Spec `2026-09-11-goal-backlog-pr-join-design.md` → **v2**. New §3.2a (the implementation chain);
+§5's card replaces `PULL REQUESTS` + `DOCUMENTS` with a single `WORK` section of `spec → plan →
+shipped` threads carrying a state (shipped / in flight / not started), plus a `direct work, no
+document` bucket. Falsifiers **F7** (a thread's state is a claim about what shipped, fixture = this
+spec) and **F8** (excluded documents must be counted) added.
+
+**Measured 2026-09-11** — spec↔plan pairing by shared stem: **60 pairs** over 94 specs / 92 plans.
+`git log --follow` recovers ≥1 `(#N)` for **45 of 46** anchor-declaring documents (98%), reaching 57
+distinct PRs. Anchor coverage is **46 of 186** documents under `docs/superpowers/` — the registry's
+deliberate living/dead split, now rendered rather than implied.
