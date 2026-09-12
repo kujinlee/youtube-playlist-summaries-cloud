@@ -45,7 +45,7 @@ anchored documents it touched so a bulk edit is visible as one. A threshold was 
 - ⛔ **EVERY TASK'S STEP 4 UPDATES THE DECLARED CASE COUNT** at `gen-goals-page.py:6`
   (`# 15 cases, pure functions only`). `gen-goals-page.py` is pinned in
   `check-selftest-counts.POPULATION` (`:134`) and that guard **runs in CI** (`ci.yml:275`). Round 1
-  found this plan adding 47 cases and never touching line 6 — five of six commits would have been
+  found this plan adding 50 cases and never touching line 6 — five of six commits would have been
   red on the guard whose entire purpose is catching it.
 - **Every case must be able to FAIL.** Where a case can only fail *in company with a sibling*, the
   plan says so, so a later refactor cannot delete the load-bearing half and leave the vacuous one.
@@ -220,9 +220,17 @@ git commit -m "A spec and its plan are one thread, and a collision cannot vanish
     # unanchored `README` also matches `README-generator.ts`, so a real implementation
     # rendered as `docs only`. Latent (no such path exists yet) and fixed by anchoring each
     # literal with `$`. This case dies the moment an anchor is dropped.
-    eq("a code file whose name STARTS with a doc name is still code",
-       files_are_code(["README-generator.ts"]) and files_are_code(["CONTEXT.md.bak"])
-       and files_are_code(["CLAUDE.md.old"]) and files_are_code(["READMEs.tsx"]), True)
+    # ⚠ Reported individually, not chained with `and`. Round 3 noted the chain is coarse;
+    # a list of results names WHICH path class regressed.
+    eq("a code file whose name starts with a doc name is still code",
+       [files_are_code([f]) for f in
+        ("README-generator.ts", "CONTEXT.md.bak", "CLAUDE.md.old", "READMEs.tsx",
+         "src/READMEs.tsx", "a/b/CONTEXT.md.ts")], [True] * 6)
+    # ⭐ ROUND 3 H. Anchoring with `$` fixed the above and MISSED nested instruction
+    # documents — the third narrowing of one regex in three rounds. `(.*/)?` is the class.
+    eq("an instruction document at any depth is not code",
+       [files_are_code([f]) for f in
+        ("worker/CONTEXT.md", "packages/api/AGENTS.md", "sub/dir/README.md")], [False] * 3)
 ```
 
 ⚠ **`files_are_code([]) == False` and `prs_from_log([]) == []` are NOT in this set.** Round 1 named
@@ -240,8 +248,15 @@ Expected: FAIL — `NameError: name 'prs_from_log' is not defined`
 PR_TAIL = re.compile(r"\(#(\d+)\)\s*$")
 # ⚠ NOT just `docs/`. Round 1 measured 10 PRs in the last 400 whose only non-`docs/`
 # changes were CONTEXT.md or .agents/skills/**, every one wrongly tagged `code`.
+# ⚠ THREE ROUNDS OF THIS ONE REGEX, and each fix was narrower than the class.
+#   r1: `^docs/` alone missed CONTEXT.md and .agents/  -> 10 real mis-taggings
+#   r2: adding bare `README` matched README-generator.ts -> 4 the other way
+#   r3: anchoring with `$` missed worker/CONTEXT.md      -> nested instruction docs
+# `(.*/)?` is the class: an instruction document at ANY depth, and only when the
+# whole basename matches. Verified 0 wrong over 19 adversarial paths.
 DOC_PATH = re.compile(
-    r"^(docs/|\.remember/|\.agents/|(README(\.md)?|CONTEXT\.md|AGENTS\.md|CLAUDE\.md)$)")
+    r"^(docs/|\.remember/|\.agents/"
+    r"|(.*/)?(README(\.md)?|CONTEXT\.md|AGENTS\.md|CLAUDE\.md)$)")
 
 
 def prs_from_log(lines) -> list[dict]:
@@ -279,7 +294,7 @@ def files_are_code(files) -> bool:
 
 - [ ] **Step 4: Run the tests, then UPDATE THE DECLARED COUNT**
 
-Run: `python3 scripts/gen-goals-page.py --self-test` → PASS, `34/34`. Set `:6` to `# 34 cases`.
+Run: `python3 scripts/gen-goals-page.py --self-test` → PASS, `35/35`. Set `:6` to `# 35 cases`.
 Run: `python3 scripts/check-selftest-counts.py` → rc=0, or stop.
 
 - [ ] **Step 5: Commit**
@@ -390,7 +405,7 @@ def annotate_code(prs: list[dict], show=git_show_files) -> list[dict]:
 
 - [ ] **Step 4: Run the tests, then UPDATE THE DECLARED COUNT**
 
-Run: `--self-test` → PASS, `38/38`. Set `:6` to `# 38 cases`. Run `check-selftest-counts.py` → rc=0.
+Run: `--self-test` → PASS, `39/39`. Set `:6` to `# 39 cases`. Run `check-selftest-counts.py` → rc=0.
 
 - [ ] **Step 5: Commit**
 
@@ -447,6 +462,17 @@ anchors, not per card.
        pr_fanout([[{"num": "5"}], [{"num": "5"}]]), {"5": 2})
     eq("an unreadable document contributes nothing, and does not crash",
        pr_fanout([None, [{"num": "5"}]]), {"5": 1})
+
+    # ⭐ ROUND 3 H. thread_prs asked only for spec and plan, so a collision's third
+    # document never got a history: a PR touching only it vanished from the thread and
+    # from the fan-out. This case dies if the loop goes back to the two named slots.
+    _t3 = {"stem": "s", "spec": {"name": "a-design.md", "rel": "a"},
+           "plan": {"name": "a.md", "rel": "b"},
+           "docs": [{"name": "a-design.md", "rel": "a"}, {"name": "a.md", "rel": "b"},
+                    {"name": "a-plan.md", "rel": "c"}]}
+    _h3 = {"a": [], "b": [], "c": [{"sha": "z", "num": "7", "date": "2026-09-01", "subject": "w"}]}
+    eq("a PR reachable only through a collision's extra document is still found",
+       [p["num"] for p in thread_prs(_t3, _h3.get)["prs"]], ["7"])
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
@@ -468,9 +494,13 @@ def thread_prs(thread: dict, history) -> dict:
     """
     merged: dict[str, dict] = {}
     error = False
-    for side in ("spec", "plan"):
-        d = thread.get(side)
-        if not d:
+    # ⚠ EVERY document on the thread, not just spec and plan. `pair_documents` appends
+    # all of them to `docs` — spec and plan are members of it — so iterating `docs` is a
+    # superset. Round 3: iterating the two named slots meant a collision's third document
+    # never got a history, so a PR touching only it vanished from the thread AND from the
+    # fan-out that `hist_cache` feeds.
+    for d in thread.get("docs") or [x for x in (thread.get("spec"), thread.get("plan")) if x]:
+        if not d or not d.get("rel"):
             continue
         got = history(d["rel"])
         if got is None:
@@ -483,7 +513,12 @@ def thread_prs(thread: dict, history) -> dict:
 
 
 def pr_fanout(histories) -> dict[str, int]:
-    """PR number -> how many DOCUMENTS reach it. PURE.
+    """PR number -> how many ANCHORED documents reach it. PURE.
+
+    ⚠ ANCHORED, and the qualifier is load-bearing. A document declaring no anchor never
+    enters `collect`'s history cache, so it cannot be counted. `on 22 documents` therefore
+    means 22 of the 47 documents this page can see, not 22 of 187. An unqualified
+    denominator is the failure this project records most often.
 
     ⛔ DOCUMENTS, NOT THREADS, and round 2 caught it counting threads while the rendered
     label said documents. `thread_prs` dedupes a PR that touched BOTH a spec and its plan,
@@ -540,7 +575,7 @@ Finally, after `out.sort(...)` and before `return out`, compute the global fan-o
 
 - [ ] **Step 4: Run the tests, then UPDATE THE DECLARED COUNT**
 
-Run: `--self-test` → PASS, `45/45`. Set `:6` to `# 45 cases`. `check-selftest-counts.py` → rc=0.
+Run: `--self-test` → PASS, `47/47`. Set `:6` to `# 47 cases`. `check-selftest-counts.py` → rc=0.
 
 Run: `python3 scripts/gen-goals-page.py --out /tmp/goals-check.html && echo BUILD-OK`
 Expected: `BUILD-OK`, no traceback on stderr.
@@ -636,10 +671,19 @@ thread-level flags are `history could not be read` (CANNOT RUN) and `no pull req
        "extra document" in render_threads(_coll, {}) and "s-plan.md" in render_threads(_coll, {}),
        True)
     # ⭐ ROUND 2 L. `d["rel"]` raised KeyError on a record without one. `.get` throughout.
+    # ⭐ ROUND 3 BLOCKING. The r2 fix changed two `.get` sites and left two `d["rel"]`
+    # renders, so this very fixture crashed on the SPEC branch before reaching the
+    # extra-document branch it was written to exercise. Both renders now use `.get`.
     eq("a document record with no rel does not crash the renderer",
        "extra document" in render_threads(
            [{"stem": "s", "spec": {"name": "s.md"}, "plan": None,
-             "docs": [{"name": "other.md"}], "prs": [], "pr_error": False}], {}), True)
+             "docs": [{"name": "s.md"}, {"name": "other.md"}],
+             "prs": [], "pr_error": False}], {}), True)
+    eq("and the crash-free path still names the document",
+       "other.md" in render_threads(
+           [{"stem": "s", "spec": {"name": "s.md"}, "plan": None,
+             "docs": [{"name": "s.md"}, {"name": "other.md"}],
+             "prs": [], "pr_error": False}], {}), True)
 
     eq("no threads renders the absence, not an empty box",
        "No spec or plan" in render_threads([], {}), True)
@@ -681,7 +725,8 @@ def render_threads(threads: list[dict], fanout: dict[str, int]) -> str:
             d = t.get(side)
             if d:
                 parts.append(f'<div class="prline"><span class="t">{side}</span>'
-                             f'<a href="/src/{esc(d["rel"])}">{esc(d["name"])}</a></div>')
+                             f'<a href="/src/{esc(d.get("rel", ""))}">'
+                             f'{esc(d.get("name", "?"))}</a></div>')
             else:
                 parts.append(f'<div class="prline"><span class="t">{side}</span>'
                              f'<span class="absent">{missing}</span></div>')
@@ -692,7 +737,8 @@ def render_threads(threads: list[dict], fanout: dict[str, int]) -> str:
             if d.get("rel") not in named:
                 parts.append(f'<div class="prline"><span class="absent">⚠ extra document '
                              f'on this stem</span>'
-                             f'<a href="/src/{esc(d["rel"])}">{esc(d["name"])}</a></div>')
+                             f'<a href="/src/{esc(d.get("rel", ""))}">'
+                             f'{esc(d.get("name", "?"))}</a></div>')
         for p in t["prs"]:
             tag = ("unknown" if p.get("code") is None
                    else "touched code" if p["code"] else "docs only")
@@ -758,7 +804,7 @@ CANNOT RUN, the one state this design argues hardest for.
 
 - [ ] **Step 4: Run the tests, verify contrast, then UPDATE THE DECLARED COUNT**
 
-Run: `--self-test` → PASS, `59/59`. Set `:6` to `# 59 cases`. `check-selftest-counts.py` → rc=0.
+Run: `--self-test` → PASS, `62/62`. Set `:6` to `# 62 cases`. `check-selftest-counts.py` → rc=0.
 
 **Measure the contrast — do not assume the fix worked:**
 
@@ -899,7 +945,7 @@ implementer can apply mechanically.
 
 - [ ] **Step 4: Run the tests, then UPDATE THE DECLARED COUNT**
 
-Run: `--self-test` → PASS, `62/62`. Set `:6` to `# 62 cases`. `check-selftest-counts.py` → rc=0.
+Run: `--self-test` → PASS, `65/65`. Set `:6` to `# 65 cases`. `check-selftest-counts.py` → rc=0.
 
 Run: `python3 scripts/gen-goals-page.py --out /tmp/goals-check.html && grep -o '[0-9]* more under docs/superpowers' /tmp/goals-check.html`
 Expected: `140 more under docs/superpowers` **as measured 2026-09-11** — and note it passes today
