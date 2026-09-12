@@ -7662,3 +7662,57 @@ Gates green: `check-anchors`, `check-docs`, `check-selftest-counts`, `check-ratc
 
 ⚠ **Owed, not done:** mutation manifest entries for the new rules; the backlog→goal join and the
 derived lifecycle (spec §3.3 and §4, Plan 2); direct document-less work in the Work band.
+
+## 2026-09-12
+The goals page generator now has mutation coverage, and getting it took paying a trap that two other
+files had already paid — after each one wrote down how to avoid it.
+
+Mutation testing here works by deliberately breaking a rule and checking that a named test goes red.
+It is how the project knows its tests can actually fail rather than merely passing. The goals page
+generator had none, alone among its five siblings, and it had just gained around five hundred lines
+of new rules — so it was the largest piece of the codebase nothing was checking in that way.
+
+Fourteen deliberate breakages were written, one per rule that could silently weaken. All fourteen
+were killed on the first real run. None of them counted, because the file printed its failures in a
+shape the harness cannot read: it looks for a line beginning with a specific marker, and this file
+used a different one. Every kill was invisible.
+
+Worth recording that the harness handled this exactly right. It did not report missing coverage,
+which would have been the wrong diagnosis and sent someone writing more tests. It said the problem
+was the failure printer, named the file, and refused to attribute anything from it until that was
+fixed. It also refused an earlier run outright — the control failed before any breakage was applied,
+so it declared every verdict below it an artefact rather than reporting thirteen of fourteen.
+
+The printer is fixed and the fix was checked by breaking a rule in a scratch copy and reading what
+came out, rather than by reading the code. Five hundred and thirty-eight breakages now all kill a
+named test, up from five hundred and twenty-four.
+<!--tech-->
+Branch `goal-page-mutations`, base `58d82658`. Follow-up to PR #292, which is merged and green on
+master.
+
+`scripts/mutations/gen-goals-page.json` — **14 entries**, covering what three plan-review rounds
+struggled with: `PR_TAIL`'s end anchor; `DOC_PATH`'s any-depth prefix **and** its basename anchor as
+**separate** entries, because they broke in opposite directions; `annotate_code` collapsing
+`None` into `False`; `thread_prs` losing `pr_error`; `thread_prs` reverting to the two named slots;
+`thread_prs` losing newest-first; `pr_fanout` ceasing to accumulate; `render_threads` identifying a
+collision's extra document by a field rather than by identity; the fan-out span; the CANNOT RUN
+branch; `excluded_count`'s refusal; `doc_stem`'s end anchor; `pair_documents` dropping the extra.
+
+**Two independent ratchets moved, both required:** `EXPECTED_MUTATIONS` sum **524 → 538**, and the
+pinned sorted list of shipping manifests gains `scripts/gen-goals-page.py`. Moving only the sum made
+the harness refuse with *"CANNOT RUN — the control run failed BEFORE any mutation was applied"*.
+
+⛔ **`gen-goals-page.py`'s `eq` now prints `[FAIL] <name>` with the name ALONE on the line.** It
+printed `  ✗ <label>  got … want …`, which `attribute` cannot parse
+(`startswith("[FAIL] ")` then `[7:]`). **Third file to pay this** — `gen-backlog-page.py` paid 5
+entries and `brief-compose.py` 8, both on 2026-09-10, both *after* `portable-practices` §22 was
+written from the first. A convention did not hold, three times.
+
+**Harness: `538 mutation(s), 538 killed, 538 attributed to the case each names, 0 survivor(s)`,
+rc=0** — up from 524 attributed. Gates green: `check-anchors`, `check-docs`,
+`check-selftest-counts`, `check-ratchet-contract`, `check-review-rounds`. Suite 65/65.
+
+⚠ **Worth a rule, not a fourth comment:** `check-plan-code.py` carries an abandoned attempt at a
+pre-flight for this, noting source shape cannot decide a behavioural property. It can be decided by
+RUNNING a suite with one case forced red and checking the output shape — which is how this fix was
+verified by hand.

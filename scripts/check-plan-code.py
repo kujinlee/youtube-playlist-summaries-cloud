@@ -560,6 +560,11 @@ EXPECTED_MUTATIONS = {
     #     test on the pattern text, so either copy could narrow while it stayed green.
     "scripts/check-catalog-coverage.py": 7,
     "scripts/gen-dashboard.py": 64,
+    # ⟳ 2026-09-12. gen-goals-page.py was the ONE sibling generator with no manifest —
+    # gen-dashboard, gen-backlog-page, brief-compose, page_chrome and page_markup all had
+    # one. The gap predates the work-threads branch, but that branch added ~540 lines of
+    # new rules to it, making it the largest unmutated surface of its kind here.
+    "scripts/gen-goals-page.py": 14,
     # ⟳ 2026-09-10, backlog #110 review round 4. A SEED, not a full manifest, and the reason is
     # measured: `gen-backlog-page.py` is 3,000 lines with 160 cases and had ZERO mutations, so
     # `--mutate .` never touched it and no machine had ever asked whether any of those cases could
@@ -2466,6 +2471,7 @@ def _self_test() -> int:
                                       "scripts/coverage_verdict.py",
                                       "scripts/gen-backlog-page.py",
                                       "scripts/gen-dashboard.py",
+                                      "scripts/gen-goals-page.py",
                                       "scripts/page_chrome.py",
                                       "scripts/page_markup.py"])
     # A literal on purpose: its whole job is that the total cannot move without
@@ -2889,7 +2895,16 @@ def _self_test() -> int:
     # all verified to ATTRIBUTE (each goes red via the case it names) before this number moved.
     # A RISE is the ordinary direction; the sanctioned FALL is retirement-with-subject, and
     # this is not one.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 524)
+    # ⟳ 2026-09-12: 524 -> 538. `gen-goals-page.py` joins the manifest with FOURTEEN entries.
+    # It was the one sibling generator nothing mutated — gen-dashboard, gen-backlog-page,
+    # brief-compose, page_chrome and page_markup all had one — and the work-threads branch
+    # added ~540 lines of new rules to it. The fourteen cover what three review rounds took
+    # to get right: PR_TAIL's end anchor, DOC_PATH's any-depth prefix AND its basename
+    # anchor (they broke in OPPOSITE directions, so they are separate entries), the
+    # None-vs-False collapse in annotate_code, thread_prs losing pr_error, thread_prs
+    # reverting to the two named slots, pr_fanout ceasing to accumulate, and render_threads
+    # identifying a collision's extra document by a field rather than by identity.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 538)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

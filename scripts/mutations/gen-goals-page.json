@@ -1,0 +1,156 @@
+[
+  {
+    "name": "PR_TAIL loses its end anchor, so a number mid-subject becomes the PR",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "PR_TAIL = re.compile(r\"\\(#(\\d+)\\)\\s*$\")",
+        "PR_TAIL = re.compile(r\"\\(#(\\d+)\\)\")"
+      ]
+    ],
+    "expect": "a PR-looking number mid-subject is not the PR"
+  },
+  {
+    "name": "DOC_PATH loses the any-depth prefix, so a nested instruction doc reads as code",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    r\"|(.*/)?(README(\\.md)?|CONTEXT\\.md|AGENTS\\.md|CLAUDE\\.md)$)\")",
+        "    r\"|(README(\\.md)?|CONTEXT\\.md|AGENTS\\.md|CLAUDE\\.md)$)\")"
+      ]
+    ],
+    "expect": "an instruction document at any depth is not code"
+  },
+  {
+    "name": "DOC_PATH loses the basename end anchor, so README-generator.ts reads as documentation",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    r\"^(docs/|\\.remember/|\\.agents/\"\n    r\"|(.*/)?(README(\\.md)?|CONTEXT\\.md|AGENTS\\.md|CLAUDE\\.md)$)\")",
+        "    r\"^(docs/|\\.remember/|\\.agents/\"\n    r\"|(.*/)?(README(\\.md)?|CONTEXT\\.md|AGENTS\\.md|CLAUDE\\.md))\")"
+      ]
+    ],
+    "expect": "a code file whose name starts with a doc name is still code"
+  },
+  {
+    "name": "annotate_code collapses CANNOT RUN into documentation",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "            cache[sha] = None if files is None else files_are_code(files)",
+        "            cache[sha] = files_are_code(files or [])"
+      ]
+    ],
+    "expect": "an unreadable commit is unknown, not False"
+  },
+  {
+    "name": "thread_prs stops recording that a document could not be read",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "        if got is None:\n            error = True\n            continue",
+        "        if got is None:\n            continue"
+      ]
+    ],
+    "expect": "one unreadable document poisons the thread's verdict"
+  },
+  {
+    "name": "thread_prs goes back to the two named slots, losing a collision's extra document",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    for d in thread.get(\"docs\") or [x for x in (thread.get(\"spec\"), thread.get(\"plan\")) if x]:",
+        "    for d in [x for x in (thread.get(\"spec\"), thread.get(\"plan\")) if x]:"
+      ]
+    ],
+    "expect": "a PR reachable only through a collision's extra document is still found"
+  },
+  {
+    "name": "thread_prs stops ordering newest first",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    prs = sorted(merged.values(), key=lambda p: (p[\"date\"], p[\"num\"]), reverse=True)",
+        "    prs = sorted(merged.values(), key=lambda p: (p[\"date\"], p[\"num\"]))"
+      ]
+    ],
+    "expect": "a thread's PRs are the union over its documents, deduped, NEWEST FIRST"
+  },
+  {
+    "name": "pr_fanout stops accumulating, so every bulk edit reads as a single-document PR",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "            out[num] = out.get(num, 0) + 1",
+        "            out[num] = 1"
+      ]
+    ],
+    "expect": "fan-out counts the documents a PR touched"
+  },
+  {
+    "name": "render_threads identifies the extra document by a field instead of by identity",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "        named = [x for x in (t.get(\"spec\"), t.get(\"plan\")) if x]\n        for d in t.get(\"docs\", []):\n            if not any(d is x for x in named):",
+        "        named = [x.get(\"rel\") for x in (t.get(\"spec\"), t.get(\"plan\")) if x]\n        for d in t.get(\"docs\", []):\n            if d.get(\"rel\") not in named:"
+      ]
+    ],
+    "expect": "a document record with no rel does not crash the renderer"
+  },
+  {
+    "name": "render_threads suppresses the fan-out, so a bulk edit poses as this goal's work",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "            fan = f'<span class=\"t\">on {n} documents</span>' if n > 1 else \"\"",
+        "            fan = \"\""
+      ]
+    ],
+    "expect": "a PR touching many documents renders its fan-out"
+  },
+  {
+    "name": "render_threads lets CANNOT RUN read as an honest absence",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "        if t[\"pr_error\"]:\n            flag = '<span class=\"absent\">history could not be read — treat as NOT MEASURED</span>'\n        elif not t[\"prs\"]:",
+        "        if False:\n            flag = '<span class=\"absent\">history could not be read — treat as NOT MEASURED</span>'\n        elif not t[\"prs\"]:"
+      ]
+    ],
+    "expect": "an unreadable history says so instead of showing nothing"
+  },
+  {
+    "name": "excluded_count returns a negative instead of refusing disagreeing populations",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    if shown > total:\n        raise ValueError(f\"shown ({shown}) exceeds total ({total}) — populations disagree\")",
+        "    if False:\n        raise ValueError(f\"shown ({shown}) exceeds total ({total}) — populations disagree\")"
+      ]
+    ],
+    "expect": "showing more than exist is a refusal, not a negative"
+  },
+  {
+    "name": "doc_stem strips a suffix anywhere, not only at the end",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "STEM_SUFFIX = re.compile(r\"-(design|plan)$\")",
+        "STEM_SUFFIX = re.compile(r\"-(design|plan)\")"
+      ]
+    ],
+    "expect": "only a TRAILING suffix is stripped"
+  },
+  {
+    "name": "pair_documents drops the extra document instead of keeping it for the renderer",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "        t[\"docs\"].append(d)\n        slot = \"plan\" if d.get(\"kind\") == \"plan\" else \"spec\"",
+        "        slot = \"plan\" if d.get(\"kind\") == \"plan\" else \"spec\"\n        if t[slot] is None:\n            t[\"docs\"].append(d)"
+      ]
+    ],
+    "expect": "a second document in a slot is kept, not dropped"
+  }
+]

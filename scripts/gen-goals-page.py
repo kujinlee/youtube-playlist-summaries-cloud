@@ -754,7 +754,21 @@ def self_test() -> int:
         nonlocal cases, failures
         cases += 1
         ok = got == want
-        print(("  ✓ " if ok else "  ✗ ") + label + ("" if ok else f"  got {got!r} want {want!r}"))
+        # ⛔ THE FAILURE LINE IS A CONTRACT WITH THE MUTATION HARNESS, not a display choice.
+        # `check-plan-code.attribute` reads a red case with `startswith("[FAIL] ")` then
+        # `[7:]`, so a suite reporting failures any other way is one whose kills NOBODY
+        # CAN SEE: every mutation reports "matched 0 red case(s)" while each one IS killed
+        # by the case it names. This file printed `  ✗ <label>  got … want …` and paid all
+        # 14 of its manifest entries for it on 2026-09-12 — the THIRD file to do so, after
+        # `gen-backlog-page.py` (5 entries) and `brief-compose.py` (8), both of which paid
+        # AFTER a convention was written to prevent exactly this.
+        # ⚠ THE NAME STAYS ALONE ON THE `[FAIL]` LINE. Appending the got/want to it makes
+        # the slice `[7:]` return a string that matches no case name.
+        if ok:
+            print(f"  ok     {label}")
+        else:
+            print(f"  [FAIL] {label}")
+            print(f"    got {got!r} want {want!r}")
         failures += 0 if ok else 1
 
     reg = "| Anchor | ADR(s) | Goal |\n|---|---|---|\n| `alpha` | 0001, 0002 | A goal. |\n"
