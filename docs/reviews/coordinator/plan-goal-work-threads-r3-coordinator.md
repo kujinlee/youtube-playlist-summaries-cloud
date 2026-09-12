@@ -88,3 +88,36 @@ forever because prose has nothing to execute; that is a signal to go build, not 
 Every defect found lives in code that does not exist yet. Once written it has a 65-case suite, a
 mutation manifest and a browser pass — instruments strictly stronger than another prose round, and
 the two halves that mattered this round only found what they found by *executing* it.
+
+---
+
+## ⛔ GATE EXIT — decided by the human, 2026-09-12
+
+**Decision: stop reviewing the plan and implement it.** Asked as a selection card with the
+round-4 counter-argument stated; option A chosen.
+
+**This is a recorded exception, not a convergence.** `docs/dev-process.md`'s Post-Plan Gate is
+*"a full re-review round with no new Blocking/High"*, and round 3 raised a Blocking. The gate was
+NOT met. What was met is the condition the same document names for a document-shaped subject:
+
+> on a *document*, rounds can be right forever because prose has nothing to execute; that is a
+> signal to go build, not to convene Phase 6
+
+**The evidence for reading it that way, from this gate's own record:**
+
+1. Every defect found in three rounds lives in code that does not exist yet.
+2. Round 3's two worst defects were **invisible to reading**. Both halves and the coordinator found
+   the `.get("rel")` collision only by executing the plan's code. The instrument that worked is the
+   one implementation provides by default.
+3. Four consecutive rounds where the Blocking was the previous round's fix — the signature of
+   patching prose, not of an unstable design.
+4. The plan's code has already been extracted and run: **39 cases, 0 failing.**
+
+**What this costs, stated rather than hidden.** If implementation surfaces a design error the plan
+should have caught, the cost lands here, on this decision. The mitigation is that implementation is
+strictly better instrumented than another prose round: a 65-case suite, a mutation manifest under
+`check-ratchet-contract.py`, and a mandatory browser pass.
+
+**`.claude/plan-gate-pending` is cleared on the strength of this decision**, which is the sanctioned
+route — the checklist permits clearing on *"convergence, or a human decision when one was actually
+needed"*. One was needed and one was given.

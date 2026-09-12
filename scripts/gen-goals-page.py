@@ -3,7 +3,7 @@
 
     python3 scripts/gen-goals-page.py              # -> ~/explainers/goals.html, served at /goals
     python3 scripts/gen-goals-page.py --fragment-only <path>
-    python3 scripts/gen-goals-page.py --self-test  # 15 cases, pure functions only
+    python3 scripts/gen-goals-page.py --self-test  # 25 cases, pure functions only
 
 WHY THIS EXISTS
 ---------------
@@ -157,6 +157,55 @@ def parse_roots(text: str) -> tuple[set[str], list[tuple[int, str, str]]]:
 # decision (2026-08-30). Both names are kept because the call sites read well with them.
 esc = page_markup.escape
 inline_md = page_markup.render_inline
+
+
+STEM_SUFFIX = re.compile(r"-(design|plan)$")
+
+
+def doc_stem(name: str) -> str:
+    """Filename -> the stem a spec and its plan share. PURE.
+
+    `2026-08-29-x-design.md` and `2026-08-29-x.md` both give `2026-08-29-x`.
+
+    ⚠ BOTH suffixes are stripped, measured rather than assumed. 2026-09-11: 91 specs end
+    `-design` and 3 are bare; 91 plans are bare and 1 ends `-plan`.
+
+    ⚠ GLOBAL vs ANCHOR-SCOPED, and the difference is large. Over ALL 187 documents this
+    rule pairs 61 (stripping `-design` alone pairs 60). But `collect` calls
+    `pair_documents` with ONE ANCHOR'S documents, and only 47 documents declare an anchor:
+    anchor-scoped the corpus yields 41 threads of which just 6 have both halves. 35
+    threads render one side absent — 21 with no plan, 14 with no spec — and that is
+    correct, because an anchor-less document is invisible to this page by design. Do not
+    read 61 as what the page shows.
+    """
+    base = name[:-3] if name.endswith(".md") else name
+    return STEM_SUFFIX.sub("", base)
+
+
+def pair_documents(docs: list[dict]) -> list[dict]:
+    """Documents -> threads, newest stem first. PURE.
+
+    A thread is {stem, spec, plan, docs}. EITHER SIDE MAY BE None and neither is an error:
+    a spec with no plan is work not yet planned; a plan with no spec was written without
+    one. The card draws them absent rather than omitting them.
+
+    ⛔ A stem claimed by two specs would FUSE two threads invisibly. Measured 2026-09-11:
+    0 stems are claimed by more than two files. The extra is kept in `docs` anyway, and
+    `render_threads` renders it — the plan's review found the record keeping it while the
+    page dropped it, which put the protection somewhere no reader could see.
+
+    ⚠ The SAME dict object goes into `docs` and into the slot, which is what lets
+    `render_threads` identify the extras by `is` rather than by a field that may be absent.
+    """
+    by_stem: dict[str, dict] = {}
+    for d in docs:
+        stem = doc_stem(d["name"])
+        t = by_stem.setdefault(stem, {"stem": stem, "spec": None, "plan": None, "docs": []})
+        t["docs"].append(d)
+        slot = "plan" if d.get("kind") == "plan" else "spec"
+        if t[slot] is None:
+            t[slot] = d
+    return sorted(by_stem.values(), key=lambda t: t["stem"], reverse=True)
 
 
 # ---------------------------------------------------------------- collection
@@ -461,6 +510,32 @@ def self_test() -> int:
     # this slice exists to remove. What is NOT covered by deleting it — that this file is
     # still BOUND to page_markup rather than to a re-grown local copy — is a structural
     # property of all four generators at once, and belongs in one check, not four cases.
+
+    eq("stem strips -design", doc_stem("2026-08-29-retarget-design.md"), "2026-08-29-retarget")
+    eq("stem strips -plan", doc_stem("2026-08-28-dashboard-plan.md"), "2026-08-28-dashboard")
+    eq("a bare name is already a stem", doc_stem("2026-08-29-retarget.md"), "2026-08-29-retarget")
+    eq("only a TRAILING suffix is stripped",
+       doc_stem("2026-09-01-design-review-notes.md"), "2026-09-01-design-review-notes")
+
+    _s = {"name": "2026-08-29-x-design.md", "kind": "spec"}
+    _p = {"name": "2026-08-29-x.md", "kind": "plan"}
+    # LOAD-BEARING PAIR. The `None`-slot cases below are satisfied by a pair_documents
+    # that never fills a slot at all; this case is what kills that. Do not delete one
+    # without the other.
+    eq("the thread names both halves",
+       [pair_documents([_s, _p])[0][k]["name"] for k in ("spec", "plan")],
+       ["2026-08-29-x-design.md", "2026-08-29-x.md"])
+    eq("a spec and its plan share one thread", len(pair_documents([_s, _p])), 1)
+    eq("a spec with no plan is a thread with an empty plan slot",   # pairs with the above
+       pair_documents([_s])[0]["plan"], None)
+    eq("a plan with no spec is a thread with an empty spec slot",   # pairs with the above
+       pair_documents([_p])[0]["spec"], None)
+    eq("threads sort newest stem first",
+       [t["stem"] for t in pair_documents([{"name": "2026-01-01-a.md", "kind": "plan"}, _p])],
+       ["2026-08-29-x", "2026-01-01-a"])
+    _s2 = {"name": "2026-08-29-x-plan.md", "kind": "spec"}
+    eq("a second document in a slot is kept, not dropped",
+       len(pair_documents([_s, _p, _s2])[0]["docs"]), 3)
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
