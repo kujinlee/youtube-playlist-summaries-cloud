@@ -790,8 +790,11 @@ def self_test() -> int:
         # a question for the command above, not for this comment.
         # ⚠ THE NAME STAYS ALONE ON THE `[FAIL]` LINE, AND THE SPLIT IS DELIBERATE — this
         # is a THIRD producer shape and a reader is owed the reason. The canonical form
-        # named at `check-plan-code.py:1395` is the single line `[FAIL] {name}: got {got!r}
-        # want {want!r}`, and it parses because `parse_fail_names` truncates at the LAST
+        # named in `check-plan-code.parse_fail_names` is the single line `[FAIL] {name}: got
+        # {got!r} want {want!r}` — ⚠ CITED BY SYMBOL, NOT LINE: this said `:1395`, which was
+        # true when written and went stale TWO COMMITS LATER inside this same branch, because
+        # edits above it moved the function. A line number is an anchor that binds by
+        # position; the symbol survives the edit. It parses because it truncates at the LAST
         # `": got "`. So an earlier draft of this comment was wrong to say that appending
         # the detail "matches no case name": with the canonical `": got "` separator it
         # matches fine. What does NOT parse is appending it with any OTHER separator —
@@ -925,7 +928,13 @@ def self_test() -> int:
 
     # ── THE CANNOT-RUN PRODUCER, REACHABLE AT LAST (round 1, both halves) ────────────────
     # ⛔ `git_pr_history` returning None is the ONLY thing in this file that can ever set
-    # `pr_error`, and THREE manifest entries defend what happens DOWNSTREAM of it. The
+    # `pr_error` (`error = True` occurs exactly once, at the `got is None` branch), and TWO
+    # manifest entries defend what happens downstream of it — `thread_prs stops recording
+    # that a document could not be read` and `render_threads lets CANNOT RUN read as an
+    # honest absence`. ⚠ THIS SAID THREE, counting `annotate_code collapses CANNOT RUN into
+    # documentation`. That entry defends the same None-IS-NOT-False DISCIPLINE but not this
+    # sentinel: its `None` comes from `git_show_files`, and when `git_pr_history` returns
+    # None `thread_prs` continues, so `annotate_code` is not on that path at all. The
     # producer itself had no seam, no case and no mutation — so every weakening of it
     # SURVIVED, measured in review, because nothing could stand in for `subprocess`.
     # `annotate_code` has taken a `show=` parameter since it was written and these two did

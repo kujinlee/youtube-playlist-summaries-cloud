@@ -7787,8 +7787,28 @@ retracts that number; a second `brief-compose.py (8)` the round-2 fix walked pas
 `~540 lines of new rules`, which is `--stat`'s CHANGED-line total (532 insertions + 8 deletions)
 read as though it were insertions.
 
-⚠ **Three corrections to this record, three of them incomplete.** That is why the count is now
-derived rather than stored, and why the branch says so at every site instead of quoting a figure.
+⛔ **Round 4 — asked ONE question, and the answer settles the branch.** Scope: *is any claim here
+contradicted by an artifact?* Both halves: **zero code defects.** Codex's findings were all located
+in immutable, already-pushed COMMIT MESSAGES — listed now in a superseded-claims table in the PR
+body, which is what a squash-merge makes the commit message on master, rather than rewritten (that
+would be erasing one's own errors, a worse instance of the defect this branch documents). Claude
+found three false claims in current prose, all fixed here:
+
+* *"the shape ADR-0006 actually had"* — **it never had it.** Both of ADR-0006's `⟳` lines are in
+  its BODY; no committed version has one in front matter. ADR-0006 is the INVERSE case, which is
+  precisely why the split is load-bearing, and `parse_adr`'s own docstring says so four lines away.
+  The fixture is synthetic and correct; only the sentence attributing it to a real document was wrong.
+* *"THREE manifest entries defend what happens downstream"* of `pr_error` — **two**. The third
+  defends the same None-vs-False discipline but through `git_show_files`, which never touches
+  `pr_error`.
+* a `check-plan-code.py:1395` citation **this branch broke itself** — accurate when written, stale
+  two commits later because its own edits moved the function. Now cited by SYMBOL, which survives.
+
+⚠ **Four corrections to this record, four of them wrong or incomplete.** That is the whole argument
+for deriving a number rather than storing one, and for citing a symbol rather than a line. Both
+reviewers independently re-ran the full mutation suite this round: 549 killed, 549 attributed,
+0 survivors. **The code converged at round 2 and has stayed converged; every round since found only
+prose.**
 
 **Harness: 25 entries for this file, all attributing over a control proved green first; the
 project total is 549. CI measured 549 attributed / 0 survivors on `8d67e55b`.** Gates green: `check-anchors`, `check-docs`,

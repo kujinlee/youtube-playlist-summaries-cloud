@@ -583,7 +583,10 @@ EXPECTED_MUTATIONS = {
     # every rule inside them was unreachable from any case and a mutation on one would have
     # survived. Their absence from the first fourteen was untestability, not completeness —
     # and `git_pr_history` returning None is the ONLY thing in that file that can set
-    # `pr_error`, which three of those fourteen entries already defended DOWNSTREAM of.
+    # `pr_error`, which TWO of those fourteen entries already defended downstream of (a third
+    # defends the same None-IS-NOT-False discipline, but through `git_show_files`, not this
+    # sentinel — the earlier "three" bound that count to `pr_error` and was wrong under its
+    # own grammar).
     # The other two close unfalsifiable fixtures: a `tag` class the case matched but never
     # captured, and a fan-out threshold whose boundary value was absent from the fixture.
     "scripts/gen-goals-page.py": 25,
@@ -2953,7 +2956,14 @@ def _self_test() -> int:
     #   * 1 — `parse_adr`'s front-matter/in-body split, which round 1 raised as a High and the
     #     first fix did NOT close. Its case passed a front matter with no `⟳`, and `AMENDMENT`
     #     requires one, so deleting the split left the case green. The fixture now carries a
-    #     `⟳ SUPERSEDED` line inside the front matter — the shape ADR-0006 actually had.
+    #     `⟳ SUPERSEDED` line inside the front matter. ⚠ THIS SAID "the shape ADR-0006
+    #     actually had", AND ADR-0006 NEVER HAD IT — both its `⟳` lines are in the BODY
+    #     (`:61`, `:76`) and no committed version has one in front matter. The fixture text
+    #     was lifted from that file and attributed to the wrong half of it. ADR-0006 is the
+    #     INVERSE case, which is why the split is load-bearing at all: `parse_adr`'s own
+    #     docstring says it "sat at `status: proposed` while its BODY recorded two
+    #     corrections". The fixture is a synthetic front-matter `⟳` — correct, and
+    #     deliberately not a real document's shape.
     # ⚠ THE FOURTEEN WERE NOT WRONG — every one attributes to the case it names, ten of them
     # to exactly one case. Re-verified in round 2: all the new entries fail by REPORTING, and
     # every `before` anchor occurs exactly once. This was a reach problem, not a coverage one.
