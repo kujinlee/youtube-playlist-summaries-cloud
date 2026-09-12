@@ -4,8 +4,11 @@
 > **Goal:** A person who was away can see the current state, what changed, and what needs them —
 > without reading the chat transcript.
 
-**v2, 2026-09-11** (v1 same day; §3.2a and the §5 card revised — the flat PR list became a
-`spec → plan → shipped` chain, on the user's refinement). Raised by the user from the live pages: *"current goal list isn't very coherent
+**v3, 2026-09-11** (v1 and v2 same day). v2 added the `spec → plan → PR` chain on the user's
+refinement. **v3 cut v2's tri-state thread badge before it was built** — measured at 44/1/1 over the
+real corpus, 96% in one bucket, which is the shape §8's F1 rejects. A per-PR `code` / `docs only` tag
+replaces it, and it discriminates on the case the user actually asked about. Raised from the live
+pages: *"current goal list isn't very coherent
 with backlog groups or tags"* and *"current dashboard just lists activities without expressing
 progress of each goal."* Their framing is the spec's thesis — **backlog, goals and dashboard should
 express different aspects of the same project activity**, and they are currently three separate
@@ -150,12 +153,17 @@ having. The chain is derivable from three signals that already exist:
 
 | Link | Derivation | Measured 2026-09-11 |
 |---|---|---|
-| spec ↔ plan | shared stem — `<date>-<stem>-design.md` ↔ `<date>-<stem>.md` | **60 pairs** (94 specs, 92 plans) |
+| spec ↔ plan | shared stem, stripping a trailing `-design` **or** `-plan` | **61 pairs** (94 specs, 92 plans) |
 | document → PR | `git log --follow -- <path>`, taking `(#N)` from subjects | **45 of 46 (98%)** anchor-declaring docs |
 | document → goal | the declared `Anchor:` header | 46 documents |
 
 The single document recovering no PR is this spec, which is unmerged — **correct behaviour, not a
 gap**, and it is the natural falsifier fixture for F7.
+
+⚠ **`-design`-only stripping was measured first and found 60 pairs; stripping `-plan` too finds 61.**
+Both suffixes occur in the corpus (91 specs end `-design`, 3 are bare; 91 plans are bare, 1 ends
+`-plan`). **No stem is claimed by more than two files**, so the rule cannot silently merge two
+threads into one — checked, because a collision here would fuse unrelated work invisibly.
 
 ⭐ **The PR is the atomic implementation unit here, not a commit range.** This repo squash-merges, so
 a branch's whole history collapses to one commit on `master`. Chasing individual commits would
@@ -165,10 +173,28 @@ reconstruct something `master` does not contain; the `(#N)` suffix is the durabl
 document behind them. The rest are direct work — a backlog fix, a guard, a page repair — with no spec
 and no plan, and they are not lesser work. So:
 
-* **Document-led work** renders as a chain: `spec → plan → shipped PR`, with any stage that does not
-  exist shown as absent rather than omitted. A plan with no shipped PR is *in flight*; a spec with no
-  plan is *not started*. Both are states worth seeing.
+* **Document-led work** renders as a chain: `spec → plan → PRs`, with any stage that does not exist
+  shown as absent rather than omitted.
 * **Direct work** renders as a plain PR line, attributed by §3.2's path rules.
+
+⟳ **v3 — THE TRI-STATE BADGE IS CUT, AND THE MEASUREMENT THAT CUT IT.** v2 specified a
+*shipped / in flight / not started* label per thread. Measured before building it: over the 46
+anchor-declaring documents the rule lands **44 shipped / 1 doc-only / 1 no-PR** — **96% in one
+bucket**. That is the shape §8's F1 exists to reject; a badge that reads the same on 44 of 46 cards
+is decoration, and it can additionally be *wrong*, because `git log --follow` on a spec returns the
+PR that **added** it, which is not necessarily the PR that **implemented** it.
+
+**What replaces it is finer and measured to discriminate.** Each PR in a thread is tagged by whether
+it touched a **non-document** file:
+
+> `2026-08-31-dashboard-ask-choices` — spec + plan
+> `PR #186 · code` — the implementation `PR #187 · docs only` — a follow-up
+
+Those two PRs are indistinguishable under the badge and distinguishable under the tag, which is
+precisely the question the user asked — *which PR is the implementation?* A thread whose PRs are all
+`docs only` is the genuinely interesting case and is called out; it occurs **once** in 46.
+
+⚠ **The state is DERIVED PER PR, never stored, and it is a claim about one commit's file list.**
 
 ⚠ **Coverage is bounded by the anchor requirement, and the page must say so.** `check-anchors.py`
 requires a header only for documents dated 2026-08-25 or later, so of 186 documents under
@@ -249,14 +275,17 @@ one of the three without it.
   <goal sentence>
   DECISIONS  [ ADR 0006 ] [ ADR 0007 ]
   ▸ BACKLOG 7 open · 9 closed   ▾ WORK 7 threads · 28 PRs
-      mutation-manifest-retarget                          ✅ shipped
+      mutation-manifest-retarget
          spec  2026-08-29-…-design.md   plan  2026-08-29-….md
-         PR #176  2026-08-29  Retire the plan-as-CI-dependency…
-      blob-addressing-reservation                      ⏸ in flight
+         PR #176  2026-08-29  Retire the plan-as-CI-dependency…   [code]
+      dashboard-ask-choices
+         spec  2026-08-31-…-design.md   plan  2026-08-31-….md
+         PR #186  2026-08-31  Dashboard asks state your choices   [code]
+         PR #187  2026-08-31  Heads-up expiry decided        [docs only]
+      blob-addressing-reservation                  ⚠ no code PR yet
          spec  2026-08-07-…-design.md   plan  —  (none written)
-         no PR yet
       ── direct work, no document ──────────────────────────────
-         PR #67   2026-08-14  Serve-path deadline
+         PR #67   2026-08-14  Serve-path deadline          [by path]
   MILESTONES  <spine, where one exists>
 
   DONE ─────────────────────────────────────────────────────────
@@ -338,11 +367,17 @@ Each states an observation that makes the design **fail**, not a box to tick.
   a backlog row's goal does not rebuild the page.
 - **F6 — "Idle N days" is a claim about git.** Fails if the rendered idle figure disagrees with the
   last merge touching that goal.
-- **F7 — A thread's state is a claim about what shipped.** Fails if a thread marked *shipped* names
-  a PR that `git log --follow` on its own documents does not reach, or if a thread marked *in
-  flight* has a merged PR touching it. ⚠ **The fixture exists already and is not synthetic:** this
-  spec is the one document of 46 that recovers no PR, so it must render as *in flight* today and
-  flip to *shipped* on merge. A falsifier that cannot be observed changing is not one.
+- **F7 — A PR's `code` / `docs only` tag is a claim about that commit's file list.** Fails if a PR
+  tagged `code` touched only documents, or vice versa. ⚠ **Two non-synthetic fixtures, both
+  measured:** `#186` must tag `code` and `#187` `docs only` on the same thread — they are
+  indistinguishable under the badge v2 specified. ⚠⚠ **And the falsifier must be watched CHANGING:**
+  this spec is the one document of 46 reaching no PR at all, so it renders with an empty thread today
+  and gains one on merge. A falsifier nobody can observe flip is not one.
+- **F7a — The tag must discriminate over the real corpus.** Fails if every PR in the corpus carries
+  the same tag. Measured 2026-09-11: 44 documents reach ≥1 code-touching PR, 1 reaches only doc-only
+  PRs, 1 reaches none. ⚠ **This is a weak margin and is stated rather than hidden** — it was the
+  measurement that cut v2's tri-state badge, and the same argument applies to its replacement if the
+  1-of-46 case ever disappears.
 - **F8 — Excluded documents must be counted, not hidden.** Fails if the page shows anchor-declaring
   documents without stating how many were excluded for lacking an anchor. Measured 2026-09-11: 46 of
   186. A partial view with an unstated denominator reads as a complete one.
