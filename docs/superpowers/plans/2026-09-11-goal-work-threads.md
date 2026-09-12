@@ -990,7 +990,15 @@ git commit -m "The goals page says how many documents it cannot see"
 - [ ] **Measure the real build time** and record it against the 2.4s baseline. If it exceeds ~10s,
       cache `git log --follow` output by `HEAD` sha before merging — the regen hook is synchronous
       and fires on every write to a spec, plan, ADR or the registry.
-- [ ] `scripts/mutations/` — manifest obligation under `check-ratchet-contract.py`. Cover the rules
+- [ ] `scripts/mutations/` — ⟳ **CORRECTED 2026-09-12, and the correction matters.** This said the
+      obligation was *"under `check-ratchet-contract.py`"*. **It is not.** That guard discovers
+      `check-*.py` GUARDS and `gen-goals-page.py` is not in its population, which is why it returns
+      rc=0 here. The real mechanism is `EXPECTED_MUTATIONS` in `check-plan-code.py`: **40 files
+      pinned, and `gen-goals-page.py` is not one of them** — while five of its six sibling generators
+      are (`gen-dashboard`, `gen-backlog-page`, `brief-compose`, `page_chrome`, `page_markup`).
+      ⚠ **The gap is PRE-EXISTING, not introduced by this plan** — but this plan adds ~540 lines of
+      new rules to the one generator nothing mutates, so it is now the largest unmutated surface of
+      its kind in the repo. Cover the rules
       that can silently weaken: `PR_TAIL`'s `$` anchor, each `DOC_PATH` branch, `git_show_files`'
       `.splitlines()`, `git_pr_history`'s `None`-vs-`[]` return, `thread_prs`' `pr_error`,
       `pr_fanout`'s counting, and the extra-document render. **Each must go red via the case it
