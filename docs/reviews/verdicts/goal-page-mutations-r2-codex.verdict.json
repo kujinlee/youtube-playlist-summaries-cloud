@@ -1,0 +1,15 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 3489 chars"
+  ],
+  "exit_code": 0,
+  "gate_ran": true,
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/9027c9cd-3190-4f01-a334-b3492cabde08/scratchpad/pr-body-new.md: CREATED during the run (writer unattributed)"
+  ],
+  "model": "gpt-5.5",
+  "reason": "3489 chars",
+  "review": "goal-page-mutations-r2-codex.md",
+  "schema": 1,
+  "tool": "codex-review"
+}

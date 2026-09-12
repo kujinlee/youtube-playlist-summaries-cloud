@@ -7662,3 +7662,160 @@ Gates green: `check-anchors`, `check-docs`, `check-selftest-counts`, `check-ratc
 
 ⚠ **Owed, not done:** mutation manifest entries for the new rules; the backlog→goal join and the
 derived lifecycle (spec §3.3 and §4, Plan 2); direct document-less work in the Work band.
+
+## 2026-09-12
+The goals page generator now has mutation coverage, and getting it took paying a trap that two other
+files had already paid — after each one wrote down how to avoid it.
+
+Mutation testing here works by deliberately breaking a rule and checking that a named test goes red.
+It is how the project knows its tests can actually fail rather than merely passing. The goals page
+generator had none, alone among its five siblings, and it had just gained around five hundred lines
+of new rules — so it was the largest piece of the codebase nothing was checking in that way.
+
+Fourteen deliberate breakages were written, one per rule that could silently weaken. All fourteen
+were killed on the first real run. None of them counted, because the file printed its failures in a
+shape the harness cannot read: it looks for a line beginning with a specific marker, and this file
+used a different one. Every kill was invisible.
+
+Two independent reviewers then read the result and both said it was not finished, for the same
+reason reached from opposite directions. One read the list of breakages and noticed that the rule
+the file argues hardest for was not on it; the other took the tests apart and measured that eleven
+different ways of weakening the code went completely unnoticed. The cause was the same: two
+functions that talk to git had no way to be tested at all, so no breakage aimed at them could ever
+have been caught. Their absence from the list looked like completeness and was untestability. Six
+more breakages close that, and two more close tests that could never have failed.
+
+A third problem came from neither reviewer: an existing guard refused the new tests because they
+handed the same fixed value to every call. The obvious lesson — *vary your test inputs* — turned out
+to be wrong, and round two proved it by measurement. Varying the inputs satisfies the guard without
+guarding anything; what actually protects the code is asserting that it *uses* the value it was
+given. The first attempt at that assertion was itself hollow: it compared one recorded call against
+one fixed string, so code that ignored its input entirely and always read the same document still
+passed. Round two caught that as the most serious finding of the round. Comparing two different
+inputs is the minimum that shows the code is really following them.
+
+One more correction, and it is the uncomfortable one, because it took three attempts and the first
+two were both wrong. This entry originally said this was the third file to hit this trap. That was
+written from memory. The replacement said ninth — also wrong, in the same direction, naming a file
+that never had the problem and omitting one that did. The third attempt is to stop writing the
+number down at all and record the command that derives it instead, because the list keeps growing
+and any number committed here is out of date by the time anyone reads it.
+
+A second round of review then found something worse than a wrong number. Two review agents had been
+given the same filename to write into, and the later one silently overwrote the earlier. The commit
+message was written from the review that no longer existed — so it credited findings to a document
+that does not contain them, and the one genuinely unresolved problem from round one was recorded as
+having been solved. It had not been. That is now fixed, and the incident is written down where the
+next person will trip over it rather than in a chat log.
+
+Worth recording that the harness handled this exactly right. It did not report missing coverage,
+which would have been the wrong diagnosis and sent someone writing more tests. It said the problem
+was the failure printer, named the file, and refused to attribute anything from it until that was
+fixed. It also refused an earlier run outright — the control failed before any breakage was applied,
+so it declared every verdict below it an artefact rather than reporting thirteen of fourteen.
+
+The printer is fixed and the fix was checked by breaking a rule in a scratch copy and reading what
+came out, rather than by reading the code. Every breakage in the project now kills a named test —
+the running total moved from five hundred and twenty-four to five hundred and forty-nine across this
+branch's three review rounds.
+<!--tech-->
+Branch `goal-page-mutations`, base `58d82658`. Follow-up to PR #292, which is merged and green on
+master.
+
+`scripts/mutations/gen-goals-page.json` — **25 entries** (14, then **+11 across review rounds 1 and 2**),
+covering what three plan-review rounds
+struggled with: `PR_TAIL`'s end anchor; `DOC_PATH`'s any-depth prefix **and** its basename anchor as
+**separate** entries, because they broke in opposite directions; `annotate_code` collapsing
+`None` into `False`; `thread_prs` losing `pr_error`; `thread_prs` reverting to the two named slots;
+`thread_prs` losing newest-first; `pr_fanout` ceasing to accumulate; `render_threads` identifying a
+collision's extra document by a field rather than by identity; the fan-out span; the CANNOT RUN
+branch; `excluded_count`'s refusal; `doc_stem`'s end anchor; `pair_documents` dropping the extra.
+
+**Two independent ratchets moved, both required:** `EXPECTED_MUTATIONS` sum **524 → 549**, and the
+pinned sorted list of shipping manifests gains `scripts/gen-goals-page.py`. Moving only the sum made
+the harness refuse with *"CANNOT RUN — the control run failed BEFORE any mutation was applied"*.
+
+⛔ **`gen-goals-page.py`'s `eq` now prints `[FAIL] <name>` with the name ALONE on the line.** It
+printed `  ✗ <label>  got … want …`, which `parse_fail_names` cannot parse
+(`startswith("[FAIL] ")` then `[7:]`). ⟳⟳ **THE COUNT OF FILES THAT PAID THIS IS NO LONGER RECORDED,
+after three attempts got it wrong three ways.** v1 "third file" — wrong. v2 "ninth, third with this
+shape" — wrong again and in the same direction: `check-gate-falsifiability.py` never had this
+printer (it printed `FAIL`), and the list dropped `check-handoff-path.py`, whose near-miss printer
+*clears* `startswith("[FAIL] ")` and then yields a garbage case name. Each correction was written
+from a reviewer's table rather than from git. The population is now DERIVED:
+`git log -S'[FAIL] ' --reverse --format='%h %as %s' -- scripts/<file>`. ⚠ One historical claim is
+kept because it was verified twice independently: §22 was introduced BY the commit that fixed
+`gen-backlog-page.py` (`050913f6`), so that file cannot have paid "after the convention was
+written" — §22 was written *from* it.
+
+**Round 1 — both halves NOT-CONVERGED, and they did NOT find the same thing.** ⟳ An earlier
+version of this paragraph said "one High each, same structural cause". That is the false account the
+overwritten review produced: the committed Claude half's High is `parse_adr`, which the seam does not
+touch, and it was still OPEN when this entry first claimed it closed. The seam is CODEX's High.
+`docs/reviews/codex/goal-page-mutations-r1-codex.md` and
+`docs/reviews/claude/goal-page-mutations-r1-claude.md`. `git_pr_history` and `git_show_files` took
+no injected `run`, so the CANNOT-RUN predicate (`rc != 0 -> None`), `--follow` and `.splitlines()`
+were unreachable from any case — measured as **SURVIVING** weakenings, not merely unlisted.
+`annotate_code` had had a `show=` seam since it was written. **None IS NOT []** is the property this
+file argues hardest for and it sat on the wrong side of that line; three of the original fourteen
+entries defended its *downstream* consumers. Also closed: a `tag` CLASS the regex matched but never
+captured (an unreadable PR could be painted as docs-only), a fan-out threshold whose boundary value
+`2` was absent from the fixture, and two `thread_prs` cases running entirely through a
+production-dead `or` fallback. ⭐ The last two entries came from **`check-fixture-variation.py`**,
+not from either reviewer: `path` and `sha` were one constant at every call site.
+
+⛔ **Round 2 — NOT-CONVERGED again, and the Blocking was inside round 1's own fix.** The two new
+argv cases compared ONE recorded call to ONE literal, so hardcoding production to the fixture's own
+value passed 75/75 — reproduced independently before fixing. Also: round 1's `parse_adr` High was
+still OPEN (its case passed a front matter with no `⟳`, and `AMENDMENT` requires one, so deleting
+the split stayed green); `check-fixture-variation`'s credit was refuted by probing both arms; the
+`--follow` comment claimed an impossibility that one run disproves; and "the ONE sibling generator
+with no manifest" is false — `gen-m4-manifest.py` has none either. ⚠ Round 2 also confirmed the
+engineering is sound: the seam changes NO production behaviour (`collect()` run over the real repo
+under both revisions — identical output, 11 anchors, 41 threads, 96 PRs), all anchors unique, and
+every new entry fails by REPORTING rather than crashing.
+
+⛔ **Round 3 — Codex found no Blocking and no High; Claude found a Blocking in the PR BODY.**
+The code has been clean since round 2's fix (Codex re-probed the Blocking six ways — first value,
+second value, basename-only path, first sha, second sha, sha prefix — all killed via the intended
+case; full pass 25/25 attributed, 0 survivors). What round 3 found was the RECORD: round 2's commit
+said the provenance correction now covered "both sites", when round 1's own message said **four**.
+Three were fixed and the fourth — the pull-request body — was left as the verbatim uncorrected
+round-1 text, still presenting the fabricated measurement as the justification for the ratchet.
+Also found: a headline "HAS NOW COST NINE FILES" surviving four lines above the paragraph that
+retracts that number; a second `brief-compose.py (8)` the round-2 fix walked past; and
+`~540 lines of new rules`, which is `--stat`'s CHANGED-line total (532 insertions + 8 deletions)
+read as though it were insertions.
+
+⛔ **Round 4 — asked ONE question, and the answer settles the branch.** Scope: *is any claim here
+contradicted by an artifact?* Both halves: **zero code defects.** Codex's findings were all located
+in immutable, already-pushed COMMIT MESSAGES — listed now in a superseded-claims table in the PR
+body, which is what a squash-merge makes the commit message on master, rather than rewritten (that
+would be erasing one's own errors, a worse instance of the defect this branch documents). Claude
+found three false claims in current prose, all fixed here:
+
+* *"the shape ADR-0006 actually had"* — **it never had it.** Both of ADR-0006's `⟳` lines are in
+  its BODY; no committed version has one in front matter. ADR-0006 is the INVERSE case, which is
+  precisely why the split is load-bearing, and `parse_adr`'s own docstring says so four lines away.
+  The fixture is synthetic and correct; only the sentence attributing it to a real document was wrong.
+* *"THREE manifest entries defend what happens downstream"* of `pr_error` — **two**. The third
+  defends the same None-vs-False discipline but through `git_show_files`, which never touches
+  `pr_error`.
+* a `check-plan-code.py:1395` citation **this branch broke itself** — accurate when written, stale
+  two commits later because its own edits moved the function. Now cited by SYMBOL, which survives.
+
+⚠ **Four corrections to this record, four of them wrong or incomplete.** That is the whole argument
+for deriving a number rather than storing one, and for citing a symbol rather than a line. Both
+reviewers independently re-ran the full mutation suite this round: 549 killed, 549 attributed,
+0 survivors. **The code converged at round 2 and has stayed converged; every round since found only
+prose.**
+
+**Harness: 25 entries for this file, all attributing over a control proved green first; the
+project total is 549. CI measured 549 attributed / 0 survivors on `8d67e55b`.** Gates green: `check-anchors`, `check-docs`,
+`check-selftest-counts`, `check-ratchet-contract`, `check-review-rounds`,
+`check-gate-falsifiability`, `check-fixture-variation`, `check-review-recorded`. Suite **75/75**.
+
+⚠ **Worth a rule, not a fourth comment:** `check-plan-code.py` carries an abandoned attempt at a
+pre-flight for this, noting source shape cannot decide a behavioural property. It can be decided by
+RUNNING a suite with one case forced red and checking the output shape — which is how this fix was
+verified by hand.

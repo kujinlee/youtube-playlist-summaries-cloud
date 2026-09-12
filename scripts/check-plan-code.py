@@ -560,6 +560,36 @@ EXPECTED_MUTATIONS = {
     #     test on the pattern text, so either copy could narrow while it stayed green.
     "scripts/check-catalog-coverage.py": 7,
     "scripts/gen-dashboard.py": 64,
+    # ⟳ 2026-09-12. gen-goals-page.py was the last PAGE-PRODUCING generator with no
+    # manifest — gen-dashboard, gen-backlog-page, brief-compose, page_chrome and page_markup
+    # all had one. ⚠ IT WAS NOT "the ONE generator with no manifest", which both round-1
+    # halves flagged and round 2 repeated: `scripts/gen-m4-manifest.py` has none either and
+    # is still outside `scripts/mutations/`. The narrower sentence is the true one; the wider
+    # one made a reader sizing manifest debt from this dict believe the class was closed.
+    # The gap predates the work-threads branch, but that branch added 532 lines to it (`git
+    # show --numstat 58d82658`), making it the largest unmutated surface of its kind here.
+    # ⚠ NOT "~540 lines of new rules", which stood here for three rounds: 540 is `--stat`'s
+    # CHANGED-line total (532 insertions + 8 deletions), read as if it were insertions.
+    # ⟳ 2026-09-12, review rounds 1 and 2: 14 -> 25. ⚠ AN EARLIER VERSION OF THIS PARAGRAPH CITED A
+    # MEASUREMENT NO COMMITTED ARTIFACT CONTAINS — "Claude staged the tree, applied 24
+    # candidate weakenings and measured 11 SURVIVING" — and used it as the justification for
+    # this number. TWO agents wrote to one review path and the later overwrote the earlier;
+    # the coordinator committed the survivor without re-reading it and wrote the commit
+    # message from the lost one. The surviving `docs/reviews/claude/goal-page-mutations-r1-
+    # claude.md` says nothing of the kind, and its High is `parse_adr`, not the seam.
+    # WHAT IS ON THE RECORD: the CANNOT-RUN producer being unnamed is CODEX's round-1 High
+    # (`docs/reviews/codex/goal-page-mutations-r1-codex.md`), independently reproduced by the
+    # coordinator before any code changed. `git_pr_history` and `git_show_files` had no seam, so
+    # every rule inside them was unreachable from any case and a mutation on one would have
+    # survived. Their absence from the first fourteen was untestability, not completeness —
+    # and `git_pr_history` returning None is the ONLY thing in that file that can set
+    # `pr_error`, which TWO of those fourteen entries already defended downstream of (a third
+    # defends the same None-IS-NOT-False discipline, but through `git_show_files`, not this
+    # sentinel — the earlier "three" bound that count to `pr_error` and was wrong under its
+    # own grammar).
+    # The other two close unfalsifiable fixtures: a `tag` class the case matched but never
+    # captured, and a fan-out threshold whose boundary value was absent from the fixture.
+    "scripts/gen-goals-page.py": 25,
     # ⟳ 2026-09-10, backlog #110 review round 4. A SEED, not a full manifest, and the reason is
     # measured: `gen-backlog-page.py` is 3,000 lines with 160 cases and had ZERO mutations, so
     # `--mutate .` never touched it and no machine had ever asked whether any of those cases could
@@ -1198,7 +1228,10 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
             # parsed out of it. That is never "caught by something else"; the something-else
             # list is empty. It means this suite does not print `[FAIL] <case>`, so no kill
             # in the whole file can ever be attributed. Measured twice on 2026-09-10 —
-            # `gen-backlog-page.py` (5 entries) and `brief-compose.py` (8) — and BOTH times
+            # `gen-backlog-page.py` and `brief-compose.py` (entry counts NOT quoted: the
+            # "8" that stood here is unsupported by any committed artifact — three review
+            # rounds said so, and `git log -S` finds no commit where this dict said 8) —
+            # and BOTH times
             # it was diagnosed by hand, at the bottom of a 420-mutation log, from an empty
             # list a reader had to know the meaning of. Said once here, per file, instead of
             # once per entry: eight identical lines is how the signal got lost the first time.
@@ -1206,7 +1239,7 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
                 report.append(
                     f"mutation {name!r}: the suite went RED but printed no `[FAIL] <case>` "
                     f"line, so NOTHING COULD SEE THE KILL. This is a report-format defect in "
-                    f"{fname}, not a coverage gap — `attribute` reads a red case with "
+                    f"{fname}, not a coverage gap — `parse_fail_names` reads a red case with "
                     f"startswith('[FAIL] ') and slices [7:]. Fix that suite's failure printer "
                     f"and re-run; every entry for this file is unattributable until you do")
             else:
@@ -2466,6 +2499,7 @@ def _self_test() -> int:
                                       "scripts/coverage_verdict.py",
                                       "scripts/gen-backlog-page.py",
                                       "scripts/gen-dashboard.py",
+                                      "scripts/gen-goals-page.py",
                                       "scripts/page_chrome.py",
                                       "scripts/page_markup.py"])
     # A literal on purpose: its whole job is that the total cannot move without
@@ -2889,7 +2923,51 @@ def _self_test() -> int:
     # all verified to ATTRIBUTE (each goes red via the case it names) before this number moved.
     # A RISE is the ordinary direction; the sanctioned FALL is retirement-with-subject, and
     # this is not one.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 524)
+    # ⟳ 2026-09-12: 524 -> 538. `gen-goals-page.py` joins the manifest with FOURTEEN entries.
+    # It was the one sibling generator nothing mutated — gen-dashboard, gen-backlog-page,
+    # brief-compose, page_chrome and page_markup all had one — and the work-threads branch
+    # added 532 lines to it (not ~540 — that was `--stat`'s changed-line total). The fourteen
+    # cover what three review rounds took
+    # to get right: PR_TAIL's end anchor, DOC_PATH's any-depth prefix AND its basename
+    # anchor (they broke in OPPOSITE directions, so they are separate entries), the
+    # None-vs-False collapse in annotate_code, thread_prs losing pr_error, thread_prs
+    # reverting to the two named slots, pr_fanout ceasing to accumulate, and render_threads
+    # identifying a collision's extra document by a field rather than by identity.
+    # ⟳ 2026-09-12, SAME DAY, review rounds 1 and 2: 538 -> 549. `gen-goals-page.py` 14 -> 25:
+    #   * 6 — the seam itself. `git_pr_history` and `git_show_files` took no injected `run`,
+    #     so the CANNOT-RUN predicate, the `--follow` flag and the `.splitlines()` rule were
+    #     unreachable from any case and a weakening of each was MEASURED to survive.
+    #     `annotate_code` had had a `show=` seam since it was written; these two had none, so
+    #     the rule this file argues hardest for — None IS NOT [] — was the one on the wrong
+    #     side of that line. A rule nothing can test is a rule nothing can mutate.
+    #   * 2 — fixtures that could not fail: a `tag` CLASS the regex matched but never
+    #     captured, and a fan-out threshold whose boundary value (2) was absent from `_fan`.
+    #   * 2 — the argv plumbing: WHICH document's history and WHICH commit's file list get
+    #     read. `check-fixture-variation.py` prompted these by refusing a draft in which
+    #     `path` and `sha` were one constant at every call site. ⚠ DO NOT RECORD THAT AS THE
+    #     GUARD FINDING THE GAP — an earlier version of this paragraph did, and round 2
+    #     probed both arms and refuted it: collapse the variation but KEEP the assertions and
+    #     the guard fails while the mutation still dies; keep the variation and DELETE the
+    #     assertions and the guard passes while the mutation SURVIVES. The guard is a floor,
+    #     as its own docstring says. What guards the clause is the assertion that the argv
+    #     TRACKS the input — and the first version of THAT was itself unfalsifiable, comparing
+    #     one recorded call to one literal, so hardcoding the fixture's own value stayed green.
+    #     Round 2 caught it as a Blocking. Two observations are the minimum that shows tracking.
+    #   * 1 — `parse_adr`'s front-matter/in-body split, which round 1 raised as a High and the
+    #     first fix did NOT close. Its case passed a front matter with no `⟳`, and `AMENDMENT`
+    #     requires one, so deleting the split left the case green. The fixture now carries a
+    #     `⟳ SUPERSEDED` line inside the front matter. ⚠ THIS SAID "the shape ADR-0006
+    #     actually had", AND ADR-0006 NEVER HAD IT — both its `⟳` lines are in the BODY
+    #     (`:61`, `:76`) and no committed version has one in front matter. The fixture text
+    #     was lifted from that file and attributed to the wrong half of it. ADR-0006 is the
+    #     INVERSE case, which is why the split is load-bearing at all: `parse_adr`'s own
+    #     docstring says it "sat at `status: proposed` while its BODY recorded two
+    #     corrections". The fixture is a synthetic front-matter `⟳` — correct, and
+    #     deliberately not a real document's shape.
+    # ⚠ THE FOURTEEN WERE NOT WRONG — every one attributes to the case it names, ten of them
+    # to exactly one case. Re-verified in round 2: all the new entries fail by REPORTING, and
+    # every `before` anchor occurs exactly once. This was a reach problem, not a coverage one.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 549)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
@@ -2901,12 +2979,35 @@ def _self_test() -> int:
          [r for r in HARNESS_TREE if not (_repo / r).exists()], [])
 
     # ─── A PRE-FLIGHT FOR THE FAILURE-LINE CONTRACT WAS ATTEMPTED HERE, AND ABANDONED ────
-    # ⛔ THE PROBLEM IS REAL AND HAS NOW COST TWO BRANCHES. `attribute` reads a red case with
-    # `startswith("[FAIL] ")` then `[7:]`, so a suite reporting failures any other way is one
-    # whose kills nobody can see: every entry reports "matched 0 red case(s) — caught by
+    # ⛔ THE PROBLEM IS REAL AND HAS COST A GROWING LIST OF FILES — see the derivation below,
+    # NOT a number here. This line said "TWO BRANCHES", then "NINE FILES", four lines above
+    # the paragraph that deletes the count and explains why "ninth" was wrong. A headline
+    # figure left behind when its own enumeration is retracted is the same defect one frame
+    # up. `parse_fail_names` reads a red case
+    # with `startswith("[FAIL] ")` then `[7:]`, so a suite reporting failures any other way is
+    # one whose kills nobody can see: every entry reports "matched 0 red case(s) — caught by
     # something else: []" while each one IS killed by the case it names. `gen-backlog-page.py`
-    # paid 5 entries on 2026-09-10; `brief-compose.py` paid 8 the same day, AFTER
+    # paid 5 entries on 2026-09-10, and `brief-compose.py` paid the same day, AFTER
     # `portable-practices` §22 was written from the first one. A convention did not hold.
+    # ⚠ AN ENTRY COUNT FOR `brief-compose.py` USED TO STAND HERE ("paid 8") and is removed:
+    # rounds 1, 2 and 3 each flagged it as unsupported — the observable count is 16, and
+    # `git log -S` finds no commit where this dict ever said 8. It may well have been true of
+    # the original payment, but nothing on disk testifies to it, and an unfalsifiable number
+    # in the record of a class about unfalsifiable numbers is the wrong thing to keep.
+    #
+    # ⟳ 2026-09-12. "TWO BRANCHES" UNDERCOUNTS, AND THE REPLACEMENT COUNT IS DELIBERATELY
+    # NOT WRITTEN HERE. Three hand-written enumerations were attempted in one day — "third
+    # file", then "ninth, third with this shape" — and each was wrong in a new way: one named
+    # `check-gate-falsifiability.py` as having had this printer when it printed `FAIL`, and
+    # dropped `check-handoff-path.py`, whose near-miss printer CLEARS `startswith("[FAIL] ")`
+    # and then yields a garbage name. Every version was written from a reviewer's table rather
+    # than from git. So the population is DERIVED, never stored:
+    #
+    #     git log -S'[FAIL] ' --reverse --format='%h %as %s' -- scripts/<file>
+    #
+    # ⚠ THE ARGUMENT DOES NOT NEED THE NUMBER, which is why the guard below is still worth
+    # building: the convention has failed repeatedly, across files that cite each other and
+    # this parser rather than §22, and nothing mechanical has ever caught one of them.
     #
     # ⛔ BUT THE PROPERTY IS BEHAVIOURAL AND SOURCE SHAPE CANNOT DECIDE IT. Two rules were
     # tried and both were wrong, in opposite directions:
@@ -2924,7 +3025,7 @@ def _self_test() -> int:
     # Every tightening moved the false positive somewhere else, which is this project's
     # recorded tell that the RULE is wrong rather than the regex. A guard that blocks is
     # judged on its false positives, and one that fires on four conforming files is worse
-    # than the 15 minutes it saves. What IS decidable is the diagnosis — see `attribute`,
+    # than the 15 minutes it saves. What IS decidable is the diagnosis — see `parse_fail_names`,
     # where an empty "caught by something else" list now names this cause instead of leaving
     # it to be inferred at the bottom of a 420-mutation log.
     with tempfile.TemporaryDirectory() as _td:

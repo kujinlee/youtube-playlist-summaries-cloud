@@ -1,0 +1,277 @@
+[
+  {
+    "name": "PR_TAIL loses its end anchor, so a number mid-subject becomes the PR",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "PR_TAIL = re.compile(r\"\\(#(\\d+)\\)\\s*$\")",
+        "PR_TAIL = re.compile(r\"\\(#(\\d+)\\)\")"
+      ]
+    ],
+    "expect": "a PR-looking number mid-subject is not the PR"
+  },
+  {
+    "name": "DOC_PATH loses the any-depth prefix, so a nested instruction doc reads as code",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    r\"|(.*/)?(README(\\.md)?|CONTEXT\\.md|AGENTS\\.md|CLAUDE\\.md)$)\")",
+        "    r\"|(README(\\.md)?|CONTEXT\\.md|AGENTS\\.md|CLAUDE\\.md)$)\")"
+      ]
+    ],
+    "expect": "an instruction document at any depth is not code"
+  },
+  {
+    "name": "DOC_PATH loses the basename end anchor, so README-generator.ts reads as documentation",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    r\"^(docs/|\\.remember/|\\.agents/\"\n    r\"|(.*/)?(README(\\.md)?|CONTEXT\\.md|AGENTS\\.md|CLAUDE\\.md)$)\")",
+        "    r\"^(docs/|\\.remember/|\\.agents/\"\n    r\"|(.*/)?(README(\\.md)?|CONTEXT\\.md|AGENTS\\.md|CLAUDE\\.md))\")"
+      ]
+    ],
+    "expect": "a code file whose name starts with a doc name is still code"
+  },
+  {
+    "name": "annotate_code collapses CANNOT RUN into documentation",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "            cache[sha] = None if files is None else files_are_code(files)",
+        "            cache[sha] = files_are_code(files or [])"
+      ]
+    ],
+    "expect": "an unreadable commit is unknown, not False"
+  },
+  {
+    "name": "thread_prs stops recording that a document could not be read",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "        if got is None:\n            error = True\n            continue",
+        "        if got is None:\n            continue"
+      ]
+    ],
+    "expect": "one unreadable document poisons the thread's verdict"
+  },
+  {
+    "name": "thread_prs goes back to the two named slots, losing a collision's extra document",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    for d in thread.get(\"docs\") or [x for x in (thread.get(\"spec\"), thread.get(\"plan\")) if x]:",
+        "    for d in [x for x in (thread.get(\"spec\"), thread.get(\"plan\")) if x]:"
+      ]
+    ],
+    "expect": "a PR reachable only through a collision's extra document is still found"
+  },
+  {
+    "name": "thread_prs stops ordering newest first",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    prs = sorted(merged.values(), key=lambda p: (p[\"date\"], p[\"num\"]), reverse=True)",
+        "    prs = sorted(merged.values(), key=lambda p: (p[\"date\"], p[\"num\"]))"
+      ]
+    ],
+    "expect": "a thread's PRs are the union over its documents, deduped, NEWEST FIRST"
+  },
+  {
+    "name": "pr_fanout stops accumulating, so every bulk edit reads as a single-document PR",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "            out[num] = out.get(num, 0) + 1",
+        "            out[num] = 1"
+      ]
+    ],
+    "expect": "fan-out counts the documents a PR touched"
+  },
+  {
+    "name": "render_threads identifies the extra document by a field instead of by identity",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "        named = [x for x in (t.get(\"spec\"), t.get(\"plan\")) if x]\n        for d in t.get(\"docs\", []):\n            if not any(d is x for x in named):",
+        "        named = [x.get(\"rel\") for x in (t.get(\"spec\"), t.get(\"plan\")) if x]\n        for d in t.get(\"docs\", []):\n            if d.get(\"rel\") not in named:"
+      ]
+    ],
+    "expect": "a rel-less extra is identified by identity, not collapsed into the spec"
+  },
+  {
+    "name": "render_threads suppresses the fan-out, so a bulk edit poses as this goal's work",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "            fan = f'<span class=\"t\">on {n} documents</span>' if n > 1 else \"\"",
+        "            fan = \"\""
+      ]
+    ],
+    "expect": "a PR touching many documents renders its fan-out"
+  },
+  {
+    "name": "render_threads lets CANNOT RUN read as an honest absence",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "        if t[\"pr_error\"]:\n            flag = '<span class=\"absent\">history could not be read — treat as NOT MEASURED</span>'\n        elif not t[\"prs\"]:",
+        "        if False:\n            flag = '<span class=\"absent\">history could not be read — treat as NOT MEASURED</span>'\n        elif not t[\"prs\"]:"
+      ]
+    ],
+    "expect": "an unreadable history says so instead of showing nothing"
+  },
+  {
+    "name": "excluded_count returns a negative instead of refusing disagreeing populations",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    if shown > total:\n        raise ValueError(f\"shown ({shown}) exceeds total ({total}) — populations disagree\")",
+        "    if False:\n        raise ValueError(f\"shown ({shown}) exceeds total ({total}) — populations disagree\")"
+      ]
+    ],
+    "expect": "showing more than exist is a refusal, not a negative"
+  },
+  {
+    "name": "doc_stem strips a suffix anywhere, not only at the end",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "STEM_SUFFIX = re.compile(r\"-(design|plan)$\")",
+        "STEM_SUFFIX = re.compile(r\"-(design|plan)\")"
+      ]
+    ],
+    "expect": "only a TRAILING suffix is stripped"
+  },
+  {
+    "name": "pair_documents drops the extra document instead of keeping it for the renderer",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "        t[\"docs\"].append(d)\n        slot = \"plan\" if d.get(\"kind\") == \"plan\" else \"spec\"",
+        "        slot = \"plan\" if d.get(\"kind\") == \"plan\" else \"spec\"\n        if t[slot] is None:\n            t[\"docs\"].append(d)"
+      ]
+    ],
+    "expect": "a second document in a slot is kept, not dropped"
+  },
+  {
+    "name": "git_pr_history turns a failed git into an empty history instead of CANNOT RUN",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    if r.returncode != 0:\n        return None\n    return prs_from_log",
+        "    if r.returncode != 0:\n        return []\n    return prs_from_log"
+      ]
+    ],
+    "expect": "a nonzero git exit is CANNOT RUN, not an empty history"
+  },
+  {
+    "name": "git_pr_history reports a git it could not launch as an honest empty history",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    except (OSError, subprocess.SubprocessError):\n        return None\n    if r.returncode != 0:",
+        "    except (OSError, subprocess.SubprocessError):\n        return []\n    if r.returncode != 0:"
+      ]
+    ],
+    "expect": "a git that cannot be launched at all is CANNOT RUN"
+  },
+  {
+    "name": "the history query stops following renames",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "        r = run([\"git\", \"log\", \"--format=%H\\x01%as\\x01%s\", \"--follow\", \"--\", str(path)],\n                cwd=ROOT, capture_output=True, text=True, timeout=20)",
+        "        r = run([\"git\", \"log\", \"--format=%H\\x01%as\\x01%s\", \"--\", str(path)],\n                cwd=ROOT, capture_output=True, text=True, timeout=20)"
+      ]
+    ],
+    "expect": "the history query follows renames"
+  },
+  {
+    "name": "git_show_files splits on WHITESPACE, so a path with a space becomes two paths",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    return r.stdout.splitlines() if r.returncode == 0 else None",
+        "    return r.stdout.split() if r.returncode == 0 else None"
+      ]
+    ],
+    "expect": "a git show is split on LINES, so a path with a space stays one path"
+  },
+  {
+    "name": "git_show_files turns a failed git show into an empty file list instead of CANNOT RUN",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "if r.returncode == 0 else None",
+        "if r.returncode == 0 else []"
+      ]
+    ],
+    "expect": "a nonzero git show is CANNOT RUN, not an empty file list"
+  },
+  {
+    "name": "git_show_files reports a git it could not launch as an empty file list",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    except (OSError, subprocess.SubprocessError):\n        return None\n    return r.stdout.splitlines()",
+        "    except (OSError, subprocess.SubprocessError):\n        return []\n    return r.stdout.splitlines()"
+      ]
+    ],
+    "expect": "a git show that cannot be launched is CANNOT RUN"
+  },
+  {
+    "name": "the unknown CSS class is dropped, so an unreadable PR is painted as docs-only",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "            cls = \"unknown\" if p.get(\"code\") is None else (\"code\" if p[\"code\"] else \"docs\")",
+        "            cls = \"code\" if p[\"code\"] else \"docs\""
+      ]
+    ],
+    "expect": "only the three measured tags can be rendered, each in its OWN class"
+  },
+  {
+    "name": "the fan-out threshold slips to >2, so every two-document PR loses its fan-out",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        " if n > 1 else \"\"",
+        " if n > 2 else \"\""
+      ]
+    ],
+    "expect": "a two-document PR is over the fan-out threshold, not on the wrong side of it"
+  },
+  {
+    "name": "the history query asks about a FIXED path, not the document it was given",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "\"--follow\", \"--\", str(path)]",
+        "\"--follow\", \"--\", \"docs/superpowers/specs/a-design.md\"]"
+      ]
+    ],
+    "expect": "the history is asked for the document it was given, not a fixed one"
+  },
+  {
+    "name": "the file list is read from a FIXED commit, not the one it was given",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "\"-1\", sha]",
+        "\"-1\", \"abc1234\"]"
+      ]
+    ],
+    "expect": "the file list is asked for the commit it was given, not a fixed one"
+  },
+  {
+    "name": "parse_adr counts FRONT MATTER as an amendment, so a claim reads as a correction",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    body = text.split(\"---\", 2)[-1] if text.startswith(\"---\") else text",
+        "    body = text"
+      ]
+    ],
+    "expect": "front matter is NOT counted as an amendment"
+  }
+]
