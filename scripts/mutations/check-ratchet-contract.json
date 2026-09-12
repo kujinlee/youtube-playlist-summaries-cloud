@@ -1,0 +1,68 @@
+[
+  {
+    "name": "the widened population stops excluding guards, charging one file to two baselines",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "if p not in guards and SELF_TEST_RE",
+        "if SELF_TEST_RE"
+      ]
+    ],
+    "expect": "a check-* guard is NOT in the widened population"
+  },
+  {
+    "name": "the widened population stops requiring a self-test, demanding manifests of everything",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        " and SELF_TEST_RE.search(texts.get(p, \"\")))",
+        ")"
+      ]
+    ],
+    "expect": "a non-guard with no self-test is not asked for a manifest"
+  },
+  {
+    "name": "debt drift reports a NOT-EXAMINED pin as PAID, so an empty corpus reads as progress",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "    for path in sorted((WIDENED_MANIFEST_DEBT & examined) - violating):",
+        "    for path in sorted(WIDENED_MANIFEST_DEBT - violating):"
+      ]
+    ],
+    "expect": "a pinned entry NOT examined is silent, not 'paid'"
+  },
+  {
+    "name": "the pin stops suppressing known debt, so the gate is red on day one",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "    for path in sorted(violating - WIDENED_MANIFEST_DEBT):",
+        "    for path in sorted(violating):"
+      ]
+    ],
+    "expect": "a pinned violator is silent — that is what the pin is for"
+  },
+  {
+    "name": "the widened rule is defined but never applied by evaluate()",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "    out.extend(widened_debt_drift(_violating, set(texts)))",
+        "    pass"
+      ]
+    ],
+    "expect": "evaluate APPLIES the widened manifest rule to a NON-guard"
+  },
+  {
+    "name": "the NO-MUTATIONS escape accepts prose again, so a guard documenting it exempts itself",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "NO_MUTATIONS_RE = re.compile(r\"NO-MUTATIONS:[ \\t]+([A-Za-z][^\\n]*)\")",
+        "NO_MUTATIONS_RE = re.compile(r\"NO-MUTATIONS:[ \\t]*(\\S[^\\n]*)\")"
+      ]
+    ],
+    "expect": "a guard that only DOCUMENTS the escape is not exempted by it"
+  }
+]

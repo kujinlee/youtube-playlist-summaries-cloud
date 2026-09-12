@@ -27,7 +27,7 @@ work exists to remove.
 
 Usage:
     python3 scripts/check-ratchet-contract.py
-    python3 scripts/check-ratchet-contract.py --self-test
+    python3 scripts/check-ratchet-contract.py --self-test  # 34 cases
 """
 from __future__ import annotations
 
@@ -185,6 +185,16 @@ def evaluate(texts: dict[str, str], caller_blob_for: dict[str, str],
         # of the function, none of its use. `manifest_stems` is REQUIRED, not defaulted, so a caller
         # cannot silently get the vacuous "everything has a manifest" answer.
         out.extend(check_manifest(rel, texts[rel], manifest_stems))
+    # ⚠ WIRED HERE FOR THE REASON THIS FUNCTION'S DOCSTRING ALREADY GIVES. Applied in main(),
+    # deleting this block would leave every widened-population case green — coverage of the
+    # functions, none of their use. Only R4 is applied: R1-R3 were never asked of these files and
+    # widening four rules at once would be a different change wearing this one's name.
+    _widened = discover_self_tested_nonguards(list(texts), texts)
+    _violating = {rel for rel in _widened
+                  if check_manifest(rel, texts[rel], manifest_stems)}
+    # `set(texts)` is the EXAMINED set, not `_widened`: a pinned script that stopped being
+    # self-tested drops out of `_widened` entirely, and its pin would then go stale in silence.
+    out.extend(widened_debt_drift(_violating, set(texts)))
     return out
 
 
@@ -216,7 +226,19 @@ def check_contract(path: str, text: str) -> list[Violation]:
 # ⚠ THE ESCAPE IS A WRITTEN REASON, NOT A FLAG — `NO-MUTATIONS: <why>` in the docstring, exactly as
 # NO-CALLER works above. A boolean opt-out is a rubber stamp; a sentence has an author and can be
 # argued with. Same rule, same shape, deliberately.
-NO_MUTATIONS_RE = re.compile(r"NO-MUTATIONS:[ \t]*(\S[^\n]*)")
+# ⛔ THE REASON MUST BEGIN WITH A LETTER, AFTER AT LEAST ONE SPACE — AND THIS GUARD EXEMPTED
+# ITSELF FOR AS LONG AS IT HAS EXISTED BECAUSE IT DID NOT. The old pattern was
+# `NO-MUTATIONS:[ \t]*(\S[^\n]*)`, and line 16 of THIS file's own docstring reads
+# "a mutation manifest, or `NO-MUTATIONS:` ENFORCED — R1 asks whether …". The regex matched it
+# and took "` ENFORCED — R1 asks whether a self-test EXISTS;" as the written reason, so the guard
+# that demands a manifest from every other guard was never asked for one. Measured 2026-09-12:
+# it was the ONLY file affected, across all 34 guards.
+#
+# ⚠ This is the shape `check-plan-code.py` records for its abandoned pre-flight — `"[FAIL] " in
+# source` is unfalsifiable because the comment explaining the contract QUOTES the marker. A rule
+# that documents its own escape hatch will match that documentation unless the pattern excludes it.
+# `[ \t]+` rejects "NO-MUTATIONS:`" (no space); `[A-Za-z]` rejects "NO-MUTATIONS: <why>".
+NO_MUTATIONS_RE = re.compile(r"NO-MUTATIONS:[ \t]+([A-Za-z][^\n]*)")
 
 # MEASURED 2026-09-05, not estimated: 28 guards discovered on disk, 4 carry a manifest
 # (check-dashboard-entry, check-plan-code, check-selftest-counts, check-theme-token-coverage),
@@ -250,6 +272,88 @@ def check_manifest(path: str, text: str, manifest_stems: set[str]) -> list[Viola
     return [Violation(path, "R4_no_mutation_manifest",
                       "no scripts/mutations/<name>.json and no written `NO-MUTATIONS: <why>` — "
                       "its self-test is unproven against the guard actually breaking")]
+
+
+# ── R4's POPULATION WAS DRAWN BY FILENAME, AND THAT IS THE HOLE ──────────────────────────────
+# ⟳ 2026-09-12. R4's RULE was always right; `discover_guards` is `scripts/check-[\w.-]+\.py`, so
+# the question "would your suite NOTICE this breaking?" was asked of 34 files because of what they
+# are CALLED. MEASURED the day PR #293 merged: 40 of 55 scripts are in scope (34 guards ∪ 22
+# self-declared ratchets) and R4 is green for all of them — while FOUR scripts outside it have a
+# working self-test and no manifest, verified by RUNNING each rather than by reading it:
+#
+#     codex-review.py            63/63   the adversarial-review gate itself
+#     m4_catalog.py              rc=0
+#     verify-exclusion-reasons.py 11/11
+#     build-m4-schema.py         22/22
+#
+# `codex-review.py` is the sharpest: it decides whether a review gate RAN, and this project has
+# measured that gate failing open twice. Its 63 cases have never been asked whether they would go
+# red if it broke.
+#
+# ⚠ THE DISCOVERY IS DELIBERATELY THE SAME `SELF_TEST_RE` R1 USES, prose false-positives and all.
+# A second detector would drift from R1's — this repo has measured that seven times — and the
+# failure direction here is safe: a script swept in by prose ALONE cannot satisfy R4, so it fails
+# CLOSED and names itself, and "the regex matched prose; there is no suite" is a perfectly good
+# `NO-MUTATIONS:` reason. A cheap, honest escape beats a cleverer detector.
+# ⚠ THIS SET CAME FROM RUNNING THE TOOL, NOT FROM A MEASUREMENT WRITTEN ALONGSIDE IT — the rule
+# `MANIFEST_BASELINE` already states in its own words: "the baseline is whatever
+# `python3 scripts/check-ratchet-contract.py` prints, and nothing else". The first version of this
+# constant listed FOUR, because the scratch measurement that produced it excluded self-declared
+# ratchets from the population while `discover_self_tested_nonguards` excludes only GUARDS. Eight
+# violate. A second implementation of one rule drifts; it drifted here, in the commit adding the
+# rule, and the tool caught it on the first run.
+WIDENED_MANIFEST_DEBT: frozenset[str] = frozenset({
+    "scripts/build-m4-schema.py",
+    "scripts/codex-review.py",
+    "scripts/explainer-serve.py",
+    "scripts/gen-m4-manifest.py",
+    "scripts/m4_catalog.py",
+    "scripts/prior-art.py",
+    "scripts/subject_status.py",
+    "scripts/verify-exclusion-reasons.py",
+})
+
+
+def discover_self_tested_nonguards(script_paths: list[str], texts: dict[str, str]) -> list[str]:
+    """Scripts that prove themselves with a `--self-test` but are not NAMED `check-*`. PURE.
+
+    R4 asks whether a suite would notice its subject breaking. Nothing about that question is
+    specific to a guard — it is just as live for a 928-line review wrapper — and the only reason
+    it was not asked is that the population was a filename pattern.
+    """
+    guards = set(discover_guards(script_paths))
+    return sorted(p for p in script_paths
+                  if p not in guards and SELF_TEST_RE.search(texts.get(p, "")))
+
+
+def widened_debt_drift(violating: set[str], examined: set[str]) -> list[Violation]:
+    """PURE. The pinned debt set vs what is actually on disk, BOTH directions.
+
+    ⚠ IDENTITY, NOT CARDINALITY — the same rule `MANIFEST_BASELINE` states for its own count and
+    `check-plan-code.EXPECTED_MUTATIONS` applies to mutation counts. A ceiling would let the debt
+    be paid down silently and re-accrued back to eight, which is how a ratchet stops ratcheting.
+    Paying one down FAILS until the constant is lowered in the SAME commit.
+
+    ⛔ `examined` IS REQUIRED, AND IT IS NOT A CONVENIENCE. A pinned path that was never READ is
+    not "paid" — it is NOT EXAMINED, and reporting the first as the second is this project's most
+    expensive recorded shape: a corpus that contains none of the subject returning a confident
+    verdict. Measured here on the first run: the wiring cases drive `evaluate()` with a synthetic
+    two-entry corpus, and without this parameter all eight pinned entries reported as paid. The
+    caller must say what it looked at; a default would let a caller get the vacuous answer.
+    """
+    out: list[Violation] = []
+    for path in sorted(violating - WIDENED_MANIFEST_DEBT):
+        out.append(Violation(path, "R4W_no_mutation_manifest",
+                             "a self-tested script outside the guard population has no "
+                             "scripts/mutations/<name>.json and no `NO-MUTATIONS: <why>` — write "
+                             "one, or add it to WIDENED_MANIFEST_DEBT with the reason"))
+    for path in sorted((WIDENED_MANIFEST_DEBT & examined) - violating):
+        out.append(Violation(path, "R4W_debt_paid_not_recorded",
+                             "pinned as manifest debt but it no longer violates R4 — it gained a "
+                             "manifest, declared `NO-MUTATIONS:`, or stopped being self-tested. "
+                             "Remove it from WIDENED_MANIFEST_DEBT in the SAME commit, so the "
+                             "debt cannot be re-accrued silently"))
+    return out
 
 
 # ── self-test ────────────────────────────────────────────────────────────────────────────────
@@ -368,6 +472,55 @@ POPULATION_CASES: list[tuple[str, list[str], list[str]]] = [
 ]
 
 
+# ── R4's WIDENED POPULATION, and its debt drift ──────────────────────────────────────────────
+_ST = '"""x"""\nif "--self-test" in sys.argv: pass\n'
+_NO_ST = '"""x"""\nprint(1)\n'
+
+# (name, script_paths, texts, expected) — `script_paths` is SEPARATE from `texts.keys()` on
+# purpose: they are different arguments and the last case is the one where they disagree.
+WIDENED_POP_CASES: list[tuple[str, list[str], dict[str, str], list[str]]] = [
+    ("a self-tested NON-guard is in the widened population",
+     ["scripts/tool.py"], {"scripts/tool.py": _ST}, ["scripts/tool.py"]),
+    # ⚠ A GUARD MUST NOT APPEAR HERE. R4 already asks it; counting it twice would charge one file
+    # against two baselines and make paying the debt impossible to record in one commit.
+    ("a check-* guard is NOT in the widened population",
+     ["scripts/check-x.py"], {"scripts/check-x.py": _ST}, []),
+    ("a non-guard with no self-test is not asked for a manifest",
+     ["scripts/tool.py"], {"scripts/tool.py": _NO_ST}, []),
+    # ⭐ THE TWO ARGUMENTS DISAGREE, which is the only case that proves they are two arguments.
+    # A path the caller listed but whose text was never read must NOT be assumed self-tested:
+    # `texts.get(p, "")` returns empty and the file drops out. Reading an unread file as
+    # "has a self-test" would demand a manifest on the strength of never having looked.
+    ("a listed path whose text was never read is not assumed self-tested",
+     ["scripts/tool.py", "scripts/unread.py"], {"scripts/tool.py": _ST}, ["scripts/tool.py"]),
+]
+
+# ── the NO-MUTATIONS escape, and the self-exemption it granted for as long as it existed ─────
+ESCAPE_CASES: list[tuple[str, str, bool]] = [
+    ("a real written reason exempts", "NO-MUTATIONS: a pure wrapper, no branches to weaken", True),
+    # ⭐ THE CASE THAT WOULD HAVE CAUGHT THE SELF-EXEMPTION. This file's own docstring says
+    # "a mutation manifest, or `NO-MUTATIONS:` ENFORCED — …", and the original pattern matched it,
+    # taking "` ENFORCED — …" as the reason. The guard demanding manifests was never asked for one.
+    ("a guard that only DOCUMENTS the escape is not exempted by it",
+     "  R4  a mutation manifest, or `NO-MUTATIONS:` ENFORCED — R1 asks whether", False),
+    ("a placeholder is not a reason", "`NO-MUTATIONS: <why>` in the docstring", False),
+]
+
+WIDENED_DRIFT_CASES: list[tuple[str, set[str], set[str], list[str]]] = [
+    ("an UNPINNED violator fails",
+     {"scripts/new.py"}, {"scripts/new.py"}, ["R4W_no_mutation_manifest"]),
+    ("a pinned violator is silent — that is what the pin is for",
+     {"scripts/codex-review.py"}, {"scripts/codex-review.py"}, []),
+    ("a pinned entry that was EXAMINED and no longer violates fails",
+     set(), {"scripts/codex-review.py"}, ["R4W_debt_paid_not_recorded"]),
+    # ⭐ THE CORPUS CASE, and it is the one that caught a real defect on the first run. Absence
+    # from the corpus is NOT-EXAMINED, never "paid". Without the `examined` argument the wiring
+    # cases below — which drive evaluate() with a two-entry synthetic corpus — reported all eight
+    # pinned entries as paid. Deleting the `& examined` clause turns this case red.
+    ("a pinned entry NOT examined is silent, not 'paid'",
+     set(), set(), []),
+]
+
 CASES: list[tuple[str, str, list[str]]] = [
     ("a conforming ratchet has no violations", SELF_TEST_OK, []),
     ("a missing --self-test is flagged", NO_SELF_TEST, ["R1_no_self_test"]),
@@ -404,22 +557,44 @@ def self_test() -> int:
     for name, text, expected in CASES:
         got = sorted({v.rule for v in check_contract("t.py", text)})
         if got != sorted(expected):
-            print(f"  FAIL {name}\n       expected {sorted(expected)}\n       got      {got}")
+            # ⛔ `[FAIL] <name>`, NAME ALONE ON THE LINE — a contract with the mutation
+            # harness, not a display choice. `check-plan-code.parse_fail_names` reads a red case
+            # with `startswith("[FAIL] ")` then `[7:]`; this file printed `  FAIL {name}`, which
+            # it cannot see at all, so every mutation aimed here would be KILLED and
+            # UNATTRIBUTED — "matched 0 red case(s)" while each one dies by the case it names.
+            # ⟳ 2026-09-12: fixed here the same day PR #293 paid it for `gen-goals-page.py` and
+            # wrote "the tenth is only a matter of time" in its own body. This is the tenth.
+            print(f"[FAIL] {name}\n       expected {sorted(expected)}\n       got      {got}")
             failures += 1
     for name, ci, scripts, expected in DISCOVERY_CASES:
         got = discover_ratchets(ci, scripts)
         if got != expected:
-            print(f"  FAIL {name}\n       expected {expected}\n       got      {got}")
+            print(f"[FAIL] {name}\n       expected {expected}\n       got      {got}")
             failures += 1
     for name, path, text, blob, expected in CALLER_CASES:
         got = sorted({v.rule for v in check_caller(path, text, blob)})
         if got != sorted(expected):
-            print(f"  FAIL {name}\n       expected {sorted(expected)}\n       got      {got}")
+            print(f"[FAIL] {name}\n       expected {sorted(expected)}\n       got      {got}")
             failures += 1
     for name, paths, expected in POPULATION_CASES:
         got = discover_guards(paths)
         if got != expected:
-            print(f"  FAIL {name}\n       expected {expected}\n       got      {got}")
+            print(f"[FAIL] {name}\n       expected {expected}\n       got      {got}")
+            failures += 1
+    for name, paths_, texts_, expected in WIDENED_POP_CASES:
+        got = discover_self_tested_nonguards(paths_, texts_)
+        if got != expected:
+            print(f"[FAIL] {name}\n       expected {expected}\n       got      {got}")
+            failures += 1
+    for name, text_, want in ESCAPE_CASES:
+        got = bool(NO_MUTATIONS_RE.search(text_))
+        if got != want:
+            print(f"[FAIL] {name}\n       expected {want}\n       got      {got}")
+            failures += 1
+    for name, violating, examined, expected in WIDENED_DRIFT_CASES:
+        got = sorted({v.rule for v in widened_debt_drift(violating, examined)})
+        if got != sorted(expected):
+            print(f"[FAIL] {name}\n       expected {sorted(expected)}\n       got      {got}")
             failures += 1
 
     # ⚠ THE WIRING, not the helpers. Every case above drives a function directly;
@@ -435,6 +610,14 @@ def self_test() -> int:
          {"scripts/check-w.py": SELF_TEST_OK},
          {"scripts/check-w.py": "python3 scripts/check-w.py"},
          ["R4_no_mutation_manifest"]),
+        # ⚠ THE WIRING CASE FOR THE WIDENED R4. Without it, deleting the
+        # discover_self_tested_nonguards/widened_debt_drift block from evaluate() leaves every
+        # case above green — coverage of the functions, none of their use. This is the same
+        # blind spot this list's own header describes, one rule later.
+        ("evaluate APPLIES the widened manifest rule to a NON-guard",
+         {"scripts/check-w.py": SELF_TEST_OK, "scripts/tool.py": SELF_TEST_OK},
+         {"scripts/check-w.py": "python3 scripts/check-w.py"},
+         ["R4W_no_mutation_manifest", "R4_no_mutation_manifest"]),
         ("evaluate APPLIES the self-test rule too",
          {"scripts/check-w.py": NO_SELF_TEST}, {"scripts/check-w.py": "python3 scripts/check-w.py"},
          ["R1_no_self_test", "R4_no_mutation_manifest"]),
@@ -444,11 +627,12 @@ def self_test() -> int:
     for name, texts, blobs, expected in wiring:
         got = sorted({v.rule for v in evaluate(texts, blobs, manifests)})
         if got != sorted(expected):
-            print(f"  FAIL {name}\n       expected {sorted(expected)}\n       got      {got}")
+            print(f"[FAIL] {name}\n       expected {sorted(expected)}\n       got      {got}")
             failures += 1
 
     total = (len(CASES) + len(DISCOVERY_CASES) + len(CALLER_CASES)
-             + len(POPULATION_CASES) + len(wiring))
+             + len(POPULATION_CASES) + len(WIDENED_POP_CASES)
+             + len(ESCAPE_CASES) + len(WIDENED_DRIFT_CASES) + len(wiring))
     print(f"self-test: {total - failures}/{total} passed")
     return 1 if failures else 0
 
@@ -463,8 +647,15 @@ def main(argv: list[str]) -> int:
         print("Treat this as NOT RUN.")
         return 1
 
+    # ⟳ 2026-09-12: `check-*.py` -> `*.py`. The guard rules are UNCHANGED — `discover_guards`
+    # still filters by GUARD_PATH_RE, so `evaluate()`'s R1-R3 loop sees exactly the same 34 files.
+    # What the narrower glob did was make R4's WIDENED population unreachable: the discovery could
+    # only ever see what main() had read, so `discover_self_tested_nonguards` returned [] and all
+    # four pinned debt entries reported as PAID. The rule was right and the corpus was empty —
+    # measured, on the first run, which is why the debt is pinned by IDENTITY: a cardinality
+    # ceiling would have read an empty corpus as "no violations" and passed.
     texts = {}
-    for p in sorted((ROOT / "scripts").glob("check-*.py")):
+    for p in sorted((ROOT / "scripts").glob("*.py")):
         rel = str(p.relative_to(ROOT))
         try:
             texts[rel] = p.read_text(errors="ignore")
@@ -474,7 +665,8 @@ def main(argv: list[str]) -> int:
 
     ratchets = discover_guards(list(texts))
     if not ratchets:
-        # This project has 24. Zero means discovery broke, not that all is well.
+        # Zero means discovery broke, not that all is well. (No count is quoted here on
+        # purpose: the population moves, and a stored figure is stale at the commit that adds it.)
         print("FAILED: discovered ZERO guards, which cannot be right. Treat this as NOT RUN.")
         return 1
 

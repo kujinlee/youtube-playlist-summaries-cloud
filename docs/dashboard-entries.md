@@ -7819,3 +7819,70 @@ project total is 549. CI measured 549 attributed / 0 survivors on `8d67e55b`.** 
 pre-flight for this, noting source shape cannot decide a behavioural property. It can be decided by
 RUNNING a suite with one case forced red and checking the output shape — which is how this fix was
 verified by hand.
+
+## 2026-09-12
+The rule that every guard must prove its own tests can fail had never been applied to the guard that
+enforces it — and the reason is a small joke at this project's expense.
+
+The rule allows an escape: a script may say, in writing, why mutation testing does not apply to it.
+The check for that escape looks for the phrase `NO-MUTATIONS:` in the file. The guard's own
+documentation explains the escape, and therefore contains that phrase. So the guard read its own
+description of the loophole as a use of the loophole, and exempted itself. It had done this since it
+was written. Measured across all thirty-four guards, it was the only file affected.
+
+Two things came out of looking at it. The first is that the rule's population was drawn by
+FILENAME — anything called `check-*.py` — so a nine-hundred-line script that decides whether a code
+review actually ran was never asked the question, because of what it is called rather than what it
+does. That population is now widened to any script that has its own test suite, with the eight
+currently outside it recorded as named debt so the check is not red on day one. A new script cannot
+join that list quietly: adding one fails, and so does paying one off without saying so.
+
+The second is that this guard printed its failures in a shape the mutation harness cannot read —
+the same trap a pull request merged earlier today had just paid for another file, whose own
+description ended "the tenth is only a matter of time." It was the same day.
+
+Nothing here is a new mechanism. The rule was right; it was asked of the wrong set of files, and it
+was not asked of itself.
+<!--tech-->
+Branch `mutation-coverage-gate`, base `7674fe87` (PR #293, merged).
+
+⛔ **`NO_MUTATIONS_RE` matched `check-ratchet-contract.py`'s own docstring.** The pattern was
+`NO-MUTATIONS:[ \t]*(\S[^\n]*)`; line 16 reads *"a mutation manifest, or `NO-MUTATIONS:` ENFORCED —
+R1 asks whether a self-test EXISTS;"*, and the regex took `` ` ENFORCED — R1 asks…`` as the written
+reason. ⚠ **This is the shape `check-plan-code.py` already records for its abandoned pre-flight** —
+`"[FAIL] " in source` is unfalsifiable *because the comment explaining the contract quotes the
+marker*. A rule that documents its own escape will match that documentation. Now
+`NO-MUTATIONS:[ \t]+([A-Za-z][^\n]*)`: `[ \t]+` rejects `NO-MUTATIONS:` + backtick, `[A-Za-z]`
+rejects the `<why>` placeholder. **Measured: the only affected file of 34.**
+
+**R4's population was a filename pattern.** `discover_guards` is `scripts/check-[\w.-]+\.py`.
+`discover_self_tested_nonguards` adds any non-guard with a self-test; only `check_manifest` is
+applied to it (widening four rules at once would be a different change wearing this one's name).
+`WIDENED_MANIFEST_DEBT` pins the eight by **identity, not cardinality** — the rule
+`MANIFEST_BASELINE` already states for its own count.
+
+⭐ **The debt set was wrong on the first run, and the tool caught it.** A scratch measurement
+written alongside the change said FOUR; it excluded self-declared ratchets while the real discovery
+excludes only guards. Eight violate. `MANIFEST_BASELINE`'s own comment already says it: *"the
+baseline is whatever the tool prints, and nothing else."*
+
+⭐ **`widened_debt_drift` takes `examined` and it is not a convenience.** A pinned path that was
+never read is NOT-EXAMINED, not "paid". Measured on the first run: the wiring cases drive
+`evaluate()` with a two-entry synthetic corpus, and without that argument all eight pinned entries
+reported as paid — an empty corpus returning a confident verdict, this project's most-recorded shape.
+
+**TENTH FILE TO PAY THE FAILURE-LINE TRAP.** Seven printers said `  FAIL {name}`, which
+`parse_fail_names` (`startswith("[FAIL] ")`) cannot see — every mutation would have been killed and
+UNATTRIBUTED. Fixed and verified by **demonstration**: one case forced red in a scratch copy, output
+confirmed as `[FAIL] a pinned violator is silent — that is what the pin is for`, and
+`parse_fail_names` parsed it.
+
+**Ratchets:** `EXPECTED_MUTATIONS` **549 → 555**, `check-ratchet-contract.py` joins with **6**; the
+pinned membership list gains it. Suite **22 → 34 cases** (a declared count where there was none).
+⚠ Four `check-fixture-variation` exemptions, each with the mutation that guards the clause instead —
+its scan counts syntactic CALL SITES, so a table-driven suite reads as one value however its rows
+vary. One genuine case was added rather than exempted: `script_paths` and `texts` disagreeing.
+
+**Falsifiers, demonstrated:** a new self-tested script → `R4W_no_mutation_manifest`; a pinned entry
+gaining a manifest, declaring `NO-MUTATIONS:`, or losing its self-test → `R4W_debt_paid_not_recorded`;
+control green in all directions. 6/6 mutations kill via the case each names.

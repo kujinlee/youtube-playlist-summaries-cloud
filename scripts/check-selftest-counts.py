@@ -86,6 +86,9 @@ POPULATION: frozenset[str] = frozenset({
                                      # ratchet contract's population never sees it — this is the
                                      # only outside observer of its declared count.
     "check-anchors.py",
+    # ⟳ 2026-09-12: gained a declared count when it gained its own manifest — the guard that
+    # enforces R4 had exempted itself from it, because the escape regex matched its own docstring.
+    "check-ratchet-contract.py",
     "check-banner-armed.py",
     "check-ci-watched.py",           # ⟳ 2026-09-04: CI ran unwatched on 2 of 3 pushes
     "check-group-claims.py",         # ⟳ 2026-09-11. Pinned in the commit that creates it:

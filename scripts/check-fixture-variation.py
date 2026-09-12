@@ -495,6 +495,25 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 EXEMPT: dict[str, str] = {
     "check-plan-code.py:diagnostic_tail.window": "the budget is a module constant with its own boundary cases and "
                               "its own manifest entry; callers never pass it",
+    # ⟳ 2026-09-12. TABLE-DRIVEN CASES HAVE ONE SYNTACTIC CALL SITE, and this scan counts call
+    # SITES. `WIDENED_DRIFT_CASES` has four rows whose `violating`/`examined` sets all differ — the
+    # values vary, the call site does not. ⚠ NOT TAKEN ON TRUST: both parameters are MEASURED as
+    # load-bearing by mutation. Dropping the `& examined` clause reddens "a pinned entry NOT
+    # examined is silent, not 'paid'"; dropping `- WIDENED_MANIFEST_DEBT` reddens "a pinned
+    # violator is silent". Both are manifest entries in scripts/mutations/check-ratchet-contract.json,
+    # so the clauses this scan calls unguarded are the two with the strongest evidence in the file.
+    "check-ratchet-contract.py:discover_self_tested_nonguards.script_paths": "table-driven; the "
+                         "rows vary, and one passes a path deliberately ABSENT from `texts` so the "
+                         "two arguments disagree. Guarded by the mutation that drops the guards "
+                         "exclusion, which dies via the case naming it",
+    "check-ratchet-contract.py:discover_self_tested_nonguards.texts": "same table; guarded by the "
+                         "mutation that drops the self-test requirement, which dies via its case",
+    "check-ratchet-contract.py:widened_debt_drift.violating": "driven by a 4-row table whose sets "
+                         "all differ; a call-SITE scan cannot see per-row variation. Guarded by "
+                         "mutation instead — see the manifest entry naming its case",
+    "check-ratchet-contract.py:widened_debt_drift.examined": "same table; the NOT-EXAMINED clause "
+                         "is the one that stopped an empty corpus reading as paid debt, and its "
+                         "mutation dies via the case it names",
     "check-plan-code.py:run_suite_parts.d": "the staging directory is the fixture's own temp dir; what varies "
                          "between its call sites is `name`, which is the parameter that "
                          "selects the suite. A second directory would test the tempfile "
