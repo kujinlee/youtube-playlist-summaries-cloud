@@ -3,7 +3,7 @@
 
     python3 scripts/gen-goals-page.py              # -> ~/explainers/goals.html, served at /goals
     python3 scripts/gen-goals-page.py --fragment-only <path>
-    python3 scripts/gen-goals-page.py --self-test  # 25 cases, pure functions only
+    python3 scripts/gen-goals-page.py --self-test  # 35 cases, pure functions only
 
 WHY THIS EXISTS
 ---------------
@@ -206,6 +206,51 @@ def pair_documents(docs: list[dict]) -> list[dict]:
         if t[slot] is None:
             t[slot] = d
     return sorted(by_stem.values(), key=lambda t: t["stem"], reverse=True)
+
+
+PR_TAIL = re.compile(r"\(#(\d+)\)\s*$")
+# ⚠ THREE ROUNDS OF PLAN REVIEW ON THIS ONE REGEX, each fix narrower than the class:
+#   r1: `^docs/` alone missed CONTEXT.md and .agents/   -> 10 real mis-taggings
+#   r2: adding a bare `README` matched README-generator.ts -> 4 the other way
+#   r3: anchoring with `$` missed worker/CONTEXT.md      -> nested instruction docs
+# `(.*/)?` is the class: an instruction document at ANY depth, whole basename only.
+# Measured 0 wrong over 19 adversarial paths.
+DOC_PATH = re.compile(
+    r"^(docs/|\.remember/|\.agents/"
+    r"|(.*/)?(README(\.md)?|CONTEXT\.md|AGENTS\.md|CLAUDE\.md)$)")
+
+
+def prs_from_log(lines) -> list[dict]:
+    """`%H\\x01%as\\x01%s` lines -> PR records, newest first, deduped by number. PURE.
+
+    ⚠ ANCHORED AT THE SUBJECT TAIL. `check-backlog-closure.py:107` already paid for this:
+    an any-occurrence match fired on 10 of 18 ids, the tail rule on 1, a true positive.
+    A commit with no tail was pushed direct to master and is not a PR.
+    """
+    out, seen = [], set()
+    for line in lines:
+        parts = line.split("\x01")
+        if len(parts) != 3:
+            continue
+        sha, date, subject = parts
+        m = PR_TAIL.search(subject)
+        if not m or m.group(1) in seen:
+            continue
+        seen.add(m.group(1))
+        out.append({"sha": sha, "num": m.group(1), "date": date, "subject": subject})
+    return out
+
+
+def files_are_code(files) -> bool:
+    """True if any path lies outside this repo's documentation. PURE.
+
+    ⛔ THIS IS A CLAIM ABOUT ONE COMMIT, NOT ABOUT A THREAD, and the spec retracted the
+    stronger reading. Measured 2026-09-11: PR #147 (the ADR-0010 header backfill) touches
+    ~26 documents plus three scripts, so this returns True on 22 of 47 documents and
+    implemented none of them. The renderer therefore says `touched code` and shows each
+    PR's document fan-out; it makes no implementation claim.
+    """
+    return any(f and not DOC_PATH.match(f) for f in files)
 
 
 # ---------------------------------------------------------------- collection
@@ -536,6 +581,35 @@ def self_test() -> int:
     _s2 = {"name": "2026-08-29-x-plan.md", "kind": "spec"}
     eq("a second document in a slot is kept, not dropped",
        len(pair_documents([_s, _p, _s2])[0]["docs"]), 3)
+
+    _lg = ["aaa\x012026-08-29\x01Retire the plan dependency (#176)",
+           "bbb\x012026-08-31\x01Asks state their choices (#186)",
+           "ccc\x012026-08-31\x01Asks state their choices (#186)",
+           "ddd\x012026-07-01\x01a direct commit with no PR"]
+    eq("a squash subject yields its PR number",
+       [p["num"] for p in prs_from_log(_lg)], ["176", "186"])
+    eq("the date travels with the PR", prs_from_log(_lg)[0]["date"], "2026-08-29")
+    eq("a commit with no PR tail is dropped", len(prs_from_log(_lg)), 2)
+    eq("a malformed line is skipped, not crashed on", prs_from_log(["garbage"]), [])
+    eq("a PR-looking number mid-subject is not the PR",
+       prs_from_log(["e\x012026-01-01\x01mentions (#99) in passing, no tail"]), [])
+
+    eq("a script path is code", files_are_code(["scripts/gen-goals-page.py"]), True)
+    eq("one code file among docs makes it a code PR",
+       files_are_code(["docs/backlog.md", "lib/storage.ts"]), True)
+    eq("this repo's documentation outside docs/ is not code",
+       files_are_code(["docs/x.md", ".remember/remember.md", "README.md",
+                       "CONTEXT.md", "AGENTS.md", "CLAUDE.md",
+                       ".agents/skills/brief/SKILL.md"]), False)
+    # ⚠ Reported as a LIST, not chained with `and`: a regression names WHICH path class
+    # broke rather than only that one did.
+    eq("a code file whose name starts with a doc name is still code",
+       [files_are_code([f]) for f in
+        ("README-generator.ts", "CONTEXT.md.bak", "CLAUDE.md.old", "READMEs.tsx",
+         "src/READMEs.tsx", "a/b/CONTEXT.md.ts")], [True] * 6)
+    eq("an instruction document at any depth is not code",
+       [files_are_code([f]) for f in
+        ("worker/CONTEXT.md", "packages/api/AGENTS.md", "sub/dir/README.md")], [False] * 3)
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
