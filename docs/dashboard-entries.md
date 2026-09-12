@@ -7594,3 +7594,71 @@ spec) and **F8** (excluded documents must be counted) added.
 `git log --follow` recovers ≥1 `(#N)` for **45 of 46** anchor-declaring documents (98%), reaching 57
 distinct PRs. Anchor coverage is **46 of 186** documents under `docs/superpowers/` — the registry's
 deliberate living/dead split, now rendered rather than implied.
+
+## 2026-09-12
+The goals page now shows the work that pursued each goal, not just the documents about it. Each goal
+card has a collapsible Work section listing every spec, its plan, and the pull requests that touched
+them — so the question "which change actually implemented this?" can be answered by looking rather
+than by searching git.
+
+The honest part is what the page refuses to claim. An earlier version of the design tagged each pull
+request as the implementation, and that turned out to be wrong in a way worth recording: one pull
+request from six weeks ago added a header line to twenty-six documents at once and also touched three
+scripts. Under the old rule it was presented as the implementation of twenty-two different goals,
+having implemented none of them, and for five of those it was the only such pull request — so those
+cards would also have hidden the warning that nothing had been built yet.
+
+The fix was to stop claiming. Each pull request now says what it touched, and how many documents it
+touched, and the reader draws the conclusion. A bulk migration reads as "on 22 documents" and is
+obviously not anyone's implementation. A threshold that would have filtered such changes out was
+tested first and rejected, because every cut that caught the migration also discarded a genuine piece
+of work.
+
+The page also now says how many documents it cannot see: a hundred and forty, which declare no goal
+and are invisible here by design. That number is computed each time the page is built rather than
+written down, which matters because this feature's own design document kept invalidating its own
+counts simply by existing.
+
+Nothing about the backlog has changed yet. Attaching backlog items to goals is the second half and
+needs a decision about naming first.
+<!--tech-->
+Branch `goal-join-spec`, base `a298df4e`. Eleven commits: spec v4, plan v2, three Post-Plan Gate
+rounds, and six implementation tasks.
+
+`scripts/gen-goals-page.py` gains `doc_stem`, `pair_documents`, `prs_from_log`, `files_are_code`,
+`git_pr_history`, `git_show_files`, `annotate_code`, `thread_prs`, `pr_fanout`, `excluded_count` and
+`render_threads`; `collect()` gains a per-document history cache, a global fan-out map and a HEAD
+stamp; the `Documents` band is replaced by `Work`. Self-test **15 → 65**, with the `:6` declaration
+updated at every task so `check-selftest-counts` was green at all six commits.
+
+**Post-Plan Gate: 3 rounds, both halves each round except r2 (`REVIEW GAP: claude`), 4 Blocking and
+8 High, all remediated.** Gate exited by explicit human decision, recorded in
+`docs/reviews/coordinator/plan-goal-work-threads-r3-coordinator.md` — the gate was NOT met, and the
+reason for proceeding is that every defect lived in code that did not exist yet.
+
+⚠ **The Blocking that took three attempts:** `d["rel"]` crashed on a record without one;
+`d.get("rel")` made every rel-less document key to a single `None`, so a collision's extra document
+matched the spec and was silently dropped — the case written to prove extras render proved the
+opposite. Identity (`d is x`) is exact, because `pair_documents` appends the same object it assigns
+to the slot. **Reading the fix found neither regression; running it found both.**
+
+⚠ **`DOC_PATH` narrowed three times** — `^docs/` missed CONTEXT.md and `.agents/` (10 real
+mis-taggings); adding a bare `README` matched `README-generator.ts` (4 the other way); anchoring with
+`$` missed `worker/CONTEXT.md`. What ships is `(.*/)?<basename>$`, 0 wrong over 19 adversarial paths.
+
+**Measured on the built page 2026-09-12:** 41 threads, 6 with both halves, 21 `no plan`, 14
+`no spec`, 72 `touched code`, 22 `docs only`, 0 `unknown`, `on 22 documents` rendered 22 times, 140
+excluded, 11 provenance stamps, Documents band 0. Build 10.8s against a 2.4s baseline (≈4.5×, as the
+plan predicted after review refuted its original "doubles the cost" claim).
+
+**Contrast measured, and it took three attempts to measure honestly** — the first run found no dark
+block and reported light values twice as PASS. Locating both blocks by searching for their selectors,
+and asserting light `--ink` differs from dark `--ink` before reporting: light 6.24 / 4.58 / 12.09,
+dark 6.34 / 7.19 / 11.18, all ≥ 4.5:1. `.tag.unknown` uses `--ink`; review measured `--ink-faint` at
+2.45:1 and 3.47:1, both failing, on the tag for CANNOT RUN.
+
+Gates green: `check-anchors`, `check-docs`, `check-selftest-counts`, `check-ratchet-contract`,
+`check-review-rounds`, `check-explainer-delivery`, `check-theme-token-coverage`.
+
+⚠ **Owed, not done:** mutation manifest entries for the new rules; the backlog→goal join and the
+derived lifecycle (spec §3.3 and §4, Plan 2); direct document-less work in the Work band.
