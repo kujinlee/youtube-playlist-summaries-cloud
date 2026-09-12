@@ -7505,3 +7505,56 @@ orphaned its two `EXAMINED_KEYS` entries; the guard was right and I read past it
 `EXPECTED_MUTATIONS` 513 → 521. Gates green: check-docs, check-selftest-counts (36),
 check-fixture-variation, check-ratchet-contract, check-group-claims, check-backlog-closure,
 check-anchors, check-review-rounds, check-plan-file-tags, check-plan-code (128/128).
+
+## 2026-09-11
+The goals page, the backlog and the dashboard describe the same project, but they have been three
+separate models rather than three views of one. A design has been written for joining them; no code
+has changed yet.
+
+The complaint that started it came from looking at the live pages: the goal list did not line up with
+the backlog's groups or tags, and the dashboard listed activity without ever saying which goal any of
+it moved. Measuring it bore that out. Of 70 open backlog items, 43 belong to a goal that does not
+exist in the registry — the largest cluster being twenty items about whether the project's own checks
+can be trusted, which has never had a name. Only six items were linked to a goal at all, and all six
+named the same one.
+
+Two findings came out of the measuring that were not expected. Five of the six hand-written groups
+turn out to be a goal each, written a second time in a different vocabulary — so groups and goals are
+a duplicate mechanism, the exact class one of this project's guards exists to catch, hiding in data
+where the guard cannot see it. And the sixth group, the one that breaks the pattern, is the one whose
+title names a *deliverable*; it splits four ways because it sits a level above goals rather than
+beside them.
+
+The design also answers a question that was asked as "show finished goals as done" and turned out to
+need three answers rather than two. One goal has had no activity for over a month and still has seven
+open items, four of them serious. Calling that done would be false. Separating idle from finished
+shows that fifteen of the project's twenty-one serious open items sit in goals nobody has touched in
+over a month — which the current page presents identically to everything being actively worked on.
+
+Worth recording that the classifier behind these numbers was wrong three times, each time in the same
+direction, and was corrected on each occasion by disagreeing with the user's own recollection of what
+the project had been working on. The fix in the end was not a cleverer rule but using a signal the
+repository already maintains: documents declare which goal they belong to, and that attributes work
+no rule about file paths can see.
+<!--tech-->
+Branch `goal-join-spec`, base `a298df4e`. Spec only — no code, no page changes.
+
+`docs/superpowers/specs/2026-09-11-goal-backlog-pr-join-design.md`, anchor `status-visibility`.
+Covers: the `deliverable -> goal -> {items, PRs, documents}` model; the three joins and which one
+needs new declared data (only item→goal, via the `Bundle` column becoming a controlled vocabulary of
+goal names); the derived done/active/dormant lifecycle; the goal card gaining three `<details>`
+sections, reusing markup already present 21× in `gen-dashboard.py` and 6× in `gen-backlog-page.py`
+but **0×** in `gen-goals-page.py`.
+
+**Measured 2026-09-11** — 113 backlog rows (70 open / 43 closed) via `gen-backlog-page.parse`;
+283 merged PRs; PR→goal derivable for **200 of 256** squashed-PR commits (78%) with a document's
+declared anchor taking priority over code paths, which attributes 57 that no path rule reaches.
+Group→goal purity 100/100/86/83/80/**36**%. Lifecycle 3 done / 4 active / 9 dormant.
+
+⚠ **The spec's own document counts went stale as it was committed** — adding it moved 45→46 and
+`status-visibility` 20→21, because it declares that anchor for want of one covering harness work.
+Recorded in §1 rather than quietly corrected.
+
+Gates green on the branch: `check-anchors` rc=0 (11 anchors, floor 22 held), `check-docs` rc=0,
+`check-review-rounds` rc=0, `check-selftest-counts` rc=0. No review round yet — this is a spec
+awaiting the user's approval, and the review gate applies when it becomes a plan.
