@@ -501,6 +501,10 @@ def thread_prs(thread: dict, history) -> dict:
     # fan-out that `hist_cache` feeds.
     for d in thread.get("docs") or [x for x in (thread.get("spec"), thread.get("plan")) if x]:
         if not d or not d.get("rel"):
+            # ⚠ A document the page cannot ADDRESS is not a document git failed to read,
+            # so this does not set `pr_error` — but it is a second place where a missing
+            # `rel` means "quietly nothing", and round 3 named it. Unreachable in
+            # production: every record built at `:200-205` carries a `rel`.
             continue
         got = history(d["rel"])
         if got is None:
@@ -613,10 +617,15 @@ thread-level flags are `history could not be read` (CANNOT RUN) and `no pull req
 
 ```python
     _fan = {"186": 1, "187": 1, "147": 22}
+    # ⚠ THREE PRs, one per tag. Round 3: with only two, the case named "only the three
+    # measured tags can be rendered" was satisfied by a renderer emitting a fourth label
+    # for the third state — it constrained two of the three it claimed. Mutation-verified
+    # there: renaming the `unknown` branch stayed GREEN with two PRs.
     _th = [{"stem": "2026-08-31-asks", "spec": {"name": "a-design.md", "rel": "ra"},
             "plan": {"name": "a.md", "rel": "rb"}, "docs": [], "pr_error": False,
             "prs": [{"num": "186", "date": "2026-08-31", "subject": "impl", "code": True},
-                    {"num": "187", "date": "2026-08-31", "subject": "docs", "code": False}]}]
+                    {"num": "187", "date": "2026-08-31", "subject": "docs", "code": False},
+                    {"num": "188", "date": "2026-08-30", "subject": "unread", "code": None}]}]
     _h = render_threads(_th, _fan)
     eq("the thread renders inside a details element", "<details" in _h, True)
     # ⭐ THE CASE THE USER ASKED FOR: two PRs on one thread must LOOK different.
@@ -627,7 +636,7 @@ thread-level flags are `history could not be read` (CANNOT RUN) and `no pull req
     # tag texts fails on any label that is not one of the three measured states.
     eq("only the three measured tags can be rendered",
        sorted(set(re.findall(r'<span class="tag [a-z]+">([^<]+)</span>', _h))),
-       ["docs only", "touched code"])
+       ["docs only", "touched code", "unknown"])
     # ⭐ THE RETRACTION, ASSERTED: a 22-document PR is shown as a bulk edit.
     _bulk = [{"stem": "s", "spec": {"name": "s-design.md", "rel": "r"}, "plan": None,
               "docs": [], "pr_error": False,
@@ -732,9 +741,15 @@ def render_threads(threads: list[dict], fanout: dict[str, int]) -> str:
                              f'<span class="absent">{missing}</span></div>')
         # A stem claimed by a third document. Kept by `pair_documents`, and rendered here
         # so the collision is visible rather than merely recorded.
-        named = {d.get("rel") for d in (t.get("spec"), t.get("plan")) if d}
+        # ⛔ IDENTITY, NOT A KEY, and round 3 paid for the alternative twice. Keying on
+        # `d["rel"]` crashed on a record without one; keying on `d.get("rel")` made EVERY
+        # rel-less document collapse to the same `None`, so the extra document matched the
+        # spec and was dropped — the case written to prove extras render proved the
+        # opposite. `pair_documents` appends the SAME dict object it assigns to the slot,
+        # so `is` is exact and needs no field at all.
+        named = [x for x in (t.get("spec"), t.get("plan")) if x]
         for d in t.get("docs", []):
-            if d.get("rel") not in named:
+            if not any(d is x for x in named):
                 parts.append(f'<div class="prline"><span class="absent">⚠ extra document '
                              f'on this stem</span>'
                              f'<a href="/src/{esc(d.get("rel", ""))}">'
@@ -834,14 +849,17 @@ Expected: all three **PASS** (≥4.5:1) in the light block. Repeat for the dark 
 ```bash
 python3 scripts/gen-goals-page.py --out /tmp/goals-check.html
 grep -c '<details class="thread"' /tmp/goals-check.html   # expect 41 (measured 2026-09-11)
-grep -c '>no plan<'              /tmp/goals-check.html    # expect 35 — the PAIRING RATE
+grep -c '>no plan<'              /tmp/goals-check.html    # expect 21   (measured 2026-09-11)
+grep -c '>no spec<'              /tmp/goals-check.html    # expect 14   — 21+14 = the 35 unpaired
 grep -c '>touched code<'         /tmp/goals-check.html    # expect > 0
 grep -c '>docs only<'            /tmp/goals-check.html    # expect >= 1
 grep -c 'on 22 documents'        /tmp/goals-check.html    # expect 22 — PR #147's fan-out
 ```
 
 ⚠ **The `>no plan<` count is round 1 M2** — 35 of 41 threads show one half absent, and nothing
-watched it before. ⚠ **The `on 22 documents` count is the retraction's falsifier in anger**: a zero
+watched it before. ⚠⚠ **It splits 21 missing a plan and 14 missing a spec**; round 3 measured this
+against a built page after the plan asserted a flat 35 for the `no plan` grep alone. Checking one
+arm and calling it the pairing rate is how a half-measurement passes for a whole one. ⚠ **The `on 22 documents` count is the retraction's falsifier in anger**: a zero
 means `pr_fanout` is not discriminating and the page is back to presenting a bulk edit as an
 implementation.
 
