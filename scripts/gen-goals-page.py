@@ -767,23 +767,27 @@ def self_test() -> int:
         # by the case it names. This file printed `  ✗ <label>  got … want …` and paid all
         # 14 of its manifest entries for it on 2026-09-12.
         #
-        # ⚠ THE COUNT HERE WAS WRITTEN FROM MEMORY AND WAS WRONG BY 3×, in the file whose
-        # purpose is to be the durable record of this class. It said "the THIRD file to do
-        # so, after gen-backlog-page.py and brief-compose.py". Enumerated in review r1 with
-        # `git log -S'[FAIL] '` per file, this is the NINTH since 2026-09-06 — and the
-        # THIRD with this exact `  ✗ {label}` shape, after `check-explainer-delivery.py`
-        # and `check-gate-falsifiability.py`, both of which paid it five days earlier:
+        # ⛔ THE COUNT THAT BELONGS HERE IS NOT WRITTEN DOWN, ON PURPOSE, AND THAT IS THE
+        # MOST EXPENSIVE THING THIS FILE HAS TO SAY. Three hand-written versions shipped in
+        # one day and every one was wrong in a NEW way:
+        #   v1 "the THIRD file"                  — wrong; it is not third by any measure
+        #   v2 "the NINTH, third with this shape" — wrong again, in the same direction:
+        #      `check-gate-falsifiability.py` never had this printer (it printed `FAIL`),
+        #      and the enumeration dropped `check-handoff-path.py`, which is named in the
+        #      subject line of a commit that same enumeration already cites
+        #   v3 would be the same bet, placed a third time, by the same method
+        # Each correction was written from a reviewer's table rather than from git, which is
+        # how "written from memory" survives being noticed. So the number is DERIVED, never
+        # stored — the corpus moves, and a stored count is stale at the commit that adds it:
         #
-        #   begin-plan · check-plan-progress (2026-09-06) · check-banner-armed (09-06)
-        #   check-explainer-delivery · check-gate-falsifiability · check-function-revokes
-        #   (2026-09-07) · gen-backlog-page · brief-compose (2026-09-10) · this file
+        #     git log -S'[FAIL] ' --reverse --format='%h %as %s' -- scripts/<file>
         #
-        # ⚠ AND "both of which paid AFTER a convention was written" was false for the first
-        # of them. `portable-practices` §22 was introduced BY the same commit that fixed
-        # `gen-backlog-page.py` (`050913f6`), so it cannot have paid after itself; only
-        # `brief-compose.py` did. Six of the eight predate §22 entirely, and cite each
-        # other and this parser rather than it. A convention did not hold, NINE times —
-        # which is a much stronger argument for a mechanical guard than "three" was.
+        # ⚠ ONE HISTORICAL CLAIM IS KEPT, because it was verified TWICE independently and it
+        # is the one a reader needs: `portable-practices` §22 was introduced BY the commit
+        # that fixed `gen-backlog-page.py` (`050913f6`) — so that file cannot have "paid
+        # after the convention was written", which an earlier version of this comment said.
+        # §22 was written FROM it. The convention has failed repeatedly since; how often is
+        # a question for the command above, not for this comment.
         # ⚠ THE NAME STAYS ALONE ON THE `[FAIL]` LINE, AND THE SPLIT IS DELIBERATE — this
         # is a THIRD producer shape and a reader is owed the reason. The canonical form
         # named at `check-plan-code.py:1395` is the single line `[FAIL] {name}: got {got!r}
@@ -819,8 +823,15 @@ def self_test() -> int:
     adr = "---\nstatus: accepted 2026-08-24 (M3) — supersedes X\n---\n\n# T\n\n⟳ CORRECTED 2026-08-06 blah\n⟳ SUPERSEDED later\n"
     eq("adr status read", parse_adr(adr)["status"].startswith("accepted"), True)
     eq("in-body amendments counted", len(parse_adr(adr)["amendments"]), 2)
+    # ⛔ THE FRONT MATTER MUST CARRY A ⟳ OR THIS CASE CANNOT FAIL FOR THE RULE IT NAMES.
+    # It read `supersedes ADR-0002` with NO ⟳, and `AMENDMENT` requires one — so deleting
+    # the front-matter/in-body split left the real and the gutted `parse_adr` both
+    # returning []. The rule the docstring calls "the point" had a case blind to it, and
+    # round 1 measured the deletion as green. ADR-0006 is the shape that matters: a ⟳ line
+    # INSIDE front matter is a claim about the day it was written, not a recorded correction.
     eq("front matter is NOT counted as an amendment",
-       parse_adr("---\nstatus: accepted — supersedes ADR-0002\n---\n\nbody\n")["amendments"], [])
+       parse_adr("---\nstatus: accepted\n⟳ SUPERSEDED 2026-08-06 by ADR-0009\n---\n\nbody\n"
+                 )["amendments"], [])
 
     spine = ("### M1 — A ⛔ RE-SCOPED AND DEFERRED\n"
              "### M2 — B — ✅ **SHIPPED**\n"
@@ -912,7 +923,7 @@ def self_test() -> int:
        annotate_code(_prs[:1], lambda sha: None)[0]["code"], None)
     eq("annotate does not lose or reorder records", [p["num"] for p in _out], ["186", "187"])
 
-    # ── THE CANNOT-RUN PRODUCER, REACHABLE AT LAST (review r1: HIGH-1 and MEDIUM-4) ──────
+    # ── THE CANNOT-RUN PRODUCER, REACHABLE AT LAST (round 1, both halves) ────────────────
     # ⛔ `git_pr_history` returning None is the ONLY thing in this file that can ever set
     # `pr_error`, and THREE manifest entries defend what happens DOWNSTREAM of it. The
     # producer itself had no seam, no case and no mutation — so every weakening of it
@@ -941,16 +952,32 @@ def self_test() -> int:
     # to type-check against `list | None`, and that default is the exact collapse the two
     # cases below exist to forbid — a guard written in the shape of the bug.
     #
-    # ⚠ THE PATH VARIES ACROSS THESE CASES, AND THAT IS NOT COSMETIC. The first draft passed
-    # `Path("x")` to all three, and `check-fixture-variation.py` refused it: a parameter
-    # given one constant everywhere is one no case can tell apart FROM a constant, so the
-    # clause that reads it is unguarded. Here that clause decides WHICH document's history
-    # is fetched — pin it to a constant and every document on the page inherits one history.
+    # ⚠ THE PATH VARIES BECAUSE A GUARD ASKED, BUT THE VARIATION IS NOT WHAT GUARDS THIS.
+    # The first draft passed `Path("x")` to all three and `check-fixture-variation.py`
+    # refused it. ⛔ DO NOT READ THAT AS "varying fixtures closes the gap" — round 2 probed
+    # both arms and the guard's verdict is ANTI-CORRELATED with the coverage here:
+    #   * collapse the variation, KEEP these assertions -> guard FAILS, mutation still killed
+    #   * keep the variation, DELETE these assertions   -> guard PASSES, mutation SURVIVES
+    # Only `_run_ok`/`_show_ok` observe their argv at all; `_run_rc1` and `_run_boom` discard
+    # it, so varying THEIR inputs cannot decide anything. The guard is a floor — its own
+    # docstring says it proves a parameter was thought about, never that the values are good.
+    # What actually guards this clause is the ASSERTION below that the argv tracks the input.
+    # The clause matters: it decides WHICH document's history is fetched, and pinning it to a
+    # constant makes every document on the page inherit one document's history.
     eq("a readable git log becomes PRs",
        git_pr_history(pathlib.Path("docs/superpowers/specs/a-design.md"), run=_run_ok),
        [{"sha": "abc", "num": "42", "date": "2026-09-01", "subject": "a subject (#42)"}])
+    # ⛔ TWO PATHS, EACH COMPARED TO ITS OWN INPUT. This asserted ONE recorded argv against
+    # ONE literal, which proves only that the code does not hardcode some OTHER value —
+    # hardcoding THIS fixture's own path passed 75/75, measured in round 2 as a Blocking via
+    # a probe mutation that SURVIVED. Varying the inputs is what `check-fixture-variation.py`
+    # asked for and it is NOT sufficient: the property is that the argv TRACKS the input, and
+    # one observation cannot exhibit tracking.
+    for _p in ("docs/superpowers/specs/a-design.md", "docs/superpowers/plans/z-plan.md"):
+        git_pr_history(pathlib.Path(_p), run=_run_ok)
     eq("the history is asked for the document it was given, not a fixed one",
-       _argv[0][-1], "docs/superpowers/specs/a-design.md")
+       [c[-1] for c in _argv[-2:]],
+       ["docs/superpowers/specs/a-design.md", "docs/superpowers/plans/z-plan.md"])
     # ⛔ THE TWO SENTINELS ARE NOT INTERCHANGEABLE. [] means git answered and named no PR;
     # None means git could not answer. `render_threads` draws those differently on purpose,
     # and collapsing them renders a failed deriver as a confident, honest-looking absence.
@@ -958,11 +985,15 @@ def self_test() -> int:
        git_pr_history(pathlib.Path("docs/superpowers/plans/b.md"), run=_run_rc1), None)
     eq("a git that cannot be launched at all is CANNOT RUN",
        git_pr_history(pathlib.Path("README.md"), run=_run_boom), None)
-    # ⚠ THIS ASSERTS THE FLAG, NOT THE BEHAVIOUR, and the limit is stated rather than
-    # implied: proving renames are followed needs a repository containing a rename, and
-    # this seam hands the stand-in a hard-coded `cwd=ROOT` it cannot redirect. What the
-    # case catches is the flag's DELETION. The docstring already records that today's
-    # corpus adds PRs for 0 of 47 documents, so nothing stronger is observable here.
+    # ⚠ THIS ASSERTS THE FLAG, NOT THE BEHAVIOUR — and the reason is the SUITE'S CONTRACT,
+    # not impossibility. An earlier version of this comment said the behaviour could not be
+    # observed because the stand-in gets a hard-coded `cwd=ROOT` it cannot redirect. That is
+    # FALSE and one run refutes it: `cwd` arrives as a keyword, every stand-in here is
+    # `(cmd, **kw)`, so `kw["cwd"] = <repo>` reaches real git. Round 2 did exactly that
+    # against a repository containing a rename and got `['101', '100']` with `--follow` and
+    # `['101']` without. The real constraint is line 6: this suite is "pure functions only",
+    # and a case that launches git breaks that promise for every reader of it. So the flag's
+    # DELETION is what this case catches, by choice — not because nothing stronger exists.
     eq("the history query follows renames", "--follow" in _argv[0], True)
 
     # ⚠ `.splitlines()`, NOT `.split()` — the rule the docstring calls load-bearing and
@@ -980,8 +1011,12 @@ def self_test() -> int:
     # ⚠ Same rule as the path above: the sha varies across these three cases because a
     # constant would leave the clause that USES it unguarded, and that clause decides which
     # commit's file list is read — pin it and every PR inherits one verdict.
+    # ⛔ Same rule, and it failed the same way: one observation cannot distinguish "uses the
+    # parameter" from "hardcodes the first fixture".
+    for _s in ("abc1234", "0ff9911"):
+        git_show_files(_s, run=_show_ok)
     eq("the file list is asked for the commit it was given, not a fixed one",
-       _show_argv[0][-1], "abc1234")
+       [c[-1] for c in _show_argv[-2:]], ["abc1234", "0ff9911"])
     eq("a nonzero git show is CANNOT RUN, not an empty file list",
        git_show_files("def5678", run=_run_rc1), None)
     eq("a git show that cannot be launched is CANNOT RUN",
@@ -993,7 +1028,7 @@ def self_test() -> int:
     # side of that `or` is unreachable in production. With `"docs": []` the two headline
     # cases below (the union/NEWEST-FIRST one, and the `pr_error` one) asserted the whole
     # rule against the fallback and never entered the loop production uses. Measured in
-    # review r1 (MEDIUM-3): deleting ONLY the dead fallback reddened both of them.
+    # Round 1, measured: deleting ONLY the dead fallback reddened both of them.
     _sp = {"name": "s-design.md", "rel": "a"}
     _pl = {"name": "s.md", "rel": "b"}
     _t = {"stem": "s", "spec": _sp, "plan": _pl, "docs": [_sp, _pl]}
@@ -1051,7 +1086,7 @@ def self_test() -> int:
     # ⚠ THE CLASS IS CAPTURED, NOT JUST MATCHED. This read `class="tag [a-z]+"` with the
     # capture group on the TEXT alone, so the class was unconstrained: the `cls` branch
     # could drop `unknown` and paint an unreadable PR in the `docs` colour while this case
-    # stayed green (review r1, MEDIUM-2 — measured as a SURVIVING weakening). The comment
+    # stayed green — round 1 measured this as a SURVIVING weakening. The comment
     # above records the same defect being found and fixed on the TAG half; the CLASS half
     # was left in exactly the state it describes. Pairs, so the two cannot drift apart.
     eq("only the three measured tags can be rendered, each in its OWN class",
@@ -1068,7 +1103,7 @@ def self_test() -> int:
        "on 22 documents" in render_threads(_bulk, _fan), True)
     # ⭐ THE BOUNDARY THE RULE ACTUALLY TURNS ON. `_fan` held only 1 and 22, so `n > 1`
     # could become `n > 2` and every TWO-document PR would silently lose its fan-out with
-    # this suite green (review r1, MEDIUM-5 — measured as a SURVIVING weakening). Two is
+    # this suite green — round 1 measured this as a SURVIVING weakening. Two is
     # not a corner case here: the distribution recorded at `pr_fanout` is 40/12/3/1/1
     # documents per PR, so the 2-bucket is the largest non-singleton class on the page.
     _pair = [{"stem": "p", "spec": {"name": "p-design.md", "rel": "rp"}, "plan": None,

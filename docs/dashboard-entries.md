@@ -7685,15 +7685,28 @@ functions that talk to git had no way to be tested at all, so no breakage aimed 
 have been caught. Their absence from the list looked like completeness and was untestability. Six
 more breakages close that, and two more close tests that could never have failed.
 
-A third problem came from neither reviewer. An existing guard refused the new tests because they
-handed the same fixed value to every call — which would have left the code that chooses *which*
-document and *which* commit to read completely unguarded. Both reviewers read those tests; the
-guard caught it in one run.
+A third problem came from neither reviewer: an existing guard refused the new tests because they
+handed the same fixed value to every call. The obvious lesson — *vary your test inputs* — turned out
+to be wrong, and round two proved it by measurement. Varying the inputs satisfies the guard without
+guarding anything; what actually protects the code is asserting that it *uses* the value it was
+given. The first attempt at that assertion was itself hollow: it compared one recorded call against
+one fixed string, so code that ignored its input entirely and always read the same document still
+passed. Round two caught that as the most serious finding of the round. Comparing two different
+inputs is the minimum that shows the code is really following them.
 
-One more correction, and it is the uncomfortable one. This entry originally said this was the third
-file to pay this trap. Counted properly, it is the ninth, and two files had the identical problem
-five days earlier. The number had been written from memory in the file whose whole purpose is to be
-the durable record of this kind of failure.
+One more correction, and it is the uncomfortable one, because it took three attempts and the first
+two were both wrong. This entry originally said this was the third file to hit this trap. That was
+written from memory. The replacement said ninth — also wrong, in the same direction, naming a file
+that never had the problem and omitting one that did. The third attempt is to stop writing the
+number down at all and record the command that derives it instead, because the list keeps growing
+and any number committed here is out of date by the time anyone reads it.
+
+A second round of review then found something worse than a wrong number. Two review agents had been
+given the same filename to write into, and the later one silently overwrote the earlier. The commit
+message was written from the review that no longer existed — so it credited findings to a document
+that does not contain them, and the one genuinely unresolved problem from round one was recorded as
+having been solved. It had not been. That is now fixed, and the incident is written down where the
+next person will trip over it rather than in a chat log.
 
 Worth recording that the harness handled this exactly right. It did not report missing coverage,
 which would have been the wrong diagnosis and sent someone writing more tests. It said the problem
@@ -7708,7 +7721,7 @@ named test, up from five hundred and twenty-four.
 Branch `goal-page-mutations`, base `58d82658`. Follow-up to PR #292, which is merged and green on
 master.
 
-`scripts/mutations/gen-goals-page.json` — **24 entries** (14, then **+10 from review round 1**),
+`scripts/mutations/gen-goals-page.json` — **25 entries** (14, then **+11 across review rounds 1 and 2**),
 covering what three plan-review rounds
 struggled with: `PR_TAIL`'s end anchor; `DOC_PATH`'s any-depth prefix **and** its basename anchor as
 **separate** entries, because they broke in opposite directions; `annotate_code` collapsing
@@ -7717,22 +7730,22 @@ struggled with: `PR_TAIL`'s end anchor; `DOC_PATH`'s any-depth prefix **and** it
 collision's extra document by a field rather than by identity; the fan-out span; the CANNOT RUN
 branch; `excluded_count`'s refusal; `doc_stem`'s end anchor; `pair_documents` dropping the extra.
 
-**Two independent ratchets moved, both required:** `EXPECTED_MUTATIONS` sum **524 → 548**, and the
+**Two independent ratchets moved, both required:** `EXPECTED_MUTATIONS` sum **524 → 549**, and the
 pinned sorted list of shipping manifests gains `scripts/gen-goals-page.py`. Moving only the sum made
 the harness refuse with *"CANNOT RUN — the control run failed BEFORE any mutation was applied"*.
 
 ⛔ **`gen-goals-page.py`'s `eq` now prints `[FAIL] <name>` with the name ALONE on the line.** It
 printed `  ✗ <label>  got … want …`, which `parse_fail_names` cannot parse
-(`startswith("[FAIL] ")` then `[7:]`). ⟳ **CORRECTED in review r1 — this said "third file", and it
-is the NINTH.** Enumerated with `git log -S'[FAIL] '` per file: `begin-plan.py`,
-`check-plan-progress.py`, `check-banner-armed.py` (2026-09-06); `check-explainer-delivery.py` and
-`check-gate-falsifiability.py` — **the identical `  ✗ {label}` printer** — and
-`check-function-revokes.py` (2026-09-07); `gen-backlog-page.py` (5 entries) and `brief-compose.py`
-(8) on 2026-09-10; this file. And "both paid **after** §22" was false: §22 was introduced BY the
-commit that fixed `gen-backlog-page.py` (`050913f6`), so it cannot have paid after itself, and six
-of the eight predate §22 entirely. A convention did not hold, **nine** times — which argues for a
-mechanical guard far more strongly than "three" did. The wrong number was written from memory into
-the file that exists to be the record.
+(`startswith("[FAIL] ")` then `[7:]`). ⟳⟳ **THE COUNT OF FILES THAT PAID THIS IS NO LONGER RECORDED,
+after three attempts got it wrong three ways.** v1 "third file" — wrong. v2 "ninth, third with this
+shape" — wrong again and in the same direction: `check-gate-falsifiability.py` never had this
+printer (it printed `FAIL`), and the list dropped `check-handoff-path.py`, whose near-miss printer
+*clears* `startswith("[FAIL] ")` and then yields a garbage case name. Each correction was written
+from a reviewer's table rather than from git. The population is now DERIVED:
+`git log -S'[FAIL] ' --reverse --format='%h %as %s' -- scripts/<file>`. ⚠ One historical claim is
+kept because it was verified twice independently: §22 was introduced BY the commit that fixed
+`gen-backlog-page.py` (`050913f6`), so that file cannot have paid "after the convention was
+written" — §22 was written *from* it.
 
 **Round 1 — both halves NOT-CONVERGED, one High each, same structural cause.**
 `docs/reviews/codex/goal-page-mutations-r1-codex.md` and
@@ -7747,8 +7760,19 @@ captured (an unreadable PR could be painted as docs-only), a fan-out threshold w
 production-dead `or` fallback. ⭐ The last two entries came from **`check-fixture-variation.py`**,
 not from either reviewer: `path` and `sha` were one constant at every call site.
 
-**Harness: `548 mutation(s), 548 killed, 548 attributed to the case each names, 0 survivor(s)`,
-rc=0** — up from 524 attributed. Gates green: `check-anchors`, `check-docs`,
+⛔ **Round 2 — NOT-CONVERGED again, and the Blocking was inside round 1's own fix.** The two new
+argv cases compared ONE recorded call to ONE literal, so hardcoding production to the fixture's own
+value passed 75/75 — reproduced independently before fixing. Also: round 1's `parse_adr` High was
+still OPEN (its case passed a front matter with no `⟳`, and `AMENDMENT` requires one, so deleting
+the split stayed green); `check-fixture-variation`'s credit was refuted by probing both arms; the
+`--follow` comment claimed an impossibility that one run disproves; and "the ONE sibling generator
+with no manifest" is false — `gen-m4-manifest.py` has none either. ⚠ Round 2 also confirmed the
+engineering is sound: the seam changes NO production behaviour (`collect()` run over the real repo
+under both revisions — identical output, 11 anchors, 41 threads, 96 PRs), all anchors unique, and
+every new entry fails by REPORTING rather than crashing.
+
+**Harness: 25 entries, all attributing over a control proved green first; CI at 548 attributed,
+0 survivors on the previous head.** Gates green: `check-anchors`, `check-docs`,
 `check-selftest-counts`, `check-ratchet-contract`, `check-review-rounds`,
 `check-gate-falsifiability`, `check-fixture-variation`, `check-review-recorded`. Suite **75/75**.
 

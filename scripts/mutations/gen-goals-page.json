@@ -247,7 +247,7 @@
     "edits": [
       [
         "\"--follow\", \"--\", str(path)]",
-        "\"--follow\", \"--\", \"docs/x.md\"]"
+        "\"--follow\", \"--\", \"docs/superpowers/specs/a-design.md\"]"
       ]
     ],
     "expect": "the history is asked for the document it was given, not a fixed one"
@@ -258,9 +258,20 @@
     "edits": [
       [
         "\"-1\", sha]",
-        "\"-1\", \"HEAD\"]"
+        "\"-1\", \"abc1234\"]"
       ]
     ],
     "expect": "the file list is asked for the commit it was given, not a fixed one"
+  },
+  {
+    "name": "parse_adr counts FRONT MATTER as an amendment, so a claim reads as a correction",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    body = text.split(\"---\", 2)[-1] if text.startswith(\"---\") else text",
+        "    body = text"
+      ]
+    ],
+    "expect": "front matter is NOT counted as an amendment"
   }
 ]
