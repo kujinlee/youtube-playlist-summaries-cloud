@@ -3,7 +3,7 @@
 
     python3 scripts/gen-goals-page.py              # -> ~/explainers/goals.html, served at /goals
     python3 scripts/gen-goals-page.py --fragment-only <path>
-    python3 scripts/gen-goals-page.py --self-test  # 39 cases, pure functions only
+    python3 scripts/gen-goals-page.py --self-test  # 47 cases, pure functions only
 
 WHY THIS EXISTS
 ---------------
@@ -253,6 +253,62 @@ def files_are_code(files) -> bool:
     return any(f and not DOC_PATH.match(f) for f in files)
 
 
+def thread_prs(thread: dict, history) -> dict:
+    """Thread + a rel->PRs lookup -> the thread with `prs` and `pr_error`. PURE.
+
+    The union over the thread's documents, deduped by PR number, newest first. `history`
+    returns None when that document could not be read; ONE such document sets `pr_error`,
+    because a shorter list that looks complete is worse than a stated gap.
+    """
+    merged: dict[str, dict] = {}
+    error = False
+    # ⚠ EVERY document on the thread, not just the two named slots. `pair_documents`
+    # appends all of them to `docs` — spec and plan are members — so `docs` is a superset.
+    # Iterating the slots meant a collision's third document never got a history, so a PR
+    # reachable only through it vanished from the thread AND from the fan-out.
+    for d in thread.get("docs") or [x for x in (thread.get("spec"), thread.get("plan")) if x]:
+        if not d or not d.get("rel"):
+            # A document the page cannot ADDRESS is not a document git failed to read, so
+            # this does not set `pr_error`. Unreachable in production: every record built
+            # in `collect` carries a `rel`.
+            continue
+        got = history(d["rel"])
+        if got is None:
+            error = True
+            continue
+        for p in got:
+            merged.setdefault(p["num"], p)
+    prs = sorted(merged.values(), key=lambda p: (p["date"], p["num"]), reverse=True)
+    return {**thread, "prs": prs, "pr_error": error}
+
+
+def pr_fanout(histories) -> dict[str, int]:
+    """PR number -> how many ANCHORED documents reach it. PURE.
+
+    ⚠ ANCHORED, and the qualifier is load-bearing. A document declaring no anchor never
+    enters `collect`'s history cache, so it cannot be counted: `on 22 documents` means 22
+    of the 47 documents this page can see, not 22 of 187. An unqualified denominator is
+    the failure this project records most often.
+
+    ⭐ WHY THIS EXISTS. A PR touching twenty-two documents did not implement any one of
+    them. PR #147 backfilled `Anchor:` headers across the corpus and also touched three
+    scripts, so it is `touched code` on 22 of 47 documents. The page renders this number
+    beside each PR so a bulk edit is visible as one. A THRESHOLD WAS TESTED AND REJECTED:
+    discounting PRs above 2 documents also discards #176, a genuine implementation, and
+    the distribution (40/12/3/1/1 documents per PR) gives any cut one data point.
+
+    Takes the per-document PR lists from the history cache, BEFORE any thread-level
+    dedupe — counting threads under-reports every PR that touched both halves of one.
+    """
+    out: dict[str, int] = {}
+    for prs in histories:
+        if not prs:               # None (unreadable) and [] alike contribute nothing
+            continue
+        for num in {p["num"] for p in prs}:   # one vote per DOCUMENT, not per commit
+            out[num] = out.get(num, 0) + 1
+    return out
+
+
 # ---------------------------------------------------------------- collection
 def last_touched(path: pathlib.Path) -> str:
     """YYYY-MM-DD, or '' when git cannot answer. Rendered as '—' rather than omitted."""
@@ -356,6 +412,18 @@ def collect(docs: pathlib.Path, gen_text: str) -> list[dict]:
                 "milestones": parse_milestones(f.read_text()),
             })
 
+    # ⚠ MEASURED COST. This is NOT "double last_touched". `last_touched` is `git log -1`;
+    # this is `git log --follow` over full history plus one `git show` per unique sha.
+    # Measured 2026-09-11: build 2.4s -> 9.7s, about 4.5x, on a hook that fires on every
+    # write to any spec, plan, ADR or the registry.
+    hist_cache: dict[str, list[dict] | None] = {}
+
+    def history(rel: str):
+        if rel not in hist_cache:
+            got = git_pr_history(ROOT / rel)
+            hist_cache[rel] = None if got is None else annotate_code(got)
+        return hist_cache[rel]
+
     out = []
     for r in registry:
         ds = sorted(by_anchor[r["slug"]], key=lambda d: d["dated"], reverse=True)
@@ -363,12 +431,30 @@ def collect(docs: pathlib.Path, gen_text: str) -> list[dict]:
         out.append({
             **r,
             "docs": ds,
+            "threads": [thread_prs(t, history) for t in pair_documents(ds)],
             "spine": spine,
             "adrs": [{"num": n, **adrs[n]} for n in re.findall(r"\d{4}", r["adrs"]) if n in adrs],
             "backlog": [(i, rel) for i, rel, root in depends if root == r["slug"]],
             "touched": max((d["touched"] for d in ds if d["touched"]), default=""),
         })
     out.sort(key=lambda a: (a["touched"], len(a["docs"])), reverse=True)
+
+    # Global, so computed once across every anchor rather than per card. `hist_cache` is
+    # fully populated by now — the comprehension above ran `history()` for every document.
+    fan = pr_fanout(hist_cache.values())
+    # The page's SIXTH source is the git log, and `regen-goals-page.sh` can only watch
+    # files. Merging a PR changes what the Work band should say and fires no hook, because
+    # a merge is not a Write. Rendering the sha it was derived from lets a reader see the
+    # input rather than infer it. Guarded like every other git call here.
+    try:
+        _r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
+                            capture_output=True, text=True, timeout=20)
+        head = (_r.stdout.strip() if _r.returncode == 0 else "") or "unknown"
+    except (OSError, subprocess.SubprocessError):
+        head = "unknown"
+    for a in out:
+        a["fanout"], a["head"] = fan, head
+
     if stray:
         # Loud, not silent: an empty backlog band would look like "this goal has no rows".
         print(f"⚠ ROOTS keys outside the registry, backlog bands will be empty for them: "
@@ -678,6 +764,44 @@ def self_test() -> int:
     eq("an unreadable commit is unknown, not False",
        annotate_code(_prs[:1], lambda sha: None)[0]["code"], None)
     eq("annotate does not lose or reorder records", [p["num"] for p in _out], ["186", "187"])
+
+    _t = {"stem": "s", "spec": {"name": "s-design.md", "rel": "a"},
+          "plan": {"name": "s.md", "rel": "b"}, "docs": []}
+    # ⚠ REAL DATES. The plan's first draft used "d" and "e"; the sort is (date, num)
+    # reverse=True, so "e" > "d" put PR 2 first while the case asserted ["1","2"]. With
+    # real dates the ordering is observable and the case also dies if `sorted` is deleted.
+    _hist = {"a": [{"sha": "x", "num": "1", "date": "2026-08-29", "subject": "u"}],
+             "b": [{"sha": "x", "num": "1", "date": "2026-08-29", "subject": "u"},
+                   {"sha": "y", "num": "2", "date": "2026-08-31", "subject": "v"}]}
+    eq("a thread's PRs are the union over its documents, deduped, NEWEST FIRST",
+       [p["num"] for p in thread_prs(_t, _hist.get)["prs"]], ["2", "1"])
+    eq("one unreadable document poisons the thread's verdict",
+       thread_prs(_t, lambda rel: None if rel == "b" else _hist["a"])["pr_error"], True)
+    eq("a fully readable thread reports no error", thread_prs(_t, _hist.get)["pr_error"], False)
+    eq("a thread with no documents has no PRs and no error",
+       thread_prs({"stem": "s", "spec": None, "plan": None, "docs": []}, _hist.get),
+       {"stem": "s", "spec": None, "plan": None, "docs": [], "prs": [], "pr_error": False})
+
+    eq("fan-out counts the documents a PR touched",
+       pr_fanout([[{"num": "147"}, {"num": "9"}], [{"num": "147"}]]), {"147": 2, "9": 1})
+    # ⭐ DOCUMENTS, NOT THREADS. thread_prs dedupes a PR touching both halves of one
+    # thread, so counting threads under-reports by one for every such PR while the
+    # rendered label says "documents".
+    eq("a PR touching both halves of one thread counts as two documents",
+       pr_fanout([[{"num": "5"}], [{"num": "5"}]]), {"5": 2})
+    eq("an unreadable document contributes nothing, and does not crash",
+       pr_fanout([None, [{"num": "5"}]]), {"5": 1})
+    # ⭐ A collision's third document must get a history too. Iterating only the two
+    # named slots meant a PR reachable ONLY through the extra vanished from the thread
+    # and from the fan-out.
+    _t3 = {"stem": "s", "spec": {"name": "a-design.md", "rel": "a"},
+           "plan": {"name": "a.md", "rel": "b"},
+           "docs": [{"name": "a-design.md", "rel": "a"}, {"name": "a.md", "rel": "b"},
+                    {"name": "a-plan.md", "rel": "c"}]}
+    _h3 = {"a": [], "b": [],
+           "c": [{"sha": "z", "num": "7", "date": "2026-09-01", "subject": "w"}]}
+    eq("a PR reachable only through a collision's extra document is still found",
+       [p["num"] for p in thread_prs(_t3, _h3.get)["prs"]], ["7"])
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
