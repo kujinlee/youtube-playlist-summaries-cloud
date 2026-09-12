@@ -1,0 +1,112 @@
+[
+  {
+    "name": "the widened population stops excluding guards, charging one file to two baselines",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "if p not in guards and SELF_TEST_RE",
+        "if SELF_TEST_RE"
+      ]
+    ],
+    "expect": "a check-* guard is NOT in the widened population"
+  },
+  {
+    "name": "the widened population stops requiring a self-test, demanding manifests of everything",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        " and SELF_TEST_RE.search(texts.get(p, \"\")))",
+        ")"
+      ]
+    ],
+    "expect": "a non-guard with no self-test is not asked for a manifest"
+  },
+  {
+    "name": "debt drift reports a NOT-EXAMINED pin as PAID, so an empty corpus reads as progress",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "    for path in sorted((WIDENED_MANIFEST_DEBT & examined) - violating):",
+        "    for path in sorted(WIDENED_MANIFEST_DEBT - violating):"
+      ]
+    ],
+    "expect": "a pinned entry NOT examined is silent, not 'paid'"
+  },
+  {
+    "name": "the pin stops suppressing known debt, so the gate is red on day one",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "    for path in sorted(violating - WIDENED_MANIFEST_DEBT):",
+        "    for path in sorted(violating):"
+      ]
+    ],
+    "expect": "a pinned violator is silent — that is what the pin is for"
+  },
+  {
+    "name": "the widened rule is defined but never applied by evaluate()",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "    out.extend(widened_debt_drift(_violating, set(texts)))",
+        "    pass"
+      ]
+    ],
+    "expect": "evaluate APPLIES the widened manifest rule to a NON-guard"
+  },
+  {
+    "name": "the NO-MUTATIONS escape accepts prose again, so a guard documenting it exempts itself",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "NO_MUTATIONS_RE = re.compile(r\"NO-MUTATIONS:[ \\t]+(?!<)(\\S[^\\n]*)\")",
+        "NO_MUTATIONS_RE = re.compile(r\"NO-MUTATIONS:[ \\t]*(\\S[^\\n]*)\")"
+      ]
+    ],
+    "expect": "a guard that only DOCUMENTS the escape is not exempted by it"
+  },
+  {
+    "name": "R3's escape accepts prose again, so this guard exempts itself from the caller rule too",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "NO_CALLER_RE = re.compile(r\"NO-CALLER:[ \\t]+(?!<)(\\S[^\\n]*)\")",
+        "NO_CALLER_RE = re.compile(r\"NO-CALLER:[ \\t]*(\\S[^\\n]*)\")"
+      ]
+    ],
+    "expect": "this file does not exempt ITSELF from either escape"
+  },
+  {
+    "name": "the debt-PAID arm is dropped, so paying debt down need never be recorded",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "    for path in sorted((WIDENED_MANIFEST_DEBT & examined) - violating):\n        out.append(Violation(path, \"R4W_debt_paid_not_recorded\",",
+        "    for path in []:\n        out.append(Violation(path, \"R4W_debt_paid_not_recorded\","
+      ]
+    ],
+    "expect": "a pinned entry that was EXAMINED and no longer violates fails"
+  },
+  {
+    "name": "R4's escape is read from the WHOLE FILE again, so a comment exempts a guard",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "    try:\n        doc = ast.get_docstring(ast.parse(text)) or \"\"\n    except SyntaxError:\n        # ⛔ FAIL CLOSED, AND `doc = text` WAS A FAIL-OPEN HANDLER INSIDE THE GUARD THAT FORBIDS",
+        "    doc = text\n    if False:\n        # ⛔ FAIL CLOSED, AND `doc = text` WAS A FAIL-OPEN HANDLER INSIDE THE GUARD THAT FORBIDS"
+      ]
+    ],
+    "expect": "a COMMENT does not exempt from R4 — it is not a declaration"
+  },
+  {
+    "name": "R4's could-not-parse path fails OPEN again, so a BOM plus a comment exempts a file",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "        # With BOM: rc=0, not mentioned at all. A docstring we could not read is not a declaration.\n        doc = \"\"",
+        "        # With BOM: rc=0, not mentioned at all. A docstring we could not read is not a declaration.\n        doc = text"
+      ]
+    ],
+    "expect": "an UNPARSEABLE file does not exempt — a docstring we cannot read is not a declaration"
+  }
+]

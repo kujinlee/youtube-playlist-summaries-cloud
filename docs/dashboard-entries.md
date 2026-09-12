@@ -7819,3 +7819,151 @@ project total is 549. CI measured 549 attributed / 0 survivors on `8d67e55b`.** 
 pre-flight for this, noting source shape cannot decide a behavioural property. It can be decided by
 RUNNING a suite with one case forced red and checking the output shape — which is how this fix was
 verified by hand.
+
+## 2026-09-12
+The rule that every guard must prove its own tests can fail had never been applied to the guard that
+enforces it — and the reason is a small joke at this project's expense.
+
+The rule allows an escape: a script may say, in writing, why mutation testing does not apply to it.
+The check for that escape looks for the phrase `NO-MUTATIONS:` in the file. The guard's own
+documentation explains the escape, and therefore contains that phrase. So the guard read its own
+description of the loophole as a use of the loophole, and exempted itself. It had done this since it
+was written. Measured across all thirty-four guards, it was the only file affected.
+
+Two things came out of looking at it. The first is that the rule's population was drawn by
+FILENAME — anything called `check-*.py` — so a nine-hundred-line script that decides whether a code
+review actually ran was never asked the question, because of what it is called rather than what it
+does. That population is now widened to any script that has its own test suite, with the eight
+currently outside it recorded as named debt so the check is not red on day one. A new script cannot
+join that list quietly: adding one fails, and so does paying one off without saying so.
+
+The second is that this guard printed its failures in a shape the mutation harness cannot read —
+the same trap a pull request merged earlier today had just paid for another file. That pull
+request also stopped recording HOW MANY files have hit it, because three attempts at the number were
+each wrong; the first draft of this entry promptly wrote a new one anyway, and review caught it.
+
+Nothing here is a new mechanism. The rule was right; it was asked of the wrong set of files, and it
+was not asked of itself.
+<!--tech-->
+Branch `mutation-coverage-gate`, base `7674fe87` (PR #293, merged).
+
+⛔ **`NO_MUTATIONS_RE` matched `check-ratchet-contract.py`'s own docstring.** The pattern was
+`NO-MUTATIONS:[ \t]*(\S[^\n]*)`; line 16 reads *"a mutation manifest, or `NO-MUTATIONS:` ENFORCED —
+R1 asks whether a self-test EXISTS;"*, and the regex took `` ` ENFORCED — R1 asks…`` as the written
+reason. ⚠ **This is the shape `check-plan-code.py` already records for its abandoned pre-flight** —
+`"[FAIL] " in source` is unfalsifiable *because the comment explaining the contract quotes the
+marker*. A rule that documents its own escape will match that documentation. Now
+`NO-MUTATIONS:[ \t]+([A-Za-z][^\n]*)`: `[ \t]+` rejects `NO-MUTATIONS:` + backtick, `[A-Za-z]`
+rejects the `<why>` placeholder. **Measured: the only affected file of 34.**
+
+**R4's population was a filename pattern.** `discover_guards` is `scripts/check-[\w.-]+\.py`.
+`discover_self_tested_nonguards` adds any non-guard with a self-test; only `check_manifest` is
+applied to it (widening four rules at once would be a different change wearing this one's name).
+`WIDENED_MANIFEST_DEBT` pins the eight by **identity, not cardinality** — the rule
+`MANIFEST_BASELINE` already states for its own count.
+
+⭐ **The debt set was wrong on the first run, and the tool caught it.** A scratch measurement
+written alongside the change said FOUR; it excluded self-declared ratchets while the real discovery
+excludes only guards. Eight violate. `MANIFEST_BASELINE`'s own comment already says it: *"the
+baseline is whatever the tool prints, and nothing else."*
+
+⭐ **`widened_debt_drift` takes `examined` and it is not a convenience.** A pinned path that was
+never read is NOT-EXAMINED, not "paid". Measured on the first run: the wiring cases drive
+`evaluate()` with a two-entry synthetic corpus, and without that argument all eight pinned entries
+reported as paid — an empty corpus returning a confident verdict, this project's most-recorded shape.
+
+**IT ALSO HIT THE FAILURE-LINE TRAP.** **Five** pre-existing printers said `  FAIL {name}`, which
+`parse_fail_names` (`startswith("[FAIL] ")`) cannot see — every mutation would have been killed and
+UNATTRIBUTED. ⟳ Two corrections here, both caught in review r1: the first draft said "seven", which
+counted two loops this branch had itself just added; and it called this "the TENTH file", **an
+ordinal PR #293 retired one commit earlier** after three hand-written versions were each wrong.
+The number is derived, not stored — `git log -S'[FAIL] ' --reverse -- scripts/<file>`. Fixed and verified by **demonstration**: one case forced red in a scratch copy, output
+confirmed as `[FAIL] a pinned violator is silent — that is what the pin is for`, and
+`parse_fail_names` parsed it.
+
+**Ratchets:** `EXPECTED_MUTATIONS` **549 → 555**, `check-ratchet-contract.py` joins with **6**; the
+pinned membership list gains it. Suite **22 → 34 cases** (a declared count where there was none).
+⚠ Four `check-fixture-variation` exemptions, each with the mutation that guards the clause instead —
+its scan counts syntactic CALL SITES, so a table-driven suite reads as one value however its rows
+vary. One genuine case was added rather than exempted: `script_paths` and `texts` disagreeing.
+
+**Falsifiers, demonstrated:** a new self-tested script → `R4W_no_mutation_manifest`; a pinned entry
+gaining a manifest, declaring the escape, or losing its self-test → `R4W_debt_paid_not_recorded`;
+control green in all directions.
+
+⛔ **Round 1 — two Blockings, and the first was this fix reintroducing the defect it fixes.** The
+new `ESCAPE_CASES` fixture spelled the marker out, so the *tightened* regex matched it and the file
+self-exempted again — masked only because it now has a manifest, which is checked first. The second:
+`NO_CALLER_RE` had the **character-identical** hole four lines from the diff, matching its own
+docstring. Fixing one and not the other was instance-not-class, in the branch whose subject is a
+rule that exempts itself.
+
+**The durable fix is not a cleverer regex.** Both markers are now ASSEMBLED at runtime (adjacent
+literals concatenate, so the source never contains what the pattern matches), and a case reads this
+file's own source and asserts it satisfies **neither** escape — by prose, fixture, or a comment
+explaining the defect. That case caught two more literals, including one inside the comment
+describing the bug. **Proof it is real:** hide the manifest and the gate now goes red on itself.
+
+Also from r1: the "TENTH file" ordinal was **a number PR #293 retired one commit earlier**, walking
+straight back in at the next opportunity; "seven printers" was five; and `m4_catalog.py rc=0` was
+recorded as evidence of a working suite when it emits **zero bytes** and has none — CANNOT-RUN read
+as success, inside the evidence for a comment claiming each was "verified by RUNNING". All eight
+pinned entries are now measured individually, and one of them (`subject_status.py`) turns out to
+have a **red** suite on master that nothing runs.
+
+⛔ **Round 2 — BOTH halves found the SAME Blocking independently: the rule was still whole-file
+scoped.** Round 1 closed the self-exemption route for *this file* with a bespoke case; R4 itself
+still read the entire source, so a comment or a string literal granted the exemption in any of the
+other 33 guards — which is precisely how the original defect was authored. Meanwhile R3, the rule
+this one is modelled on, has always parsed the **docstring**. Two siblings, one reading a
+declaration and one reading anything.
+
+`check_manifest` now parses the docstring exactly as `check_caller` does, and `self_exemption()`
+CALLS the shipped rules instead of re-applying their regexes — a case that reimplements the rule it
+checks was already drifting from it by round 2. Measured after: a comment no longer exempts, a
+string literal no longer exempts, a docstring declaration still does.
+
+**The pattern was also too STRICT, which a blocking guard is judged on.** `[A-Za-z]` refused
+backticked identifiers — this repo's house style in every sentence — so a real declaration like
+``NO-MUTATIONS: `evaluate()` is pure`` was rejected while the refusal message told the author to
+write ``<why>``, itself refused. Now `[ \t]+(?!<)`: it rejects only the two documentation forms and
+accepts reasons starting with a backtick, digit, glyph, dash or quote. All three refusal messages
+rewritten to describe the rule instead of printing an example the guard refuses.
+
+⭐ **Two mutations were ORPHANED by that fix and the verifier caught it.** Changing the patterns left
+two manifest anchors naming text that no longer exists; `str.replace` on a missing needle does
+nothing, so the suite ran UNMUTATED, exited 0, and was reported as a failure to attribute. Anchors
+bind by text, so improving code breaks them while everything stays green — it surfaced only because
+the check asserts the NAMED case goes red rather than trusting a non-zero exit.
+
+⚠ **One `check-fixture-variation` exemption was REMOVED, because the right answer was a missing
+case:** nothing drove `check_manifest`'s `stem in manifest_stems` branch at all.
+
+✅ **Round 3 — CONVERGED on the Claude half (no Blocking, no High); Codex filed one Low.** The
+curve across the branch is Blocking → Blocking → none, and the character changed with it.
+
+⚠ **The Medium round 3 raised was worth landing here rather than filing.** Round 2's fix wrapped the
+docstring parse in `except SyntaxError: doc = text` — the OLD rule verbatim on the could-not-parse
+path. A **fail-open handler inside the guard whose own R2 rule forbids exactly that**: *"'could not
+run' reported as success"*. Demonstrated with a real file: a self-tested non-guard carrying a UTF-8
+BOM and an ordinary comment mentioning the marker. Python runs it and its suite passes, but
+`ast.parse` on the text fails, so the comment became a declaration and the file was silently exempt
+— **only in the population R4 had just been widened to reach**. Control `rc=1` and named; with BOM
+`rc=0` and not mentioned at all. Both fallbacks now `doc = ""`; re-measured after, both `rc=1`.
+
+⚠ **Fixed in BOTH siblings, not just the one filed** — R3 carried the identical fallback. This
+branch has twice paid for fixing an instance and leaving the class.
+
+**Four comments described a rule the code no longer implements**, all introduced by the fix that
+widened the pattern: "the reason must begin with a LETTER" (it must merely follow a space and not be
+a placeholder), `[A-Za-z]` cited where `(?!<)` now stands, and the `self_exemption` warrant claiming
+a reach — "by ANY route: prose, fixture, or a comment" — that stopped being true when the escape
+moved to the docstring. Its reach is exactly the rules' reach, which is the correct one.
+
+⭐ **Another orphaned anchor, caught before it shipped.** Editing the fallback broke the
+docstring-scope mutation's anchor. Every anchor is now asserted present exactly once before any run
+— the third silent `str.replace` no-op this branch has produced, and the one habit that catches all
+three is asserting on the string you are about to replace.
+
+**10/10 mutations kill via the case each names**, over a control proved green first. Suite **41**
+cases; `EXPECTED_MUTATIONS` **549 → 559**.
