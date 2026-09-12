@@ -928,7 +928,10 @@ def self_test() -> int:
 
     # ── THE CANNOT-RUN PRODUCER, REACHABLE AT LAST (round 1, both halves) ────────────────
     # ⛔ `git_pr_history` returning None is the ONLY thing in this file that can ever set
-    # `pr_error` (`error = True` occurs exactly once, at the `got is None` branch), and TWO
+    # `pr_error` — the assignment that sets it appears once in CODE, at the `got is None`
+    # branch (⚠ grep counts TWO, because this comment quotes the token it counts: the
+    # same unfalsifiable shape `check-plan-code.py` records for `"[FAIL] " in source`),
+    # and TWO
     # manifest entries defend what happens downstream of it — `thread_prs stops recording
     # that a document could not be read` and `render_threads lets CANNOT RUN read as an
     # honest absence`. ⚠ THIS SAID THREE, counting `annotate_code collapses CANNOT RUN into
