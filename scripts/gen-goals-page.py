@@ -3,7 +3,7 @@
 
     python3 scripts/gen-goals-page.py              # -> ~/explainers/goals.html, served at /goals
     python3 scripts/gen-goals-page.py --fragment-only <path>
-    python3 scripts/gen-goals-page.py --self-test  # 62 cases, pure functions only
+    python3 scripts/gen-goals-page.py --self-test  # 65 cases, pure functions only
 
 WHY THIS EXISTS
 ---------------
@@ -552,6 +552,20 @@ CSS = """
 """
 
 
+def excluded_count(total: int, shown: int) -> int:
+    """Documents present but not rendered, because they declare no anchor. PURE.
+
+    ⛔ REFUSES on shown > total. That can only mean the two numbers were counted over
+    different populations, which is the most-recorded measurement defect in this repo, and
+    a negative rendered as "-36 excluded" would be believed. The branch is unreachable in
+    production — both counts come from SUBDIRS — so the case exercises it directly and the
+    guard is there for a future caller, not for today's.
+    """
+    if shown > total:
+        raise ValueError(f"shown ({shown}) exceeds total ({total}) — populations disagree")
+    return total - shown
+
+
 def render_threads(threads: list[dict], fanout: dict[str, int]) -> str:
     """The Work band's body: one collapsible block per spec/plan thread.
 
@@ -689,6 +703,12 @@ def render_goal(a: dict) -> str:
 def build(anchors: list[dict], sha: str, stamp: str, generated_at: str = "") -> str:
     spined = sum(1 for a in anchors if a["spine"])
     docs = sum(len(a["docs"]) for a in anchors)
+    # ⚠ `total_docs` counts SUBDIRS — superpowers/specs and superpowers/plans — not all of
+    # `docs/superpowers/`. Those are the only two subdirectories today, so a sentence
+    # saying "under docs/superpowers/" would be true by coincidence of the tree's shape.
+    # The rendered text names both directories instead.
+    total_docs = sum(1 for sub in SUBDIRS for _ in (DOCS / sub).glob("*.md"))
+    hidden = excluded_count(total_docs, docs)
     body = "\n".join(render_goal(a) for a in anchors)
     return f"""<title>Goals — what this project is pursuing, and where each stands</title>
 <style>{CSS}
@@ -700,7 +720,9 @@ def build(anchors: list[dict], sha: str, stamp: str, generated_at: str = "") -> 
   {page_chrome.chrome_bar("goals", generated_at)}
   <p class="standfirst">One card per goal, keyed by its <strong>anchor</strong> — the name that
     survives a rename. <strong>{len(anchors)}</strong> goals, <strong>{docs}</strong> documents,
-    <strong>{spined}</strong> with a milestone spine.</p>
+    <strong>{spined}</strong> with a milestone spine.
+    <span class="absent">{hidden} more under docs/superpowers/specs and /plans declare no
+    anchor and are not shown.</span></p>
   <p class="standfirst">Nothing here is maintained by hand. Membership comes from the
     <code>Anchor:</code> headers, decision status from <code>docs/adr/</code> including its in-body
     amendment trail, milestone state from each spine's own headings, and dates from
@@ -949,6 +971,20 @@ def self_test() -> int:
 
     eq("no threads renders the absence, not an empty box",
        "No spec or plan" in render_threads([], {}), True)
+
+    def _raises(fn, exc) -> bool:
+        try:
+            fn()
+        except exc:
+            return True
+        return False
+
+    # ⚠ Deliberately SYNTHETIC numbers. Using the live 187/47 here would read as a corpus
+    # claim and invite someone to "correct" it when the corpus moves. This is arithmetic.
+    eq("the excluded count is total minus shown", excluded_count(10, 4), 6)
+    eq("nothing excluded reads as zero", excluded_count(4, 4), 0)
+    eq("showing more than exist is a refusal, not a negative",
+       _raises(lambda: excluded_count(4, 10), ValueError), True)
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
