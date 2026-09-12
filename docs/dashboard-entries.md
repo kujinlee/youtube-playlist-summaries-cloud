@@ -7505,3 +7505,160 @@ orphaned its two `EXAMINED_KEYS` entries; the guard was right and I read past it
 `EXPECTED_MUTATIONS` 513 → 521. Gates green: check-docs, check-selftest-counts (36),
 check-fixture-variation, check-ratchet-contract, check-group-claims, check-backlog-closure,
 check-anchors, check-review-rounds, check-plan-file-tags, check-plan-code (128/128).
+
+## 2026-09-11
+The goals page, the backlog and the dashboard describe the same project, but they have been three
+separate models rather than three views of one. A design has been written for joining them; no code
+has changed yet.
+
+The complaint that started it came from looking at the live pages: the goal list did not line up with
+the backlog's groups or tags, and the dashboard listed activity without ever saying which goal any of
+it moved. Measuring it bore that out. Of 70 open backlog items, 43 belong to a goal that does not
+exist in the registry — the largest cluster being twenty items about whether the project's own checks
+can be trusted, which has never had a name. Only six items were linked to a goal at all, and all six
+named the same one.
+
+Two findings came out of the measuring that were not expected. Five of the six hand-written groups
+turn out to be a goal each, written a second time in a different vocabulary — so groups and goals are
+a duplicate mechanism, the exact class one of this project's guards exists to catch, hiding in data
+where the guard cannot see it. And the sixth group, the one that breaks the pattern, is the one whose
+title names a *deliverable*; it splits four ways because it sits a level above goals rather than
+beside them.
+
+The design also answers a question that was asked as "show finished goals as done" and turned out to
+need three answers rather than two. One goal has had no activity for over a month and still has seven
+open items, four of them serious. Calling that done would be false. Separating idle from finished
+shows that fifteen of the project's twenty-one serious open items sit in goals nobody has touched in
+over a month — which the current page presents identically to everything being actively worked on.
+
+Worth recording that the classifier behind these numbers was wrong three times, each time in the same
+direction, and was corrected on each occasion by disagreeing with the user's own recollection of what
+the project had been working on. The fix in the end was not a cleverer rule but using a signal the
+repository already maintains: documents declare which goal they belong to, and that attributes work
+no rule about file paths can see.
+<!--tech-->
+Branch `goal-join-spec`, base `a298df4e`. Spec only — no code, no page changes.
+
+`docs/superpowers/specs/2026-09-11-goal-backlog-pr-join-design.md`, anchor `status-visibility`.
+Covers: the `deliverable -> goal -> {items, PRs, documents}` model; the three joins and which one
+needs new declared data (only item→goal, via the `Bundle` column becoming a controlled vocabulary of
+goal names); the derived done/active/dormant lifecycle; the goal card gaining three `<details>`
+sections, reusing markup already present 21× in `gen-dashboard.py` and 6× in `gen-backlog-page.py`
+but **0×** in `gen-goals-page.py`.
+
+**Measured 2026-09-11** — 113 backlog rows (70 open / 43 closed) via `gen-backlog-page.parse`;
+283 merged PRs; PR→goal derivable for **200 of 256** squashed-PR commits (78%) with a document's
+declared anchor taking priority over code paths, which attributes 57 that no path rule reaches.
+Group→goal purity 100/100/86/83/80/**36**%. Lifecycle 3 done / 4 active / 9 dormant.
+
+⚠ **The spec's own document counts went stale as it was committed** — adding it moved 45→46 and
+`status-visibility` 20→21, because it declares that anchor for want of one covering harness work.
+Recorded in §1 rather than quietly corrected.
+
+Gates green on the branch: `check-anchors` rc=0 (11 anchors, floor 22 held), `check-docs` rc=0,
+`check-review-rounds` rc=0, `check-selftest-counts` rc=0. No review round yet — this is a spec
+awaiting the user's approval, and the review gate applies when it becomes a plan.
+
+## 2026-09-11
+Correction to the entry above, and it is the design getting sharper rather than a slip being
+patched. The goals page was going to list each goal's pull requests as a flat list. It will now show
+the lineage instead — which specification led to which plan, and which pull request shipped it.
+
+The user's point was that a goal's work has a shape: a spec becomes a plan, and a plan becomes an
+implementation. Listing the specs and plans but not the implementations, which is what the page does
+today, breaks the chain at its last and most interesting link. A flat list of pull requests
+technically makes them findable and still loses the shape.
+
+Checking whether the chain could be rebuilt from what already exists: it can. Forty-five of the
+forty-six documents that declare a goal recover the pull request that shipped them straight out of
+git history. The one that does not is this design itself, which has not merged — the right answer,
+and now the test fixture for the rule, since it must read as *in flight* today and flip to *shipped*
+when it lands.
+
+Two things this surfaced that the design now has to state rather than gloss. Because every branch
+here is squash-merged, a pull request is the smallest unit of implementation that master actually
+contains; hunting for individual commits would reconstruct something that is not there. And only
+fifty-seven of two hundred and eighty-three merged pull requests have a document behind them at all
+— the rest are direct work with no spec and no plan, which is not lesser work and needs its own
+place on the card rather than being quietly dropped.
+<!--tech-->
+Branch `goal-join-spec`, base `a298df4e`. Second commit. Still spec-only — no code, no page changes.
+
+Spec `2026-09-11-goal-backlog-pr-join-design.md` → **v2**. New §3.2a (the implementation chain);
+§5's card replaces `PULL REQUESTS` + `DOCUMENTS` with a single `WORK` section of `spec → plan →
+shipped` threads carrying a state (shipped / in flight / not started), plus a `direct work, no
+document` bucket. Falsifiers **F7** (a thread's state is a claim about what shipped, fixture = this
+spec) and **F8** (excluded documents must be counted) added.
+
+**Measured 2026-09-11** — spec↔plan pairing by shared stem: **60 pairs** over 94 specs / 92 plans.
+`git log --follow` recovers ≥1 `(#N)` for **45 of 46** anchor-declaring documents (98%), reaching 57
+distinct PRs. Anchor coverage is **46 of 186** documents under `docs/superpowers/` — the registry's
+deliberate living/dead split, now rendered rather than implied.
+
+## 2026-09-12
+The goals page now shows the work that pursued each goal, not just the documents about it. Each goal
+card has a collapsible Work section listing every spec, its plan, and the pull requests that touched
+them — so the question "which change actually implemented this?" can be answered by looking rather
+than by searching git.
+
+The honest part is what the page refuses to claim. An earlier version of the design tagged each pull
+request as the implementation, and that turned out to be wrong in a way worth recording: one pull
+request from six weeks ago added a header line to twenty-six documents at once and also touched three
+scripts. Under the old rule it was presented as the implementation of twenty-two different goals,
+having implemented none of them, and for five of those it was the only such pull request — so those
+cards would also have hidden the warning that nothing had been built yet.
+
+The fix was to stop claiming. Each pull request now says what it touched, and how many documents it
+touched, and the reader draws the conclusion. A bulk migration reads as "on 22 documents" and is
+obviously not anyone's implementation. A threshold that would have filtered such changes out was
+tested first and rejected, because every cut that caught the migration also discarded a genuine piece
+of work.
+
+The page also now says how many documents it cannot see: a hundred and forty, which declare no goal
+and are invisible here by design. That number is computed each time the page is built rather than
+written down, which matters because this feature's own design document kept invalidating its own
+counts simply by existing.
+
+Nothing about the backlog has changed yet. Attaching backlog items to goals is the second half and
+needs a decision about naming first.
+<!--tech-->
+Branch `goal-join-spec`, base `a298df4e`. Eleven commits: spec v4, plan v2, three Post-Plan Gate
+rounds, and six implementation tasks.
+
+`scripts/gen-goals-page.py` gains `doc_stem`, `pair_documents`, `prs_from_log`, `files_are_code`,
+`git_pr_history`, `git_show_files`, `annotate_code`, `thread_prs`, `pr_fanout`, `excluded_count` and
+`render_threads`; `collect()` gains a per-document history cache, a global fan-out map and a HEAD
+stamp; the `Documents` band is replaced by `Work`. Self-test **15 → 65**, with the `:6` declaration
+updated at every task so `check-selftest-counts` was green at all six commits.
+
+**Post-Plan Gate: 3 rounds, both halves each round except r2 (`REVIEW GAP: claude`), 4 Blocking and
+8 High, all remediated.** Gate exited by explicit human decision, recorded in
+`docs/reviews/coordinator/plan-goal-work-threads-r3-coordinator.md` — the gate was NOT met, and the
+reason for proceeding is that every defect lived in code that did not exist yet.
+
+⚠ **The Blocking that took three attempts:** `d["rel"]` crashed on a record without one;
+`d.get("rel")` made every rel-less document key to a single `None`, so a collision's extra document
+matched the spec and was silently dropped — the case written to prove extras render proved the
+opposite. Identity (`d is x`) is exact, because `pair_documents` appends the same object it assigns
+to the slot. **Reading the fix found neither regression; running it found both.**
+
+⚠ **`DOC_PATH` narrowed three times** — `^docs/` missed CONTEXT.md and `.agents/` (10 real
+mis-taggings); adding a bare `README` matched `README-generator.ts` (4 the other way); anchoring with
+`$` missed `worker/CONTEXT.md`. What ships is `(.*/)?<basename>$`, 0 wrong over 19 adversarial paths.
+
+**Measured on the built page 2026-09-12:** 41 threads, 6 with both halves, 21 `no plan`, 14
+`no spec`, 72 `touched code`, 22 `docs only`, 0 `unknown`, `on 22 documents` rendered 22 times, 140
+excluded, 11 provenance stamps, Documents band 0. Build 10.8s against a 2.4s baseline (≈4.5×, as the
+plan predicted after review refuted its original "doubles the cost" claim).
+
+**Contrast measured, and it took three attempts to measure honestly** — the first run found no dark
+block and reported light values twice as PASS. Locating both blocks by searching for their selectors,
+and asserting light `--ink` differs from dark `--ink` before reporting: light 6.24 / 4.58 / 12.09,
+dark 6.34 / 7.19 / 11.18, all ≥ 4.5:1. `.tag.unknown` uses `--ink`; review measured `--ink-faint` at
+2.45:1 and 3.47:1, both failing, on the tag for CANNOT RUN.
+
+Gates green: `check-anchors`, `check-docs`, `check-selftest-counts`, `check-ratchet-contract`,
+`check-review-rounds`, `check-explainer-delivery`, `check-theme-token-coverage`.
+
+⚠ **Owed, not done:** mutation manifest entries for the new rules; the backlog→goal join and the
+derived lifecycle (spec §3.3 and §4, Plan 2); direct document-less work in the Work band.

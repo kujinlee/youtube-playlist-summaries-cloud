@@ -1,17 +1,12 @@
 {
   "attempts": [
-    "  gpt-5.6-sol: try_next \u2014 CLI reported HTTP 400",
-    "  gpt-5.6-terra: try_next \u2014 CLI reported HTTP 400",
-    "  gpt-5.6-luna: try_next \u2014 CLI reported HTTP 400",
-    "  gpt-5.5: ok \u2014 1746 chars"
+    "  gpt-5.5: ok \u2014 3675 chars"
   ],
   "exit_code": 0,
   "gate_ran": true,
-  "intrusions": [
-    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/243fbe86-3e0c-4e8e-b697-7ea9c23866f1/scratchpad/r1-run.log: OVERWRITTEN during the run (writer unattributed)"
-  ],
+  "intrusions": [],
   "model": "gpt-5.5",
-  "reason": "1746 chars",
+  "reason": "3675 chars",
   "review": "r1-codex.md",
   "schema": 1,
   "tool": "codex-review"

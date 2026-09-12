@@ -3,7 +3,7 @@
 
     python3 scripts/gen-goals-page.py              # -> ~/explainers/goals.html, served at /goals
     python3 scripts/gen-goals-page.py --fragment-only <path>
-    python3 scripts/gen-goals-page.py --self-test  # 15 cases, pure functions only
+    python3 scripts/gen-goals-page.py --self-test  # 65 cases, pure functions only
 
 WHY THIS EXISTS
 ---------------
@@ -159,6 +159,156 @@ esc = page_markup.escape
 inline_md = page_markup.render_inline
 
 
+STEM_SUFFIX = re.compile(r"-(design|plan)$")
+
+
+def doc_stem(name: str) -> str:
+    """Filename -> the stem a spec and its plan share. PURE.
+
+    `2026-08-29-x-design.md` and `2026-08-29-x.md` both give `2026-08-29-x`.
+
+    ⚠ BOTH suffixes are stripped, measured rather than assumed. 2026-09-11: 91 specs end
+    `-design` and 3 are bare; 91 plans are bare and 1 ends `-plan`.
+
+    ⚠ GLOBAL vs ANCHOR-SCOPED, and the difference is large. Over ALL 187 documents this
+    rule pairs 61 (stripping `-design` alone pairs 60). But `collect` calls
+    `pair_documents` with ONE ANCHOR'S documents, and only 47 documents declare an anchor:
+    anchor-scoped the corpus yields 41 threads of which just 6 have both halves. 35
+    threads render one side absent — 21 with no plan, 14 with no spec — and that is
+    correct, because an anchor-less document is invisible to this page by design. Do not
+    read 61 as what the page shows.
+    """
+    base = name[:-3] if name.endswith(".md") else name
+    return STEM_SUFFIX.sub("", base)
+
+
+def pair_documents(docs: list[dict]) -> list[dict]:
+    """Documents -> threads, newest stem first. PURE.
+
+    A thread is {stem, spec, plan, docs}. EITHER SIDE MAY BE None and neither is an error:
+    a spec with no plan is work not yet planned; a plan with no spec was written without
+    one. The card draws them absent rather than omitting them.
+
+    ⛔ A stem claimed by two specs would FUSE two threads invisibly. Measured 2026-09-11:
+    0 stems are claimed by more than two files. The extra is kept in `docs` anyway, and
+    `render_threads` renders it — the plan's review found the record keeping it while the
+    page dropped it, which put the protection somewhere no reader could see.
+
+    ⚠ The SAME dict object goes into `docs` and into the slot, which is what lets
+    `render_threads` identify the extras by `is` rather than by a field that may be absent.
+    """
+    by_stem: dict[str, dict] = {}
+    for d in docs:
+        stem = doc_stem(d["name"])
+        t = by_stem.setdefault(stem, {"stem": stem, "spec": None, "plan": None, "docs": []})
+        t["docs"].append(d)
+        slot = "plan" if d.get("kind") == "plan" else "spec"
+        if t[slot] is None:
+            t[slot] = d
+    return sorted(by_stem.values(), key=lambda t: t["stem"], reverse=True)
+
+
+PR_TAIL = re.compile(r"\(#(\d+)\)\s*$")
+# ⚠ THREE ROUNDS OF PLAN REVIEW ON THIS ONE REGEX, each fix narrower than the class:
+#   r1: `^docs/` alone missed CONTEXT.md and .agents/   -> 10 real mis-taggings
+#   r2: adding a bare `README` matched README-generator.ts -> 4 the other way
+#   r3: anchoring with `$` missed worker/CONTEXT.md      -> nested instruction docs
+# `(.*/)?` is the class: an instruction document at ANY depth, whole basename only.
+# Measured 0 wrong over 19 adversarial paths.
+DOC_PATH = re.compile(
+    r"^(docs/|\.remember/|\.agents/"
+    r"|(.*/)?(README(\.md)?|CONTEXT\.md|AGENTS\.md|CLAUDE\.md)$)")
+
+
+def prs_from_log(lines) -> list[dict]:
+    """`%H\\x01%as\\x01%s` lines -> PR records, newest first, deduped by number. PURE.
+
+    ⚠ ANCHORED AT THE SUBJECT TAIL. `check-backlog-closure.py:107` already paid for this:
+    an any-occurrence match fired on 10 of 18 ids, the tail rule on 1, a true positive.
+    A commit with no tail was pushed direct to master and is not a PR.
+    """
+    out, seen = [], set()
+    for line in lines:
+        parts = line.split("\x01")
+        if len(parts) != 3:
+            continue
+        sha, date, subject = parts
+        m = PR_TAIL.search(subject)
+        if not m or m.group(1) in seen:
+            continue
+        seen.add(m.group(1))
+        out.append({"sha": sha, "num": m.group(1), "date": date, "subject": subject})
+    return out
+
+
+def files_are_code(files) -> bool:
+    """True if any path lies outside this repo's documentation. PURE.
+
+    ⛔ THIS IS A CLAIM ABOUT ONE COMMIT, NOT ABOUT A THREAD, and the spec retracted the
+    stronger reading. Measured 2026-09-11: PR #147 (the ADR-0010 header backfill) touches
+    ~26 documents plus three scripts, so this returns True on 22 of 47 documents and
+    implemented none of them. The renderer therefore says `touched code` and shows each
+    PR's document fan-out; it makes no implementation claim.
+    """
+    return any(f and not DOC_PATH.match(f) for f in files)
+
+
+def thread_prs(thread: dict, history) -> dict:
+    """Thread + a rel->PRs lookup -> the thread with `prs` and `pr_error`. PURE.
+
+    The union over the thread's documents, deduped by PR number, newest first. `history`
+    returns None when that document could not be read; ONE such document sets `pr_error`,
+    because a shorter list that looks complete is worse than a stated gap.
+    """
+    merged: dict[str, dict] = {}
+    error = False
+    # ⚠ EVERY document on the thread, not just the two named slots. `pair_documents`
+    # appends all of them to `docs` — spec and plan are members — so `docs` is a superset.
+    # Iterating the slots meant a collision's third document never got a history, so a PR
+    # reachable only through it vanished from the thread AND from the fan-out.
+    for d in thread.get("docs") or [x for x in (thread.get("spec"), thread.get("plan")) if x]:
+        if not d or not d.get("rel"):
+            # A document the page cannot ADDRESS is not a document git failed to read, so
+            # this does not set `pr_error`. Unreachable in production: every record built
+            # in `collect` carries a `rel`.
+            continue
+        got = history(d["rel"])
+        if got is None:
+            error = True
+            continue
+        for p in got:
+            merged.setdefault(p["num"], p)
+    prs = sorted(merged.values(), key=lambda p: (p["date"], p["num"]), reverse=True)
+    return {**thread, "prs": prs, "pr_error": error}
+
+
+def pr_fanout(histories) -> dict[str, int]:
+    """PR number -> how many ANCHORED documents reach it. PURE.
+
+    ⚠ ANCHORED, and the qualifier is load-bearing. A document declaring no anchor never
+    enters `collect`'s history cache, so it cannot be counted: `on 22 documents` means 22
+    of the 47 documents this page can see, not 22 of 187. An unqualified denominator is
+    the failure this project records most often.
+
+    ⭐ WHY THIS EXISTS. A PR touching twenty-two documents did not implement any one of
+    them. PR #147 backfilled `Anchor:` headers across the corpus and also touched three
+    scripts, so it is `touched code` on 22 of 47 documents. The page renders this number
+    beside each PR so a bulk edit is visible as one. A THRESHOLD WAS TESTED AND REJECTED:
+    discounting PRs above 2 documents also discards #176, a genuine implementation, and
+    the distribution (40/12/3/1/1 documents per PR) gives any cut one data point.
+
+    Takes the per-document PR lists from the history cache, BEFORE any thread-level
+    dedupe — counting threads under-reports every PR that touched both halves of one.
+    """
+    out: dict[str, int] = {}
+    for prs in histories:
+        if not prs:               # None (unreadable) and [] alike contribute nothing
+            continue
+        for num in {p["num"] for p in prs}:   # one vote per DOCUMENT, not per commit
+            out[num] = out.get(num, 0) + 1
+    return out
+
+
 # ---------------------------------------------------------------- collection
 def last_touched(path: pathlib.Path) -> str:
     """YYYY-MM-DD, or '' when git cannot answer. Rendered as '—' rather than omitted."""
@@ -168,6 +318,64 @@ def last_touched(path: pathlib.Path) -> str:
         return r.stdout.strip() if r.returncode == 0 else ""
     except (OSError, subprocess.SubprocessError):
         return ""
+
+
+def git_pr_history(path: pathlib.Path) -> list[dict] | None:
+    """PRs that touched `path`, newest first — or None when git cannot answer.
+
+    ⛔ None IS NOT []. None is CANNOT RUN. [] means git answered and named no PR — and for
+    a path git has never tracked it also exits 0 with empty output, so [] is precisely
+    "git names no PR for this path", which is a slightly weaker claim than "no PR touched
+    this document". That is the right answer for an unmerged document.
+
+    `--follow` keeps a renamed document's history. Measured 2026-09-11: it currently adds
+    PRs for 0 of 47 documents, because nothing has been renamed — its justification is real
+    but untested today. ⚠ Its known hazard is live regardless: rename detection is
+    similarity-based, and this repo writes dated specs derived from predecessors, so
+    --follow can jump into an ancestor's history and inherit its PRs.
+    """
+    try:
+        r = subprocess.run(
+            ["git", "log", "--format=%H\x01%as\x01%s", "--follow", "--", str(path)],
+            cwd=ROOT, capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0:
+        return None
+    return prs_from_log(r.stdout.splitlines())
+
+
+def git_show_files(sha: str) -> list[str] | None:
+    """The file list of one commit, or None when git cannot answer.
+
+    ⚠ `.splitlines()`, NOT `.split()`. `git show --name-only` emits one path per line, and
+    a path containing a space would split into two entries whose tail matches no DOC_PATH
+    branch — turning a documentation PR into a `code` one. No such path exists in this
+    repo today; the plan review caught the two halves of one insertion disagreeing, with
+    the sibling above already correct.
+    """
+    try:
+        r = subprocess.run(["git", "show", "--name-only", "--format=", "-1", sha],
+                           cwd=ROOT, capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return r.stdout.splitlines() if r.returncode == 0 else None
+
+
+def annotate_code(prs: list[dict], show=git_show_files) -> list[dict]:
+    """Add `code`: True / False / None to each PR. `show` is injected so this is testable.
+
+    None means the commit could not be read — NOT that it was documentation.
+    """
+    cache: dict[str, bool | None] = {}
+    out = []
+    for p in prs:
+        sha = p["sha"]
+        if sha not in cache:
+            files = show(sha)
+            cache[sha] = None if files is None else files_are_code(files)
+        out.append({**p, "code": cache[sha]})
+    return out
 
 
 def collect(docs: pathlib.Path, gen_text: str) -> list[dict]:
@@ -204,6 +412,18 @@ def collect(docs: pathlib.Path, gen_text: str) -> list[dict]:
                 "milestones": parse_milestones(f.read_text()),
             })
 
+    # ⚠ MEASURED COST. This is NOT "double last_touched". `last_touched` is `git log -1`;
+    # this is `git log --follow` over full history plus one `git show` per unique sha.
+    # Measured 2026-09-11: build 2.4s -> 9.7s, about 4.5x, on a hook that fires on every
+    # write to any spec, plan, ADR or the registry.
+    hist_cache: dict[str, list[dict] | None] = {}
+
+    def history(rel: str):
+        if rel not in hist_cache:
+            got = git_pr_history(ROOT / rel)
+            hist_cache[rel] = None if got is None else annotate_code(got)
+        return hist_cache[rel]
+
     out = []
     for r in registry:
         ds = sorted(by_anchor[r["slug"]], key=lambda d: d["dated"], reverse=True)
@@ -211,12 +431,30 @@ def collect(docs: pathlib.Path, gen_text: str) -> list[dict]:
         out.append({
             **r,
             "docs": ds,
+            "threads": [thread_prs(t, history) for t in pair_documents(ds)],
             "spine": spine,
             "adrs": [{"num": n, **adrs[n]} for n in re.findall(r"\d{4}", r["adrs"]) if n in adrs],
             "backlog": [(i, rel) for i, rel, root in depends if root == r["slug"]],
             "touched": max((d["touched"] for d in ds if d["touched"]), default=""),
         })
     out.sort(key=lambda a: (a["touched"], len(a["docs"])), reverse=True)
+
+    # Global, so computed once across every anchor rather than per card. `hist_cache` is
+    # fully populated by now — the comprehension above ran `history()` for every document.
+    fan = pr_fanout(hist_cache.values())
+    # The page's SIXTH source is the git log, and `regen-goals-page.sh` can only watch
+    # files. Merging a PR changes what the Work band should say and fires no hook, because
+    # a merge is not a Write. Rendering the sha it was derived from lets a reader see the
+    # input rather than infer it. Guarded like every other git call here.
+    try:
+        _r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
+                            capture_output=True, text=True, timeout=20)
+        head = (_r.stdout.strip() if _r.returncode == 0 else "") or "unknown"
+    except (OSError, subprocess.SubprocessError):
+        head = "unknown"
+    for a in out:
+        a["fanout"], a["head"] = fan, head
+
     if stray:
         # Loud, not silent: an empty backlog band would look like "this goal has no rows".
         print(f"⚠ ROOTS keys outside the registry, backlog bands will be empty for them: "
@@ -292,12 +530,100 @@ CSS = """
   .doc .t{font-family:var(--mono);font-size:.72rem;color:var(--ink-faint);
           font-variant-numeric:tabular-nums}
   .doc .g{grid-column:1/-1;font-size:.86rem;color:var(--ink-soft);max-width:66ch}
+  .thread{border-top:1px solid var(--rule);padding:.4rem 0}
+  .thread summary{cursor:pointer;font-family:var(--mono);font-size:.86rem;color:var(--ink)}
+  .prline{display:flex;gap:.5rem;align-items:baseline;padding:.15rem 0 .15rem 1rem;
+          flex-wrap:wrap}
+  .prline .t{font-family:var(--mono);font-size:.72rem;color:var(--ink-faint);
+             font-variant-numeric:tabular-nums}
+  .prline .g{font-size:.84rem;color:var(--ink-soft);max-width:60ch}
+  .tag{font-size:.72rem;padding:.05rem .35rem;border-radius:3px;font-family:var(--mono);
+       background:var(--structure-bg);color:var(--structure)}
+  .tag.docs{background:var(--pending-bg);color:var(--pending)}
+  /* ⚠ --ink, NOT --ink-faint. Measured during review: --rule/--ink-faint is 2.45:1 in
+     light and 3.47:1 in dark, both failing WCAG AA at this size — and this is the tag for
+     CANNOT RUN, the one state the design argues hardest for. */
+  .tag.unknown{background:var(--rule);color:var(--ink)}
   footer{border-top:1px solid var(--rule);padding-top:1.1rem;display:flex;flex-direction:column;
          gap:.6rem;font-size:.82rem;color:var(--ink-faint)}
   .legend{max-width:70ch}
   a{color:var(--structure)}\n  a.n{color:var(--structure);text-decoration:underline;text-underline-offset:3px;\n      text-decoration-color:color-mix(in srgb,var(--structure) 45%,transparent)}\n  a.n:hover{text-decoration-color:var(--structure)}\n  a.chip{text-decoration:none}\n  a.chip:hover{border-color:var(--structure)}
   :focus-visible{outline:2px solid var(--structure);outline-offset:2px}
 """
+
+
+def excluded_count(total: int, shown: int) -> int:
+    """Documents present but not rendered, because they declare no anchor. PURE.
+
+    ⛔ REFUSES on shown > total. That can only mean the two numbers were counted over
+    different populations, which is the most-recorded measurement defect in this repo, and
+    a negative rendered as "-36 excluded" would be believed. The branch is unreachable in
+    production — both counts come from SUBDIRS — so the case exercises it directly and the
+    guard is there for a future caller, not for today's.
+    """
+    if shown > total:
+        raise ValueError(f"shown ({shown}) exceeds total ({total}) — populations disagree")
+    return total - shown
+
+
+def render_threads(threads: list[dict], fanout: dict[str, int]) -> str:
+    """The Work band's body: one collapsible block per spec/plan thread.
+
+    ⚠ `<details>/<summary>` is this project's existing collapsible — 21 uses in
+    `gen-dashboard.py`, 6 in `gen-backlog-page.py`, and none here before this. Reused.
+
+    ⛔ MAKES NO IMPLEMENTATION CLAIM. The tag says what the commit TOUCHED; the fan-out
+    says how many anchored documents it touched. An earlier draft said `code` and
+    summarised `N code PR(s)`, which presented PR #147 — a 22-document header backfill —
+    as the implementation of 22 different goals, and for 5 documents it was the only such
+    PR, so those cards would also have suppressed the flag that was their real finding.
+    """
+    if not threads:
+        return '<span class="absent">No spec or plan declares this goal.</span>'
+    parts = []
+    for t in threads:
+        # TWO thread-level states, and they are not the same claim. CANNOT RUN beats
+        # "git named no PR", because rendering a broken deriver as an honest absence is
+        # the failure this project records most often.
+        if t["pr_error"]:
+            flag = '<span class="absent">history could not be read — treat as NOT MEASURED</span>'
+        elif not t["prs"]:
+            flag = '<span class="absent">no pull requests</span>'
+        else:
+            flag = f'<span class="t">{len(t["prs"])} PR(s)</span>'
+        parts.append(f'<details class="thread"><summary>{esc(t["stem"])} {flag}</summary>')
+        for side, missing in (("spec", "no spec"), ("plan", "no plan")):
+            d = t.get(side)
+            if d:
+                parts.append(f'<div class="prline"><span class="t">{side}</span>'
+                             f'<a href="/src/{esc(d.get("rel", ""))}">'
+                             f'{esc(d.get("name", "?"))}</a></div>')
+            else:
+                parts.append(f'<div class="prline"><span class="t">{side}</span>'
+                             f'<span class="absent">{missing}</span></div>')
+        # ⛔ IDENTITY, NOT A KEY. `pair_documents` appends the SAME dict object it assigns
+        # to the slot, so `is` is exact and needs no field. Keying on `d["rel"]` crashed on
+        # a record without one; keying on `d.get("rel")` made every rel-less document
+        # collapse to a single `None`, so the extra matched the spec and was dropped — the
+        # case written to prove extras render proved the opposite.
+        named = [x for x in (t.get("spec"), t.get("plan")) if x]
+        for d in t.get("docs", []):
+            if not any(d is x for x in named):
+                parts.append(f'<div class="prline"><span class="absent">⚠ extra document '
+                             f'on this stem</span>'
+                             f'<a href="/src/{esc(d.get("rel", ""))}">'
+                             f'{esc(d.get("name", "?"))}</a></div>')
+        for p in t["prs"]:
+            tag = ("unknown" if p.get("code") is None
+                   else "touched code" if p["code"] else "docs only")
+            cls = "unknown" if p.get("code") is None else ("code" if p["code"] else "docs")
+            n = fanout.get(p["num"], 1)
+            fan = f'<span class="t">on {n} documents</span>' if n > 1 else ""
+            parts.append(f'<div class="prline"><span class="tag {cls}">{tag}</span>'
+                         f'<span class="t">#{esc(p["num"])} · {esc(p["date"])}</span>{fan}'
+                         f'<span class="g">{inline_md(p["subject"])}</span></div>')
+        parts.append("</details>")
+    return "\n".join(parts)
 
 
 def render_goal(a: dict) -> str:
@@ -359,12 +685,17 @@ def render_goal(a: dict) -> str:
             parts.append(f'<span class="chip">#{num} · {esc(rel)}</span>')
         parts.append("</div></div>")
 
-    parts.append('<div class="band"><span class="blab">Documents</span><div class="docs">')
-    for d in a["docs"]:
-        parts.append(f'<div class="doc"><a class="n" href="/src/{esc(d["rel"])}">'
-                     f'{esc(d["name"])}</a>'
-                     f'<span class="t">{esc(d["kind"])} · {esc(d["touched"] or "—")}</span>'
-                     f'<span class="g">{inline_md(d["goal"])}</span></div>')
+    # The Documents band is GONE. Every document now sits inside the thread it belongs to,
+    # which is what the reader asked for and also removes the band's guaranteed redundancy:
+    # it reprinted the goal sentence under every document, identical each time, because a
+    # document's `Goal:` line is by construction the same for every document under an
+    # anchor. On the status-visibility card that was 20 copies of one sentence.
+    n_pr = sum(len(t["prs"]) for t in a["threads"])
+    parts.append(f'<div class="band"><span class="blab">Work</span>'
+                 f'<span class="t">{len(a["threads"])} thread(s) · {n_pr} PR(s) · '
+                 f'derived from git at {esc(a.get("head", "?")[:8])}</span>'
+                 f'<div class="docs">')
+    parts.append(render_threads(a["threads"], a.get("fanout", {})))
     parts.append("</div></div></article>")
     return "\n".join(parts)
 
@@ -372,6 +703,12 @@ def render_goal(a: dict) -> str:
 def build(anchors: list[dict], sha: str, stamp: str, generated_at: str = "") -> str:
     spined = sum(1 for a in anchors if a["spine"])
     docs = sum(len(a["docs"]) for a in anchors)
+    # ⚠ `total_docs` counts SUBDIRS — superpowers/specs and superpowers/plans — not all of
+    # `docs/superpowers/`. Those are the only two subdirectories today, so a sentence
+    # saying "under docs/superpowers/" would be true by coincidence of the tree's shape.
+    # The rendered text names both directories instead.
+    total_docs = sum(1 for sub in SUBDIRS for _ in (DOCS / sub).glob("*.md"))
+    hidden = excluded_count(total_docs, docs)
     body = "\n".join(render_goal(a) for a in anchors)
     return f"""<title>Goals — what this project is pursuing, and where each stands</title>
 <style>{CSS}
@@ -383,7 +720,9 @@ def build(anchors: list[dict], sha: str, stamp: str, generated_at: str = "") -> 
   {page_chrome.chrome_bar("goals", generated_at)}
   <p class="standfirst">One card per goal, keyed by its <strong>anchor</strong> — the name that
     survives a rename. <strong>{len(anchors)}</strong> goals, <strong>{docs}</strong> documents,
-    <strong>{spined}</strong> with a milestone spine.</p>
+    <strong>{spined}</strong> with a milestone spine.
+    <span class="absent">{hidden} more under docs/superpowers/specs and /plans declare no
+    anchor and are not shown.</span></p>
   <p class="standfirst">Nothing here is maintained by hand. Membership comes from the
     <code>Anchor:</code> headers, decision status from <code>docs/adr/</code> including its in-body
     amendment trail, milestone state from each spine's own headings, and dates from
@@ -461,6 +800,191 @@ def self_test() -> int:
     # this slice exists to remove. What is NOT covered by deleting it — that this file is
     # still BOUND to page_markup rather than to a re-grown local copy — is a structural
     # property of all four generators at once, and belongs in one check, not four cases.
+
+    eq("stem strips -design", doc_stem("2026-08-29-retarget-design.md"), "2026-08-29-retarget")
+    eq("stem strips -plan", doc_stem("2026-08-28-dashboard-plan.md"), "2026-08-28-dashboard")
+    eq("a bare name is already a stem", doc_stem("2026-08-29-retarget.md"), "2026-08-29-retarget")
+    eq("only a TRAILING suffix is stripped",
+       doc_stem("2026-09-01-design-review-notes.md"), "2026-09-01-design-review-notes")
+
+    _s = {"name": "2026-08-29-x-design.md", "kind": "spec"}
+    _p = {"name": "2026-08-29-x.md", "kind": "plan"}
+    # LOAD-BEARING PAIR. The `None`-slot cases below are satisfied by a pair_documents
+    # that never fills a slot at all; this case is what kills that. Do not delete one
+    # without the other.
+    eq("the thread names both halves",
+       [pair_documents([_s, _p])[0][k]["name"] for k in ("spec", "plan")],
+       ["2026-08-29-x-design.md", "2026-08-29-x.md"])
+    eq("a spec and its plan share one thread", len(pair_documents([_s, _p])), 1)
+    eq("a spec with no plan is a thread with an empty plan slot",   # pairs with the above
+       pair_documents([_s])[0]["plan"], None)
+    eq("a plan with no spec is a thread with an empty spec slot",   # pairs with the above
+       pair_documents([_p])[0]["spec"], None)
+    eq("threads sort newest stem first",
+       [t["stem"] for t in pair_documents([{"name": "2026-01-01-a.md", "kind": "plan"}, _p])],
+       ["2026-08-29-x", "2026-01-01-a"])
+    _s2 = {"name": "2026-08-29-x-plan.md", "kind": "spec"}
+    eq("a second document in a slot is kept, not dropped",
+       len(pair_documents([_s, _p, _s2])[0]["docs"]), 3)
+
+    _lg = ["aaa\x012026-08-29\x01Retire the plan dependency (#176)",
+           "bbb\x012026-08-31\x01Asks state their choices (#186)",
+           "ccc\x012026-08-31\x01Asks state their choices (#186)",
+           "ddd\x012026-07-01\x01a direct commit with no PR"]
+    eq("a squash subject yields its PR number",
+       [p["num"] for p in prs_from_log(_lg)], ["176", "186"])
+    eq("the date travels with the PR", prs_from_log(_lg)[0]["date"], "2026-08-29")
+    eq("a commit with no PR tail is dropped", len(prs_from_log(_lg)), 2)
+    eq("a malformed line is skipped, not crashed on", prs_from_log(["garbage"]), [])
+    eq("a PR-looking number mid-subject is not the PR",
+       prs_from_log(["e\x012026-01-01\x01mentions (#99) in passing, no tail"]), [])
+
+    eq("a script path is code", files_are_code(["scripts/gen-goals-page.py"]), True)
+    eq("one code file among docs makes it a code PR",
+       files_are_code(["docs/backlog.md", "lib/storage.ts"]), True)
+    eq("this repo's documentation outside docs/ is not code",
+       files_are_code(["docs/x.md", ".remember/remember.md", "README.md",
+                       "CONTEXT.md", "AGENTS.md", "CLAUDE.md",
+                       ".agents/skills/brief/SKILL.md"]), False)
+    # ⚠ Reported as a LIST, not chained with `and`: a regression names WHICH path class
+    # broke rather than only that one did.
+    eq("a code file whose name starts with a doc name is still code",
+       [files_are_code([f]) for f in
+        ("README-generator.ts", "CONTEXT.md.bak", "CLAUDE.md.old", "READMEs.tsx",
+         "src/READMEs.tsx", "a/b/CONTEXT.md.ts")], [True] * 6)
+    eq("an instruction document at any depth is not code",
+       [files_are_code([f]) for f in
+        ("worker/CONTEXT.md", "packages/api/AGENTS.md", "sub/dir/README.md")], [False] * 3)
+
+    _prs = [{"sha": "aaa", "num": "186", "date": "2026-08-31", "subject": "s"},
+            {"sha": "bbb", "num": "187", "date": "2026-08-31", "subject": "t"}]
+    _shown = {"aaa": ["scripts/gen-dashboard.py", "docs/x.md"], "bbb": ["docs/x.md"]}
+    _out = annotate_code(_prs, lambda sha: _shown.get(sha))
+    eq("a PR touching a script is tagged code", _out[0]["code"], True)
+    eq("a doc-only PR is not", _out[1]["code"], False)
+    eq("an unreadable commit is unknown, not False",
+       annotate_code(_prs[:1], lambda sha: None)[0]["code"], None)
+    eq("annotate does not lose or reorder records", [p["num"] for p in _out], ["186", "187"])
+
+    _t = {"stem": "s", "spec": {"name": "s-design.md", "rel": "a"},
+          "plan": {"name": "s.md", "rel": "b"}, "docs": []}
+    # ⚠ REAL DATES. The plan's first draft used "d" and "e"; the sort is (date, num)
+    # reverse=True, so "e" > "d" put PR 2 first while the case asserted ["1","2"]. With
+    # real dates the ordering is observable and the case also dies if `sorted` is deleted.
+    _hist = {"a": [{"sha": "x", "num": "1", "date": "2026-08-29", "subject": "u"}],
+             "b": [{"sha": "x", "num": "1", "date": "2026-08-29", "subject": "u"},
+                   {"sha": "y", "num": "2", "date": "2026-08-31", "subject": "v"}]}
+    eq("a thread's PRs are the union over its documents, deduped, NEWEST FIRST",
+       [p["num"] for p in thread_prs(_t, _hist.get)["prs"]], ["2", "1"])
+    eq("one unreadable document poisons the thread's verdict",
+       thread_prs(_t, lambda rel: None if rel == "b" else _hist["a"])["pr_error"], True)
+    eq("a fully readable thread reports no error", thread_prs(_t, _hist.get)["pr_error"], False)
+    eq("a thread with no documents has no PRs and no error",
+       thread_prs({"stem": "s", "spec": None, "plan": None, "docs": []}, _hist.get),
+       {"stem": "s", "spec": None, "plan": None, "docs": [], "prs": [], "pr_error": False})
+
+    eq("fan-out counts the documents a PR touched",
+       pr_fanout([[{"num": "147"}, {"num": "9"}], [{"num": "147"}]]), {"147": 2, "9": 1})
+    # ⭐ DOCUMENTS, NOT THREADS. thread_prs dedupes a PR touching both halves of one
+    # thread, so counting threads under-reports by one for every such PR while the
+    # rendered label says "documents".
+    eq("a PR touching both halves of one thread counts as two documents",
+       pr_fanout([[{"num": "5"}], [{"num": "5"}]]), {"5": 2})
+    eq("an unreadable document contributes nothing, and does not crash",
+       pr_fanout([None, [{"num": "5"}]]), {"5": 1})
+    # ⭐ A collision's third document must get a history too. Iterating only the two
+    # named slots meant a PR reachable ONLY through the extra vanished from the thread
+    # and from the fan-out.
+    _t3 = {"stem": "s", "spec": {"name": "a-design.md", "rel": "a"},
+           "plan": {"name": "a.md", "rel": "b"},
+           "docs": [{"name": "a-design.md", "rel": "a"}, {"name": "a.md", "rel": "b"},
+                    {"name": "a-plan.md", "rel": "c"}]}
+    _h3 = {"a": [], "b": [],
+           "c": [{"sha": "z", "num": "7", "date": "2026-09-01", "subject": "w"}]}
+    eq("a PR reachable only through a collision's extra document is still found",
+       [p["num"] for p in thread_prs(_t3, _h3.get)["prs"]], ["7"])
+
+    _fan = {"186": 1, "187": 1, "188": 1, "147": 22}
+    # ⚠ THREE PRs, one per tag. With only two, the case named "only the three measured
+    # tags can be rendered" was satisfied by a renderer emitting a fourth label for the
+    # third state — mutation-verified during review: renaming the `unknown` branch stayed
+    # GREEN. It constrained two of the three it claimed.
+    _th = [{"stem": "2026-08-31-asks", "spec": {"name": "a-design.md", "rel": "ra"},
+            "plan": {"name": "a.md", "rel": "rb"}, "docs": [], "pr_error": False,
+            "prs": [{"num": "186", "date": "2026-08-31", "subject": "impl", "code": True},
+                    {"num": "187", "date": "2026-08-31", "subject": "docs", "code": False},
+                    {"num": "188", "date": "2026-08-30", "subject": "unread", "code": None}]}]
+    _h = render_threads(_th, _fan)
+    eq("the thread renders inside a details element", "<details" in _h, True)
+    # ⭐ THE CASE THE USER ASKED FOR: two PRs on one thread must LOOK different.
+    eq("the PRs are distinguishable in the markup",
+       (_h.count(">touched code<"), _h.count(">docs only<")), (1, 1))
+    eq("only the three measured tags can be rendered",
+       sorted(set(re.findall(r'<span class="tag [a-z]+">([^<]+)</span>', _h))),
+       ["docs only", "touched code", "unknown"])
+    eq("a PR whose files could not be read is tagged unknown", ">unknown<" in _h, True)
+    eq("a single-document thread renders no fan-out", _h.count(" documents</span>"), 0)
+    # ⭐ THE RETRACTION, ASSERTED: a 22-document PR is shown as a bulk edit.
+    _bulk = [{"stem": "s", "spec": {"name": "s-design.md", "rel": "r"}, "plan": None,
+              "docs": [], "pr_error": False,
+              "prs": [{"num": "147", "date": "2026-08-01", "subject": "backfill",
+                       "code": True}]}]
+    eq("a PR touching many documents renders its fan-out",
+       "on 22 documents" in render_threads(_bulk, _fan), True)
+    eq("the page makes no implementation claim about any tag",
+       "implementation" in render_threads(_bulk, _fan).lower(), False)
+
+    _empty = [{"stem": "s", "spec": {"name": "s-design.md", "rel": "r"}, "plan": None,
+               "docs": [], "prs": [], "pr_error": False}]
+    eq("a missing plan is drawn as absent, not omitted",
+       "no plan" in render_threads(_empty, {}), True)
+    eq("a thread git named no PR for says so",
+       "no pull requests" in render_threads(_empty, {}), True)
+    # LOAD-BEARING PAIR. The negative below is an absence assertion and passes on an empty
+    # string; the positive above it is what kills that. Neither may be deleted alone.
+    _broken = [{"stem": "s", "spec": {"name": "s-design.md", "rel": "r"}, "plan": None,
+                "docs": [], "prs": [], "pr_error": True}]
+    eq("an unreadable history says so instead of showing nothing",
+       "could not be read" in render_threads(_broken, {}), True)
+    eq("and it does NOT also claim there are no pull requests",
+       "no pull requests" in render_threads(_broken, {}), False)
+
+    # ⭐ A collision's extra document must be RENDERED, not merely kept in the record.
+    _sp = {"name": "s-design.md", "rel": "r"}
+    _ex = {"name": "s-plan.md", "rel": "rx"}
+    _coll = [{"stem": "s", "spec": _sp, "plan": None, "docs": [_sp, _ex],
+              "prs": [], "pr_error": False}]
+    eq("an extra document on a stem is rendered, not silently dropped",
+       ("extra document" in render_threads(_coll, {})
+        and "s-plan.md" in render_threads(_coll, {})), True)
+    # ⚠ Identity, not a key: keying on `d.get("rel")` made every rel-less document
+    # collapse to one `None`, so the extra matched the spec and vanished. This fixture
+    # has no `rel` at all and is what caught it.
+    _sp2 = {"name": "s.md"}
+    _ex2 = {"name": "other.md"}
+    _norel = [{"stem": "s", "spec": _sp2, "plan": None, "docs": [_sp2, _ex2],
+               "prs": [], "pr_error": False}]
+    eq("a document record with no rel does not crash the renderer",
+       "extra document" in render_threads(_norel, {}), True)
+    eq("and the rel-less extra is still named once",
+       render_threads(_norel, {}).count("other.md"), 1)
+
+    eq("no threads renders the absence, not an empty box",
+       "No spec or plan" in render_threads([], {}), True)
+
+    def _raises(fn, exc) -> bool:
+        try:
+            fn()
+        except exc:
+            return True
+        return False
+
+    # ⚠ Deliberately SYNTHETIC numbers. Using the live 187/47 here would read as a corpus
+    # claim and invite someone to "correct" it when the corpus moves. This is arithmetic.
+    eq("the excluded count is total minus shown", excluded_count(10, 4), 6)
+    eq("nothing excluded reads as zero", excluded_count(4, 4), 0)
+    eq("showing more than exist is a refusal, not a negative",
+       _raises(lambda: excluded_count(4, 10), ValueError), True)
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
