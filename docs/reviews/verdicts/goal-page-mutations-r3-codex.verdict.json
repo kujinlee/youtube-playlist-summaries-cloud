@@ -1,0 +1,13 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 4514 chars"
+  ],
+  "exit_code": 0,
+  "gate_ran": true,
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "reason": "4514 chars",
+  "review": "goal-page-mutations-r3-codex.md",
+  "schema": 1,
+  "tool": "codex-review"
+}

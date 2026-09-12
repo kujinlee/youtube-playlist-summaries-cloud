@@ -7715,8 +7715,9 @@ fixed. It also refused an earlier run outright — the control failed before any
 so it declared every verdict below it an artefact rather than reporting thirteen of fourteen.
 
 The printer is fixed and the fix was checked by breaking a rule in a scratch copy and reading what
-came out, rather than by reading the code. Five hundred and thirty-eight breakages now all kill a
-named test, up from five hundred and twenty-four.
+came out, rather than by reading the code. Every breakage in the project now kills a named test —
+the running total moved from five hundred and twenty-four to five hundred and forty-nine across this
+branch's three review rounds.
 <!--tech-->
 Branch `goal-page-mutations`, base `58d82658`. Follow-up to PR #292, which is merged and green on
 master.
@@ -7747,7 +7748,10 @@ kept because it was verified twice independently: §22 was introduced BY the com
 `gen-backlog-page.py` (`050913f6`), so that file cannot have paid "after the convention was
 written" — §22 was written *from* it.
 
-**Round 1 — both halves NOT-CONVERGED, one High each, same structural cause.**
+**Round 1 — both halves NOT-CONVERGED, and they did NOT find the same thing.** ⟳ An earlier
+version of this paragraph said "one High each, same structural cause". That is the false account the
+overwritten review produced: the committed Claude half's High is `parse_adr`, which the seam does not
+touch, and it was still OPEN when this entry first claimed it closed. The seam is CODEX's High.
 `docs/reviews/codex/goal-page-mutations-r1-codex.md` and
 `docs/reviews/claude/goal-page-mutations-r1-claude.md`. `git_pr_history` and `git_show_files` took
 no injected `run`, so the CANNOT-RUN predicate (`rc != 0 -> None`), `--follow` and `.splitlines()`
@@ -7771,8 +7775,23 @@ engineering is sound: the seam changes NO production behaviour (`collect()` run 
 under both revisions — identical output, 11 anchors, 41 threads, 96 PRs), all anchors unique, and
 every new entry fails by REPORTING rather than crashing.
 
-**Harness: 25 entries, all attributing over a control proved green first; CI at 548 attributed,
-0 survivors on the previous head.** Gates green: `check-anchors`, `check-docs`,
+⛔ **Round 3 — Codex found no Blocking and no High; Claude found a Blocking in the PR BODY.**
+The code has been clean since round 2's fix (Codex re-probed the Blocking six ways — first value,
+second value, basename-only path, first sha, second sha, sha prefix — all killed via the intended
+case; full pass 25/25 attributed, 0 survivors). What round 3 found was the RECORD: round 2's commit
+said the provenance correction now covered "both sites", when round 1's own message said **four**.
+Three were fixed and the fourth — the pull-request body — was left as the verbatim uncorrected
+round-1 text, still presenting the fabricated measurement as the justification for the ratchet.
+Also found: a headline "HAS NOW COST NINE FILES" surviving four lines above the paragraph that
+retracts that number; a second `brief-compose.py (8)` the round-2 fix walked past; and
+`~540 lines of new rules`, which is `--stat`'s CHANGED-line total (532 insertions + 8 deletions)
+read as though it were insertions.
+
+⚠ **Three corrections to this record, three of them incomplete.** That is why the count is now
+derived rather than stored, and why the branch says so at every site instead of quoting a figure.
+
+**Harness: 25 entries for this file, all attributing over a control proved green first; the
+project total is 549. CI measured 549 attributed / 0 survivors on `8d67e55b`.** Gates green: `check-anchors`, `check-docs`,
 `check-selftest-counts`, `check-ratchet-contract`, `check-review-rounds`,
 `check-gate-falsifiability`, `check-fixture-variation`, `check-review-recorded`. Suite **75/75**.
 

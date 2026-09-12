@@ -566,8 +566,10 @@ EXPECTED_MUTATIONS = {
     # halves flagged and round 2 repeated: `scripts/gen-m4-manifest.py` has none either and
     # is still outside `scripts/mutations/`. The narrower sentence is the true one; the wider
     # one made a reader sizing manifest debt from this dict believe the class was closed.
-    # The gap predates the work-threads branch, but that branch added ~540 lines of new rules
-    # to it, making it the largest unmutated surface of its kind here.
+    # The gap predates the work-threads branch, but that branch added 532 lines to it (`git
+    # show --numstat 58d82658`), making it the largest unmutated surface of its kind here.
+    # ⚠ NOT "~540 lines of new rules", which stood here for three rounds: 540 is `--stat`'s
+    # CHANGED-line total (532 insertions + 8 deletions), read as if it were insertions.
     # ⟳ 2026-09-12, review rounds 1 and 2: 14 -> 25. ⚠ AN EARLIER VERSION OF THIS PARAGRAPH CITED A
     # MEASUREMENT NO COMMITTED ARTIFACT CONTAINS — "Claude staged the tree, applied 24
     # candidate weakenings and measured 11 SURVIVING" — and used it as the justification for
@@ -1223,7 +1225,10 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
             # parsed out of it. That is never "caught by something else"; the something-else
             # list is empty. It means this suite does not print `[FAIL] <case>`, so no kill
             # in the whole file can ever be attributed. Measured twice on 2026-09-10 —
-            # `gen-backlog-page.py` (5 entries) and `brief-compose.py` (8) — and BOTH times
+            # `gen-backlog-page.py` and `brief-compose.py` (entry counts NOT quoted: the
+            # "8" that stood here is unsupported by any committed artifact — three review
+            # rounds said so, and `git log -S` finds no commit where this dict said 8) —
+            # and BOTH times
             # it was diagnosed by hand, at the bottom of a 420-mutation log, from an empty
             # list a reader had to know the meaning of. Said once here, per file, instead of
             # once per entry: eight identical lines is how the signal got lost the first time.
@@ -2918,7 +2923,8 @@ def _self_test() -> int:
     # ⟳ 2026-09-12: 524 -> 538. `gen-goals-page.py` joins the manifest with FOURTEEN entries.
     # It was the one sibling generator nothing mutated — gen-dashboard, gen-backlog-page,
     # brief-compose, page_chrome and page_markup all had one — and the work-threads branch
-    # added ~540 lines of new rules to it. The fourteen cover what three review rounds took
+    # added 532 lines to it (not ~540 — that was `--stat`'s changed-line total). The fourteen
+    # cover what three review rounds took
     # to get right: PR_TAIL's end anchor, DOC_PATH's any-depth prefix AND its basename
     # anchor (they broke in OPPOSITE directions, so they are separate entries), the
     # None-vs-False collapse in annotate_code, thread_prs losing pr_error, thread_prs
@@ -2963,12 +2969,21 @@ def _self_test() -> int:
          [r for r in HARNESS_TREE if not (_repo / r).exists()], [])
 
     # ─── A PRE-FLIGHT FOR THE FAILURE-LINE CONTRACT WAS ATTEMPTED HERE, AND ABANDONED ────
-    # ⛔ THE PROBLEM IS REAL AND HAS NOW COST NINE FILES. `parse_fail_names` reads a red case
+    # ⛔ THE PROBLEM IS REAL AND HAS COST A GROWING LIST OF FILES — see the derivation below,
+    # NOT a number here. This line said "TWO BRANCHES", then "NINE FILES", four lines above
+    # the paragraph that deletes the count and explains why "ninth" was wrong. A headline
+    # figure left behind when its own enumeration is retracted is the same defect one frame
+    # up. `parse_fail_names` reads a red case
     # with `startswith("[FAIL] ")` then `[7:]`, so a suite reporting failures any other way is
     # one whose kills nobody can see: every entry reports "matched 0 red case(s) — caught by
     # something else: []" while each one IS killed by the case it names. `gen-backlog-page.py`
-    # paid 5 entries on 2026-09-10; `brief-compose.py` paid 8 the same day, AFTER
+    # paid 5 entries on 2026-09-10, and `brief-compose.py` paid the same day, AFTER
     # `portable-practices` §22 was written from the first one. A convention did not hold.
+    # ⚠ AN ENTRY COUNT FOR `brief-compose.py` USED TO STAND HERE ("paid 8") and is removed:
+    # rounds 1, 2 and 3 each flagged it as unsupported — the observable count is 16, and
+    # `git log -S` finds no commit where this dict ever said 8. It may well have been true of
+    # the original payment, but nothing on disk testifies to it, and an unfalsifiable number
+    # in the record of a class about unfalsifiable numbers is the wrong thing to keep.
     #
     # ⟳ 2026-09-12. "TWO BRANCHES" UNDERCOUNTS, AND THE REPLACEMENT COUNT IS DELIBERATELY
     # NOT WRITTEN HERE. Three hand-written enumerations were attempted in one day — "third
