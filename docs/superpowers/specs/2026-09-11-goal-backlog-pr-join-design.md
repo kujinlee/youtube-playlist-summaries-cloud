@@ -150,7 +150,7 @@ requires that the remainder is *displayed as unattributed*, not silently dropped
 ⚠ **A zero here means the deriver is broken, not that a goal is idle.** The distinction is the
 subject of falsifier F4.
 
-### 3.2a The implementation chain — spec → plan → shipped
+### 3.2a The work chain — spec → plan → the pull requests that touched them
 
 ⟳ **Added v2, 2026-09-11**, on the user's refinement: *"goals lists many docs: spec → plan →
 implementation (commits → PRs). Currently it only lists spec and plan doc. I hope related
@@ -173,7 +173,9 @@ Both suffixes occur in the corpus (91 specs end `-design`, 3 are bare; 91 plans 
 `-plan`). **No stem is claimed by more than two files**, so the rule cannot silently merge two
 threads into one — checked, because a collision here would fuse unrelated work invisibly.
 
-⭐ **The PR is the atomic implementation unit here, not a commit range.** This repo squash-merges, so
+⭐ **The PR is the atomic unit of CHANGE here, not a commit range** — a statement about granularity
+only, and deliberately not about authorship of any thread's implementation, which §3.2a's ⛔ retracts.
+This repo squash-merges, so
 a branch's whole history collapses to one commit on `master`. Chasing individual commits would
 reconstruct something `master` does not contain; the `(#N)` suffix is the durable identity.
 
@@ -308,12 +310,13 @@ one of the three without it.
   ▸ BACKLOG 7 open · 9 closed   ▾ WORK 7 threads · 28 PRs
       mutation-manifest-retarget
          spec  2026-08-29-…-design.md   plan  2026-08-29-….md
-         PR #176  2026-08-29  Retire the plan-as-CI-dependency…   [code]
+         #176 · touched code · 2026-08-29  Retire the plan-as-CI-dependency…
       dashboard-ask-choices
          spec  2026-08-31-…-design.md   plan  2026-08-31-….md
-         PR #186  2026-08-31  Dashboard asks state your choices   [code]
-         PR #187  2026-08-31  Heads-up expiry decided        [docs only]
-      blob-addressing-reservation                  ⚠ no code PR yet
+         #186 · touched code · 2026-08-31  Dashboard asks state your choices
+         #187 · docs only  · 2026-08-31  Heads-up expiry decided
+         #147 · touched code · on 22 documents  ADR-0010 header backfill
+      blob-addressing-reservation                     no pull requests
          spec  2026-08-07-…-design.md   plan  —  (none written)
       ── direct work, no document ──────────────────────────────
          PR #67   2026-08-14  Serve-path deadline          [by path]
@@ -325,10 +328,16 @@ one of the three without it.
 
 - **Expanded BACKLOG** lists `#num`, severity marker, title, linked to the backlog page.
 - **Expanded WORK replaces the flat PR list** (§3.2a). Document-led work renders as a
-  `spec → plan → PR` thread with a state — **shipped**, **in flight**, **not started** — and a
-  missing stage is drawn as absent, not omitted. Direct work follows under its own rule, with the
-  **attribution method shown** (anchor / path / backlog-ref) so a reader can judge it rather than
-  trust it. The count of documents excluded for having no anchor is rendered here too.
+  `spec → plan → PRs` thread; a missing stage is drawn as absent, not omitted. **There is no
+  per-thread state label** — ⛔ v2 specified *shipped / in flight / not started* and v3 cut it as
+  96%-in-one-bucket; **this bullet still described it until round 2 of the Post-Plan Gate caught it**,
+  which is why the retraction is restated here rather than only in §3.2a. Each PR carries the
+  `touched code` / `docs only` / `unknown` tag and, where it exceeds one, its **document fan-out**.
+  Direct work follows under its own rule with the **attribution method shown** (anchor / path /
+  backlog-ref). The count of documents excluded for having no anchor is rendered here too.
+
+  ⚠ **The two thread-level flags are the only ones**, and neither is a claim about shipping:
+  `history could not be read` (CANNOT RUN) and `no pull requests` (git named none).
 - **DOCUMENTS as a separate section disappears** — every document now appears inside the thread it
   belongs to, which is what the user asked for and also kills §1c's twenty repeated goal sentences.
 - **DONE goals collapse to a single line** — findable, not competing for attention.

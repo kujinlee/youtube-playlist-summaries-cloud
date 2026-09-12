@@ -45,7 +45,7 @@ anchored documents it touched so a bulk edit is visible as one. A threshold was 
 - ⛔ **EVERY TASK'S STEP 4 UPDATES THE DECLARED CASE COUNT** at `gen-goals-page.py:6`
   (`# 15 cases, pure functions only`). `gen-goals-page.py` is pinned in
   `check-selftest-counts.POPULATION` (`:134`) and that guard **runs in CI** (`ci.yml:275`). Round 1
-  found this plan adding 41 cases and never touching line 6 — five of six commits would have been
+  found this plan adding 47 cases and never touching line 6 — five of six commits would have been
   red on the guard whose entire purpose is catching it.
 - **Every case must be able to FAIL.** Where a case can only fail *in company with a sibling*, the
   plan says so, so a later refactor cannot delete the load-bearing half and leave the vacuous one.
@@ -216,6 +216,13 @@ git commit -m "A spec and its plan are one thread, and a collision cannot vanish
        files_are_code(["docs/x.md", ".remember/remember.md", "README.md",
                        "CONTEXT.md", "AGENTS.md", "CLAUDE.md",
                        ".agents/skills/brief/SKILL.md"]), False)
+    # ⭐ ROUND 2 H. The round-1 fix for the above created the OPPOSITE defect: an
+    # unanchored `README` also matches `README-generator.ts`, so a real implementation
+    # rendered as `docs only`. Latent (no such path exists yet) and fixed by anchoring each
+    # literal with `$`. This case dies the moment an anchor is dropped.
+    eq("a code file whose name STARTS with a doc name is still code",
+       files_are_code(["README-generator.ts"]) and files_are_code(["CONTEXT.md.bak"])
+       and files_are_code(["CLAUDE.md.old"]) and files_are_code(["READMEs.tsx"]), True)
 ```
 
 ⚠ **`files_are_code([]) == False` and `prs_from_log([]) == []` are NOT in this set.** Round 1 named
@@ -233,7 +240,8 @@ Expected: FAIL — `NameError: name 'prs_from_log' is not defined`
 PR_TAIL = re.compile(r"\(#(\d+)\)\s*$")
 # ⚠ NOT just `docs/`. Round 1 measured 10 PRs in the last 400 whose only non-`docs/`
 # changes were CONTEXT.md or .agents/skills/**, every one wrongly tagged `code`.
-DOC_PATH = re.compile(r"^(docs/|\.remember/|\.agents/|README|CONTEXT\.md|AGENTS\.md|CLAUDE\.md)")
+DOC_PATH = re.compile(
+    r"^(docs/|\.remember/|\.agents/|(README(\.md)?|CONTEXT\.md|AGENTS\.md|CLAUDE\.md)$)")
 
 
 def prs_from_log(lines) -> list[dict]:
@@ -271,7 +279,7 @@ def files_are_code(files) -> bool:
 
 - [ ] **Step 4: Run the tests, then UPDATE THE DECLARED COUNT**
 
-Run: `python3 scripts/gen-goals-page.py --self-test` → PASS, `33/33`. Set `:6` to `# 33 cases`.
+Run: `python3 scripts/gen-goals-page.py --self-test` → PASS, `34/34`. Set `:6` to `# 34 cases`.
 Run: `python3 scripts/check-selftest-counts.py` → rc=0, or stop.
 
 - [ ] **Step 5: Commit**
@@ -382,7 +390,7 @@ def annotate_code(prs: list[dict], show=git_show_files) -> list[dict]:
 
 - [ ] **Step 4: Run the tests, then UPDATE THE DECLARED COUNT**
 
-Run: `--self-test` → PASS, `37/37`. Set `:6` to `# 37 cases`. Run `check-selftest-counts.py` → rc=0.
+Run: `--self-test` → PASS, `38/38`. Set `:6` to `# 38 cases`. Run `check-selftest-counts.py` → rc=0.
 
 - [ ] **Step 5: Commit**
 
@@ -431,9 +439,14 @@ anchors, not per card.
        {"stem": "s", "spec": None, "plan": None, "docs": [], "prs": [], "pr_error": False})
 
     eq("fan-out counts the documents a PR touched",
-       pr_fanout([{"prs": [{"num": "147"}, {"num": "9"}]}, {"prs": [{"num": "147"}]}]),
-       {"147": 2, "9": 1})
-    eq("no threads means no fan-out", pr_fanout([]), {})
+       pr_fanout([[{"num": "147"}, {"num": "9"}], [{"num": "147"}]]), {"147": 2, "9": 1})
+    # ⭐ ROUND 2 H. This is the case that distinguishes documents from threads: one PR
+    # touching BOTH halves of one thread is TWO documents, and the thread-level dedupe
+    # would have reported 1 under the label "on N documents".
+    eq("a PR touching both halves of one thread counts as two documents",
+       pr_fanout([[{"num": "5"}], [{"num": "5"}]]), {"5": 2})
+    eq("an unreadable document contributes nothing, and does not crash",
+       pr_fanout([None, [{"num": "5"}]]), {"5": 1})
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
@@ -469,8 +482,13 @@ def thread_prs(thread: dict, history) -> dict:
     return {**thread, "prs": prs, "pr_error": error}
 
 
-def pr_fanout(threads: list[dict]) -> dict[str, int]:
-    """PR number -> how many threads reach it. PURE.
+def pr_fanout(histories) -> dict[str, int]:
+    """PR number -> how many DOCUMENTS reach it. PURE.
+
+    ⛔ DOCUMENTS, NOT THREADS, and round 2 caught it counting threads while the rendered
+    label said documents. `thread_prs` dedupes a PR that touched BOTH a spec and its plan,
+    so counting threads under-reports by one for every such PR. Takes the per-document PR
+    lists straight from `collect`'s history cache, before any thread-level dedupe.
 
     ⭐ WHY THIS EXISTS. A PR that touches twenty-two documents did not implement any one of
     them. PR #147 backfilled `Anchor:` headers across the corpus and also touched three
@@ -480,9 +498,11 @@ def pr_fanout(threads: list[dict]) -> dict[str, int]:
     distribution (40/12/3/1/1 documents per PR) gives any cut exactly one data point.
     """
     out: dict[str, int] = {}
-    for t in threads:
-        for p in t.get("prs", []):
-            out[p["num"]] = out.get(p["num"], 0) + 1
+    for prs in histories:
+        if not prs:                      # None (unreadable) and [] alike contribute nothing
+            continue
+        for num in {p["num"] for p in prs}:   # one vote per DOCUMENT, not per commit
+            out[num] = out.get(num, 0) + 1
     return out
 ```
 
@@ -513,14 +533,14 @@ Add **one** key inside the existing `out.append({...})` dict, immediately after 
 Finally, after `out.sort(...)` and before `return out`, compute the global fan-out and attach it:
 
 ```python
-    fan = pr_fanout([t for a in out for t in a["threads"]])
+    fan = pr_fanout(hist_cache.values())
     for a in out:
         a["fanout"] = fan
 ```
 
 - [ ] **Step 4: Run the tests, then UPDATE THE DECLARED COUNT**
 
-Run: `--self-test` → PASS, `43/43`. Set `:6` to `# 43 cases`. `check-selftest-counts.py` → rc=0.
+Run: `--self-test` → PASS, `45/45`. Set `:6` to `# 45 cases`. `check-selftest-counts.py` → rc=0.
 
 Run: `python3 scripts/gen-goals-page.py --out /tmp/goals-check.html && echo BUILD-OK`
 Expected: `BUILD-OK`, no traceback on stderr.
@@ -567,15 +587,23 @@ thread-level flags are `history could not be read` (CANNOT RUN) and `no pull req
     # ⭐ THE CASE THE USER ASKED FOR: two PRs on one thread must LOOK different.
     eq("the two PRs are distinguishable in the markup",
        _h.count(">touched code<") == 1 and _h.count(">docs only<") == 1, True)
-    eq("the tag makes no implementation claim", "implement" in _h.lower(), False)
+    # ⭐ ROUND 2 M. This was `"implement" not in html`, which passes for `shipped`,
+    # `done` or `landed` — the same false claim in other words. Pinning the SET of rendered
+    # tag texts fails on any label that is not one of the three measured states.
+    eq("only the three measured tags can be rendered",
+       sorted(set(re.findall(r'<span class="tag [a-z]+">([^<]+)</span>', _h))),
+       ["docs only", "touched code"])
     # ⭐ THE RETRACTION, ASSERTED: a 22-document PR is shown as a bulk edit.
     _bulk = [{"stem": "s", "spec": {"name": "s-design.md", "rel": "r"}, "plan": None,
               "docs": [], "pr_error": False,
               "prs": [{"num": "147", "date": "2026-08-01", "subject": "backfill", "code": True}]}]
     eq("a PR touching many documents renders its fan-out",
        "on 22 documents" in render_threads(_bulk, _fan), True)
-    eq("a PR touching one document does not claim a fan-out",
-       "on 1 documents" in _h, False)
+    # ⭐ ROUND 2 L. This was `"on 1 documents" not in html`, which a renderer saying
+    # "on 1 document" passes. Counting the fan-out spans cannot be evaded by wording.
+    eq("only the multi-document PR renders a fan-out",
+       render_threads(_bulk, _fan).count(" documents</span>"), 1)
+    eq("and a single-document thread renders none", _h.count(" documents</span>"), 0)
 
     _empty = [{"stem": "s", "spec": {"name": "s-design.md", "rel": "r"}, "plan": None,
                "docs": [], "prs": [], "pr_error": False}]
@@ -607,6 +635,11 @@ thread-level flags are `history could not be read` (CANNOT RUN) and `no pull req
     eq("an extra document on a stem is rendered, not silently dropped",
        "extra document" in render_threads(_coll, {}) and "s-plan.md" in render_threads(_coll, {}),
        True)
+    # ⭐ ROUND 2 L. `d["rel"]` raised KeyError on a record without one. `.get` throughout.
+    eq("a document record with no rel does not crash the renderer",
+       "extra document" in render_threads(
+           [{"stem": "s", "spec": {"name": "s.md"}, "plan": None,
+             "docs": [{"name": "other.md"}], "prs": [], "pr_error": False}], {}), True)
 
     eq("no threads renders the absence, not an empty box",
        "No spec or plan" in render_threads([], {}), True)
@@ -654,9 +687,9 @@ def render_threads(threads: list[dict], fanout: dict[str, int]) -> str:
                              f'<span class="absent">{missing}</span></div>')
         # A stem claimed by a third document. Kept by `pair_documents`, and rendered here
         # so the collision is visible rather than merely recorded.
-        named = {d["rel"] for d in (t.get("spec"), t.get("plan")) if d}
+        named = {d.get("rel") for d in (t.get("spec"), t.get("plan")) if d}
         for d in t.get("docs", []):
-            if d["rel"] not in named:
+            if d.get("rel") not in named:
                 parts.append(f'<div class="prline"><span class="absent">⚠ extra document '
                              f'on this stem</span>'
                              f'<a href="/src/{esc(d["rel"])}">{esc(d["name"])}</a></div>')
@@ -692,8 +725,14 @@ no hook, because a merge is not a `Write`. Rendering the sha the PRs were derive
 reader see the input. Set it in `collect()` beside `fanout`:
 
 ```python
-    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
-                          capture_output=True, text=True).stdout.strip() or "unknown"
+    # Guarded like every other git call in this file. Round 2: this was the one new
+    # deriver that would abort the whole page build on FileNotFoundError.
+    try:
+        _r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
+                            capture_output=True, text=True, timeout=20)
+        head = (_r.stdout.strip() if _r.returncode == 0 else "") or "unknown"
+    except (OSError, subprocess.SubprocessError):
+        head = "unknown"
     for a in out:
         a["fanout"], a["head"] = fan, head
 ```
@@ -719,7 +758,7 @@ CANNOT RUN, the one state this design argues hardest for.
 
 - [ ] **Step 4: Run the tests, verify contrast, then UPDATE THE DECLARED COUNT**
 
-Run: `--self-test` → PASS, `55/55`. Set `:6` to `# 55 cases`. `check-selftest-counts.py` → rc=0.
+Run: `--self-test` → PASS, `59/59`. Set `:6` to `# 59 cases`. `check-selftest-counts.py` → rc=0.
 
 **Measure the contrast — do not assume the fix worked:**
 
@@ -860,7 +899,7 @@ implementer can apply mechanically.
 
 - [ ] **Step 4: Run the tests, then UPDATE THE DECLARED COUNT**
 
-Run: `--self-test` → PASS, `58/58`. Set `:6` to `# 58 cases`. `check-selftest-counts.py` → rc=0.
+Run: `--self-test` → PASS, `62/62`. Set `:6` to `# 62 cases`. `check-selftest-counts.py` → rc=0.
 
 Run: `python3 scripts/gen-goals-page.py --out /tmp/goals-check.html && grep -o '[0-9]* more under docs/superpowers' /tmp/goals-check.html`
 Expected: `140 more under docs/superpowers` **as measured 2026-09-11** — and note it passes today
