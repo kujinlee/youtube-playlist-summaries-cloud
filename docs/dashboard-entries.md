@@ -7911,5 +7911,33 @@ as success, inside the evidence for a comment claiming each was "verified by RUN
 pinned entries are now measured individually, and one of them (`subject_status.py`) turns out to
 have a **red** suite on master that nothing runs.
 
-**8/8 mutations kill via the case each names**, over a control proved green first. Suite **35**
-cases; `EXPECTED_MUTATIONS` **549 → 557**.
+⛔ **Round 2 — BOTH halves found the SAME Blocking independently: the rule was still whole-file
+scoped.** Round 1 closed the self-exemption route for *this file* with a bespoke case; R4 itself
+still read the entire source, so a comment or a string literal granted the exemption in any of the
+other 33 guards — which is precisely how the original defect was authored. Meanwhile R3, the rule
+this one is modelled on, has always parsed the **docstring**. Two siblings, one reading a
+declaration and one reading anything.
+
+`check_manifest` now parses the docstring exactly as `check_caller` does, and `self_exemption()`
+CALLS the shipped rules instead of re-applying their regexes — a case that reimplements the rule it
+checks was already drifting from it by round 2. Measured after: a comment no longer exempts, a
+string literal no longer exempts, a docstring declaration still does.
+
+**The pattern was also too STRICT, which a blocking guard is judged on.** `[A-Za-z]` refused
+backticked identifiers — this repo's house style in every sentence — so a real declaration like
+``NO-MUTATIONS: `evaluate()` is pure`` was rejected while the refusal message told the author to
+write ``<why>``, itself refused. Now `[ \t]+(?!<)`: it rejects only the two documentation forms and
+accepts reasons starting with a backtick, digit, glyph, dash or quote. All three refusal messages
+rewritten to describe the rule instead of printing an example the guard refuses.
+
+⭐ **Two mutations were ORPHANED by that fix and the verifier caught it.** Changing the patterns left
+two manifest anchors naming text that no longer exists; `str.replace` on a missing needle does
+nothing, so the suite ran UNMUTATED, exited 0, and was reported as a failure to attribute. Anchors
+bind by text, so improving code breaks them while everything stays green — it surfaced only because
+the check asserts the NAMED case goes red rather than trusting a non-zero exit.
+
+⚠ **One `check-fixture-variation` exemption was REMOVED, because the right answer was a missing
+case:** nothing drove `check_manifest`'s `stem in manifest_stems` branch at all.
+
+**9/9 mutations kill via the case each names**, over a control proved green first. Suite **40**
+cases; `EXPECTED_MUTATIONS` **549 → 558**.

@@ -59,7 +59,7 @@
     "file": "scripts/check-ratchet-contract.py",
     "edits": [
       [
-        "NO_MUTATIONS_RE = re.compile(r\"NO-MUTATIONS:[ \\t]+([A-Za-z][^\\n]*)\")",
+        "NO_MUTATIONS_RE = re.compile(r\"NO-MUTATIONS:[ \\t]+(?!<)(\\S[^\\n]*)\")",
         "NO_MUTATIONS_RE = re.compile(r\"NO-MUTATIONS:[ \\t]*(\\S[^\\n]*)\")"
       ]
     ],
@@ -70,7 +70,7 @@
     "file": "scripts/check-ratchet-contract.py",
     "edits": [
       [
-        "NO_CALLER_RE = re.compile(r\"NO-CALLER:[ \\t]+([A-Za-z][^\\n]*)\")",
+        "NO_CALLER_RE = re.compile(r\"NO-CALLER:[ \\t]+(?!<)(\\S[^\\n]*)\")",
         "NO_CALLER_RE = re.compile(r\"NO-CALLER:[ \\t]*(\\S[^\\n]*)\")"
       ]
     ],
@@ -86,5 +86,16 @@
       ]
     ],
     "expect": "a pinned entry that was EXAMINED and no longer violates fails"
+  },
+  {
+    "name": "R4's escape is read from the WHOLE FILE again, so a comment exempts a guard",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "    try:\n        doc = ast.get_docstring(ast.parse(text)) or \"\"\n    except SyntaxError:\n        doc = text\n    if NO_MUTATIONS_RE.search(doc):",
+        "    doc = text\n    if NO_MUTATIONS_RE.search(doc):"
+      ]
+    ],
+    "expect": "a COMMENT does not exempt from R4 — it is not a declaration"
   }
 ]

@@ -502,6 +502,16 @@ EXEMPT: dict[str, str] = {
     # examined is silent, not 'paid'"; dropping `- WIDENED_MANIFEST_DEBT` reddens "a pinned
     # violator is silent". Both are manifest entries in scripts/mutations/check-ratchet-contract.json,
     # so the clauses this scan calls unguarded are the two with the strongest evidence in the file.
+    # ⟳ 2026-09-12 r2. `check_manifest.path` was EXEMPTED here and is not any more — the right
+    # answer turned out to be a missing CASE, not an exemption: nothing drove the
+    # `stem in manifest_stems` branch at all. `text` stays exempt because the two call sites are
+    # both table loops and this scan compares argument EXPRESSIONS, not values; the rows differ
+    # (docstring / comment / string literal), which is exactly what distinguishes the clause.
+    # MEASURED: the mutation replacing `ast.get_docstring(ast.parse(text))` with `text` dies via
+    # "a COMMENT does not exempt from R4" — so the clause reading this parameter is guarded.
+    "check-ratchet-contract.py:check_manifest.text": "two table loops, one argument expression "
+                         "each; the ROWS vary (docstring vs comment vs literal). Guarded by the "
+                         "whole-file-vs-docstring mutation, which dies via the case naming it",
     "check-ratchet-contract.py:discover_self_tested_nonguards.script_paths": "table-driven; the "
                          "rows vary, and one passes a path deliberately ABSENT from `texts` so the "
                          "two arguments disagree. Guarded by the mutation that drops the guards "
