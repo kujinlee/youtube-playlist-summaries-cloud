@@ -3,7 +3,7 @@
 
     python3 scripts/gen-goals-page.py              # -> ~/explainers/goals.html, served at /goals
     python3 scripts/gen-goals-page.py --fragment-only <path>
-    python3 scripts/gen-goals-page.py --self-test  # 47 cases, pure functions only
+    python3 scripts/gen-goals-page.py --self-test  # 62 cases, pure functions only
 
 WHY THIS EXISTS
 ---------------
@@ -530,12 +530,86 @@ CSS = """
   .doc .t{font-family:var(--mono);font-size:.72rem;color:var(--ink-faint);
           font-variant-numeric:tabular-nums}
   .doc .g{grid-column:1/-1;font-size:.86rem;color:var(--ink-soft);max-width:66ch}
+  .thread{border-top:1px solid var(--rule);padding:.4rem 0}
+  .thread summary{cursor:pointer;font-family:var(--mono);font-size:.86rem;color:var(--ink)}
+  .prline{display:flex;gap:.5rem;align-items:baseline;padding:.15rem 0 .15rem 1rem;
+          flex-wrap:wrap}
+  .prline .t{font-family:var(--mono);font-size:.72rem;color:var(--ink-faint);
+             font-variant-numeric:tabular-nums}
+  .prline .g{font-size:.84rem;color:var(--ink-soft);max-width:60ch}
+  .tag{font-size:.72rem;padding:.05rem .35rem;border-radius:3px;font-family:var(--mono);
+       background:var(--structure-bg);color:var(--structure)}
+  .tag.docs{background:var(--pending-bg);color:var(--pending)}
+  /* ⚠ --ink, NOT --ink-faint. Measured during review: --rule/--ink-faint is 2.45:1 in
+     light and 3.47:1 in dark, both failing WCAG AA at this size — and this is the tag for
+     CANNOT RUN, the one state the design argues hardest for. */
+  .tag.unknown{background:var(--rule);color:var(--ink)}
   footer{border-top:1px solid var(--rule);padding-top:1.1rem;display:flex;flex-direction:column;
          gap:.6rem;font-size:.82rem;color:var(--ink-faint)}
   .legend{max-width:70ch}
   a{color:var(--structure)}\n  a.n{color:var(--structure);text-decoration:underline;text-underline-offset:3px;\n      text-decoration-color:color-mix(in srgb,var(--structure) 45%,transparent)}\n  a.n:hover{text-decoration-color:var(--structure)}\n  a.chip{text-decoration:none}\n  a.chip:hover{border-color:var(--structure)}
   :focus-visible{outline:2px solid var(--structure);outline-offset:2px}
 """
+
+
+def render_threads(threads: list[dict], fanout: dict[str, int]) -> str:
+    """The Work band's body: one collapsible block per spec/plan thread.
+
+    ⚠ `<details>/<summary>` is this project's existing collapsible — 21 uses in
+    `gen-dashboard.py`, 6 in `gen-backlog-page.py`, and none here before this. Reused.
+
+    ⛔ MAKES NO IMPLEMENTATION CLAIM. The tag says what the commit TOUCHED; the fan-out
+    says how many anchored documents it touched. An earlier draft said `code` and
+    summarised `N code PR(s)`, which presented PR #147 — a 22-document header backfill —
+    as the implementation of 22 different goals, and for 5 documents it was the only such
+    PR, so those cards would also have suppressed the flag that was their real finding.
+    """
+    if not threads:
+        return '<span class="absent">No spec or plan declares this goal.</span>'
+    parts = []
+    for t in threads:
+        # TWO thread-level states, and they are not the same claim. CANNOT RUN beats
+        # "git named no PR", because rendering a broken deriver as an honest absence is
+        # the failure this project records most often.
+        if t["pr_error"]:
+            flag = '<span class="absent">history could not be read — treat as NOT MEASURED</span>'
+        elif not t["prs"]:
+            flag = '<span class="absent">no pull requests</span>'
+        else:
+            flag = f'<span class="t">{len(t["prs"])} PR(s)</span>'
+        parts.append(f'<details class="thread"><summary>{esc(t["stem"])} {flag}</summary>')
+        for side, missing in (("spec", "no spec"), ("plan", "no plan")):
+            d = t.get(side)
+            if d:
+                parts.append(f'<div class="prline"><span class="t">{side}</span>'
+                             f'<a href="/src/{esc(d.get("rel", ""))}">'
+                             f'{esc(d.get("name", "?"))}</a></div>')
+            else:
+                parts.append(f'<div class="prline"><span class="t">{side}</span>'
+                             f'<span class="absent">{missing}</span></div>')
+        # ⛔ IDENTITY, NOT A KEY. `pair_documents` appends the SAME dict object it assigns
+        # to the slot, so `is` is exact and needs no field. Keying on `d["rel"]` crashed on
+        # a record without one; keying on `d.get("rel")` made every rel-less document
+        # collapse to a single `None`, so the extra matched the spec and was dropped — the
+        # case written to prove extras render proved the opposite.
+        named = [x for x in (t.get("spec"), t.get("plan")) if x]
+        for d in t.get("docs", []):
+            if not any(d is x for x in named):
+                parts.append(f'<div class="prline"><span class="absent">⚠ extra document '
+                             f'on this stem</span>'
+                             f'<a href="/src/{esc(d.get("rel", ""))}">'
+                             f'{esc(d.get("name", "?"))}</a></div>')
+        for p in t["prs"]:
+            tag = ("unknown" if p.get("code") is None
+                   else "touched code" if p["code"] else "docs only")
+            cls = "unknown" if p.get("code") is None else ("code" if p["code"] else "docs")
+            n = fanout.get(p["num"], 1)
+            fan = f'<span class="t">on {n} documents</span>' if n > 1 else ""
+            parts.append(f'<div class="prline"><span class="tag {cls}">{tag}</span>'
+                         f'<span class="t">#{esc(p["num"])} · {esc(p["date"])}</span>{fan}'
+                         f'<span class="g">{inline_md(p["subject"])}</span></div>')
+        parts.append("</details>")
+    return "\n".join(parts)
 
 
 def render_goal(a: dict) -> str:
@@ -597,12 +671,17 @@ def render_goal(a: dict) -> str:
             parts.append(f'<span class="chip">#{num} · {esc(rel)}</span>')
         parts.append("</div></div>")
 
-    parts.append('<div class="band"><span class="blab">Documents</span><div class="docs">')
-    for d in a["docs"]:
-        parts.append(f'<div class="doc"><a class="n" href="/src/{esc(d["rel"])}">'
-                     f'{esc(d["name"])}</a>'
-                     f'<span class="t">{esc(d["kind"])} · {esc(d["touched"] or "—")}</span>'
-                     f'<span class="g">{inline_md(d["goal"])}</span></div>')
+    # The Documents band is GONE. Every document now sits inside the thread it belongs to,
+    # which is what the reader asked for and also removes the band's guaranteed redundancy:
+    # it reprinted the goal sentence under every document, identical each time, because a
+    # document's `Goal:` line is by construction the same for every document under an
+    # anchor. On the status-visibility card that was 20 copies of one sentence.
+    n_pr = sum(len(t["prs"]) for t in a["threads"])
+    parts.append(f'<div class="band"><span class="blab">Work</span>'
+                 f'<span class="t">{len(a["threads"])} thread(s) · {n_pr} PR(s) · '
+                 f'derived from git at {esc(a.get("head", "?")[:8])}</span>'
+                 f'<div class="docs">')
+    parts.append(render_threads(a["threads"], a.get("fanout", {})))
     parts.append("</div></div></article>")
     return "\n".join(parts)
 
@@ -802,6 +881,74 @@ def self_test() -> int:
            "c": [{"sha": "z", "num": "7", "date": "2026-09-01", "subject": "w"}]}
     eq("a PR reachable only through a collision's extra document is still found",
        [p["num"] for p in thread_prs(_t3, _h3.get)["prs"]], ["7"])
+
+    _fan = {"186": 1, "187": 1, "188": 1, "147": 22}
+    # ⚠ THREE PRs, one per tag. With only two, the case named "only the three measured
+    # tags can be rendered" was satisfied by a renderer emitting a fourth label for the
+    # third state — mutation-verified during review: renaming the `unknown` branch stayed
+    # GREEN. It constrained two of the three it claimed.
+    _th = [{"stem": "2026-08-31-asks", "spec": {"name": "a-design.md", "rel": "ra"},
+            "plan": {"name": "a.md", "rel": "rb"}, "docs": [], "pr_error": False,
+            "prs": [{"num": "186", "date": "2026-08-31", "subject": "impl", "code": True},
+                    {"num": "187", "date": "2026-08-31", "subject": "docs", "code": False},
+                    {"num": "188", "date": "2026-08-30", "subject": "unread", "code": None}]}]
+    _h = render_threads(_th, _fan)
+    eq("the thread renders inside a details element", "<details" in _h, True)
+    # ⭐ THE CASE THE USER ASKED FOR: two PRs on one thread must LOOK different.
+    eq("the PRs are distinguishable in the markup",
+       (_h.count(">touched code<"), _h.count(">docs only<")), (1, 1))
+    eq("only the three measured tags can be rendered",
+       sorted(set(re.findall(r'<span class="tag [a-z]+">([^<]+)</span>', _h))),
+       ["docs only", "touched code", "unknown"])
+    eq("a PR whose files could not be read is tagged unknown", ">unknown<" in _h, True)
+    eq("a single-document thread renders no fan-out", _h.count(" documents</span>"), 0)
+    # ⭐ THE RETRACTION, ASSERTED: a 22-document PR is shown as a bulk edit.
+    _bulk = [{"stem": "s", "spec": {"name": "s-design.md", "rel": "r"}, "plan": None,
+              "docs": [], "pr_error": False,
+              "prs": [{"num": "147", "date": "2026-08-01", "subject": "backfill",
+                       "code": True}]}]
+    eq("a PR touching many documents renders its fan-out",
+       "on 22 documents" in render_threads(_bulk, _fan), True)
+    eq("the page makes no implementation claim about any tag",
+       "implementation" in render_threads(_bulk, _fan).lower(), False)
+
+    _empty = [{"stem": "s", "spec": {"name": "s-design.md", "rel": "r"}, "plan": None,
+               "docs": [], "prs": [], "pr_error": False}]
+    eq("a missing plan is drawn as absent, not omitted",
+       "no plan" in render_threads(_empty, {}), True)
+    eq("a thread git named no PR for says so",
+       "no pull requests" in render_threads(_empty, {}), True)
+    # LOAD-BEARING PAIR. The negative below is an absence assertion and passes on an empty
+    # string; the positive above it is what kills that. Neither may be deleted alone.
+    _broken = [{"stem": "s", "spec": {"name": "s-design.md", "rel": "r"}, "plan": None,
+                "docs": [], "prs": [], "pr_error": True}]
+    eq("an unreadable history says so instead of showing nothing",
+       "could not be read" in render_threads(_broken, {}), True)
+    eq("and it does NOT also claim there are no pull requests",
+       "no pull requests" in render_threads(_broken, {}), False)
+
+    # ⭐ A collision's extra document must be RENDERED, not merely kept in the record.
+    _sp = {"name": "s-design.md", "rel": "r"}
+    _ex = {"name": "s-plan.md", "rel": "rx"}
+    _coll = [{"stem": "s", "spec": _sp, "plan": None, "docs": [_sp, _ex],
+              "prs": [], "pr_error": False}]
+    eq("an extra document on a stem is rendered, not silently dropped",
+       ("extra document" in render_threads(_coll, {})
+        and "s-plan.md" in render_threads(_coll, {})), True)
+    # ⚠ Identity, not a key: keying on `d.get("rel")` made every rel-less document
+    # collapse to one `None`, so the extra matched the spec and vanished. This fixture
+    # has no `rel` at all and is what caught it.
+    _sp2 = {"name": "s.md"}
+    _ex2 = {"name": "other.md"}
+    _norel = [{"stem": "s", "spec": _sp2, "plan": None, "docs": [_sp2, _ex2],
+               "prs": [], "pr_error": False}]
+    eq("a document record with no rel does not crash the renderer",
+       "extra document" in render_threads(_norel, {}), True)
+    eq("and the rel-less extra is still named once",
+       render_threads(_norel, {}).count("other.md"), 1)
+
+    eq("no threads renders the absence, not an empty box",
+       "No spec or plan" in render_threads([], {}), True)
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
