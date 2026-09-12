@@ -3,7 +3,7 @@
 
     python3 scripts/gen-goals-page.py              # -> ~/explainers/goals.html, served at /goals
     python3 scripts/gen-goals-page.py --fragment-only <path>
-    python3 scripts/gen-goals-page.py --self-test  # 65 cases, pure functions only
+    python3 scripts/gen-goals-page.py --self-test  # 75 cases, pure functions only
 
 WHY THIS EXISTS
 ---------------
@@ -320,7 +320,7 @@ def last_touched(path: pathlib.Path) -> str:
         return ""
 
 
-def git_pr_history(path: pathlib.Path) -> list[dict] | None:
+def git_pr_history(path: pathlib.Path, run=subprocess.run) -> list[dict] | None:
     """PRs that touched `path`, newest first — or None when git cannot answer.
 
     ⛔ None IS NOT []. None is CANNOT RUN. [] means git answered and named no PR — and for
@@ -333,11 +333,17 @@ def git_pr_history(path: pathlib.Path) -> list[dict] | None:
     but untested today. ⚠ Its known hazard is live regardless: rename detection is
     similarity-based, and this repo writes dated specs derived from predecessors, so
     --follow can jump into an ancestor's history and inherit its PRs.
+
+    ⚠ `run` IS INJECTED so this layer is testable at all. Review found the CANNOT-RUN
+    predicate here, the `--follow` flag and `git_show_files`' `.splitlines()` all UNMUTATED
+    — not because they were forgotten, but because nothing could reach them: `annotate_code`
+    took a `show=` parameter and these did not, so a mutation on them would have SURVIVED.
+    An untestable rule is an unmutatable one, and this file's most load-bearing property —
+    None IS NOT [] — lived on the wrong side of that line.
     """
     try:
-        r = subprocess.run(
-            ["git", "log", "--format=%H\x01%as\x01%s", "--follow", "--", str(path)],
-            cwd=ROOT, capture_output=True, text=True, timeout=20)
+        r = run(["git", "log", "--format=%H\x01%as\x01%s", "--follow", "--", str(path)],
+                cwd=ROOT, capture_output=True, text=True, timeout=20)
     except (OSError, subprocess.SubprocessError):
         return None
     if r.returncode != 0:
@@ -345,7 +351,7 @@ def git_pr_history(path: pathlib.Path) -> list[dict] | None:
     return prs_from_log(r.stdout.splitlines())
 
 
-def git_show_files(sha: str) -> list[str] | None:
+def git_show_files(sha: str, run=subprocess.run) -> list[str] | None:
     """The file list of one commit, or None when git cannot answer.
 
     ⚠ `.splitlines()`, NOT `.split()`. `git show --name-only` emits one path per line, and
@@ -355,8 +361,8 @@ def git_show_files(sha: str) -> list[str] | None:
     the sibling above already correct.
     """
     try:
-        r = subprocess.run(["git", "show", "--name-only", "--format=", "-1", sha],
-                           cwd=ROOT, capture_output=True, text=True, timeout=20)
+        r = run(["git", "show", "--name-only", "--format=", "-1", sha],
+                cwd=ROOT, capture_output=True, text=True, timeout=20)
     except (OSError, subprocess.SubprocessError):
         return None
     return r.stdout.splitlines() if r.returncode == 0 else None
@@ -755,15 +761,41 @@ def self_test() -> int:
         cases += 1
         ok = got == want
         # ⛔ THE FAILURE LINE IS A CONTRACT WITH THE MUTATION HARNESS, not a display choice.
-        # `check-plan-code.attribute` reads a red case with `startswith("[FAIL] ")` then
-        # `[7:]`, so a suite reporting failures any other way is one whose kills NOBODY
+        # `check-plan-code.parse_fail_names` reads a red case with `startswith("[FAIL] ")`
+        # then `[7:]`, so a suite reporting failures any other way is one whose kills NOBODY
         # CAN SEE: every mutation reports "matched 0 red case(s)" while each one IS killed
         # by the case it names. This file printed `  ✗ <label>  got … want …` and paid all
-        # 14 of its manifest entries for it on 2026-09-12 — the THIRD file to do so, after
-        # `gen-backlog-page.py` (5 entries) and `brief-compose.py` (8), both of which paid
-        # AFTER a convention was written to prevent exactly this.
-        # ⚠ THE NAME STAYS ALONE ON THE `[FAIL]` LINE. Appending the got/want to it makes
-        # the slice `[7:]` return a string that matches no case name.
+        # 14 of its manifest entries for it on 2026-09-12.
+        #
+        # ⚠ THE COUNT HERE WAS WRITTEN FROM MEMORY AND WAS WRONG BY 3×, in the file whose
+        # purpose is to be the durable record of this class. It said "the THIRD file to do
+        # so, after gen-backlog-page.py and brief-compose.py". Enumerated in review r1 with
+        # `git log -S'[FAIL] '` per file, this is the NINTH since 2026-09-06 — and the
+        # THIRD with this exact `  ✗ {label}` shape, after `check-explainer-delivery.py`
+        # and `check-gate-falsifiability.py`, both of which paid it five days earlier:
+        #
+        #   begin-plan · check-plan-progress (2026-09-06) · check-banner-armed (09-06)
+        #   check-explainer-delivery · check-gate-falsifiability · check-function-revokes
+        #   (2026-09-07) · gen-backlog-page · brief-compose (2026-09-10) · this file
+        #
+        # ⚠ AND "both of which paid AFTER a convention was written" was false for the first
+        # of them. `portable-practices` §22 was introduced BY the same commit that fixed
+        # `gen-backlog-page.py` (`050913f6`), so it cannot have paid after itself; only
+        # `brief-compose.py` did. Six of the eight predate §22 entirely, and cite each
+        # other and this parser rather than it. A convention did not hold, NINE times —
+        # which is a much stronger argument for a mechanical guard than "three" was.
+        # ⚠ THE NAME STAYS ALONE ON THE `[FAIL]` LINE, AND THE SPLIT IS DELIBERATE — this
+        # is a THIRD producer shape and a reader is owed the reason. The canonical form
+        # named at `check-plan-code.py:1395` is the single line `[FAIL] {name}: got {got!r}
+        # want {want!r}`, and it parses because `parse_fail_names` truncates at the LAST
+        # `": got "`. So an earlier draft of this comment was wrong to say that appending
+        # the detail "matches no case name": with the canonical `": got "` separator it
+        # matches fine. What does NOT parse is appending it with any OTHER separator —
+        # which is what this file did (`  ✗ <label>  got …`, two spaces, no colon).
+        # Keeping the detail on its own line is immune to both: the continuation does not
+        # start with `[FAIL] `, so it is never read as a case, and the name cannot be
+        # truncated by a case that happens to contain `": got "` — the hazard
+        # `parse_fail_names` documents against itself.
         if ok:
             print(f"  ok     {label}")
         else:
@@ -880,8 +912,91 @@ def self_test() -> int:
        annotate_code(_prs[:1], lambda sha: None)[0]["code"], None)
     eq("annotate does not lose or reorder records", [p["num"] for p in _out], ["186", "187"])
 
-    _t = {"stem": "s", "spec": {"name": "s-design.md", "rel": "a"},
-          "plan": {"name": "s.md", "rel": "b"}, "docs": []}
+    # ── THE CANNOT-RUN PRODUCER, REACHABLE AT LAST (review r1: HIGH-1 and MEDIUM-4) ──────
+    # ⛔ `git_pr_history` returning None is the ONLY thing in this file that can ever set
+    # `pr_error`, and THREE manifest entries defend what happens DOWNSTREAM of it. The
+    # producer itself had no seam, no case and no mutation — so every weakening of it
+    # SURVIVED, measured in review, because nothing could stand in for `subprocess`.
+    # `annotate_code` has taken a `show=` parameter since it was written and these two did
+    # not; their absence from the manifest was UNTESTABILITY, not completeness. An
+    # untestable rule is an unmutatable one, and the property this file argues hardest for
+    # — None IS NOT [] — was the one living on the wrong side of that line.
+    class _R:
+        def __init__(self, returncode, stdout=""):
+            self.returncode, self.stdout = returncode, stdout
+
+    _argv: list[list[str]] = []
+
+    def _run_ok(cmd, **kw):
+        _argv.append(cmd)
+        return _R(0, "abc\x012026-09-01\x01a subject (#42)\n")
+
+    def _run_rc1(cmd, **kw):
+        return _R(1, "")
+
+    def _run_boom(cmd, **kw):
+        raise OSError("git is not on PATH")
+
+    # ⚠ THE WHOLE RECORD, not just the numbers. `[p["num"] for p in …]` needs an `or []`
+    # to type-check against `list | None`, and that default is the exact collapse the two
+    # cases below exist to forbid — a guard written in the shape of the bug.
+    #
+    # ⚠ THE PATH VARIES ACROSS THESE CASES, AND THAT IS NOT COSMETIC. The first draft passed
+    # `Path("x")` to all three, and `check-fixture-variation.py` refused it: a parameter
+    # given one constant everywhere is one no case can tell apart FROM a constant, so the
+    # clause that reads it is unguarded. Here that clause decides WHICH document's history
+    # is fetched — pin it to a constant and every document on the page inherits one history.
+    eq("a readable git log becomes PRs",
+       git_pr_history(pathlib.Path("docs/superpowers/specs/a-design.md"), run=_run_ok),
+       [{"sha": "abc", "num": "42", "date": "2026-09-01", "subject": "a subject (#42)"}])
+    eq("the history is asked for the document it was given, not a fixed one",
+       _argv[0][-1], "docs/superpowers/specs/a-design.md")
+    # ⛔ THE TWO SENTINELS ARE NOT INTERCHANGEABLE. [] means git answered and named no PR;
+    # None means git could not answer. `render_threads` draws those differently on purpose,
+    # and collapsing them renders a failed deriver as a confident, honest-looking absence.
+    eq("a nonzero git exit is CANNOT RUN, not an empty history",
+       git_pr_history(pathlib.Path("docs/superpowers/plans/b.md"), run=_run_rc1), None)
+    eq("a git that cannot be launched at all is CANNOT RUN",
+       git_pr_history(pathlib.Path("README.md"), run=_run_boom), None)
+    # ⚠ THIS ASSERTS THE FLAG, NOT THE BEHAVIOUR, and the limit is stated rather than
+    # implied: proving renames are followed needs a repository containing a rename, and
+    # this seam hands the stand-in a hard-coded `cwd=ROOT` it cannot redirect. What the
+    # case catches is the flag's DELETION. The docstring already records that today's
+    # corpus adds PRs for 0 of 47 documents, so nothing stronger is observable here.
+    eq("the history query follows renames", "--follow" in _argv[0], True)
+
+    # ⚠ `.splitlines()`, NOT `.split()` — the rule the docstring calls load-bearing and
+    # which nothing asserted. A path with a space is the whole point: under `.split()`
+    # `docs/a b.md` becomes `docs/a` and `b.md`, whose tails match no DOC_PATH branch, and
+    # a documentation-only commit is then tagged as touching code.
+    _show_argv: list[list[str]] = []
+
+    def _show_ok(cmd, **kw):
+        _show_argv.append(cmd)
+        return _R(0, "docs/a b.md\nscripts/x.py\n")
+
+    eq("a git show is split on LINES, so a path with a space stays one path",
+       git_show_files("abc1234", run=_show_ok), ["docs/a b.md", "scripts/x.py"])
+    # ⚠ Same rule as the path above: the sha varies across these three cases because a
+    # constant would leave the clause that USES it unguarded, and that clause decides which
+    # commit's file list is read — pin it and every PR inherits one verdict.
+    eq("the file list is asked for the commit it was given, not a fixed one",
+       _show_argv[0][-1], "abc1234")
+    eq("a nonzero git show is CANNOT RUN, not an empty file list",
+       git_show_files("def5678", run=_run_rc1), None)
+    eq("a git show that cannot be launched is CANNOT RUN",
+       git_show_files("beef999", run=_run_boom), None)
+
+    # ⛔ `docs` IS POPULATED, and an empty one here was a case running through DEAD CODE.
+    # `thread_prs` iterates `thread.get("docs") or [spec, plan]`, and `pair_documents`
+    # appends EVERY document to `docs` — so for any thread `collect` builds, the right-hand
+    # side of that `or` is unreachable in production. With `"docs": []` the two headline
+    # cases below (the union/NEWEST-FIRST one, and the `pr_error` one) asserted the whole
+    # rule against the fallback and never entered the loop production uses. Measured in
+    # review r1 (MEDIUM-3): deleting ONLY the dead fallback reddened both of them.
+    _sp = {"name": "s-design.md", "rel": "a"}
+    _pl = {"name": "s.md", "rel": "b"}
+    _t = {"stem": "s", "spec": _sp, "plan": _pl, "docs": [_sp, _pl]}
     # ⚠ REAL DATES. The plan's first draft used "d" and "e"; the sort is (date, num)
     # reverse=True, so "e" > "d" put PR 2 first while the case asserted ["1","2"]. With
     # real dates the ordering is observable and the case also dies if `sorted` is deleted.
@@ -918,7 +1033,7 @@ def self_test() -> int:
     eq("a PR reachable only through a collision's extra document is still found",
        [p["num"] for p in thread_prs(_t3, _h3.get)["prs"]], ["7"])
 
-    _fan = {"186": 1, "187": 1, "188": 1, "147": 22}
+    _fan = {"186": 1, "187": 1, "188": 1, "147": 22, "189": 2}
     # ⚠ THREE PRs, one per tag. With only two, the case named "only the three measured
     # tags can be rendered" was satisfied by a renderer emitting a fourth label for the
     # third state — mutation-verified during review: renaming the `unknown` branch stayed
@@ -933,9 +1048,15 @@ def self_test() -> int:
     # ⭐ THE CASE THE USER ASKED FOR: two PRs on one thread must LOOK different.
     eq("the PRs are distinguishable in the markup",
        (_h.count(">touched code<"), _h.count(">docs only<")), (1, 1))
-    eq("only the three measured tags can be rendered",
-       sorted(set(re.findall(r'<span class="tag [a-z]+">([^<]+)</span>', _h))),
-       ["docs only", "touched code", "unknown"])
+    # ⚠ THE CLASS IS CAPTURED, NOT JUST MATCHED. This read `class="tag [a-z]+"` with the
+    # capture group on the TEXT alone, so the class was unconstrained: the `cls` branch
+    # could drop `unknown` and paint an unreadable PR in the `docs` colour while this case
+    # stayed green (review r1, MEDIUM-2 — measured as a SURVIVING weakening). The comment
+    # above records the same defect being found and fixed on the TAG half; the CLASS half
+    # was left in exactly the state it describes. Pairs, so the two cannot drift apart.
+    eq("only the three measured tags can be rendered, each in its OWN class",
+       sorted(set(re.findall(r'<span class="tag ([a-z]+)">([^<]+)</span>', _h))),
+       [("code", "touched code"), ("docs", "docs only"), ("unknown", "unknown")])
     eq("a PR whose files could not be read is tagged unknown", ">unknown<" in _h, True)
     eq("a single-document thread renders no fan-out", _h.count(" documents</span>"), 0)
     # ⭐ THE RETRACTION, ASSERTED: a 22-document PR is shown as a bulk edit.
@@ -945,6 +1066,17 @@ def self_test() -> int:
                        "code": True}]}]
     eq("a PR touching many documents renders its fan-out",
        "on 22 documents" in render_threads(_bulk, _fan), True)
+    # ⭐ THE BOUNDARY THE RULE ACTUALLY TURNS ON. `_fan` held only 1 and 22, so `n > 1`
+    # could become `n > 2` and every TWO-document PR would silently lose its fan-out with
+    # this suite green (review r1, MEDIUM-5 — measured as a SURVIVING weakening). Two is
+    # not a corner case here: the distribution recorded at `pr_fanout` is 40/12/3/1/1
+    # documents per PR, so the 2-bucket is the largest non-singleton class on the page.
+    _pair = [{"stem": "p", "spec": {"name": "p-design.md", "rel": "rp"}, "plan": None,
+              "docs": [], "pr_error": False,
+              "prs": [{"num": "189", "date": "2026-09-02", "subject": "two",
+                       "code": True}]}]
+    eq("a two-document PR is over the fan-out threshold, not on the wrong side of it",
+       "on 2 documents" in render_threads(_pair, _fan), True)
     eq("the page makes no implementation claim about any tag",
        "implementation" in render_threads(_bulk, _fan).lower(), False)
 
@@ -978,7 +1110,12 @@ def self_test() -> int:
     _ex2 = {"name": "other.md"}
     _norel = [{"stem": "s", "spec": _sp2, "plan": None, "docs": [_sp2, _ex2],
                "prs": [], "pr_error": False}]
-    eq("a document record with no rel does not crash the renderer",
+    # ⚠ NAMED FOR WHAT IT ASSERTS. This case said "does not crash the renderer", which
+    # describes the FIRST bug in the comment above (`d["rel"]`, a KeyError) while its
+    # assertion is a PRESENCE check that catches the SECOND (`d.get("rel")`, the silent
+    # collapse). Both reviewers landed on it independently in r1, because the manifest
+    # entry pointing here told a reader it tested crash-safety when it tests presence.
+    eq("a rel-less extra is identified by identity, not collapsed into the spec",
        "extra document" in render_threads(_norel, {}), True)
     eq("and the rel-less extra is still named once",
        render_threads(_norel, {}).count("other.md"), 1)

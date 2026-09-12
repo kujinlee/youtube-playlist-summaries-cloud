@@ -96,7 +96,7 @@
         "        named = [x.get(\"rel\") for x in (t.get(\"spec\"), t.get(\"plan\")) if x]\n        for d in t.get(\"docs\", []):\n            if d.get(\"rel\") not in named:"
       ]
     ],
-    "expect": "a document record with no rel does not crash the renderer"
+    "expect": "a rel-less extra is identified by identity, not collapsed into the spec"
   },
   {
     "name": "render_threads suppresses the fan-out, so a bulk edit poses as this goal's work",
@@ -152,5 +152,115 @@
       ]
     ],
     "expect": "a second document in a slot is kept, not dropped"
+  },
+  {
+    "name": "git_pr_history turns a failed git into an empty history instead of CANNOT RUN",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    if r.returncode != 0:\n        return None\n    return prs_from_log",
+        "    if r.returncode != 0:\n        return []\n    return prs_from_log"
+      ]
+    ],
+    "expect": "a nonzero git exit is CANNOT RUN, not an empty history"
+  },
+  {
+    "name": "git_pr_history reports a git it could not launch as an honest empty history",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    except (OSError, subprocess.SubprocessError):\n        return None\n    if r.returncode != 0:",
+        "    except (OSError, subprocess.SubprocessError):\n        return []\n    if r.returncode != 0:"
+      ]
+    ],
+    "expect": "a git that cannot be launched at all is CANNOT RUN"
+  },
+  {
+    "name": "the history query stops following renames",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "        r = run([\"git\", \"log\", \"--format=%H\\x01%as\\x01%s\", \"--follow\", \"--\", str(path)],\n                cwd=ROOT, capture_output=True, text=True, timeout=20)",
+        "        r = run([\"git\", \"log\", \"--format=%H\\x01%as\\x01%s\", \"--\", str(path)],\n                cwd=ROOT, capture_output=True, text=True, timeout=20)"
+      ]
+    ],
+    "expect": "the history query follows renames"
+  },
+  {
+    "name": "git_show_files splits on WHITESPACE, so a path with a space becomes two paths",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    return r.stdout.splitlines() if r.returncode == 0 else None",
+        "    return r.stdout.split() if r.returncode == 0 else None"
+      ]
+    ],
+    "expect": "a git show is split on LINES, so a path with a space stays one path"
+  },
+  {
+    "name": "git_show_files turns a failed git show into an empty file list instead of CANNOT RUN",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "if r.returncode == 0 else None",
+        "if r.returncode == 0 else []"
+      ]
+    ],
+    "expect": "a nonzero git show is CANNOT RUN, not an empty file list"
+  },
+  {
+    "name": "git_show_files reports a git it could not launch as an empty file list",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    except (OSError, subprocess.SubprocessError):\n        return None\n    return r.stdout.splitlines()",
+        "    except (OSError, subprocess.SubprocessError):\n        return []\n    return r.stdout.splitlines()"
+      ]
+    ],
+    "expect": "a git show that cannot be launched is CANNOT RUN"
+  },
+  {
+    "name": "the unknown CSS class is dropped, so an unreadable PR is painted as docs-only",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "            cls = \"unknown\" if p.get(\"code\") is None else (\"code\" if p[\"code\"] else \"docs\")",
+        "            cls = \"code\" if p[\"code\"] else \"docs\""
+      ]
+    ],
+    "expect": "only the three measured tags can be rendered, each in its OWN class"
+  },
+  {
+    "name": "the fan-out threshold slips to >2, so every two-document PR loses its fan-out",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        " if n > 1 else \"\"",
+        " if n > 2 else \"\""
+      ]
+    ],
+    "expect": "a two-document PR is over the fan-out threshold, not on the wrong side of it"
+  },
+  {
+    "name": "the history query asks about a FIXED path, not the document it was given",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "\"--follow\", \"--\", str(path)]",
+        "\"--follow\", \"--\", \"docs/x.md\"]"
+      ]
+    ],
+    "expect": "the history is asked for the document it was given, not a fixed one"
+  },
+  {
+    "name": "the file list is read from a FIXED commit, not the one it was given",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "\"-1\", sha]",
+        "\"-1\", \"HEAD\"]"
+      ]
+    ],
+    "expect": "the file list is asked for the commit it was given, not a fixed one"
   }
 ]
