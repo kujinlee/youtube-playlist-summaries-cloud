@@ -665,10 +665,14 @@ EXPECTED_MUTATIONS = {
     # OWN docstring — "a mutation manifest, or `NO-MUTATIONS:` ENFORCED — R1 asks whether …" —
     # taking "` ENFORCED — …" as the reason. Measured across all 34 guards: it was the only file
     # affected. The regex now requires a space then a LETTER, and this manifest is the answer to
-    # the question it had been dodging. ⚠ It was also the TENTH file to hit the failure-line trap
-    # (`  FAIL {name}`, which `parse_fail_names` cannot see) — PR #293 wrote "the tenth is only a
-    # matter of time" in its own body, the same day.
-    "scripts/check-ratchet-contract.py": 6,
+    # the question it had been dodging. ⚠ It ALSO hit the failure-line trap — FIVE printers said
+    # `  FAIL {name}`, which `parse_fail_names` cannot see, so every mutation here would have been
+    # killed and unattributed. ⛔ AN ORDINAL FOR THAT IS DELIBERATELY NOT WRITTEN: PR #293 retired
+    # the count one commit earlier, after three hand-written versions were each wrong, and the
+    # first draft of THIS comment resurrected it as "the TENTH file" — the retired number walking
+    # straight back in at the next opportunity. Derive it:
+    #     git log -S'[FAIL] ' --reverse --format='%h %as %s' -- scripts/<file>
+    "scripts/check-ratchet-contract.py": 8,
     "scripts/check-review-rounds.py": 12,
     # ⟳ 2026-09-08, R4 manifest debt 3 -> 2. ⚠ ONE MUTATION SURVIVED FIRST: I removed the words
     # "Produce one with" from the absent-results refusal, but the case asserts that `--outputFile=`
@@ -2979,13 +2983,13 @@ def _self_test() -> int:
     # ⚠ THE FOURTEEN WERE NOT WRONG — every one attributes to the case it names, ten of them
     # to exactly one case. Re-verified in round 2: all the new entries fail by REPORTING, and
     # every `before` anchor occurs exactly once. This was a reach problem, not a coverage one.
-    # ⟳ 2026-09-12, SAME DAY, second slice: 549 -> 555. `check-ratchet-contract.py` joins with
-    # SIX — the guard enforcing R4 had exempted itself since it was written, because the regex for
+    # ⟳ 2026-09-12, SAME DAY, second slice: 549 -> 557. `check-ratchet-contract.py` joins with
+    # EIGHT — the guard enforcing R4 had exempted itself since it was written, because the regex for
     # the written escape matched its own documentation of that escape. The six cover the widened
     # population (guards excluded, self-test required), the debt pin in both directions, the
     # NOT-EXAMINED clause that keeps an empty corpus from reading as paid, the evaluate() wiring,
     # and the escape regex itself.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 555)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 557)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

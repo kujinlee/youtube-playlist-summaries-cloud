@@ -7838,8 +7838,9 @@ currently outside it recorded as named debt so the check is not red on day one. 
 join that list quietly: adding one fails, and so does paying one off without saying so.
 
 The second is that this guard printed its failures in a shape the mutation harness cannot read —
-the same trap a pull request merged earlier today had just paid for another file, whose own
-description ended "the tenth is only a matter of time." It was the same day.
+the same trap a pull request merged earlier today had just paid for another file. That pull
+request also stopped recording HOW MANY files have hit it, because three attempts at the number were
+each wrong; the first draft of this entry promptly wrote a new one anyway, and review caught it.
 
 Nothing here is a new mechanism. The rule was right; it was asked of the wrong set of files, and it
 was not asked of itself.
@@ -7871,9 +7872,12 @@ never read is NOT-EXAMINED, not "paid". Measured on the first run: the wiring ca
 `evaluate()` with a two-entry synthetic corpus, and without that argument all eight pinned entries
 reported as paid — an empty corpus returning a confident verdict, this project's most-recorded shape.
 
-**TENTH FILE TO PAY THE FAILURE-LINE TRAP.** Seven printers said `  FAIL {name}`, which
+**IT ALSO HIT THE FAILURE-LINE TRAP.** **Five** pre-existing printers said `  FAIL {name}`, which
 `parse_fail_names` (`startswith("[FAIL] ")`) cannot see — every mutation would have been killed and
-UNATTRIBUTED. Fixed and verified by **demonstration**: one case forced red in a scratch copy, output
+UNATTRIBUTED. ⟳ Two corrections here, both caught in review r1: the first draft said "seven", which
+counted two loops this branch had itself just added; and it called this "the TENTH file", **an
+ordinal PR #293 retired one commit earlier** after three hand-written versions were each wrong.
+The number is derived, not stored — `git log -S'[FAIL] ' --reverse -- scripts/<file>`. Fixed and verified by **demonstration**: one case forced red in a scratch copy, output
 confirmed as `[FAIL] a pinned violator is silent — that is what the pin is for`, and
 `parse_fail_names` parsed it.
 
@@ -7884,5 +7888,28 @@ its scan counts syntactic CALL SITES, so a table-driven suite reads as one value
 vary. One genuine case was added rather than exempted: `script_paths` and `texts` disagreeing.
 
 **Falsifiers, demonstrated:** a new self-tested script → `R4W_no_mutation_manifest`; a pinned entry
-gaining a manifest, declaring `NO-MUTATIONS:`, or losing its self-test → `R4W_debt_paid_not_recorded`;
-control green in all directions. 6/6 mutations kill via the case each names.
+gaining a manifest, declaring the escape, or losing its self-test → `R4W_debt_paid_not_recorded`;
+control green in all directions.
+
+⛔ **Round 1 — two Blockings, and the first was this fix reintroducing the defect it fixes.** The
+new `ESCAPE_CASES` fixture spelled the marker out, so the *tightened* regex matched it and the file
+self-exempted again — masked only because it now has a manifest, which is checked first. The second:
+`NO_CALLER_RE` had the **character-identical** hole four lines from the diff, matching its own
+docstring. Fixing one and not the other was instance-not-class, in the branch whose subject is a
+rule that exempts itself.
+
+**The durable fix is not a cleverer regex.** Both markers are now ASSEMBLED at runtime (adjacent
+literals concatenate, so the source never contains what the pattern matches), and a case reads this
+file's own source and asserts it satisfies **neither** escape — by prose, fixture, or a comment
+explaining the defect. That case caught two more literals, including one inside the comment
+describing the bug. **Proof it is real:** hide the manifest and the gate now goes red on itself.
+
+Also from r1: the "TENTH file" ordinal was **a number PR #293 retired one commit earlier**, walking
+straight back in at the next opportunity; "seven printers" was five; and `m4_catalog.py rc=0` was
+recorded as evidence of a working suite when it emits **zero bytes** and has none — CANNOT-RUN read
+as success, inside the evidence for a comment claiming each was "verified by RUNNING". All eight
+pinned entries are now measured individually, and one of them (`subject_status.py`) turns out to
+have a **red** suite on master that nothing runs.
+
+**8/8 mutations kill via the case each names**, over a control proved green first. Suite **35**
+cases; `EXPECTED_MUTATIONS` **549 → 557**.

@@ -27,7 +27,7 @@ work exists to remove.
 
 Usage:
     python3 scripts/check-ratchet-contract.py
-    python3 scripts/check-ratchet-contract.py --self-test  # 34 cases
+    python3 scripts/check-ratchet-contract.py --self-test  # 35 cases
 """
 from __future__ import annotations
 
@@ -120,7 +120,20 @@ GUARD_PATH_RE = re.compile(r"scripts/check-[\w.-]+\.py")
 # it sees, and the mutation SURVIVED the battery against the bare fixture. The
 # claim was written from how the source looks, not from what the parser returns.
 # `OPTED_OUT_BARE_THEN_PROSE` is the input that makes the distinction real.
-NO_CALLER_RE = re.compile(r"NO-CALLER:[ \t]*(\S[^\n]*)")
+# ⛔ SAME TIGHTENING AS R4's ESCAPE, AND FOR THE SAME REASON — review r1 found this one four
+# lines above the diff that fixed its sibling. `NO-CALLER:[ \t]*(\S[^\n]*)` matched line 15 of
+# this file's own docstring ("or `NO-CALLER:`  ENFORCED"). Fixing R4 and not R3 was
+# instance-not-class, in the branch whose subject IS a rule that exempts itself.
+NO_CALLER_RE = re.compile(r"NO-CALLER:[ \t]+([A-Za-z][^\n]*)")
+
+# ⛔ THE MARKERS, ASSEMBLED — defined HERE, beside the patterns they mirror, because the first
+# fixture that needs them appears long before the escape cases do. Adjacent string literals
+# concatenate at compile time, so the runtime values are exact while this source never contains
+# either marker followed by a space and a letter. That is the only thing standing between this
+# file and granting itself the two opt-outs it exists to police; the `self_exemption` case asserts
+# it, because a convention that has already failed twice here is not a mechanism.
+_NM = "NO-" "MUTATIONS:"
+_NC = "NO-" "CALLER:"
 
 
 def invocation_re(basename: str) -> re.Pattern[str]:
@@ -277,18 +290,31 @@ def check_manifest(path: str, text: str, manifest_stems: set[str]) -> list[Viola
 # ── R4's POPULATION WAS DRAWN BY FILENAME, AND THAT IS THE HOLE ──────────────────────────────
 # ⟳ 2026-09-12. R4's RULE was always right; `discover_guards` is `scripts/check-[\w.-]+\.py`, so
 # the question "would your suite NOTICE this breaking?" was asked of 34 files because of what they
-# are CALLED. MEASURED the day PR #293 merged: 40 of 55 scripts are in scope (34 guards ∪ 22
-# self-declared ratchets) and R4 is green for all of them — while FOUR scripts outside it have a
-# working self-test and no manifest, verified by RUNNING each rather than by reading it:
+# are CALLED. 40 of 55 scripts are in scope (34 guards ∪ 22 self-declared ratchets) and R4 is
+# green for all of them; EIGHT outside it have a self-test and no manifest.
 #
-#     codex-review.py            63/63   the adversarial-review gate itself
-#     m4_catalog.py              rc=0
+# MEASURED the day PR #293 merged, then RE-measured in review r1, because the first version of
+# this comment was wrong twice: it listed FOUR (a scratch measurement that excluded self-declared
+# ratchets while the real discovery excludes only guards), and it recorded `m4_catalog.py rc=0` as
+# evidence of a working suite. Running all eight:
+#
+#     explainer-serve.py          88/88
+#     codex-review.py             63/63   the adversarial-review gate itself
+#     build-m4-schema.py          22/22
 #     verify-exclusion-reasons.py 11/11
-#     build-m4-schema.py         22/22
+#     prior-art.py                PASS
+#     m4_catalog.py               rc=0 and ZERO BYTES — it ignores the flag; there is no suite
+#     gen-m4-manifest.py          rc=1 CANNOT RUN (cannot create its scratch directory)
+#     subject_status.py           rc=1 — 16/17, a suite RED on master that nothing runs
 #
-# `codex-review.py` is the sharpest: it decides whether a review gate RAN, and this project has
-# measured that gate failing open twice. Its 63 cases have never been asked whether they would go
-# red if it broke.
+# ⛔ `m4_catalog.py rc=0` WAS CANNOT-RUN READ AS SUCCESS, inside the evidence for a comment saying
+# each was "verified by RUNNING". An exit code cannot tell a passing suite from an ignored
+# argument; only the absent output can. That file is in this population by PROSE — the documented
+# fail-closed case — and `NO-MUTATIONS:` is the honest escape for it.
+#
+# `codex-review.py` is the sharpest entry: it decides whether a review gate RAN, and this project
+# has measured that gate failing open twice. Its 63 cases have never been asked whether they would
+# go red if it broke.
 #
 # ⚠ THE DISCOVERY IS DELIBERATELY THE SAME `SELF_TEST_RE` R1 USES, prose false-positives and all.
 # A second detector would drift from R1's — this repo has measured that seven times — and the
@@ -404,9 +430,12 @@ def main():
         return 0
     return 0
 '''
-OPTED_OUT = '''"""A guard.
+# ⚠ ASSEMBLED, like the R4 fixtures below and for the same measured reason: a fixture that spells
+# the marker out grants THIS file the very opt-out it is testing. `_NC` is defined near the escape
+# cases; this f-string keeps the literal out of the source while the runtime value is exact.
+OPTED_OUT = f'''"""A guard.
 
-NO-CALLER: run by hand during a schema promotion; wiring it into CI would need a
+{_NC} run by hand during a schema promotion; wiring it into CI would need a
 live Postgres that CI does not have.
 """
 def main():
@@ -478,6 +507,18 @@ _NO_ST = '"""x"""\nprint(1)\n'
 
 # (name, script_paths, texts, expected) — `script_paths` is SEPARATE from `texts.keys()` on
 # purpose: they are different arguments and the last case is the one where they disagree.
+# ⭐ THE CASE THAT KEEPS THIS FILE HONEST, and the only one that reads its own source.
+# Both escapes are opt-outs from rules THIS file enforces. It has now granted itself one of them
+# twice — first because the docstring documented it, then because a test fixture demonstrated it —
+# so the durable guard is not a cleverer regex but an assertion that the source does not satisfy
+# either escape, by ANY route: prose, fixture, or a comment explaining the defect.
+# ⚠ Reads the file it is running FROM, so under a staged mutation copy it checks the copy.
+def self_exemption() -> tuple[bool, bool]:
+    """(exempt-from-R4, exempt-from-R3) for THIS file's own source."""
+    own = Path(__file__).read_text(errors="ignore")
+    return bool(NO_MUTATIONS_RE.search(own)), bool(NO_CALLER_RE.search(own))
+
+
 WIDENED_POP_CASES: list[tuple[str, list[str], dict[str, str], list[str]]] = [
     ("a self-tested NON-guard is in the widened population",
      ["scripts/tool.py"], {"scripts/tool.py": _ST}, ["scripts/tool.py"]),
@@ -496,14 +537,21 @@ WIDENED_POP_CASES: list[tuple[str, list[str], dict[str, str], list[str]]] = [
 ]
 
 # ── the NO-MUTATIONS escape, and the self-exemption it granted for as long as it existed ─────
+# ⛔ THE MARKERS ARE ASSEMBLED AT RUNTIME, NOT WRITTEN AS LITERALS, AND THIS IS THE WHOLE POINT.
+# The first version of this fix tightened the regex and then shipped
+# the marker spelled out, followed by a plain reason, as a fixture — which the tightened regex
+# MATCHES, re-granting this file the exemption it had just removed. Review r1 caught it as
+# Blocking, masked only because the file now has a manifest (checked first). Adjacent string
+# literals concatenate at compile time, so the runtime value is the marker while the SOURCE never
+# contains it. The self-exemption case below is what keeps this true.
 ESCAPE_CASES: list[tuple[str, str, bool]] = [
-    ("a real written reason exempts", "NO-MUTATIONS: a pure wrapper, no branches to weaken", True),
+    ("a real written reason exempts", f"{_NM} a pure wrapper, no branches to weaken", True),
     # ⭐ THE CASE THAT WOULD HAVE CAUGHT THE SELF-EXEMPTION. This file's own docstring says
     # "a mutation manifest, or `NO-MUTATIONS:` ENFORCED — …", and the original pattern matched it,
     # taking "` ENFORCED — …" as the reason. The guard demanding manifests was never asked for one.
     ("a guard that only DOCUMENTS the escape is not exempted by it",
-     "  R4  a mutation manifest, or `NO-MUTATIONS:` ENFORCED — R1 asks whether", False),
-    ("a placeholder is not a reason", "`NO-MUTATIONS: <why>` in the docstring", False),
+     f"  R4  a mutation manifest, or `{_NM}` ENFORCED — R1 asks whether", False),
+    ("a placeholder is not a reason", f"`{_NM} <why>` in the docstring", False),
 ]
 
 WIDENED_DRIFT_CASES: list[tuple[str, set[str], set[str], list[str]]] = [
@@ -586,6 +634,11 @@ def self_test() -> int:
         if got != expected:
             print(f"[FAIL] {name}\n       expected {expected}\n       got      {got}")
             failures += 1
+    _r4x, _r3x = self_exemption()
+    if (_r4x, _r3x) != (False, False):
+        print(f"[FAIL] this file does not exempt ITSELF from either escape\n"
+              f"       expected (False, False)\n       got      {(_r4x, _r3x)}")
+        failures += 1
     for name, text_, want in ESCAPE_CASES:
         got = bool(NO_MUTATIONS_RE.search(text_))
         if got != want:
@@ -632,7 +685,7 @@ def self_test() -> int:
 
     total = (len(CASES) + len(DISCOVERY_CASES) + len(CALLER_CASES)
              + len(POPULATION_CASES) + len(WIDENED_POP_CASES)
-             + len(ESCAPE_CASES) + len(WIDENED_DRIFT_CASES) + len(wiring))
+             + len(ESCAPE_CASES) + len(WIDENED_DRIFT_CASES) + len(wiring) + 1)
     print(f"self-test: {total - failures}/{total} passed")
     return 1 if failures else 0
 

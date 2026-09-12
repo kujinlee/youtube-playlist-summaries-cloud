@@ -64,5 +64,27 @@
       ]
     ],
     "expect": "a guard that only DOCUMENTS the escape is not exempted by it"
+  },
+  {
+    "name": "R3's escape accepts prose again, so this guard exempts itself from the caller rule too",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "NO_CALLER_RE = re.compile(r\"NO-CALLER:[ \\t]+([A-Za-z][^\\n]*)\")",
+        "NO_CALLER_RE = re.compile(r\"NO-CALLER:[ \\t]*(\\S[^\\n]*)\")"
+      ]
+    ],
+    "expect": "this file does not exempt ITSELF from either escape"
+  },
+  {
+    "name": "the debt-PAID arm is dropped, so paying debt down need never be recorded",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "    for path in sorted((WIDENED_MANIFEST_DEBT & examined) - violating):\n        out.append(Violation(path, \"R4W_debt_paid_not_recorded\",",
+        "    for path in []:\n        out.append(Violation(path, \"R4W_debt_paid_not_recorded\","
+      ]
+    ],
+    "expect": "a pinned entry that was EXAMINED and no longer violates fails"
   }
 ]
