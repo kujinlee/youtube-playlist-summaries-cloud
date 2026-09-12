@@ -4,7 +4,11 @@
 > **Goal:** A person who was away can see the current state, what changed, and what needs them —
 > without reading the chat transcript.
 
-**v3, 2026-09-11** (v1 and v2 same day). v2 added the `spec → plan → PR` chain on the user's
+**v4, 2026-09-11** (v1–v3 same day). **v4 retracts v3's central claim** after the Post-Plan Gate
+refuted it three independent ways — see the ⛔ in §3.2a. The per-PR tag survives; the meaning
+attached to it does not.
+
+**v3, 2026-09-11.** v2 added the `spec → plan → PR` chain on the user's
 refinement. **v3 cut v2's tri-state thread badge before it was built** — measured at 44/1/1 over the
 real corpus, 96% in one bucket, which is the shape §8's F1 rejects. A per-PR `code` / `docs only` tag
 replaces it, and it discriminates on the case the user actually asked about. Raised from the live
@@ -56,8 +60,12 @@ had no anchor of its own.
 
 ⟳ **That pair went stale while this document was being written, and the cause was this document.**
 Adding it made the figures 21 of 46 — it declares `status-visibility` itself, for want of an anchor
-covering harness work, which is the same gap the sentence describes. Recorded rather than silently
-corrected, because it is the §1 warning happening to the paragraph that states it.
+covering harness work, which is the same gap the sentence describes. **Then its implementation plan
+did it again: 22 of 47.** Recorded rather than silently corrected, because it is the §1 warning
+happening twice to the paragraph that states it — and because it is not a typo but a structural
+property. These documents are members of the corpus they measure, so any count they quote is stale
+at the moment they are committed. That is the argument for the page DERIVING every count at render
+time, which §2 requires.
 
 **(c) A document's `Goal:` line is reprinted under every document in the card's list.** On the
 `status-visibility` card that is 20 identical lines. It is redundant *by construction* — the line is
@@ -119,7 +127,7 @@ Only one needs data that does not exist.
 
 ### 3.1 doc → goal — exists, unchanged
 
-The `> **Anchor:**` header. 46 documents carry one as of this commit; `check-anchors.py` enforces it
+The `> **Anchor:**` header. **47** documents carry one as of this commit; `check-anchors.py` enforces it
 for anything dated 2026-08-25 or later, reading the first `HEAD_LINES = 10` lines
 (`check-anchors.py:61`). No change.
 
@@ -153,8 +161,8 @@ having. The chain is derivable from three signals that already exist:
 
 | Link | Derivation | Measured 2026-09-11 |
 |---|---|---|
-| spec ↔ plan | shared stem, stripping a trailing `-design` **or** `-plan` | **61 pairs** (94 specs, 92 plans) |
-| document → PR | `git log --follow -- <path>`, taking `(#N)` from subjects | **45 of 46 (98%)** anchor-declaring docs |
+| spec ↔ plan | shared stem, stripping a trailing `-design` **or** `-plan` | **61 pairs** GLOBAL (94 specs, 93 plans); **6** once scoped to one anchor |
+| document → PR | `git log --follow -- <path>`, taking `(#N)` from subjects | **45 of 47 (96%)** anchor-declaring docs |
 | document → goal | the declared `Anchor:` header | 46 documents |
 
 The single document recovering no PR is this spec, which is unmerged — **correct behaviour, not a
@@ -184,21 +192,44 @@ bucket**. That is the shape §8's F1 exists to reject; a badge that reads the sa
 is decoration, and it can additionally be *wrong*, because `git log --follow` on a spec returns the
 PR that **added** it, which is not necessarily the PR that **implemented** it.
 
-**What replaces it is finer and measured to discriminate.** Each PR in a thread is tagged by whether
-it touched a **non-document** file:
+**What replaces it is a tag per PR** — whether that commit touched a **non-document** file.
+
+⛔ **v4 — AND THAT TAG DOES NOT MEAN WHAT v3 SAID IT MEANT.** v3 claimed it *"separates the PR that
+IMPLEMENTED a thread from a documentation follow-up."* The Post-Plan Gate refuted this, measured
+three independent ways:
+
+**PR #147 — the ADR-0010 anchor-header backfill — is tagged `code` on 22 of the 47 anchored
+documents.** It added `> **Anchor:**` to ~26 documents in one commit and also touched `ci.yml`,
+`check-anchors.py` and `gen-backlog-page.py`. It implemented none of them. Worse, for **5 documents
+it is the only code-touching PR they reach**, so those cards would have asserted `1 code PR(s)`
+naming an unrelated migration *and* suppressed the very flag that was their true finding.
+
+**A threshold was tested and rejected.** Discounting PRs that touch ≥N documents sounds right, but
+the distribution is 40 PRs on 1 document, 12 on 2, three on 3, one on 4, one on 22 — a `≤2` cut
+excludes #147 and also kills **#176**, a genuine implementation. Any cut that catches #147 is tuned
+to a single data point.
+
+⭐ **The fix is a retraction plus a rendered fact, not a fourth mechanism.**
+
+1. The tag reads **`touched code`** — exactly what is measured, a property of one commit's file list.
+2. Each PR renders **how many anchored documents it touched**, so a bulk edit is visible as one:
+   `#147 · touched code · on 22 documents`.
+3. The thread-level `N code PR(s)` summary and the `⚠ no code PR yet` flag are **deleted.** They were
+   where the false confidence was loudest.
 
 > `2026-08-31-dashboard-ask-choices` — spec + plan
-> `PR #186 · code` — the implementation `PR #187 · docs only` — a follow-up
+> `#186 · touched code` `#187 · docs only`
 
-Those two PRs are indistinguishable under the badge and distinguishable under the tag, which is
-precisely the question the user asked — *which PR is the implementation?* A thread whose PRs are all
-`docs only` is the genuinely interesting case and is called out; it occurs **once** in 46.
+The two remain distinguishable, which is what the user asked for. What the page no longer does is
+tell the reader which one *is* the implementation — because nothing measured here can.
 
-⚠ **The state is DERIVED PER PR, never stored, and it is a claim about one commit's file list.**
+⚠ **`DOC_PATH` must cover this repo's documentation outside `docs/`.** Measured: **10 of the last
+400 PRs** touch only `CONTEXT.md`, `AGENTS.md`, `CLAUDE.md` or `.agents/skills/**` and were tagged
+`code`. F7 had already fired before a line was written.
 
 ⚠ **Coverage is bounded by the anchor requirement, and the page must say so.** `check-anchors.py`
-requires a header only for documents dated 2026-08-25 or later, so of 186 documents under
-`docs/superpowers/`, **46 declare an anchor** and the remainder are invisible to this page. That is
+requires a header only for documents dated 2026-08-25 or later, so of 187 documents under
+`docs/superpowers/`, **47 declare an anchor** and the remainder are invisible to this page. That is
 the registry's deliberate living/dead split, not an error — but an unstated denominator is how a
 partial view gets read as a complete one, so the count of excluded documents is rendered.
 

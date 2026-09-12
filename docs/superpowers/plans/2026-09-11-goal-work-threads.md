@@ -8,61 +8,72 @@
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use
 > checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Each goal card on `/goals` shows the work that pursued it as `spec → plan → PR` threads,
-with every PR tagged by whether it touched code — so a reader can find the implementation, not just
-the documents.
+**Goal:** Each goal card on `/goals` shows the work that pursued it as `spec → plan → PR` threads, so
+a reader can find the pull requests, not just the documents.
 
 **Architecture:** Pure functions parse and pair; a thin collection layer shells out to `git`; the
-renderer consumes records. This mirrors `gen-goals-page.py`'s existing three-band structure
-(`pure parsing` / `collection` / `rendering`) and keeps every new rule unit-testable without a repo.
+renderer consumes records. Mirrors `gen-goals-page.py`'s existing three-band structure
+(`pure parsing` / `collection` / `rendering`) so every new rule is unit-testable without a repo.
 
 **Tech Stack:** Python 3, stdlib only. `subprocess` for git. No new dependencies.
 
-**Spec:** [`docs/superpowers/specs/2026-09-11-goal-backlog-pr-join-design.md`](../specs/2026-09-11-goal-backlog-pr-join-design.md) **v3**.
+**Spec:** [`docs/superpowers/specs/2026-09-11-goal-backlog-pr-join-design.md`](../specs/2026-09-11-goal-backlog-pr-join-design.md) **v4**.
 
-⚠ **THIS IS PLAN 1 OF 2.** The spec covers two separable subsystems. This plan needs **no new
-declared data** and ships a working improvement alone. Plan 2 — the `Bundle` column becoming
-controlled goal names (spec §3.3), and the done/active/dormant lifecycle (§4) which depends on it —
-is deliberately not here. Splitting was the writing-plans scope check, not a scope cut: §3.3 and §4
-remain owed.
+**v2 of this plan, 2026-09-11 — rewritten after Post-Plan Gate round 1.** Both halves returned
+NOT-CONVERGED: 3 Blocking, 4 High, 7 Medium, 6 Low, one Codex Blocking refuted. Adjudication in
+[`docs/reviews/coordinator/plan-goal-work-threads-r1-coordinator.md`](../../reviews/coordinator/plan-goal-work-threads-r1-coordinator.md).
+
+⭐ **THE BIGGEST CHANGE IS A RETRACTION.** v1 tagged each PR `code` and claimed that identified the
+implementation. Measured three ways independently: **PR #147 — the ADR-0010 anchor-header backfill —
+is tagged `code` on 22 of 47 documents**, and for 5 of them it is the *only* such PR. The tag is
+demoted to what it actually measures (*this commit touched a non-document file*), the thread-level
+`n_code` summary and the `⚠ no code PR yet` flag are **deleted**, and each PR renders how many
+anchored documents it touched so a bulk edit is visible as one. A threshold was tested and rejected:
+`≤2 documents` excludes #147 but also kills **#176**, a real implementation.
+
+⚠ **THIS IS PLAN 1 OF 2** — see *Not in this plan* at the end. Direct (document-less) work is
+**explicitly out of scope**, which round 1 raised and which is recorded there rather than implied.
 
 ## Global Constraints
 
-Copied verbatim from the spec and the repo's process documents. Every task's requirements include
-these.
-
-- **Never re-implement another script's rule.** Call the owner's function. Seven recorded instances
-  of a second implementation drifting; **two of them occurred while measuring for this spec**.
-- **A gate or deriver that cannot run is a FAILURE, not a pass.** If git cannot answer, the page must
-  say *CANNOT RUN* — never render an empty thread as though it were a true absence.
-- **`docs/anchors.md` holds names, not state.** Nothing in this plan writes to it. Every value is
-  computed at render time.
-- **Pure functions take text or records and return records.** Anything touching the filesystem or
-  `subprocess` lives in the collection section (`gen-goals-page.py:162` onward), never above it.
-- **Self-test style is the file's own:** `eq(label, got, want)` inside `self_test()`
-  (`gen-goals-page.py:411-419`), counted dynamically and printed as `N/M self-test cases passed`.
-- **Every case must be able to FAIL.** An assertion that deleting the subject would also satisfy is
-  not a test — 12 unfalsifiable cases across 8 guards were paid for in this repo already.
+- **Never re-implement another script's rule.** Call the owner's function.
+- **A deriver that cannot run is a FAILURE, not a pass.** `None` (git could not answer) and `[]` (no
+  PRs) must stay distinguishable to the renderer.
+- **`docs/anchors.md` holds names, not state.** Nothing here writes to it.
+- **Pure functions above `# ---- collection` (`:162`); anything touching the filesystem or
+  `subprocess` below it.**
+- ⛔ **EVERY TASK'S STEP 4 UPDATES THE DECLARED CASE COUNT** at `gen-goals-page.py:6`
+  (`# 15 cases, pure functions only`). `gen-goals-page.py` is pinned in
+  `check-selftest-counts.POPULATION` (`:134`) and that guard **runs in CI** (`ci.yml:275`). Round 1
+  found this plan adding 41 cases and never touching line 6 — five of six commits would have been
+  red on the guard whose entire purpose is catching it.
+- **Every case must be able to FAIL.** Where a case can only fail *in company with a sibling*, the
+  plan says so, so a later refactor cannot delete the load-bearing half and leave the vacuous one.
+- **Counts in this plan are dated corpus measurements**, not contracts. Measured **2026-09-11**:
+  187 documents under `docs/superpowers/{specs,plans}`, **47** declaring an anchor, 140 excluded.
 
 ---
 
 ### Task 1: Thread identity — pairing a spec with its plan
 
 **Files:**
-- Modify: `scripts/gen-goals-page.py` — add to the pure-parsing section, after `parse_roots` (ends `:160`)
-- Test: `scripts/gen-goals-page.py` `self_test()` (`:411`)
+- Modify: `scripts/gen-goals-page.py` — pure-parsing section. **Insert at `:160`**, i.e. after the
+  `esc`/`inline_md` bindings at `:158-159` and before the `# ---- collection` banner at `:162`.
+  (⚠ round 1 L1: `parse_roots` actually ends at `:141`; `:144-159` is the backlog-#71 comment plus
+  those two bindings. The insertion point is right, the old description was not.)
+- Test: `scripts/gen-goals-page.py` `self_test()` (`:411`; `eq` at `:414-419`)
 
 **Interfaces:**
-- Consumes: nothing from other tasks.
-- Produces: `doc_stem(name: str) -> str` and
-  `pair_documents(docs: list[dict]) -> list[dict]`, each thread being
+- Consumes: nothing.
+- Produces: `doc_stem(name: str) -> str`;
+  `pair_documents(docs: list[dict]) -> list[dict]` where a thread is
   `{"stem": str, "spec": dict|None, "plan": dict|None, "docs": list[dict]}`.
-  Input records are the dicts `collect()` already builds at `:200-205` — keys `name`, `rel`, `goal`,
-  `dated`, `touched`, `kind` (`"spec"` or `"plan"`), `milestones`.
+  Input records are what `collect()` builds at `:200-205` — keys `name`, `rel`, `goal`, `dated`,
+  `touched`, `kind` (`"spec"`/`"plan"`), `milestones`.
 
 - [ ] **Step 1: Write the failing tests**
 
-Add inside `self_test()`, immediately before the `print(f"\n{cases - failures}...")` line:
+Add inside `self_test()`, before the final `print(...)`:
 
 ```python
     eq("stem strips -design", doc_stem("2026-08-29-retarget-design.md"), "2026-08-29-retarget")
@@ -73,19 +84,20 @@ Add inside `self_test()`, immediately before the `print(f"\n{cases - failures}..
 
     _s = {"name": "2026-08-29-x-design.md", "kind": "spec"}
     _p = {"name": "2026-08-29-x.md", "kind": "plan"}
-    eq("a spec and its plan share one thread", len(pair_documents([_s, _p])), 1)
+    # LOAD-BEARING PAIR. The `None`-slot cases below are satisfied by a pair_documents
+    # that never fills a slot at all; this case is what kills that. Do not delete one
+    # without the other.
     eq("the thread names both halves",
        [pair_documents([_s, _p])[0][k]["name"] for k in ("spec", "plan")],
        ["2026-08-29-x-design.md", "2026-08-29-x.md"])
-    eq("a spec with no plan is a thread with an empty plan slot",
+    eq("a spec and its plan share one thread", len(pair_documents([_s, _p])), 1)
+    eq("a spec with no plan is a thread with an empty plan slot",   # pairs with the above
        pair_documents([_s])[0]["plan"], None)
-    eq("a plan with no spec is a thread with an empty spec slot",
+    eq("a plan with no spec is a thread with an empty spec slot",   # pairs with the above
        pair_documents([_p])[0]["spec"], None)
     eq("threads sort newest stem first",
        [t["stem"] for t in pair_documents([{"name": "2026-01-01-a.md", "kind": "plan"}, _p])],
        ["2026-08-29-x", "2026-01-01-a"])
-    # ⚠ A COLLISION MUST NOT VANISH. Two specs on one stem would fuse two threads
-    # silently; the extra is kept in `docs`, so the thread has 3 documents rather than 2.
     _s2 = {"name": "2026-08-29-x-plan.md", "kind": "spec"}
     eq("a second document in a slot is kept, not dropped",
        len(pair_documents([_s, _p, _s2])[0]["docs"]), 3)
@@ -98,7 +110,7 @@ Expected: FAIL — `NameError: name 'doc_stem' is not defined`
 
 - [ ] **Step 3: Write the minimal implementation**
 
-Insert after `parse_roots` (i.e. after line 160, before the `# ---- collection` banner at `:162`):
+Insert at `:160`:
 
 ```python
 STEM_SUFFIX = re.compile(r"-(design|plan)$")
@@ -109,9 +121,15 @@ def doc_stem(name: str) -> str:
 
     `2026-08-29-x-design.md` and `2026-08-29-x.md` both give `2026-08-29-x`.
 
-    ⚠ BOTH suffixes are stripped, and the second one was measured rather than assumed.
-    2026-09-11: 91 specs end `-design` and 3 are bare; 91 plans are bare and 1 ends `-plan`.
-    Stripping `-design` alone pairs 60; stripping both pairs 61.
+    ⚠ BOTH suffixes are stripped, measured rather than assumed. 2026-09-11: 91 specs end
+    `-design` and 3 are bare; 91 plans are bare and 1 ends `-plan`.
+
+    ⚠ GLOBAL vs ANCHOR-SCOPED, and the difference is large. Over ALL 187 documents this
+    rule pairs 61 (stripping `-design` alone pairs 60). But `collect` calls
+    `pair_documents` with ONE ANCHOR'S documents, and only 47 documents declare an anchor:
+    anchor-scoped the corpus yields 41 threads of which just **6** have both halves. 35
+    threads render one side absent, and that is correct — an anchor-less document is
+    invisible to this page by design (spec F8) — but do not read 61 as what the page shows.
     """
     base = name[:-3] if name.endswith(".md") else name
     return STEM_SUFFIX.sub("", base)
@@ -122,12 +140,12 @@ def pair_documents(docs: list[dict]) -> list[dict]:
 
     A thread is {stem, spec, plan, docs}. EITHER SIDE MAY BE None and neither is an error:
     a spec with no plan is work not yet planned; a plan with no spec was written without
-    one. Both are real states and the card draws them as absent rather than omitting them.
+    one. The card draws them absent rather than omitting them.
 
     ⛔ A stem claimed by two specs would FUSE two threads invisibly. Measured 2026-09-11:
-    no stem is claimed by more than two files across the corpus. The extra is nonetheless
-    kept in `docs`, so a future collision surfaces as a three-document thread instead of a
-    disappearance — the failure this project keeps paying for is the silent one.
+    0 stems are claimed by more than two files. The extra is kept in `docs` anyway, and
+    `render_threads` MUST render it — round 1 found the record kept it while the page
+    dropped it, which put the protection somewhere no reader could see.
     """
     by_stem: dict[str, dict] = {}
     for d in docs:
@@ -140,10 +158,16 @@ def pair_documents(docs: list[dict]) -> list[dict]:
     return sorted(by_stem.values(), key=lambda t: t["stem"], reverse=True)
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **Step 4: Run the tests, then UPDATE THE DECLARED COUNT**
 
 Run: `python3 scripts/gen-goals-page.py --self-test`
-Expected: PASS, case count risen by 10.
+Expected: PASS, `25/25`.
+
+Then edit `gen-goals-page.py:6` so the declaration reads the number just printed:
+`python3 scripts/gen-goals-page.py --self-test  # 25 cases, pure functions only`
+
+Run: `python3 scripts/check-selftest-counts.py`
+Expected: rc=0. **If this is red, stop — do not commit.**
 
 - [ ] **Step 5: Commit**
 
@@ -158,13 +182,13 @@ git commit -m "A spec and its plan are one thread, and a collision cannot vanish
 
 **Files:**
 - Modify: `scripts/gen-goals-page.py` — pure-parsing section, after `pair_documents`
-- Test: `scripts/gen-goals-page.py` `self_test()`
+- Test: `self_test()`
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `prs_from_log(lines: Sequence[str]) -> list[dict]` returning
-  `{"sha": str, "num": str, "date": str, "subject": str}` newest first, deduped by `num`;
-  and `files_are_code(files: Iterable[str]) -> bool`.
+- Produces: `prs_from_log(lines) -> list[dict]` giving
+  `{"sha", "num", "date", "subject"}` newest first, deduped by `num`;
+  `files_are_code(files) -> bool`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -176,22 +200,27 @@ git commit -m "A spec and its plan are one thread, and a collision cannot vanish
     eq("a squash subject yields its PR number",
        [p["num"] for p in prs_from_log(_lg)], ["176", "186"])
     eq("the date travels with the PR", prs_from_log(_lg)[0]["date"], "2026-08-29")
-    # A commit with no `(#N)` tail was pushed straight to master. It is not a PR, and
-    # counting it would inflate every thread.
     eq("a commit with no PR tail is dropped", len(prs_from_log(_lg)), 2)
     eq("a malformed line is skipped, not crashed on", prs_from_log(["garbage"]), [])
-    eq("an empty log yields no PRs", prs_from_log([]), [])
-    # ⚠ `(#N)` must be at the TAIL. `check-backlog-closure.py:107` pays for this rule
-    # already: an any-occurrence match fired on 10 of 18 ids, the tail rule on 1.
     eq("a PR-looking number mid-subject is not the PR",
        prs_from_log(["e\x012026-01-01\x01mentions (#99) in passing, no tail"]), [])
 
     eq("a script path is code", files_are_code(["scripts/gen-goals-page.py"]), True)
-    eq("a doc path is not code", files_are_code(["docs/superpowers/specs/x.md"]), False)
     eq("one code file among docs makes it a code PR",
        files_are_code(["docs/backlog.md", "lib/storage.ts"]), True)
-    eq("an empty file list is not code", files_are_code([]), False)
+    # ⭐ ROUND 1 H3 — F7 had ALREADY FIRED before the code was written. Measured over the
+    # last 400 PRs: 10 commits whose only non-`docs/` files are markdown — CONTEXT.md and
+    # .agents/skills/**. Each was tagged `code`. A single-path case cannot see this class;
+    # this one goes red if DOC_PATH loses ANY branch.
+    eq("this repo's documentation outside docs/ is not code",
+       files_are_code(["docs/x.md", ".remember/remember.md", "README.md",
+                       "CONTEXT.md", "AGENTS.md", "CLAUDE.md",
+                       ".agents/skills/brief/SKILL.md"]), False)
 ```
+
+⚠ **`files_are_code([]) == False` and `prs_from_log([]) == []` are NOT in this set.** Round 1 named
+both vacuous: `any()` over an empty iterable is `False` for every predicate, so the first passes even
+if the body is `return False`. They document; they cannot fail.
 
 - [ ] **Step 2: Run it to verify it fails**
 
@@ -202,16 +231,17 @@ Expected: FAIL — `NameError: name 'prs_from_log' is not defined`
 
 ```python
 PR_TAIL = re.compile(r"\(#(\d+)\)\s*$")
-DOC_PATH = re.compile(r"^(docs/|\.remember/|README)")
+# ⚠ NOT just `docs/`. Round 1 measured 10 PRs in the last 400 whose only non-`docs/`
+# changes were CONTEXT.md or .agents/skills/**, every one wrongly tagged `code`.
+DOC_PATH = re.compile(r"^(docs/|\.remember/|\.agents/|README|CONTEXT\.md|AGENTS\.md|CLAUDE\.md)")
 
 
 def prs_from_log(lines) -> list[dict]:
     """`%H\\x01%as\\x01%s` lines -> PR records, newest first, deduped by number. PURE.
 
-    ⚠ ANCHORED AT THE SUBJECT TAIL, and the alternative was measured elsewhere in this
-    repo: `check-backlog-closure.py:107` records that an any-occurrence match fired on 10
-    of 18 ids while the tail rule fired on 1, which was a true positive. A commit with no
-    tail was pushed direct to master and is not a PR.
+    ⚠ ANCHORED AT THE SUBJECT TAIL. `check-backlog-closure.py:107` already paid for this:
+    an any-occurrence match fired on 10 of 18 ids, the tail rule on 1, a true positive.
+    A commit with no tail was pushed direct to master and is not a PR.
     """
     out, seen = [], set()
     for line in lines:
@@ -228,20 +258,21 @@ def prs_from_log(lines) -> list[dict]:
 
 
 def files_are_code(files) -> bool:
-    """True if any path lies outside the documentation tree. PURE.
+    """True if any path lies outside this repo's documentation. PURE.
 
-    THE DISCRIMINATOR the spec's v3 rests on: it separates the PR that IMPLEMENTED a
-    thread from a documentation follow-up touching the same spec. Measured 2026-09-11 on
-    one thread — `git log --follow` reaches both #186 (touches code) and #187 (docs only),
-    and they are indistinguishable without this.
+    ⛔ THIS IS A CLAIM ABOUT ONE COMMIT, NOT ABOUT A THREAD. v1 of this plan called the
+    result `code` and treated it as "this PR implemented the thread". Measured: PR #147
+    (the ADR-0010 header backfill) touches ~26 documents plus three scripts, so it returns
+    True on 22 of 47 documents and implemented none of them. The renderer therefore says
+    `touched code` and shows the PR's document fan-out; it makes no implementation claim.
     """
     return any(f and not DOC_PATH.match(f) for f in files)
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **Step 4: Run the tests, then UPDATE THE DECLARED COUNT**
 
-Run: `python3 scripts/gen-goals-page.py --self-test`
-Expected: PASS, case count risen by 10.
+Run: `python3 scripts/gen-goals-page.py --self-test` → PASS, `33/33`. Set `:6` to `# 33 cases`.
+Run: `python3 scripts/check-selftest-counts.py` → rc=0, or stop.
 
 - [ ] **Step 5: Commit**
 
@@ -255,33 +286,27 @@ git commit -m "Read pull requests off a git log, and tell code from documentatio
 ### Task 3: The collection layer — asking git, and failing loudly when it cannot answer
 
 **Files:**
-- Modify: `scripts/gen-goals-page.py` — collection section, beside `last_touched` (`:163-170`)
-- Test: `scripts/gen-goals-page.py` `self_test()`
+- Modify: `scripts/gen-goals-page.py` — collection section, after `last_touched` (`:163-170`; `:170`
+  is `return ""`)
+- Test: `self_test()`
 
 **Interfaces:**
-- Consumes: `prs_from_log`, `files_are_code` (Task 2).
-- Produces: `git_pr_history(path: pathlib.Path) -> list[dict] | None` — `None` means **git could not
-  answer**, an empty list means **no PRs**; and
-  `annotate_code(prs: list[dict], show: Callable[[str], list[str] | None]) -> list[dict]`, adding
-  `"code": bool | None` to each record.
+- Consumes: `prs_from_log`, `files_are_code`.
+- Produces: `git_pr_history(path) -> list[dict] | None`; `git_show_files(sha) -> list[str] | None`;
+  `annotate_code(prs, show=git_show_files) -> list[dict]` adding `"code": bool | None`.
 
-⚠ **`None` and `[]` must stay distinguishable all the way to the renderer.** They are the CANNOT RUN
-and the true-absence cases, and this project has recorded a check reporting a clean verdict over a
-population it could not read.
+⚠ **`None` and `[]` must stay distinguishable to the renderer.** Round 1 traced this end to end and
+confirmed nothing collapses — keep it that way.
 
 - [ ] **Step 1: Write the failing tests**
-
-`annotate_code` takes its `git show` as a parameter precisely so it can be tested without a repo.
 
 ```python
     _prs = [{"sha": "aaa", "num": "186", "date": "2026-08-31", "subject": "s"},
             {"sha": "bbb", "num": "187", "date": "2026-08-31", "subject": "t"}]
     _shown = {"aaa": ["scripts/gen-dashboard.py", "docs/x.md"], "bbb": ["docs/x.md"]}
     _out = annotate_code(_prs, lambda sha: _shown.get(sha))
-    eq("the implementing PR is tagged code", _out[0]["code"], True)
-    eq("the doc-only follow-up is not", _out[1]["code"], False)
-    # ⚠ CANNOT RUN is a THIRD value. If `git show` fails, the tag is unknown — rendering
-    # that as `docs only` would assert something never measured.
+    eq("a PR touching a script is tagged code", _out[0]["code"], True)
+    eq("a doc-only PR is not", _out[1]["code"], False)
     eq("an unreadable commit is unknown, not False",
        annotate_code(_prs[:1], lambda sha: None)[0]["code"], None)
     eq("annotate does not lose or reorder records", [p["num"] for p in _out], ["186", "187"])
@@ -294,17 +319,22 @@ Expected: FAIL — `NameError: name 'annotate_code' is not defined`
 
 - [ ] **Step 3: Write the minimal implementation**
 
-Insert after `last_touched` (after `:170`):
+Insert after `:170`:
 
 ```python
 def git_pr_history(path: pathlib.Path) -> list[dict] | None:
     """PRs that touched `path`, newest first — or None when git cannot answer.
 
-    ⛔ None IS NOT []. None is CANNOT RUN; [] is a document no PR has touched, which is
-    the true state of an unmerged document. Collapsing them would render a broken deriver
-    as an honest absence, and that is the failure this repo names most often.
+    ⛔ None IS NOT []. None is CANNOT RUN. [] means git answered and found no PR — for a
+    path git has never tracked it also exits 0 with empty output, so [] is precisely
+    "git names no PR for this path", which is a slightly weaker claim than "no PR touched
+    this document". That is the right answer for an unmerged document.
 
-    `--follow` so a renamed document keeps its history.
+    `--follow` keeps a renamed document's history. Measured 2026-09-11: it currently adds
+    PRs for 0 of 47 documents, because nothing has been renamed — so its justification is
+    real but untested today. ⚠ Its known hazard is live even so: rename detection is
+    similarity-based, and this repo writes dated specs derived from predecessors, so
+    --follow can jump into an ancestor's history and inherit its PRs.
     """
     try:
         r = subprocess.run(
@@ -318,13 +348,20 @@ def git_pr_history(path: pathlib.Path) -> list[dict] | None:
 
 
 def git_show_files(sha: str) -> list[str] | None:
-    """The file list of one commit, or None when git cannot answer."""
+    """The file list of one commit, or None when git cannot answer.
+
+    ⚠ `.splitlines()`, NOT `.split()`. `git show --name-only` emits one path per line, and
+    a path containing a space would split into two entries whose tail matches no DOC_PATH
+    branch — turning a documentation PR into a `code` one. No such path exists in this
+    repo today; the sibling `git_pr_history` already uses `.splitlines()`, and round 1
+    caught the two halves of one insertion disagreeing.
+    """
     try:
         r = subprocess.run(["git", "show", "--name-only", "--format=", "-1", sha],
                            cwd=ROOT, capture_output=True, text=True, timeout=20)
     except (OSError, subprocess.SubprocessError):
         return None
-    return r.stdout.split() if r.returncode == 0 else None
+    return r.stdout.splitlines() if r.returncode == 0 else None
 
 
 def annotate_code(prs: list[dict], show=git_show_files) -> list[dict]:
@@ -343,10 +380,9 @@ def annotate_code(prs: list[dict], show=git_show_files) -> list[dict]:
     return out
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **Step 4: Run the tests, then UPDATE THE DECLARED COUNT**
 
-Run: `python3 scripts/gen-goals-page.py --self-test`
-Expected: PASS, case count risen by 4.
+Run: `--self-test` → PASS, `37/37`. Set `:6` to `# 37 cases`. Run `check-selftest-counts.py` → rc=0.
 
 - [ ] **Step 5: Commit**
 
@@ -357,39 +393,47 @@ git commit -m "Ask git for a document's pull requests, and say so when it cannot
 
 ---
 
-### Task 4: Assembling threads inside `collect()`
+### Task 4: Assembling threads inside `collect()`, and counting each PR's fan-out
 
 **Files:**
-- Modify: `scripts/gen-goals-page.py:173-224` (`collect`)
-- Test: `scripts/gen-goals-page.py` `self_test()`
+- Modify: `scripts/gen-goals-page.py:173-224` (`collect`); `out = []` is `:207`, the `out.append({…})`
+  block is `:211-218`, `"docs": ds,` is `:213`
+- Test: `self_test()`
 
 **Interfaces:**
-- Consumes: `pair_documents` (Task 1), `git_pr_history` + `annotate_code` (Task 3).
-- Produces: each anchor record in `collect()`'s output gains
-  `"threads": list[dict]` — every thread from Task 1 plus `"prs": list[dict] | None` — and
-  `"pr_error": bool`, True when any document's history could not be read.
+- Consumes: `pair_documents`, `git_pr_history`, `annotate_code`.
+- Produces: `thread_prs(thread, history) -> dict` adding `"prs"` and `"pr_error"`; each anchor record
+  gains `"threads": list[dict]`; `collect` returns a second value
+  `fanout: dict[str, int]` — PR number → how many anchored documents it touched.
 
-- [ ] **Step 1: Write the failing test**
+⭐ **The fan-out is the retraction's mechanism.** It is global, so it is computed once across all
+anchors, not per card.
 
-`thread_prs` is factored out as a pure merge so it is testable without git.
+- [ ] **Step 1: Write the failing tests**
 
 ```python
     _t = {"stem": "s", "spec": {"name": "s-design.md", "rel": "a"},
           "plan": {"name": "s.md", "rel": "b"}, "docs": []}
-    _hist = {"a": [{"sha": "x", "num": "1", "date": "d", "subject": "u"}],
-             "b": [{"sha": "x", "num": "1", "date": "d", "subject": "u"},
-                   {"sha": "y", "num": "2", "date": "e", "subject": "v"}]}
-    eq("a thread's PRs are the UNION over its documents, deduped",
-       [p["num"] for p in thread_prs(_t, _hist.get)["prs"]], ["1", "2"])
-    # ⚠ If ANY half is unreadable the thread's PR list is a partial view, and saying so
-    # beats showing a shorter list that looks complete.
+    # ⚠ REAL DATES. Round 1 Blocking B1: the first version used "d" and "e", and since the
+    # sort is (date, num) reverse=True, "e" > "d" put PR 2 first — the case asserted
+    # ["1","2"] and the implementation produced ["2","1"]. With real dates the ordering is
+    # observable, and this case now also dies if `sorted(...)` is deleted.
+    _hist = {"a": [{"sha": "x", "num": "1", "date": "2026-08-29", "subject": "u"}],
+             "b": [{"sha": "x", "num": "1", "date": "2026-08-29", "subject": "u"},
+                   {"sha": "y", "num": "2", "date": "2026-08-31", "subject": "v"}]}
+    eq("a thread's PRs are the union over its documents, deduped, NEWEST FIRST",
+       [p["num"] for p in thread_prs(_t, _hist.get)["prs"]], ["2", "1"])
     eq("one unreadable document poisons the thread's verdict",
        thread_prs(_t, lambda rel: None if rel == "b" else _hist["a"])["pr_error"], True)
-    eq("a fully readable thread reports no error",
-       thread_prs(_t, _hist.get)["pr_error"], False)
+    eq("a fully readable thread reports no error", thread_prs(_t, _hist.get)["pr_error"], False)
     eq("a thread with no documents has no PRs and no error",
        thread_prs({"stem": "s", "spec": None, "plan": None, "docs": []}, _hist.get),
        {"stem": "s", "spec": None, "plan": None, "docs": [], "prs": [], "pr_error": False})
+
+    eq("fan-out counts the documents a PR touched",
+       pr_fanout([{"prs": [{"num": "147"}, {"num": "9"}]}, {"prs": [{"num": "147"}]}]),
+       {"147": 2, "9": 1})
+    eq("no threads means no fan-out", pr_fanout([]), {})
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
@@ -399,15 +443,15 @@ Expected: FAIL — `NameError: name 'thread_prs' is not defined`
 
 - [ ] **Step 3: Write the minimal implementation**
 
-Add beside the other pure functions (before the collection banner):
+Add above the collection banner:
 
 ```python
 def thread_prs(thread: dict, history) -> dict:
     """Thread + a rel->PRs lookup -> the thread with `prs` and `pr_error`. PURE.
 
-    The union over the thread's spec and plan, deduped by PR number and newest first.
-    `history` returns None when that document could not be read; ONE such document sets
-    `pr_error`, because a shorter list that looks complete is worse than a stated gap.
+    The union over spec and plan, deduped by PR number, newest first. `history` returns
+    None when that document could not be read; ONE such document sets `pr_error`, because
+    a shorter list that looks complete is worse than a stated gap.
     """
     merged: dict[str, dict] = {}
     error = False
@@ -423,15 +467,32 @@ def thread_prs(thread: dict, history) -> dict:
             merged.setdefault(p["num"], p)
     prs = sorted(merged.values(), key=lambda p: (p["date"], p["num"]), reverse=True)
     return {**thread, "prs": prs, "pr_error": error}
+
+
+def pr_fanout(threads: list[dict]) -> dict[str, int]:
+    """PR number -> how many threads reach it. PURE.
+
+    ⭐ WHY THIS EXISTS. A PR that touches twenty-two documents did not implement any one of
+    them. PR #147 backfilled `Anchor:` headers across the corpus and also touched three
+    scripts, so it is `touched code` on 22 of 47 documents. The page renders this number
+    beside each PR so a bulk edit is visible as one. A THRESHOLD WAS TESTED AND REJECTED:
+    discounting PRs above 2 documents also discards #176, a genuine implementation, and the
+    distribution (40/12/3/1/1 documents per PR) gives any cut exactly one data point.
+    """
+    out: dict[str, int] = {}
+    for t in threads:
+        for p in t.get("prs", []):
+            out[p["num"]] = out.get(p["num"], 0) + 1
+    return out
 ```
 
-Then in `collect()`, replace the `out.append({...})` block at `:211-218` so each record carries
-threads. Insert immediately before `out = []` at `:207`:
+In `collect()`, insert immediately **before** `out = []` at `:207`:
 
 ```python
-    # One git call per document, cached by rel: `collect` already pays one per document for
-    # `last_touched`, so this doubles that cost rather than multiplying it. The PR->files
-    # lookup behind `annotate_code` caches by sha across every thread.
+    # ⚠ MEASURED COST, round 1 B-perf. This is NOT "double last_touched". `last_touched`
+    # is `git log -1`; this is `git log --follow` over full history plus one `git show`
+    # per unique sha. Measured 2026-09-11: build 2.4s -> ~10s, about 4.5x, on a hook that
+    # fires on every write to any spec, plan, ADR or the registry.
     hist_cache: dict[str, list[dict] | None] = {}
 
     def history(rel: str):
@@ -441,33 +502,34 @@ threads. Insert immediately before `out = []` at `:207`:
         return hist_cache[rel]
 ```
 
-and add **one** key inside the existing `out.append({...})` dict, immediately after the
-`"docs": ds,` line at `:213`:
+Add **one** key inside the existing `out.append({...})` dict, immediately after `"docs": ds,` (`:213`):
 
 ```python
             "threads": [thread_prs(t, history) for t in pair_documents(ds)],
 ```
 
-⚠ **`"docs": ds` STAYS.** `build` counts it at `:374` and Task 6 needs that count; removing it here
-would break Task 6 while its own tests still pass, because they never touch `collect`. There is no
-separate `pr_error` key on the anchor record — the renderer reads it per thread, which is the level
-it is true at.
+⚠ **`"docs": ds` STAYS** — `build` counts it at `:374` and Task 6 needs that count.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+Finally, after `out.sort(...)` and before `return out`, compute the global fan-out and attach it:
 
-Run: `python3 scripts/gen-goals-page.py --self-test`
-Expected: PASS, case count risen by 4.
+```python
+    fan = pr_fanout([t for a in out for t in a["threads"]])
+    for a in out:
+        a["fanout"] = fan
+```
 
-Then run the real generator to confirm it still builds against the live repo:
+- [ ] **Step 4: Run the tests, then UPDATE THE DECLARED COUNT**
+
+Run: `--self-test` → PASS, `43/43`. Set `:6` to `# 43 cases`. `check-selftest-counts.py` → rc=0.
 
 Run: `python3 scripts/gen-goals-page.py --out /tmp/goals-check.html && echo BUILD-OK`
-Expected: `BUILD-OK`, and stderr carries no traceback.
+Expected: `BUILD-OK`, no traceback on stderr.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add scripts/gen-goals-page.py
-git commit -m "Every goal carries its work threads, and a partial history says so"
+git commit -m "Every goal carries its work threads, and a bulk edit is counted as one"
 ```
 
 ---
@@ -475,57 +537,79 @@ git commit -m "Every goal carries its work threads, and a partial history says s
 ### Task 5: Rendering the WORK band, and retiring the Documents band
 
 **Files:**
-- Modify: `scripts/gen-goals-page.py:362-368` (the Documents band inside `render_goal`)
-- Modify: `scripts/gen-goals-page.py:228-302` (`CSS`) — add `.thread`, `.prline`, `.tag` rules
-- Test: `scripts/gen-goals-page.py` `self_test()`
+- Modify: `scripts/gen-goals-page.py:362-369` — the Documents band **and** the `</article>` +
+  `return` that follow it. ⚠ Round 1 L3: the band is `:362-368` but `:369` is
+  `return "\n".join(parts)`, which the replacement block also ends in; replacing `:362-368` alone
+  leaves a duplicate unreachable `return`.
+- Modify: `scripts/gen-goals-page.py:228-300` (`CSS`; `CSS = """` at `:228`, closing `"""` at `:300`)
+- Test: `self_test()`
 
 **Interfaces:**
-- Consumes: `collect()`'s `threads` key (Task 4).
-- Produces: `render_threads(threads: list[dict]) -> str`.
+- Consumes: `collect()`'s `threads` and `fanout`.
+- Produces: `render_threads(threads: list[dict], fanout: dict[str, int]) -> str`.
 
-⚠ **`<details>/<summary>` is the house pattern — 21 uses in `gen-dashboard.py`, 6 in
-`gen-backlog-page.py`, 0 here.** Reuse the markup; do not invent a collapsible.
+⚠ `<details>/<summary>` is the house pattern — 21 uses in `gen-dashboard.py`, 6 in
+`gen-backlog-page.py`, 0 here. Escaping goes through the existing `esc` / `inline_md`.
 
-⚠ **Escaping goes through the file's existing `esc` and `inline_md`.** A second escaper would be a
-second implementation of one rule.
+⛔ **NO `n_code` SUMMARY AND NO `no code PR yet` FLAG.** Both are deleted by the retraction. The only
+thread-level flags are `history could not be read` (CANNOT RUN) and `no pull requests`.
 
 - [ ] **Step 1: Write the failing tests**
 
 ```python
+    _fan = {"186": 1, "187": 1, "147": 22}
     _th = [{"stem": "2026-08-31-asks", "spec": {"name": "a-design.md", "rel": "ra"},
             "plan": {"name": "a.md", "rel": "rb"}, "docs": [], "pr_error": False,
             "prs": [{"num": "186", "date": "2026-08-31", "subject": "impl", "code": True},
                     {"num": "187", "date": "2026-08-31", "subject": "docs", "code": False}]}]
-    _h = render_threads(_th)
+    _h = render_threads(_th, _fan)
     eq("the thread renders inside a details element", "<details" in _h, True)
-    eq("the implementing PR is marked code", "#186" in _h and ">code<" in _h, True)
-    eq("the doc-only PR is marked as such", "docs only" in _h, True)
     # ⭐ THE CASE THE USER ASKED FOR: two PRs on one thread must LOOK different.
     eq("the two PRs are distinguishable in the markup",
-       _h.count(">code<") == 1 and _h.count(">docs only<") == 1, True)
+       _h.count(">touched code<") == 1 and _h.count(">docs only<") == 1, True)
+    eq("the tag makes no implementation claim", "implement" in _h.lower(), False)
+    # ⭐ THE RETRACTION, ASSERTED: a 22-document PR is shown as a bulk edit.
+    _bulk = [{"stem": "s", "spec": {"name": "s-design.md", "rel": "r"}, "plan": None,
+              "docs": [], "pr_error": False,
+              "prs": [{"num": "147", "date": "2026-08-01", "subject": "backfill", "code": True}]}]
+    eq("a PR touching many documents renders its fan-out",
+       "on 22 documents" in render_threads(_bulk, _fan), True)
+    eq("a PR touching one document does not claim a fan-out",
+       "on 1 documents" in _h, False)
 
     _empty = [{"stem": "s", "spec": {"name": "s-design.md", "rel": "r"}, "plan": None,
                "docs": [], "prs": [], "pr_error": False}]
-    eq("a missing plan is drawn as absent, not omitted", "no plan" in render_threads(_empty), True)
-    eq("a thread with no code PR is called out",
-       "no code PR yet" in render_threads(_empty), True)
+    eq("a missing plan is drawn as absent, not omitted", "no plan" in render_threads(_empty, {}), True)
+    eq("a thread git found no PR for says so", "no pull requests" in render_threads(_empty, {}), True)
 
+    # LOAD-BEARING PAIR. The negative below is an absence assertion and passes on an empty
+    # string; the positive above it is what kills that. Neither may be deleted alone.
     _broken = [{"stem": "s", "spec": {"name": "s-design.md", "rel": "r"}, "plan": None,
                 "docs": [], "prs": [], "pr_error": True}]
-    # ⛔ CANNOT RUN must not read as "nothing shipped".
     eq("an unreadable history says so instead of showing nothing",
-       "could not be read" in render_threads(_broken), True)
-    eq("and it does NOT also claim there is no code PR",
-       "no code PR yet" in render_threads(_broken), False)
+       "could not be read" in render_threads(_broken, {}), True)
+    eq("and it does NOT also claim there are no pull requests",
+       "no pull requests" in render_threads(_broken, {}), False)
 
     _unknown = [{"stem": "s", "spec": {"name": "s-design.md", "rel": "r"}, "plan": None,
                  "docs": [], "pr_error": False,
                  "prs": [{"num": "9", "date": "d", "subject": "s", "code": None}]}]
+    # `>unknown<` asserts the TEXT NODE. Round 1: `"unknown" in html` also matched the CSS
+    # class, so it passed however the visible label changed.
     eq("a PR whose files could not be read is tagged unknown",
-       "unknown" in render_threads(_unknown), True)
+       ">unknown<" in render_threads(_unknown, {}), True)
+
+    # ⭐ ROUND 1 H1. Task 1 keeps a collision's extra document; the page must show it.
+    _extra = {"name": "s-plan.md", "rel": "rx", "kind": "spec"}
+    _coll = [{"stem": "s", "spec": {"name": "s-design.md", "rel": "r"}, "plan": None,
+              "docs": [{"name": "s-design.md", "rel": "r"}, _extra],
+              "prs": [], "pr_error": False}]
+    eq("an extra document on a stem is rendered, not silently dropped",
+       "extra document" in render_threads(_coll, {}) and "s-plan.md" in render_threads(_coll, {}),
+       True)
 
     eq("no threads renders the absence, not an empty box",
-       "No spec or plan" in render_threads([]), True)
+       "No spec or plan" in render_threads([], {}), True)
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
@@ -538,26 +622,27 @@ Expected: FAIL — `NameError: name 'render_threads' is not defined`
 Add before `render_goal` (`:303`):
 
 ```python
-def render_threads(threads: list[dict]) -> str:
+def render_threads(threads: list[dict], fanout: dict[str, int]) -> str:
     """The WORK band's body: one collapsible block per spec/plan thread.
 
-    ⚠ `<details>/<summary>` is this project's existing collapsible — 21 uses in
-    `gen-dashboard.py`, 6 in `gen-backlog-page.py`. Reused, not reinvented.
+    ⛔ MAKES NO IMPLEMENTATION CLAIM. The tag says what the commit touched; the fan-out
+    says how many documents it touched. v1 said `code` and summarised `N code PR(s)`, which
+    presented PR #147 — a 22-document header backfill — as the implementation of 22
+    different goals.
     """
     if not threads:
         return '<span class="absent">No spec or plan declares this goal.</span>'
     parts = []
     for t in threads:
-        n_code = sum(1 for p in t["prs"] if p.get("code") is True)
-        # THREE outcomes, and the third is why `pr_error` exists: a thread with no code PR
-        # is a real finding; a thread whose history could not be READ is not a finding at
-        # all, and rendering them the same would launder a broken deriver into a fact.
+        # TWO thread-level states only, and they are not the same claim: CANNOT RUN beats
+        # "git named no PR", because rendering a broken deriver as an honest absence is the
+        # failure this project records most often.
         if t["pr_error"]:
             flag = '<span class="absent">history could not be read — treat as NOT MEASURED</span>'
-        elif not n_code:
-            flag = '<span class="absent">⚠ no code PR yet</span>'
+        elif not t["prs"]:
+            flag = '<span class="absent">no pull requests</span>'
         else:
-            flag = f'<span class="t">{n_code} code PR(s)</span>'
+            flag = f'<span class="t">{len(t["prs"])} PR(s)</span>'
         parts.append(f'<details class="thread"><summary>{esc(t["stem"])} {flag}</summary>')
         for side, missing in (("spec", "no spec"), ("plan", "no plan")):
             d = t.get(side)
@@ -567,28 +652,56 @@ def render_threads(threads: list[dict]) -> str:
             else:
                 parts.append(f'<div class="prline"><span class="t">{side}</span>'
                              f'<span class="absent">{missing}</span></div>')
+        # A stem claimed by a third document. Kept by `pair_documents`, and rendered here
+        # so the collision is visible rather than merely recorded.
+        named = {d["rel"] for d in (t.get("spec"), t.get("plan")) if d}
+        for d in t.get("docs", []):
+            if d["rel"] not in named:
+                parts.append(f'<div class="prline"><span class="absent">⚠ extra document '
+                             f'on this stem</span>'
+                             f'<a href="/src/{esc(d["rel"])}">{esc(d["name"])}</a></div>')
         for p in t["prs"]:
-            tag = "unknown" if p.get("code") is None else ("code" if p["code"] else "docs only")
-            parts.append(f'<div class="prline"><span class="tag {tag.split()[0]}">{tag}</span>'
-                         f'<span class="t">#{esc(p["num"])} · {esc(p["date"])}</span>'
+            tag = ("unknown" if p.get("code") is None
+                   else "touched code" if p["code"] else "docs only")
+            cls = "unknown" if p.get("code") is None else ("code" if p["code"] else "docs")
+            n = fanout.get(p["num"], 1)
+            fan = f'<span class="t">on {n} documents</span>' if n > 1 else ""
+            parts.append(f'<div class="prline"><span class="tag {cls}">{tag}</span>'
+                         f'<span class="t">#{esc(p["num"])} · {esc(p["date"])}</span>{fan}'
                          f'<span class="g">{inline_md(p["subject"])}</span></div>')
         parts.append("</details>")
     return "\n".join(parts)
 ```
 
-Then replace the Documents band at `:362-368` with:
+Replace `:362-369` (the Documents band **through** the existing `return`) with:
 
 ```python
     n_pr = sum(len(t["prs"]) for t in a["threads"])
     parts.append(f'<div class="band"><span class="blab">Work</span>'
-                 f'<span class="t">{len(a["threads"])} thread(s) · {n_pr} PR(s)</span>'
+                 f'<span class="t">{len(a["threads"])} thread(s) · {n_pr} PR(s) · '
+                 f'derived from git at {esc(a.get("head", "?")[:8])}</span>'
                  f'<div class="docs">')
-    parts.append(render_threads(a["threads"]))
+    parts.append(render_threads(a["threads"], a.get("fanout", {})))
     parts.append("</div></div></article>")
     return "\n".join(parts)
 ```
 
-Add to `CSS` (inside the existing string, after the `.doc` rules):
+⚠ **`head` is round 1 M4.** The page now has a **sixth** source — the git log — and
+`regen-goals-page.sh` watches five *files*. Merging a PR changes what this band should say and fires
+no hook, because a merge is not a `Write`. Rendering the sha the PRs were derived from lets the
+reader see the input. Set it in `collect()` beside `fanout`:
+
+```python
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
+                          capture_output=True, text=True).stdout.strip() or "unknown"
+    for a in out:
+        a["fanout"], a["head"] = fan, head
+```
+
+and add one sentence to `.claude/hooks/regen-goals-page.sh`'s comment naming git as a source no
+`case` arm can match.
+
+Add to `CSS` before the closing `"""` at `:300`:
 
 ```css
   .thread{border-top:1px solid var(--rule);padding:.4rem 0}
@@ -597,31 +710,61 @@ Add to `CSS` (inside the existing string, after the `.doc` rules):
   .tag{font-size:.72rem;padding:.05rem .35rem;border-radius:3px;
        background:var(--structure-bg);color:var(--structure)}
   .tag.docs{background:var(--pending-bg);color:var(--pending)}
-  .tag.unknown{background:var(--rule);color:var(--ink-faint)}
+  .tag.unknown{background:var(--rule);color:var(--ink)}
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+⚠ **`.tag.unknown` uses `--ink`, not `--ink-faint`.** Round 1 M3 measured `--rule`/`--ink-faint` at
+**2.45:1 light and 3.47:1 dark** — both fail WCAG AA at this 11.5px size, and it is the tag for
+CANNOT RUN, the one state this design argues hardest for.
 
-Run: `python3 scripts/gen-goals-page.py --self-test`
-Expected: PASS, case count risen by 10.
+- [ ] **Step 4: Run the tests, verify contrast, then UPDATE THE DECLARED COUNT**
 
-Then build and eyeball the real page:
+Run: `--self-test` → PASS, `55/55`. Set `:6` to `# 55 cases`. `check-selftest-counts.py` → rc=0.
+
+**Measure the contrast — do not assume the fix worked:**
+
+```bash
+python3 - <<'PY'
+def lum(h):
+    c=[int(h[i:i+2],16)/255 for i in (1,3,5)]
+    c=[(x/12.92 if x<=.03928 else ((x+.055)/1.055)**2.4) for x in c]
+    return .2126*c[0]+.7152*c[1]+.0722*c[2]
+def ratio(a,b):
+    L1,L2=sorted((lum(a),lum(b)),reverse=True); return (L1+.05)/(L2+.05)
+# read the real values out of CSS rather than retyping them
+import re,pathlib
+css=pathlib.Path('scripts/gen-goals-page.py').read_text()
+v={m.group(1):m.group(2) for m in re.finditer(r'--([a-z-]+):(#[0-9a-f]{6})',css)}
+for name,bg,fg in [("tag","structure-bg","structure"),("tag.docs","pending-bg","pending"),
+                   ("tag.unknown","rule","ink")]:
+    r=ratio(v[bg],v[fg]); print(f"  {name:12s} {r:5.2f}:1 {'PASS' if r>=4.5 else 'FAIL'}")
+PY
+```
+
+Expected: all three **PASS** (≥4.5:1) in the light block. Repeat for the dark block's values.
+**A FAIL here is a stop.** This repo shipped PR #175 with a link-contrast defect no test could see.
+
+**Build and check the real page:**
 
 ```bash
 python3 scripts/gen-goals-page.py --out /tmp/goals-check.html
-grep -c '<details class="thread"' /tmp/goals-check.html   # expect > 20
-grep -c 'class="tag code"' /tmp/goals-check.html          # expect > 0
-grep -c 'class="tag docs"' /tmp/goals-check.html          # expect >= 1
+grep -c '<details class="thread"' /tmp/goals-check.html   # expect 41 (measured 2026-09-11)
+grep -c '>no plan<'              /tmp/goals-check.html    # expect 35 — the PAIRING RATE
+grep -c '>touched code<'         /tmp/goals-check.html    # expect > 0
+grep -c '>docs only<'            /tmp/goals-check.html    # expect >= 1
+grep -c 'on 22 documents'        /tmp/goals-check.html    # expect 22 — PR #147's fan-out
 ```
 
-⚠ **The third count is the falsifier-in-anger.** Measured 2026-09-11 there is exactly one doc-only
-thread in the corpus; a zero here means `files_are_code` is not discriminating and F7a has failed.
+⚠ **The `>no plan<` count is round 1 M2** — 35 of 41 threads show one half absent, and nothing
+watched it before. ⚠ **The `on 22 documents` count is the retraction's falsifier in anger**: a zero
+means `pr_fanout` is not discriminating and the page is back to presenting a bulk edit as an
+implementation.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add scripts/gen-goals-page.py
-git commit -m "A goal shows the work that pursued it, and which PR carried the code"
+git add scripts/gen-goals-page.py .claude/hooks/regen-goals-page.sh
+git commit -m "A goal shows the work that pursued it, and a bulk edit cannot pose as an implementation"
 ```
 
 ---
@@ -629,31 +772,22 @@ git commit -m "A goal shows the work that pursued it, and which PR carried the c
 ### Task 6: Saying what the page cannot see
 
 **Files:**
-- Modify: `scripts/gen-goals-page.py:372-409` (`build`)
-- Test: `scripts/gen-goals-page.py` `self_test()`
+- Modify: `scripts/gen-goals-page.py:372-407` (`build`; the single `return f"""…"""` is `:376-407`,
+  and the existing `<strong>{docs}</strong> documents` phrasing is at `:385`)
+- Test: `self_test()`
 
 **Interfaces:**
 - Consumes: `collect()` output.
-- Produces: `excluded_count(total: int, shown: int) -> int` — pure, refusing on `shown > total` —
-  and a rendered line in the page header. The two populations are counted in `build`, not inside the
-  function, so the function stays testable without a filesystem.
+- Produces: `excluded_count(total: int, shown: int) -> int` — pure, refusing on `shown > total`.
 
-⚠ **Spec falsifier F8.** The page renders 46 of 186 documents under `docs/superpowers/`. That is the
-registry's deliberate living/dead split, but an unstated denominator is how a partial view is read as
-a complete one.
+⚠ **Spec falsifier F8.** Measured 2026-09-11: the page renders **47 of 187** documents; **140** are
+excluded for declaring no anchor. That is the registry's deliberate living/dead split, but an
+unstated denominator is how a partial view reads as a complete one.
 
 - [ ] **Step 1: Write the failing test**
 
-```python
-    eq("the excluded count is total minus shown", excluded_count(186, 46), 140)
-    eq("nothing excluded reads as zero", excluded_count(46, 46), 0)
-    # ⛔ A NEGATIVE would mean the two populations were counted differently — which is this
-    # repo's most-recorded measurement bug. Refuse rather than render a nonsense number.
-    eq("showing more than exist is a refusal, not a negative",
-       _raises(lambda: excluded_count(10, 46), ValueError), True)
-```
-
-`_raises` already exists in this file's self-test idiom; if absent, add:
+`_raises` does **not** exist in this file (round 1 M6 — it lives in four *other* scripts). Add it
+**above** its first use, inside `self_test()`:
 
 ```python
     def _raises(fn, exc) -> bool:
@@ -662,7 +796,15 @@ a complete one.
         except exc:
             return True
         return False
+
+    eq("the excluded count is total minus shown", excluded_count(10, 4), 6)
+    eq("nothing excluded reads as zero", excluded_count(4, 4), 0)
+    eq("showing more than exist is a refusal, not a negative",
+       _raises(lambda: excluded_count(4, 10), ValueError), True)
 ```
+
+⚠ **Deliberately synthetic numbers.** v1 used `excluded_count(186, 46)`, which reads as a corpus
+claim and invites someone to "correct" it when the corpus moves. These are arithmetic.
 
 - [ ] **Step 2: Run it to verify it fails**
 
@@ -676,35 +818,54 @@ def excluded_count(total: int, shown: int) -> int:
     """Documents present but not rendered, because they declare no anchor. PURE.
 
     ⛔ REFUSES on shown > total. That can only mean the two numbers were counted over
-    different populations, which is the single most-recorded measurement defect in this
-    repo. A negative rendered as "-36 excluded" would be believed.
+    different populations, which is the most-recorded measurement defect in this repo.
+    A negative rendered as "-36 excluded" would be believed. Note the branch is
+    unreachable in production, since both counts come from SUBDIRS — the case exercises it
+    directly and the guard is there for a future caller, not for today's.
     """
     if shown > total:
         raise ValueError(f"shown ({shown}) exceeds total ({total}) — populations disagree")
     return total - shown
 ```
 
-In `build`, after the existing `docs = sum(...)` line at `:374`, add:
+In `build`, after `docs = sum(...)` at `:374`, add:
 
 ```python
     total_docs = sum(1 for sub in SUBDIRS for _ in (DOCS / sub).glob("*.md"))
     hidden = excluded_count(total_docs, docs)
 ```
 
-and render it in the page's intro paragraph beside the existing `{docs} documents` phrasing:
+⚠ **`total_docs` counts `SUBDIRS`, i.e. `superpowers/specs` and `superpowers/plans` — not all of
+`docs/superpowers/`.** Today those are the only two subdirectories, so a sentence saying "under
+`docs/superpowers/`" would be true by coincidence of the tree's shape. **Name the two directories in
+the rendered text**, as below.
 
-```python
-    f"{docs} documents carry an anchor; {hidden} more under docs/superpowers/ do not "
-    f"and are not shown."
+Then the literal edit inside the `return f"""…"""`. `:385` currently reads:
+
+```html
+    <strong>{docs}</strong> documents, <strong>{spined}</strong> with a milestone spine.
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+Replace that one line with:
 
-Run: `python3 scripts/gen-goals-page.py --self-test`
-Expected: PASS, case count risen by 3.
+```html
+    <strong>{docs}</strong> documents, <strong>{spined}</strong> with a milestone spine.
+    <span class="absent">{hidden} more under docs/superpowers/specs and /plans declare no
+    anchor and are not shown.</span>
+```
 
-Run: `python3 scripts/gen-goals-page.py --out /tmp/goals-check.html && grep -o '[0-9]* more under docs/superpowers/' /tmp/goals-check.html`
-Expected: a non-zero count (140 as measured 2026-09-11).
+⚠ It is inside an existing f-string — do **not** add an `f` prefix or extra quotes, and keep the
+`<strong>` markup. Round 1 H2: v1 gave a bare `f"…"` fragment here, which is not an edit an
+implementer can apply mechanically.
+
+- [ ] **Step 4: Run the tests, then UPDATE THE DECLARED COUNT**
+
+Run: `--self-test` → PASS, `58/58`. Set `:6` to `# 58 cases`. `check-selftest-counts.py` → rc=0.
+
+Run: `python3 scripts/gen-goals-page.py --out /tmp/goals-check.html && grep -o '[0-9]* more under docs/superpowers' /tmp/goals-check.html`
+Expected: `140 more under docs/superpowers` **as measured 2026-09-11** — and note it passes today
+partly by cancellation, since both the total and the anchored count rose by one when this plan was
+written. Re-derive rather than trusting the constant.
 
 - [ ] **Step 5: Commit**
 
@@ -717,23 +878,28 @@ git commit -m "The goals page says how many documents it cannot see"
 
 ## After the last task
 
-- [ ] Run the full gate set: `python3 scripts/check-docs.py`, `check-anchors.py`,
-      `check-ratchet-contract.py`, `check-selftest-counts.py`. **A gate that cannot run is a
-      failure.**
-- [ ] Open `/goals` in a browser against the rebuilt page and confirm by eye that a thread expands,
-      that `#186` and `#187` on the ask-choices thread read differently, and that the theme toggle
-      still works. **The browser pass is not optional** — this project has shipped a page whose
-      contrast defect no test could see.
+- [ ] Full gate set: `check-docs.py`, `check-anchors.py`, `check-ratchet-contract.py`,
+      `check-selftest-counts.py`, `check-review-rounds.py`. **A gate that cannot run is a failure.**
+- [ ] **Browser pass, not optional.** Open `/goals`, confirm a thread expands; that `#186` and `#187`
+      on the ask-choices thread read differently; that PR #147 shows `on 22 documents`; that the
+      theme toggle still works and all three tags stay legible in both themes.
 - [ ] Record a dashboard entry (`check-dashboard-entry.py` refuses a branch without one).
-- [ ] `scripts/mutations/` — this file has a manifest obligation under
-      `check-ratchet-contract.py`. Add mutations for the rules that can silently weaken:
-      `PR_TAIL`'s tail anchor, `files_are_code`'s negation, `git_pr_history`'s None-vs-[] return,
-      and `thread_prs`' `pr_error`. **Each must go red via the case it names.**
+- [ ] **Measure the real build time** and record it against the 2.4s baseline. If it exceeds ~10s,
+      cache `git log --follow` output by `HEAD` sha before merging — the regen hook is synchronous
+      and fires on every write to a spec, plan, ADR or the registry.
+- [ ] `scripts/mutations/` — manifest obligation under `check-ratchet-contract.py`. Cover the rules
+      that can silently weaken: `PR_TAIL`'s `$` anchor, each `DOC_PATH` branch, `git_show_files`'
+      `.splitlines()`, `git_pr_history`'s `None`-vs-`[]` return, `thread_prs`' `pr_error`,
+      `pr_fanout`'s counting, and the extra-document render. **Each must go red via the case it
+      names.** Round 1 also suggests one worth more than any of these: rename a fixture document and
+      assert `--follow` does not inherit its ancestor's PRs.
 
 ## Not in this plan — owed by the spec
 
+- **Direct work — PRs with no spec or plan.** Spec §5's card has a `direct work, no document` bucket
+  and this plan does not build it, which round 1 raised. It needs §3.2's path-attribution rules,
+  which are their own body of work. **Named as owed, not dropped.** Round 1 measured that removing
+  the Documents band does *not* orphan the Backlog band, so the card is coherent without it.
 - **§3.3** — the `Bundle` column becoming controlled goal names (~70 rows to classify).
-- **§4** — the done/active/dormant lifecycle, which depends on §3.3 for open-item counts.
-- **§5's BACKLOG section** of the card, which depends on §3.3.
-
-These are Plan 2. Nothing here blocks them and nothing here makes them harder.
+- **§4** — the done/active/dormant lifecycle, which depends on §3.3.
+- **§5's BACKLOG section**, which depends on §3.3.
