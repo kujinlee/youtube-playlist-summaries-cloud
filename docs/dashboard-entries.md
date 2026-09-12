@@ -7939,5 +7939,31 @@ the check asserts the NAMED case goes red rather than trusting a non-zero exit.
 ⚠ **One `check-fixture-variation` exemption was REMOVED, because the right answer was a missing
 case:** nothing drove `check_manifest`'s `stem in manifest_stems` branch at all.
 
-**9/9 mutations kill via the case each names**, over a control proved green first. Suite **40**
-cases; `EXPECTED_MUTATIONS` **549 → 558**.
+✅ **Round 3 — CONVERGED on the Claude half (no Blocking, no High); Codex filed one Low.** The
+curve across the branch is Blocking → Blocking → none, and the character changed with it.
+
+⚠ **The Medium round 3 raised was worth landing here rather than filing.** Round 2's fix wrapped the
+docstring parse in `except SyntaxError: doc = text` — the OLD rule verbatim on the could-not-parse
+path. A **fail-open handler inside the guard whose own R2 rule forbids exactly that**: *"'could not
+run' reported as success"*. Demonstrated with a real file: a self-tested non-guard carrying a UTF-8
+BOM and an ordinary comment mentioning the marker. Python runs it and its suite passes, but
+`ast.parse` on the text fails, so the comment became a declaration and the file was silently exempt
+— **only in the population R4 had just been widened to reach**. Control `rc=1` and named; with BOM
+`rc=0` and not mentioned at all. Both fallbacks now `doc = ""`; re-measured after, both `rc=1`.
+
+⚠ **Fixed in BOTH siblings, not just the one filed** — R3 carried the identical fallback. This
+branch has twice paid for fixing an instance and leaving the class.
+
+**Four comments described a rule the code no longer implements**, all introduced by the fix that
+widened the pattern: "the reason must begin with a LETTER" (it must merely follow a space and not be
+a placeholder), `[A-Za-z]` cited where `(?!<)` now stands, and the `self_exemption` warrant claiming
+a reach — "by ANY route: prose, fixture, or a comment" — that stopped being true when the escape
+moved to the docstring. Its reach is exactly the rules' reach, which is the correct one.
+
+⭐ **Another orphaned anchor, caught before it shipped.** Editing the fallback broke the
+docstring-scope mutation's anchor. Every anchor is now asserted present exactly once before any run
+— the third silent `str.replace` no-op this branch has produced, and the one habit that catches all
+three is asserting on the string you are about to replace.
+
+**10/10 mutations kill via the case each names**, over a control proved green first. Suite **41**
+cases; `EXPECTED_MUTATIONS` **549 → 559**.

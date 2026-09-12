@@ -92,10 +92,21 @@
     "file": "scripts/check-ratchet-contract.py",
     "edits": [
       [
-        "    try:\n        doc = ast.get_docstring(ast.parse(text)) or \"\"\n    except SyntaxError:\n        doc = text\n    if NO_MUTATIONS_RE.search(doc):",
-        "    doc = text\n    if NO_MUTATIONS_RE.search(doc):"
+        "    try:\n        doc = ast.get_docstring(ast.parse(text)) or \"\"\n    except SyntaxError:\n        # ⛔ FAIL CLOSED, AND `doc = text` WAS A FAIL-OPEN HANDLER INSIDE THE GUARD THAT FORBIDS",
+        "    doc = text\n    if False:\n        # ⛔ FAIL CLOSED, AND `doc = text` WAS A FAIL-OPEN HANDLER INSIDE THE GUARD THAT FORBIDS"
       ]
     ],
     "expect": "a COMMENT does not exempt from R4 — it is not a declaration"
+  },
+  {
+    "name": "R4's could-not-parse path fails OPEN again, so a BOM plus a comment exempts a file",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "        # With BOM: rc=0, not mentioned at all. A docstring we could not read is not a declaration.\n        doc = \"\"",
+        "        # With BOM: rc=0, not mentioned at all. A docstring we could not read is not a declaration.\n        doc = text"
+      ]
+    ],
+    "expect": "an UNPARSEABLE file does not exempt — a docstring we cannot read is not a declaration"
   }
 ]

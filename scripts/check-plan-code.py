@@ -672,7 +672,7 @@ EXPECTED_MUTATIONS = {
     # first draft of THIS comment resurrected it as "the TENTH file" — the retired number walking
     # straight back in at the next opportunity. Derive it:
     #     git log -S'[FAIL] ' --reverse --format='%h %as %s' -- scripts/<file>
-    "scripts/check-ratchet-contract.py": 9,
+    "scripts/check-ratchet-contract.py": 10,
     "scripts/check-review-rounds.py": 12,
     # ⟳ 2026-09-08, R4 manifest debt 3 -> 2. ⚠ ONE MUTATION SURVIVED FIRST: I removed the words
     # "Produce one with" from the absent-results refusal, but the case asserts that `--outputFile=`
@@ -2983,13 +2983,19 @@ def _self_test() -> int:
     # ⚠ THE FOURTEEN WERE NOT WRONG — every one attributes to the case it names, ten of them
     # to exactly one case. Re-verified in round 2: all the new entries fail by REPORTING, and
     # every `before` anchor occurs exactly once. This was a reach problem, not a coverage one.
-    # ⟳ 2026-09-12, SAME DAY, second slice: 549 -> 558. `check-ratchet-contract.py` joins with
-    # NINE — the guard enforcing R4 had exempted itself since it was written, because the regex for
-    # the written escape matched its own documentation of that escape. The six cover the widened
-    # population (guards excluded, self-test required), the debt pin in both directions, the
-    # NOT-EXAMINED clause that keeps an empty corpus from reading as paid, the evaluate() wiring,
-    # and the escape regex itself.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 558)
+    # ⟳ 2026-09-12, SAME DAY, second slice: 549 -> 559. `check-ratchet-contract.py` joins with
+    # TEN — the guard enforcing R4 had exempted itself since it was written, because the regex for
+    # the written escape matched its own documentation of that escape. SIX came with the first
+    # commit: the widened population (guards excluded, self-test required), the debt pin in both
+    # directions, the NOT-EXAMINED clause that keeps an empty corpus from reading as paid, the
+    # evaluate() wiring, and the R4 escape regex. FOUR came from review: R3's character-identical
+    # hole, the debt-PAID arm, R4 reading the DOCSTRING rather than the whole file, and the
+    # could-not-parse path failing CLOSED rather than handing back the whole source — because a
+    # comment was a declaration for every guard, not only for this one.
+    # ⚠ This sentence said "The six cover …" over nine entries for two rounds. Both halves filed it
+    # twice; the first fix asserted on one string and replaced another, so `str.replace` silently
+    # did nothing and the count drifted further (8 -> 9) while reading as fixed.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 559)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

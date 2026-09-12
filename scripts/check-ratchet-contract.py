@@ -27,7 +27,7 @@ work exists to remove.
 
 Usage:
     python3 scripts/check-ratchet-contract.py
-    python3 scripts/check-ratchet-contract.py --self-test  # 40 cases
+    python3 scripts/check-ratchet-contract.py --self-test  # 41 cases
 """
 from __future__ import annotations
 
@@ -129,9 +129,12 @@ NO_CALLER_RE = re.compile(r"NO-CALLER:[ \t]+(?!<)(\S[^\n]*)")
 # ⛔ THE MARKERS, ASSEMBLED — defined HERE, beside the patterns they mirror, because the first
 # fixture that needs them appears long before the escape cases do. Adjacent string literals
 # concatenate at compile time, so the runtime values are exact while this source never contains
-# either marker followed by a space and a letter. That is the only thing standing between this
-# file and granting itself the two opt-outs it exists to police; the `self_exemption` case asserts
-# it, because a convention that has already failed twice here is not a mechanism.
+# either marker followed by a space and a real reason. ⟳ This said assembly was "the only thing
+# standing between this file and granting itself the two opt-outs" — that was true when written and
+# stopped being true one round later, when the escapes moved to the DOCSTRING. Docstring scoping is
+# the barrier now; the assembly is cheap defence in depth against a future re-widening, and is kept
+# for that and not because the suite depends on it. Measured r3: with the markers written as plain
+# literals the suite still passes 40/40.
 _NM = "NO-" "MUTATIONS:"
 _NC = "NO-" "CALLER:"
 
@@ -166,7 +169,11 @@ def check_caller(path: str, text: str, caller_blob: str) -> list[Violation]:
     try:
         doc = ast.get_docstring(ast.parse(text)) or ""
     except SyntaxError:
-        doc = text
+        # ⛔ FAIL CLOSED. `doc = text` here restored WHOLE-FILE scoping on the could-not-parse
+        # path — the rule this guard's own R2 forbids: "could not run" reported as success. An
+        # unparseable file is one whose docstring we could not read, and an escape we could not
+        # read is not an escape. See the sibling in `check_manifest` for the measurement.
+        doc = ""
     optout = NO_CALLER_RE.search(doc)
     if optout:
         return []
@@ -241,7 +248,7 @@ def check_contract(path: str, text: str) -> list[Violation]:
 # ⚠ THE ESCAPE IS A WRITTEN REASON, NOT A FLAG — `NO-MUTATIONS: <why>` in the docstring, exactly as
 # NO-CALLER works above. A boolean opt-out is a rubber stamp; a sentence has an author and can be
 # argued with. Same rule, same shape, deliberately.
-# ⛔ THE REASON MUST BEGIN WITH A LETTER, AFTER AT LEAST ONE SPACE — AND THIS GUARD EXEMPTED
+# ⛔ THE REASON MUST FOLLOW A SPACE AND NOT BE AN ANGLE-BRACKET PLACEHOLDER — AND THIS GUARD EXEMPTED
 # ITSELF FOR AS LONG AS IT HAS EXISTED BECAUSE IT DID NOT. The old pattern was
 # `NO-MUTATIONS:[ \t]*(\S[^\n]*)`, and line 16 of THIS file's own docstring reads
 # "a mutation manifest, or `NO-MUTATIONS:` ENFORCED — R1 asks whether …". The regex matched it
@@ -252,7 +259,11 @@ def check_contract(path: str, text: str) -> list[Violation]:
 # ⚠ This is the shape `check-plan-code.py` records for its abandoned pre-flight — `"[FAIL] " in
 # source` is unfalsifiable because the comment explaining the contract QUOTES the marker. A rule
 # that documents its own escape hatch will match that documentation unless the pattern excludes it.
-# `[ \t]+` rejects "NO-MUTATIONS:`" (no space); `[A-Za-z]` rejects "NO-MUTATIONS: <why>".
+# `[ \t]+` rejects the marker followed immediately by a backtick (no space); `(?!<)` rejects the
+# `<why>` placeholder. ⟳ An earlier version required `[A-Za-z]`, which ALSO refused a reason
+# starting with a backtick — this repo's house style — so a correct declaration was rejected
+# while the refusal message told the author to write the placeholder. A guard that BLOCKS is
+# judged on its false positives; six of seven plausible real reasons are accepted now.
 NO_MUTATIONS_RE = re.compile(r"NO-MUTATIONS:[ \t]+(?!<)(\S[^\n]*)")
 
 # MEASURED 2026-09-05, not estimated: 28 guards discovered on disk, 4 carry a manifest
@@ -293,7 +304,15 @@ def check_manifest(path: str, text: str, manifest_stems: set[str]) -> list[Viola
     try:
         doc = ast.get_docstring(ast.parse(text)) or ""
     except SyntaxError:
-        doc = text
+        # ⛔ FAIL CLOSED, AND `doc = text` WAS A FAIL-OPEN HANDLER INSIDE THE GUARD THAT FORBIDS
+        # THEM. R2's own rule is "an `except` handler returns 0 — 'could not run' reported as
+        # success"; this one silently restored the whole-file scoping round 2 removed. MEASURED in
+        # review r3: a self-tested non-guard with a UTF-8 BOM and an ordinary comment mentioning
+        # the marker. Python runs the file and its suite passes, but `ast.parse` on the TEXT
+        # fails, so the comment became a declaration and the file was exempt — silently, and only
+        # in the population R4 had just been widened to reach. Control (no BOM): rc=1, named.
+        # With BOM: rc=0, not mentioned at all. A docstring we could not read is not a declaration.
+        doc = ""
     if NO_MUTATIONS_RE.search(doc):
         return []
     return [Violation(path, "R4_no_mutation_manifest",
@@ -529,7 +548,11 @@ _NO_ST = '"""x"""\nprint(1)\n'
 # Both escapes are opt-outs from rules THIS file enforces. It has now granted itself one of them
 # twice — first because the docstring documented it, then because a test fixture demonstrated it —
 # so the durable guard is not a cleverer regex but an assertion that the source does not satisfy
-# either escape, by ANY route: prose, fixture, or a comment explaining the defect.
+# either escape. ⟳ This said "by ANY route: prose, fixture, or a comment explaining the defect",
+# which was true when the rules read the whole file and stopped being true one round later.
+# It asks the SHIPPED rules, so its reach is exactly theirs — the module docstring. Measured
+# r3: appending a comment or a fixture granting either escape leaves the suite 40/40; a
+# DOCSTRING line granting R4 turns it red. That is the correct reach, not a weaker one.
 # ⚠ Reads the file it is running FROM, so under a staged mutation copy it checks the copy.
 def self_exemption() -> tuple[bool, bool]:
     """(exempt-from-R4, exempt-from-R3) for THIS file's own source.
@@ -584,8 +607,14 @@ _DOC = f'"""A guard.\n\n{_NM} a pure wrapper, no branches to weaken\n"""\nif "--
 _CMT = f'"""A guard."""\n# {_NM} a pure wrapper, no branches\nif "--self-test" in sys.argv: pass\n'
 _LIT = f'"""A guard."""\nX = "{_NM} a pure wrapper"\nif "--self-test" in sys.argv: pass\n'
 
+_BAD = f'\ufeff"""A guard."""\n# {_NM} note to self, declare this properly later\nif "--self-test" in sys.argv: pass\n'
+
 SCOPE_CASES: list[tuple[str, str, bool]] = [
     ("a DOCSTRING declaration exempts from R4", _DOC, True),
+    # ⭐ THE COULD-NOT-PARSE PATH. A BOM makes ast.parse fail while Python still runs the file.
+    # The fallback used to hand back the whole source, so this comment granted the exemption.
+    ("an UNPARSEABLE file does not exempt — a docstring we cannot read is not a declaration",
+     _BAD, False),
     ("a COMMENT does not exempt from R4 — it is not a declaration", _CMT, False),
     ("a STRING LITERAL does not exempt from R4", _LIT, False),
 ]
