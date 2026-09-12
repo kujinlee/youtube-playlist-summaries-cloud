@@ -3,7 +3,7 @@
 
     python3 scripts/gen-goals-page.py              # -> ~/explainers/goals.html, served at /goals
     python3 scripts/gen-goals-page.py --fragment-only <path>
-    python3 scripts/gen-goals-page.py --self-test  # 35 cases, pure functions only
+    python3 scripts/gen-goals-page.py --self-test  # 39 cases, pure functions only
 
 WHY THIS EXISTS
 ---------------
@@ -262,6 +262,64 @@ def last_touched(path: pathlib.Path) -> str:
         return r.stdout.strip() if r.returncode == 0 else ""
     except (OSError, subprocess.SubprocessError):
         return ""
+
+
+def git_pr_history(path: pathlib.Path) -> list[dict] | None:
+    """PRs that touched `path`, newest first — or None when git cannot answer.
+
+    ⛔ None IS NOT []. None is CANNOT RUN. [] means git answered and named no PR — and for
+    a path git has never tracked it also exits 0 with empty output, so [] is precisely
+    "git names no PR for this path", which is a slightly weaker claim than "no PR touched
+    this document". That is the right answer for an unmerged document.
+
+    `--follow` keeps a renamed document's history. Measured 2026-09-11: it currently adds
+    PRs for 0 of 47 documents, because nothing has been renamed — its justification is real
+    but untested today. ⚠ Its known hazard is live regardless: rename detection is
+    similarity-based, and this repo writes dated specs derived from predecessors, so
+    --follow can jump into an ancestor's history and inherit its PRs.
+    """
+    try:
+        r = subprocess.run(
+            ["git", "log", "--format=%H\x01%as\x01%s", "--follow", "--", str(path)],
+            cwd=ROOT, capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0:
+        return None
+    return prs_from_log(r.stdout.splitlines())
+
+
+def git_show_files(sha: str) -> list[str] | None:
+    """The file list of one commit, or None when git cannot answer.
+
+    ⚠ `.splitlines()`, NOT `.split()`. `git show --name-only` emits one path per line, and
+    a path containing a space would split into two entries whose tail matches no DOC_PATH
+    branch — turning a documentation PR into a `code` one. No such path exists in this
+    repo today; the plan review caught the two halves of one insertion disagreeing, with
+    the sibling above already correct.
+    """
+    try:
+        r = subprocess.run(["git", "show", "--name-only", "--format=", "-1", sha],
+                           cwd=ROOT, capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return r.stdout.splitlines() if r.returncode == 0 else None
+
+
+def annotate_code(prs: list[dict], show=git_show_files) -> list[dict]:
+    """Add `code`: True / False / None to each PR. `show` is injected so this is testable.
+
+    None means the commit could not be read — NOT that it was documentation.
+    """
+    cache: dict[str, bool | None] = {}
+    out = []
+    for p in prs:
+        sha = p["sha"]
+        if sha not in cache:
+            files = show(sha)
+            cache[sha] = None if files is None else files_are_code(files)
+        out.append({**p, "code": cache[sha]})
+    return out
 
 
 def collect(docs: pathlib.Path, gen_text: str) -> list[dict]:
@@ -610,6 +668,16 @@ def self_test() -> int:
     eq("an instruction document at any depth is not code",
        [files_are_code([f]) for f in
         ("worker/CONTEXT.md", "packages/api/AGENTS.md", "sub/dir/README.md")], [False] * 3)
+
+    _prs = [{"sha": "aaa", "num": "186", "date": "2026-08-31", "subject": "s"},
+            {"sha": "bbb", "num": "187", "date": "2026-08-31", "subject": "t"}]
+    _shown = {"aaa": ["scripts/gen-dashboard.py", "docs/x.md"], "bbb": ["docs/x.md"]}
+    _out = annotate_code(_prs, lambda sha: _shown.get(sha))
+    eq("a PR touching a script is tagged code", _out[0]["code"], True)
+    eq("a doc-only PR is not", _out[1]["code"], False)
+    eq("an unreadable commit is unknown, not False",
+       annotate_code(_prs[:1], lambda sha: None)[0]["code"], None)
+    eq("annotate does not lose or reorder records", [p["num"] for p in _out], ["186", "187"])
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
