@@ -1,0 +1,163 @@
+# The fifteen schema gates, in CI. Two jobs, because they have two different SUBJECTS.
+#
+# ⭐ WHY THIS IS A SEPARATE FILE FROM ci.yml, AND WHY IT IS NOT NIGHTLY-ONLY.
+#
+# The original proposal was "wire the schema gates in nightly", on the grounds that ~232s against a
+# 7-8 minute `verify` job roughly doubles CI. Both halves of that were checked and neither held:
+#
+#   * CI is not serial. As a SEPARATE JOB this runs beside `verify`, so the wall-clock cost is
+#     max(verify, schema) and not the sum. Measured locally: database 14s + suite 185s ~= 3.3 min,
+#     against a `verify` job that has taken 5-8 min on its last twelve runs.
+#   * The precedent cited (backlog #56) measured a gate being switched off for firing on every
+#     DOCS-ONLY commit — noise, not duration. That argues for the path filter below, not for a
+#     schedule.
+#
+# And nightly would be actively wrong for gate 12: it guards REPO CODE, so a nightly red arrives up
+# to a day after the push that caused it and lands on whoever pushes next. Attribution is the whole
+# value; detaching it is how a gate becomes background noise.
+#
+# What genuinely belongs on a schedule is the OTHER subject: production drift. Nobody's PR changes
+# what is deployed, so there is no push to hang that check on. Hence `prod-drift` below.
+#
+# ⚠ PATH FILTERS ARE PER-WORKFLOW, NOT PER-JOB — which is the only reason this is not simply a
+# second job inside ci.yml. The filter is deliberately COARSE: over-including costs runner minutes,
+# while under-including makes the gate SILENTLY NOT RUN on the change that breaks it. Those errors
+# are not symmetric, so the list biases wide.
+name: Schema gates
+
+# ⚠ THE TWO PATH LISTS ARE DUPLICATED ON PURPOSE, AND IT IS NOT A STYLE CHOICE. GitHub Actions does
+# not support YAML anchors in workflow files, so `paths: &x` / `paths: *x` does not expand — it
+# fails to parse or silently does the wrong thing. Written once, this would be a filter that works
+# in every YAML tool and not in the one that matters.
+# THE HAZARD THAT CREATES: if the two lists ever DRIFT, pull requests and pushes to master filter
+# differently, and the gate can pass on a PR and then not run at all on merge (or the reverse).
+# They are kept adjacent so a one-sided edit is visible in the same screen — which is a convention,
+# i.e. weaker than a check. If this ever bites, the fix is a script that asserts the two lists are
+# equal, not a sterner comment.
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'scripts/**'
+      - 'supabase/**'
+      - 'docs/superpowers/specs/2026-08-03-stable-blob-addressing/**'
+      - 'docs/superpowers/specs/m4/**'
+      - '.github/workflows/schema-gates.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'scripts/**'
+      - 'supabase/**'
+      - 'docs/superpowers/specs/2026-08-03-stable-blob-addressing/**'
+      - 'docs/superpowers/specs/m4/**'
+      - '.github/workflows/schema-gates.yml'
+  schedule:
+    # 09:00 UTC daily. Production drift only — see the job's own comment.
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: schema-gates-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  schema-gates:
+    # Not on the schedule: this job's subject is the repo, and the repo has not changed overnight.
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # ⛔ THE CLAIM THAT KEEPS THE STORAGE FIXTURE HONEST, CHECKED BEFORE IT IS RELIED ON.
+      # `scripts/ci/storage-service-fixture.sql` is a MINIMAL stand-in for tables the storage-api
+      # service creates and CI does not run. That is only safe while no gate reads `storage.*` —
+      # `m4_catalog.CATALOG_SQL` is scoped to `nspname = 'public'` at every one of its six relation
+      # queries. The moment a gate starts reading the storage schema, the fixture stops being
+      # scaffolding and becomes a test double that can pass while production fails.
+      # Without this step that claim is a comment, and comments outlive their premises — which is
+      # the defect the branch immediately before this one existed to fix.
+      - name: The storage fixture is not load-bearing (falsifier for its own header)
+        run: |
+          set -uo pipefail
+          FILES="scripts/m4_catalog.py scripts/check-live-schema.py scripts/check-anon-exposure.py
+                 scripts/verify-exclusion-reasons.py scripts/check-catalog-coverage.py
+                 scripts/check-sentinel-meanings.py scripts/check-guard-coverage.py
+                 scripts/check-vocabulary-collisions.py scripts/gen-m4-manifest.py"
+          missing=0
+          for f in $FILES; do [ -r "$f" ] || { echo "CANNOT RUN — $f is gone; this check no longer reads what it claims to."; missing=1; }; done
+          [ "$missing" -eq 0 ] || exit 2
+          hits=$(grep -nE "storage\." $FILES | grep -vE '^\S+:[0-9]+:\s*(#|--)' | grep -vE '"""|storage\.objects` policies' || true)
+          if [ -n "$hits" ]; then
+            echo "❌ a catalog-reading gate now references storage.* in CODE:"
+            echo "$hits"
+            echo "   scripts/ci/storage-service-fixture.sql is a MINIMAL stand-in and has just become"
+            echo "   load-bearing. Replace it with the real service schema — do not extend it."
+            exit 1
+          fi
+          echo "✅ no gate reads storage.* — the fixture stays scaffolding"
+
+      - name: Build the schema database from the repo
+        run: scripts/ci/start-schema-db.sh m4_schema_gates
+
+      # `M4_PHASE=post` is not a guess: `start-schema-db.sh` applies every migration including 0027
+      # and ASSERTS both M4 relations exist before exiting 0. The suite refuses to guess the polarity
+      # and exits 2 without it, which is the correct refusal and not something to paper over.
+      - name: Fifteen schema gates
+        env:
+          PGCONTAINER: m4_schema_gates
+          M4_PHASE: post
+        run: scripts/check-schema-gates.sh
+
+      # ⚠ Docker state outlives a step but not a runner; this is for `act`/self-hosted runs, where a
+      # leftover container would make the NEXT run's `docker rm -f` the only thing standing between
+      # a stale database and a green suite over it.
+      - name: Remove the schema database
+        if: always()
+        run: docker rm -f m4_schema_gates || true
+
+  prod-drift:
+    # ⭐ THE ONE GATE WITH A GENUINELY SCHEDULED SUBJECT. `check-live-schema.py --prod` reads what is
+    # actually deployed, over CLAUDE_RO_DATABASE_URL. Production drifts on its own schedule — a
+    # migration applied by hand, a platform upgrade — and no pull request corresponds to that, so
+    # there is no push to attach the check to. This is what "nightly" was always right about.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ⛔ A MISSING CREDENTIAL IS A FAILURE, NEVER A SKIP. A scheduled job that quietly exits 0
+      # because a secret is absent reports "production has not drifted" every night while reading
+      # nothing at all — the precise shape this repo calls a gate that cannot run reporting success.
+      # If this is red because the secret was never added, the correct fixes are to add it or to
+      # remove the schedule. Leaving it red and ignored is the one option that teaches people to
+      # ignore a red.
+      - name: The credential exists, or this is NOT RUN
+        env:
+          CLAUDE_RO_DATABASE_URL: ${{ secrets.CLAUDE_RO_DATABASE_URL }}
+        run: |
+          if [ -z "${CLAUDE_RO_DATABASE_URL:-}" ]; then
+            echo "CANNOT RUN — secret CLAUDE_RO_DATABASE_URL is not set on this repository."
+            echo "  This job reads PRODUCTION read-only and cannot substitute anything for it."
+            echo "  TREAT THIS AS NOT RUN — not as 'production has not drifted'."
+            echo "  Fix: add the secret (a read-only role; see the claude_ro recipe), or delete the"
+            echo "       schedule from .github/workflows/schema-gates.yml. Do not make it exit 0."
+            exit 2
+          fi
+          echo "✅ credential present"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Has production drifted from the manifest?
+        env:
+          CLAUDE_RO_DATABASE_URL: ${{ secrets.CLAUDE_RO_DATABASE_URL }}
+        run: python3 scripts/check-live-schema.py --prod --expect-present

@@ -8138,3 +8138,60 @@ corrected in place while accepting the fix.)
 ⚠ `check-review-rounds.py` went RED the moment the r2 Claude half was filed alone
 ("1 review round with one half and no stated reason") and passed once the Codex half
 landed. The gate caught a missing review half before a human had to.
+
+## 2026-09-13
+The fifteen database checks now run automatically on every relevant push, instead of
+only on my machine — which is what the last two weeks of red was really about. Two
+surprises worth knowing. First, this was estimated at about a day and took a couple
+of hours, because the container image already provides most of what was thought to be
+the hard part. Second, the estimate's central claim — that these checks would roughly
+double the time CI takes — was wrong, because CI runs jobs side by side rather than
+one after another. A separate nightly check watches for the live production database
+drifting; it needs a credential added before it can do anything, and it will fail
+loudly every night until it gets one rather than quietly reporting all-clear.
+<!--tech-->
+Branch `schema-gates-in-ci`. New: `.github/workflows/schema-gates.yml` (jobs
+`schema-gates` and `prod-drift`), `scripts/ci/start-schema-db.sh`, and three fixtures
+under `scripts/ci/`.
+
+**Measured, against a database built entirely from the repo in a container:**
+
+    scripts/ci/start-schema-db.sh          14s   27 migrations, M4 PRESENT asserted
+    M4_PHASE=post check-schema-gates.sh   185s   73 ✓ / 0 ✗, exit 0, 15/15 green
+    image                                 0.34 GB  public.ecr.aws/supabase/postgres
+
+**Five scripts hardcoded the container name** — `m4_catalog.py`, `check-anon-exposure.py`
+and three that defined the constant and never read it. The handoff's claim that the
+connection was "already seamed (`m4_base_db.py:40`)" was true of one file and false of
+five, which is why a CI-built database reported `database "m4_rb2" does not exist` for
+one that demonstrably existed: the gate was querying the dev stack. Now one definition
+(`m4_base_db.CONTAINER`), five readers; three dead constants deleted.
+
+**Four gaps between the image and a real Supabase stack**, each found by a gate
+refusing rather than passing vacuously:
+
+    storage.buckets/objects missing   -> 0007 aborts, taking 4 PUBLIC functions with it
+    auth.users lacks is_anonymous     -> handle_new_user raises; 21 vs 35 columns, 1 read
+    auth.uid() reads only the legacy  -> owner cannot read own row; RLS silently off
+      singular GUC, not the JSON         (auth.role/auth.jwt differ the same way)
+    empty database                    -> "no workspaces exist"; seed 2 tenants + playlists
+
+The auth.uid() one is the dangerous class: it would weaken RLS rather than break it.
+The three helper bodies are copied verbatim via `pg_get_functiondef`, never retyped,
+and gate 8's owner-read assertion is their falsifier — it is what caught this.
+
+**`pg_isready` is not a readiness signal for this image, and the image's own
+HEALTHCHECK uses it.** The init phase runs a temporary server that answers yes and
+then shuts down; waiting on it produced `20 of 27` migrations failing with cascading
+`relation "profiles" does not exist`. Readiness is the init marker in the logs, then a
+query that answers. This also rules out a `services:` block with the documented health
+options.
+
+⭐ **I reproduced this repo's own documented `grep -q` under `pipefail` footgun** while
+writing that wait loop: `grep -q` exits on match, SIGPIPEs `docker logs`, and pipefail
+returns the producer's 141 — measured `piped_rc=141` on the very iteration where the
+marker was found. `mutate-live-schema-check.sh:97-102` already carries that warning.
+
+**Found while checking my own work:** `scripts/m4-base-db.sh` declared `# 6 cases` and
+runs **10**. `check-selftest-counts.py` globs `scripts/*.py`, so a declared count in a
+shell script has no outside observer. Instance corrected; the blind spot is not filed.

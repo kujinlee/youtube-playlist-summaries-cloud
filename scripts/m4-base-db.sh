@@ -5,7 +5,12 @@
 #     exit 0 = <dbname> exists, is a clone of `postgres`, and M4 is ABSENT from it
 #     exit 2 = CANNOT RUN (treat as NOT RUN — never a pass)
 #
-#   ./scripts/m4-base-db.sh --self-test    # 6 cases, including the two fail-closed post-conditions
+#   ./scripts/m4-base-db.sh --self-test    # 10 cases, including the two fail-closed post-conditions
+#
+# ⟳ 2026-09-13: this said **6** and the suite runs **10** — measured by running it. The drift was
+# invisible because `check-selftest-counts.py` globs `scripts/*.py`, so a declared count in a
+# SHELL script has no outside observer at all. Found while wiring the gates into CI, by asking
+# whether a new shell script's own declared count would be checked. It would not have been.
 #
 # ⭐⭐ WHY THIS EXISTS — ONE DEFECT WITH SEVEN FACES, MEASURED 2026-08-26.
 #

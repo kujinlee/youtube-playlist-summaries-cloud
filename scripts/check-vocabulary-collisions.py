@@ -48,7 +48,6 @@ SCHEMA = ROOT / "docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from m4_base_db import read_catalog  # noqa: E402
 
-CONTAINER = "supabase_db_youtube-playlist-summaries-cloud"
 
 TABLES = ("video_artifacts", "video_generations", "workspace_videos",
           "videos", "jobs", "playlists", "workspaces", "spend_ledger")

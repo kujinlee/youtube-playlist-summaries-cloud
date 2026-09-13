@@ -79,7 +79,13 @@ import os
 import re
 import subprocess
 
-CONTAINER = "supabase_db_youtube-playlist-summaries-cloud"
+# ⛔ ONE DEFINITION, NOT A COPY OF THE EXPRESSION. `m4_base_db.CONTAINER` is the single
+# place the container name is resolved (and the single place `PGCONTAINER` is read).
+# ⟳ 2026-09-13: this line WAS the hardcoded name, so every gate reaching Postgres through
+# this module talked to the developer's own stack no matter what the caller set — measured
+# when a CI-built database reported `database "m4_rb2" does not exist` for a database that
+# demonstrably existed. Five files held that literal; three never read theirs at all.
+from m4_base_db import CONTAINER  # noqa: E402,F401  (re-exported: two modules import it here)
 
 # ⭐ EVERY ENFORCEMENT COLUMN, ASSERTED BY THE SELF-TEST TO STILL BE IN `CATALOG_SQL`.
 # r5 B2 was possible because nothing named the properties the digest was supposed to cover, so

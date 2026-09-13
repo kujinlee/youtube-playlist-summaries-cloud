@@ -82,7 +82,13 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CONTAINER = "supabase_db_youtube-playlist-summaries-cloud"
+# ⛔ ONE DEFINITION, NOT A COPY OF THE EXPRESSION. `m4_base_db.CONTAINER` is the single
+# place the container name is resolved (and the single place `PGCONTAINER` is read).
+# ⟳ 2026-09-13: this line WAS the hardcoded name, so every gate reaching Postgres through
+# this module talked to the developer's own stack no matter what the caller set — measured
+# when a CI-built database reported `database "m4_rb2" does not exist` for a database that
+# demonstrably existed. Five files held that literal; three never read theirs at all.
+from m4_base_db import CONTAINER  # noqa: E402,F401  (re-exported: two modules import it here)
 
 # The five tables backlog #30 names. Kept explicit rather than pattern-matched: a money table that
 # stops matching a pattern silently leaves the check, which is the failure mode this file is about.
