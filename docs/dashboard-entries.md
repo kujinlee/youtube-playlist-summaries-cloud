@@ -7967,3 +7967,174 @@ three is asserting on the string you are about to replace.
 
 **10/10 mutations kill via the case each names**, over a control proved green first. Suite **41**
 cases; `EXPECTED_MUTATIONS` **549 → 559**.
+
+## 2026-09-12
+The schema suite has been failing for two weeks, and the failure turns out to be the
+alarm doing its job rather than a bug. One of its checks was written to record a
+known gap — "the gate cannot see a bare index added to one of our tables" — so that
+if the gap ever closed by accident, someone would find out. The gap closed on
+purpose on 28 August. Nobody updated the note, so the note went red, which is
+exactly what it was built to do. The note is now inverted: it checks that the gap
+is closed, and that undoing the change puts everything back. All fifteen schema
+gates are green.
+<!--tech-->
+Branch `schema-index-bound-stale`, commit `7f8558da`.
+
+`scripts/mutate-live-schema-check.sh` asserted `BOUND: a bare INDEX on an M4
+relation still PASSES — idx: carries no relation name` as an expected-**pass**.
+The premise died on 2026-08-28 when `m4_catalog.CATALOG_SQL` joined `x.indrelid`
+and began emitting `idx:<relation>.<index>`, `idx` joined
+`check-live-schema.ATTRIBUTABLE_KINDS`, and the 12 `idx:` entries in
+`docs/superpowers/specs/m4/live-manifest.txt` were regenerated with their relations.
+
+**Triaged by measurement against the live local post-M4 database**, not by reading
+the code — control, mutation and undo:
+
+    check-live-schema.py --database postgres --expect-present          rc=0  (161 objects)
+    create index m4_triage_idx on public.workspace_videos (...)        rc=1
+        ⛔ 1 object(s) EXIST ON A RELATION M4 OWNS ...
+           + idx:workspace_videos.m4_triage_idx@117497863c05c6ab98e58db7054aff43
+    drop index m4_triage_idx                                           rc=0
+
+The case is now `probe_kind "INDEX"` beside POLICY/CONSTRAINT/TRIGGER, so it
+asserts the drift SENTENCE (the only thing `unexpected()` can emit) and then that
+undoing it goes green — the discrimination an exit code cannot provide, per this
+file's own r8 B1 lesson. It drops the `landed` postcondition deliberately: `landed`
+defends an expected-**pass** against SQL that never ran, and an expected-**red**
+matched on a sentence has no green left for an unapplied mutation to earn. `landed`
+stays in use for the one surviving bound (a column on foreign `videos`).
+
+`docs/backlog.md` row 65 carried the stale claim in the **present tense** — "`idx:`
+renders as `idx:<indexname>` with no relation ... this hole is on the money path" —
+and was the source the triage brief quoted. Corrected, with the old sentence kept
+inline as the record. Its "Both bounds are asserted as PASSING" line is now
+singular and cites the red as the thing that proved the mechanism.
+
+    harness   71 ✓ / 1 ✗  ->  73 ✓ / 0 ✗   (one bound removed, two probe halves added)
+    suite     M4_PHASE=post scripts/check-schema-gates.sh  exit 0, 15/15 green, ~232s
+
+No declared count needed bumping: `check-schema-gates.sh:130` labels this harness
+"29 mutations" and the probe lives inside mutation 3; `check-catalog-coverage.py`
+reads the harness only for `mutation <N>` labels, none of which moved.
+
+## 2026-09-12
+Correction to the entry above (2026-09-12/4): one of its numbers was labelled as
+coming from the schema test harness when it actually came from the whole suite of
+fifteen checks. The work it describes is unaffected — the harness really did go
+from one failure to none — but the figures quoted belonged to a bigger set than the
+label said. An adversarial review caught it and the counts were re-measured on both
+sides.
+<!--tech-->
+Found by the Codex review of `schema-index-bound-stale`
+(`docs/reviews/codex/schema-index-bound-r1-codex.md`, graded Low; no Blocking, High
+or Medium findings). Entry 2026-09-12/4 reads
+`harness   71 ✓ / 1 ✗  ->  73 ✓ / 0 ✗`. Those are `check-schema-gates.sh` totals,
+which include ticks from the other fourteen gates; `71/1` was itself inherited from
+a session handoff that counted the same way.
+
+Re-measured by running each population on each side, not by reasoning from the diff:
+
+    mutate-live-schema-check.sh alone      master a1a5e1bf   54 ✓ / 1 ✗
+                                           branch 1b4ee329   56 ✓ / 0 ✗
+    M4_PHASE=post check-schema-gates.sh    master a1a5e1bf   71 ✓ / 1 ✗
+                                           branch 1b4ee329   73 ✓ / 0 ✗
+
+Both move +1 net, which is what the diff predicts — one `report` call removed, one
+`probe_kind` (two `report` calls) added — and Codex's independent count of 56 agrees.
+
+This is an append, not an edit: entry ids are positional (`YYYY-MM-DD/N` counting
+blocks that share a date), so rewriting 2026-09-12/4 would renumber ids that other
+entries already point at.
+
+## 2026-09-12
+The second reviewer found a real problem with yesterday's fix, and it was the kind
+that only shows up when someone runs the code rather than reading it: a check that
+was supposed to be impossible to pass by accident could, in fact, be passed by
+accident — on the half of it nobody had counted. Fixed at the mechanism, so all four
+of these checks are now protected rather than just the one that was noticed. While
+fixing it, the reviewer's own suggested repair for a second issue turned out not to
+work when actually run, so a different one was built. All fifteen schema gates are
+green and the change is ready to merge.
+<!--tech-->
+Round 1 Claude adversarial half: `docs/reviews/claude/schema-index-bound-r1-claude.md`
+— 1 Medium, 3 Low, all accepted and fixed. Codex r1 (same round) found no
+Blocking/High/Medium. The `REVIEW GAP: claude` line in the Codex doc was removed once
+the half actually ran; a gap declaration outliving its gap is this branch's own topic.
+
+**MEDIUM 1.** `probe_kind` emits TWO assertions and the second
+(`…and undoing the $1 goes GREEN again`) is an expected-PASS. The comment justifying
+the removal of `landed` claimed "there is no green left for an unapplied mutation to
+earn" — true of the drift half, false of the undo half. The reviewer measured the ✓
+with `create index … (no_such_column)`. Fixed generically in `probe_kind`, so
+POLICY/CONSTRAINT/TRIGGER gain it too:
+
+    (a) psql exit status under ON_ERROR_STOP=1  -> "DID NOT LAND … NOT RUN", which also
+        restores the accusation to the SQL instead of to check-live-schema.py
+    (b) undo assertion runs only if the drift was OBSERVED, else NOT RUN
+
+**LOW 1 — the reviewer's second fix option was REFUTED by running it.** Restoring
+`drop index if exists m4_mut_idx;` to the cleanup block still produced two reds: that
+block runs after the bound it was meant to protect. Fixed instead with a `residue`
+flag — a failed undo marks the clone dirty and downstream expected-passes report NOT
+RUN rather than a red they did not earn. The `if exists` drop was kept anyway, since
+the reviewer is right that it can only absorb, never disagree.
+
+**LOW 2** nested `**` in backlog row 65, verified through `page_markup.render_inline`
+(1 stray → 0). **LOW 3(a)** the "only one artifact still asserts the old world" count
+was short by one (`docs/reviews/backlog-65-live-schema-drift-claude.md:54-57`, same
+class, correctly left as a dated record). **LOW 3(b)** entry 2026-09-12/5 says
+rewriting a block "would renumber ids" — false for a pure text edit; only inserting,
+deleting or reordering renumbers. The append was still mandatory per the dashboard
+skill, and the loose reason is inherited from that skill's wording.
+
+    control (unmodified harness)   56 ✓ / 0 ✗ exit 0   — unchanged by all of the above
+    falsifiers (a)(b)(c)           each fires, each correctly attributed
+    M4_PHASE=post check-schema-gates.sh   73 ✓ / 0 ✗, exit 0, 15/15
+
+⚠ Structural note for future rounds: the Codex half was committed ON the branch under
+review, so its verdict appears in `git log` and its grade in the diff — the second
+reviewer disclosed it could not avoid learning them. True independence needs the
+second half dispatched before the first is committed.
+
+## 2026-09-12
+Round two of review is done and both reviewers came back clean, so this is ready to
+merge. The second round found that my own fix had repeated, in miniature, the exact
+mistake the whole change is about: a comment claiming the safety net covered more
+than it did. Fixed so the net now covers every case the reviewer could construct —
+including two it had to combine faults to reach. Worth noting: for the second round
+running, the reviewer's *suggested* repair turned out not to work when actually run,
+and a different one had to be built. All fifteen schema gates green.
+<!--tech-->
+Round 2: `docs/reviews/claude/schema-index-bound-r2-claude.md` (CONVERGED, no
+Blocking/High/Medium, 2 Low — both fixed) and
+`docs/reviews/codex/schema-index-bound-r2-codex.md` (**no findings**).
+
+r2 LOW 1: the `residue` flag added in r1 had ONE writer (a failed undo assertion) and
+ONE reader (the FOREIGN bound), so its comment — "a downstream expected-pass reports
+NOT RUN" — was true of that bound and false in general. Measured on the shipped file
+with a SINGLE fault: desyncing the POLICY undo produced 4 ✗, three of them siblings
+dying for a leftover policy they never created.
+
+Fixed as one rule at three sites — **observe whether the clone is still clean, credit
+nothing**. Both NOT-RUN paths now read the gate without asserting, plus a top-of-probe
+guard. Reading the *gate* rather than the *exit status* is what closes the desync
+cases; r2's own sketch (capture the undo's exit status) closes only the first, because
+`drop … if exists <wrong-name>` succeeds. It labelled its own fix a partial closer.
+
+    POLICY undo desynced             4 ✗  ->  1 ✗ + siblings and bound NOT RUN
+    neutered gate + POLICY desync    ✗ BOUND MUTATION SURVIVED  ->  ⚠ BOUND NOT RUN
+    partial land + desynced undo     ✗ BOUND MUTATION SURVIVED  ->  DID NOT LAND + NOT RUN
+    control                          56 ✓ / 0 ✗ exit 0, unmoved throughout
+    suite                            73 ✓ / 0 ✗, 15/15, exit 0
+
+The neutered `unexpected()` was validated before anything was inferred from it —
+`104/119` on its own self-test, reproduced independently by all three of us.
+
+r2 LOW 2: removing the `REVIEW GAP:` line deleted its reasoning instead of quoting it,
+the opposite of what this branch did to backlog row 65. Now quoted inline. (The
+finding attributes that paragraph to Codex; it was the coordinator's filing header —
+corrected in place while accepting the fix.)
+
+⚠ `check-review-rounds.py` went RED the moment the r2 Claude half was filed alone
+("1 review round with one half and no stated reason") and passed once the Codex half
+landed. The gate caught a missing review half before a human had to.
