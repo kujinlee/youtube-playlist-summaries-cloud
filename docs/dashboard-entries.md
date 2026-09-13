@@ -8195,3 +8195,50 @@ marker was found. `mutate-live-schema-check.sh:97-102` already carries that warn
 **Found while checking my own work:** `scripts/m4-base-db.sh` declared `# 6 cases` and
 runs **10**. `check-selftest-counts.py` globs `scripts/*.py`, so a declared count in a
 shell script has no outside observer. Instance corrected; the blind spot is not filed.
+
+## 2026-09-13
+Review of the CI work found twelve problems, including two that would have made the
+new checks useless in different ways: the nightly production check could never have
+passed at all, and the check that watches for expensive mistakes was set up to ignore
+the very folders that mistake would appear in. Both are fixed, along with ten smaller
+ones. The part I was most worried about — the stand-ins for the real login service —
+turned out to be sound, and the reviewer proved it rather than taking my word.
+<!--tech-->
+`docs/reviews/claude/schema-gates-ci-r1-claude.md` — 2 Blocking, 1 High, 5 Medium,
+4 Low. All twelve fixed in `a411ba9d`.
+
+**B1 — `prod-drift` could never pass, secret or not.** `--prod` does not open a socket
+from Python: `m4_catalog.psql_cmd` builds `docker exec … psql`, so production needs a
+container to run the CLIENT in and that job created none (`rc=2, No such container`).
+Fixed with an `--entrypoint sleep` client container; the failure then moves to a real
+connection error. I had tested the credential guard and stopped one step short.
+
+**B2 — the money gate was inside a path filter excluding the code it watches.** Gate
+15 walks `lib/ app/ worker/ components/ types/` + `middleware.ts`; the filter admitted
+`scripts/` and `supabase/`. One line under `lib/` flips it 0 → 1 and nothing else in
+CI runs it. ⭐ This falsified my own committed claim "UNDER-FIRING WAS CHECKED, NOT
+ASSUMED" — I enumerated paths the scripts MENTION; gate 15's subject is a tuple of
+directories it WALKS at runtime. Third wrong-predicate measurement this session.
+
+**HIGH — my storage falsifier was a grep and survived 3 of 5 mutations**, including
+the realistic edit: widening `nspname = 'public'` to admit storage contains no
+`storage.` at all. Replaced by `scripts/check-storage-independence.py`, which parses
+with `ast` (so a comment cannot match and a string can) and DERIVES its file set (so a
+new gate is covered the day it is written).
+
+The new guard paid the full contract: 26-case self-test, a caller in `ci.yml`'s
+unfiltered job, `EXAMINED_KEYS` pinned, and a 7-mutation manifest. ⭐ One mutation went
+"RED but NOT via its case" — `problems([], root)[0]` raised IndexError and took the
+suite down, so the kill was unattributable. The case now reports instead of dying.
+7/7 kill via the case each names. `EXPECTED_MUTATIONS` 559 → 566.
+
+Mediums: the spine still listed the schema gates as "not yet in CI"; the "single place
+`PGCONTAINER` is read" claim was false (seven readers — the one other Python gate now
+imports it); `${1:-…}` treated an empty argument as absent so `docker rm -f` hit the
+default while the self-test exercised a path `main()` could not reach; the corrected
+`# 10 cases` restored a stored claim to a place nothing observes; one concurrency
+group let a 09:00 cron and a push to master cancel each other. Lows: `auth.email()`
+left legacy inside a paragraph claiming all three helpers were fixed; "six relation
+queries" was nine; the 14s excludes the image pull; no `permissions:` block.
+
+    suite  73 ✓ / 0 ✗, 15/15, exit 0 against a rebuilt CI database
