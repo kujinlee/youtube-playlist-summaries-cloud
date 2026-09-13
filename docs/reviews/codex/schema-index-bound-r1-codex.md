@@ -1,10 +1,27 @@
 # Adversarial review — `schema-index-bound-stale`, round 1 (Codex)
 
 **Both halves ran.** The Claude half is `docs/reviews/claude/schema-index-bound-r1-claude.md`.
-⟳ This file originally carried a `REVIEW GAP: claude — not invoked` line, because the session's
-harness instruction forbids dispatching review subagents unrequested. The user then asked for
-the half explicitly, it ran, and the gap line was REMOVED rather than left standing — a gap
-declaration that outlives its gap is the same defect class this whole branch is about.
+
+⟳ This file originally carried a `REVIEW GAP:` declaration. The user then asked for the Claude half
+explicitly, it ran, and the line was REMOVED rather than left standing — a gap declaration that
+outlives its gap is the same defect class this whole branch is about. ⚠ `check-review-rounds.py` was
+proved live for this round rather than assumed: with the Claude half moved aside it exits **1** with
+*"schema-index-bound round 1: only codex — claude neither ran nor recorded a `REVIEW GAP:` line"*,
+and rc=0 with it restored.
+
+⟳ r2 LOW 2 (claude): the removal deleted the reasoning instead of quoting it — the opposite of what
+this branch did to `docs/backlog.md` row 65 three lines away. **It read:**
+
+> *"REVIEW GAP: claude — not invoked. This session's harness instruction forbids dispatching review
+> subagents unless the user asks, and the user's approval covered the triage and fix shape, not a
+> review fleet. The change is a 44-line assertion inversion whose subject is itself a test harness,
+> and it is verified by the full fifteen-gate schema suite plus an independent Codex run that
+> re-executed the harness on the clone path. Re-attempt the Claude half before merge if wanted."*
+
+⚠ One correction to the finding while accepting it: r2 calls that *"a substantive claim of Codex's
+own"*. It is not — the paragraph is the COORDINATOR's header, written by me when filing the run.
+Codex authored nothing about the gap. The fix is right for the same reason either way: deleting a
+justification leaves a later reader unable to judge whether it was ever sound.
 
 **Dispatched with** `scripts/codex-review.py --prompt-file … --out …/r1.md`; model `gpt-5.5`;
 `gate_ran=true`, 3187 chars. ⚠ The verdict JSON beside this file was renamed from its run stem

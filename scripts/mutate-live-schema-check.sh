@@ -313,8 +313,21 @@ SQL
     #   (b) was the mutation OBSERVED as drift? Only then does undoing it mean anything. If the
     #       drift half went red, the undo assertion is NOT RUN rather than a tick, because a green
     #       over nothing is the thing being prevented.
+    # ⛔ THE CLONE IS SHARED BY EVERY PROBE, SO ONE DIRTY PROBE POISONS ITS SIBLINGS — ⟳ r2 LOW 1
+    # (claude), MEASURED on the shipped file with a SINGLE fault. Desyncing the POLICY undo produced
+    # four reds: its own, plus CONSTRAINT, TRIGGER and INDEX, each red for a leftover policy it never
+    # created. The r1 fix set `residue` and read it at the FOREIGN bound only — so the comment saying
+    # "a downstream expected-pass reports NOT RUN" was true of THE bound it guarded and false of
+    # downstream expected-passes in general. **That is this branch's own subject, one scope inward:**
+    # a sentence claiming more reach than the code has, shipped by the fix for a sentence that did.
+    residue=0
     probe_kind() { # label  mutate-sql  undo-sql
       local out mrc seen
+      if [ "$residue" = 1 ]; then
+        echo "  ⚠ the $1 probe — NOT RUN: an earlier undo failed, so the clone is known dirty and"
+        echo "     any verdict here would name the wrong defect. The first failure above is the one."
+        return 1
+      fi
       db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<SQL
 $2
 SQL
@@ -325,6 +338,11 @@ SQL
         db "${PREFIX}_raw" >/dev/null 2>&1 <<SQL
 $3
 SQL
+        # ⚠ OBSERVE, DO NOT ASSERT. A partially-landed mutation leaves residue that the best-effort
+        # undo above may not remove, and r1's flag could never learn about it because the only writer
+        # was an assertion this path skips. Reading the gate here credits nothing and reports nothing
+        # — it only records whether the clone is still usable by the NEXT probe.
+        gate "${PREFIX}_raw" --expect-present || residue=1
         return 1
       fi
       # ⚠ CAPTURE FIRST, MATCH SECOND — never pipe into `grep -q` under `set -o pipefail`; this file
@@ -339,6 +357,11 @@ SQL
       if [ "$seen" != pass ]; then
         echo "  ⚠ …and undoing the $1 — NOT RUN: the $1 was never observed as drift, so a green"
         echo "     here would be a green over nothing. The failure above is the finding."
+        # Same observe-don't-assert rule as the DID-NOT-LAND path. r2 LOW 1 (ii) measured this exact
+        # hole: with the gate neutered AND an undo desynced, every probe took this branch, nothing
+        # ever wrote the flag, and the leftover broke the FOREIGN bound through the SUBSET test
+        # rather than through the drift report — a red the flag existed to prevent and could not see.
+        gate "${PREFIX}_raw" --expect-present || residue=1
         return 1
       fi
       gate "${PREFIX}_raw" --expect-present && r=pass || r=fail
@@ -348,12 +371,16 @@ SQL
       # looked cheapest, restoring `drop index if exists` to the cleanup block, was MEASURED HERE and
       # DOES NOT WORK, because that block runs AFTER the bound it was supposed to protect. A filed
       # finding's proposed fix is a hypothesis.
-      # So the flag, which is generic: once a probe's undo fails, the clone is KNOWN DIRTY, and a
-      # downstream expected-pass reports NOT RUN instead of a red it did not earn. This is the same
-      # rule this file already applies everywhere else — an instrument that could not run says so.
+      #
+      # ⚠ WHAT THE FLAG DOES AND DOES NOT SEE, stated narrowly because r2 caught the wide version:
+      # it is written by THREE observations — this failed undo assertion, and the two NOT-RUN paths
+      # above, each of which reads the gate without asserting. All three ask the same question, *is
+      # the clone still clean*, so an undo that SUCCEEDS as a command while leaving the object behind
+      # (a desynced `drop … if exists <wrong-name>`) is caught too — by the gate, not by the exit
+      # status. It is read by every later probe AND by the FOREIGN bound, which is what makes the
+      # sentence "a downstream expected-pass reports NOT RUN" true as written rather than true of one.
       [ "$r" = pass ] || residue=1
     }
-    residue=0
 
     out=$(drift_out "${PREFIX}_raw")
     case "$out" in *"EXIST ON A RELATION M4 OWNS"*) r=fail ;; *) r=pass ;; esac

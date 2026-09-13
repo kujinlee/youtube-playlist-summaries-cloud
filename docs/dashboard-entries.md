@@ -8095,3 +8095,46 @@ skill, and the loose reason is inherited from that skill's wording.
 review, so its verdict appears in `git log` and its grade in the diff — the second
 reviewer disclosed it could not avoid learning them. True independence needs the
 second half dispatched before the first is committed.
+
+## 2026-09-12
+Round two of review is done and both reviewers came back clean, so this is ready to
+merge. The second round found that my own fix had repeated, in miniature, the exact
+mistake the whole change is about: a comment claiming the safety net covered more
+than it did. Fixed so the net now covers every case the reviewer could construct —
+including two it had to combine faults to reach. Worth noting: for the second round
+running, the reviewer's *suggested* repair turned out not to work when actually run,
+and a different one had to be built. All fifteen schema gates green.
+<!--tech-->
+Round 2: `docs/reviews/claude/schema-index-bound-r2-claude.md` (CONVERGED, no
+Blocking/High/Medium, 2 Low — both fixed) and
+`docs/reviews/codex/schema-index-bound-r2-codex.md` (**no findings**).
+
+r2 LOW 1: the `residue` flag added in r1 had ONE writer (a failed undo assertion) and
+ONE reader (the FOREIGN bound), so its comment — "a downstream expected-pass reports
+NOT RUN" — was true of that bound and false in general. Measured on the shipped file
+with a SINGLE fault: desyncing the POLICY undo produced 4 ✗, three of them siblings
+dying for a leftover policy they never created.
+
+Fixed as one rule at three sites — **observe whether the clone is still clean, credit
+nothing**. Both NOT-RUN paths now read the gate without asserting, plus a top-of-probe
+guard. Reading the *gate* rather than the *exit status* is what closes the desync
+cases; r2's own sketch (capture the undo's exit status) closes only the first, because
+`drop … if exists <wrong-name>` succeeds. It labelled its own fix a partial closer.
+
+    POLICY undo desynced             4 ✗  ->  1 ✗ + siblings and bound NOT RUN
+    neutered gate + POLICY desync    ✗ BOUND MUTATION SURVIVED  ->  ⚠ BOUND NOT RUN
+    partial land + desynced undo     ✗ BOUND MUTATION SURVIVED  ->  DID NOT LAND + NOT RUN
+    control                          56 ✓ / 0 ✗ exit 0, unmoved throughout
+    suite                            73 ✓ / 0 ✗, 15/15, exit 0
+
+The neutered `unexpected()` was validated before anything was inferred from it —
+`104/119` on its own self-test, reproduced independently by all three of us.
+
+r2 LOW 2: removing the `REVIEW GAP:` line deleted its reasoning instead of quoting it,
+the opposite of what this branch did to backlog row 65. Now quoted inline. (The
+finding attributes that paragraph to Codex; it was the coordinator's filing header —
+corrected in place while accepting the fix.)
+
+⚠ `check-review-rounds.py` went RED the moment the r2 Claude half was filed alone
+("1 review round with one half and no stated reason") and passed once the Codex half
+landed. The gate caught a missing review half before a human had to.
