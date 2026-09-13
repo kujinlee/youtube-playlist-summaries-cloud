@@ -1,10 +1,10 @@
 # Adversarial review — `schema-index-bound-stale`, round 1 (Codex)
 
-**REVIEW GAP:** claude — not invoked. This session's harness instruction forbids dispatching review
-subagents unless the user asks, and the user's approval covered the triage and fix shape, not a
-review fleet. The change is a 44-line assertion inversion whose subject is itself a test harness,
-and it is verified by the full fifteen-gate schema suite plus an independent Codex run that
-re-executed the harness on the clone path. Re-attempt the Claude half before merge if wanted.
+**Both halves ran.** The Claude half is `docs/reviews/claude/schema-index-bound-r1-claude.md`.
+⟳ This file originally carried a `REVIEW GAP: claude — not invoked` line, because the session's
+harness instruction forbids dispatching review subagents unrequested. The user then asked for
+the half explicitly, it ran, and the gap line was REMOVED rather than left standing — a gap
+declaration that outlives its gap is the same defect class this whole branch is about.
 
 **Dispatched with** `scripts/codex-review.py --prompt-file … --out …/r1.md`; model `gpt-5.5`;
 `gate_ran=true`, 3187 chars. ⚠ The verdict JSON beside this file was renamed from its run stem

@@ -8045,3 +8045,53 @@ Both move +1 net, which is what the diff predicts — one `report` call removed,
 This is an append, not an edit: entry ids are positional (`YYYY-MM-DD/N` counting
 blocks that share a date), so rewriting 2026-09-12/4 would renumber ids that other
 entries already point at.
+
+## 2026-09-12
+The second reviewer found a real problem with yesterday's fix, and it was the kind
+that only shows up when someone runs the code rather than reading it: a check that
+was supposed to be impossible to pass by accident could, in fact, be passed by
+accident — on the half of it nobody had counted. Fixed at the mechanism, so all four
+of these checks are now protected rather than just the one that was noticed. While
+fixing it, the reviewer's own suggested repair for a second issue turned out not to
+work when actually run, so a different one was built. All fifteen schema gates are
+green and the change is ready to merge.
+<!--tech-->
+Round 1 Claude adversarial half: `docs/reviews/claude/schema-index-bound-r1-claude.md`
+— 1 Medium, 3 Low, all accepted and fixed. Codex r1 (same round) found no
+Blocking/High/Medium. The `REVIEW GAP: claude` line in the Codex doc was removed once
+the half actually ran; a gap declaration outliving its gap is this branch's own topic.
+
+**MEDIUM 1.** `probe_kind` emits TWO assertions and the second
+(`…and undoing the $1 goes GREEN again`) is an expected-PASS. The comment justifying
+the removal of `landed` claimed "there is no green left for an unapplied mutation to
+earn" — true of the drift half, false of the undo half. The reviewer measured the ✓
+with `create index … (no_such_column)`. Fixed generically in `probe_kind`, so
+POLICY/CONSTRAINT/TRIGGER gain it too:
+
+    (a) psql exit status under ON_ERROR_STOP=1  -> "DID NOT LAND … NOT RUN", which also
+        restores the accusation to the SQL instead of to check-live-schema.py
+    (b) undo assertion runs only if the drift was OBSERVED, else NOT RUN
+
+**LOW 1 — the reviewer's second fix option was REFUTED by running it.** Restoring
+`drop index if exists m4_mut_idx;` to the cleanup block still produced two reds: that
+block runs after the bound it was meant to protect. Fixed instead with a `residue`
+flag — a failed undo marks the clone dirty and downstream expected-passes report NOT
+RUN rather than a red they did not earn. The `if exists` drop was kept anyway, since
+the reviewer is right that it can only absorb, never disagree.
+
+**LOW 2** nested `**` in backlog row 65, verified through `page_markup.render_inline`
+(1 stray → 0). **LOW 3(a)** the "only one artifact still asserts the old world" count
+was short by one (`docs/reviews/backlog-65-live-schema-drift-claude.md:54-57`, same
+class, correctly left as a dated record). **LOW 3(b)** entry 2026-09-12/5 says
+rewriting a block "would renumber ids" — false for a pure text edit; only inserting,
+deleting or reordering renumbers. The append was still mandatory per the dashboard
+skill, and the loose reason is inherited from that skill's wording.
+
+    control (unmodified harness)   56 ✓ / 0 ✗ exit 0   — unchanged by all of the above
+    falsifiers (a)(b)(c)           each fires, each correctly attributed
+    M4_PHASE=post check-schema-gates.sh   73 ✓ / 0 ✗, exit 0, 15/15
+
+⚠ Structural note for future rounds: the Codex half was committed ON the branch under
+review, so its verdict appears in `git log` and its grade in the diff — the second
+reviewer disclosed it could not avoid learning them. True independence needs the
+second half dispatched before the first is committed.
