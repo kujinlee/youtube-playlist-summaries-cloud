@@ -7967,3 +7967,52 @@ three is asserting on the string you are about to replace.
 
 **10/10 mutations kill via the case each names**, over a control proved green first. Suite **41**
 cases; `EXPECTED_MUTATIONS` **549 → 559**.
+
+## 2026-09-12
+The schema suite has been failing for two weeks, and the failure turns out to be the
+alarm doing its job rather than a bug. One of its checks was written to record a
+known gap — "the gate cannot see a bare index added to one of our tables" — so that
+if the gap ever closed by accident, someone would find out. The gap closed on
+purpose on 28 August. Nobody updated the note, so the note went red, which is
+exactly what it was built to do. The note is now inverted: it checks that the gap
+is closed, and that undoing the change puts everything back. All fifteen schema
+gates are green.
+<!--tech-->
+Branch `schema-index-bound-stale`, commit `7f8558da`.
+
+`scripts/mutate-live-schema-check.sh` asserted `BOUND: a bare INDEX on an M4
+relation still PASSES — idx: carries no relation name` as an expected-**pass**.
+The premise died on 2026-08-28 when `m4_catalog.CATALOG_SQL` joined `x.indrelid`
+and began emitting `idx:<relation>.<index>`, `idx` joined
+`check-live-schema.ATTRIBUTABLE_KINDS`, and the 12 `idx:` entries in
+`docs/superpowers/specs/m4/live-manifest.txt` were regenerated with their relations.
+
+**Triaged by measurement against the live local post-M4 database**, not by reading
+the code — control, mutation and undo:
+
+    check-live-schema.py --database postgres --expect-present          rc=0  (161 objects)
+    create index m4_triage_idx on public.workspace_videos (...)        rc=1
+        ⛔ 1 object(s) EXIST ON A RELATION M4 OWNS ...
+           + idx:workspace_videos.m4_triage_idx@117497863c05c6ab98e58db7054aff43
+    drop index m4_triage_idx                                           rc=0
+
+The case is now `probe_kind "INDEX"` beside POLICY/CONSTRAINT/TRIGGER, so it
+asserts the drift SENTENCE (the only thing `unexpected()` can emit) and then that
+undoing it goes green — the discrimination an exit code cannot provide, per this
+file's own r8 B1 lesson. It drops the `landed` postcondition deliberately: `landed`
+defends an expected-**pass** against SQL that never ran, and an expected-**red**
+matched on a sentence has no green left for an unapplied mutation to earn. `landed`
+stays in use for the one surviving bound (a column on foreign `videos`).
+
+`docs/backlog.md` row 65 carried the stale claim in the **present tense** — "`idx:`
+renders as `idx:<indexname>` with no relation ... this hole is on the money path" —
+and was the source the triage brief quoted. Corrected, with the old sentence kept
+inline as the record. Its "Both bounds are asserted as PASSING" line is now
+singular and cites the red as the thing that proved the mechanism.
+
+    harness   71 ✓ / 1 ✗  ->  73 ✓ / 0 ✗   (one bound removed, two probe halves added)
+    suite     M4_PHASE=post scripts/check-schema-gates.sh  exit 0, 15/15 green, ~232s
+
+No declared count needed bumping: `check-schema-gates.sh:130` labels this harness
+"29 mutations" and the probe lives inside mutation 3; `check-catalog-coverage.py`
+reads the harness only for `mutation <N>` labels, none of which moved.
