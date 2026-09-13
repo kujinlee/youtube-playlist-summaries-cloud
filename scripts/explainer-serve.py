@@ -63,7 +63,12 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 100 cases, binds no port
+    python3 scripts/explainer-serve.py --restart  # the one to remember: works up OR down
+    python3 scripts/explainer-serve.py --self-test   # 108 cases, binds no port
+
+Every page also carries a **Restart server** button, and — under it — these commands in a
+`<details>` that needs no script and no network, so the instructions survive the server
+they describe (`page_chrome.restart_control`).
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -958,6 +963,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if target is None or not target.is_file():
                 return self._send(404, b"no such page", "text/plain; charset=utf-8")
             return self._send(200, revision(target).encode(), "text/plain; charset=utf-8")
+        if path == "/_alive":
+            # The pid is the POINT, not a diagnostic. After pressing Restart the page waits
+            # for a pid that is NOT the one it was talking to: the outgoing server still
+            # answers for a moment after it replies, so "does it respond" resolves against
+            # the process being replaced and would report a restart that never happened.
+            return self._send(200, json.dumps({"pid": os.getpid()}).encode(),
+                              "application/json")
         if path == "/_stale":
             # "Is this page BEHIND its source?" — a DIFFERENT question from `/_rev`'s "has this
             # page changed?", which is why it is a different endpoint rather than a fourth field
@@ -1018,6 +1030,47 @@ class Handler(http.server.BaseHTTPRequestHandler):
             body += RELOAD_JS.encode()   # appended, so a page that lacks </body> still gets it
         return self._send(200, body, ctype)
 
+    def _restart(self) -> None:
+        """Replace this server, from the page. Backlog: the reader who cannot remember a command.
+
+        ⛔ THE REPLY GOES FIRST, AND NOTHING AFTER IT MAY BLOCK. A reply written after the
+        process dies is a reply nobody receives, and the button would report a failed
+        restart that in fact succeeded — the worst of the four outcomes, because it teaches
+        the reader to distrust a control that works.
+
+        ⚠ THIS PROCESS DOES NOT KILL ITSELF. It hands its own pid to a DETACHED child which
+        SIGTERMs it, waits for the port, and starts the replacement. Self-termination was
+        the design that made an in-page button look unwise: a server that shuts down first
+        and respawns second has a window where nothing is listening and nothing is left to
+        report if the respawn fails. Here the surviving process is the one doing the work.
+
+        ⚠ Takes NO parameters — no path, no argument, no command. The allow-list argument
+        `_regenerate` makes is stronger here by having nothing to allow. What a caller on
+        this machine can do is restart a local docs server, which is what the button on the
+        page does; `start_new_session` keeps the child alive when this process ends."""
+        pid = os.getpid()
+        self._send(200, json.dumps({"ok": True, "pid": pid}).encode(), "application/json")
+        try:
+            self.wfile.flush()
+        except OSError:
+            pass                      # the reader navigated away; the restart still proceeds
+        try:
+            subprocess.Popen([sys.executable, str(pathlib.Path(__file__).resolve()),
+                              "--respawn", str(pid)],
+                             start_new_session=True, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except (OSError, ValueError) as exc:
+            # The 200 is already sent, so this cannot be reported in the response. The page
+            # finds out the honest way — it waits for a pid that never changes and says the
+            # restart failed — and the log says why.
+            try:
+                ROOT.mkdir(parents=True, exist_ok=True)
+                with RESTART_LOG.open("a", encoding="utf-8") as fh:
+                    fh.write(f"{_dt.datetime.now():%Y-%m-%d %H:%M:%S} NOT RESTARTED — could "
+                             f"not spawn the replacement: {type(exc).__name__}: {exc}\n")
+            except OSError:
+                pass
+
     def _regenerate(self, payload: dict) -> None:
         """Rebuild one derived page. Backlog #77.
 
@@ -1065,6 +1118,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         route = self.path.split("?", 1)[0]
+        # ⚠ BEFORE the body machinery below, which requires a non-empty JSON object and
+        # answers 413 to a zero-length body. Restart takes NO parameters — there is nothing
+        # for a caller to name — so routing it through a mandatory-body path would make the
+        # button 413 on the empty POST that is the correct request for it.
+        if route == "/_restart":
+            return self._restart()
         if route not in ("/questions", "/regenerate"):
             return self._send(404, b"not found", "text/plain; charset=utf-8")
         try:
@@ -1136,6 +1195,49 @@ def stop() -> int:
     PIDFILE.unlink(missing_ok=True)
     print(f"stopped pid {pid}")
     return 0
+
+
+RESTART_LOG = ROOT / ".restart.log"
+
+
+def respawn(old_pid: int | None) -> int:
+    """Stop a running server and start a fresh one. ONE mechanism, TWO callers.
+
+    `--restart` on the command line and the page's Restart button both land here, because
+    two implementations of "replace the server" is the duplicate-vocabulary shape
+    `check-vocabulary-collisions.py` exists to catch — and the two would drift on exactly
+    the detail that matters, which is the wait below.
+
+    ⚠ THE WAIT IS THE WHOLE FUNCTION. `start()` refuses a busy port rather than fighting
+    for it, so a stop-then-start with no wait loses the race against the kernel releasing
+    the socket and reports `already serving` about the process it just killed. Bounded,
+    because waiting forever for a port that will never free is the "cannot run" that
+    reports nothing.
+
+    ⚠ Called from the BUTTON it runs detached, with no terminal to print to, so a failure
+    here is invisible by construction. It writes RESTART_LOG instead: a restart that did
+    not happen must leave a trace somewhere a person can look."""
+    import time
+    if pid_alive(old_pid):
+        assert old_pid is not None
+        os.kill(old_pid, signal.SIGTERM)
+    deadline = time.monotonic() + 20
+    while port_busy(HOST, PORT) and time.monotonic() < deadline:
+        time.sleep(0.1)
+    if port_busy(HOST, PORT):
+        note = (f"{_dt.datetime.now():%Y-%m-%d %H:%M:%S} NOT RESTARTED — port {PORT} was "
+                f"still busy 20s after SIGTERM to pid {old_pid}. Something else may be "
+                f"holding it; check with: lsof -nP -iTCP:{PORT} -sTCP:LISTEN\n")
+        try:
+            ROOT.mkdir(parents=True, exist_ok=True)
+            with RESTART_LOG.open("a", encoding="utf-8") as fh:
+                fh.write(note)
+        except OSError:
+            pass
+        print(note, end="")
+        return 1
+    PIDFILE.unlink(missing_ok=True)
+    return start()
 
 
 def status() -> int:
@@ -1539,6 +1641,40 @@ def _self_test() -> int:
         case("help: the common arm leaves no unfilled <placeholder>",
              lambda: "<" not in src_root_help("/nope", root))
 
+        # ── restart ──────────────────────────────────────────────────────────────────────
+        # These read SOURCE, like the `/_rev` case below, because what has to hold is an
+        # ORDER between two statements and a live restart cannot be asserted from inside
+        # the process being restarted. Each names the line whose move breaks it.
+        _post = inspect.getsource(Handler.do_POST)
+        _rst = inspect.getsource(Handler._restart)
+        _main = inspect.getsource(main)
+        _resp = inspect.getsource(respawn)
+        # ⛔ /_restart is routed BEFORE the body machinery, which 413s a zero-length body.
+        # Restart takes no parameters, so the empty POST is the CORRECT request for it, and
+        # routing it after would make the button fail on a well-formed press.
+        case("restart is routed before the mandatory-body path",
+             lambda: _post.index('"/_restart"') < _post.index("Content-Length"))
+        # ⛔ THE REPLY GOES FIRST. Sent after the process dies it never arrives, and the
+        # button reports a failure that actually succeeded — the outcome that teaches a
+        # reader to distrust a control that works.
+        case("the reply is sent before the replacement is spawned",
+             lambda: _rst.index("self._send(200") < _rst.index("subprocess.Popen"))
+        case("the replacement outlives this process",
+             lambda: "start_new_session=True" in _rst)
+        # This process does NOT kill itself: it hands its pid to the child that replaces it.
+        case("the server does not SIGTERM itself", lambda: "os.kill" not in _rst)
+        case("a spawn failure is written down, not swallowed",
+             lambda: "RESTART_LOG" in _rst)
+        # ⛔ ONE mechanism, TWO callers — the flag and the button both land in respawn().
+        case("--restart and --respawn both route to respawn()",
+             lambda: _main.count("respawn(") == 2)
+        # ⛔ `start()` refuses a busy port, so the wait must come first or the restart
+        # reports `already serving` about the process it just killed.
+        case("respawn waits for the port before starting",
+             lambda: _resp.index("port_busy") < _resp.index("return start()"))
+        case("…and the wait is bounded, not forever",
+             lambda: "deadline" in _resp and "monotonic" in _resp)
+
         for name, fn in cases:
             try:
                 result = fn()          # called EXACTLY once — a case may have side effects
@@ -1558,6 +1694,10 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--stop", action="store_true")
     ap.add_argument("--status", action="store_true")
+    ap.add_argument("--restart", action="store_true",
+                    help="stop the running server and start a fresh one")
+    # Not for humans: the detached child `POST /_restart` spawns, told which pid to replace.
+    ap.add_argument("--respawn", type=int, metavar="PID", help=argparse.SUPPRESS)
     ap.add_argument("--self-test", action="store_true")
     a = ap.parse_args()
     if a.self_test:
@@ -1566,6 +1706,13 @@ def main() -> int:
         return stop()
     if a.status:
         return status()
+    if a.respawn is not None:
+        return respawn(a.respawn)
+    # The pid comes from the pidfile rather than from the caller — `--restart` means
+    # "replace whatever is serving", and asking a human to look one up would make the
+    # flag no easier to remember than the two commands it replaces.
+    if a.restart:
+        return respawn(read_pid(PIDFILE))
     return start()
 
 
