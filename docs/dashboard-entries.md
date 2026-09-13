@@ -7967,3 +7967,32 @@ three is asserting on the string you are about to replace.
 
 **10/10 mutations kill via the case each names**, over a control proved green first. Suite **41**
 cases; `EXPECTED_MUTATIONS` **549 → 559**.
+
+## 2026-09-12
+Clicking a source link on the goals page did nothing useful for four days — now it opens the document.
+<!--tech-->
+Every `/src/` link on `/goals` answered *no source root* — 55 of them, since the server was last
+started on 8 September. Nothing was broken in the page: the links were correct, and
+`scripts/explainer-serve.py` simply declined to resolve them because `EXPLAINER_DOCS_ROOT` was not
+set. Started the way a person actually types it — `python3 scripts/explainer-serve.py` — the whole
+`/src/` subsystem switched itself off and the page around it kept working, which is why nobody saw it.
+
+**The server already knew the answer.** `REPO` is derived from `__file__` and `/_stale` has always
+used it to find the source a page was built from, so `/src/` was refusing to open files that
+`/_stale` was stat-ing by name in the same process, one handler apart. `src_root()` now falls back
+to that root. The variable keeps its real job — pointing at a *different* checkout — and
+project-independence is untouched, because `SCRIPTS.parent` hardcodes no repo.
+
+A **wrong** value stays an error rather than falling back. Unset means "no opinion"; a path someone
+typed means a specific checkout, and quietly serving a different one would rebuild this same bug
+with better manners.
+
+The remaining 404 now prints the commands to run. The old text said `EXPLAINER_DOCS_ROOT=<dir>` and
+never filled in `<dir>`, although the value was one module constant away — a description of the
+failure wearing the shape of an instruction.
+
+⭐ **`src_root()` had no self-test cases at all**, which is how a green suite coexisted with a dead
+subsystem for four days. Twelve added, **88 → 100**; removing the fallback turns three of them red
+over a control proved green first. One case asserts the exact token `unset EXPLAINER_DOCS_ROOT`
+rather than the word "unset", because the other arm's own prose says "…is unset and the fallback…"
+and a bare substring test passes on the very text it excludes — measured while writing it.

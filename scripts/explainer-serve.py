@@ -63,7 +63,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 88 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 100 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -422,12 +422,62 @@ def md_blocks(esc: str) -> str:
 
 
 def src_root() -> pathlib.Path | None:
-    """The optional source root, or None when unset or not a directory. PURE given the env."""
+    """The source root: the env var when set, else the repo this server lives in.
+
+    PURE given the env and the filesystem.
+
+    ⟳ 2026-09-12. THE FALLBACK IS THE FIX, and the bug it closes is that nothing announced
+    itself. Started bare — `python3 scripts/explainer-serve.py`, which is what a person types —
+    this returned None, every `/src/` link on `/goals` answered *no source root*, and the server
+    kept serving the page that generated them. Measured: 55 dead links, four days, pid 18092.
+    A subsystem that silently switches off is worse than one that refuses to start, because the
+    page around it still works and nothing looks broken.
+
+    ⚠ IT WAS NEVER MISSING INFORMATION — only unasked-for. `REPO` (:109) is derived from
+    `__file__` and `/_stale` has always used it to find the source a page was built from. So
+    `/src/` was refusing to open files that `/_stale` was already stat-ing by name, in the same
+    process, one handler apart. The two now agree by construction rather than by the reader
+    having remembered a variable.
+
+    Project-independence, the reason `:204` gives for the env var, is untouched: `SCRIPTS.parent`
+    hardcodes no repo, it is wherever this file happens to sit. The variable keeps its real job —
+    pointing at a DIFFERENT checkout than the one being run from — and now that is all it does."""
     v = os.environ.get(SRC_ROOT_ENV, "").strip()
     if not v:
-        return None
+        # `.is_dir()` rather than an unconditional return: REPO is a parent of a resolved
+        # __file__ so it is a directory in every ordinary case, and this function's contract
+        # is "a directory or None" — one that returns a path it never checked is a promise
+        # kept by luck.
+        return REPO if REPO.is_dir() else None
     p = pathlib.Path(v).expanduser()
     return p if p.is_dir() else None
+
+
+def src_root_help(env_value: str, repo: pathlib.Path) -> str:
+    """The body of the `/src/` 404 — a remedy that can be PASTED, not a variable name.
+
+    The old text was `no source root — start the server with EXPLAINER_DOCS_ROOT=<dir>`, and
+    `<dir>` was never filled in although `src_root` had just read the env and `REPO` was a
+    module constant. A reader who does not already know the answer cannot act on it, which
+    makes it a description of the failure wearing the shape of an instruction.
+
+    PURE, so the self-test asserts on the text rather than on a live 404."""
+    stop = f"python3 {repo}/scripts/explainer-serve.py --stop"
+    start = f"python3 {repo}/scripts/explainer-serve.py"
+    if env_value:
+        return (f"no source root — {SRC_ROOT_ENV} is set to {env_value!r}, which is not a "
+                f"directory.\n\n"
+                f"Unset it to serve sources from the repo this server runs from ({repo}):\n\n"
+                f"  {stop}\n"
+                f"  unset {SRC_ROOT_ENV}\n"
+                f"  {start}\n\n"
+                f"Or set it to a checkout that exists.\n")
+    # Reachable only if REPO stopped being a directory under a running server — the repo moved
+    # or was deleted. Named as its own case: "unset it" would be nonsense advice here.
+    return (f"no source root — {SRC_ROOT_ENV} is unset and the fallback {repo} is not a "
+            f"directory, so there is nothing to serve sources from.\n\n"
+            f"  {stop}\n"
+            f"  {SRC_ROOT_ENV}=<an-existing-checkout> {start}\n")
 
 
 def source_shell(rel: str, text: str) -> str:
@@ -946,8 +996,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path.startswith("/src/"):
             root = src_root()
             if root is None:
-                return self._send(404, (f"no source root — start the server with "
-                                        f"{SRC_ROOT_ENV}=<dir>").encode(),
+                body = src_root_help(os.environ.get(SRC_ROOT_ENV, "").strip(), REPO)
+                return self._send(404, body.encode("utf-8"),
                                   "text/plain; charset=utf-8")
             target = safe_path(path[len("/src/"):], root)
             if target is None or not target.is_file():
@@ -1433,6 +1483,61 @@ def _self_test() -> int:
         case("md: fenced code kept verbatim", lambda: "**not bold**" in md_render("```\n**not bold**\n```"))
         case("md: PLACEHOLDER survives escaping", lambda: "&lt;ws&gt;" in md_render("a <ws> b"))
         case("md: no emphasis inside code", lambda: "<strong>" not in md_render("`a **b** c`"))
+
+        # ── the source root ──────────────────────────────────────────────────────────────────
+        # ⚠ `src_root` HAD NO CASES AT ALL, and that is the whole story of 2026-09-12: `/src/`
+        # served nothing for four days, 55 dead links on /goals, while this suite ran green.
+        # An untested function that returns None is indistinguishable from one that works.
+        def with_env(value, fn):
+            """Call fn with SRC_ROOT_ENV set to `value`, or REMOVED when value is None.
+
+            Restores the previous value in a `finally` — the runner calls each case exactly
+            once, but a case that leaks env state would corrupt the cases after it, and that
+            is a failure mode this project has paid for in other harnesses."""
+            prev = os.environ.get(SRC_ROOT_ENV)
+            if value is None:
+                os.environ.pop(SRC_ROOT_ENV, None)
+            else:
+                os.environ[SRC_ROOT_ENV] = value
+            try:
+                return fn()
+            finally:
+                if prev is None:
+                    os.environ.pop(SRC_ROOT_ENV, None)
+                else:
+                    os.environ[SRC_ROOT_ENV] = prev
+
+        # THE REGRESSION CASE. Delete the fallback and this one goes red by itself.
+        case("src_root: UNSET falls back to the repo this file lives in",
+             lambda: with_env(None, src_root) == REPO)
+        case("src_root: empty string is unset, not a path",
+             lambda: with_env("", src_root) == REPO)
+        case("src_root: whitespace is unset", lambda: with_env("   ", src_root) == REPO)
+        case("src_root: an explicit directory still OVERRIDES the fallback",
+             lambda: with_env(str(root), src_root) == root)
+        # ⛔ A WRONG value is None, NOT the fallback — deliberate, and the opposite of the
+        # unset case above. Someone who typed a path meant a specific checkout; quietly
+        # serving a different one would be the silent-substitution bug this slice exists to
+        # kill, rebuilt with better manners. Unset means "no opinion"; wrong means wrong.
+        case("src_root: a non-directory path is None, NOT the fallback",
+             lambda: with_env(str(root / "a.html"), src_root) is None)
+        case("src_root: a missing path is None", lambda: with_env(str(root / "nope"), src_root) is None)
+
+        # The 404 body: an instruction has to be runnable by someone who does not know the answer.
+        case("help: names the offending value", lambda: "/nope" in src_root_help("/nope", root))
+        case("help: names the fallback directory", lambda: str(root) in src_root_help("/nope", root))
+        case("help: gives a runnable unset command",
+             lambda: f"unset {SRC_ROOT_ENV}" in src_root_help("/nope", root))
+        case("help: both arms name the stop command",
+             lambda: all("--stop" in src_root_help(v, root) for v in ("", "/nope")))
+        # ⚠ ASSERTS THE EXACT TOKEN `unset EXPLAINER_DOCS_ROOT`, not the word "unset": the
+        # no-fallback arm's own prose says "…is unset and the fallback…", so a bare `"unset "`
+        # substring test passes on the very text it is meant to exclude. Measured while writing
+        # it, which is the only reason it is not in the file that way.
+        case("help: the no-fallback arm does not advise unsetting",
+             lambda: f"unset {SRC_ROOT_ENV}" not in src_root_help("", root))
+        case("help: the common arm leaves no unfilled <placeholder>",
+             lambda: "<" not in src_root_help("/nope", root))
 
         for name, fn in cases:
             try:
