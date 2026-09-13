@@ -73,6 +73,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
+
+      # ⛔ `node_modules` IS A GATE DEPENDENCY, NOT A CONVENIENCE — measured on this job's first CI
+      # run. Gate 15 (`check-paid-caller-arrival.py`) answers "is this line a comment?" with the
+      # TYPESCRIPT COMPILER and has NO fallback, because the two hand-written versions before it each
+      # shipped a false verdict on the money path (r10 H4, r11 H1). Without an install it exits with
+      # `CANNOT RUN — node could not compute comment spans … ERR_MODULE_NOT_FOUND`, which the suite
+      # correctly treats as a failure rather than a pass. 14 of 15 gates went green without this step;
+      # the fifteenth refused, which is the behaviour that makes the refusal worth having.
+      - name: Install node dependencies (gate 15 needs the TypeScript compiler)
+        run: npm ci
 
       # ⛔ THE CLAIM THAT KEEPS THE STORAGE FIXTURE HONEST, CHECKED BEFORE IT IS RELIED ON.
       # `scripts/ci/storage-service-fixture.sql` is a MINIMAL stand-in for tables the storage-api
