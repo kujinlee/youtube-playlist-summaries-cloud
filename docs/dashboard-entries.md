@@ -8016,3 +8016,32 @@ singular and cites the red as the thing that proved the mechanism.
 No declared count needed bumping: `check-schema-gates.sh:130` labels this harness
 "29 mutations" and the probe lives inside mutation 3; `check-catalog-coverage.py`
 reads the harness only for `mutation <N>` labels, none of which moved.
+
+## 2026-09-12
+Correction to the entry above (2026-09-12/4): one of its numbers was labelled as
+coming from the schema test harness when it actually came from the whole suite of
+fifteen checks. The work it describes is unaffected — the harness really did go
+from one failure to none — but the figures quoted belonged to a bigger set than the
+label said. An adversarial review caught it and the counts were re-measured on both
+sides.
+<!--tech-->
+Found by the Codex review of `schema-index-bound-stale`
+(`docs/reviews/codex/schema-index-bound-r1-codex.md`, graded Low; no Blocking, High
+or Medium findings). Entry 2026-09-12/4 reads
+`harness   71 ✓ / 1 ✗  ->  73 ✓ / 0 ✗`. Those are `check-schema-gates.sh` totals,
+which include ticks from the other fourteen gates; `71/1` was itself inherited from
+a session handoff that counted the same way.
+
+Re-measured by running each population on each side, not by reasoning from the diff:
+
+    mutate-live-schema-check.sh alone      master a1a5e1bf   54 ✓ / 1 ✗
+                                           branch 1b4ee329   56 ✓ / 0 ✗
+    M4_PHASE=post check-schema-gates.sh    master a1a5e1bf   71 ✓ / 1 ✗
+                                           branch 1b4ee329   73 ✓ / 0 ✗
+
+Both move +1 net, which is what the diff predicts — one `report` call removed, one
+`probe_kind` (two `report` calls) added — and Codex's independent count of 56 agrees.
+
+This is an append, not an edit: entry ids are positional (`YYYY-MM-DD/N` counting
+blocks that share a date), so rewriting 2026-09-12/4 would renumber ids that other
+entries already point at.
