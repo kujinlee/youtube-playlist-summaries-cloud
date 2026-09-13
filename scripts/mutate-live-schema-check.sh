@@ -325,12 +325,38 @@ SQL
          for each row execute function video_artifacts_append_only();" \
       "drop trigger if exists m4_mut_trg on public.video_artifacts;"
 
-    # ⛔ THE STATED BOUNDS, ASSERTED. An unstated bound is read as coverage, so each one that this
-    #    gate deliberately does NOT cover gets a case here — if a later change silently widens the
-    #    scope, these turn red and the widening is a decision instead of an accident.
-    # ⟳ codex Low (backlog 65 review): these two probes assert that the gate PASSES, so if their SQL
-    # never landed they would pass on an UNCHANGED database and certify a bound nothing tested. A
-    # green over an unapplied mutation is the exact shape this harness exists to prevent, so each one
+    # ⟳ 2026-09-12 — THE FOURTH KIND, AND IT ARRIVED HERE BY BEING RED. Until 2026-08-28 an index
+    # was the one ATTRIBUTABLE_KIND with no probe, because it could not be attributed at all:
+    # `idx:` rendered as `idx:<indexname>`, naming no relation. That hole was written down six lines
+    # below as an expected-PASS bound — and when `m4_catalog.CATALOG_SQL` gained `x.indrelid` and
+    # started emitting `idx:<relation>.<index>`, the bound became the only thing in the repo still
+    # asserting the old world. It went ✗ and took the suite red for TWO WEEKS.
+    #
+    # ⭐ THAT RED WAS THE MECHANISM WORKING, NOT FAILING — it is what the stated-bounds block below
+    # promises: *"if a later change silently widens the scope, these turn red and the widening is a
+    # decision instead of an accident."* A widening nobody asserted would have been invisible.
+    # Backlog 65 already ran this same inversion once, for the sibling added-COLUMN case; the index
+    # half of it was simply never carried through.
+    #
+    # ⚠ WHY THIS DROPS `landed`, WHICH A REVIEW ROUND PAID FOR — the polarity SUBSUMES it. `landed`
+    # exists so an expected-PASS cannot be earned by SQL that never ran (codex Low, backlog 65:
+    # falsified by desyncing the index name). Here the assertion is expected-RED, matched on the
+    # drift SENTENCE, which only `unexpected()` emits: a mutation that never lands produces no
+    # sentence and reports MUTATION SURVIVED. There is no green left for an unapplied mutation to
+    # earn. `landed` stays in use below, where the FOREIGN bound is still an expected-pass.
+    probe_kind "INDEX" \
+      "create index m4_mut_idx on public.workspace_videos (workspace_id);" \
+      "drop index if exists m4_mut_idx;"
+
+    # ⛔ THE STATED BOUND, ASSERTED. An unstated bound is read as coverage, so what this gate
+    #    deliberately does NOT cover gets a case here — if a later change silently widens the
+    #    scope, it turns red and the widening is a decision instead of an accident.
+    # ⟳ 2026-09-12: there were TWO, and the INDEX one is gone because that promise was KEPT — see
+    #    the probe above. One remains, and it is the one that should never move: `videos` is not
+    #    M4's relation, so bounding it would generate false positives forever.
+    # ⟳ codex Low (backlog 65 review): this probe asserts that the gate PASSES, so if its SQL
+    # never landed it would pass on an UNCHANGED database and certify a bound nothing tested. A
+    # green over an unapplied mutation is the exact shape this harness exists to prevent, so it
     # now asserts its own postcondition and reports NOT RUN rather than a tick.
     landed() { # relation predicate-sql label
       local n
@@ -348,24 +374,29 @@ SQL
       report "BOUND: a new column on a FOREIGN relation (videos) still PASSES — not M4's to bound" pass "$r"
     fi
 
+    # ⛔ A SECOND BOUND STOOD HERE AND IS GONE — a bare INDEX on an M4-owned relation, asserted to
+    # PASS because `idx:` named no relation. It is now the INDEX probe above, asserting the opposite,
+    # because the hole CLOSED on 2026-08-28 (`check-live-schema.py:273`, kept there as the record of
+    # a hole rather than deleted). Removing the sentence is the whole repair: the bound was not
+    # broken, it was TRUE-THEN and the code outgrew it. Left in place it read as coverage of a
+    # blind spot that no longer exists — the one failure mode a stated bound is supposed to prevent,
+    # turned inside out.
     db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
 alter table public.videos drop column if exists m4_mut_foreign;
-create index m4_mut_idx on public.workspace_videos (workspace_id);
 SQL
-    if landed idx "select count(*) from pg_indexes where schemaname='public' and indexname='m4_mut_idx';" "the bare INDEX"; then
-      gate "${PREFIX}_raw" --expect-present && r=pass || r=fail
-      report "BOUND: a bare INDEX on an M4 relation still PASSES — idx: carries no relation name" pass "$r"
-    fi
 
-    # The direction that was ALREADY guarded — asserting it keeps the bounds above from reading as
+    # The direction that was ALREADY guarded — asserting it keeps the bound above from reading as
     # "the gate sees nothing".
     # ⚠ `if exists` ON THE CLEANUP, so a probe that failed cannot make its NEIGHBOUR red. MEASURED
     # while falsifying `landed`: a deliberately misnamed index left `drop index m4_mut_idx` to abort
     # this block under ON_ERROR_STOP, so the removed-column case never ran and reported MUTATION
     # SURVIVED for a reason that had nothing to do with it. Failing loudly is right; failing loudly
     # in the WRONG ASSERTION sends the next reader to the wrong defect.
+    # ⟳ 2026-09-12: that `drop index` is no longer here — `m4_mut_idx` is created AND undone by its
+    # own probe, which ASSERTS the undo went green. Two droppers for one object is a second owner
+    # that can silently disagree; the lesson above is kept because it is why `m4_mut_residue` below
+    # still carries `if exists`, and it is not specific to the index that taught it.
     db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
-drop index if exists m4_mut_idx;
 alter table public.workspace_videos drop column if exists m4_mut_residue;
 alter table public.workspace_videos drop column video_id cascade;
 SQL
