@@ -34,6 +34,17 @@ name: Schema gates
 # They are kept adjacent so a one-sided edit is visible in the same screen — which is a convention,
 # i.e. weaker than a check. If this ever bites, the fix is a script that asserts the two lists are
 # equal, not a sterner comment.
+#
+# ⚠ UNDER-FIRING WAS CHECKED, NOT ASSUMED — it is the dangerous direction, because it makes the gate
+# silently NOT RUN on the change that breaks it. MEASURED 2026-09-13: of the files the suite reaches,
+# exactly ONE lives outside these globs and is genuinely OPENED rather than merely named in a
+# comment — `docs/backlog.md`, read by `check-docs.py:297,406,463` (gate 6). That is not a gap:
+# `ci.yml:109` runs the same `check-docs.py` in the `verify` job, which has NO path filter, so a
+# docs-only change is gated there. Everything else on the first pass (`docs/dev-process.md`,
+# `docs/plugins.md`, `docs/roadmap-to-launch.md`, the ADR and review paths) is prose inside comments.
+# ⚠ That distinction is the whole finding: a grep for path literals cannot tell a path the code
+# OPENS from one a comment MENTIONS, and the first version of this check reported 14 uncovered paths
+# of which 13 were sentences.
 on:
   pull_request:
     branches: [master]
