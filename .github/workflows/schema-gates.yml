@@ -69,6 +69,12 @@ on:
       - 'components/**'
       - 'types/**'
       - 'middleware.ts'
+      # ⟳ r1 LOW (codex): gate 15 answers "is this a comment?" with the TypeScript compiler and has
+      # no fallback, so `typescript` in package.json is a GATE DEPENDENCY — this workflow's own
+      # comments say so. A dependency-only PR could change that surface without running the gate
+      # whose correctness rests on it.
+      - 'package.json'
+      - 'package-lock.json'
       - 'scripts/**'
       - 'supabase/**'
       - 'docs/superpowers/specs/2026-08-03-stable-blob-addressing/**'
@@ -86,6 +92,12 @@ on:
       - 'components/**'
       - 'types/**'
       - 'middleware.ts'
+      # ⟳ r1 LOW (codex): gate 15 answers "is this a comment?" with the TypeScript compiler and has
+      # no fallback, so `typescript` in package.json is a GATE DEPENDENCY — this workflow's own
+      # comments say so. A dependency-only PR could change that surface without running the gate
+      # whose correctness rests on it.
+      - 'package.json'
+      - 'package-lock.json'
       - 'scripts/**'
       - 'supabase/**'
       - 'docs/superpowers/specs/2026-08-03-stable-blob-addressing/**'

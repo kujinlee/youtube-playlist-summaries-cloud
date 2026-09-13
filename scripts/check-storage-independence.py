@@ -32,10 +32,27 @@ gates*. So:
     `storage.objects` into `m4_catalog.py`; they widen `nspname = 'public'`. That edit contains the
     word `storage` but not the string `storage.`, which is why the grep could never see it.
 
-⚠ WHAT THIS STILL CANNOT SEE, stated rather than implied: SQL assembled at runtime from fragments
-(`"storage" + "." + tbl`), a gate that shells out to `psql` with a heredoc built elsewhere, or a
-non-Python gate. The first two are contrivances; the third is real and bounded — the shell gates
-reach Postgres through these same Python modules.
+⛔⛔ THE FIRST VERSION'S STATED BOUND WAS ITSELF FALSE — ⟳ r1 HIGH (codex). It read: *"a non-Python
+gate … is real and bounded — the shell gates reach Postgres through these same Python modules."*
+Gate 1 plainly does not. `verify-schema.sh` CONCATENATES `05_assert.sql` (2,517 lines, 122 assertion
+sites) and executes it against Postgres directly, and gate 2 does the same through `mutate-schema.py`
+— both under `docs/superpowers/specs/…/`, which the population never reached. So a future assertion
+could query `storage.objects`, pass against the minimal CI fixture, and this guard would still report
+green: the exact direction the fixture is dangerous in.
+
+The population now covers three kinds, and the comment rule differs per kind because the available
+precision does:
+
+    .py    `ast` — EXACT. Comments never enter the tree; strings do.
+    .sql   `--` to end of line and `/* … */` stripped, then matched
+    .sh    `#` to end of line stripped when it starts a line or follows whitespace
+
+⚠ THE LAST TWO ARE APPROXIMATIONS AND THAT IS STATED RATHER THAN HIDDEN: a `#` inside a shell string
+is treated as a comment, so a reference written as `psql -c "select … storage.objects"` on a line
+that also contains a `#` could be missed. It errs toward MISSING a reference, never toward inventing
+one — a false alarm here would train someone to switch the guard off.
+
+⚠ WHAT REMAINS UNSEEABLE: SQL assembled at runtime from fragments (`"storage" + "." + tbl`).
 """
 from __future__ import annotations
 
@@ -82,6 +99,35 @@ def gate_files(root: pathlib.Path = ROOT) -> list[pathlib.Path]:
             continue
         if re.search(r"^\s*(?:from|import)\s+(?:m4_catalog|m4_base_db)\b", src, re.M):
             out.add(p)
+    # ⟳ r1 HIGH (codex): the NON-PYTHON gates, and the SQL they execute. Gates 1 and 2 live under
+    # `docs/superpowers/specs/…/` and were outside every branch above, so the guard's own stated
+    # bound was false. Derived the same way as the rest — read out of the suite, not listed here.
+    if suite.is_file():
+        text = suite.read_text(encoding="utf-8")
+        # ⚠ EXPAND THE SUITE'S OWN VARIABLES FIRST. Gates 1 and 2 are invoked as `"$SPEC/…"`, so a
+        # literal-path regex finds neither — which is the SAME miss as the finding this fixes, one
+        # level down: I looked for the shape I expected instead of the shape the file uses.
+        for var, val in re.findall(r'^([A-Z_]+)="([^"$]+)"', text, re.M):
+            text = text.replace(f'"${var}/', f'"{val}/').replace(f"${{{var}}}/", f"{val}/")
+        for m in re.findall(r"[\w./-]+\.(?:sh|py|sql)", text):
+            p = root / m.lstrip("./")
+            # ⛔ A MIGRATION IS THE SUBJECT, NOT A GATE. `supabase/migrations/**` is excluded because
+            # those files are what the gates READ THE CATALOG ABOUT — and `0007_storage_and_rpcs.sql`
+            # uses `storage.buckets` on purpose. That use is the entire REASON the CI fixture exists,
+            # so counting it as "a gate reads storage" inverts the rule: the guard fired on its own
+            # premise. Measured when the population first widened: 3 hits, all in 0007, all correct
+            # by the letter of the rule and all meaningless.
+            # The population is things that read the catalog to reach a VERDICT, never things the
+            # verdict is about.
+            if str(p.relative_to(root)).startswith("supabase/"):
+                continue
+            if p.is_file() and p.suffix in (".sh", ".py", ".sql"):
+                out.add(p)
+                # a gate that executes SQL keeps it beside itself or in a `schema/` subdirectory;
+                # those files ARE the gate's body as far as Postgres is concerned.
+                for d in (p.parent, p.parent / "schema"):
+                    if d.is_dir() and not str(d.relative_to(root)).startswith("supabase/"):
+                        out.update(q for q in sorted(d.glob("*.sql")) if q.is_file())
     return sorted(out)
 
 
@@ -101,6 +147,25 @@ def storage_refs(src: str) -> list[str]:
             if node.value.id == "storage":
                 hits.append(f"line {node.lineno}: attribute access on a name `storage`")
     return hits
+
+
+def text_refs(src: str, kind: str) -> list[str]:
+    """Every `storage.<x>` in a NON-Python subject, comments removed by kind. PURE.
+
+    ⟳ r1 HIGH (codex). `ast` is exact and only exists for Python; these two are approximations, and
+    they err toward MISSING a reference rather than inventing one. A false alarm in a guard like this
+    is worse than a miss: it trains the reader to switch the guard off, and then both directions are
+    unguarded.
+    """
+    if kind == ".sql":
+        body = re.sub(r"/\*.*?\*/", " ", src, flags=re.S)          # block comments
+        body = re.sub(r"--[^\n]*", " ", body)                       # line comments
+    elif kind == ".sh":
+        body = re.sub(r"(?m)(?:^|(?<=\s))#[^\n]*", " ", src)        # `#` at line start or after space
+    else:
+        body = src
+    return [f"line {body[:m.start()].count(chr(10)) + 1}: {kind[1:]} reads storage.*"
+            for m in STORAGE_REF.finditer(body)]
 
 
 def namespace_scopes(sql: str) -> list[str]:
@@ -131,6 +196,16 @@ def problems(files: list[pathlib.Path], root: pathlib.Path = ROOT) -> list[str]:
             src = p.read_text(encoding="utf-8")
         except OSError as e:
             out.append(f"CANNOT RUN — {rel}: unreadable ({e})")
+            continue
+        if p.suffix != ".py":
+            # ⟳ r1 HIGH: gates 1 and 2 are a shell script and the SQL it executes. Sending those
+            # through `ast` would report every one as CANNOT RUN — a guard drowning in refusals is
+            # switched off just as fast as one that never fires.
+            for hit in text_refs(src, p.suffix):
+                out.append(f"{rel}: {hit}")
+            for node_sql in (src,):
+                for bad in namespace_scopes(node_sql):
+                    out.append(f"{rel}: {bad}")
             continue
         try:
             for hit in storage_refs(src):
@@ -255,6 +330,53 @@ def self_test() -> int:
         check("an EMPTY derived set is CANNOT RUN, not a clean sweep",
               bool(res) and res[0].startswith("CANNOT RUN"), True)
 
+    # ── ⟳ r1 HIGH (codex): the non-Python kinds, and the population that missed them ──────────
+    check("a .sql gate reading storage.objects is CAUGHT",
+          bool(text_refs("select 1 from storage.objects;", ".sql")), True)
+    check("a SQL `--` comment mentioning it is NOT",
+          text_refs("-- we never read storage.objects\nselect 1;", ".sql"), [])
+    check("a SQL /* block */ comment is NOT",
+          text_refs("/* storage.objects is not read here */ select 1;", ".sql"), [])
+    check("a .sh gate reading storage.buckets is CAUGHT",
+          bool(text_refs('psql -c "select id from storage.buckets"', ".sh")), True)
+    check("a shell `#` comment is NOT",
+          text_refs("# storage.buckets is never read\necho hi", ".sh"), [])
+    check("a `#` mid-line after whitespace still comments the rest out",
+          text_refs("echo hi   # storage.buckets", ".sh"), [])
+    check("a `#` with no leading whitespace is NOT treated as a comment",
+          bool(text_refs("X=a#storage.buckets", ".sh")), True)
+
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        (root / "scripts").mkdir()
+        spec = root / "docs" / "spec"
+        (spec / "schema").mkdir(parents=True)
+        (root / "supabase" / "migrations").mkdir(parents=True)
+        # the suite invokes its gates through a VARIABLE, exactly as the real one does
+        # ⚠ THE SUITE MUST NAME THE MIGRATION, or the exclusion case cannot fail: a file that was
+        # never a candidate is absent for a reason that has nothing to do with the rule. Measured —
+        # the mutation that removes the exclusion went RED but NOT via this case until the fixture
+        # made the migration a genuine candidate.
+        (root / "scripts" / "check-schema-gates.sh").write_text(
+            'SPEC="docs/spec"\nrun "1/15 x" "$SPEC/verify-schema.sh"\n'
+            'psql -f supabase/migrations/0007.sql\n')
+        (spec / "verify-schema.sh").write_text('psql -f "$DIR/schema/05_assert.sql"\n')
+        (spec / "schema" / "05_assert.sql").write_text("select 1 from storage.objects;\n")
+        (root / "supabase" / "migrations" / "0007.sql").write_text(
+            "insert into storage.buckets values ('x');\n")
+        names = {p.name for p in gate_files(root)}
+        check("r1 HIGH: a gate invoked through a shell VARIABLE is in scope",
+              "verify-schema.sh" in names, True)
+        check("r1 HIGH: the SQL that gate executes is in scope",
+              "05_assert.sql" in names, True)
+        check("a MIGRATION is the subject, not a gate — excluded",
+              "0007.sql" in names, False)
+        found = problems(sorted(gate_files(root)), root)
+        check("r1 HIGH: storage read from that SQL is REPORTED",
+              any("05_assert.sql" in f for f in found), True)
+        check("...and the migration's legitimate storage use is NOT",
+              any("0007.sql" in f for f in found), False)
+
     # ⚠ THE `root` PARAMETER IS VARIED AGAINST THE REAL REPO, NOT ONLY BETWEEN TWO TEMP DIRS —
     # ⟳ `check-fixture-variation.py` refused this file until it was: every call above passes the
     # same `root` expression, so no case could tell that parameter from a constant and any clause
@@ -262,8 +384,11 @@ def self_test() -> int:
     # works on the SHIPPED tree rather than on fixtures I built to suit it.
     check("the default root derives a non-empty gate set from the real repo",
           len(gate_files()) > 5, True)
-    check("...and every derived path is a real file under scripts/",
-          all(p.is_file() and p.suffix == ".py" for p in gate_files()), True)
+    # ⟳ r1 HIGH widened this deliberately: the population is no longer Python-only, because gates 1
+    # and 2 are a shell script and the SQL it executes. The case moves with the rule instead of being
+    # deleted — a case quietly dropped when it fails is how a rule loses its only observer.
+    check("...and every derived path is a real file of a kind this guard can read",
+          all(p.is_file() and p.suffix in (".py", ".sh", ".sql") for p in gate_files()), True)
     check("the shipped tree is independent of storage (the live claim, as a case)",
           problems(gate_files()), [])
 

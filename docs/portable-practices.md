@@ -1096,3 +1096,49 @@ of the four is the one everybody reads it as.
 zero can mean "we checked and found none" or "we could not see any" — and the difference is invisible
 unless something asserts that the observation was possible. See §21: this is the population question
 asked of an instrument rather than of a guard.
+
+---
+
+## 23. A background job with no heartbeat is indistinguishable from a hung one — emit evidence, not reassurance
+
+> The user asked, twice in three messages: *"are you continuing or paused right now"*, then
+> *"show some progress indicator or line so that I can know some job is currently progressing"*.
+> Both times the answer was "continuing". Both times there was no way for them to know that.
+
+**Measured 2026-09-13.** An adversarial review was running as a background process for nine minutes.
+It was healthy throughout — the process was alive, it had built its own database container, run a
+three-minute suite against it, and torn the container down. None of that reached the person waiting,
+because a backgrounded job writes to a file, not to their terminal. From outside, *working* and
+*wedged* produce byte-identical output: nothing.
+
+**The fix is not to say "it's running".** That sentence is exactly what a stuck session emits, so it
+carries no information. Emit a line that could have said something BAD:
+
+```
+codex r1 running 372s · wrapper alive · its db container: 1 · review file: not yet
+codex r1 PROCESS GONE after 6m12s with no review file — treat as NOT RUN, falling back
+```
+
+The first line is trustworthy *because* the second one exists. Every field is re-derived from a live
+observation — `pgrep`, `docker ps`, `wc -c` on the output file — never from what the caller believes
+it started. A spinner that cannot report death is decoration.
+
+**Two mechanisms, and they answer different questions.**
+
+| | mechanism | answers |
+|---|---|---|
+| **While it runs** | a watcher emitting one line every 90–120s | *is it alive right now* |
+| **Every message** | a compact status block, one row per job, same shape each time | *what is the whole board* |
+
+⚠ **Do not implement the heartbeat by polling in your own loop.** That consumes the very turns the
+background job exists to free up, and it makes the cadence a function of how often you happen to
+look. Arm a watcher once; read its events.
+
+⚠ **Pick the interval from what changes, not from impatience.** A review takes minutes, so 90 seconds
+is frequent enough to prove life and rare enough not to bury the conversation. A heartbeat every ten
+seconds is a denial-of-service on the reader's attention, and they will stop reading it — at which
+point it has the same value as no heartbeat, having cost more.
+
+**The general principle, beyond progress lines:** any status a human consumes should be *falsifiable
+by its own format*. If the display cannot render failure, its success reading means nothing — which
+is §20's table-of-results rule applied to a thing that updates while you watch it.

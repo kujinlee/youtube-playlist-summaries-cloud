@@ -8242,3 +8242,48 @@ left legacy inside a paragraph claiming all three helpers were fixed; "six relat
 queries" was nine; the 14s excludes the image pull; no `permissions:` block.
 
     suite  73 ✓ / 0 ✗, 15/15, exit 0 against a rebuilt CI database
+
+## 2026-09-13
+The second reviewer found a hole in the safety check I had written an hour earlier:
+it was supposed to prove that no database check reads the storage system, and it was
+only looking at two thirds of them. Fixed, along with a genuinely dangerous one — a
+helper script could delete an unrelated container on your machine if an environment
+variable happened to point at it. Both reviewers have now signed off and every check
+is green.
+<!--tech-->
+Codex r1: `docs/reviews/codex/schema-gates-ci-r1-codex.md` — 1 High, 1 Medium, 1 Low,
+all accepted and fixed. It built its own database, ran the full suite (15/15, 120 live
+assertions, 58/58 schema mutations, 29/29 live-schema mutations) and tore it down.
+
+**HIGH — the guard's STATED BOUND was false.** It claimed "the shell gates reach
+Postgres through these same Python modules". Gate 1 does not: `verify-schema.sh`
+concatenates `05_assert.sql` (2,517 lines, 122 assertion sites) and executes it. So a
+future assertion could read `storage.objects`, pass against the minimal CI fixture,
+and the guard would report green. Three defects had to be fixed to close it:
+
+    population missed the non-Python gates       12 files, 0 spec gates, 0 .sql
+    the WIDENED version still missed them        gates 1-2 are invoked as "$SPEC/…"
+    then it over-fired on migrations             3 hits in 0007, all meaningless
+
+⭐ The middle one is the same miss as the finding itself, one level down: I matched
+literal paths when the file uses a variable. The third inverted the rule — a migration
+is the SUBJECT the gates read the catalog about, and 0007's use of `storage.buckets`
+is *why* the fixture exists. Population is now 21 (12 Python + 6 spec gates +
+05_assert.sql and siblings, 0 migrations), with comment handling per kind: `ast` for
+Python, `--`/`/* */` for SQL, `#` for shell — the last two stated as approximations
+that err toward missing a reference rather than inventing one.
+
+Self-test 26 → 38 cases; manifest 7 → 11 mutations, 11/11 killing via the case each
+names. One new mutation went "RED but NOT via its case" first, because the exclusion
+case asserted the absence of a file the fixture never made a candidate.
+
+**MEDIUM — a deny-list where an allow-list belonged, and it was live.**
+`PGCONTAINER=redis scripts/ci/start-schema-db.sh` would have run `docker rm -f redis`.
+Now only `m4_[a-z0-9_]*` may be destroyed; anything unrecognised is refused. Falsified
+live: `PGCONTAINER=redis_ru202` → refused, container survived.
+
+**LOW** — `package.json`/`package-lock.json` added to the path filter: gate 15 answers
+comment detection with the TypeScript compiler and has no fallback, so its dependency
+surface is a gate dependency.
+
+    suite   73 ✓ / 0 ✗, 15/15, exit 0     guards  10/10 green

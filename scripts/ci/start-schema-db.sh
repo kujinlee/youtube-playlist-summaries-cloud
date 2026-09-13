@@ -60,10 +60,26 @@ WAIT_SECONDS="${SCHEMA_DB_WAIT:-180}"
 # ⚠ REFUSE TO TOUCH THE SHARED LOCAL STACK. This script's first act is `docker rm -f`, and the
 # developer's own Supabase container holds every other agent's work. Same rule, and the same reason,
 # as `m4-base-db.sh`'s `valid_name`.
+# ⛔⛔ AN ALLOW-LIST, NOT A DENY-LIST — ⟳ r1 MEDIUM (codex), and the deny-list version was live.
+# This script's first act is `docker rm -f "$NAME"`, and `NAME` can come from `PGCONTAINER`, which
+# is an ENVIRONMENT variable the caller may not even know is set. The old rule refused only
+# `supabase_*`, `*_supabase*`, `postgres` and empty — so `PGCONTAINER=redis scripts/ci/start-schema-db.sh`
+# destroyed an unrelated container, and the reviewer found a live one on this machine to prove it.
+#
+# A deny-list is a claim that you have thought of every name worth protecting; an allow-list is a
+# claim that you know which names are yours. Only the second is checkable, and only the second fails
+# SAFE — an unrecognised name is refused rather than deleted. The `m4_` prefix is the throwaway
+# naming discipline the rest of this suite already uses (`m4_gate_mut_$$`, `m4_verify_base_…`).
+#
+# ⚠ STATED BOUND: this still permits deleting ANY `m4_*` container, including one another agent is
+# using. That is deliberate — the alternative is a registry of live containers, which is state this
+# script cannot read. The blast radius is now "throwaway databases this project creates" rather than
+# "anything on the machine".
 refuses_name() { # 0 = REFUSE this name
   case "$1" in
-    supabase_*|*_supabase*|postgres|"") return 0 ;;
-    *) return 1 ;;
+    supabase_*|*_supabase*|postgres|"") return 0 ;;   # kept: explicit, and first
+    m4_[a-z0-9_]*) return 1 ;;                        # the only shape this script may destroy
+    *) return 0 ;;                                    # unrecognised -> REFUSE, never delete
   esac
 }
 
@@ -73,7 +89,10 @@ apply_sql() { # container file [role] -> 0 ok, 1 failed
 
 main() {
   if refuses_name "$NAME"; then
-    echo "CANNOT RUN — refusing container name '$NAME': it could be the shared local stack." >&2
+    echo "CANNOT RUN — refusing container name '$NAME'." >&2
+    echo "  This script's first act is \`docker rm -f\`, so it destroys ONLY names it recognises as" >&2
+    echo "  its own: \`m4_<lowercase/digits/underscores>\`. Anything else — including an unrelated" >&2
+    echo "  container inherited from \$PGCONTAINER — is refused rather than deleted." >&2
     return 2
   fi
   command -v docker >/dev/null 2>&1 || { echo "CANNOT RUN — no docker on PATH." >&2; return 2; }
@@ -198,6 +217,15 @@ self_test() {
   t "an EMPTY argument stays empty, so refuses_name gets to refuse it" "" "$(resolve_name "")"
   t "an ABSENT argument falls back to the default" "m4_schema_gates" "$(PGCONTAINER= resolve_name)"
   t "an explicit argument wins" "m4_review_x" "$(resolve_name m4_review_x)"
+  # ⟳ r1 MEDIUM (codex): the allow-list's own cases. Each of these was ALLOWED by the deny-list.
+  refuses_name "redis" && r=REFUSE || r=allow
+  t "an unrelated container name is REFUSED" REFUSE "$r"
+  refuses_name "my-app-db" && r=REFUSE || r=allow
+  t "a plausible foreign database is REFUSED" REFUSE "$r"
+  refuses_name "M4_UPPER" && r=REFUSE || r=allow
+  t "a name that only looks like ours is REFUSED" REFUSE "$r"
+  refuses_name "m4" && r=REFUSE || r=allow
+  t "the bare prefix with nothing after it is REFUSED" REFUSE "$r"
   refuses_name "m4_schema_gates" && r=REFUSE || r=allow
   t "the CI name is allowed" allow "$r"
   refuses_name "m4_ci_probe" && r=REFUSE || r=allow

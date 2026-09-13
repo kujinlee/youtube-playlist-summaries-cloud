@@ -75,5 +75,49 @@
       ]
     ],
     "expect": "`mystorage.x` is not a storage reference"
+  },
+  {
+    "name": "the SQL comment stripper stops running, so a comment false-fires",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "        body = re.sub(r\"--[^\\n]*\", \" \", body)                       # line comments",
+        "        body = body"
+      ]
+    ],
+    "expect": "a SQL `--` comment mentioning it is NOT"
+  },
+  {
+    "name": "the shell comment stripper stops running",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "        body = re.sub(r\"(?m)(?:^|(?<=\\s))#[^\\n]*\", \" \", src)        # `#` at line start or after space",
+        "        body = src"
+      ]
+    ],
+    "expect": "a shell `#` comment is NOT"
+  },
+  {
+    "name": "the suite's shell variables stop being expanded, so gates 1 and 2 vanish again",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "        for var, val in re.findall(r'^([A-Z_]+)=\"([^\"$]+)\"', text, re.M):",
+        "        for var, val in []:"
+      ]
+    ],
+    "expect": "r1 HIGH: a gate invoked through a shell VARIABLE is in scope"
+  },
+  {
+    "name": "migrations stop being excluded, so the guard fires on its own premise",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "            if str(p.relative_to(root)).startswith(\"supabase/\"):",
+        "            if False:"
+      ]
+    ],
+    "expect": "a MIGRATION is the subject, not a gate — excluded"
   }
 ]
