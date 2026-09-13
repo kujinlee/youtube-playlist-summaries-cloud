@@ -79,8 +79,12 @@ import os
 import re
 import subprocess
 
-# ⛔ ONE DEFINITION, NOT A COPY OF THE EXPRESSION. `m4_base_db.CONTAINER` is the single
-# place the container name is resolved (and the single place `PGCONTAINER` is read).
+# ⛔ ONE DEFINITION FOR THE PYTHON GATES, NOT A COPY OF THE EXPRESSION. `m4_base_db.CONTAINER`
+# resolves the container name for every Python gate that reaches Postgres through it.
+# ⟳ r1 MEDIUM 2 (claude): this said "the single place `PGCONTAINER` is read", which was FALSE —
+# measured, SEVEN places read it. Four are shell and genuinely cannot import a Python constant;
+# the fifth was `check-paid-caller-arrival.py`, a Python gate in this same suite, which could
+# have taken the same one-line import and now does.
 # ⟳ 2026-09-13: this line WAS the hardcoded name, so every gate reaching Postgres through
 # this module talked to the developer's own stack no matter what the caller set — measured
 # when a CI-built database reported `database "m4_rb2" does not exist` for a database that

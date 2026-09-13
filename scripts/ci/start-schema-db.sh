@@ -40,7 +40,16 @@ set -uo pipefail
 cd "$(dirname "$0")/../.."
 
 IMAGE="${SCHEMA_DB_IMAGE:-public.ecr.aws/supabase/postgres:17.6.1.147}"
-NAME="${1:-${PGCONTAINER:-m4_schema_gates}}"
+# ⟳ r1 MEDIUM 3 (claude): `${1:-…}` treats an EMPTY argument as absent, so
+# `start-schema-db.sh "$SOME_EMPTY_VAR"` silently resolved to the default and `docker rm -f`
+# ran against it — while the self-test's "an empty name is REFUSED" case passed by calling
+# `refuses_name ""` directly, a path `main()` could never reach. The case would have gone on
+# passing if this line were deleted. `${1-…}` (no colon) makes an empty argument EMPTY, which
+# `refuses_name` then refuses — and `resolve_name` below makes the resolution itself testable.
+resolve_name() { # $1 = the raw argument, possibly absent, possibly empty
+  if [ "$#" -eq 0 ]; then printf '%s' "${PGCONTAINER:-m4_schema_gates}"; else printf '%s' "$1"; fi
+}
+NAME="$(resolve_name ${1+"$1"})"
 READY_MARKER="PostgreSQL init process complete"
 MIGRATIONS="supabase/migrations"
 FIXTURE="scripts/ci/storage-service-fixture.sql"
@@ -184,6 +193,11 @@ self_test() {
   t "the bare name 'postgres' is REFUSED" REFUSE "$r"
   refuses_name "" && r=REFUSE || r=allow
   t "an empty name is REFUSED, never defaulted" REFUSE "$r"
+  # ⟳ r1 MEDIUM 3: assert on the RESOLUTION, not on `refuses_name` alone. These are the cases that
+  # go red if `${1-…}` is written `${1:-…}` again — the ones the old case could not see.
+  t "an EMPTY argument stays empty, so refuses_name gets to refuse it" "" "$(resolve_name "")"
+  t "an ABSENT argument falls back to the default" "m4_schema_gates" "$(PGCONTAINER= resolve_name)"
+  t "an explicit argument wins" "m4_review_x" "$(resolve_name m4_review_x)"
   refuses_name "m4_schema_gates" && r=REFUSE || r=allow
   t "the CI name is allowed" allow "$r"
   refuses_name "m4_ci_probe" && r=REFUSE || r=allow

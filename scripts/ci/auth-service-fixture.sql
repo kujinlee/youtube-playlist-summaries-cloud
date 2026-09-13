@@ -51,9 +51,16 @@ alter table auth.users add column if not exists is_anonymous boolean not null de
 -- `ASSERTION FAILED — the OWNER cannot read their own manifest`. Three gates (1, 2 and 8) die on
 -- that single line.
 --
--- ⚠ FIXED FOR ALL THREE HELPERS, NOT JUST THE ONE THAT FAILED. `auth.role()` and `auth.jwt()`
--- differ between image and stack in the same way; fixing only `uid` would have meant meeting the
--- next one as a fresh failure two gates later. (This repo has a name for that: instance, not class.)
+-- ⚠ FIXED FOR ALL FOUR HELPERS, NOT JUST THE ONE THAT FAILED. `auth.role()`, `auth.jwt()` and
+-- `auth.email()` differ between image and stack in the same way; fixing only `uid` would have
+-- meant meeting the next one as a fresh failure two gates later.
+-- ⟳ r1 LOW 1 (claude): this said THREE and left `auth.email()` in its legacy form — an
+-- instance-shaped fix inside a paragraph claiming to have closed the class, which is this
+-- session's most repeated defect. Nothing in the repo calls `auth.email()` TODAY (grepped:
+-- zero hits in migrations and in the M4 spec), so it was latent rather than live: the first
+-- policy to use it would have failed in CI only, and read as a CI problem rather than a
+-- fixture gap. Included now because the class is 'every auth helper the image ships legacy',
+-- not 'the ones something happens to call'.
 --
 -- ⛔ THE RISK, STATED PLAINLY BECAUSE IT RUNS THE WRONG WAY. A fixture that made `auth.uid()` MORE
 -- permissive than production would turn CI green while prod stays broken — the worst direction for
@@ -108,3 +115,14 @@ AS $function$
     )::jsonb
 $function$;
 
+CREATE OR REPLACE FUNCTION auth.email()
+ RETURNS text
+ LANGUAGE sql
+ STABLE
+AS $function$
+  select 
+  coalesce(
+    nullif(current_setting('request.jwt.claim.email', true), ''),
+    (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'email')
+  )::text
+$function$;

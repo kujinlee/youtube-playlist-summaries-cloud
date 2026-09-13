@@ -5,7 +5,15 @@
 #     exit 0 = <dbname> exists, is a clone of `postgres`, and M4 is ABSENT from it
 #     exit 2 = CANNOT RUN (treat as NOT RUN — never a pass)
 #
-#   ./scripts/m4-base-db.sh --self-test    # 10 cases, including the two fail-closed post-conditions
+#   ./scripts/m4-base-db.sh --self-test    # fail-closed post-conditions included
+#
+# ⟳ r1 MEDIUM 4 (claude), and this is the SECOND correction of the same line. It said `# 6
+# cases` and the suite ran 10 — measured. Writing `# 10 cases` fixed the number and RESTORED
+# THE DEFECT: `check-selftest-counts.py` globs `scripts/*.py`, so a declared count in a shell
+# script has no outside observer and will drift again the moment a case is added. Its sibling
+# `scripts/ci/start-schema-db.sh` had already handled this correctly by declaring nothing and
+# deriving the count at runtime — so this branch contained both the right answer and the wrong
+# one, three files apart. No stored count here either; the suite prints what it ran.
 #
 # ⟳ 2026-09-13: this said **6** and the suite runs **10** — measured by running it. The drift was
 # invisible because `check-selftest-counts.py` globs `scripts/*.py`, so a declared count in a

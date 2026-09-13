@@ -22,11 +22,19 @@
 -- name, and no more.
 --
 -- ⛔ THE CLAIM THAT MAKES THAT SAFE, AND IT IS CHECKED RATHER THAN ASSERTED: no schema gate reads
--- `storage.*`. `m4_catalog.CATALOG_SQL` is scoped to `nspname = 'public'` at every one of its six
--- relation queries. The CI job greps the gate scripts for a code reference to `storage.` and FAILS
--- if one appears — at which point this fixture has become load-bearing and must be replaced by the
--- real service schema rather than extended. That grep is the falsifier; without it this header is
--- just a sentence that was true once.
+-- `storage.*`. `m4_catalog.CATALOG_SQL` scopes EVERY query to `nspname = 'public'`.
+-- ⟳ r1 LOW 2 (claude): this used to say "at every one of its six relation queries" and the real
+-- number is NINE. The count is gone rather than corrected — ALL is the claim that carries weight,
+-- and a hand-counted number in a comment is a stored value with no observer, which is how it was
+-- wrong in the first place.
+--
+-- ⛔ THE FALSIFIER IS `scripts/check-storage-independence.py`, run by the CI job, and it is a SCRIPT
+-- because the first version was a grep inside the workflow that SURVIVED THREE OF FIVE MUTATIONS
+-- (⟳ r1 HIGH, claude) — including the realistic one: widening `nspname = 'public'` to admit
+-- `storage` contains no `storage.` at all. The replacement parses with `ast` and derives its file
+-- set, so a comment cannot false-fire it and a NEW gate script is covered the day it is written.
+-- If it goes red, this fixture has become load-bearing and must be REPLACED by the real service
+-- schema, not extended to match.
 --
 -- NOT a migration, and never applied to any database that matters: `supabase migration up` does not
 -- see this path, and the only caller is the CI workflow.
@@ -40,7 +48,7 @@
 -- ⚠ DIVERGENCE FROM THE REAL STACK, STATED: there the two tables are owned by
 -- `supabase_storage_admin`, and `postgres` is not a member of it (measured on the dev container).
 -- Exactly how the storage-api service applies those policies is not something this file needs to
--- answer, because no gate reads `storage.*` — see the grep falsifier above. If one ever does, this
+-- answer, because no gate reads `storage.*` — see the falsifier named above. If one ever does, this
 -- divergence becomes load-bearing and the fixture must be replaced, not patched.
 
 create table if not exists storage.buckets (

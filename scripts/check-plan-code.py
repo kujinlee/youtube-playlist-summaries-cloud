@@ -818,6 +818,10 @@ EXPECTED_MUTATIONS = {
     # live outside scripts/, so before HARNESS_TREE their control could never be green.
     # One mutation per case — the suite has exactly six, and each is now killed by one.
     "scripts/check-storage-grant-pin.py": 6,
+    # ⟳ 2026-09-13: the CI storage fixture's falsifier, pinned in the commit that creates it.
+    # Its predecessor was a grep inside the workflow that survived 3 of 5 mutations, so this
+    # manifest exists to prove the replacement does not.
+    "scripts/check-storage-independence.py": 7,
     # ⟳ 2026-09-06, backlog #99: the Stop guard and its driver BOTH join the manifest, in the
     # commit that changes their decision paths. Only ONE of them is R4 debt — begin-plan.py is
     # not a `check-*` guard, so `discover_guards` never saw it and it was never counted as owed.
@@ -2509,6 +2513,7 @@ def _self_test() -> int:
                                       "scripts/check-selftest-counts.py",
                                       "scripts/check-sentinel-meanings.py",
                                       "scripts/check-storage-grant-pin.py",
+"scripts/check-storage-independence.py",
                                       "scripts/check-test-counts.py",
                                       "scripts/check-theme-token-coverage.py",
                                       "scripts/check-vocabulary-collisions.py",
@@ -2995,7 +3000,10 @@ def _self_test() -> int:
     # ⚠ This sentence said "The six cover …" over nine entries for two rounds. Both halves filed it
     # twice; the first fix asserted on one string and replaced another, so `str.replace` silently
     # did nothing and the count drifted further (8 -> 9) while reading as fixed.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 559)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 566)
+    # ⟳ 2026-09-13: 559 -> 566. +7 for `check-storage-independence.py`, the CI storage
+    # fixture's falsifier. A RISE needs only the new manifest; a FALL needs the sanctioned
+    # reason (see the retire-plan-mode entry above), and this is not one.
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

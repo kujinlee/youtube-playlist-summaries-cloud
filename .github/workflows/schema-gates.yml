@@ -6,7 +6,10 @@
 # 7-8 minute `verify` job roughly doubles CI. Both halves of that were checked and neither held:
 #
 #   * CI is not serial. As a SEPARATE JOB this runs beside `verify`, so the wall-clock cost is
-#     max(verify, schema) and not the sum. Measured locally: database 14s + suite 185s ~= 3.3 min,
+#     max(verify, schema) and not the sum. Measured locally: database 14s + suite 185s ~= 3.3 min
+#     WITH THE IMAGE ALREADY CACHED (⟳ r1 LOW 3, claude — a cold runner also pays the 0.34 GB
+#     pull). The real CI figure beat the estimate anyway: the first green run of this job took
+#     93s end to end, pull included, while `verify` was still running.
 #     against a `verify` job that has taken 5-8 min on its last twelve runs.
 #   * The precedent cited (backlog #56) measured a gate being switched off for firing on every
 #     DOCS-ONLY commit — noise, not duration. That argues for the path filter below, not for a
@@ -35,20 +38,37 @@ name: Schema gates
 # i.e. weaker than a check. If this ever bites, the fix is a script that asserts the two lists are
 # equal, not a sterner comment.
 #
-# ⚠ UNDER-FIRING WAS CHECKED, NOT ASSUMED — it is the dangerous direction, because it makes the gate
-# silently NOT RUN on the change that breaks it. MEASURED 2026-09-13: of the files the suite reaches,
-# exactly ONE lives outside these globs and is genuinely OPENED rather than merely named in a
-# comment — `docs/backlog.md`, read by `check-docs.py:297,406,463` (gate 6). That is not a gap:
-# `ci.yml:109` runs the same `check-docs.py` in the `verify` job, which has NO path filter, so a
-# docs-only change is gated there. Everything else on the first pass (`docs/dev-process.md`,
-# `docs/plugins.md`, `docs/roadmap-to-launch.md`, the ADR and review paths) is prose inside comments.
-# ⚠ That distinction is the whole finding: a grep for path literals cannot tell a path the code
-# OPENS from one a comment MENTIONS, and the first version of this check reported 14 uncovered paths
-# of which 13 were sentences.
+# ⛔⛔ UNDER-FIRING IS THE DANGEROUS DIRECTION — it makes the gate SILENTLY NOT RUN on the change
+# that breaks it — AND THE FIRST VERSION OF THIS COMMENT GOT IT WRONG WHILE CLAIMING TO HAVE
+# MEASURED IT. ⟳ r1 BLOCKING 2 (claude). It said: *"MEASURED: of the files the suite reaches,
+# exactly ONE lives outside these globs"* — `docs/backlog.md`. That sentence was the output of a
+# check that enumerated paths the gate scripts MENTION IN THEIR SOURCE, and gate 15's subject is not
+# mentioned anywhere: it is a TUPLE OF DIRECTORIES THE GATE WALKS AT RUNTIME
+# (`check-paid-caller-arrival.PRODUCTION_DIRS`). Five of those six directories, plus `middleware.ts`,
+# were outside the filter — so a paid caller could land in `lib/` and this workflow would not run,
+# which is the precise scenario `check-schema-gates.sh:246` says the gate exists for.
+#
+# ⚠ THE LESSON IS THE PREDICATE, NOT THE LIST. "Which files does the suite read?" was answered by
+# grepping for path literals — the wrong question twice over: it cannot tell a path the code OPENS
+# from one a comment MENTIONS (13 of its 14 hits were prose), and it cannot see a path COMPUTED at
+# runtime at all. A filter derived from a gate's DECLARED subject is the only version that holds.
+#
+# ⚠ STILL TRUE, AND NOW THE ONLY SUCH CASE: `docs/backlog.md` is read by `check-docs.py:297,406,463`
+# (gate 6) and is not in this filter. That is not a gap — `ci.yml:109` runs the same script in the
+# `verify` job, which has NO path filter.
 on:
   pull_request:
     branches: [master]
     paths:
+      # gate 15's own subject — `check-paid-caller-arrival.PRODUCTION_DIRS/PRODUCTION_FILES`.
+      # ⟳ r1 BLOCKING 2: these six were MISSING, so the money gate lived inside a filter that
+      # excluded the code it watches. Measured: one line added under `lib/` alone flips it 0 -> 1.
+      - 'lib/**'
+      - 'app/**'
+      - 'worker/**'
+      - 'components/**'
+      - 'types/**'
+      - 'middleware.ts'
       - 'scripts/**'
       - 'supabase/**'
       - 'docs/superpowers/specs/2026-08-03-stable-blob-addressing/**'
@@ -57,6 +77,15 @@ on:
   push:
     branches: [master]
     paths:
+      # gate 15's own subject — `check-paid-caller-arrival.PRODUCTION_DIRS/PRODUCTION_FILES`.
+      # ⟳ r1 BLOCKING 2: these six were MISSING, so the money gate lived inside a filter that
+      # excluded the code it watches. Measured: one line added under `lib/` alone flips it 0 -> 1.
+      - 'lib/**'
+      - 'app/**'
+      - 'worker/**'
+      - 'components/**'
+      - 'types/**'
+      - 'middleware.ts'
       - 'scripts/**'
       - 'supabase/**'
       - 'docs/superpowers/specs/2026-08-03-stable-blob-addressing/**'
@@ -67,9 +96,19 @@ on:
     - cron: '0 9 * * *'
   workflow_dispatch:
 
+# ⚠ `github.event_name` IS IN THE KEY, and it is load-bearing — ⟳ r1 MEDIUM 5 (claude). Without it
+# one group spans both jobs, and `github.ref` is `refs/heads/master` for a push to master AND for the
+# 09:00 cron: whichever starts second CANCELS the first. A merge at 08:59 loses its gate run; a merge
+# at 09:01 loses the night's drift check. A cancelled run is neither green nor red — it reports
+# nothing, which this repo treats as worse than a failure.
 concurrency:
-  group: schema-gates-${{ github.workflow }}-${{ github.ref }}
+  group: schema-gates-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
+
+# ⟳ r1 LOW 4 (claude): declared explicitly rather than inherited. Neither job writes anything to
+# GitHub, and an unstated `permissions` takes the repository default, which can be read-write.
+permissions:
+  contents: read
 
 jobs:
   schema-gates:
@@ -95,34 +134,6 @@ jobs:
       # the fifteenth refused, which is the behaviour that makes the refusal worth having.
       - name: Install node dependencies (gate 15 needs the TypeScript compiler)
         run: npm ci
-
-      # ⛔ THE CLAIM THAT KEEPS THE STORAGE FIXTURE HONEST, CHECKED BEFORE IT IS RELIED ON.
-      # `scripts/ci/storage-service-fixture.sql` is a MINIMAL stand-in for tables the storage-api
-      # service creates and CI does not run. That is only safe while no gate reads `storage.*` —
-      # `m4_catalog.CATALOG_SQL` is scoped to `nspname = 'public'` at every one of its six relation
-      # queries. The moment a gate starts reading the storage schema, the fixture stops being
-      # scaffolding and becomes a test double that can pass while production fails.
-      # Without this step that claim is a comment, and comments outlive their premises — which is
-      # the defect the branch immediately before this one existed to fix.
-      - name: The storage fixture is not load-bearing (falsifier for its own header)
-        run: |
-          set -uo pipefail
-          FILES="scripts/m4_catalog.py scripts/check-live-schema.py scripts/check-anon-exposure.py
-                 scripts/verify-exclusion-reasons.py scripts/check-catalog-coverage.py
-                 scripts/check-sentinel-meanings.py scripts/check-guard-coverage.py
-                 scripts/check-vocabulary-collisions.py scripts/gen-m4-manifest.py"
-          missing=0
-          for f in $FILES; do [ -r "$f" ] || { echo "CANNOT RUN — $f is gone; this check no longer reads what it claims to."; missing=1; }; done
-          [ "$missing" -eq 0 ] || exit 2
-          hits=$(grep -nE "storage\." $FILES | grep -vE '^\S+:[0-9]+:\s*(#|--)' | grep -vE '"""|storage\.objects` policies' || true)
-          if [ -n "$hits" ]; then
-            echo "❌ a catalog-reading gate now references storage.* in CODE:"
-            echo "$hits"
-            echo "   scripts/ci/storage-service-fixture.sql is a MINIMAL stand-in and has just become"
-            echo "   load-bearing. Replace it with the real service schema — do not extend it."
-            exit 1
-          fi
-          echo "✅ no gate reads storage.* — the fixture stays scaffolding"
 
       - name: Build the schema database from the repo
         run: scripts/ci/start-schema-db.sh m4_schema_gates
@@ -179,7 +190,28 @@ jobs:
         with:
           python-version: '3.12'
 
+      # ⛔⛔ `--prod` DOES NOT OPEN A SOCKET FROM PYTHON — ⟳ r1 BLOCKING 1 (claude), and without this
+      # step the job could NEVER pass, secret or no secret. `m4_catalog.psql_cmd` builds
+      # `docker exec -i -e PGU <container> bash -c 'psql "$PGU" …'`, so even the production path
+      # needs a container to run the CLIENT in. With none, it exits 2 with
+      # `CANNOT RUN — No such container: supabase_db_…` — the developer's own stack name, which does
+      # not exist on a runner. Measured: adding this step changes the failure from "No such
+      # container" to a real connection error, i.e. the client path is satisfied and only the URL
+      # decides the outcome.
+      # ⚠ `--entrypoint sleep` because we want psql, NOT a server: the image would otherwise
+      # initialise a database nobody reads, which is 14 seconds spent to be ignored.
+      - name: A psql client to reach production through
+        run: |
+          docker run -d --name m4_prod_client \
+            --entrypoint sleep public.ecr.aws/supabase/postgres:17.6.1.147 infinity
+          docker exec -i m4_prod_client psql --version
+
       - name: Has production drifted from the manifest?
         env:
           CLAUDE_RO_DATABASE_URL: ${{ secrets.CLAUDE_RO_DATABASE_URL }}
+          PGCONTAINER: m4_prod_client
         run: python3 scripts/check-live-schema.py --prod --expect-present
+
+      - name: Remove the psql client
+        if: always()
+        run: docker rm -f m4_prod_client || true

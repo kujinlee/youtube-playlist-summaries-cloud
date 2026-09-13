@@ -1,0 +1,79 @@
+[
+  {
+    "name": "rule 1 stops reading string literals, so a storage.* constant is invisible",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "            if STORAGE_REF.search(node.value):",
+        "            if False:"
+      ]
+    ],
+    "expect": "M1 a storage.* string literal is CAUGHT"
+  },
+  {
+    "name": "the namespace IN-list stops being scanned — the realistic widening escapes",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "    for m in NSPNAME_IN.finditer(sql):",
+        "    for m in []:"
+      ]
+    ],
+    "expect": "M2 widening the namespace scope is CAUGHT"
+  },
+  {
+    "name": "the equality branch stops comparing to public, so any schema passes",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "        if m.group(1) != \"public\":",
+        "        if False:"
+      ]
+    ],
+    "expect": "a scope naming only another schema is CAUGHT"
+  },
+  {
+    "name": "the derived file set stops following imports, so a NEW gate is never in scope",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "        if re.search(r\"^\\s*(?:from|import)\\s+(?:m4_catalog|m4_base_db)\\b\", src, re.M):",
+        "        if False:"
+      ]
+    ],
+    "expect": "M4 a NEW gate importing m4_catalog is in scope without being listed"
+  },
+  {
+    "name": "an empty derived set reports clean instead of CANNOT RUN",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "        return [\"CANNOT RUN — no gate files were derived. This check no longer reads its subject.\"]",
+        "        return []"
+      ]
+    ],
+    "expect": "an EMPTY derived set is CANNOT RUN, not a clean sweep"
+  },
+  {
+    "name": "a gate that does not parse is skipped silently instead of refusing",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "            out.append(f\"CANNOT RUN — {rel}: does not parse ({e.msg} line {e.lineno})\")",
+        "            pass"
+      ]
+    ],
+    "expect": "an unparseable gate is CANNOT RUN"
+  },
+  {
+    "name": "the word boundary is dropped, so mystorage.x false-fires",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "STORAGE_REF = re.compile(r\"(?<![\\w.])storage\\s*\\.\\s*\\w\", re.I)",
+        "STORAGE_REF = re.compile(r\"storage\\s*\\.\\s*\\w\", re.I)"
+      ]
+    ],
+    "expect": "`mystorage.x` is not a storage reference"
+  }
+]
