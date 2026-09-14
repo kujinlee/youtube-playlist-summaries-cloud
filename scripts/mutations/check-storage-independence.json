@@ -147,8 +147,8 @@
     "file": "scripts/check-storage-independence.py",
     "edits": [
       [
-        "            body = re.sub(r\"\\$\\{?[A-Za-z_][A-Za-z0-9_]*\\}?/\", \"\", body)",
-        "            body = re.sub(r\"\\$\\{?REPO\\}?/\", \"\", body)"
+        "            rootish = {v for v, rhs in re.findall(r\"^([A-Z_]+)=(.*)$\", body, re.M)\n                       if re.search(r\"dirname|rev-parse|--show-toplevel|&&\\s*pwd\", rhs)}",
+        "            rootish = {\"REPO\"}"
       ]
     ],
     "expect": "r2 MEDIUM 1: a COMPUTED root under any name still resolves"
@@ -163,5 +163,16 @@
       ]
     ],
     "expect": "only the FIXTURE is scaffolding, not its whole directory"
+  },
+  {
+    "name": "the root-like PREDICATE matches everything, so any variable is stripped",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "r\"dirname|rev-parse|--show-toplevel|&&\\s*pwd\"",
+        "r\".*\""
+      ]
+    ],
+    "expect": "r3 MEDIUM: a mktemp variable is NOT stripped into a same-named repo file"
   }
 ]

@@ -185,7 +185,19 @@ def gate_files(root: pathlib.Path = ROOT) -> list[pathlib.Path]:
             for var, val in re.findall(r'^([A-Z_]+)="([^"]*)"', body, re.M):
                 body = body.replace(f'"${var}"', f'"{val}"').replace(f'"${{{var}}}"', f'"{val}"')
                 body = body.replace(f'${var}/', f'{val}/').replace(f'${{{var}}}/', f'{val}/')
-            body = re.sub(r"\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/", "", body)
+            # ⛔ ONLY ROOT-LIKE VARIABLES ARE STRIPPED — ⟳ r3 MEDIUM (codex). Stripping ANY `$VAR/`
+            # assumes every variable holds the repo root. It does not: a gate reading
+            # `"$TMP/docs/real.sql"` from a `mktemp -d` resolved to the repo's own `docs/real.sql`,
+            # which exists and is clean — so the guard checked a REAL BUT WRONG file and reported
+            # green. Reproduced by the reviewer in a temp tree.
+            # A root-like assignment announces itself: `$(cd … && pwd)`, `dirname "$0"`, or
+            # `git rev-parse --show-toplevel`. Anything else keeps its prefix, fails to resolve, and
+            # is simply not in the population — a MISS, which is the safe direction, rather than a
+            # confident check of the wrong file.
+            rootish = {v for v, rhs in re.findall(r"^([A-Z_]+)=(.*)$", body, re.M)
+                       if re.search(r"dirname|rev-parse|--show-toplevel|&&\s*pwd", rhs)}
+            for v in rootish:
+                body = re.sub(r"\$\{?" + re.escape(v) + r"\}?/", "", body)
             for m2 in re.findall(r"[\w./-]+\.(?:sh|py|sql)", body):
                 cand = root / m2.lstrip("./")
                 if not cand.is_file() or cand.suffix not in (".sh", ".py", ".sql"):
@@ -495,6 +507,16 @@ def self_test() -> int:
             (root / "scripts" / "check-schema-gates.sh").read_text() + 'run "4/15 w" "$SPEC/helper3.sh"\n')
         check("r2 MEDIUM 1: a COMPUTED root under any name still resolves",
               "seed3.sql" in {q.name for q in gate_files(root)}, True)
+
+        # ⟳ r3 MEDIUM (codex): a NON-root computed variable must NOT be stripped, or the resolver
+        # checks a real-but-wrong repo file and calls it clean. `$SCRATCH` here is a mktemp dir.
+        (spec / "helper4.sh").write_text(
+            'SCRATCH=$(mktemp -d)\ncat "$SCRATCH/docs/decoy.sql"\n')
+        (root / "docs" / "decoy.sql").write_text("select 1;  -- clean, and NOT the file being read\n")
+        (root / "scripts" / "check-schema-gates.sh").write_text(
+            (root / "scripts" / "check-schema-gates.sh").read_text() + 'run "5/15 v" "$SPEC/helper4.sh"\n')
+        check("r3 MEDIUM: a mktemp variable is NOT stripped into a same-named repo file",
+              "decoy.sql" in {q.name for q in gate_files(root)}, False)
 
         # ⟳ r2 MEDIUM 2 (claude): the exclusion is BY FILE, so a sibling seed in the same directory
         # stays in scope. Two seeds must not get opposite treatment for living in different folders.
