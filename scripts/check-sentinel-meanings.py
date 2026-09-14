@@ -56,7 +56,6 @@ SCHEMA = ROOT / "docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from m4_base_db import read_catalog  # noqa: E402
 
-CONTAINER = "supabase_db_youtube-playlist-summaries-cloud"
 
 # Tables this spec owns or extends. Same set the guard ratchet uses, for the same
 # reason: an exclusion is a place a real conflation can hide.

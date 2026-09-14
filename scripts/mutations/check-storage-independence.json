@@ -1,0 +1,178 @@
+[
+  {
+    "name": "rule 1 stops reading string literals, so a storage.* constant is invisible",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "            if STORAGE_REF.search(node.value):",
+        "            if False:"
+      ]
+    ],
+    "expect": "M1 a storage.* string literal is CAUGHT"
+  },
+  {
+    "name": "the namespace IN-list stops being scanned — the realistic widening escapes",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "    for m in NSPNAME_IN.finditer(sql):",
+        "    for m in []:"
+      ]
+    ],
+    "expect": "M2 widening the namespace scope is CAUGHT"
+  },
+  {
+    "name": "the equality branch stops comparing to public, so any schema passes",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "        if m.group(1) != \"public\":",
+        "        if False:"
+      ]
+    ],
+    "expect": "a scope naming only another schema is CAUGHT"
+  },
+  {
+    "name": "the derived file set stops following imports, so a NEW gate is never in scope",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "        if re.search(r\"^\\s*(?:from|import)\\s+(?:m4_catalog|m4_base_db)\\b\", src, re.M):",
+        "        if False:"
+      ]
+    ],
+    "expect": "M4 a NEW gate importing m4_catalog is in scope without being listed"
+  },
+  {
+    "name": "an empty derived set reports clean instead of CANNOT RUN",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "        return [\"CANNOT RUN — no gate files were derived. This check no longer reads its subject.\"]",
+        "        return []"
+      ]
+    ],
+    "expect": "an EMPTY derived set is CANNOT RUN, not a clean sweep"
+  },
+  {
+    "name": "a gate that does not parse is skipped silently instead of refusing",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "            out.append(f\"CANNOT RUN — {rel}: does not parse ({e.msg} line {e.lineno})\")",
+        "            pass"
+      ]
+    ],
+    "expect": "an unparseable gate is CANNOT RUN"
+  },
+  {
+    "name": "the word boundary is dropped, so mystorage.x false-fires",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "STORAGE_REF = re.compile(r\"(?<![\\w.\\\"])\\\"?storage\\\"?\\s*\\.\\s*\\\"?\\w\", re.I)",
+        "STORAGE_REF = re.compile(r\"\\\"?storage\\\"?\\s*\\.\\s*\\\"?\\w\", re.I)"
+      ]
+    ],
+    "expect": "`mystorage.x` is not a storage reference"
+  },
+  {
+    "name": "the SQL comment stripper stops running, so a comment false-fires",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "        body = re.sub(r\"--[^\\n]*\", \" \", body)                       # line comments",
+        "        body = body"
+      ]
+    ],
+    "expect": "a SQL `--` comment mentioning it is NOT"
+  },
+  {
+    "name": "the shell comment stripper stops running",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "        body = re.sub(r\"(?m)(?:^|(?<=\\s))#[^\\n]*\", \" \", src)        # `#` at line start or after space",
+        "        body = src"
+      ]
+    ],
+    "expect": "a shell `#` comment is NOT"
+  },
+  {
+    "name": "the suite's shell variables stop being expanded, so gates 1 and 2 vanish again",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "        for var, val in re.findall(r'^([A-Z_]+)=\"([^\"$]+)\"', text, re.M):",
+        "        for var, val in []:"
+      ]
+    ],
+    "expect": "r1 HIGH: a gate invoked through a shell VARIABLE is in scope"
+  },
+  {
+    "name": "migrations stop being excluded, so the guard fires on its own premise",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "    return rel.startswith(NOT_A_GATE)",
+        "    return rel.startswith(\"scripts/ci/\")"
+      ]
+    ],
+    "expect": "a MIGRATION is the subject, not a gate — excluded"
+  },
+  {
+    "name": "the transitive step stops, so a file named only by another gate's variable escapes",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "        frontier = [q for q in out if q not in seen and q.suffix in (\".sh\", \".py\")]",
+        "        frontier = []"
+      ]
+    ],
+    "expect": "r2 HIGH: a file named only by ANOTHER GATE's variable is in scope"
+  },
+  {
+    "name": "CI scaffolding stops being excluded, so the guard flags the fixture it certifies",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "NOT_A_GATE_FILES = (\"scripts/ci/storage-service-fixture.sql\",)",
+        "NOT_A_GATE_FILES = ()"
+      ]
+    ],
+    "expect": "CI SCAFFOLDING is the subject too — the fixture that CREATES storage tables"
+  },
+  {
+    "name": "the variable resolver narrows back to a single hard-coded name",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "            rootish = {v for v, rhs in re.findall(r\"^([A-Z_]+)=(.*)$\", body, re.M)\n                       if re.search(r\"dirname|rev-parse|--show-toplevel|&&\\s*pwd\", rhs)}",
+        "            rootish = {\"REPO\"}"
+      ]
+    ],
+    "expect": "r2 MEDIUM 1: a COMPUTED root under any name still resolves"
+  },
+  {
+    "name": "the file exclusion widens back to the whole scripts/ci directory",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "NOT_A_GATE = (\"supabase/\",)",
+        "NOT_A_GATE = (\"supabase/\", \"scripts/ci/\")"
+      ]
+    ],
+    "expect": "only the FIXTURE is scaffolding, not its whole directory"
+  },
+  {
+    "name": "the root-like PREDICATE matches everything, so any variable is stripped",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "r\"dirname|rev-parse|--show-toplevel|&&\\s*pwd\"",
+        "r\".*\""
+      ]
+    ],
+    "expect": "r3 MEDIUM: a mktemp variable is NOT stripped into a same-named repo file"
+  }
+]

@@ -48,7 +48,6 @@ MUTATIONS = SPEC / "mutate-schema.py"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from m4_base_db import read_catalog  # noqa: E402
 
-CONTAINER = "supabase_db_youtube-playlist-summaries-cloud"
 TABLES = ("video_artifacts", "video_generations")
 
 # ⟳ ROUND 9 — THE ENUMERATED WHOLE WAS ITSELF SCOPED TOO NARROWLY, which is this script's own

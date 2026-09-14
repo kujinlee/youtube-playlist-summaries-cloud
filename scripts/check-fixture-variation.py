@@ -270,6 +270,15 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # ⟳ 2026-09-13: the CI storage fixture's falsifier. Pinned in the commit that creates it —
+    # this guard REFUSED the file until it was, which is §21's population half doing its job.
+    'check-storage-independence.py': (
+        'gate_files.root',
+        'namespace_scopes.sql',
+        'problems.files',
+        'problems.root',
+        'storage_refs.src',
+    ),
     'begin-plan.py': (
         'cmd_begin.slug_raw', 'cmd_begin.step_args', 'cmd_pause.why',
         'first_unticked.steps', 'normalise_slug.raw', 'parse_steps.plan_text',
