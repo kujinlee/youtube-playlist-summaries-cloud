@@ -8501,3 +8501,33 @@ written first.
 Both reviewers clean on everything else, including the nine key classifications and the
 three MUTATION_EXEMPT claims — Codex tried to construct a corpus path that invalidates
 one and could not.
+
+## 2026-09-14
+Third review pass, and the reviewer found the one attack I had not thought of — I had
+predicted two ways someone could sneak the old bug back in, asked it to try those, and
+it reported both were already blocked while demonstrating a third that worked. Fixed.
+That is the third round in a row where the useful finding was in the previous round's
+repair rather than in the original work.
+<!--tech-->
+Codex r3: `docs/reviews/codex/guard-coverage-scope-r3-codex.md` — 1 Medium, no Blocking
+or High. ⚠ `REVIEW GAP: claude` recorded.
+
+**MEDIUM.** `clause_predicates()` read only the text after the first `where`, so the
+`_uq` narrowing simply moves earlier:
+
+    join pg_class c on c.oid = indexrelid and c.relname like '%_uq'
+     where indrelid = any (array[...]) and indisunique
+
+Measured on the full query: table array unchanged, predicates returned only
+`['indisunique']`, verdict CLEAN. Conditions now come from every `on` AND `where`.
+
+⚠ Consequence worth stating: the trigger clause's own join condition `p.oid = t.tgfoid`
+is now visible, and is DECLARED in `EXPECTED_PREDICATES` rather than exempted —
+declaring it is what makes an *added* join condition visible.
+
+Not fixed, deliberately: a literal `union all` inside a clause could truncate
+`_clause_body`. It fails closed and no clause contains that text; a guard against a
+string nobody writes is a rule with no falsifier.
+
+    self-test 34 -> 37 · mutations 9 -> 10, all attributable
+    suite 73 ✓ / 0 ✗, 15/15 · nine repo guards rc=0 · EXPECTED_MUTATIONS 579 -> 580

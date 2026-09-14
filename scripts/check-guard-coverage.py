@@ -32,7 +32,7 @@ guards that are plainly correct) but "what does it do when the caller is merely
 SECOND?"
 
 Usage:  ./scripts/check-guard-coverage.py     (exit 0 = every guard classified)
-    --self-test  # 34 cases
+    --self-test  # 37 cases
 """
 import ast
 import re
@@ -405,15 +405,24 @@ def clause_scopes(sql: str) -> dict[str, list[str]]:
 def clause_predicates(sql: str) -> dict[str, list[str]]:
     """The conditions each clause applies BESIDES its table array. PURE.
 
-    ⛔ THE ARRAY IS NOT THE WHOLE SCOPE — ⟳ r2 MEDIUM (codex). `clause_scopes()` compares which tables
-    a clause names, so the prior defect can return without touching it:
+    ⛔ THE ARRAY IS NOT THE WHOLE SCOPE — ⟳ r2 MEDIUM (codex). `clause_scopes()` compares which
+    tables a clause names, so the prior defect can return without touching them:
 
         where indrelid = any (array{OWNED}::regclass[]) and indisunique
           and indexrelid::regclass::text like '%_uq'      <- array unchanged, scope narrowed
 
-    That filter is exactly what hid a unique constraint on a table already in scope, and a check that
-    reads only the array reports clean while it comes back. So the PREDICATES are pinned too: each
-    clause may apply the conditions its kind needs and nothing else.
+    That filter is exactly what hid a unique constraint on a table already in scope.
+
+    ⛔⛔ AND CONDITIONS COME FROM EVERY `on` AND `where`, NOT THE FIRST `where` — ⟳ r3 MEDIUM
+    (codex), measured against the full query. The first version of this function read only the WHERE
+    text, so the same narrowing simply moved earlier:
+
+        join pg_class c on c.oid = indexrelid and c.relname like '%_uq'
+         where indrelid = any (array[...]) and indisunique
+
+    `clause_scopes` unchanged, predicates returned only `['indisunique']`, verdict CLEAN. Joining
+    catalog tables is the natural way to write these clauses — the trigger clause already does it —
+    so JOIN CONDITIONS ARE PART OF THE SCOPE and must be declared like any other predicate.
     """
     out: dict[str, list[str]] = {}
     for kind in ("check", "fk", "index", "trigger"):
@@ -421,15 +430,13 @@ def clause_predicates(sql: str) -> dict[str, list[str]]:
         if not body:
             out[kind] = []
             continue
-        where = body.find("where")
-        if where < 0:
-            out[kind] = []
-            continue
-        conds = re.split(r"\band\b", body[where + 5:])
+        conds: list[str] = []
+        for seg in re.findall(r"\b(?:on|where)\b(.*?)(?=\bjoin\b|\bwhere\b|$)", body, re.S):
+            conds += re.split(r"\band\b", seg)
         keep = []
         for c in conds:
             c = " ".join(c.replace(";", " ").split())
-            if not c or "array[" in c:          # the table array is clause_scopes()'s subject
+            if not c or "array[" in c:      # the table array is clause_scopes()'s subject
                 continue
             keep.append(c)
         out[kind] = sorted(keep)
@@ -442,7 +449,10 @@ EXPECTED_PREDICATES: dict[str, tuple[str, ...]] = {
     "check":   ("contype = 'c'",),
     "fk":      ("connamespace = 'public'::regnamespace", "contype = 'f'"),
     "index":   ("indisunique",),
-    "trigger": ("not t.tgisinternal",),
+    # ⟳ r3: the trigger clause's JOIN condition is declared here rather than exempted from the rule.
+    # It is a legitimate part of that clause's scope — and declaring it is what makes an ADDED join
+    # condition visible, which is the whole point.
+    "trigger": ("not t.tgisinternal", "p.oid = t.tgfoid"),
 }
 
 
@@ -635,6 +645,18 @@ def self_test() -> int:
     _toy_narrowed = ("select 'index:' || indexrelid::regclass::text from pg_index\n"
                      " where indrelid = any (array['a']::regclass[]) and indisunique\n"
                      "   and indexrelid::regclass::text like '%_uq';\n")
+    # ⟳ r3 MEDIUM (codex): the narrowing that hides in a JOIN, which reading only the WHERE missed.
+    _joined = CATALOG_SQL.replace(
+        "from pg_index\n where indrelid",
+        "from pg_index join pg_class c on c.oid = indexrelid and c.relname like '%_uq'\n where indrelid")
+    case("a narrowing moved into a JOIN is CAUGHT",
+         len(scope_problems(clause_scopes(_joined), OWNED_TABLES, TRIGGER_TABLES,
+                            clause_predicates(_joined))) >= 1)
+    case("...and the table array is unchanged by that edit, which is why the array test misses it",
+         clause_scopes(_joined)["index"] == clause_scopes(CATALOG_SQL)["index"])
+    case("the trigger clause's own join condition is DECLARED, not ignored",
+         "p.oid = t.tgfoid" in clause_predicates(CATALOG_SQL)["trigger"])
+
     case("a narrowing filter is found in a query this function has never seen",
          any("like" in c for c in clause_predicates(_toy_narrowed)["index"]))
     case("...and a clause with only its own marker reads clean",

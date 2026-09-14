@@ -862,7 +862,7 @@ EXPECTED_MUTATIONS = {
     # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed
     # BEFORE these were registered, which is the order the loop requires and I got wrong once.
     "scripts/check-function-revokes.py": 6,
-    "scripts/check-guard-coverage.py": 9,
+    "scripts/check-guard-coverage.py": 10,
     "scripts/check-handoff-path.py": 5,
     # ⟳ 2026-09-07. Third of PR #247's four, and the money one — backlog #26's trigger. Six
     # targets in the PURE halves: the per-occurrence line scan (the r12 blocking defect), the
@@ -3000,7 +3000,7 @@ def _self_test() -> int:
     # ⚠ This sentence said "The six cover …" over nine entries for two rounds. Both halves filed it
     # twice; the first fix asserted on one string and replaced another, so `str.replace` silently
     # did nothing and the count drifted further (8 -> 9) while reading as fixed.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 579)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 580)
     # ⟳ 2026-09-13: 559 -> 574 across this branch. All +15 belong to
     # `check-storage-independence.py` — the CI storage fixture's falsifier — whose manifest grew
     # 7 -> 11 -> 13 -> 15 as three review rounds widened the guard it proves. A RISE needs only the

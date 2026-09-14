@@ -115,5 +115,18 @@
     "expect": [
       "re-adding the `_uq` filter is CAUGHT even though the array is unchanged"
     ]
+  },
+  {
+    "name": "predicate extraction goes back to reading only the WHERE, so a JOIN narrowing hides",
+    "file": "scripts/check-guard-coverage.py",
+    "edits": [
+      [
+        "        for seg in re.findall(r\"\\b(?:on|where)\\b(.*?)(?=\\bjoin\\b|\\bwhere\\b|$)\", body, re.S):",
+        "        for seg in re.findall(r\"\\bwhere\\b(.*?)(?=\\bjoin\\b|$)\", body, re.S):"
+      ]
+    ],
+    "expect": [
+      "a narrowing moved into a JOIN is CAUGHT"
+    ]
   }
 ]
