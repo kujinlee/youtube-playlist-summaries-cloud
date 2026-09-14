@@ -1,0 +1,25 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 2210 chars"
+  ],
+  "dirty": {
+    "docs/reviews/codex/record-review-topology-r11-codex.md": "100644 7f44dc64061ed92a670eb3cecf4fbddd4ac0406d",
+    "docs/reviews/coordinator/record-review-topology-r11-coordinator.md": "100644 22cb79bbb23b46b1fdede82103dde8df81304183",
+    "docs/reviews/verdicts/record-review-topology-r11-codex.verdict.json": "100644 9ee12370518c6421e114f0281197e20cc54823c8",
+    "scripts/codex-review.py": "100755 71266edfe8acccb195bdd01add65bb4638460e43",
+    "scripts/mutations/check-review-recorded.json": "100644 ba039f6012232c12583bb039418f565499a61b7e",
+    "scripts/mutations/codex-review.json": "100644 fe333d2b32cd373dd770aba91168acf119c5cde4"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "dc9fe10708795db8b447fab3834b01f4b0db56b3",
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f99c413a-446d-4b36-8225-a04481fe69fa/scratchpad/codexout12/run.log: OVERWRITTEN during the run (writer unattributed)"
+  ],
+  "model": "gpt-5.5",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f99c413a-446d-4b36-8225-a04481fe69fa/scratchpad/r12-codex-prompt.md",
+  "reason": "2210 chars",
+  "review": "record-review-topology-r12-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}

@@ -8376,6 +8376,88 @@ NOTHING — portable practice §22, in the anchor rather than the case.
 Guard population across four rounds: 12 -> 21 -> 27 -> 30, every widening bought by a
 measured miss rather than by caution.
 
+## 2026-09-13
+A review now has to have seen the code that is actually shipping.
+
+Until today a branch passed its review gate by *having* a review — no check asked whether the
+reviewed code was the code about to merge. That gap is where the last two branches' worst defects
+lived: on both of them, the problem that survived furthest was introduced by a **fix** written after
+the round, in code no reviewer had ever looked at.
+
+The measurement behind it is worth stating, because it refutes the obvious economy. Across three
+rounds on two branches the two reviewers produced **zero** overlapping findings — so running both is
+not duplicated effort and dropping one saves nothing real. What they do duplicate is building the
+test environment. The saving is there, not in the reading.
+
+So the rule that shipped is narrow: a branch fails if guarded code was committed after **every**
+round it recorded. Running one more round against the final tree clears it, and so does the existing
+practice of holding the last fixes uncommitted so the reviewer sees the state that will merge — the
+wrapper now records the exact git tree entry it handed over uncommitted, precisely so the careful
+version of the workflow is not the one that gets punished.
+
+The protocol this belongs to — round 1 both reviewers at once, later rounds alternating — is written
+down with **the two observations that would retire it**, and those get re-read at each architecture
+review rather than by a script, because deciding whether two findings are the same finding is not
+something a script can do.
+<!--tech-->
+Branch `record-review-topology`. Ships the *Round topology* section in `docs/review-method.md`, its
+Phase 6 re-examination item in `docs/process-checklists.md`, verdict schema **2** in
+`scripts/codex-review.py` (`head` + `dirty`, captured at dispatch, never at exit), and the
+final-tree rule in `scripts/check-review-recorded.py`.
+
+⛔ **Commit order cannot answer this question, which is why the wrapper had to change.** "Was the
+review document committed after the last code commit?" is defeated by the ordinary act of committing
+the fixes and the review doc together — the likely accident, not an exotic evasion. Only the commit
+recorded at dispatch says what the reviewer was handed.
+
+The rule lives in `check-review-recorded.py` rather than a new script because that file already owns
+base resolution, the guarded-vs-prose classifier and the shallow-clone CANNOT RUN; `guarded_changes`
+is called, not re-derived, so "code that obliges a review" and "code no round saw" cannot drift into
+two different sets. `NO-REVIEW:` waives both questions — one declaration per concern, no second
+marker.
+
+Stated limits, none of them papered over: only the Codex half leaves a verdict, so a round that ran
+as Claude-only is reported **NOT CHECKED**, never as a pass; verdicts older than schema 2 carry no
+commit and are counted and named; only verdicts this branch wrote are considered, so on `master` the
+range is empty and the rule correctly says nothing.
+
+Proved live against real git, each direction with its control: a round that saw the final tree
+passes and is named; a code commit after the only round fails and names the file; a docs commit
+after it does not fire; a file the reviewer was handed uncommitted does not count against it, and
+removing just the `dirty` list from the same tree makes it fire. `EXPECTED_MUTATIONS` for
+`check-review-recorded.py` 6 → 11, declared total 559 → 564.
+
+Three review rounds then found sixteen defects in it — thirteen fixed, three accepted and written
+down — and **both Blockings were the same class one layer apart**, which is the finding, not an
+aside. r1: the rule subtracted dirty **paths**, so "review a
+file, edit it again, commit" certified code no reviewer had seen, by the ordinary loop rather than
+an exotic evasion. r2: comparing **content** still certified a mode-only change — same bytes, newly
+executable. The answer was to stop reconstructing what git already knows and record the git tree
+entry — mode and object id — taken from a throwaway index. That also fixed two false failures r2 found on
+the careful path: a symlink was being recorded as the hash of its target's contents, and an
+untracked new file present at review time was read as never seen.
+
+The rest, in the rounds' own order: a round taken before the branch's first commit was silently
+discarded; "no usable round" returned 0 while printing CANNOT RUN; the population read MODIFIED
+historical verdicts as this branch's testimony; the working-tree scan broke on quoted paths and
+renames; `docs/plugins.md` still commanded concurrent dispatch with no exception; a case that named
+the live wiring never touched it, so deleting that wiring left the suite green; a `REVIEW GAP:`
+about the **Claude** half cleared a missing **Codex** verdict — one absence excusing a different
+one; a reviewed **deletion** was credited to nobody, so the careful path failed for the crime of
+deleting code; and one unrelated out-of-cone file made the whole record empty instead of partial.
+`EXPECTED_MUTATIONS` 6 → 20, declared total 559 → 573.
+
+Three things were accepted rather than fixed, and are written into the code that has them: the CI
+step runs on pull requests only, so a push to `master` asks neither question (that path is closed by
+a different mechanism, the default-branch push hook); a stacked branch is cleared by its parent's
+declaration, exactly as the existing recorded-review question already is, and the pass now names the
+document it relied on; and a non-deterministic `clean` filter makes content identity impossible for
+git itself, not only for this rule.
+
+⚠ The sum line was first written as `421 → 426`, read off the running commentary above the
+assertion instead of off `sum(EXPECTED_MUTATIONS.values())`. The case caught it. Steps 1–4 of the
+protocol have no machine behind them and are convention only — the Phase 6 item is the only thing
+that ever observes whether they are followed.
 ## 2026-09-14
 A check that verifies "every safety rule in the database has been deliberately
 classified" was quietly ignoring five of them — on a table it builds itself. It had
@@ -8531,3 +8613,80 @@ string nobody writes is a rule with no falsifier.
 
     self-test 34 -> 37 · mutations 9 -> 10, all attributable
     suite 73 ✓ / 0 ✗, 15/15 · nine repo guards rc=0 · EXPECTED_MUTATIONS 579 -> 580
+
+## 2026-09-14
+Six more review rounds found three ways past the rule this branch adds — and the last one was hiding inside the fix for the one before it.
+
+The branch's whole subject is a rule that a review must have seen the code that actually ships. It
+had been through ten adversarial rounds. All ten were run by a single reviewer — it was built by a
+worker fork, which cannot spawn a second one, and every round said so in writing. Running the owed
+second half found that the rule could be walked straight past.
+
+Then running it five more times found three more ways past, each in a different part of the gate,
+and each one sitting inside a sentence an earlier round had already declared clean. One of those
+sentences was written by this branch's own first review: *"searched the documentation folder for
+executable files that would be wrongly exempt — none found."* Two exist. They are schema gates that
+CI runs, and because they live under `docs/` the gate classified them as prose and went silent over
+them entirely.
+
+The fourth is the one worth remembering. Round fifteen built a guard specifically to stop that
+happening again — a check that the exemption list still matches what CI treats as gate code. Round
+sixteen found the check was comparing a *copy* of CI's list against the exemption list, with neither
+being the original. Add a new gate directory to CI and the guard reported everything fine. The
+mechanism built to prevent the defect had rebuilt it.
+
+None of this shipped. The pattern behind all four is the same and it is now written down: a rule can
+be perfectly correct about the cases it names and say nothing at all about a case nobody thought of
+— and the only thing that found them was re-deriving each "we checked, it's clean" instead of
+believing it.
+
+<!--tech-->
+Branch `record-review-topology`, rounds 11-17. r1-r10 all carry a written `REVIEW GAP: claude`; the
+owed half was discharged as ONE whole-branch review against the shipping tree rather than ten
+retroactive ones, because re-running superseded trees would violate the rule under review.
+
+**The four fail-opens, all in `scripts/check-review-recorded.py` unless noted.** r11 Blocking: a
+REVERTED dirty overlay left the compared set entirely — reviewed as GOOD, merged as BAD, exit 0
+under *"the final tree was reviewed by"*. r14 High: `git diff --name-only` with rename detection ON
+by default, so a guarded file moved to a prose path vanished; it also defeated the second question,
+since `tail_candidates` intersected a `--no-renames` list with a rename-detected one. r15 High:
+`docs/` holds two of the fifteen schema gates (mode 755, run by `check-schema-gates.sh`,
+path-filtered by `schema-gates.yml`). r16 High: the r15 anti-drift falsifier was fed a TRANSCRIPTION
+of the workflow's globs typed into its own test — copy #1 the workflow, #2 the tuple, #3 the case,
+comparing #3 to #2 — and `main` never called it at all.
+
+Also: an empty `NO-REVIEW:` (refused by question one) fully waived question two; a missing
+`--pr-body-file` exited 1 with a traceback where the docstring promises CANNOT RUN 2; and
+`codex-review.py` printed `[FAIL] {name}: got={got}` where the harness truncates at the LAST
+`": got "`, so every kill in the file that decides whether a review gate RAN was unattributable —
+found only because the file joined the mutation manifest for the first time.
+
+**Structure, not patches.** Eight decision points came out of the git-reading gatherer into pure
+casable rules (`classify_verdict`, `reviewed_map`, `tail_candidates`, `second_question`,
+`readable_docs`, `split_nul`, `diff_argv`, `workflow_docs_globs`) — all eight had survived mutation
+with the suite green, two turned a live refusal into a live pass. Two `[FAIL]` printers became one
+`case_line`, asserted against `check-plan-code.parse_fail_names` **imported**, not re-derived.
+
+**Measured:** `--mutate .` 44 files / **629 mutations / 629 killed / 629 attributed / 0 survivors**;
+`check-review-recorded` 139/139 (was 31 at the merge-base), `codex-review` 85/85, `check-plan-code`
+128/128, plus six live gates rc=0. `EXPECTED_MUTATIONS` 597 → 629; `codex-review.py` joins the
+manifest with 12 entries and leaves `WIDENED_MANIFEST_DEBT` in the same commit; `HARNESS_TREE` gains
+`.github/workflows` because the anti-drift rule reads it.
+
+⚠ **Three harness refusals, each correct and each worth more than the pass it eventually gave.**
+`NOT MEASURED — 625 of 626` (a fix rewrote a function body; anchors bind by TEXT), `CANNOT RUN —
+control red` (a new case read a file `HARNESS_TREE` did not stage), `NOT MEASURED — 628 of 629` (a
+fix rewrote another body AND renamed a case an entry named). **An entry binds to its target twice —
+by anchor text and by case name — and a pre-flight checking one passes exactly when the other
+breaks.**
+
+⚠ **An incident.** A reviewer probing `GIT_DIR` redirection ran this file's own `--self-test` under
+an exported `GIT_DIR` aimed at the live worktree; the fixture's `git commit` moved the branch's real
+ref onto a scratch commit. Recovered from the reflog, nothing lost, and it upgraded that finding
+from reasoned to demonstrated. A `cp -R` of a git WORKTREE carries a `.git` POINTER FILE and is not
+isolated until it is deleted.
+
+Round 16 was the last review round by the user's decision; round 17 is a verification pass —
+CONVERGED, zero findings, independently reproducing 629/629/0. Its verdict records `head dc9fe107`
+and 29 dirty entries, which is what lets the branch's own gate pass on its own PR by evidence.
+`NO-REVIEW:` was available and deliberately not used. Filed not fixed: backlog **#114**.

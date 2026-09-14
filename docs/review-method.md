@@ -208,6 +208,86 @@ writer-only lock does not protect readers, and extending it to readers would blo
 
 ---
 
+## Round topology — concurrent r1, alternating r2+ (added 2026-09-13)
+
+**A different question from the section above.** That table asks whether two agents can run at once
+without *interfering*; this one asks whether the code that merges was ever *looked at*. Both halves
+concurrently is still safe. It is also, on its own, not enough.
+
+### What was measured, and what it refutes
+
+The premise "two reviewers on one diff is duplicated effort" was tested over three rounds on two
+consecutive branches (backlog #296, #297):
+
+| round | first half | second half | overlapping findings |
+|---|---|---|---|
+| #296 r1 | Codex: 0 Blocking/High/Medium, 1 Low | Claude: 1 Medium, 3 Low | **0** |
+| #296 r2 | Claude: converged, 2 Low | Codex: no findings | 0 |
+| #297 r1 | Claude: 2 Blocking, 1 High, 5 Medium, 4 Low | Codex: 1 High, 1 Medium, 1 Low | 0 |
+
+**Zero duplicate findings.** The halves do different work: Codex *executes* (rebuilt the database,
+ran 15/15 gates, re-derived every number); the Claude half *designs experiments* (neutered
+`unexpected()` to expose four false greens). So the effort is not duplicated and neither half is the
+saving. **What IS duplicated is environment construction** — each reviewer built its own container
+and ran the same suite. Dedupe that, not the reading.
+
+**The real argument for alternating is elsewhere: both defects that survived furthest were
+introduced by a FIX.** #296's repair shipped a comment claiming more reach than its one writer and
+one reader delivered. #297's new guard — written to close a review finding — had a population that
+missed two of the fifteen gates. A concurrent pair reviewing one frozen tree cannot find either:
+nobody is looking at the repair.
+
+### The protocol
+
+1. **Round 1 concurrently**, isolated per the table above.
+2. **Hold both halves UNCOMMITTED until both finish.** Measured on #296 r2: the Claude half
+   disclosed it could not avoid learning Codex's grade, because r1 was already committed on the
+   branch under review — `git log` and the diff both carried it. This is the whole fix for leakage.
+3. Fix. **Treat a reviewer's proposed fix as unverified code**: twice in one session a proposed fix
+   was weaker than the finding it closed (a cleanup block running after the bound it protects; an
+   exit-status check where `drop … if exists <wrong-name>` succeeds). Findings arrive measured; the
+   sentence after *"Fix."* never does.
+4. **Rounds 2+ alternate**, scoped to the delta, sent to the half that did NOT author the fix.
+   Match the reviewer to the risk: reproduction and execution → Codex; experiment design → Claude.
+5. **Stop when a round has seen the tree that will merge** and no code change follows it. Holding
+   the last round's fixes uncommitted so the reviewer sees the final state satisfies this and is the
+   documented way to do it.
+
+Step 5 is the only step with a machine behind it: `scripts/check-review-recorded.py` reads what each
+Codex run records at dispatch — the commit, and the **git tree entry** of every file handed over
+uncommitted — and refuses a branch where guarded code was committed after **every** round. Its own
+two review rounds are why it compares entries and not something weaker: r1 reproduced "review `x`
+dirty, then edit `x` again and commit", which a path match certifies; r2 then reproduced the same
+class one layer in, a **mode-only** change that a content match certifies. No usable round is
+**CANNOT RUN**, cleared by a `REVIEW GAP:` naming **codex** — the half that leaves the testimony,
+since a gap about the other half explains a different absence. Steps 1–4 are convention. Do not
+read them as protection.
+
+⚠ **Batch the editorial fixes BEFORE the last round.** The rule is deliberately strict: any change
+to guarded code after the final round makes that round stale, and a docstring lives in guarded code.
+Measured while building it — a converged round left one stale-prose Low, fixing it cost another
+round, and that round found three more spellings of the same thing. There is no "docstring-only"
+escape and there should not be: every loosening this rule survived (path, then content, then the
+tree entry) was a loosening that certified unreviewed code. Fix the Lows, THEN run the round that
+sees the final tree.
+
+### ⚠ The observations that would RETIRE this section
+
+A rule with no falsifier is a decision wearing a checkbox. Both of these are read at Phase 6, not
+by a script — they need judgement about whether two findings are *the same finding*, which is
+exactly what a script cannot do:
+
+- **Retire alternating** if five consecutive rounds produce **no finding inside a fix delta**. Then
+  it is buying nothing and costing wall clock; go back to concurrent-only.
+- **Revisit the whole shape** if the two halves of one round report the **same finding twice in
+  five rounds**. The independence premise has weakened, and concurrent-plus-dedup becomes cheaper.
+
+The evidence for both is derivable, not remembered: `docs/reviews/verdicts/*.json` names every
+Codex round and the commit it saw; the halves are in `docs/reviews/<writer>/`. Do not maintain a
+hand-written tally of it — this project has measured what those do.
+
+---
+
 ## Adversarial Review
 
 Dispatch Codex (`codex:rescue`) with an explicit adversarial mandate at every phase.

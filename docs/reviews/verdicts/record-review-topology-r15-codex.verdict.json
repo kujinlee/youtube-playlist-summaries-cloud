@@ -1,0 +1,39 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 2719 chars"
+  ],
+  "dirty": {
+    "docs/plugins.md": "100644 94056bed7fdfa0407eb0870101130c13b5e15ca7",
+    "docs/reviews/claude/record-review-topology-r12-claude.md": "100644 738b8665a37eea7fd9c0f3f88183570b0bdb0966",
+    "docs/reviews/claude/record-review-topology-r13-claude.md": "100644 24178d40c9e4887b9f96384a1a4d88dfd479723f",
+    "docs/reviews/claude/record-review-topology-r14-claude.md": "100644 184d18ea1f37ce316c1db67af9aa789d5d59ad4e",
+    "docs/reviews/codex/record-review-topology-r11-codex.md": "100644 7f44dc64061ed92a670eb3cecf4fbddd4ac0406d",
+    "docs/reviews/codex/record-review-topology-r12-codex.md": "100644 2395d8512027dfcd4d84a6f9d3c5b6add4e45660",
+    "docs/reviews/codex/record-review-topology-r14-codex.md": "100644 a1ad273d993249782c1988cd9e9aef01f821bc3d",
+    "docs/reviews/coordinator/record-review-topology-r11-coordinator.md": "100644 22cb79bbb23b46b1fdede82103dde8df81304183",
+    "docs/reviews/coordinator/record-review-topology-r12-coordinator.md": "100644 1f464ef08713d49c9bec22f56cbbe2ca255242ae",
+    "docs/reviews/coordinator/record-review-topology-r13-coordinator.md": "100644 3443d7e601e987670838e44b5b85d31cb0c96eb3",
+    "docs/reviews/coordinator/record-review-topology-r14-coordinator.md": "100644 f497ef6f216f65e12415458e4c90fbcf7addcdc6",
+    "docs/reviews/verdicts/record-review-topology-r11-codex.verdict.json": "100644 9ee12370518c6421e114f0281197e20cc54823c8",
+    "docs/reviews/verdicts/record-review-topology-r12-codex.verdict.json": "100644 8a759479dcba1dea3ad5fee7117169529665ac30",
+    "docs/reviews/verdicts/record-review-topology-r13-codex.verdict.json": "100644 6a38ea9f6b661633ab0815c46f650e782f259bc0",
+    "docs/reviews/verdicts/record-review-topology-r14-codex.verdict.json": "100644 10ce3ce373b08777fcea2c6e401de6326a09f4fa",
+    "scripts/check-plan-code.py": "100644 870e54851f6ba83edeac9c8dd594de62b2a0f5fd",
+    "scripts/check-review-recorded.py": "100755 2c45d1f67b72a0f74f8d2c8315a42f8bc733838c",
+    "scripts/codex-review.py": "100755 f1c9d89806d0a925e250ce88a8162e27c2fabbb7",
+    "scripts/mutations/check-review-recorded.json": "100644 3a640f9b7e60414b673ba9d865f414eafb638841",
+    "scripts/mutations/codex-review.json": "100644 2b00b75a11f00303792e1c340b92246e4d0c5002"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "dc9fe10708795db8b447fab3834b01f4b0db56b3",
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f99c413a-446d-4b36-8225-a04481fe69fa/scratchpad/codexout15/run.log: OVERWRITTEN during the run (writer unattributed)"
+  ],
+  "model": "gpt-5.5",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f99c413a-446d-4b36-8225-a04481fe69fa/scratchpad/r15-prompt.md",
+  "reason": "2719 chars",
+  "review": "record-review-topology-r15-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}

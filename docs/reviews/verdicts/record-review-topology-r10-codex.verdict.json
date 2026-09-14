@@ -1,0 +1,19 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 1755 chars"
+  ],
+  "dirty": {
+    "scripts/check-fixture-variation.py": "100644 29faa173de009dad6e44ce7d73c2202ee14f71ea",
+    "scripts/check-review-recorded.py": "100755 7dfd86e968fc45e2cce9788f2b41a0543989c932",
+    "scripts/codex-review.py": "100755 f90175b5e9d8d85d567758e0a9dc60448598a677"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "01b4da0b56e367caa9fab9db0b05031ce9705c95",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "reason": "1755 chars",
+  "review": "record-review-topology-r10-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}

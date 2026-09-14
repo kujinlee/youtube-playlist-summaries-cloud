@@ -191,6 +191,16 @@ HARNESS_TREE = (
     # `.gitignore` is a bare `*` (backlog #86), and copying a nested repo into the harness tree is
     # a surprise nobody needs.
     ".claude/hooks",
+    # ⟳ 2026-09-14, r16. `check-review-recorded`'s anti-drift rule READS
+    # `.github/workflows/schema-gates.yml` — the paths CI path-filters as schema-gate subjects are
+    # the authority its `CODE_UNDER_PROSE` tuple must match, and the previous version compared a
+    # transcription against a transcription, which is the defect r16 filed. Staging the workflow is
+    # what makes that rule reachable here at all: without it the case sees no file, the CONTROL for
+    # that script goes red at 138/139, and the harness correctly refuses the whole run —
+    # *"every verdict below would be an artefact"*. This tuple's own recorded failure ("a
+    # scripts-only tree gave each a red control"), happening again for a new subject, and caught
+    # the same way. 44 KB, two files.
+    ".github/workflows",
 )
 
 
@@ -766,7 +776,34 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-09-10: the zero-round gate joins the manifest in the SAME commit that adds it. Five
     # PRs merged unreviewed on 2026-09-09 because a guard existed and nothing ran it; shipping its
     # replacement as manifest debt would repeat the shape at one remove.
-    "scripts/check-review-recorded.py": 6,
+    # ⟳ 2026-09-13, 6 -> 23: the final-tree rule, over FOUR review rounds. TWELVE of the seventeen
+    # exist because its own reviews found them, and both rounds' Blockings were the SAME class one
+    # layer apart — r1: subtracting dirty PATHS credited a file edited again after the round; r2:
+    # comparing CONTENT credited a mode-only change. The entry is now mode+blob. Also here: the
+    # `guarded_changes` call that no case could reach, the CANNOT-RUN exit code, and the REVIEW GAP
+    # escape in both directions including whose absence it is allowed to explain, and the reviewed
+    # DELETION that had no entry to compare against — absence is a tree state, and dropping it
+    # failed the careful path for the crime of deleting code.
+    # ⟳ 2026-09-14, r11: 23 -> 35. TWELVE entries, and every one of them aims at a rule that used to
+    # live inside the git-reading gatherer where no case could reach it — measured, eight decision
+    # points all surviving mutation with the suite at 77/77, two of them turning a live refusal into
+    # a live pass. The rules are now `classify_verdict`, `reviewed_map`, `tail_candidates`,
+    # `second_question`, `readable_docs` and `split_nul`; these entries are the proof they can fail.
+    # Two of the twelve are the r11 Blocking and High, which are ONE expression pulling opposite
+    # ways: the union (a reverted overlay must still be compared) and the intersection (the base's
+    # commits must not be charged to this branch).
+    "scripts/check-review-recorded.py": 43,
+    # ⟳ 2026-09-14, r11: this file JOINS the manifest — R4 widened-debt 8 -> 7, removed from
+    # `WIDENED_MANIFEST_DEBT` in this same commit, which that rule requires as an identity and not
+    # a ceiling. It is the producer half of the mechanism the file above consumes, and it had gone
+    # from zero mutations to zero while gaining `reviewed_state`. r11 found THREE of its new rules
+    # surviving mutation — two of them regressions of findings earlier rounds had already paid for
+    # (r3's "a deletion is RECORDED, not skipped" and the producer half of r2's mode contract) —
+    # plus a case that could not fail at all, because the fixture held no file matching its own
+    # subject. Nine entries: the two the earlier rounds bought back, the destination-mode read, the
+    # throwaway index, the unchanged-file rule, the null-vs-empty distinction, the recorded prompt,
+    # and repository redirection in both directions.
+    "scripts/codex-review.py": 12,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
@@ -936,6 +973,28 @@ def load_manifests(root: pathlib.Path) -> tuple[list[dict], list[str]]:
                                 f"cannot both be the guard for the same named behaviour, and "
                                 f"a duplicate keeps the count while shrinking coverage")
                 continue
+            # ⚠ EXACT TUPLE EQUALITY, SO THE MESSAGE CLAIMS MORE THAN THE TEST DELIVERS — r12 Low.
+            # Two entries aimed at the SAME behaviour clear this rule simply by shortening one
+            # anchor to a different substring of the same line, which is exactly what r11's repair
+            # did (legitimately — both halves of `tail_candidates` are genuinely different
+            # behaviours, verified by attribution).
+            #
+            # ⛔ NOTHING ELSE CATCHES IT EITHER, AND THE FIRST VERSION OF THIS COMMENT SAID
+            # OTHERWISE — r13 Medium. It claimed the property was "really carried by the exact-
+            # `expect` rule below: a duplicate-in-substance entry names the same case and is refused
+            # there." FALSE, twice over. That rule is evaluated PER MUTATION inside the per-entry
+            # loop, so two entries sharing an `expect` are each attributed independently and neither
+            # is refused; measured, both layers. And such a rule could not be added: sharing an
+            # `expect` is legitimate and common — several distinct mutations can be caught by one
+            # case — so a duplicate-`expect` refusal would red SIX shipping manifests today
+            # (`begin-plan`, `check-fixture-variation`, `check-plan-code`, `check-review-rounds`,
+            # `gen-dashboard`, `page_markup`).
+            #
+            # The honest statement: a duplicate-IN-SUBSTANCE entry is caught by NOTHING. The name
+            # rule and this anchor rule catch the two literal forms; `EXPECTED_MUTATIONS` keeps the
+            # count so coverage cannot shrink unnoticed. Written out because a comment asserting a
+            # property the code lacks is this branch's signature defect, and the first draft of this
+            # one landed inside the repair for a finding about exactly that.
             if anchors and anchors in seen_anchors:
                 problems.append(f"{man.name}: entry {nm!r} repeats the edit anchors of an "
                                 f"earlier entry — it measures nothing new")
@@ -2517,6 +2576,11 @@ def _self_test() -> int:
                                       "scripts/check-test-counts.py",
                                       "scripts/check-theme-token-coverage.py",
                                       "scripts/check-vocabulary-collisions.py",
+                                      # ⟳ 2026-09-14, r11. A LIVE inventory entry, added with the
+                                      # manifest — and it is NOT a `check-*` guard, so this list is
+                                      # the only place that names it. Its R4 debt is dropped from
+                                      # WIDENED_MANIFEST_DEBT in the same commit.
+                                      "scripts/codex-review.py",
                                       "scripts/coverage_verdict.py",
                                       "scripts/gen-backlog-page.py",
                                       "scripts/gen-dashboard.py",
@@ -3000,7 +3064,6 @@ def _self_test() -> int:
     # ⚠ This sentence said "The six cover …" over nine entries for two rounds. Both halves filed it
     # twice; the first fix asserted on one string and replaced another, so `str.replace` silently
     # did nothing and the count drifted further (8 -> 9) while reading as fixed.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 580)
     # ⟳ 2026-09-13: 559 -> 574 across this branch. All +15 belong to
     # `check-storage-independence.py` — the CI storage fixture's falsifier — whose manifest grew
     # 7 -> 11 -> 13 -> 15 as three review rounds widened the guard it proves. A RISE needs only the
@@ -3008,6 +3071,75 @@ def _self_test() -> int:
     # ⟳ r2 LOW 2 (claude): this said "559 -> 566 … +7" while the case beside it said 572 — the total
     # moved four times and the prose was updated once. Nothing observes a comment, which is why the
     # number lives next to the case that proves it and nowhere else.
+    # ⟳ 2026-09-13, 559 -> 576: the final-tree rule in `check-review-recorded.py`. ⚠ r11 Low: this
+    # sentence said "FIVE entries" over a delta of +17, and the manifest really grew 6 -> 23 — the
+    # line disagreed with itself, which is what a running commentary does when only one of its two
+    # halves is updated. SEVENTEEN entries for fourteen behaviours; nine were bought by its own three
+    # review rounds, whose two Blockings were the same class one layer apart — path, then content,
+    # then the tree entry that is actually right. A RISE, the ordinary kind. ⚠ The first draft of this line said `421 -> 426`, read off the narration block
+    # above rather than off `sum(EXPECTED_MUTATIONS.values())`, and THIS CASE caught it — which is
+    # the case working, and a reminder that the running commentary up there is history, not the
+    # total.
+    # ⟳ MERGE of master (#297) into this branch: 592, which is master's total plus this
+    # branch's additions. DERIVED from the dict, not added up from either side's
+    # narration — both blocks above are history and neither knew about the other.
+    # ⟳ SECOND MERGE of master into this branch: 592 -> 597. ⚠ ONE PR, NOT THREE — the first
+    # draft of this line said "(#296, #297, #298)" because that is what master had merged since
+    # the branch opened, and `git merge-base --is-ancestor` says #296 and #297 were ALREADY in
+    # via the first merge. Only #298 is new, which is why the only foreign delta below is its
+    # `check-guard-coverage.py`. A merge's contents are a measurement, not the PR list. The conflict
+    # was this very case, twice: the branch had moved the line down under three lines of new
+    # narration, so git saw an EMPTY hunk on our side and master's line on theirs and kept both.
+    # Two copies of a total is the failure this case exists to catch, arriving in the case
+    # itself. Resolved by keeping ONE line and DERIVING its number from the merged dict
+    # (`sum(EXPECTED_MUTATIONS.values())` read with `ast`), never by adding 580 + 17 — the
+    # arithmetic happens to agree, and that agreement is a check on the resolution, not its
+    # source. ENTRY COUNT IS 43 ON ALL THREE SIDES and the key sets are identical, so no file
+    # joined or left the manifest here; only per-file counts moved, which is what a merge of
+    # two ordinary RISES should look like.
+    # ⟳ 2026-09-14, r11: 597 -> 618. A RISE, the ordinary kind, and the largest single-round one on
+    # this branch: +12 on `check-review-recorded.py` for rules extracted out of the git-reading
+    # gatherer so a case can reach them, and +9 for `codex-review.py` joining the manifest at last.
+    # Every one of the 21 was PROVEN before it was written down — applied to an isolated copy,
+    # required to go red, and required to make the case it names red and NO OTHER, which is this
+    # harness's own rule (`expect must name EXACTLY ONE`). Two of the 21 did not survive that check
+    # on the first try and were fixed rather than weakened: both CRASHED the suite instead of
+    # failing it, so no `[FAIL] <case>` line was printed and the harness would have reported them
+    # unattributable — the contract this file already states, met from the other side.
+    # ⟳ 2026-09-14, r13: 618 -> 620. TWO entries, and they exist because the r12 repair could not
+    # fail — measured, not argued: reverting the classifier printer to its broken shape left this
+    # gate at `618 killed, 618 attributed, 0 survivor(s)`, rc=0, byte-identical to the repaired
+    # tree. All nine entries for that file named `chk` cases, so nothing measured the printer at
+    # all, in a file that has broken the `[FAIL] <case>` contract TWICE.
+    # ⚠ I WROTE "AND THE OBVIOUS ENTRY IS IMPOSSIBLE" HERE, AND IT WAS FALSE — r14 Medium, refuted
+    # by construction. The reasoning was real: a mutation reverting the line to `got=` IS caught, but
+    # its own `[FAIL]` line is printed by the printer it broke, so the detecting case's name comes
+    # back garbled — the detector is printed by what it detects. What I did not do was look for a
+    # case whose garbled form is SHORT AND STABLE. A boolean case has one: its tail is a literal
+    # `: got=False` under any revert of the delimiter, embedding no repr and moving with no fixture.
+    # That entry now ships. I had computed the ugly long-form variant, seen it, and written
+    # "impossible" — an unfalsifiable word in a guard's source is a durable instruction to future
+    # authors not to try, which is the same defect class as a comment asserting a property the code
+    # lacks. The rule: say what was measured, or say the judgement and own it.
+    # ⟳ 2026-09-14, r14: 620 -> 622. That entry (+1 on codex-review) and the `--no-renames` falsifier
+    # (+1 on check-review-recorded) for a FAIL-OPEN in the gate this branch ships: git's rename
+    # detection is on by default, so a guarded file moved to a prose path vanished from
+    # `--name-only` and the gate reported "no guarded path changed" over a DELETED code file.
+    # ⟳ 2026-09-14, r15 (FINAL round): 622 -> 626. FOUR entries for two more fail-opens in the
+    # DELIVERABLE, both found by attacking the gate's classifier rather than its instrument.
+    # `docs/` is not prose in this repository — it holds two of the fifteen schema gates, mode 755,
+    # executed by `check-schema-gates.sh` and path-filtered by `schema-gates.yml` — so a branch
+    # changing gate code owed no round AND skipped the final-tree question. And an EMPTY
+    # `NO-REVIEW:`, which question one explicitly refuses, fully waived question two.
+    # ⟳ 2026-09-14, r16 (the LAST round): 626 -> 629. THREE entries for the sharpest instance of
+    # this branch's signature defect: r15's anti-drift falsifier was fed a TRANSCRIPTION of the
+    # workflow's globs typed into its own test, while its docstring claimed it read the real file.
+    # Copy #1 the workflow, #2 the tuple, #3 the case — and it compared #3 to #2. Measured: a new
+    # `docs/` gate directory in the workflow left the suite green at 134/134 while the gate called
+    # that gate's code prose. The globs are now READ; the broader-glob clause that cleared `docs/**`
+    # is gone and has a case; and `main` finally CALLS the rule, so its answer is a red rather than
+    # a return value nobody reads.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 629)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

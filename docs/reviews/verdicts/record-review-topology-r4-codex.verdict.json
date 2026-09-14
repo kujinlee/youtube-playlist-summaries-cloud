@@ -1,0 +1,28 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 4448 chars"
+  ],
+  "dirty": {
+    "docs/dashboard-entries.md": "100644 7b0f25a4a1a15d2a35318b6e742fd6385fe1e4d8",
+    "docs/review-method.md": "100644 e280048bedc8ef2c5425db5511ee3fb4021de60a",
+    "docs/reviews/codex/record-review-topology-r2-codex.md": "100644 c0a75f04196d535e0b5ca376c22558fddab9b62c",
+    "docs/reviews/codex/record-review-topology-r3-codex.md": "100644 577cd7f9d13c562309fc2e32a152174e86fb9325",
+    "docs/reviews/coordinator/record-review-topology-r2-coordinator.md": "100644 e98d826fd3a54e9223e4af35b3c6f489732ad001",
+    "docs/reviews/coordinator/record-review-topology-r3-coordinator.md": "100644 bf93436f3ee3554dd6c7aa222ef029d731236cdc",
+    "docs/reviews/verdicts/record-review-topology-r2-codex.verdict.json": "100644 173224c407545c5b91ef61e8fc07961151fff12f",
+    "docs/reviews/verdicts/record-review-topology-r3-codex.verdict.json": "100644 8c49f37683b203c04b0d1126a5ad5d3da5fb3a0f",
+    "scripts/check-plan-code.py": "100644 b06259edaab7f63df9bded2937ccc0e1715b7d82",
+    "scripts/check-review-recorded.py": "100755 167cb7994e0b29d6c129b9104acd96ad553d1b3c",
+    "scripts/codex-review.py": "100755 2e92a9f9e1dd2df55339aa8ee0f6e2756242e708",
+    "scripts/mutations/check-review-recorded.json": "100644 9b97370dcb62a1a6314e23ec36c7f3bbaa2e51b8"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "90a89ad5e225b559a12d8f625b7bd16aaf2fc8b0",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "reason": "4448 chars",
+  "review": "record-review-topology-r4-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}
