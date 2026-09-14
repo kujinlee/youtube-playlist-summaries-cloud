@@ -95,12 +95,25 @@
     "file": "scripts/check-guard-coverage.py",
     "edits": [
       [
-        "        start = sql.find(f\"'{kind}:\")",
-        "        start = sql.find(f\"select '{kind}:\")"
+        "    start = sql.find(f\"'{kind}:\")",
+        "    start = sql.find(f\"select '{kind}:\")"
       ]
     ],
     "expect": [
       "every clause is located, including the `select distinct` one"
+    ]
+  },
+  {
+    "name": "the predicate pin stops comparing, so a narrowing filter can return",
+    "file": "scripts/check-guard-coverage.py",
+    "edits": [
+      [
+        "            extra = sorted(set(predicates.get(kind, [])) - set(allowed))",
+        "            extra = []"
+      ]
+    ],
+    "expect": [
+      "re-adding the `_uq` filter is CAUGHT even though the array is unchanged"
     ]
   }
 ]

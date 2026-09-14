@@ -32,7 +32,7 @@ guards that are plainly correct) but "what does it do when the caller is merely
 SECOND?"
 
 Usage:  ./scripts/check-guard-coverage.py     (exit 0 = every guard classified)
-    --self-test  # 27 cases
+    --self-test  # 34 cases
 """
 import ast
 import re
@@ -355,6 +355,22 @@ select distinct 'trigger:' || p.proname from pg_trigger t
 """
 
 
+def _clause_body(sql: str, kind: str) -> str:
+    """The text of one CATALOG_SQL clause, or "" if it is not there. PURE.
+
+    ⚠ ONE LOCATOR, TWO READERS — `clause_scopes` and `clause_predicates` both need it, and the first
+    version of the second one COPIED these four lines. That made a mutation anchor ambiguous (the
+    harness refuses a `find` string that matches twice) and, worse, created a second implementation
+    of the rule this repo has seven recorded instances of drifting. Located by the OUTPUT PREFIX
+    rather than by `select '<kind>:`, because the trigger clause is `select distinct 'trigger:'`.
+    """
+    start = sql.find(f"'{kind}:")
+    if start < 0:
+        return ""
+    nxt = sql.find("union all", start)
+    return sql[start:nxt if nxt > 0 else len(sql)]
+
+
 def clause_scopes(sql: str) -> dict[str, list[str]]:
     """Which table set each CATALOG_SQL clause reads. PURE — no database, no filesystem.
 
@@ -374,15 +390,10 @@ def clause_scopes(sql: str) -> dict[str, list[str]]:
     """
     out: dict[str, list[str]] = {}
     for kind in ("check", "fk", "index", "trigger"):
-        # ⚠ Located by the OUTPUT PREFIX, not by `select '<kind>:` — the trigger clause is
-        # `select distinct 'trigger:' …` and a prefix match on `select` missed it entirely, which is
-        # this function's own failure mode in miniature: a pattern narrower than the text it reads.
-        start = sql.find(f"'{kind}:")
-        if start < 0:
+        body = _clause_body(sql, kind)
+        if not body:
             out[kind] = []
             continue
-        nxt = sql.find("union all", start)
-        body = sql[start:nxt if nxt > 0 else len(sql)]
         # ⚠ Read the INTERPOLATED array, not every quoted literal in the clause. The first version
         # took `'c'` from `contype = 'c'` and `'public'` from the FK clause's namespace test as table
         # names — a scope check that cannot tell a table from a catalog constant proves nothing.
@@ -391,12 +402,63 @@ def clause_scopes(sql: str) -> dict[str, list[str]]:
     return out
 
 
+def clause_predicates(sql: str) -> dict[str, list[str]]:
+    """The conditions each clause applies BESIDES its table array. PURE.
+
+    ⛔ THE ARRAY IS NOT THE WHOLE SCOPE — ⟳ r2 MEDIUM (codex). `clause_scopes()` compares which tables
+    a clause names, so the prior defect can return without touching it:
+
+        where indrelid = any (array{OWNED}::regclass[]) and indisunique
+          and indexrelid::regclass::text like '%_uq'      <- array unchanged, scope narrowed
+
+    That filter is exactly what hid a unique constraint on a table already in scope, and a check that
+    reads only the array reports clean while it comes back. So the PREDICATES are pinned too: each
+    clause may apply the conditions its kind needs and nothing else.
+    """
+    out: dict[str, list[str]] = {}
+    for kind in ("check", "fk", "index", "trigger"):
+        body = _clause_body(sql, kind)
+        if not body:
+            out[kind] = []
+            continue
+        where = body.find("where")
+        if where < 0:
+            out[kind] = []
+            continue
+        conds = re.split(r"\band\b", body[where + 5:])
+        keep = []
+        for c in conds:
+            c = " ".join(c.replace(";", " ").split())
+            if not c or "array[" in c:          # the table array is clause_scopes()'s subject
+                continue
+            keep.append(c)
+        out[kind] = sorted(keep)
+    return out
+
+
+# What each clause is ALLOWED to test besides its table array. A clause applying anything else is
+# narrowing its own scope, which is the defect `_uq` was.
+EXPECTED_PREDICATES: dict[str, tuple[str, ...]] = {
+    "check":   ("contype = 'c'",),
+    "fk":      ("connamespace = 'public'::regnamespace", "contype = 'f'"),
+    "index":   ("indisunique",),
+    "trigger": ("not t.tgisinternal",),
+}
+
+
 def scope_problems(scopes: dict[str, list[str]], owned: tuple[str, ...],
-                   trigger: tuple[str, ...]) -> list[str]:
+                   trigger: tuple[str, ...],
+                   predicates: "dict[str, list[str]] | None" = None) -> list[str]:
     """One line per clause reading a set it should not. PURE."""
     want = {"check": sorted(owned), "index": sorted(owned),
             "fk": sorted(trigger), "trigger": sorted(trigger)}
     out = []
+    if predicates is not None:
+        for kind, allowed in EXPECTED_PREDICATES.items():
+            extra = sorted(set(predicates.get(kind, [])) - set(allowed))
+            if extra:
+                out.append(f"the {kind} clause applies an extra predicate that NARROWS its scope "
+                           f"without changing its table array: {extra}")
     for kind, expected in want.items():
         got = scopes.get(kind, [])
         if not got:
@@ -552,6 +614,32 @@ def self_test() -> int:
             "union all\n"
             "select distinct 'trigger:' || p.proname from pg_trigger t\n"
             " where t.tgrelid = any (array['a', 'b', 'c']::regclass[]) and not t.tgisinternal;\n")
+    # ── ⟳ r2 MEDIUM (codex): the array is not the whole scope ────────────────────────────────
+    _pr = clause_predicates(CATALOG_SQL)
+    case("the shipped clauses apply no predicate beyond what their kind needs",
+         scope_problems(_sc, OWNED_TABLES, TRIGGER_TABLES, _pr) == [])
+    case("re-adding the `_uq` filter is CAUGHT even though the array is unchanged",
+         len(scope_problems(_sc, OWNED_TABLES, TRIGGER_TABLES,
+                            {**_pr, "index": sorted(_pr["index"]
+                                    + ["indexrelid::regclass::text like '%_uq'"])})) == 1)
+    case("a narrowing predicate on any OTHER clause is caught too",
+         len(scope_problems(_sc, OWNED_TABLES, TRIGGER_TABLES,
+                            {**_pr, "check": sorted(_pr["check"] + ["conname like 'art_%'"])})) == 1)
+    case("the table array itself is not mistaken for a predicate",
+         all("array[" not in c for v in _pr.values() for c in v))
+    case("each kind's own marker is present, or the clause was mis-located",
+         _pr["check"] == ["contype = 'c'"] and _pr["index"] == ["indisunique"])
+    # ⟳ the variation guard refused `clause_predicates.sql` until a case passed it something other
+    # than CATALOG_SQL. The toy query below carries a deliberate narrowing filter, which is also the
+    # only case that proves the extractor finds one in a query it has never seen.
+    _toy_narrowed = ("select 'index:' || indexrelid::regclass::text from pg_index\n"
+                     " where indrelid = any (array['a']::regclass[]) and indisunique\n"
+                     "   and indexrelid::regclass::text like '%_uq';\n")
+    case("a narrowing filter is found in a query this function has never seen",
+         any("like" in c for c in clause_predicates(_toy_narrowed)["index"]))
+    case("...and a clause with only its own marker reads clean",
+         clause_predicates(_toy) ["check"] == ["contype = 'c'"])
+
     case("a DIFFERENT query is read as itself, not as CATALOG_SQL",
          clause_scopes(_toy)["check"] == ["a", "b"])
     case("...and its wider clauses are read as wider",
@@ -625,7 +713,8 @@ def self_test() -> int:
 def main() -> int:
     # ⛔ THE ENUMERATION IS CHECKED BEFORE ITS OUTPUT IS TRUSTED — ⟳ r1 MEDIUM 2 (claude).
     # Three rounds found this component short and nothing could have caught any of them.
-    scope_bad = scope_problems(clause_scopes(CATALOG_SQL), OWNED_TABLES, TRIGGER_TABLES)
+    scope_bad = scope_problems(clause_scopes(CATALOG_SQL), OWNED_TABLES, TRIGGER_TABLES,
+                               clause_predicates(CATALOG_SQL))
     if scope_bad:
         for line in scope_bad:
             print(f"❌ SCOPE  {line}")

@@ -8466,3 +8466,38 @@ the measured reason each, which is what that field exists for.
 
     guards 41 -> 55 · self-test 16 -> 27 · mutations 5 -> 8, all attributable
     suite 73 ✓ / 0 ✗, 15/15 · mutate-schema 59/59 · EXPECTED_MUTATIONS 575 -> 578
+
+## 2026-09-14
+A second review pass found that the test I added to stop the problem recurring only
+checked half of what "scope" means — it watched which tables a query asks about, but
+not the extra conditions that can quietly exclude things from those same tables. So the
+original bug could have come back invisibly. Fixed, and the fix itself immediately
+produced a smaller version of the same family of mistake, which the repo's own guards
+caught. Everything green.
+<!--tech-->
+Codex r2: `docs/reviews/codex/guard-coverage-scope-r2-codex.md` — 1 Medium, no Blocking
+or High. ⚠ `REVIEW GAP: claude` recorded. Its `--mutate .` run: 578 mutations, 578
+killed, 578 attributed, 0 survivors.
+
+**MEDIUM.** `clause_scopes()` compares the table ARRAY, so the `_uq` defect can return
+without touching it: `… and indisunique and indexrelid::regclass::text like '%_uq'`
+leaves the array identical and narrows the scope. `clause_predicates()` now pins what
+each clause may test besides its array. Measured: shipped CLEAN, the `_uq` filter back
+is CAUGHT and named.
+
+⚠ **The fix copied four lines.** `clause_predicates` duplicated `clause_scopes`'s
+locator — making a mutation anchor ambiguous and creating a second implementation of one
+rule *inside the file arguing that four clauses must not disagree*. Extracted to
+`_clause_body()`: one locator, two readers.
+
+⚠ Then `check-fixture-variation.py` refused the new parameter because every call passed
+`CATALOG_SQL`. The two cases added to satisfy it are the only ones proving the extractor
+finds a narrowing filter in a query it has never seen — a better test than the ones
+written first.
+
+    self-test 27 -> 34 · guard-coverage mutations 8 -> 9, all attributable
+    suite 73 ✓ / 0 ✗, 15/15 · EXPECTED_MUTATIONS 578 -> 579 · eight repo guards rc=0
+
+Both reviewers clean on everything else, including the nine key classifications and the
+three MUTATION_EXEMPT claims — Codex tried to construct a corpus path that invalidates
+one and could not.
