@@ -254,12 +254,22 @@ nobody is looking at the repair.
    documented way to do it.
 
 Step 5 is the only step with a machine behind it: `scripts/check-review-recorded.py` reads what each
-Codex run records at dispatch — the commit, and the **blob** of every file handed over uncommitted —
-and refuses a branch where guarded code was committed after **every** round. The comparison is
-content, not filenames: its own r1 review reproduced "review `x` dirty, then edit `x` again and
-commit", which a path match certifies and a blob match does not. No usable round is **CANNOT RUN**,
-cleared by the `REVIEW GAP:` line `docs/plugins.md` already requires when a half could not run.
-Steps 1–4 are convention. Do not read them as protection.
+Codex run records at dispatch — the commit, and the **git tree entry** of every file handed over
+uncommitted — and refuses a branch where guarded code was committed after **every** round. Its own
+two review rounds are why it compares entries and not something weaker: r1 reproduced "review `x`
+dirty, then edit `x` again and commit", which a path match certifies; r2 then reproduced the same
+class one layer in, a **mode-only** change that a content match certifies. No usable round is
+**CANNOT RUN**, cleared by a `REVIEW GAP:` naming **codex** — the half that leaves the testimony,
+since a gap about the other half explains a different absence. Steps 1–4 are convention. Do not
+read them as protection.
+
+⚠ **Batch the editorial fixes BEFORE the last round.** The rule is deliberately strict: any change
+to guarded code after the final round makes that round stale, and a docstring lives in guarded code.
+Measured while building it — a converged round left one stale-prose Low, fixing it cost another
+round, and that round found three more spellings of the same thing. There is no "docstring-only"
+escape and there should not be: every loosening this rule survived (path, then content, then the
+tree entry) was a loosening that certified unreviewed code. Fix the Lows, THEN run the round that
+sees the final tree.
 
 ### ⚠ The observations that would RETIRE this section
 

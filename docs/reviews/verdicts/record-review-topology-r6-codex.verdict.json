@@ -1,0 +1,33 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 1971 chars"
+  ],
+  "dirty": {
+    "docs/dashboard-entries.md": "100644 7b0f25a4a1a15d2a35318b6e742fd6385fe1e4d8",
+    "docs/review-method.md": "100644 e280048bedc8ef2c5425db5511ee3fb4021de60a",
+    "docs/reviews/codex/record-review-topology-r2-codex.md": "100644 c0a75f04196d535e0b5ca376c22558fddab9b62c",
+    "docs/reviews/codex/record-review-topology-r3-codex.md": "100644 577cd7f9d13c562309fc2e32a152174e86fb9325",
+    "docs/reviews/codex/record-review-topology-r4-codex.md": "100644 b055f6f665a615c24debea326b2dacd4ece94046",
+    "docs/reviews/codex/record-review-topology-r5-codex.md": "100644 4829b58d296474581d9d354cd66dec47a684469d",
+    "docs/reviews/coordinator/record-review-topology-r2-coordinator.md": "100644 e98d826fd3a54e9223e4af35b3c6f489732ad001",
+    "docs/reviews/coordinator/record-review-topology-r3-coordinator.md": "100644 bf93436f3ee3554dd6c7aa222ef029d731236cdc",
+    "docs/reviews/coordinator/record-review-topology-r4-coordinator.md": "100644 db0f1363e00e17f13382742cb57512fc734fa0fb",
+    "docs/reviews/verdicts/record-review-topology-r2-codex.verdict.json": "100644 173224c407545c5b91ef61e8fc07961151fff12f",
+    "docs/reviews/verdicts/record-review-topology-r3-codex.verdict.json": "100644 8c49f37683b203c04b0d1126a5ad5d3da5fb3a0f",
+    "docs/reviews/verdicts/record-review-topology-r4-codex.verdict.json": "100644 d1a07280c71619799536480810f2120a10f81d51",
+    "docs/reviews/verdicts/record-review-topology-r5-codex.verdict.json": "100644 f92d7459d23c3708f9da0e9b71a1019c5bb74c38",
+    "scripts/check-plan-code.py": "100644 1b8bcb1a91fc091df30e41a36f9e9e08f2c2ed1e",
+    "scripts/check-review-recorded.py": "100755 1e2855c1a9569798dd5983b5716c5e052e98f597",
+    "scripts/codex-review.py": "100755 2e92a9f9e1dd2df55339aa8ee0f6e2756242e708",
+    "scripts/mutations/check-review-recorded.json": "100644 0da4701420af254b757a214e6b6656f0f0011717"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "90a89ad5e225b559a12d8f625b7bd16aaf2fc8b0",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "reason": "1971 chars",
+  "review": "record-review-topology-r6-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}

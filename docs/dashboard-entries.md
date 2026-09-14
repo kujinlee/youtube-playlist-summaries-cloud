@@ -8155,8 +8155,8 @@ test environment. The saving is there, not in the reading.
 So the rule that shipped is narrow: a branch fails if guarded code was committed after **every**
 round it recorded. Running one more round against the final tree clears it, and so does the existing
 practice of holding the last fixes uncommitted so the reviewer sees the state that will merge — the
-wrapper now records the exact content it handed over uncommitted, precisely so the careful version of
-the workflow is not the one that gets punished.
+wrapper now records the exact git tree entry it handed over uncommitted, precisely so the careful
+version of the workflow is not the one that gets punished.
 
 The protocol this belongs to — round 1 both reviewers at once, later rounds alternating — is written
 down with **the two observations that would retire it**, and those get re-read at each architecture
@@ -8190,13 +8190,32 @@ after it does not fire; a file the reviewer was handed uncommitted does not coun
 removing just the `dirty` list from the same tree makes it fire. `EXPECTED_MUTATIONS` for
 `check-review-recorded.py` 6 → 11, declared total 559 → 564.
 
-Round 1 of its own review then found the rule's worst defect. The first version subtracted dirty
-**paths**, so "review a file, edit it again, commit" passed — certifying code no reviewer had seen,
-by the ordinary loop rather than an exotic evasion. It now compares blobs. Four more came from that
-round: a round taken before the branch's first commit was silently discarded; "no usable round"
-returned 0 while printing CANNOT RUN; the population read MODIFIED historical verdicts as this
-branch's testimony; and a case that named the live wiring never touched it — deleting that wiring
-left the suite green. `EXPECTED_MUTATIONS` 6 → 15, declared total 559 → 568.
+Three review rounds then found sixteen defects in it — thirteen fixed, three accepted and written
+down — and **both Blockings were the same class one layer apart**, which is the finding, not an
+aside. r1: the rule subtracted dirty **paths**, so "review a
+file, edit it again, commit" certified code no reviewer had seen, by the ordinary loop rather than
+an exotic evasion. r2: comparing **content** still certified a mode-only change — same bytes, newly
+executable. The answer was to stop reconstructing what git already knows and record the git tree
+entry — mode and object id — taken from a throwaway index. That also fixed two false failures r2 found on
+the careful path: a symlink was being recorded as the hash of its target's contents, and an
+untracked new file present at review time was read as never seen.
+
+The rest, in the rounds' own order: a round taken before the branch's first commit was silently
+discarded; "no usable round" returned 0 while printing CANNOT RUN; the population read MODIFIED
+historical verdicts as this branch's testimony; the working-tree scan broke on quoted paths and
+renames; `docs/plugins.md` still commanded concurrent dispatch with no exception; a case that named
+the live wiring never touched it, so deleting that wiring left the suite green; a `REVIEW GAP:`
+about the **Claude** half cleared a missing **Codex** verdict — one absence excusing a different
+one; a reviewed **deletion** was credited to nobody, so the careful path failed for the crime of
+deleting code; and one unrelated out-of-cone file made the whole record empty instead of partial.
+`EXPECTED_MUTATIONS` 6 → 20, declared total 559 → 573.
+
+Three things were accepted rather than fixed, and are written into the code that has them: the CI
+step runs on pull requests only, so a push to `master` asks neither question (that path is closed by
+a different mechanism, the default-branch push hook); a stacked branch is cleared by its parent's
+declaration, exactly as the existing recorded-review question already is, and the pass now names the
+document it relied on; and a non-deterministic `clean` filter makes content identity impossible for
+git itself, not only for this rule.
 
 ⚠ The sum line was first written as `421 → 426`, read off the running commentary above the
 assertion instead of off `sum(EXPECTED_MUTATIONS.values())`. The case caught it. Steps 1–4 of the

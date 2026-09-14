@@ -766,11 +766,15 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-09-10: the zero-round gate joins the manifest in the SAME commit that adds it. Five
     # PRs merged unreviewed on 2026-09-09 because a guard existed and nothing ran it; shipping its
     # replacement as manifest debt would repeat the shape at one remove.
-    # ⟳ 2026-09-13, 6 -> 15: the final-tree rule. NINE entries, one per behaviour it adds. FOUR
-    # of the nine exist because its own r1 review found them: the PATH-vs-CONTENT subtraction that
-    # certified unreviewed code (Blocking), the `guarded_changes` call that had moved out of reach
-    # of any case (Low), the CANNOT-RUN exit code, and the REVIEW GAP escape in both directions.
-    "scripts/check-review-recorded.py": 15,
+    # ⟳ 2026-09-13, 6 -> 23: the final-tree rule, over FOUR review rounds. TWELVE of the seventeen
+    # exist because its own reviews found them, and both rounds' Blockings were the SAME class one
+    # layer apart — r1: subtracting dirty PATHS credited a file edited again after the round; r2:
+    # comparing CONTENT credited a mode-only change. The entry is now mode+blob. Also here: the
+    # `guarded_changes` call that no case could reach, the CANNOT-RUN exit code, and the REVIEW GAP
+    # escape in both directions including whose absence it is allowed to explain, and the reviewed
+    # DELETION that had no entry to compare against — absence is a tree state, and dropping it
+    # failed the careful path for the crime of deleting code.
+    "scripts/check-review-recorded.py": 23,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
@@ -2999,14 +3003,14 @@ def _self_test() -> int:
     # ⚠ This sentence said "The six cover …" over nine entries for two rounds. Both halves filed it
     # twice; the first fix asserted on one string and replaced another, so `str.replace` silently
     # did nothing and the count drifted further (8 -> 9) while reading as fixed.
-    # ⟳ 2026-09-13, 559 -> 568: the final-tree rule in `check-review-recorded.py`. FIVE entries for
-    # NINE behaviours added to an already-manifested file; four of them were bought by its own r1
-    # review, including the path-vs-content subtraction that certified unreviewed code. A RISE, the
-    # ordinary kind. ⚠ The first draft of this line said `421 -> 426`, read off the narration block
+    # ⟳ 2026-09-13, 559 -> 576: the final-tree rule in `check-review-recorded.py`. FIVE entries for
+    # FOURTEEN behaviours added to an already-manifested file; nine were bought by its own three
+    # review rounds, whose two Blockings were the same class one layer apart — path, then content,
+    # then the tree entry that is actually right. A RISE, the ordinary kind. ⚠ The first draft of this line said `421 -> 426`, read off the narration block
     # above rather than off `sum(EXPECTED_MUTATIONS.values())`, and THIS CASE caught it — which is
     # the case working, and a reminder that the running commentary up there is history, not the
     # total.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 568)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 576)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

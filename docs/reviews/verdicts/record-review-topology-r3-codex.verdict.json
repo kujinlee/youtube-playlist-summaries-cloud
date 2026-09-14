@@ -1,0 +1,25 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 4423 chars"
+  ],
+  "dirty": {
+    "docs/dashboard-entries.md": "100644 5184e7ea9ffbfec957429b4c18717803521f9184",
+    "docs/review-method.md": "100644 e280048bedc8ef2c5425db5511ee3fb4021de60a",
+    "docs/reviews/codex/record-review-topology-r2-codex.md": "100644 c0a75f04196d535e0b5ca376c22558fddab9b62c",
+    "docs/reviews/coordinator/record-review-topology-r2-coordinator.md": "100644 e98d826fd3a54e9223e4af35b3c6f489732ad001",
+    "docs/reviews/verdicts/record-review-topology-r2-codex.verdict.json": "100644 173224c407545c5b91ef61e8fc07961151fff12f",
+    "scripts/check-plan-code.py": "100644 dc500f148acb3cc74e160e43062449371cb1c314",
+    "scripts/check-review-recorded.py": "100755 9f0ea1338d9d9c7275c6f6c091f96671f38b6cca",
+    "scripts/codex-review.py": "100755 a748153aae0d22f9dbfcc2a192ebef47175b251f",
+    "scripts/mutations/check-review-recorded.json": "100644 70c8f608417591e80a9a1a783342c265db85bcee"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "90a89ad5e225b559a12d8f625b7bd16aaf2fc8b0",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "reason": "4423 chars",
+  "review": "record-review-topology-r3-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}

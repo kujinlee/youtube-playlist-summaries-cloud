@@ -135,8 +135,8 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "    missed = [p for p in guarded_changes(after)\n              if not (reviewed.get(p) and final.get(p) == reviewed.get(p))]",
-        "    missed = [p for p in guarded_changes(after)\n              if not reviewed.get(p)]"
+        "        if not seen:\n            return False\n        return (is_absent(seen) and is_absent(now)) or now == seen",
+        "        if not seen:\n            return False\n        return True"
       ]
     ],
     "expect": [
@@ -161,8 +161,8 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "        if gap:\n            return 0, f\"final-tree rule NOT CHECKED — {why}; declared: REVIEW GAP: {gap}\"",
-        "        if False:\n            return 0, f\"final-tree rule NOT CHECKED — {why}; declared: REVIEW GAP: {gap}\""
+        "        if gap:",
+        "        if False:"
       ]
     ],
     "expect": [
@@ -180,6 +180,110 @@
     ],
     "expect": [
       "a declared gap does NOT excuse a round that exists and is stale"
+    ]
+  },
+  {
+    "name": "⛔ the r2 BLOCKING, restored: the final-tree lookup answers with a bare sha, so flipping the executable bit after the round is credited as reviewed",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "            entries[name] = f\"{parts[0]} {parts[2]}\"",
+        "            entries[name] = parts[2]"
+      ]
+    ],
+    "expect": [
+      "the lookup answers with an ENTRY — mode and object id, not a bare sha"
+    ]
+  },
+  {
+    "name": "⛔ the r4 BLOCKING, restored: entries are filtered to blobs, so a path holding a SUBMODULE reads as absent and a reviewed deletion credits a merge that puts a gitlink there",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        if name and len(parts) >= 3:",
+        "        if name and len(parts) >= 3 and parts[1] == \"blob\":"
+      ]
+    ],
+    "expect": [
+      "a submodule gitlink is KEPT, so a path holding one can never read as absent"
+    ]
+  },
+  {
+    "name": "⛔ the r2 HIGH, restored: any REVIEW GAP clears a missing Codex verdict, so `claude — not invoked` excuses a different absence entirely",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        if gap_names_codex(reason):\n            return f\"{path} — {reason}\"",
+        "        if reason:\n            return f\"{path} — {reason}\""
+      ]
+    ],
+    "expect": [
+      "...a claude-only gap is NOT accepted, however emphatic"
+    ]
+  },
+  {
+    "name": "the gap's WHO is matched against the whole line, so a claude gap whose REASON mentions codex is accepted",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return bool(reason) and reason.split(\":\", 1)[0].strip().lower() == \"codex\"",
+        "    return bool(reason) and \"codex\" in reason.lower()"
+      ]
+    ],
+    "expect": [
+      "the WHO is read, not the reason — a claude gap mentioning codex stays a claude gap"
+    ]
+  },
+  {
+    "name": "⛔ the r3 deletion finding, restored: a path absent from the final tree has no entry to compare, so a reviewed DELETION reads as unseen and the careful path fails for deleting code",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "ABSENT_ENTRY = \"000000 \" + \"0\" * 40",
+        "ABSENT_ENTRY = \"not a tree entry\""
+      ]
+    ],
+    "expect": [
+      "the absent entry is spelled the way git spells a deletion"
+    ]
+  },
+  {
+    "name": "absence is matched by an exact 40-zero literal again, so a reviewed deletion in a SHA-256 repository falsely fails",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return len(parts) == 2 and bool(parts[1]) and set(parts[1]) == {\"0\"}",
+        "    return (entry or \"\") == ABSENT_ENTRY"
+      ]
+    ],
+    "expect": [
+      "...and so is a 64-zero one, because the width is not the meaning"
+    ]
+  },
+  {
+    "name": "two absences stop matching each other, so the reviewed-deletion path returns to failing closed on every branch that deletes code",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        return (is_absent(seen) and is_absent(now)) or now == seen",
+        "        return now == seen"
+      ]
+    ],
+    "expect": [
+      "a deletion recorded at one sha width matches an absence at another"
+    ]
+  },
+  {
+    "name": "⛔ the r4 HIGH, restored: the declared gap loses the document that made it, so a stacked branch's pass is indistinguishable from one that declared for itself",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "            return f\"{path} — {reason}\"",
+        "            return reason"
+      ]
+    ],
+    "expect": [
+      "...and the answer NAMES the document, so a stacked pass is visible in the log"
     ]
   }
 ]

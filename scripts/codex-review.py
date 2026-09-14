@@ -262,7 +262,7 @@ def verdict_record(*, gate_ran: bool, exit_code: int, out_path: str, reason: str
 
 
 def reviewed_state(repo_root: "str | None" = None) -> "tuple[str | None, dict[str, str]]":
-    """`(HEAD commit, {uncommitted path: blob sha of what the reviewer was handed})`. IMPURE.
+    """`(HEAD commit, {uncommitted path: "<mode> <object-id>" the reviewer was handed})`. IMPURE.
 
     WHY BOTH, and the second one is not decoration. `head` alone answers the question for a clean
     tree. But the documented practice is to hold a round's fixes UNCOMMITTED so the reviewer sees
@@ -270,12 +270,12 @@ def reviewed_state(repo_root: "str | None" = None) -> "tuple[str | None, dict[st
     purpose. Under that practice `head` is the commit BEFORE the reviewed fixes, and a downstream
     check reading it alone would accuse the careful author of shipping unreviewed code.
 
-    ⛔ CONTENT, NOT PATHS, AND THE FIRST VERSION GOT THIS WRONG. It recorded a list of dirty paths,
-    and r1 of its own review reproduced the defeat in a scratch repo: review `lib/x.py` dirty at v2,
-    then edit it again to v3 and commit — the path still matches, so the check subtracted it and
-    certified code no reviewer had seen. Not exotic: "fix the same file again after the round" is
-    the ordinary loop. A blob sha is exact — the reviewer saw THIS content, and the check can ask
-    whether the merging tree still holds it.
+    ⛔ THE TREE ENTRY, NOT THE PATH, AND NOT THE CONTENT ALONE. Two review rounds on this function:
+    r1 found that a list of dirty PATHS let "review `lib/x.py` at v2, edit it to v3, commit" pass,
+    because the name still matched — the ordinary fix-it-again loop, not an exotic evasion. r2 then
+    found that content alone let a MODE-ONLY change through: same bytes, newly executable, credited
+    as reviewed. What the reviewer saw is the tree ENTRY — mode and object id — so that is what is
+    recorded, and `git` is asked for it rather than reconstructing it here.
 
     ⚠ NEVER RAISES, and never blocks the review. A wrapper that cannot describe the tree still has
     a gate to run and testimony to file. The cost of failing is a `None` head, which downstream
@@ -283,10 +283,10 @@ def reviewed_state(repo_root: "str | None" = None) -> "tuple[str | None, dict[st
     """
     root = repo_root or REPO_ROOT
 
-    def git(*args: str) -> "str | None":
+    def git(*args: str, env: "dict[str, str] | None" = None) -> "str | None":
         try:
             p = subprocess.run(["git", "-C", root, *args],
-                               capture_output=True, text=True, timeout=15)
+                               capture_output=True, text=True, timeout=60, env=env)
         except (OSError, subprocess.SubprocessError):
             return None
         return p.stdout if p.returncode == 0 else None
@@ -294,19 +294,48 @@ def reviewed_state(repo_root: "str | None" = None) -> "tuple[str | None, dict[st
     head = git("rev-parse", "HEAD")
     if head is None:
         return None, {}
-    # `git diff HEAD` over `git status --porcelain`: r1 Medium. Porcelain v1 is human-shaped — it
-    # quotes non-ASCII under `core.quotePath`, spells a rename `old -> new`, and a tracked file
-    # literally named `a -> b` parses as `b`. `-z` removes the quoting and `--no-renames` removes
-    # the arrow, so the field IS the path. Untracked files are excluded for free: a file the branch
-    # does not contain is not code the reviewer will be credited with having seen.
-    names = git("diff", "--name-only", "-z", "--no-renames", "HEAD") or ""
+    # ⛔ ASK GIT WHAT IT WOULD STORE — do not compute it. r2 broke three attempts at doing this by
+    # hand: `git diff --name-only` + `hash-object` recorded a symlink as the hash of its TARGET's
+    # contents (git stores the link text), omitted untracked files entirely (a new file present at
+    # review time then read as never-seen), and carried no MODE, so flipping the executable bit
+    # after the round was credited as reviewed — the r1 Blocking in another costume.
+    #
+    # A throwaway index answers all three at once, in git's own words: `read-tree HEAD` then
+    # `add -A` produces exactly the entries a commit would hold, and `diff-index` names the ones
+    # that differ from HEAD. `GIT_INDEX_FILE` keeps it out of the real index, which a concurrent
+    # agent's `git add` would otherwise collide with (docs/review-method.md, hazard 2).
     dirty: "dict[str, str]" = {}
-    for path in (p for p in names.split("\0") if p):
-        # A path DELETED in the working tree has no content to hash; `hash-object` fails and it is
-        # simply absent, which downstream reads as "not seen" — the safe direction.
-        blob = git("hash-object", "--", path)
-        if blob and blob.strip():
-            dirty[path] = blob.strip()
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            env = dict(os.environ, GIT_INDEX_FILE=os.path.join(td, "index"))
+            if git("read-tree", "HEAD", env=env) is None:
+                return head.strip(), {}
+            # ⚠ BEST EFFORT, NOT ALL-OR-NOTHING — r3 Medium. `add -A` fails on an out-of-cone
+            # untracked path under a sparse checkout, and returning {} there discarded the entries
+            # it HAD staged: one unrelated file turned a full record into no record, and every
+            # reviewed file then read as never-seen. A partial record fails CLOSED (unrecorded
+            # paths count as unseen); an empty one throws away evidence that exists.
+            git("add", "-A", env=env)
+            raw = git("diff-index", "--cached", "-z", "--no-renames", "HEAD", env=env)
+    except OSError:
+        return head.strip(), {}
+    if raw is None:
+        return head.strip(), {}
+    # Raw `-z` records are `:<srcmode> <dstmode> <srcsha> <dstsha> <status>\0<path>\0`.
+    fields = raw.split("\0")
+    for i in range(0, len(fields) - 1, 2):
+        meta, path = fields[i], fields[i + 1]
+        if not meta.startswith(":") or not path:
+            continue
+        parts = meta[1:].split()
+        if len(parts) < 5:
+            continue
+        # ⚠ A DELETION IS RECORDED, NOT SKIPPED — r3 Medium. The first version dropped all-zero
+        # destinations as "no content to credit", so a reviewer who saw a file DELETED left no
+        # trace of it and the branch was accused of merging an unreviewed deletion. Absence is a
+        # tree state. The zero entry git itself writes here says exactly that, so nothing is
+        # invented: the check compares against the same zeros for a path absent from HEAD.
+        dirty[path] = f"{parts[1]} {parts[3]}"
     return head.strip(), dirty
 
 
@@ -992,8 +1021,9 @@ def self_test() -> int:
     chk("the verdict records the commit the reviewer was handed", _s["head"], "abc123")
     # ⛔ CONTENT, NOT A PATH LIST — r1 Blocking. A path alone still matches after the file is edited
     # AGAIN, so the check subtracted it and certified content nobody reviewed. Reproduced in a
-    # scratch repo; the blob sha is what makes "the reviewer saw THIS" answerable.
-    chk("…and the BLOB each uncommitted file held, not merely its name",
+    # scratch repo; the entry is what makes "the reviewer saw THIS" answerable — and after r4 its
+    # second field is an OBJECT ID: a blob for a file, a commit for a gitlink, zeros for a deletion.
+    chk("…and the TREE ENTRY each uncommitted file held — mode and object id, not merely its name",
         _s["dirty"], {"scripts/a.py": "b10b"})
     # ⚠ NULL, NOT ABSENT. Both read as falsey downstream, but an absent field is indistinguishable
     # from a schema-1 verdict written before the question could be asked, and the reader must be

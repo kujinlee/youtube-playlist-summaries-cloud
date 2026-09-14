@@ -54,8 +54,10 @@ SCOPE, STATED RATHER THAN IMPLIED
   * Only verdicts THIS branch ADDED are considered. On `master` the range is empty, so the rule
     correctly says nothing; a MODIFIED historical verdict is not testimony about this branch.
   * Only the Codex half leaves a verdict. A round that ran as Claude because Codex was down cannot
-    answer this question at all — which is CANNOT RUN, cleared by the `REVIEW GAP:` line
-    `docs/plugins.md` already requires in that situation.
+    answer this question at all — which is CANNOT RUN, cleared by a `REVIEW GAP:` naming **codex**
+    (a gap about the other half explains a different absence). ⚠ Like the recorded-review question,
+    the gap is read over the whole RANGE, so a stacked child is cleared by its parent's
+    declaration — measured r3. The pass names the document it relied on rather than hiding it.
   * A verdict older than schema 2 carries no `head`, and one whose head was rebased or squashed
     away cannot be diffed. Both are counted as unusable, never quietly dropped.
   * `NO-REVIEW:` waives BOTH questions. One declaration per concern, deliberately — a second marker
@@ -97,6 +99,19 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 NO_REVIEW = "NO-REVIEW:"
 REVIEW_DIR = "docs/reviews/"
 VERDICT_DIR = "docs/reviews/verdicts/"
+# What a path absent from the tree looks like as an entry. NOT an invented sentinel: it is the
+# all-zero destination `git diff-index` itself writes for a deletion, which is what the wrapper
+# records when a reviewer is handed a deleted file (r3 Medium). One spelling, both ends.
+# ⚠ THE WIDTH IS NOT PART OF THE MEANING — r4 Medium. A SHA-256 repository writes 64 zeros, not 40,
+# and comparing against this literal made a reviewed deletion falsely FAIL there. `is_absent` reads
+# the shape instead, so the constant stays a readable spelling rather than a hidden width check.
+ABSENT_ENTRY = "000000 " + "0" * 40
+
+
+def is_absent(entry: "str | None") -> bool:
+    """PURE. Does this entry mean `the path is not in the tree`? Any sha width."""
+    parts = (entry or "").split()
+    return len(parts) == 2 and bool(parts[1]) and set(parts[1]) == {"0"}
 
 # ⛔ A DENYLIST OF PROSE, NOT AN ALLOWLIST OF CODE — and the first version got this backwards.
 # It enumerated `lib/ app/ components/ worker/ supabase/ scripts/ tests/ .github/ .claude/hooks/`
@@ -214,19 +229,25 @@ def round_tail(after: list[str], reviewed: dict[str, str], final: dict[str, str]
     """PURE. The guarded paths one round cannot have seen.
 
     `after`    — paths changed between that round's commit and HEAD
-    `reviewed` — path -> blob the reviewer was handed UNCOMMITTED
-    `final`    — path -> blob in the tree that will merge
+    `reviewed` — path -> `"<mode> <object-id>"` the reviewer was handed UNCOMMITTED
+    `final`    — path -> `"<mode> <object-id>"` in the tree that will merge
 
-    ⛔ THE COMPARISON IS CONTENT, NOT PATHS — r1 Blocking, reproduced in a scratch repo. Subtracting
-    dirty PATHS lets "review `lib/x.py` dirty at v2, then edit it to v3 and commit" pass: the name
-    still matches. Equal blobs mean the reviewer saw exactly what is merging, and nothing else does.
+    ⛔ THE COMPARISON IS THE TREE ENTRY, and it took two rounds to get there. r1: subtracting dirty
+    PATHS let "review `lib/x.py` at v2, then edit it to v3 and commit" pass, because the name still
+    matched. r2: comparing CONTENT alone let a mode-only change pass — same bytes, newly executable,
+    credited as reviewed. Equal entries mean the reviewer saw what is merging; nothing weaker does.
 
     `guarded_changes` is CALLED here rather than upstream so this rule — the one a mutation must be
     able to break — is pure and reachable from a case. r1 Low: the previous wiring lived inside the
     git-reading gatherer, and deleting the call left the suite at 45/45.
     """
-    missed = [p for p in guarded_changes(after)
-              if not (reviewed.get(p) and final.get(p) == reviewed.get(p))]
+    def same(p: str) -> bool:
+        seen, now = reviewed.get(p), final.get(p, ABSENT_ENTRY)
+        if not seen:
+            return False
+        return (is_absent(seen) and is_absent(now)) or now == seen
+
+    missed = [p for p in guarded_changes(after) if not same(p)]
     return sorted(set(missed))
 
 
@@ -252,7 +273,13 @@ def tail_verdict(tails: dict[str, list[str]], unusable: int = 0,
         why = (f"{unusable} round(s) recorded no commit (verdicts written before schema 2)"
                if unusable else "no Codex verdict was added by this branch")
         if gap:
-            return 0, f"final-tree rule NOT CHECKED — {why}; declared: REVIEW GAP: {gap}"
+            # ⚠ THE RANGE, NOT THE BRANCH — r3 High, and the same honest contract `verdict()` states
+            # six lines up: a stacked child is cleared by its PARENT's declaration. Not silently:
+            # the pass NAMES the document, so a stacked pass is visible in the log instead of being
+            # indistinguishable from a branch that declared for itself. Closing it properly needs
+            # the true parent, which CI does not know; inventing half a mechanism would be worse.
+            return 0, (f"final-tree rule NOT CHECKED — {why}; declared in this range by "
+                       f"{gap}")
         return 2, (f"CANNOT RUN — {why}, so whether any round saw the code about to merge is "
                    f"UNKNOWN.\n"
                    f"  Treat this as NOT CHECKED, never as reviewed. Either run a Codex round "
@@ -279,14 +306,47 @@ def _git(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True)
 
 
-def _final_blobs(paths: list[str]) -> dict[str, str]:
-    """path -> blob sha in the tree that will merge. Absent means the path is not in HEAD."""
-    out = {}
-    for p in paths:
-        got = _git("rev-parse", f"HEAD:{p}")
-        if got.returncode == 0 and got.stdout.strip():
-            out[p] = got.stdout.strip()
-    return out
+def _final_entries(paths: list[str]) -> dict[str, str]:
+    """path -> `"<mode> <object-id>"` in the tree that will merge. Absent means it is not in HEAD.
+
+    ⚠ MODE IS PART OF IT — r2 Blocking. `git rev-parse HEAD:<path>` answers with the object id
+    alone, so a change that flips ONLY the executable bit left the recorded and final shas equal and
+    the file was credited as reviewed. `ls-tree` answers with the ENTRY, which is what a reviewer
+    sees and what a commit stores.
+
+    ⚠ EVERY ENTRY, NO TYPE FILTER — r4 Blocking. An earlier version kept only `blob` entries, to
+    stop a gitlink's commit sha being compared against a blob's. That made a path holding a
+    SUBMODULE read as absent, so a reviewer who saw the path deleted credited a merge that puts a
+    gitlink there. The mode already separates them (`160000` gitlink, `120000` symlink,
+    `100644`/`100755` file), so the filter bought nothing and cost a false pass.
+    """
+    if not paths:
+        return {}
+    got = _git("ls-tree", "-z", "HEAD", "--", *paths)
+    return parse_ls_tree(got.stdout) if got.returncode == 0 else {}
+
+
+def parse_ls_tree(out: str) -> dict[str, str]:
+    """PURE. `git ls-tree -z` output -> `{path: "<mode> <object-id>"}`.
+
+    ⚠ SPLIT FROM THE FETCH DELIBERATELY. The first version read git inline and its case did too —
+    which went red the moment the mutation harness ran the suite inside its STAGED TREE, a copytree
+    that is not a git checkout. A rule reachable only through a live repository is a rule the
+    harness cannot measure, and a red control names the guard when the harness was what failed.
+    """
+    entries: dict[str, str] = {}
+    for rec in out.split("\0"):
+        meta, _, name = rec.partition("\t")
+        parts = meta.split()
+        # ⛔ NO TYPE FILTER — r4 Blocking, and it fired the REDESIGN falsifier r3's adjudication
+        # wrote down. Keeping only `blob` entries made a SUBMODULE read as absent, so a reviewer
+        # who saw a path deleted credited a merge that puts a gitlink there. The mode already
+        # carries the type (`160000` gitlink, `120000` symlink, `100644`/`100755` file), so
+        # comparing `"<mode> <sha>"` over EVERY entry cannot confuse a commit sha with a blob's —
+        # which is the only thing the filter was there to prevent.
+        if name and len(parts) >= 3:
+            entries[name] = f"{parts[0]} {parts[2]}"
+    return entries
 
 
 def round_tails(verdict_files: list[str]) -> tuple[dict[str, list[str]], int]:
@@ -333,16 +393,26 @@ def round_tails(verdict_files: list[str]) -> tuple[dict[str, list[str]], int]:
                     if isinstance(k, str) and isinstance(v, str)} \
             if isinstance(rec.get("dirty"), dict) else {}
         tails[pathlib.PurePosixPath(rel).name] = round_tail(
-            after, reviewed, _final_blobs(guarded_changes(after)))
+            after, reviewed, _final_entries(guarded_changes(after)))
     return tails, unusable
 
 
-def declared_gap(review_docs: list[str]) -> "str | None":
-    """The `REVIEW GAP:` reason recorded in one of this branch's review documents, or None.
+def gap_names_codex(reason: "str | None") -> bool:
+    """PURE. Is this `REVIEW GAP:` about the half that leaves a verdict?
 
-    The parser is `check-review-rounds.has_gap_line`, IMPORTED. Which emphasis wraps the marker and
-    what counts as a stated reason cost that file measured escapes; a sibling re-deriving them would
-    drift, and the two gates would then disagree about the same line in the same file.
+    ⛔ r2 High. `has_gap_line` returns `"<who>: <reason>"` for EITHER half, and the first version
+    accepted both. A branch could then declare `REVIEW GAP: claude — not invoked` and clear a
+    missing CODEX verdict — an explanation of one absence excusing a different one. Only the Codex
+    half writes the testimony this rule reads, so only a Codex gap explains its absence.
+    """
+    return bool(reason) and reason.split(":", 1)[0].strip().lower() == "codex"
+
+
+def _load_gap_line_parser():
+    """`has_gap_line` from check-review-rounds, so both gates read one grammar.
+
+    RAISES if it cannot be loaded. A gate that quietly fell back to its own regex is the duplicate
+    this import exists to prevent, and it would look green while the two disagreed about one line.
     """
     path = ROOT / "scripts" / "check-review-rounds.py"
     spec = importlib.util.spec_from_file_location("_crr", path)
@@ -351,13 +421,41 @@ def declared_gap(review_docs: list[str]) -> "str | None":
     mod = importlib.util.module_from_spec(spec)
     sys.modules["_crr"] = mod
     spec.loader.exec_module(mod)
-    for rel in review_docs:
-        p = ROOT / rel
-        if not p.is_file():
-            continue
-        if reason := mod.has_gap_line(p.read_text(encoding="utf-8", errors="replace")):
-            return reason
+    return mod.has_gap_line
+
+
+def first_codex_gap(docs: "list[tuple[str, str]]", parse) -> "str | None":
+    """PURE given `parse`. `"<path> — <who>: <reason>"` for the first Codex gap, or None.
+
+    ⛔ IT CARRIES THE PATH — r4 High, and the finding was against my own adjudication rather than
+    the code: r3 accepted that a stacked child is cleared by its parent's declaration ON CONDITION
+    that the pass NAMES the document, and then the message printed only the reason. A claim in a
+    review record that the code does not deliver is worse than the gap it excused.
+
+    Split out from the file reading so the RULE — which gaps count — is driven by cases holding the
+    real parser and literal text. r2's High lived exactly here, and a rule reachable only through
+    the filesystem is a rule a mutation cannot be aimed at.
+    """
+    for path, text in docs:
+        reason = parse(text)
+        if gap_names_codex(reason):
+            return f"{path} — {reason}"
     return None
+
+
+def declared_gap(review_docs: list[str]) -> "str | None":
+    """The Codex `REVIEW GAP:` reason recorded in one of this branch's review documents, or None.
+
+    The parser is `check-review-rounds.has_gap_line`, IMPORTED. Which emphasis wraps the marker and
+    what counts as a stated reason cost that file measured escapes; a sibling re-deriving them would
+    drift, and the two gates would then disagree about the same line in the same file.
+    """
+    mod_parse = _load_gap_line_parser()
+    docs = [(rel, (ROOT / rel).read_text(encoding="utf-8", errors="replace"))
+            for rel in review_docs if (ROOT / rel).is_file()]
+    return first_codex_gap(docs, mod_parse)
+    # ⚠ `review_docs` is every review document ADDED IN THE RANGE, which for a stacked branch
+    # includes its parent's. Stated in the docstring, named in the message, not papered over.
 
 
 def changed_paths(base: str) -> list[str]:
@@ -566,10 +664,95 @@ def self_test() -> int:
          round_tail(["lib/x.ts"], {"lib/x.ts": "aaa"}, {"lib/x.ts": "aaa"}), [])
     # A path the reviewer saw uncommitted and that is NOT in the merging tree — deleted since — has
     # no final blob to equal, so it counts as missed. The safe direction.
-    case("a reviewed path absent from the final tree is missed, not credited",
-         round_tail(["lib/x.ts"], {"lib/x.ts": "aaa"}, {}), ["lib/x.ts"])
+    # ⛔ A REVIEWED DELETION IS A REVIEWED STATE — r3 Medium. The reviewer was handed a tree with
+    # `lib/x.ts` gone; the merging tree also lacks it. Dropping deletions made that read as unseen
+    # and failed the careful path for the crime of deleting code.
+    #
+    # ⚠ THE LITERAL, NOT THE CONSTANT, AND THAT IS NOT PEDANTRY. Written as
+    # `{"lib/x.ts": ABSENT_ENTRY}` this case took its value from the same constant the rule
+    # defaults to, so a mutation redefining `ABSENT_ENTRY` moved BOTH sides and the comparison
+    # stayed true — the mutation SURVIVED, measured. The spelling is a wire format shared with
+    # whatever the wrapper records, so the case pins it independently, the way an outside observer
+    # must.
+    _GIT_DELETION = "000000 " + "0" * 40      # what `git diff-index` writes; verified live
+    case("the absent entry is spelled the way git spells a deletion", ABSENT_ENTRY, _GIT_DELETION)
+    case("a deletion the reviewer saw is credited, because absence is a tree state too",
+         round_tail(["lib/x.ts"], {"lib/x.ts": _GIT_DELETION}, {}), [])
+    case("...while a path the reviewer saw PRESENT and that is now gone is still missed",
+         round_tail(["lib/x.ts"], {"lib/x.ts": "100644 aaa"}, {}), ["lib/x.ts"])
+    case("...and a path nobody reviewed is missed whether or not it is absent",
+         round_tail(["lib/x.ts"], {}, {}), ["lib/x.ts"])
     case("a clean round after which nothing guarded changed has an empty tail",
          round_tail(["docs/backlog.md"], {}, {}), [])
+    # ⛔ THE r2 BLOCKING, as a case. SAME BYTES, NEW MODE: `bin/t.sh` reviewed at 100644 and merged
+    # at 100755 is a change the reviewer did not see, and comparing content alone credited it.
+    case("a mode-only change after the round is still missed, though the blob matches",
+         round_tail(["bin/t.sh"], {"bin/t.sh": "100644 aaa"}, {"bin/t.sh": "100755 aaa"}),
+         ["bin/t.sh"])
+    case("...and an identical tree entry — same mode, same blob — is not missed",
+         round_tail(["bin/t.sh"], {"bin/t.sh": "100755 aaa"}, {"bin/t.sh": "100755 aaa"}), [])
+    # ⛔ THE r2 HIGH. A gap about the CLAUDE half explains a different absence: only the Codex half
+    # writes the verdict this rule reads, so only a Codex gap can excuse its absence.
+    case("a REVIEW GAP naming codex explains a missing verdict",
+         gap_names_codex("codex: usage limit"), True)
+    case("...one naming claude does NOT — it explains a different absence",
+         gap_names_codex("claude: not invoked; ran as r2"), False)
+    case("...and no gap line at all is not a declaration",
+         gap_names_codex(None), False)
+    # The parser hands back `<who>: <reason>`; matching must not be fooled by the reason's text.
+    case("the WHO is read, not the reason — a claude gap mentioning codex stays a claude gap",
+         gap_names_codex("claude: codex ran instead"), False)
+    # ⭐ THE REAL PARSER over literal text: `first_codex_gap` is handed `has_gap_line` itself, so
+    # these exercise the rule the live path uses, not a stand-in weaker than its subject.
+    _parse = _load_gap_line_parser()
+    _D = "docs/reviews/codex/x-r1-codex.md"
+    case("a codex gap in a review document is accepted",
+         first_codex_gap([(_D, "**REVIEW GAP:** codex — usage limit")], _parse),
+         f"{_D} — codex: usage limit")
+    # ⛔ r4 High: the pass must NAME the document. A stacked branch is cleared by its parent's
+    # declaration — an accepted limit — and the only thing that keeps that from being invisible is
+    # printing which file said it. The adjudication claimed this before the code did it.
+    case("...and the answer NAMES the document, so a stacked pass is visible in the log",
+         _D in (first_codex_gap([(_D, "REVIEW GAP: codex — usage limit")], _parse) or ""), True)
+    case("...a claude-only gap is NOT accepted, however emphatic",
+         first_codex_gap([(_D, "**REVIEW GAP:** claude — not invoked; ran as r2")], _parse), None)
+    case("...and a codex gap is found past a claude one",
+         first_codex_gap([("a.md", "REVIEW GAP: claude — not invoked"),
+                          (_D, "REVIEW GAP: codex — usage limit")], _parse),
+         f"{_D} — codex: usage limit")
+    # ⛔ THE FINAL-TREE LOOKUP. The mode half of the r2 Blocking lives HERE, not in `round_tail` —
+    # a case feeding `round_tail` literal strings can never see it. Driven by real `ls-tree -z`
+    # output rather than a live repository, because the mutation harness runs this suite inside a
+    # staged copy that is not a git checkout (measured: the first version's control went red).
+    _LS = ("100644 blob 1111111111111111111111111111111111111111\tlib/a.ts\0"
+           "100755 blob 2222222222222222222222222222222222222222\tbin/t.sh\0"
+           "160000 commit 3333333333333333333333333333333333333333\tvendor/sub\0")
+    # ⚠ `.get`, NOT `[...]`, AND THAT IS A CONTRACT NOT A STYLE CHOICE. Written with subscripts,
+    # the mutation that restores the blob filter raised KeyError — the suite went RED and printed
+    # no `[FAIL] <case>` line, so the harness could not see WHICH case killed it and reported every
+    # entry for this file as unattributable. A case must FAIL, not crash.
+    _tree = parse_ls_tree(_LS)
+    case("the lookup answers with an ENTRY — mode and object id, not a bare sha",
+         _tree.get("lib/a.ts"), "100644 1111111111111111111111111111111111111111")
+    case("...so two files with identical content but different modes do not collide",
+         _tree.get("bin/t.sh", "").split()[:1], ["100755"])
+    # ⛔ r4 BLOCKING, inverted into a case. The gitlink used to be FILTERED OUT, so a path holding a
+    # submodule looked absent — and a reviewer who saw that path DELETED was credited for a merge
+    # that puts a gitlink there. Every entry is kept; the mode is what stops a commit sha from ever
+    # equalling a blob's.
+    case("a submodule gitlink is KEPT, so a path holding one can never read as absent",
+         _tree.get("vendor/sub"), "160000 3333333333333333333333333333333333333333")
+    case("...and its mode marks it, so it cannot compare equal to a blob with the same sha",
+         _tree.get("vendor/sub", "x").split()[:1] == _tree.get("lib/a.ts", "y").split()[:1], False)
+    # ⚠ ABSENCE IS A SHAPE, NOT A WIDTH — r4 Medium. A SHA-256 repository writes 64 zeros.
+    case("a 40-zero deletion is absence", is_absent("000000 " + "0" * 40), True)
+    case("...and so is a 64-zero one, because the width is not the meaning",
+         is_absent("000000 " + "0" * 64), True)
+    case("...while a real entry is not absence", is_absent("100644 " + "a" * 40), False)
+    case("...and neither is nothing at all", is_absent(None), False)
+    case("a deletion recorded at one sha width matches an absence at another",
+         round_tail(["lib/x.ts"], {"lib/x.ts": "000000 " + "0" * 64}, {}), [])
+    case("empty output is an empty answer, not an invented one", parse_ls_tree(""), {})
 
     # ⛔ THE FAILURE LINE IS A CONTRACT, NOT A STYLE CHOICE. `check-plan-code`'s mutation harness
     # attributes a kill by reading `l.strip().startswith("[FAIL] ")`, slicing `[7:]`, then
