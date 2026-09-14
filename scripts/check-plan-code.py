@@ -821,7 +821,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-09-13: the CI storage fixture's falsifier, pinned in the commit that creates it.
     # Its predecessor was a grep inside the workflow that survived 3 of 5 mutations, so this
     # manifest exists to prove the replacement does not.
-    "scripts/check-storage-independence.py": 11,
+    "scripts/check-storage-independence.py": 13,
     # ⟳ 2026-09-06, backlog #99: the Stop guard and its driver BOTH join the manifest, in the
     # commit that changes their decision paths. Only ONE of them is R4 debt — begin-plan.py is
     # not a `check-*` guard, so `discover_guards` never saw it and it was never counted as owed.
@@ -3000,7 +3000,7 @@ def _self_test() -> int:
     # ⚠ This sentence said "The six cover …" over nine entries for two rounds. Both halves filed it
     # twice; the first fix asserted on one string and replaced another, so `str.replace` silently
     # did nothing and the count drifted further (8 -> 9) while reading as fixed.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 570)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 572)
     # ⟳ 2026-09-13: 559 -> 566. +7 for `check-storage-independence.py`, the CI storage
     # fixture's falsifier. A RISE needs only the new manifest; a FALL needs the sanctioned
     # reason (see the retire-plan-mode entry above), and this is not one.

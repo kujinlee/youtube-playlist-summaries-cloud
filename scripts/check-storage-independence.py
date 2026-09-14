@@ -67,7 +67,10 @@ SUITE = ROOT / "scripts" / "check-schema-gates.sh"
 SCRIPTS = ROOT / "scripts"
 
 # `storage.` with a word boundary in front, so `mystorage.x` does not match.
-STORAGE_REF = re.compile(r"(?<![\w.])storage\s*\.\s*\w", re.I)
+# ⟳ r2 MEDIUM (codex): `select 1 from "storage"."objects"` is a REAL Postgres read and was
+# invisible — the rule matched only the bare identifier. Quoting is not exotic; it is what a
+# generator emits. Optional double quotes on either side, and whitespace around the dot.
+STORAGE_REF = re.compile(r"(?<![\w.\"])\"?storage\"?\s*\.\s*\"?\w", re.I)
 # Every namespace comparison in a SQL string, however spelled — and BOUNDED TO ITS OWN OPERAND.
 # ⚠ The first version matched `nspname\s*(?:=|in)\s*([^\n]+)` and then pulled every quoted literal
 # out of the rest of the line, so `where n.nspname = 'public' and c.relkind = 'r'` reported that the
@@ -76,6 +79,20 @@ STORAGE_REF = re.compile(r"(?<![\w.])storage\s*\.\s*\w", re.I)
 # guard ran anywhere — which is the entire argument for writing the control case first.
 NSPNAME_EQ = re.compile(r"nspname\s*=\s*'([^']*)'", re.I)
 NSPNAME_IN = re.compile(r"nspname\s+in\s*\(([^)]*)\)", re.I)
+
+
+# ⛔ WHAT IS NOT A GATE, even though the suite touches it. Two kinds, and both were learned by the
+# guard firing on its own premise:
+#   supabase/**     a MIGRATION is the subject the gates read the catalog ABOUT (r1 HIGH fix)
+#   scripts/ci/**   the CI SCAFFOLDING — `storage-service-fixture.sql` creates `storage.buckets`,
+#                   which is its entire job. Reporting it as "a gate reads storage" would mean the
+#                   guard flags the very file whose safety it exists to certify (r2 HIGH fix).
+# The population is things that read the catalog to reach a VERDICT. Nothing else.
+NOT_A_GATE = ("supabase/", "scripts/ci/")
+
+
+def _is_subject(rel: str) -> bool:
+    return rel.startswith(NOT_A_GATE)
 
 
 def gate_files(root: pathlib.Path = ROOT) -> list[pathlib.Path]:
@@ -102,6 +119,13 @@ def gate_files(root: pathlib.Path = ROOT) -> list[pathlib.Path]:
     # ⟳ r1 HIGH (codex): the NON-PYTHON gates, and the SQL they execute. Gates 1 and 2 live under
     # `docs/superpowers/specs/…/` and were outside every branch above, so the guard's own stated
     # bound was false. Derived the same way as the rest — read out of the suite, not listed here.
+    # ⟳ r2 HIGH (codex): a gate's OWN variables name more subjects. `run-schema-assertions.sh:47`
+    # sets `SEED="$REPO/docs/superpowers/specs/m4/seed-assertion-corpus.sql"` and `:318` does
+    # `cat "$SEED"` into the SQL it sends to psql — verdict-affecting, and outside the population,
+    # because the first version expanded only the SUITE's variables. Resolve TRANSITIVELY: every
+    # file admitted is itself read for variables and path tokens, to a fixpoint.
+    # ⚠ Bounded by the set only ever growing and by files being admitted once — there is no cycle to
+    # chase, but the bound is stated rather than assumed.
     if suite.is_file():
         text = suite.read_text(encoding="utf-8")
         # ⚠ EXPAND THE SUITE'S OWN VARIABLES FIRST. Gates 1 and 2 are invoked as `"$SPEC/…"`, so a
@@ -119,15 +143,37 @@ def gate_files(root: pathlib.Path = ROOT) -> list[pathlib.Path]:
             # by the letter of the rule and all meaningless.
             # The population is things that read the catalog to reach a VERDICT, never things the
             # verdict is about.
-            if str(p.relative_to(root)).startswith("supabase/"):
+            if _is_subject(str(p.relative_to(root))):
                 continue
             if p.is_file() and p.suffix in (".sh", ".py", ".sql"):
                 out.add(p)
                 # a gate that executes SQL keeps it beside itself or in a `schema/` subdirectory;
                 # those files ARE the gate's body as far as Postgres is concerned.
                 for d in (p.parent, p.parent / "schema"):
-                    if d.is_dir() and not str(d.relative_to(root)).startswith("supabase/"):
+                    if d.is_dir() and not _is_subject(str(d.relative_to(root))):
                         out.update(q for q in sorted(d.glob("*.sql")) if q.is_file())
+    # the transitive step: read each admitted .sh/.py for ITS OWN variables and path tokens
+    seen: set[pathlib.Path] = set()
+    while True:
+        frontier = [q for q in out if q not in seen and q.suffix in (".sh", ".py")]
+        if not frontier:
+            break
+        for q in frontier:
+            seen.add(q)
+            try:
+                body = q.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            for var, val in re.findall(r'^([A-Z_]+)="([^"]*)"', body, re.M):
+                body = body.replace(f'"${var}"', f'"{val}"').replace(f'"${{{var}}}"', f'"{val}"')
+            body = re.sub(r"\$\{?REPO\}?/", "", body).replace('"$REPO/', '"')
+            for m2 in re.findall(r"[\w./-]+\.(?:sh|py|sql)", body):
+                cand = root / m2.lstrip("./")
+                if not cand.is_file() or cand.suffix not in (".sh", ".py", ".sql"):
+                    continue
+                if _is_subject(str(cand.relative_to(root))):
+                    continue
+                out.add(cand)
     return sorted(out)
 
 
@@ -294,6 +340,15 @@ def self_test() -> int:
           namespace_scopes("where nspname='public' and p.proname='record_artifact'"), [])
     check("...and widening the namespace itself is still CAUGHT beside them",
           bool(namespace_scopes("where n.nspname in ('public','storage') and c.relkind = 'r'")), True)
+    # ⟳ r2 MEDIUM (codex): quoted identifiers are real Postgres and were invisible.
+    check("a QUOTED schema read is CAUGHT in SQL",
+          bool(text_refs('select 1 from "storage"."objects";', ".sql")), True)
+    check("...and in shell, inside single quotes",
+          bool(text_refs("psql -c 'select 1 from \"storage\".\"objects\";'", ".sh")), True)
+    check("...and in a Python SQL string",
+          bool(storage_refs('X = \'select 1 from "storage"."objects"\'')), True)
+    check("a quoted-but-different schema is NOT a storage reference",
+          text_refs('select 1 from "auth"."users";', ".sql"), [])
     check("`mystorage.x` is not a storage reference",
           storage_refs('X = "select mystorage.x"'), [])
     check("attribute access on a name `storage` is CAUGHT",
@@ -378,6 +433,27 @@ def self_test() -> int:
               "verify-schema.sh" in names, True)
         check("r1 HIGH: the SQL that gate executes is in scope",
               "05_assert.sql" in names, True)
+        # ⟳ r2 HIGH (codex): a gate's OWN variables name more subjects — `run-schema-assertions.sh`
+        # sets SEED=… and `cat "$SEED"` into the SQL it runs. Transitive resolution, as a case.
+        # ⚠ THE SEED LIVES IN A DIFFERENT TREE FROM ITS GATE, as it does in reality:
+        # `run-schema-assertions.sh` is in `scripts/` and its SEED is under
+        # `docs/superpowers/specs/m4/`. A fixture that put it beside the gate would be reachable by
+        # the SIBLING GLOB, and the transitive-step mutation would survive — measured: it did, and
+        # this case passed for a reason that had nothing to do with the rule it names.
+        (root / "docs" / "elsewhere").mkdir(parents=True)
+        (spec / "helper.sh").write_text('SEED="docs/elsewhere/seed.sql"\ncat "$SEED"\n')
+        (root / "docs" / "elsewhere" / "seed.sql").write_text("select 1 from storage.buckets;\n")
+        (root / "scripts" / "check-schema-gates.sh").write_text(
+            (root / "scripts" / "check-schema-gates.sh").read_text() + 'run "2/15 y" "$SPEC/helper.sh"\n')
+        names2 = {p.name for p in gate_files(root)}
+        check("r2 HIGH: a file named only by ANOTHER GATE's variable is in scope",
+              "seed.sql" in names2, True)
+        check("r2 HIGH: and its storage read is REPORTED",
+              any("seed.sql" in f for f in problems(sorted(gate_files(root)), root)), True)
+        check("CI SCAFFOLDING is the subject too — the fixture that CREATES storage tables",
+              _is_subject("scripts/ci/storage-service-fixture.sql"), True)
+        check("...but a gate under scripts/ is not scaffolding",
+              _is_subject("scripts/check-live-schema.py"), False)
         check("a MIGRATION is the subject, not a gate — excluded",
               "0007.sql" in names, False)
         found = problems(sorted(gate_files(root)), root)

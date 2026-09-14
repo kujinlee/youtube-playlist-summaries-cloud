@@ -70,8 +70,8 @@
     "file": "scripts/check-storage-independence.py",
     "edits": [
       [
-        "STORAGE_REF = re.compile(r\"(?<![\\w.])storage\\s*\\.\\s*\\w\", re.I)",
-        "STORAGE_REF = re.compile(r\"storage\\s*\\.\\s*\\w\", re.I)"
+        "STORAGE_REF = re.compile(r\"(?<![\\w.\\\"])\\\"?storage\\\"?\\s*\\.\\s*\\\"?\\w\", re.I)",
+        "STORAGE_REF = re.compile(r\"\\\"?storage\\\"?\\s*\\.\\s*\\\"?\\w\", re.I)"
       ]
     ],
     "expect": "`mystorage.x` is not a storage reference"
@@ -114,10 +114,32 @@
     "file": "scripts/check-storage-independence.py",
     "edits": [
       [
-        "            if str(p.relative_to(root)).startswith(\"supabase/\"):",
-        "            if False:"
+        "    return rel.startswith(NOT_A_GATE)",
+        "    return rel.startswith(\"scripts/ci/\")"
       ]
     ],
     "expect": "a MIGRATION is the subject, not a gate — excluded"
+  },
+  {
+    "name": "the transitive step stops, so a file named only by another gate's variable escapes",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "        frontier = [q for q in out if q not in seen and q.suffix in (\".sh\", \".py\")]",
+        "        frontier = []"
+      ]
+    ],
+    "expect": "r2 HIGH: a file named only by ANOTHER GATE's variable is in scope"
+  },
+  {
+    "name": "CI scaffolding stops being excluded, so the guard flags the fixture it certifies",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "NOT_A_GATE = (\"supabase/\", \"scripts/ci/\")",
+        "NOT_A_GATE = (\"supabase/\",)"
+      ]
+    ],
+    "expect": "CI SCAFFOLDING is the subject too — the fixture that CREATES storage tables"
   }
 ]
