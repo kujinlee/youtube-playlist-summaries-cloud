@@ -8741,3 +8741,60 @@ Sizing for #115 is measured, not guessed: `check-selftest-counts` globs `scripts
 so it cannot be shell, and `discover_self_tested_nonguards` sweeps anything matching
 `--self.test` into R4W — so it needs a `--self-test`, a declared count, and a manifest
 entry or a written escape. ~1 hour, and it would have **no caller**.
+
+## 2026-09-14 [needs-you] [resolved: 2026-09-03/1] [resolved: 2026-09-03/9] [resolved: 2026-09-04/2] [resolved: 2026-09-04/3] [resolved: 2026-09-06/8] [resolved: 2026-09-09/8] [resolved: 2026-09-13/5] [resolved: 2026-09-14/6]
+You reported the "What needs you" section looked broken, and it was — not in its
+rendering, but in what it had filled up with. Seven boxes were error notices saying
+the page could not read an item that claimed to need you. Six of those were never
+questions at all: they were reports of finished work, flagged as if they were asking
+something. One of them literally says "the answer is no — it can be closed". They are
+now closed, and the reason is written down rather than silently dropped.
+
+The seventh was a real question that had never written itself down properly, and it is
+the one that has been outstanding the longest: the nightly production-drift check still
+needs a credential only you can add. It is asked properly below, so it will stay
+visible instead of appearing as an error.
+
+You also chose how to enforce the "wait on the artifact, not the process" rule — as a
+written practice rather than a script — and that is done.
+
+**Decide:** The nightly production-drift check has been waiting on one credential since 2026-09-13
+- add the repository secret CLAUDE_RO_DATABASE_URL, then uncomment two lines in schema-gates.yml to arm the nightly job [recommended]
+- leave it unarmed and keep running the drift check by hand when you want it
+- drop the nightly schedule altogether and delete the commented-out trigger
+<!--tech-->
+Branch `await-artifact-practice`. Two changes, batched as docs.
+
+**1 — `docs/portable-practices.md` §24**, the measured form of backlog #115, chosen
+over `scripts/await-codex-review.py` on cost (10 min vs ~1h, nearly all of the latter
+being ratchet compliance for an instrument with no CI caller). It carries TWO measured
+incidents from 2026-09-14, and the second is the load-bearing one: after committing the
+entry describing the defect, this session wrote a CI waiter whose settled-test was
+`! grep -q "pending"`, ran it against a CLI that answered `no checks reported`, and
+**declared a green that did not exist** — absence of the bad token reading as success.
+§24 states the three-state predicate (DONE / running / NOT SETTLED), the deadline rule
+(past it the answer is HANG, not "still waiting"), subject-pinning to the commit under
+test, and the one-`stat` falsifier. ⚠ It cites §23 rather than restating it: §23 governs
+the status a human READS, §24 the predicate an agent TERMINATES on.
+
+Also completed the file's own status line, which had stopped at §16 while §17–§23
+existed — stale for seventeen days, in the document that warns about exactly this.
+Dates recovered with `git log --reverse -S'## N. '`, per its own instruction.
+
+**2 — the seven unreadable asks.** `gen-dashboard.py:846` renders an ask whose body has
+no `**Decide:**` block as a `Could not read one ask` notice, deliberately placed LAST
+and deliberately loud (`:849` — "a malformed ask is LOUDER, never quieter", because
+setting `e["error"]` would delete it from the tray and show "Nothing needs you." in
+green). The design is right; it assumed such entries would be rare. Seven had
+accumulated between 2026-09-03 and 2026-09-13, so the section became mostly error text
+with one live decision wedged among it.
+
+⚠ Resolving is the in-design fix, not a workaround: `unresolved()` at `:453` filters
+`e["id"] not in cleared`, and `:846` iterates that same filtered list — so a
+`[resolved:]` removes the notice at its source. Nothing is rewritten; the store stays
+append-only and every original entry remains readable in place.
+
+Dispositions, read off each entry's own text rather than assumed: `2026-09-03/1`,
+`2026-09-03/9`, `2026-09-04/2`, `2026-09-04/3`, `2026-09-06/8` and `2026-09-09/8` are
+reports that should have carried `[heads-up]`; `2026-09-13/5` is a live ask, resolved
+here only because it is re-asked above in readable form; `2026-09-14/6` is answered.

@@ -37,9 +37,13 @@ the documents that make it reproducible somewhere else. This file is the second 
 
 **Status: STARTED 2026-08-11, deliberately incomplete.** §1–§7 measured 2026-08-11, §8 on 2026-08-12,
 §9 and §10 on 2026-08-13, §11 and §12 on 2026-08-15, §13 on 2026-08-17, §14 and §15 on 2026-08-22,
-§16 on 2026-08-26. *(⟳ 2026-08-26: this line had gone stale in the way it warns about everywhere else
-— it omitted §9, §13, §14 and §15. The dates above were recovered with `git log -S'## N. '`, not
-recalled.)* The great majority of the memory files and review documents have **not** been mined yet —
+§16 on 2026-08-26, §17 and §18 on 2026-08-28, §19 and §20 on 2026-09-09, §21 and §22 on 2026-09-10,
+§23 on 2026-09-13, §24 on 2026-09-14. *(⟳ 2026-08-26: this line had gone stale in the way it warns
+about everywhere else — it omitted §9, §13, §14 and §15. ⟳⟳ 2026-09-14: stale AGAIN, and by more —
+it stopped at §16 while §17–§23 existed, so it had been wrong for seventeen days. Both times the
+dates were recovered with `git log --reverse -S'## N. '`, not recalled; the recurrence is the
+argument that a hand-maintained index inside the document it indexes cannot stay true.)*
+The great majority of the memory files and review documents have **not** been mined yet —
 see *Not yet mined*, whose counts are re-enumerated, not recalled, whenever this file is edited.
 
 ---
@@ -1142,3 +1146,54 @@ point it has the same value as no heartbeat, having cost more.
 **The general principle, beyond progress lines:** any status a human consumes should be *falsifiable
 by its own format*. If the display cannot render failure, its success reading means nothing — which
 is §20's table-of-results rule applied to a thing that updates while you watch it.
+
+## 24. Wait on the ARTIFACT, with a deadline — a process is not a deliverable, and ABSENCE is not a pass
+
+> §23 is about the status a human reads: make the display able to render failure. **This is the other
+> half — the predicate the agent itself terminates on.** A perfect heartbeat still hangs forever if
+> the thing it tests is "is the process alive".
+
+**Measured 2026-09-14, twice in one day, the second time by the session writing the rule.**
+
+**First incident — polling the process.** A background review wrote its output file at 12:50 and its
+verdict alongside it. Its work was done. The waiter looped on `pgrep -f "<prompt-name>"`, the process
+stayed alive until 14:44, and three consecutive status reports said *"still running"* over a file
+that had been on disk for **1h53m**. The rule against this was already written down, in a document
+loaded into every session, and was broken three times that day — recalled at the moment of use
+instead of read.
+
+**Second incident — the corrected waiter failed a different way, and worse.** Its settled-test was
+*"the word `pending` does not appear"*:
+
+```bash
+if ! grep -q "pending" <<<"$(gh pr checks 300)"; then echo "SETTLED"; fi
+```
+
+The CLI answered `no checks reported on the branch` — CI had not started. That string contains no
+`pending`, so **the absence of the bad token read as success**, and the waiter declared a green that
+did not exist. A predicate written as *"the failure word is missing"* passes vacuously on an empty
+response, an error message, and a typo'd command alike. This is §2 (*"cannot run" is a failure*)
+reached through a string match instead of an exit code.
+
+**The shape of a correct waiter — three states, not two:**
+
+| Observation | Verdict |
+|---|---|
+| the artifact exists (`[ -f "$OUT" ]`) | **DONE** — stop, regardless of what any process is doing |
+| a run for **this subject** is genuinely in progress | still running |
+| no run found at all, or the source cannot answer | **NOT SETTLED** — never "done" |
+| the deadline (budget + slack) has passed | **HANG** — and say `HANG`, not "still waiting" |
+
+**Pin the predicate to the SUBJECT, not the branch.** The second incident also had two sources
+disagreeing at the same instant: one reported *no checks*, the other reported a run with
+`status=pending`. A waiter must name which source is authoritative and filter it to the exact commit
+under test — otherwise it can report settled about work that has not begun, or green about a
+different revision.
+
+⚠ **The falsifier is one command, and nobody ran it.** *Does the output file exist while the waiter
+still says running?* A single `stat` on the first status report would have ended the 1h53m. Any
+waiter you write should be accompanied by the observation that would expose it lying — if none can be
+named, it is decoration, which is §3 applied to a loop.
+
+**Test for the GOOD state positively.** `grep -q done` and `! grep -q pending` are not complements;
+they differ on exactly the inputs that matter — empty output, an error, an unreachable service.
