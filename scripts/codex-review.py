@@ -208,7 +208,10 @@ def _digest(path: str) -> str:
 # It is a subdirectory of `docs/reviews/` on purpose: `dir_snapshot` is non-recursive, so the
 # wrapper's own verdict writes cannot register as agent intrusions into the artifact root.
 VERDICT_DIR = os.path.join("docs", "reviews", "verdicts")
-VERDICT_SCHEMA = 1
+# ⟳ 2 (2026-09-13): `head` and `dirty`. The verdict could say the gate RAN and not what it ran
+# AGAINST, so nothing downstream could tell a review of the tree that will merge from a review of
+# the tree as it stood before three fixes landed. `check-review-recorded.py` reads both.
+VERDICT_SCHEMA = 2
 
 
 def verdict_path(out_path: str, override: "str | None" = None) -> str:
