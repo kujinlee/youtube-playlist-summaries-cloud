@@ -253,9 +253,13 @@ nobody is looking at the repair.
    the last round's fixes uncommitted so the reviewer sees the final state satisfies this and is the
    documented way to do it.
 
-Step 5 is the only step with a machine behind it: `scripts/check-review-recorded.py` reads the
-`head` each Codex run records at dispatch and refuses a branch where guarded code was committed
-after **every** round. Steps 1–4 are convention. Do not read them as protection.
+Step 5 is the only step with a machine behind it: `scripts/check-review-recorded.py` reads what each
+Codex run records at dispatch — the commit, and the **blob** of every file handed over uncommitted —
+and refuses a branch where guarded code was committed after **every** round. The comparison is
+content, not filenames: its own r1 review reproduced "review `x` dirty, then edit `x` again and
+commit", which a path match certifies and a blob match does not. No usable round is **CANNOT RUN**,
+cleared by the `REVIEW GAP:` line `docs/plugins.md` already requires when a half could not run.
+Steps 1–4 are convention. Do not read them as protection.
 
 ### ⚠ The observations that would RETIRE this section
 

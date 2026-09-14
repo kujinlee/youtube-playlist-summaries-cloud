@@ -234,7 +234,7 @@ def verdict_path(out_path: str, override: "str | None" = None) -> str:
 def verdict_record(*, gate_ran: bool, exit_code: int, out_path: str, reason: str,
                    model: "str | None" = None, attempts: "list[str] | None" = None,
                    intrusions_seen: "list[str] | None" = None,
-                   head: "str | None" = None, dirty: "list[str] | None" = None) -> dict:
+                   head: "str | None" = None, dirty: "dict[str, str] | None" = None) -> dict:
     """The testimony, as data. PURE — no clock, no filesystem, so a case can assert every field.
 
     `gate_ran` is the load-bearing field and is stated SEPARATELY from `exit_code`, not derived
@@ -257,23 +257,29 @@ def verdict_record(*, gate_ran: bool, exit_code: int, out_path: str, reason: str
         "attempts": list(attempts or []),
         "intrusions": list(intrusions_seen or []),
         "head": head,
-        "dirty": list(dirty or []),
+        "dirty": dict(dirty or {}),
     }
 
 
-def reviewed_state(repo_root: "str | None" = None) -> "tuple[str | None, list[str]]":
-    """`(HEAD commit, uncommitted tracked paths)` — WHAT this run is about to review. IMPURE.
+def reviewed_state(repo_root: "str | None" = None) -> "tuple[str | None, dict[str, str]]":
+    """`(HEAD commit, {uncommitted path: blob sha of what the reviewer was handed})`. IMPURE.
 
     WHY BOTH, and the second one is not decoration. `head` alone answers the question for a clean
     tree. But the documented practice is to hold a round's fixes UNCOMMITTED so the reviewer sees
     the state that will actually merge — measured on backlog #296, where exactly that was done on
     purpose. Under that practice `head` is the commit BEFORE the reviewed fixes, and a downstream
-    check reading it alone would accuse the careful author of shipping unreviewed code. The dirty
-    list names the files the reviewer saw in a form no commit records.
+    check reading it alone would accuse the careful author of shipping unreviewed code.
+
+    ⛔ CONTENT, NOT PATHS, AND THE FIRST VERSION GOT THIS WRONG. It recorded a list of dirty paths,
+    and r1 of its own review reproduced the defeat in a scratch repo: review `lib/x.py` dirty at v2,
+    then edit it again to v3 and commit — the path still matches, so the check subtracted it and
+    certified code no reviewer had seen. Not exotic: "fix the same file again after the round" is
+    the ordinary loop. A blob sha is exact — the reviewer saw THIS content, and the check can ask
+    whether the merging tree still holds it.
 
     ⚠ NEVER RAISES, and never blocks the review. A wrapper that cannot describe the tree still has
     a gate to run and testimony to file. The cost of failing is a `None` head, which downstream
-    reads as "cannot tell" — reported as NOT CHECKED, never as a pass.
+    reads as "cannot tell" — reported as CANNOT RUN, never as a pass.
     """
     root = repo_root or REPO_ROOT
 
@@ -287,13 +293,21 @@ def reviewed_state(repo_root: "str | None" = None) -> "tuple[str | None, list[st
 
     head = git("rev-parse", "HEAD")
     if head is None:
-        return None, []
-    # `--untracked-files=no`: an untracked file is not part of the tree that will merge, and
-    # listing one would claim the reviewer saw something the branch does not contain.
-    status = git("status", "--porcelain", "--untracked-files=no") or ""
-    # `R  old -> new` names two paths; the one that survives into the tree is the one on the right.
-    dirty = {ln[3:].split(" -> ")[-1].strip() for ln in status.splitlines() if ln[3:].strip()}
-    return head.strip(), sorted(dirty)
+        return None, {}
+    # `git diff HEAD` over `git status --porcelain`: r1 Medium. Porcelain v1 is human-shaped — it
+    # quotes non-ASCII under `core.quotePath`, spells a rename `old -> new`, and a tracked file
+    # literally named `a -> b` parses as `b`. `-z` removes the quoting and `--no-renames` removes
+    # the arrow, so the field IS the path. Untracked files are excluded for free: a file the branch
+    # does not contain is not code the reviewer will be credited with having seen.
+    names = git("diff", "--name-only", "-z", "--no-renames", "HEAD") or ""
+    dirty: "dict[str, str]" = {}
+    for path in (p for p in names.split("\0") if p):
+        # A path DELETED in the working tree has no content to hash; `hash-object` fails and it is
+        # simply absent, which downstream reads as "not seen" — the safe direction.
+        blob = git("hash-object", "--", path)
+        if blob and blob.strip():
+            dirty[path] = blob.strip()
+    return head.strip(), dirty
 
 
 def write_verdict(path: str, record: dict) -> "str | None":
@@ -974,9 +988,13 @@ def self_test() -> int:
     # an author who held fixes uncommitted so the reviewer would see the final state, and `dirty`
     # alone cannot place the round in the branch's history at all.
     _s = verdict_record(gate_ran=True, exit_code=0, out_path="x/y.md", reason="r",
-                        head="abc123", dirty=["scripts/a.py"])
+                        head="abc123", dirty={"scripts/a.py": "b10b"})
     chk("the verdict records the commit the reviewer was handed", _s["head"], "abc123")
-    chk("…and the uncommitted files it saw, which no commit records", _s["dirty"], ["scripts/a.py"])
+    # ⛔ CONTENT, NOT A PATH LIST — r1 Blocking. A path alone still matches after the file is edited
+    # AGAIN, so the check subtracted it and certified content nobody reviewed. Reproduced in a
+    # scratch repo; the blob sha is what makes "the reviewer saw THIS" answerable.
+    chk("…and the BLOB each uncommitted file held, not merely its name",
+        _s["dirty"], {"scripts/a.py": "b10b"})
     # ⚠ NULL, NOT ABSENT. Both read as falsey downstream, but an absent field is indistinguishable
     # from a schema-1 verdict written before the question could be asked, and the reader must be
     # able to tell "this run could not say" from "this run predates the field".
@@ -986,7 +1004,7 @@ def self_test() -> int:
         _head, _dirty = reviewed_state(td)
         chk("reviewed_state outside a git repository returns no head rather than raising",
             _head, None)
-        chk("…and claims no dirty files when it has no head to place them against", _dirty, [])
+        chk("…and claims no dirty files when it has no head to place them against", _dirty, {})
     extra += 8
 
     total = len(cases) + extra

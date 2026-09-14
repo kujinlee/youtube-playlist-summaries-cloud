@@ -51,15 +51,21 @@ those fixes, and a check reading `head` alone would accuse the author who did th
 
 SCOPE, STATED RATHER THAN IMPLIED
 ----------------------------------
-  * Only verdicts THIS branch wrote are considered — a verdict file in the range against the base.
-    History and squashed predecessors are not this branch's rounds, and on `master` the range is
-    empty, so the rule correctly says nothing.
-  * Only the Codex half leaves a verdict. A round whose Codex half was down and ran as Claude is
-    invisible here and is reported as NOT CHECKED, never as a pass.
-  * A verdict older than schema 2 carries no `head`; it is counted and named as unusable.
+  * Only verdicts THIS branch ADDED are considered. On `master` the range is empty, so the rule
+    correctly says nothing; a MODIFIED historical verdict is not testimony about this branch.
+  * Only the Codex half leaves a verdict. A round that ran as Claude because Codex was down cannot
+    answer this question at all — which is CANNOT RUN, cleared by the `REVIEW GAP:` line
+    `docs/plugins.md` already requires in that situation.
+  * A verdict older than schema 2 carries no `head`, and one whose head was rebased or squashed
+    away cannot be diffed. Both are counted as unusable, never quietly dropped.
   * `NO-REVIEW:` waives BOTH questions. One declaration per concern, deliberately — a second marker
     for "yes it is stale and that is fine" is the duplicate-vocabulary shape
     `check-vocabulary-collisions.py` exists to refuse.
+  * ⚠ IT RUNS ON `pull_request` ONLY (r1 High). The workflow also runs on push to `master`, where
+    this step is skipped and neither question is asked. Direct pushes to the default branch are
+    refused by `.claude/hooks/block-default-branch-push.sh`, so the path is closed by a different
+    mechanism — but it is closed THERE, not here, and this line exists so nobody reads CI green on
+    master as this gate having spoken.
 
 FAILS IF
 --------
@@ -67,6 +73,8 @@ FAILS IF
     reason -> exit 1, naming the files.
   * every round this branch recorded has guarded code committed after it -> exit 1, naming the
     files the closest round did not see.
+  * the question applies and NO round can answer it -> exit **2**, CANNOT RUN, unless a review
+    document of this branch carries a `REVIEW GAP:` reason.
   * git is absent, the base cannot be resolved, or the clone is SHALLOW -> exit **2**, CANNOT RUN.
     A shallow clone sees fewer commits and would report a confident, smaller diff.
 
@@ -186,32 +194,71 @@ def verdict(changed: list[str], added: list[str], pr_body: str,
 
 
 # ── THE SECOND QUESTION, as a pure rule ───────────────────────────────────────────────────────
-def branch_verdicts(changed: list[str]) -> list[str]:
-    """PURE. The Codex verdicts THIS branch wrote — the rounds that are about this work.
+def branch_verdicts(added: list[str]) -> list[str]:
+    """PURE. The Codex verdicts THIS branch ADDED — the rounds that are about this work.
 
-    Membership is the DIFF, exactly as `review_added` decides what counts as a recorded review.
-    Not "every verdict on disk": 82 of them predate this branch, and a rule that read those would
-    spend every run reporting that history cannot be placed, which is how a gate earns the
-    reputation that gets it switched off (backlog #56, measured).
+    ⛔ ADDED, NOT CHANGED, and the first version said changed — r1 Medium. A branch could then MODIFY
+    a historical verdict so its `head` cleared the tail, and the rule would read a rewritten record
+    of somebody else's round as testimony about this one. `review_added` already decides the
+    recorded-review question on the ADDED set; these two answers must come from the same kind of
+    observation or they are about different branches.
+
+    Not "every verdict on disk" either: 82 predate this branch, and a rule reading those would spend
+    every run reporting that history cannot be placed — how a gate earns the reputation that gets it
+    switched off (backlog #56, measured).
     """
-    return [p for p in changed if p.startswith(VERDICT_DIR) and p.endswith(".json")]
+    return [p for p in added if p.startswith(VERDICT_DIR) and p.endswith(".json")]
 
 
-def tail_verdict(tails: dict[str, list[str]], unusable: int = 0) -> tuple[int, str]:
+def round_tail(after: list[str], reviewed: dict[str, str], final: dict[str, str]) -> list[str]:
+    """PURE. The guarded paths one round cannot have seen.
+
+    `after`    — paths changed between that round's commit and HEAD
+    `reviewed` — path -> blob the reviewer was handed UNCOMMITTED
+    `final`    — path -> blob in the tree that will merge
+
+    ⛔ THE COMPARISON IS CONTENT, NOT PATHS — r1 Blocking, reproduced in a scratch repo. Subtracting
+    dirty PATHS lets "review `lib/x.py` dirty at v2, then edit it to v3 and commit" pass: the name
+    still matches. Equal blobs mean the reviewer saw exactly what is merging, and nothing else does.
+
+    `guarded_changes` is CALLED here rather than upstream so this rule — the one a mutation must be
+    able to break — is pure and reachable from a case. r1 Low: the previous wiring lived inside the
+    git-reading gatherer, and deleting the call left the suite at 45/45.
+    """
+    missed = [p for p in guarded_changes(after)
+              if not (reviewed.get(p) and final.get(p) == reviewed.get(p))]
+    return sorted(set(missed))
+
+
+def tail_verdict(tails: dict[str, list[str]], unusable: int = 0,
+                 gap: "str | None" = None) -> tuple[int, str]:
     """PURE. `(exit_code, message)` for "did any round see the code that is about to merge?".
 
-    `tails` maps a round's verdict filename to the guarded paths committed AFTER it — the files
-    that round cannot have reviewed. An EMPTY list is the pass: that round saw everything.
+    `tails` maps a round's verdict filename to the guarded paths it cannot have reviewed. An EMPTY
+    list is the pass: that round saw everything.
 
     ⚠ ANY round clears it, not the latest. Two rounds can each be the last to see a different file
     only if a third thing changed between them, and requiring the newest specifically would make
-    the answer depend on an ordering the verdicts do not record. "Some round saw the final tree" is
-    the property that matters and it is the one that is actually observable here.
+    the answer depend on an ordering the verdicts do not record.
+
+    ⛔ NO USABLE ROUND IS **CANNOT RUN (2)**, NOT A PASS — r1 High. The first version returned 0 with
+    an honest NOT CHECKED line, and CI consumes the exit code, not the line. `CLAUDE.md` is
+    unambiguous: *"'Cannot run' is a FAILURE, never a pass."* The escape is the marker that already
+    exists for a half that could not run — `REVIEW GAP:` in one of this branch's review documents,
+    parsed by `check-review-rounds.has_gap_line`, never by a second copy. So a Codex-down round
+    says so once, in the place the other gate already reads, and is not asked to say it twice.
     """
     if not tails:
         why = (f"{unusable} round(s) recorded no commit (verdicts written before schema 2)"
-               if unusable else "no Codex round was recorded on this branch")
-        return 0, f"final-tree rule NOT CHECKED — {why}"
+               if unusable else "no Codex verdict was added by this branch")
+        if gap:
+            return 0, f"final-tree rule NOT CHECKED — {why}; declared: REVIEW GAP: {gap}"
+        return 2, (f"CANNOT RUN — {why}, so whether any round saw the code about to merge is "
+                   f"UNKNOWN.\n"
+                   f"  Treat this as NOT CHECKED, never as reviewed. Either run a Codex round "
+                   f"against the current tree,\n"
+                   f"  or record `REVIEW GAP: codex — <reason>` in a review document of this "
+                   f"branch (docs/plugins.md).")
     clean = sorted(n for n, paths in tails.items() if not paths)
     if clean:
         extra = f"; {unusable} other round(s) recorded no commit" if unusable else ""
@@ -232,28 +279,35 @@ def _git(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True)
 
 
-def _merge_base(base: str) -> str:
-    """The commit this branch forked from. RAISES rather than guessing."""
-    mb = _git("merge-base", base, "HEAD")
-    if mb.returncode != 0:
-        raise RuntimeError(f"CANNOT RUN — cannot resolve a merge base with {base!r}: "
-                           f"{mb.stderr.strip()}")
-    return mb.stdout.strip()
+def _final_blobs(paths: list[str]) -> dict[str, str]:
+    """path -> blob sha in the tree that will merge. Absent means the path is not in HEAD."""
+    out = {}
+    for p in paths:
+        got = _git("rev-parse", f"HEAD:{p}")
+        if got.returncode == 0 and got.stdout.strip():
+            out[p] = got.stdout.strip()
+    return out
 
 
-def round_tails(base: str, verdict_files: list[str]) -> tuple[dict[str, list[str]], int]:
-    """`(tails, unusable)` for `tail_verdict`. Reads git and the verdicts; the RULE is pure.
+def round_tails(verdict_files: list[str]) -> tuple[dict[str, list[str]], int]:
+    """`(tails, unusable)` for `tail_verdict`. Reads git and the verdicts; the RULE is `round_tail`.
 
-    `guarded_changes` is called, never re-derived: what obliges a review and what counts as
-    "unreviewed code" must be the same set, or one of the two answers is about a different repo.
+    ⚠ NO MERGE-BASE SKIP — r1 High. The first version also skipped a verdict whose head is an
+    ancestor of the merge base, which silently discarded the round taken BEFORE the branch's first
+    commit — precisely what the hold-fixes-uncommitted practice produces, and the case r1
+    reproduced. Membership is now decided entirely by `branch_verdicts` (this branch ADDED the
+    file), so reachability from HEAD is the only remaining question: a head we cannot diff against
+    is a head we cannot reason about.
     """
-    mb = _merge_base(base)
     tails: dict[str, list[str]] = {}
     unusable = 0
     for rel in verdict_files:
         p = ROOT / rel
         if not p.is_file():
-            continue                        # the branch deleted it; there is nothing to read
+            # Added in the range and absent now means added then deleted. It cannot testify, and
+            # counting it as unusable is right: silence here is what `tail_verdict` refuses to pass.
+            unusable += 1
+            continue
         try:
             rec = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
@@ -268,18 +322,42 @@ def round_tails(base: str, verdict_files: list[str]) -> tuple[dict[str, list[str
             unusable += 1
             continue
         if _git("merge-base", "--is-ancestor", head, "HEAD").returncode != 0:
-            continue                        # unreachable: a squashed or rewritten predecessor
-        if _git("merge-base", "--is-ancestor", head, mb).returncode == 0:
-            continue                        # already on the base; not one of this branch's rounds
-        diff = _git("diff", "--name-only", head, "HEAD")
+            unusable += 1                   # unreachable: squashed, rebased or rewritten away
+            continue
+        diff = _git("diff", "--name-only", "-z", "--no-renames", head, "HEAD")
         if diff.returncode != 0:
             raise RuntimeError(f"CANNOT RUN — git diff against {head[:12]} failed: "
                                f"{diff.stderr.strip()}")
-        after = guarded_changes([ln for ln in diff.stdout.splitlines() if ln.strip()])
-        # Files the reviewer was handed uncommitted are files it SAW, whatever the commit says.
-        seen = {s for s in (rec.get("dirty") or []) if isinstance(s, str)}
-        tails[pathlib.PurePosixPath(rel).name] = sorted(set(after) - seen)
+        after = [ln for ln in diff.stdout.split("\0") if ln]
+        reviewed = {k: v for k, v in (rec.get("dirty") or {}).items()
+                    if isinstance(k, str) and isinstance(v, str)} \
+            if isinstance(rec.get("dirty"), dict) else {}
+        tails[pathlib.PurePosixPath(rel).name] = round_tail(
+            after, reviewed, _final_blobs(guarded_changes(after)))
     return tails, unusable
+
+
+def declared_gap(review_docs: list[str]) -> "str | None":
+    """The `REVIEW GAP:` reason recorded in one of this branch's review documents, or None.
+
+    The parser is `check-review-rounds.has_gap_line`, IMPORTED. Which emphasis wraps the marker and
+    what counts as a stated reason cost that file measured escapes; a sibling re-deriving them would
+    drift, and the two gates would then disagree about the same line in the same file.
+    """
+    path = ROOT / "scripts" / "check-review-rounds.py"
+    spec = importlib.util.spec_from_file_location("_crr", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"CANNOT RUN — cannot load the REVIEW GAP parser from {path}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["_crr"] = mod
+    spec.loader.exec_module(mod)
+    for rel in review_docs:
+        p = ROOT / rel
+        if not p.is_file():
+            continue
+        if reason := mod.has_gap_line(p.read_text(encoding="utf-8", errors="replace")):
+            return reason
+    return None
 
 
 def changed_paths(base: str) -> list[str]:
@@ -355,12 +433,13 @@ def main(argv: list[str]) -> int:
     if not guarded_changes(changed) or reason_of(body, NO_REVIEW) is not None:
         return 0
     try:
-        tails, unusable = round_tails(args.base, branch_verdicts(changed))
+        tails, unusable = round_tails(branch_verdicts(added))
+        gap = declared_gap(review_added(added))
     except (RuntimeError, OSError) as exc:
         print(str(exc) if str(exc).startswith("CANNOT RUN") else f"CANNOT RUN — {exc}",
               file=sys.stderr)
         return 2
-    tcode, tmessage = tail_verdict(tails, unusable)
+    tcode, tmessage = tail_verdict(tails, unusable, gap)
     print(("FAILED — " if tcode else "ok — ") + tmessage,
           file=sys.stderr if tcode else sys.stdout)
     return tcode
@@ -430,7 +509,7 @@ def self_test() -> int:
 
     # ── THE SECOND QUESTION: did any round see the code that is about to merge? ──
     V = "docs/reviews/verdicts/x-r1-codex.verdict.json"
-    case("a verdict this branch wrote is one of its rounds", branch_verdicts([V]), [V])
+    case("a verdict this branch ADDED is one of its rounds", branch_verdicts([V]), [V])
     case("a review document is not a verdict",
          branch_verdicts(["docs/reviews/codex/x-r1-codex.md"]), [])
     case("a JSON file elsewhere under docs/ is not a verdict",
@@ -450,23 +529,47 @@ def self_test() -> int:
     case("the failure reports the CLOSEST round, not an arbitrary one",
          "b.json" in tail_verdict({"a.json": ["lib/x.ts", "lib/y.ts"], "b.json": ["lib/y.ts"]})[1],
          True)
-    # ⛔ "CANNOT RUN" IS NOT A PASS, and it must not read as one either. No rounds, or rounds that
-    # cannot say what they saw, is exit 0 — but the line has to say NOT CHECKED, because a green
-    # line claiming more than its input covers is this project's most-repeated defect.
-    case("no rounds at all is not a failure", tail_verdict({})[0], 0)
-    case("...and says NOT CHECKED rather than reporting a clean tree",
-         "NOT CHECKED" in tail_verdict({})[1], True)
+    # ⛔ "CANNOT RUN" IS NOT A PASS — r1 High. The first version returned 0 here with an honest
+    # NOT CHECKED line, and CI reads the exit code, not the line. `CLAUDE.md`: *"'Cannot run' is a
+    # FAILURE, never a pass."* Exit 2 is the project's CANNOT RUN code, distinct from a finding.
+    case("no round that can answer is CANNOT RUN, not a pass", tail_verdict({})[0], 2)
+    case("...and says so in the project's words, so nobody reads it as reviewed",
+         "CANNOT RUN" in tail_verdict({})[1], True)
     case("pre-schema-2 verdicts are counted and named, not silently dropped",
          "recorded no commit" in tail_verdict({}, unusable=3)[1], True)
+    # ⚠ THE ESCAPE IS THE MARKER THAT ALREADY EXISTS. A Codex-down round genuinely cannot answer
+    # this, and `docs/plugins.md` already requires it to say `REVIEW GAP:` in the review document.
+    # Asking for a SECOND declaration of the same fact is the duplicate-vocabulary shape.
+    case("a declared REVIEW GAP clears it", tail_verdict({}, gap="codex — usage limit")[0], 0)
+    case("...and the pass repeats the declared reason into the log",
+         "usage limit" in tail_verdict({}, gap="codex — usage limit")[1], True)
+    # ⛔ AND THE GAP MUST NOT EXCUSE A STALE ROUND. It says "no Codex half ran", not "the code you
+    # committed afterwards is fine" — if a round DID run and is stale, the gap is irrelevant.
+    case("a declared gap does NOT excuse a round that exists and is stale",
+         tail_verdict({"a.json": ["lib/x.ts"]}, gap="codex — usage limit")[0], 1)
     # ⚠ A clean round does not excuse silence about the others: the pass still reports what it
     # could not place, or "reviewed" would cover rounds nobody checked.
     case("...including alongside a clean round",
          "1 other round(s) recorded no commit" in tail_verdict({"a.json": []}, unusable=1)[1], True)
-    # ⭐ THE LIVE WIRING, not a simulation. `round_tails` must call `guarded_changes`, or the two
-    # questions would disagree about what code is: a docs commit after a round would fail the tail
-    # rule while not obliging a review in the first place.
+    # ── round_tail: the per-round rule, PURE so a mutation can reach it ──
+    # ⭐ r1 Low: this used to assert on `guarded_changes` directly while the live call sat inside
+    # the git-reading gatherer. Deleting that call left the suite at 45/45 — a case that named the
+    # wiring and never touched it. The rule now lives HERE, and these cases drive it.
     case("the tail rule and the review obligation share one idea of `guarded`",
-         guarded_changes(["docs/reviews/codex/x-r1-codex.md", "lib/x.ts"]), ["lib/x.ts"])
+         round_tail(["docs/reviews/codex/x-r1-codex.md", "lib/x.ts"], {}, {}), ["lib/x.ts"])
+    # ⛔ THE r1 BLOCKING, as a case. Same PATH, DIFFERENT CONTENT: the reviewer saw blob `aaa`, the
+    # tree that merges holds `bbb`. Reproduced live before the fix — it passed, certifying code no
+    # reviewer had seen, because subtraction was by name.
+    case("a file edited AGAIN after the round is still missed, though its path matches",
+         round_tail(["lib/x.ts"], {"lib/x.ts": "aaa"}, {"lib/x.ts": "bbb"}), ["lib/x.ts"])
+    case("...and the SAME content the reviewer was handed is not missed",
+         round_tail(["lib/x.ts"], {"lib/x.ts": "aaa"}, {"lib/x.ts": "aaa"}), [])
+    # A path the reviewer saw uncommitted and that is NOT in the merging tree — deleted since — has
+    # no final blob to equal, so it counts as missed. The safe direction.
+    case("a reviewed path absent from the final tree is missed, not credited",
+         round_tail(["lib/x.ts"], {"lib/x.ts": "aaa"}, {}), ["lib/x.ts"])
+    case("a clean round after which nothing guarded changed has an empty tail",
+         round_tail(["docs/backlog.md"], {}, {}), [])
 
     # ⛔ THE FAILURE LINE IS A CONTRACT, NOT A STYLE CHOICE. `check-plan-code`'s mutation harness
     # attributes a kill by reading `l.strip().startswith("[FAIL] ")`, slicing `[7:]`, then

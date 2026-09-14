@@ -8155,8 +8155,8 @@ test environment. The saving is there, not in the reading.
 So the rule that shipped is narrow: a branch fails if guarded code was committed after **every**
 round it recorded. Running one more round against the final tree clears it, and so does the existing
 practice of holding the last fixes uncommitted so the reviewer sees the state that will merge — the
-wrapper now records which files it handed over uncommitted, precisely so the careful version of the
-workflow is not the one that gets punished.
+wrapper now records the exact content it handed over uncommitted, precisely so the careful version of
+the workflow is not the one that gets punished.
 
 The protocol this belongs to — round 1 both reviewers at once, later rounds alternating — is written
 down with **the two observations that would retire it**, and those get re-read at each architecture
@@ -8189,6 +8189,14 @@ passes and is named; a code commit after the only round fails and names the file
 after it does not fire; a file the reviewer was handed uncommitted does not count against it, and
 removing just the `dirty` list from the same tree makes it fire. `EXPECTED_MUTATIONS` for
 `check-review-recorded.py` 6 → 11, declared total 559 → 564.
+
+Round 1 of its own review then found the rule's worst defect. The first version subtracted dirty
+**paths**, so "review a file, edit it again, commit" passed — certifying code no reviewer had seen,
+by the ordinary loop rather than an exotic evasion. It now compares blobs. Four more came from that
+round: a round taken before the branch's first commit was silently discarded; "no usable round"
+returned 0 while printing CANNOT RUN; the population read MODIFIED historical verdicts as this
+branch's testimony; and a case that named the live wiring never touched it — deleting that wiring
+left the suite green. `EXPECTED_MUTATIONS` 6 → 15, declared total 559 → 568.
 
 ⚠ The sum line was first written as `421 → 426`, read off the running commentary above the
 assertion instead of off `sum(EXPECTED_MUTATIONS.values())`. The case caught it. Steps 1–4 of the

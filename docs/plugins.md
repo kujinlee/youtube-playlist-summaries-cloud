@@ -117,7 +117,7 @@ worked example). ⚠ That directory is a real git checkout whose `.gitignore` is
 
 ### Code Review (dual review per task)
 
-Both must complete before marking a task done. **Dispatch them CONCURRENTLY — measured safe.** What is and is not, plus the three operations that must be serialised and are enforced by nothing: [`review-method.md`](review-method.md) → *Running agents concurrently* (backlog #67). Not restated here — a second copy of a safety table is a copy that drifts.
+Both must complete before marking a task done. **Round 1 concurrently — measured safe; rounds 2+ ALTERNATE**, because a concurrent pair never reviews the FIXES, and that is where both of 2026-09-13's surviving defects were. Topology, plus the three operations that must be serialised and are enforced by nothing: [`review-method.md`](review-method.md) → *Round topology* and *Running agents concurrently* (backlog #67). Not restated here — a second copy of a safety table is a copy that drifts.
 
 | Review | Use | Requires |
 |---|---|---|

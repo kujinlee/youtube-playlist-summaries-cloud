@@ -79,25 +79,25 @@
     ]
   },
   {
-    "name": "an empty round set is treated as a clean tree instead of NOT CHECKED, so a branch with no round at all reads as reviewed",
+    "name": "no usable round returns 0 instead of 2, so `CANNOT RUN` prints while CI reads a pass — the exact fail-open r1 filed",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "        return 0, f\"final-tree rule NOT CHECKED — {why}\"",
-        "        return 0, \"reviewed\""
+        "        return 2, (f\"CANNOT RUN — {why}, so whether any round saw the code about to merge is \"",
+        "        return 0, (f\"CANNOT RUN — {why}, so whether any round saw the code about to merge is \""
       ]
     ],
     "expect": [
-      "...and says NOT CHECKED rather than reporting a clean tree"
+      "no round that can answer is CANNOT RUN, not a pass"
     ]
   },
   {
-    "name": "rounds that could not say what they saw stop being counted, so `NOT CHECKED` loses the number that makes it honest",
+    "name": "rounds that could not say what they saw stop being counted, so the report loses the number that makes it honest",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "        why = (f\"{unusable} round(s) recorded no commit (verdicts written before schema 2)\"\n               if unusable else \"no Codex round was recorded on this branch\")",
-        "        why = \"no Codex round was recorded on this branch\""
+        "        why = (f\"{unusable} round(s) recorded no commit (verdicts written before schema 2)\"\n               if unusable else \"no Codex verdict was added by this branch\")",
+        "        why = \"no Codex verdict was added by this branch\""
       ]
     ],
     "expect": [
@@ -105,7 +105,7 @@
     ]
   },
   {
-    "name": "the failure names an arbitrary round rather than the closest one, so the report points away from the shortest way back to green",
+    "name": "the failure names an arbitrary round rather than the closest one, pointing away from the shortest way back to green",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -118,16 +118,68 @@
     ]
   },
   {
-    "name": "a review document counts as a verdict, so the tail rule reads prose as testimony about what a round saw",
+    "name": "a review document counts as a verdict, so prose is read as testimony about what a round saw",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "    return [p for p in changed if p.startswith(VERDICT_DIR) and p.endswith(\".json\")]",
-        "    return [p for p in changed if p.startswith(REVIEW_DIR)]"
+        "    return [p for p in added if p.startswith(VERDICT_DIR) and p.endswith(\".json\")]",
+        "    return [p for p in added if p.startswith(REVIEW_DIR)]"
       ]
     ],
     "expect": [
       "a review document is not a verdict"
+    ]
+  },
+  {
+    "name": "⛔ the r1 BLOCKING, restored: the tail subtracts by PATH again, so a file edited a second time after the round is certified as reviewed",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    missed = [p for p in guarded_changes(after)\n              if not (reviewed.get(p) and final.get(p) == reviewed.get(p))]",
+        "    missed = [p for p in guarded_changes(after)\n              if not reviewed.get(p)]"
+      ]
+    ],
+    "expect": [
+      "a file edited AGAIN after the round is still missed, though its path matches"
+    ]
+  },
+  {
+    "name": "⛔ the r1 LOW, restored: the tail rule stops asking what counts as guarded, so a docs commit after a round fails a branch that owed no review for it",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    missed = [p for p in guarded_changes(after)",
+        "    missed = [p for p in (after)"
+      ]
+    ],
+    "expect": [
+      "the tail rule and the review obligation share one idea of `guarded`"
+    ]
+  },
+  {
+    "name": "the REVIEW GAP escape stops working, so a Codex-down round — the documented fallback — reds every branch that takes it",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        if gap:\n            return 0, f\"final-tree rule NOT CHECKED — {why}; declared: REVIEW GAP: {gap}\"",
+        "        if False:\n            return 0, f\"final-tree rule NOT CHECKED — {why}; declared: REVIEW GAP: {gap}\""
+      ]
+    ],
+    "expect": [
+      "a declared REVIEW GAP clears it"
+    ]
+  },
+  {
+    "name": "a declared gap excuses a round that EXISTS and is stale, turning `the Codex half could not run` into `the code I committed afterwards is fine`",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if not tails:",
+        "    if not tails or gap:"
+      ]
+    ],
+    "expect": [
+      "a declared gap does NOT excuse a round that exists and is stale"
     ]
   }
 ]
