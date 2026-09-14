@@ -644,6 +644,19 @@ create trigger video_generations_freeze_trg""",
     # "the branch reconciles".
     # ⟳ ADR-0007 RE-ANCHORED — the mutation and the rule are untouched; only the lease columns left
     # the `do update` list, and they took the anchor with them.
+    # ⟳ r1 (2026-09-14): the KEYS became visible when all four CATALOG_SQL clauses started reading
+    # one set, and each SEQUENCE key needs the mutation its class demands. Every one of these drops
+    # the RECONCILER — the `on conflict` arbiter — not the key: the key is not what a blameless
+    # second caller collides with, the missing no-op is.
+    # ⚠ THIS ONE'S RECONCILER IS NOT AN `on conflict` — it is the EMPTINESS GUARD around the insert
+    # (04_artifacts.sql:597). A same-set re-statement falls past it to the implicit else, which the
+    # comment at :606-607 calls "the path a crash-retry takes and must NOT be refused". Remove the
+    # condition and the insert runs unconditionally, so the retry collides with the PK.
+    ("video_artifact_sources_pkey: the same-set no-op removed (a crash-retry now duplicates)",
+     "    if not v_existed and v_recorded = '{}'::text[] then",
+     "    if true then",
+     "video_artifact_sources_pkey", ART),
+
     ("video_artifacts_free_uq: the free upsert made blind (branch kept, conflict handling dropped)",
      """    on conflict (workspace_id, video_id, slot) where generation_id is null
     do update set blob_key = excluded.blob_key, state = 'recorded';""",

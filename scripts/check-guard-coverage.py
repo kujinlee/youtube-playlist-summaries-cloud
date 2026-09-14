@@ -32,9 +32,10 @@ guards that are plainly correct) but "what does it do when the caller is merely
 SECOND?"
 
 Usage:  ./scripts/check-guard-coverage.py     (exit 0 = every guard classified)
-    --self-test  # 16 cases
+    --self-test  # 27 cases
 """
 import ast
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -66,8 +67,25 @@ TABLES = ("video_artifacts", "video_generations")
 # ⚠ NOT A MIGRATIONS PROBLEM — `video_artifact_sources` is created by M4's own schema files,
 # so the gate BUILT it and then declined to look at it. MEASURED against a fully migrated
 # database: three trigger functions on it, none of them in GUARDS, gate green at 41 guards.
-TRIGGER_TABLES = TABLES + ("videos", "jobs", "workspace_videos", "playlists", "profiles",
-                           "video_artifact_sources")
+# ⛔⛔ TWO SETS, AND THE SPLIT IS THE SCOPE DECISION backlog #29 ASKED FOR.
+# ⟳ r1 (codex Medium + claude, 2026-09-14). Making all four clauses read ONE set was the first fix
+# and it was wrong in the other direction: it pulled in 17 guards including `jobs_status_chk`,
+# `playlists_pkey` and `videos_check` — pre-existing objects on tables M4 merely ADDS TRIGGERS TO.
+# A blob-addressing ratchet classifying the jobs queue's own CHECKs is the overclaiming Codex named.
+#
+# The line that is actually defensible is the one M4's own manifest already draws:
+#   OWNED    — relations M4 CREATES. Every guard on them is M4's, so all four clauses apply.
+#              Derived from the manifest's `table:` entries, not hand-listed (check-live-schema.py
+#              learned the same lesson: a hand-maintained list of what to check silently stops
+#              matching).
+#   FOREIGN  — `videos`, `jobs`, `playlists`, `profiles`. M4 adds TRIGGERS and FKs here and owns
+#              nothing else, so only those two clauses apply. Their PKs and CHECKs predate M4 and
+#              belong to whatever gate owns those tables — today, none. That gap is REAL and is
+#              recorded in backlog #29, not papered over by pretending this gate covers it.
+OWNED_TABLES = ("workspaces", "workspace_videos", "video_generations", "video_artifacts",
+                "video_artifact_sources")
+FOREIGN_TABLES = ("videos", "jobs", "playlists", "profiles")
+TRIGGER_TABLES = OWNED_TABLES + FOREIGN_TABLES
 
 # Every guard the schema ships, with its class. A guard present in the database and
 # absent here FAILS THE RATCHET - that is the whole point: adding a guard forces a
@@ -137,6 +155,50 @@ GUARDS: dict[str, tuple[str, str]] = {
     # added to a second playlist CLOBBERED the shared corrections (measured round 9). ADR-0011 (T2)
     # deletes the trigger and the denormalized copy it synchronised, so the reconciler has nothing
     # left to reconcile. VERIFIED ABSENT by this ratchet reporting it STALE before deletion.
+    # ── ⟳ r1 (2026-09-14): the KEYS, visible for the first time once all four clauses read one set.
+    # Each is classified from its WRITER, not its name — `pg_get_constraintdef` for the shape, then
+    # the insert that can hit it. The reconciler for a key is almost always an `on conflict` arbiter,
+    # and naming which one is the whole value of the entry.
+    "workspaces_owner_id_fkey":  ("SHAPE", ""),   # FK -> profiles(id); reads the row being written
+    "workspaces_owner_id_key": (
+        "SEQUENCE",
+        "ensure_workspace_for_profile inserts `values (new.id, new.id) on conflict (owner_id) do "
+        "nothing` (03_generations.sql:143-144) — a second provisioning of the same profile is "
+        "absorbed, not raised"),
+    "workspaces_pkey": (
+        "SHAPE",
+        "id = owner_id for every row this schema writes, so a duplicate conflicts on the OWNER_ID "
+        "arbiter first and the no-op above absorbs it: the SEQUENCE question has no reachable case, "
+        "rather than a reconciler of its own (the idiom video_artifacts_identity_uq already uses)"),
+    "workspaces_id_owner_id_key": (
+        "SHAPE",
+        "UNIQUE(id, owner_id) is implied by the two single-column keys above for every row this "
+        "schema writes; it cannot fire before one of them does"),
+    "workspace_videos_pkey": (
+        "SEQUENCE",
+        "the manifest-parent trigger inserts `on conflict (workspace_id, video_id) do nothing` "
+        "(03_generations.sql:183-185) — two videos arriving at once leave one parent, not an error"),
+    "video_generations_pkey": (
+        "SEQUENCE",
+        "record_artifact inserts the generation `on conflict (workspace_id, video_id, generation_id) "
+        "do nothing` (04_artifacts.sql:447) — the second writer of a generation continues rather "
+        "than raising, which is what makes a crash-retry safe"),
+    "video_generations_workspace_id_video_id_generation_id_kind_key": (
+        "SHAPE",
+        "UNIQUE(ws, vid, gen, kind) is WEAKER than the PK(ws, vid, gen) above — any row the PK "
+        "admits is already distinct here — so it cannot fire before the PK does"),
+    "video_artifacts_pkey": (
+        "SHAPE",
+        "artifact_id is generated per insert and no writer uses it as a conflict arbiter (the two "
+        "upserts arbitrate on the slot keys, 04_artifacts.sql:384 and :540), so a second caller "
+        "never presents the same value: no reachable case"),
+    "video_artifact_sources_pkey": (
+        "SEQUENCE",
+        "⭐ THE RECONCILER FOR insert_once, AND THE REASON THAT GUARD'S NOTE HAD TO CHANGE: a "
+        "same-set re-statement inserts NOTHING here, so insert_once's transition table is empty and "
+        "it never fires. 04_artifacts.sql:606-607 says that path 'is the path a crash-retry takes "
+        "and must NOT be refused'. One row per (artifact, source), 04_artifacts.sql:231"),
+
     # ── video_artifact_sources ⟳ 2026-09-14: reached the schema unclassified because the TABLE was
     # outside TRIGGER_TABLES, not because anyone judged them. ⚠ `art_summary_has_no_source` is the
     # sharpest case: the deletion note above records it verified ABSENT as a CONSTRAINT in T5 — true,
@@ -146,19 +208,31 @@ GUARDS: dict[str, tuple[str, str]] = {
     # list widened this too. Referential integrity reads only the row being written.
     "vas_artifact_fk":                    ("SHAPE", ""),
     "vas_source_generation_fk":           ("SHAPE", ""),
-    "video_artifact_sources_append_only": ("SHAPE", ""),   # before update|delete, per row: rejects
-                                                           # the operation itself, like its sibling
-                                                           # video_artifacts_append_only
+    "video_artifact_sources_append_only": (
+        "SHAPE",
+        "⟳ r1 MEDIUM (claude): the reason here used to read 'rejects the operation itself', which is "
+        "true of the UPDATE half and FALSE of the DELETE half — that one raises only `if exists` an "
+        "artifact for the row (04_artifacts.sql:1111-1117), which is a sequencing question wearing a "
+        "well-formedness sentence. SHAPE is kept because the reviewer measured the blameless caller "
+        "OUT of reach, not because the guard is unconditional: deleting a generation that owns an "
+        "artifact dies first on video_artifacts' own FK (23503), and `delete from workspace_videos` "
+        "dies earlier still on video_artifacts' append-only trigger (P0001). The remaining reachable "
+        "case is a future §8 sweeper deleting source-only generations — so, in this file's own idiom "
+        "(video_artifacts_identity_uq), the SEQUENCE question has no reachable case rather than a "
+        "reconciler. What must not survive is a sentence that stops the next reader opening the body"),
     "art_summary_has_no_source":          ("SHAPE", ""),   # reads the inserted row and its parent's
                                                            # kind; a merely-SECOND caller inserting a
                                                            # well-formed row is untouched
     "video_artifact_sources_insert_once": (
         "SEQUENCE",
-        "does NOT reconcile, and that is the design: provenance is immutable, so a second statement "
-        "is a caller bug rather than a race. `after insert ... for each statement` compares the "
-        "table's existing rows for the artifact against this statement's, so ALL sources must arrive "
-        "in ONE statement; the error names both sets ({recorded} vs {added}) so the loser can see "
-        "what it collided with. No retry succeeds, and none should"),
+        "⟳ r1 HIGH (claude): this note used to say it does NOT reconcile and that 'no retry succeeds'. "
+        "MEASURED false. The reconciler is TWO-PART — `video_artifact_sources_pkey` plus "
+        "`record_artifact`'s same-set no-op (04_artifacts.sql:597-607): an idempotent re-statement "
+        "inserts NOTHING, so the transition table is empty and this trigger never fires, and :606 "
+        "says that path 'is the path a crash-retry takes and must NOT be refused'. Only a second "
+        "statement that CHANGES the set is a caller bug; the error names both sets so the loser can "
+        "see what it collided with. ⚠ The old note made this the first RECONCILING member naming no "
+        "reconciler — delete record_artifact's same-set branch and the ratchet would have endorsed it"),
     "forbid_collecting_current": (
         "SEQUENCE",
         "the sweeper selects THROUGH video_generations_collectable; trigger kept as a backstop "
@@ -202,7 +276,27 @@ GUARDS: dict[str, tuple[str, str]] = {
 
 # A SEQUENCE guard whose reconciler cannot be mutation-tested must say why here.
 # Empty by design: if this grows, the ratchet is being talked out of rather than met.
-MUTATION_EXEMPT: dict[str, str] = {}
+MUTATION_EXEMPT: dict[str, str] = {
+    # ⟳ r1 (2026-09-14). These three became visible when all four CATALOG_SQL clauses started reading
+    # one set. Their reconcilers are REAL and named in GUARDS — each is an `on conflict … do nothing`
+    # I read in the writer — but the ASSERTION CORPUS does not exercise the path, so a mutation that
+    # removes the reconciler goes GREEN. That was MEASURED, not assumed: all three were written as
+    # mutations, run, and reported `❌ GREEN`, which is why they are not in the mutation file
+    # pretending to cover something.
+    #
+    # ⚠ WHY EACH PATH IS UNREACHED, because "the corpus does not test it" is not a reason on its own:
+    "workspaces_owner_id_key":
+        "the trigger's insert can only conflict when a workspace for that owner ALREADY exists, and "
+        "a profile cannot be inserted twice (profiles_pkey fires first). Reaching it needs a "
+        "workspace created before its profile row — a restore/replay shape the corpus never builds",
+    "workspace_videos_pkey":
+        "same shape one table over: the manifest-parent insert conflicts only when the (workspace, "
+        "video) pair already exists, which the corpus only ever creates through this same trigger",
+    "video_generations_pkey":
+        "an identical retry short-circuits on `v_existed` before reaching the generation insert "
+        "(04_artifacts.sql), so the corpus's idempotent-retry assertion never re-inserts the "
+        "generation. Reaching it needs TWO SLOTS recorded against ONE generation",
+}
 
 # Both classes carry the same obligations: name the reconciler, and mutate it. The distinction is
 # only about who is at fault when the guard fires — never about how much proof it needs.
@@ -223,9 +317,25 @@ COVERED_BY: dict[str, tuple[str, ...]] = {
     # This map is a second inventory keyed on the first, and only the self-test compares them.
 }
 
+# ⛔⛔ ONE SET, FOUR CLAUSES — ⟳ r1 BLOCKING (codex AND claude, independently, 2026-09-14).
+# This query had FOUR clauses reading THREE different scopes: CHECKs on `TABLES`, FKs and triggers on
+# `TRIGGER_TABLES`, unique indexes on `TABLES` **and only if named `%_uq`**. Widening one clause is
+# what round 9 did, and round 11, and what the first version of this branch did — three times a table
+# entered the gate's world through one clause and stayed invisible to the others, while the script
+# printed "every guard classified".
+# MEASURED here, by widening only the two left behind:
+#     jobs.jobs_kind_chk · jobs.jobs_progress_phase_check · jobs.jobs_status_chk · videos.videos_check
+#     video_artifact_sources.video_artifact_sources_pkey                                 [p]
+#     video_generations.video_generations_workspace_id_video_id_generation_id_kind_key   [u]
+# ⚠ THE LAST ONE IS THE ARGUMENT AGAINST A NAME FILTER: `video_generations` was ALREADY in `TABLES`.
+# The only thing hiding that unique constraint was `like '%_uq'` — a NAMING CONVENTION acting as a
+# scope rule, so a guard that declines to be named `_uq` is not a guard. It is gone.
+# ⚠ AND THE PK IS NOT A FORMALITY: `04_artifacts.sql:231` documents it as the rule "One row per
+# (artifact, source)", and it is the RECONCILER that makes `insert_once`'s same-set retry succeed
+# (see that guard's note). The gate could not see the object its own classification rests on.
 CATALOG_SQL = f"""
 select 'check:' || conname from pg_constraint
- where conrelid = any (array{list(TABLES)}::regclass[]) and contype = 'c'
+ where conrelid = any (array{list(OWNED_TABLES)}::regclass[]) and contype = 'c'
 union all
 -- ⟳ ROUND 11 (round 10) — DERIVED FROM THE SAME SET AS THE TRIGGERS, not a second hand-written
 -- list. Round 9 widened the TRIGGER enumeration to six tables and left this clause on its original
@@ -237,13 +347,68 @@ select 'fk:' || conname from pg_constraint
    and conrelid = any (array{list(TRIGGER_TABLES)}::regclass[])
 union all
 select 'index:' || indexrelid::regclass::text from pg_index
- where indrelid = any (array{list(TABLES)}::regclass[]) and indisunique
-   and indexrelid::regclass::text like '%_uq'
+ where indrelid = any (array{list(OWNED_TABLES)}::regclass[]) and indisunique
 union all
 select distinct 'trigger:' || p.proname from pg_trigger t
   join pg_proc p on p.oid = t.tgfoid
  where t.tgrelid = any (array{list(TRIGGER_TABLES)}::regclass[]) and not t.tgisinternal;
 """
+
+
+def clause_scopes(sql: str) -> dict[str, list[str]]:
+    """Which table set each CATALOG_SQL clause reads. PURE — no database, no filesystem.
+
+    ⛔⛔ THE FALSIFIER FOR THE COMPONENT THAT HAD NONE — ⟳ r1 MEDIUM 2 (claude), and the measurement
+    behind it is the reason this exists: all 16 self-test cases and all 5 mutation entries drive
+    `evaluate`. NOTHING tested `CATALOG_SQL` or the table tuples — the one part of this script that
+    was short in round 9, short in round 11, and short again in this branch's first commit. Three for
+    three, in the component with no test.
+
+    The defect is always the same and it is STRUCTURAL, not a typo: the clauses disagree about scope,
+    so a table enters the gate's world through one clause and stays invisible to the others. That is
+    checkable without a database — the SQL is a formatted string, and which tuple each clause
+    interpolates is right there in the text.
+
+    ⚠ This cannot prove the SET is right (that is the scope decision, argued in the tuples' own
+    comment). It proves the four clauses AGREE about it, which is the failure that actually happened.
+    """
+    out: dict[str, list[str]] = {}
+    for kind in ("check", "fk", "index", "trigger"):
+        # ⚠ Located by the OUTPUT PREFIX, not by `select '<kind>:` — the trigger clause is
+        # `select distinct 'trigger:' …` and a prefix match on `select` missed it entirely, which is
+        # this function's own failure mode in miniature: a pattern narrower than the text it reads.
+        start = sql.find(f"'{kind}:")
+        if start < 0:
+            out[kind] = []
+            continue
+        nxt = sql.find("union all", start)
+        body = sql[start:nxt if nxt > 0 else len(sql)]
+        # ⚠ Read the INTERPOLATED array, not every quoted literal in the clause. The first version
+        # took `'c'` from `contype = 'c'` and `'public'` from the FK clause's namespace test as table
+        # names — a scope check that cannot tell a table from a catalog constant proves nothing.
+        m = re.search(r"array\[(.*?)\]", body, re.S)
+        out[kind] = sorted(re.findall(r"'([a-z_]+)'", m.group(1))) if m else []
+    return out
+
+
+def scope_problems(scopes: dict[str, list[str]], owned: tuple[str, ...],
+                   trigger: tuple[str, ...]) -> list[str]:
+    """One line per clause reading a set it should not. PURE."""
+    want = {"check": sorted(owned), "index": sorted(owned),
+            "fk": sorted(trigger), "trigger": sorted(trigger)}
+    out = []
+    for kind, expected in want.items():
+        got = scopes.get(kind, [])
+        if not got:
+            out.append(f"CANNOT RUN — the {kind} clause was not found in CATALOG_SQL, so its scope "
+                       f"is unknown. This check no longer reads what it claims to.")
+        elif got != expected:
+            missing = sorted(set(expected) - set(got))
+            extra = sorted(set(got) - set(expected))
+            out.append(f"the {kind} clause reads a different set than it should"
+                       + (f" — missing {missing}" if missing else "")
+                       + (f" — unexpected {extra}" if extra else ""))
+    return out
 
 
 def catalog_guards() -> set[str]:
@@ -354,6 +519,48 @@ def self_test() -> int:
     def case(name: str, ok: bool) -> None:
         cases.append((name, ok))
 
+    # ── ⟳ r1 MEDIUM 2 (claude): the enumeration finally has cases ────────────────────────────
+    _sql = CATALOG_SQL
+    _sc = clause_scopes(_sql)
+    case("every clause is located, including the `select distinct` one",
+         sorted(k for k, v in _sc.items() if v) == ["check", "fk", "index", "trigger"])
+    case("the shipped clauses agree about scope",
+         scope_problems(_sc, OWNED_TABLES, TRIGGER_TABLES) == [])
+    case("a clause reading the WIDER set is caught",
+         len(scope_problems({**_sc, "check": sorted(TRIGGER_TABLES)}, OWNED_TABLES, TRIGGER_TABLES)) == 1)
+    case("a clause reading the NARROWER set is caught",
+         len(scope_problems({**_sc, "trigger": sorted(OWNED_TABLES)}, OWNED_TABLES, TRIGGER_TABLES)) == 1)
+    case("a clause that vanishes is CANNOT RUN, not a pass",
+         scope_problems({**_sc, "index": []}, OWNED_TABLES, TRIGGER_TABLES)[0].startswith("CANNOT RUN"))
+    case("a catalog constant is not read as a table name",
+         not ("c" in _sc["check"] or "public" in _sc["fk"]))
+    case("owned is a subset of trigger, or the split is incoherent",
+         set(OWNED_TABLES) <= set(TRIGGER_TABLES))
+
+    # ⟳ `check-fixture-variation.py` refused the three new parameters until a case told them apart
+    # from a constant — every call above passed the same `_sql`, `OWNED_TABLES`, `TRIGGER_TABLES`.
+    # These vary all three over a hand-built query, which also proves the extractor reads the SQL it
+    # is given rather than the module-level one it happens to sit beside.
+    _toy = ("select 'check:' || conname from pg_constraint\n"
+            " where conrelid = any (array['a', 'b']::regclass[]) and contype = 'c'\n"
+            "union all\n"
+            "select 'fk:' || conname from pg_constraint where contype = 'f'\n"
+            "   and conrelid = any (array['a', 'b', 'c']::regclass[])\n"
+            "union all\n"
+            "select 'index:' || indexrelid::regclass::text from pg_index\n"
+            " where indrelid = any (array['a', 'b']::regclass[]) and indisunique\n"
+            "union all\n"
+            "select distinct 'trigger:' || p.proname from pg_trigger t\n"
+            " where t.tgrelid = any (array['a', 'b', 'c']::regclass[]) and not t.tgisinternal;\n")
+    case("a DIFFERENT query is read as itself, not as CATALOG_SQL",
+         clause_scopes(_toy)["check"] == ["a", "b"])
+    case("...and its wider clauses are read as wider",
+         clause_scopes(_toy)["trigger"] == ["a", "b", "c"])
+    case("a DIFFERENT owned/trigger split is honoured",
+         scope_problems(clause_scopes(_toy), ("a", "b"), ("a", "b", "c")) == [])
+    case("...and the same query against the WRONG split is caught",
+         len(scope_problems(clause_scopes(_toy), ("a", "b", "c"), ("a", "b", "c"))) == 2)
+
     SHAPE = {"g_shape": ("SHAPE", "")}
     SEQ = {"g_seq": ("SEQUENCE", "loser re-reads and retries")}
 
@@ -416,6 +623,17 @@ def self_test() -> int:
 
 
 def main() -> int:
+    # ⛔ THE ENUMERATION IS CHECKED BEFORE ITS OUTPUT IS TRUSTED — ⟳ r1 MEDIUM 2 (claude).
+    # Three rounds found this component short and nothing could have caught any of them.
+    scope_bad = scope_problems(clause_scopes(CATALOG_SQL), OWNED_TABLES, TRIGGER_TABLES)
+    if scope_bad:
+        for line in scope_bad:
+            print(f"❌ SCOPE  {line}")
+        print("\n  CATALOG_SQL's clauses disagree about which tables they read. A table that enters")
+        print("  through one clause is invisible to the others, which is how this gate reported")
+        print("  'every guard classified' three times over a guard it had never enumerated.")
+        return 2 if any(x.startswith("CANNOT RUN") for x in scope_bad) else 1
+
     for _line in subject_banner(SCHEMA, Path(__file__)):
         print(_line)
     live = catalog_guards()
@@ -441,7 +659,15 @@ def main() -> int:
         print("=" * 78)
         print(f"{len(problems)} problem(s) — guard coverage NOT met")
         return 1
-    print("\n✅ every guard classified; every SEQUENCE guard reconciles and is mutation-covered")
+    # ⟳ r1 MEDIUM (codex): this said "every guard classified", which is not what the gate checks.
+    # Its subject is the relations M4 OWNS plus the triggers and FKs M4 adds to four foreign
+    # tables. 25 CHECK constraints on the MONEY tables — guardrail_config (13), spend_ledger,
+    # usage_counters, correction_spend, serve_model_charge, serve_owner_budget,
+    # quota_allowance, share_tokens — are OUTSIDE it, and they are real guards rather than
+    # non-guards. Leaving them out is defensible ONLY while the sentence says what is covered:
+    # "every guard" turns a scope decision into an invisible gap. Recorded in backlog #29.
+    print("\n✅ every BLOB-ADDRESSING SCHEMA guard classified; every SEQUENCE guard reconciles "
+          "and is mutation-covered")
     return 0
 
 

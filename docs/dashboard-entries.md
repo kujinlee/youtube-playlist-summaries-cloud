@@ -8418,3 +8418,51 @@ for a second gate. That is a scope decision, not a defect.
     guard coverage  41 -> 46 guards, self-test 16/16
     suite           73 ✓ / 0 ✗, 15/15, exit 0
     mutate-schema   58/58 behaved as expected
+
+## 2026-09-14
+Both reviewers independently found the same problem with my fix — the first time
+they've overlapped in five rounds — and it was that I'd fixed one quarter of the thing
+that was broken. The check has four separate questions it asks the database, and they
+disagreed about which tables they were asking about, so a table could be visible to one
+and invisible to the other three. All four now agree, and the check went from seeing 41
+safety rules to 55. The component that had been wrong three times before also had no
+test of its own; it does now.
+<!--tech-->
+Codex r1: 1 Blocking, 1 High, 1 Medium. Claude r1: 1 Blocking, 1 High, 2 Medium, 2 Low.
+All accepted and fixed. ⭐ Both halves ran CONCURRENTLY on separate databases with the
+tree frozen and neither committed until both finished — the fix for the false Blocking
+and verdict-leakage measured on the previous branch. Neither had a disclosure to make.
+
+**The Blocking, found by both.** `CATALOG_SQL` asks four questions over three scopes:
+CHECKs on `TABLES`, FKs/triggers on `TRIGGER_TABLES`, unique indexes on `TABLES` AND
+only if named `%_uq`. My first commit widened one. That is round 9's defect, round 11's,
+and mine — my own commit message said "the third time" while adding the fourth.
+
+⚠ The `_uq` filter was a NAMING CONVENTION acting as a scope rule: a unique constraint
+on `video_generations` — a table already in scope — was invisible purely for declining
+to be called `_uq`.
+
+⭐ **Codex's invisible PK is the reconciler Claude's HIGH says my note denied.**
+`video_artifact_sources_pkey` is why an idempotent retry succeeds: it inserts nothing,
+so `insert_once`'s transition table is empty and the trigger never fires. The gate
+could not see the object its own classification rests on.
+
+**The scope decision.** One unified set pulled in 17 guards including `jobs_status_chk`
+and `playlists_pkey` — a blob-addressing ratchet policing the jobs queue. Split the way
+M4's own manifest does: OWNED (5 relations, all four clauses) vs FOREIGN (videos, jobs,
+playlists, profiles — only the triggers and FKs M4 adds). **41 → 55 guards**, nine keys
+classified from their WRITERS.
+
+**The component with no falsifier now has one.** All 16 cases and all 5 mutations drove
+`evaluate`; nothing tested `CATALOG_SQL`. `clause_scopes()`/`scope_problems()` read
+which table set each clause interpolates and refuse when they disagree — pure, no
+database needed. Self-test 16 → 27, mutations 5 → 8.
+
+⚠ Stated rather than skipped: three of four new SEQUENCE keys could not be
+mutation-covered. I wrote the mutations, ran them, and all three went GREEN — the
+corpus never exercises the path (a profile cannot be inserted twice; a retry
+short-circuits before re-inserting the generation). They are in `MUTATION_EXEMPT` with
+the measured reason each, which is what that field exists for.
+
+    guards 41 -> 55 · self-test 16 -> 27 · mutations 5 -> 8, all attributable
+    suite 73 ✓ / 0 ✗, 15/15 · mutate-schema 59/59 · EXPECTED_MUTATIONS 575 -> 578
