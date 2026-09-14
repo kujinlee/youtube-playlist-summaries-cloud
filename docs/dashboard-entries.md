@@ -8702,11 +8702,16 @@ than from reading it. The second: the program that wrote that review stayed aliv
 those two hours after it had finished its work, and **nobody knows why** — which is
 recorded as not-known rather than guessed at.
 
-**What needs you:** the first one can be fixed two ways, and they cost very
-differently. A proper script is about an hour, almost all of it satisfying this
-project's own rules about scripts, and nothing in CI would ever run it — its only
-protection is an agent choosing to use it. A written convention is ten minutes and
-honest about being only a convention. That trade is yours to make.
+The first one can be fixed two ways and they cost very differently. A proper script
+is about an hour, almost all of it spent satisfying this project's own rules about
+scripts, and nothing in CI would ever run it — its only protection is an agent
+choosing to use it. A written convention is ten minutes and honest about being only
+a convention.
+
+**Decide:** How should the "wait on the artifact, not the process" rule be enforced?
+- write it as a measured snippet in docs/portable-practices.md — ten minutes, and honest that a convention is all it is [recommended]
+- build scripts/await-codex-review.py — about an hour, nearly all ratchet compliance, and it would have no caller in CI
+- leave it as the existing prose in docs/plugins.md, which was broken three times in one session
 <!--tech-->
 Branch `backlog-await-and-hang`, PR #300, docs-only. Both rows filed at the user's
 instruction out of PR #299.
