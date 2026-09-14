@@ -870,7 +870,7 @@ EXPECTED_MUTATIONS = {
     # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed
     # BEFORE these were registered, which is the order the loop requires and I got wrong once.
     "scripts/check-function-revokes.py": 6,
-    "scripts/check-guard-coverage.py": 5,
+    "scripts/check-guard-coverage.py": 10,
     "scripts/check-handoff-path.py": 5,
     # ⟳ 2026-09-07. Third of PR #247's four, and the money one — backlog #26's trigger. Six
     # targets in the PURE halves: the per-occurrence line scan (the r12 blocking defect), the
@@ -3025,7 +3025,21 @@ def _self_test() -> int:
     # ⟳ MERGE of master (#297) into this branch: 592, which is master's total plus this
     # branch's additions. DERIVED from the dict, not added up from either side's
     # narration — both blocks above are history and neither knew about the other.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 592)
+    # ⟳ SECOND MERGE of master into this branch: 592 -> 597. ⚠ ONE PR, NOT THREE — the first
+    # draft of this line said "(#296, #297, #298)" because that is what master had merged since
+    # the branch opened, and `git merge-base --is-ancestor` says #296 and #297 were ALREADY in
+    # via the first merge. Only #298 is new, which is why the only foreign delta below is its
+    # `check-guard-coverage.py`. A merge's contents are a measurement, not the PR list. The conflict
+    # was this very case, twice: the branch had moved the line down under three lines of new
+    # narration, so git saw an EMPTY hunk on our side and master's line on theirs and kept both.
+    # Two copies of a total is the failure this case exists to catch, arriving in the case
+    # itself. Resolved by keeping ONE line and DERIVING its number from the merged dict
+    # (`sum(EXPECTED_MUTATIONS.values())` read with `ast`), never by adding 580 + 17 — the
+    # arithmetic happens to agree, and that agreement is a check on the resolution, not its
+    # source. ENTRY COUNT IS 43 ON ALL THREE SIDES and the key sets are identical, so no file
+    # joined or left the manifest here; only per-file counts moved, which is what a merge of
+    # two ordinary RISES should look like.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 597)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
