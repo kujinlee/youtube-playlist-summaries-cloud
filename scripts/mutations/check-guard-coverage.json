@@ -2,32 +2,131 @@
   {
     "name": "the UNCLASSIFIED sweep is dropped, so a new guard reaches the schema undecided",
     "file": "scripts/check-guard-coverage.py",
-    "edits": [["    for name in sorted(live - set(guards)):", "    for name in sorted(set()):"]],
-    "expect": ["a guard in the schema but not classified is caught"]
+    "edits": [
+      [
+        "    for name in sorted(live - set(guards)):",
+        "    for name in sorted(set()):"
+      ]
+    ],
+    "expect": [
+      "a guard in the schema but not classified is caught"
+    ]
   },
   {
     "name": "the STALE sweep is dropped, so a classification outlives the guard it described",
     "file": "scripts/check-guard-coverage.py",
-    "edits": [["    for name in sorted(set(guards) - live):", "    for name in sorted(set() - live):"]],
-    "expect": ["a classified guard no longer in the schema is STALE"]
+    "edits": [
+      [
+        "    for name in sorted(set(guards) - live):",
+        "    for name in sorted(set() - live):"
+      ]
+    ],
+    "expect": [
+      "a classified guard no longer in the schema is STALE"
+    ]
   },
   {
     "name": "the UNJUSTIFIED check is dropped, so a SEQUENCE guard need not say HOW it reconciles",
     "file": "scripts/check-guard-coverage.py",
-    "edits": [["        if not note:", "        if False:"]],
-    "expect": ["a SEQUENCE guard with no reconciliation note is UNJUSTIFIED"]
+    "edits": [
+      [
+        "        if not note:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "a SEQUENCE guard with no reconciliation note is UNJUSTIFIED"
+    ]
   },
   {
     "name": "COVERED_BY needs only ONE token, not every one, so partial coverage passes",
     "file": "scripts/check-guard-coverage.py",
-    "edits": [["        for token in wanted:\n            if not any(token in label for label in labels):",
-               "        for token in wanted[:1]:\n            if not any(token in label for label in labels):"]],
-    "expect": ["COVERED_BY requires EVERY listed token, not just one"]
+    "edits": [
+      [
+        "        for token in wanted:\n            if not any(token in label for label in labels):",
+        "        for token in wanted[:1]:\n            if not any(token in label for label in labels):"
+      ]
+    ],
+    "expect": [
+      "COVERED_BY requires EVERY listed token, not just one"
+    ]
   },
   {
     "name": "MUTATION_EXEMPT stops working, so an exempted guard is still demanded a mutation",
     "file": "scripts/check-guard-coverage.py",
-    "edits": [["        if name in exempt:\n            continue", "        if False:\n            continue"]],
-    "expect": ["MUTATION_EXEMPT suppresses only the mutation requirement"]
+    "edits": [
+      [
+        "        if name in exempt:\n            continue",
+        "        if False:\n            continue"
+      ]
+    ],
+    "expect": [
+      "MUTATION_EXEMPT suppresses only the mutation requirement"
+    ]
+  },
+  {
+    "name": "the scope check stops comparing, so clauses may disagree again",
+    "file": "scripts/check-guard-coverage.py",
+    "edits": [
+      [
+        "        elif got != expected:",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "a clause reading the WIDER set is caught"
+    ]
+  },
+  {
+    "name": "a vanished clause reports clean instead of CANNOT RUN",
+    "file": "scripts/check-guard-coverage.py",
+    "edits": [
+      [
+        "            out.append(f\"CANNOT RUN — the {kind} clause was not found in CATALOG_SQL, so its scope \"",
+        "            out.append(f\"the {kind} clause is absent, which is fine \""
+      ]
+    ],
+    "expect": [
+      "a clause that vanishes is CANNOT RUN, not a pass"
+    ]
+  },
+  {
+    "name": "the clause locator goes back to matching `select '<kind>:`, losing the distinct one",
+    "file": "scripts/check-guard-coverage.py",
+    "edits": [
+      [
+        "    start = sql.find(f\"'{kind}:\")",
+        "    start = sql.find(f\"select '{kind}:\")"
+      ]
+    ],
+    "expect": [
+      "every clause is located, including the `select distinct` one"
+    ]
+  },
+  {
+    "name": "the predicate pin stops comparing, so a narrowing filter can return",
+    "file": "scripts/check-guard-coverage.py",
+    "edits": [
+      [
+        "            extra = sorted(set(predicates.get(kind, [])) - set(allowed))",
+        "            extra = []"
+      ]
+    ],
+    "expect": [
+      "re-adding the `_uq` filter is CAUGHT even though the array is unchanged"
+    ]
+  },
+  {
+    "name": "predicate extraction goes back to reading only the WHERE, so a JOIN narrowing hides",
+    "file": "scripts/check-guard-coverage.py",
+    "edits": [
+      [
+        "        for seg in re.findall(r\"\\b(?:on|where)\\b(.*?)(?=\\bjoin\\b|\\bwhere\\b|$)\", body, re.S):",
+        "        for seg in re.findall(r\"\\bwhere\\b(.*?)(?=\\bjoin\\b|$)\", body, re.S):"
+      ]
+    ],
+    "expect": [
+      "a narrowing moved into a JOIN is CAUGHT"
+    ]
   }
 ]

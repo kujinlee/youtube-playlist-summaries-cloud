@@ -109,7 +109,7 @@ MUTATIONS = [
     # ⚠ ROUND 17 H3, AS A MUTATION. This is the guard whose ABSENCE was measured: with only the
     # update/delete freeze above, a re-record naming a different source is an INSERT, which fires no
     # such trigger, and the probe got a silent UNION — neither the same set nor a raise.
-    ("vas: the INSERT enforcer removed (round 17 H3 — the silent UNION returns)",
+    ("video_artifact_sources_insert_once removed (round 17 H3 — the silent UNION returns)",
      """create trigger video_artifact_sources_insert_once_trg
   after insert on video_artifact_sources
   referencing new table as ins
@@ -119,7 +119,7 @@ MUTATIONS = [
 
     # The other direction: an enforcer that refuses a legitimate multi-row set would make the table's
     # own purpose unreachable. `>` becomes `>=`, so every insert looks like an addition.
-    ("vas: the INSERT enforcer refuses the FIRST set too (multi-source unrepresentable)",
+    ("video_artifact_sources_insert_once refuses the FIRST set too (multi-source unrepresentable)",
      "       > (select count(*) from ins j where j.artifact_id = i.artifact_id)",
      "       >= (select count(*) from ins j where j.artifact_id = i.artifact_id)",
      "the PROVENANCE of artifact", ART),
@@ -644,6 +644,19 @@ create trigger video_generations_freeze_trg""",
     # "the branch reconciles".
     # ⟳ ADR-0007 RE-ANCHORED — the mutation and the rule are untouched; only the lease columns left
     # the `do update` list, and they took the anchor with them.
+    # ⟳ r1 (2026-09-14): the KEYS became visible when all four CATALOG_SQL clauses started reading
+    # one set, and each SEQUENCE key needs the mutation its class demands. Every one of these drops
+    # the RECONCILER — the `on conflict` arbiter — not the key: the key is not what a blameless
+    # second caller collides with, the missing no-op is.
+    # ⚠ THIS ONE'S RECONCILER IS NOT AN `on conflict` — it is the EMPTINESS GUARD around the insert
+    # (04_artifacts.sql:597). A same-set re-statement falls past it to the implicit else, which the
+    # comment at :606-607 calls "the path a crash-retry takes and must NOT be refused". Remove the
+    # condition and the insert runs unconditionally, so the retry collides with the PK.
+    ("video_artifact_sources_pkey: the same-set no-op removed (a crash-retry now duplicates)",
+     "    if not v_existed and v_recorded = '{}'::text[] then",
+     "    if true then",
+     "video_artifact_sources_pkey", ART),
+
     ("video_artifacts_free_uq: the free upsert made blind (branch kept, conflict handling dropped)",
      """    on conflict (workspace_id, video_id, slot) where generation_id is null
     do update set blob_key = excluded.blob_key, state = 'recorded';""",

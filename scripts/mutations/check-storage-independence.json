@@ -8,7 +8,9 @@
         "            if False:"
       ]
     ],
-    "expect": "M1 a storage.* string literal is CAUGHT"
+    "expect": [
+      "M1 a storage.* string literal is CAUGHT"
+    ]
   },
   {
     "name": "the namespace IN-list stops being scanned — the realistic widening escapes",
@@ -19,7 +21,9 @@
         "    for m in []:"
       ]
     ],
-    "expect": "M2 widening the namespace scope is CAUGHT"
+    "expect": [
+      "M2 widening the namespace scope is CAUGHT"
+    ]
   },
   {
     "name": "the equality branch stops comparing to public, so any schema passes",
@@ -30,7 +34,9 @@
         "        if False:"
       ]
     ],
-    "expect": "a scope naming only another schema is CAUGHT"
+    "expect": [
+      "a scope naming only another schema is CAUGHT"
+    ]
   },
   {
     "name": "the derived file set stops following imports, so a NEW gate is never in scope",
@@ -41,7 +47,9 @@
         "        if False:"
       ]
     ],
-    "expect": "M4 a NEW gate importing m4_catalog is in scope without being listed"
+    "expect": [
+      "M4 a NEW gate importing m4_catalog is in scope without being listed"
+    ]
   },
   {
     "name": "an empty derived set reports clean instead of CANNOT RUN",
@@ -52,7 +60,9 @@
         "        return []"
       ]
     ],
-    "expect": "an EMPTY derived set is CANNOT RUN, not a clean sweep"
+    "expect": [
+      "an EMPTY derived set is CANNOT RUN, not a clean sweep"
+    ]
   },
   {
     "name": "a gate that does not parse is skipped silently instead of refusing",
@@ -63,7 +73,9 @@
         "            pass"
       ]
     ],
-    "expect": "an unparseable gate is CANNOT RUN"
+    "expect": [
+      "an unparseable gate is CANNOT RUN"
+    ]
   },
   {
     "name": "the word boundary is dropped, so mystorage.x false-fires",
@@ -74,7 +86,9 @@
         "STORAGE_REF = re.compile(r\"\\\"?storage\\\"?\\s*\\.\\s*\\\"?\\w\", re.I)"
       ]
     ],
-    "expect": "`mystorage.x` is not a storage reference"
+    "expect": [
+      "`mystorage.x` is not a storage reference"
+    ]
   },
   {
     "name": "the SQL comment stripper stops running, so a comment false-fires",
@@ -85,7 +99,9 @@
         "        body = body"
       ]
     ],
-    "expect": "a SQL `--` comment mentioning it is NOT"
+    "expect": [
+      "a SQL `--` comment mentioning it is NOT"
+    ]
   },
   {
     "name": "the shell comment stripper stops running",
@@ -96,7 +112,9 @@
         "        body = src"
       ]
     ],
-    "expect": "a shell `#` comment is NOT"
+    "expect": [
+      "a shell `#` comment is NOT"
+    ]
   },
   {
     "name": "the suite's shell variables stop being expanded, so gates 1 and 2 vanish again",
@@ -107,7 +125,9 @@
         "        for var, val in []:"
       ]
     ],
-    "expect": "r1 HIGH: a gate invoked through a shell VARIABLE is in scope"
+    "expect": [
+      "r1 HIGH: a gate invoked through a shell VARIABLE is in scope"
+    ]
   },
   {
     "name": "migrations stop being excluded, so the guard fires on its own premise",
@@ -118,7 +138,9 @@
         "    return rel.startswith(\"scripts/ci/\")"
       ]
     ],
-    "expect": "a MIGRATION is the subject, not a gate — excluded"
+    "expect": [
+      "a MIGRATION is the subject, not a gate — excluded"
+    ]
   },
   {
     "name": "the transitive step stops, so a file named only by another gate's variable escapes",
@@ -129,7 +151,9 @@
         "        frontier = []"
       ]
     ],
-    "expect": "r2 HIGH: a file named only by ANOTHER GATE's variable is in scope"
+    "expect": [
+      "r2 HIGH: a file named only by ANOTHER GATE's variable is in scope"
+    ]
   },
   {
     "name": "CI scaffolding stops being excluded, so the guard flags the fixture it certifies",
@@ -140,7 +164,9 @@
         "NOT_A_GATE_FILES = ()"
       ]
     ],
-    "expect": "CI SCAFFOLDING is the subject too — the fixture that CREATES storage tables"
+    "expect": [
+      "CI SCAFFOLDING is the subject too — the fixture that CREATES storage tables"
+    ]
   },
   {
     "name": "the variable resolver narrows back to a single hard-coded name",
@@ -151,7 +177,9 @@
         "            rootish = {\"REPO\"}"
       ]
     ],
-    "expect": "r2 MEDIUM 1: a COMPUTED root under any name still resolves"
+    "expect": [
+      "r2 MEDIUM 1: a COMPUTED root under any name still resolves"
+    ]
   },
   {
     "name": "the file exclusion widens back to the whole scripts/ci directory",
@@ -162,7 +190,9 @@
         "NOT_A_GATE = (\"supabase/\", \"scripts/ci/\")"
       ]
     ],
-    "expect": "only the FIXTURE is scaffolding, not its whole directory"
+    "expect": [
+      "only the FIXTURE is scaffolding, not its whole directory"
+    ]
   },
   {
     "name": "the root-like PREDICATE matches everything, so any variable is stripped",
@@ -173,6 +203,8 @@
         "r\".*\""
       ]
     ],
-    "expect": "r3 MEDIUM: a mktemp variable is NOT stripped into a same-named repo file"
+    "expect": [
+      "r3 MEDIUM: a mktemp variable is NOT stripped into a same-named repo file"
+    ]
   }
 ]

@@ -8375,3 +8375,159 @@ NOTHING — portable practice §22, in the anchor rather than the case.
 
 Guard population across four rounds: 12 -> 21 -> 27 -> 30, every widening bought by a
 measured miss rather than by caution.
+
+## 2026-09-14
+A check that verifies "every safety rule in the database has been deliberately
+classified" was quietly ignoring five of them — on a table it builds itself. It had
+been reporting all-clear over 41 rules while five sat outside the question it asks.
+Fixed; it now covers 46. Separately measured, and deliberately left alone: the same
+check cannot see any of the 25 safety rules on the money tables, which is a decision
+about what that check is FOR rather than a bug, and now has a price tag.
+<!--tech-->
+Branch `guard-coverage-scope`. Backlog #29's trigger fired when the schema gates
+reached CI (PR #297), which is what made this measurable.
+
+**Half one — CLOSED, and it was never about migrations.** `video_artifact_sources` is
+created by M4's own `04_artifacts.sql`, so `check-guard-coverage.py` BUILT the table
+and then declined to enumerate it — `TRIGGER_TABLES` omitted it. Invisible: three
+trigger functions (`video_artifact_sources_append_only`,
+`video_artifact_sources_insert_once`, `art_summary_has_no_source`) and two FKs
+(`vas_artifact_fk`, `vas_source_generation_fk`), while the gate printed **✅ every
+guard classified** over 41. Now 46, all classified.
+
+⚠ `art_summary_has_no_source` is the sharpest of the five: the script's own deletion
+note records it verified ABSENT as a CONSTRAINT in T5 — true — and it was reborn the
+same day as a constraint TRIGGER that nothing re-enumerated.
+
+⚠ `insert_once` also read UNMUTATED. Its mutations exist; the gate reads only each
+mutation's LABEL, by `ast`, deliberately — round 9 tightened it after a guard name
+surviving in a COMMENT satisfied the ratchet. The labels said "vas: the INSERT
+enforcer". Renamed to name the guard; both go RED in the suite.
+
+⭐ **Third time this enumeration has been short while the gate reported complete** —
+round 9 (`resolve_workspace_from_playlist`), round 11 (the FK clause), now.
+
+**Half two — OPEN, and now sized.** 25 CHECK constraints across 8 tables are outside
+the gate's scope, and they are the money tables: `guardrail_config` (13),
+`correction_spend`, `quota_allowance`, `serve_model_charge`, `serve_owner_budget`,
+`spend_ledger`, `usage_counters`, `share_tokens`. Scoped 20/45 checks, 8/11 trigger
+functions. ⚠ Left alone deliberately: this gate is named for the blob-addressing spec,
+and widening it to all of `public` either re-points it at a different subject or argues
+for a second gate. That is a scope decision, not a defect.
+
+    guard coverage  41 -> 46 guards, self-test 16/16
+    suite           73 ✓ / 0 ✗, 15/15, exit 0
+    mutate-schema   58/58 behaved as expected
+
+## 2026-09-14
+Both reviewers independently found the same problem with my fix — the first time
+they've overlapped in five rounds — and it was that I'd fixed one quarter of the thing
+that was broken. The check has four separate questions it asks the database, and they
+disagreed about which tables they were asking about, so a table could be visible to one
+and invisible to the other three. All four now agree, and the check went from seeing 41
+safety rules to 55. The component that had been wrong three times before also had no
+test of its own; it does now.
+<!--tech-->
+Codex r1: 1 Blocking, 1 High, 1 Medium. Claude r1: 1 Blocking, 1 High, 2 Medium, 2 Low.
+All accepted and fixed. ⭐ Both halves ran CONCURRENTLY on separate databases with the
+tree frozen and neither committed until both finished — the fix for the false Blocking
+and verdict-leakage measured on the previous branch. Neither had a disclosure to make.
+
+**The Blocking, found by both.** `CATALOG_SQL` asks four questions over three scopes:
+CHECKs on `TABLES`, FKs/triggers on `TRIGGER_TABLES`, unique indexes on `TABLES` AND
+only if named `%_uq`. My first commit widened one. That is round 9's defect, round 11's,
+and mine — my own commit message said "the third time" while adding the fourth.
+
+⚠ The `_uq` filter was a NAMING CONVENTION acting as a scope rule: a unique constraint
+on `video_generations` — a table already in scope — was invisible purely for declining
+to be called `_uq`.
+
+⭐ **Codex's invisible PK is the reconciler Claude's HIGH says my note denied.**
+`video_artifact_sources_pkey` is why an idempotent retry succeeds: it inserts nothing,
+so `insert_once`'s transition table is empty and the trigger never fires. The gate
+could not see the object its own classification rests on.
+
+**The scope decision.** One unified set pulled in 17 guards including `jobs_status_chk`
+and `playlists_pkey` — a blob-addressing ratchet policing the jobs queue. Split the way
+M4's own manifest does: OWNED (5 relations, all four clauses) vs FOREIGN (videos, jobs,
+playlists, profiles — only the triggers and FKs M4 adds). **41 → 55 guards**, nine keys
+classified from their WRITERS.
+
+**The component with no falsifier now has one.** All 16 cases and all 5 mutations drove
+`evaluate`; nothing tested `CATALOG_SQL`. `clause_scopes()`/`scope_problems()` read
+which table set each clause interpolates and refuse when they disagree — pure, no
+database needed. Self-test 16 → 27, mutations 5 → 8.
+
+⚠ Stated rather than skipped: three of four new SEQUENCE keys could not be
+mutation-covered. I wrote the mutations, ran them, and all three went GREEN — the
+corpus never exercises the path (a profile cannot be inserted twice; a retry
+short-circuits before re-inserting the generation). They are in `MUTATION_EXEMPT` with
+the measured reason each, which is what that field exists for.
+
+    guards 41 -> 55 · self-test 16 -> 27 · mutations 5 -> 8, all attributable
+    suite 73 ✓ / 0 ✗, 15/15 · mutate-schema 59/59 · EXPECTED_MUTATIONS 575 -> 578
+
+## 2026-09-14
+A second review pass found that the test I added to stop the problem recurring only
+checked half of what "scope" means — it watched which tables a query asks about, but
+not the extra conditions that can quietly exclude things from those same tables. So the
+original bug could have come back invisibly. Fixed, and the fix itself immediately
+produced a smaller version of the same family of mistake, which the repo's own guards
+caught. Everything green.
+<!--tech-->
+Codex r2: `docs/reviews/codex/guard-coverage-scope-r2-codex.md` — 1 Medium, no Blocking
+or High. ⚠ `REVIEW GAP: claude` recorded. Its `--mutate .` run: 578 mutations, 578
+killed, 578 attributed, 0 survivors.
+
+**MEDIUM.** `clause_scopes()` compares the table ARRAY, so the `_uq` defect can return
+without touching it: `… and indisunique and indexrelid::regclass::text like '%_uq'`
+leaves the array identical and narrows the scope. `clause_predicates()` now pins what
+each clause may test besides its array. Measured: shipped CLEAN, the `_uq` filter back
+is CAUGHT and named.
+
+⚠ **The fix copied four lines.** `clause_predicates` duplicated `clause_scopes`'s
+locator — making a mutation anchor ambiguous and creating a second implementation of one
+rule *inside the file arguing that four clauses must not disagree*. Extracted to
+`_clause_body()`: one locator, two readers.
+
+⚠ Then `check-fixture-variation.py` refused the new parameter because every call passed
+`CATALOG_SQL`. The two cases added to satisfy it are the only ones proving the extractor
+finds a narrowing filter in a query it has never seen — a better test than the ones
+written first.
+
+    self-test 27 -> 34 · guard-coverage mutations 8 -> 9, all attributable
+    suite 73 ✓ / 0 ✗, 15/15 · EXPECTED_MUTATIONS 578 -> 579 · eight repo guards rc=0
+
+Both reviewers clean on everything else, including the nine key classifications and the
+three MUTATION_EXEMPT claims — Codex tried to construct a corpus path that invalidates
+one and could not.
+
+## 2026-09-14
+Third review pass, and the reviewer found the one attack I had not thought of — I had
+predicted two ways someone could sneak the old bug back in, asked it to try those, and
+it reported both were already blocked while demonstrating a third that worked. Fixed.
+That is the third round in a row where the useful finding was in the previous round's
+repair rather than in the original work.
+<!--tech-->
+Codex r3: `docs/reviews/codex/guard-coverage-scope-r3-codex.md` — 1 Medium, no Blocking
+or High. ⚠ `REVIEW GAP: claude` recorded.
+
+**MEDIUM.** `clause_predicates()` read only the text after the first `where`, so the
+`_uq` narrowing simply moves earlier:
+
+    join pg_class c on c.oid = indexrelid and c.relname like '%_uq'
+     where indrelid = any (array[...]) and indisunique
+
+Measured on the full query: table array unchanged, predicates returned only
+`['indisunique']`, verdict CLEAN. Conditions now come from every `on` AND `where`.
+
+⚠ Consequence worth stating: the trigger clause's own join condition `p.oid = t.tgfoid`
+is now visible, and is DECLARED in `EXPECTED_PREDICATES` rather than exempted —
+declaring it is what makes an *added* join condition visible.
+
+Not fixed, deliberately: a literal `union all` inside a clause could truncate
+`_clause_body`. It fails closed and no clause contains that text; a guard against a
+string nobody writes is a rule with no falsifier.
+
+    self-test 34 -> 37 · mutations 9 -> 10, all attributable
+    suite 73 ✓ / 0 ✗, 15/15 · nine repo guards rc=0 · EXPECTED_MUTATIONS 579 -> 580
