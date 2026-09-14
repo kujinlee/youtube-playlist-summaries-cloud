@@ -109,7 +109,7 @@ MUTATIONS = [
     # ⚠ ROUND 17 H3, AS A MUTATION. This is the guard whose ABSENCE was measured: with only the
     # update/delete freeze above, a re-record naming a different source is an INSERT, which fires no
     # such trigger, and the probe got a silent UNION — neither the same set nor a raise.
-    ("vas: the INSERT enforcer removed (round 17 H3 — the silent UNION returns)",
+    ("video_artifact_sources_insert_once removed (round 17 H3 — the silent UNION returns)",
      """create trigger video_artifact_sources_insert_once_trg
   after insert on video_artifact_sources
   referencing new table as ins
@@ -119,7 +119,7 @@ MUTATIONS = [
 
     # The other direction: an enforcer that refuses a legitimate multi-row set would make the table's
     # own purpose unreachable. `>` becomes `>=`, so every insert looks like an addition.
-    ("vas: the INSERT enforcer refuses the FIRST set too (multi-source unrepresentable)",
+    ("video_artifact_sources_insert_once refuses the FIRST set too (multi-source unrepresentable)",
      "       > (select count(*) from ins j where j.artifact_id = i.artifact_id)",
      "       >= (select count(*) from ins j where j.artifact_id = i.artifact_id)",
      "the PROVENANCE of artifact", ART),

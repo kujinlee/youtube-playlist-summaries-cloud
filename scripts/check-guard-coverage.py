@@ -58,7 +58,16 @@ TABLES = ("video_artifacts", "video_generations")
 #
 # An absence is only visible against an enumerated whole — and the whole has to be "every table this
 # spec puts a guard on", not the two that were interesting the day the query was typed.
-TRIGGER_TABLES = TABLES + ("videos", "jobs", "workspace_videos", "playlists", "profiles")
+# ⟳ 2026-09-14 (backlog #29, whose trigger fired when the schema gates reached CI) —
+# `video_artifact_sources` WAS MISSING, and this is the THIRD time this list has been too
+# short while the gate printed "every guard classified". Round 9 added four tables after
+# `resolve_workspace_from_playlist` was invisible; round 11 fixed the FK clause for the same
+# reason; this is the same defect on the table 04_artifacts.sql adds LAST.
+# ⚠ NOT A MIGRATIONS PROBLEM — `video_artifact_sources` is created by M4's own schema files,
+# so the gate BUILT it and then declined to look at it. MEASURED against a fully migrated
+# database: three trigger functions on it, none of them in GUARDS, gate green at 41 guards.
+TRIGGER_TABLES = TABLES + ("videos", "jobs", "workspace_videos", "playlists", "profiles",
+                           "video_artifact_sources")
 
 # Every guard the schema ships, with its class. A guard present in the database and
 # absent here FAILS THE RATCHET - that is the whole point: adding a guard forces a
@@ -128,6 +137,28 @@ GUARDS: dict[str, tuple[str, str]] = {
     # added to a second playlist CLOBBERED the shared corrections (measured round 9). ADR-0011 (T2)
     # deletes the trigger and the denormalized copy it synchronised, so the reconciler has nothing
     # left to reconcile. VERIFIED ABSENT by this ratchet reporting it STALE before deletion.
+    # ── video_artifact_sources ⟳ 2026-09-14: reached the schema unclassified because the TABLE was
+    # outside TRIGGER_TABLES, not because anyone judged them. ⚠ `art_summary_has_no_source` is the
+    # sharpest case: the deletion note above records it verified ABSENT as a CONSTRAINT in T5 — true,
+    # and it was reborn the same day as a constraint TRIGGER, which nothing re-enumerated.
+    # ⟳ 2026-09-14: the two FKs surfaced with the table — the FK clause is DERIVED from
+    # TRIGGER_TABLES (round 11 made it so, for exactly this reason), so widening the trigger
+    # list widened this too. Referential integrity reads only the row being written.
+    "vas_artifact_fk":                    ("SHAPE", ""),
+    "vas_source_generation_fk":           ("SHAPE", ""),
+    "video_artifact_sources_append_only": ("SHAPE", ""),   # before update|delete, per row: rejects
+                                                           # the operation itself, like its sibling
+                                                           # video_artifacts_append_only
+    "art_summary_has_no_source":          ("SHAPE", ""),   # reads the inserted row and its parent's
+                                                           # kind; a merely-SECOND caller inserting a
+                                                           # well-formed row is untouched
+    "video_artifact_sources_insert_once": (
+        "SEQUENCE",
+        "does NOT reconcile, and that is the design: provenance is immutable, so a second statement "
+        "is a caller bug rather than a race. `after insert ... for each statement` compares the "
+        "table's existing rows for the artifact against this statement's, so ALL sources must arrive "
+        "in ONE statement; the error names both sets ({recorded} vs {added}) so the loser can see "
+        "what it collided with. No retry succeeds, and none should"),
     "forbid_collecting_current": (
         "SEQUENCE",
         "the sweeper selects THROUGH video_generations_collectable; trigger kept as a backstop "

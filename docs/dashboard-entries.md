@@ -8375,3 +8375,46 @@ NOTHING — portable practice §22, in the anchor rather than the case.
 
 Guard population across four rounds: 12 -> 21 -> 27 -> 30, every widening bought by a
 measured miss rather than by caution.
+
+## 2026-09-14
+A check that verifies "every safety rule in the database has been deliberately
+classified" was quietly ignoring five of them — on a table it builds itself. It had
+been reporting all-clear over 41 rules while five sat outside the question it asks.
+Fixed; it now covers 46. Separately measured, and deliberately left alone: the same
+check cannot see any of the 25 safety rules on the money tables, which is a decision
+about what that check is FOR rather than a bug, and now has a price tag.
+<!--tech-->
+Branch `guard-coverage-scope`. Backlog #29's trigger fired when the schema gates
+reached CI (PR #297), which is what made this measurable.
+
+**Half one — CLOSED, and it was never about migrations.** `video_artifact_sources` is
+created by M4's own `04_artifacts.sql`, so `check-guard-coverage.py` BUILT the table
+and then declined to enumerate it — `TRIGGER_TABLES` omitted it. Invisible: three
+trigger functions (`video_artifact_sources_append_only`,
+`video_artifact_sources_insert_once`, `art_summary_has_no_source`) and two FKs
+(`vas_artifact_fk`, `vas_source_generation_fk`), while the gate printed **✅ every
+guard classified** over 41. Now 46, all classified.
+
+⚠ `art_summary_has_no_source` is the sharpest of the five: the script's own deletion
+note records it verified ABSENT as a CONSTRAINT in T5 — true — and it was reborn the
+same day as a constraint TRIGGER that nothing re-enumerated.
+
+⚠ `insert_once` also read UNMUTATED. Its mutations exist; the gate reads only each
+mutation's LABEL, by `ast`, deliberately — round 9 tightened it after a guard name
+surviving in a COMMENT satisfied the ratchet. The labels said "vas: the INSERT
+enforcer". Renamed to name the guard; both go RED in the suite.
+
+⭐ **Third time this enumeration has been short while the gate reported complete** —
+round 9 (`resolve_workspace_from_playlist`), round 11 (the FK clause), now.
+
+**Half two — OPEN, and now sized.** 25 CHECK constraints across 8 tables are outside
+the gate's scope, and they are the money tables: `guardrail_config` (13),
+`correction_spend`, `quota_allowance`, `serve_model_charge`, `serve_owner_budget`,
+`spend_ledger`, `usage_counters`, `share_tokens`. Scoped 20/45 checks, 8/11 trigger
+functions. ⚠ Left alone deliberately: this gate is named for the blob-addressing spec,
+and widening it to all of `public` either re-points it at a different subject or argues
+for a second gate. That is a scope decision, not a defect.
+
+    guard coverage  41 -> 46 guards, self-test 16/16
+    suite           73 ✓ / 0 ✗, 15/15, exit 0
+    mutate-schema   58/58 behaved as expected
