@@ -136,10 +136,32 @@
     "file": "scripts/check-storage-independence.py",
     "edits": [
       [
-        "NOT_A_GATE = (\"supabase/\", \"scripts/ci/\")",
-        "NOT_A_GATE = (\"supabase/\",)"
+        "NOT_A_GATE_FILES = (\"scripts/ci/storage-service-fixture.sql\",)",
+        "NOT_A_GATE_FILES = ()"
       ]
     ],
     "expect": "CI SCAFFOLDING is the subject too — the fixture that CREATES storage tables"
+  },
+  {
+    "name": "the variable resolver narrows back to a single hard-coded name",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "            body = re.sub(r\"\\$\\{?[A-Za-z_][A-Za-z0-9_]*\\}?/\", \"\", body)",
+        "            body = re.sub(r\"\\$\\{?REPO\\}?/\", \"\", body)"
+      ]
+    ],
+    "expect": "r2 MEDIUM 1: a COMPUTED root under any name still resolves"
+  },
+  {
+    "name": "the file exclusion widens back to the whole scripts/ci directory",
+    "file": "scripts/check-storage-independence.py",
+    "edits": [
+      [
+        "NOT_A_GATE = (\"supabase/\",)",
+        "NOT_A_GATE = (\"supabase/\", \"scripts/ci/\")"
+      ]
+    ],
+    "expect": "only the FIXTURE is scaffolding, not its whole directory"
   }
 ]

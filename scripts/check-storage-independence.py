@@ -88,11 +88,20 @@ NSPNAME_IN = re.compile(r"nspname\s+in\s*\(([^)]*)\)", re.I)
 #                   which is its entire job. Reporting it as "a gate reads storage" would mean the
 #                   guard flags the very file whose safety it exists to certify (r2 HIGH fix).
 # The population is things that read the catalog to reach a VERDICT. Nothing else.
-NOT_A_GATE = ("supabase/", "scripts/ci/")
+NOT_A_GATE = ("supabase/",)
+
+# ⟳ r2 MEDIUM 2 (claude): `scripts/ci/` used to be excluded as a DIRECTORY, justified by ONE file in
+# it. That directory also holds `seed-corpus.sql`, which runs against the database the gates then
+# read — so a `storage.*` read planted there was MISSED while the identical read in
+# `docs/superpowers/specs/m4/seed-assertion-corpus.sql` was CAUGHT. Two seeds, opposite treatment,
+# and the difference was which directory they lived in rather than anything about what they do.
+# The exclusion is now BY FILE, and the list is short enough to read: a file whose JOB is to create
+# the storage tables cannot also be evidence that nothing reads them.
+NOT_A_GATE_FILES = ("scripts/ci/storage-service-fixture.sql",)
 
 
 def _is_subject(rel: str) -> bool:
-    return rel.startswith(NOT_A_GATE)
+    return rel.startswith(NOT_A_GATE) or rel in NOT_A_GATE_FILES
 
 
 def gate_files(root: pathlib.Path = ROOT) -> list[pathlib.Path]:
@@ -164,9 +173,19 @@ def gate_files(root: pathlib.Path = ROOT) -> list[pathlib.Path]:
                 body = q.read_text(encoding="utf-8")
             except OSError:
                 continue
+            # ⟳ r2 MEDIUM 1 (claude): this used to substitute assignments and then strip the
+            # literal identifier `REPO`, because `run-schema-assertions.sh` happens to spell its root
+            # that way. MEASURED by the reviewer: rename `REPO` to `BASEDIR` in that file — changing
+            # nothing else, the gate still names the same seed — and the seed leaves the population
+            # silently. Population 27 -> 26, guard still green. Written to the shape of the one file
+            # it was fixing, which is the THIRD time on this branch.
+            # Now: substitute every assignment, then strip ANY remaining `$VAR/` or `${VAR}/` prefix,
+            # whatever it is called. A path that survives as a real file is in scope; one that does
+            # not was never a path.
             for var, val in re.findall(r'^([A-Z_]+)="([^"]*)"', body, re.M):
                 body = body.replace(f'"${var}"', f'"{val}"').replace(f'"${{{var}}}"', f'"{val}"')
-            body = re.sub(r"\$\{?REPO\}?/", "", body).replace('"$REPO/', '"')
+                body = body.replace(f'${var}/', f'{val}/').replace(f'${{{var}}}/', f'{val}/')
+            body = re.sub(r"\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/", "", body)
             for m2 in re.findall(r"[\w./-]+\.(?:sh|py|sql)", body):
                 cand = root / m2.lstrip("./")
                 if not cand.is_file() or cand.suffix not in (".sh", ".py", ".sql"):
@@ -450,6 +469,38 @@ def self_test() -> int:
               "seed.sql" in names2, True)
         check("r2 HIGH: and its storage read is REPORTED",
               any("seed.sql" in f for f in problems(sorted(gate_files(root)), root)), True)
+        # ⟳ r2 MEDIUM 1 (claude): the variable name must not matter. Same fixture, root spelled
+        # `$BASEDIR` instead of `$REPO` — the rename is faithful, the gate names the same file.
+        (spec / "helper2.sh").write_text('BASEDIR="docs/elsewhere"\ncat "$BASEDIR/seed2.sql"\n')
+        (root / "docs" / "elsewhere" / "seed2.sql").write_text("select 1 from storage.objects;\n")
+        (root / "scripts" / "check-schema-gates.sh").write_text(
+            (root / "scripts" / "check-schema-gates.sh").read_text() + 'run "3/15 z" "$SPEC/helper2.sh"\n')
+        check("r2 MEDIUM 1: a root spelled $BASEDIR resolves as well as $REPO",
+              "seed2.sql" in {q.name for q in gate_files(root)}, True)
+
+        # ⚠ AND A ROOT THAT IS COMPUTED, NOT ASSIGNED LITERALLY — which is how the real file does it:
+        # `run-schema-assertions.sh` sets `REPO="$(cd "$(dirname "$0")/.." && pwd)"`. The
+        # literal-assignment substitution cannot see that value, so ONLY the generic `$VAR/` strip
+        # keeps such a path in scope. Measured: without this case the narrowing mutation SURVIVED,
+        # because the fixture assigned its root literally and never exercised the generic path.
+        # ⚠ UNQUOTED assignment, deliberately: `TOPDIR="$(…)"` is PARTIALLY captured by the
+        # literal-assignment regex (it stops at the inner quote) and the resulting garbage
+        # substitution happens to leave a matchable path — so the narrowing mutation SURVIVED
+        # against that fixture. Measured twice. Unquoted, nothing but the generic strip can save it,
+        # which is the clause under test.
+        (spec / "helper3.sh").write_text(
+            'TOPDIR=$(cd "$(dirname "$0")/.." && pwd)\ncat "$TOPDIR/docs/elsewhere/seed3.sql"\n')
+        (root / "docs" / "elsewhere" / "seed3.sql").write_text("select 1 from storage.buckets;\n")
+        (root / "scripts" / "check-schema-gates.sh").write_text(
+            (root / "scripts" / "check-schema-gates.sh").read_text() + 'run "4/15 w" "$SPEC/helper3.sh"\n')
+        check("r2 MEDIUM 1: a COMPUTED root under any name still resolves",
+              "seed3.sql" in {q.name for q in gate_files(root)}, True)
+
+        # ⟳ r2 MEDIUM 2 (claude): the exclusion is BY FILE, so a sibling seed in the same directory
+        # stays in scope. Two seeds must not get opposite treatment for living in different folders.
+        check("only the FIXTURE is scaffolding, not its whole directory",
+              _is_subject("scripts/ci/seed-corpus.sql"), False)
+
         check("CI SCAFFOLDING is the subject too — the fixture that CREATES storage tables",
               _is_subject("scripts/ci/storage-service-fixture.sql"), True)
         check("...but a gate under scripts/ is not scaffolding",

@@ -77,9 +77,21 @@ PULL_ATTEMPTS="${SCHEMA_DB_PULL_ATTEMPTS:-5}"
 # script cannot read. The blast radius is now "throwaway databases this project creates" rather than
 # "anything on the machine".
 refuses_name() { # 0 = REFUSE this name
+  # ⛔ EVERY CHARACTER IS CHECKED, NOT JUST THE FIRST — ⟳ r2 MEDIUM 3 (claude), measured.
+  # The previous rule was `m4_[a-z0-9_]*`, and a shell glob's `[class]` binds ONE character: the `*`
+  # after it matched anything at all. So `m4_UPPER`, `m4_x-y-z`, `m4_a b` and `m4_a;rm` were all
+  # ALLOWED into `docker rm -f`, while the refusal message promised
+  # "m4_<lowercase/digits/underscores>". The message was not describing the code.
+  # The reject-first form below cannot have that bug: anything containing a character outside the
+  # class is refused before the prefix is even considered.
   case "$1" in
     supabase_*|*_supabase*|postgres|"") return 0 ;;   # kept: explicit, and first
-    m4_[a-z0-9_]*) return 1 ;;                        # the only shape this script may destroy
+    # ⚠ THE CLASS IS ENUMERATED, NOT A RANGE — measured here, twice in one minute. `*[!a-z0-9_]*`
+    # still ALLOWED `m4_UPPER`, because a bracket RANGE is collation-dependent: outside the C locale
+    # `a-z` can cover uppercase, so the negation lets it through. It built a real container before
+    # the case caught it. Explicit characters cannot be re-collated.
+    *[!abcdefghijklmnopqrstuvwxyz0123456789_]*) return 0 ;;   # ANY char outside the class -> REFUSE
+    m4_?*) return 1 ;;                                # m4_ plus at least one more character
     *) return 0 ;;                                    # unrecognised -> REFUSE, never delete
   esac
 }
@@ -251,7 +263,12 @@ main() {
 self_test() {
   local pass=0 fail=0
   t() { # name expected actual
-    if [ "$2" = "$3" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "  ✗ $1 — wanted '$2', got '$3'"; fi
+    # ⟳ r2 LOW 1 (claude): the same `[FAIL] <case>` contract as the Python guards. LATENT today —
+    # `check-plan-code.py:487` runs a mutation target as `[sys.executable, name, "--self-test"]`, so a
+    # shell script cannot be a mutation target and no manifest names one. Written in the canonical
+    # form anyway, because this branch already paid for the gap once: eleven kills went unattributed
+    # in CI, and the shape was invisible until then.
+    if [ "$2" = "$3" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "  [FAIL] $1: got '$3', want '$2'"; fi
   }
   # The name guard is the destructive one, so it gets most of the cases.
   refuses_name "supabase_db_youtube-playlist-summaries-cloud" && r=REFUSE || r=allow
@@ -274,6 +291,21 @@ self_test() {
   t "five attempts means four waits" "5 10 20 40 " "$(backoff_delays 5)"
   t "one attempt means no wait at all" "" "$(backoff_delays 1)"
   t "the delays double, so patience grows without a long fixed sleep" "5 10 " "$(backoff_delays 3)"
+
+  # ⟳ r2 MEDIUM 3 (claude): every one of these was ALLOWED by the `m4_[a-z0-9_]*` glob, because a
+  # glob class binds ONE character and the trailing `*` matched the rest.
+  refuses_name "m4_UPPER_TAIL" && r=REFUSE || r=allow
+  t "an uppercase tail is REFUSED" REFUSE "$r"
+  refuses_name "m4_x-y-z" && r=REFUSE || r=allow
+  t "a hyphenated tail is REFUSED" REFUSE "$r"
+  refuses_name "m4_a b" && r=REFUSE || r=allow
+  t "a name containing a space is REFUSED" REFUSE "$r"
+  refuses_name "m4_a;rm" && r=REFUSE || r=allow
+  t "a name carrying a shell metacharacter is REFUSED" REFUSE "$r"
+  refuses_name "m4_" && r=REFUSE || r=allow
+  t "the bare prefix with an empty tail is REFUSED" REFUSE "$r"
+  refuses_name "m4_schema_gates_2" && r=REFUSE || r=allow
+  t "a legitimate CI name with digits and underscores is allowed" allow "$r"
 
   # ⟳ r1 MEDIUM (codex): the allow-list's own cases. Each of these was ALLOWED by the deny-list.
   refuses_name "redis" && r=REFUSE || r=allow
