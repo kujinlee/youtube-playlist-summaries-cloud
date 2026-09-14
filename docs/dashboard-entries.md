@@ -8311,3 +8311,31 @@ appears in the output AND a `✗` is present" — a second implementation of the
 attribution rule, more generous than the only one that counts. Re-verified by
 importing `check-plan-code.parse_fail_names` itself: control parses to `[]`, and
 11/11 mutations name their case.
+
+## 2026-09-13 [needs-you]
+The nightly production-drift check is built and works, but it needs one credential
+that only you can add, so I have deliberately NOT switched on its nightly schedule.
+Arming it now would mean a failed job every night until the credential exists, and a
+check that fails every night is one people learn to ignore. It can still be run by
+hand at any time, and turning the schedule on is a one-line change once the secret is
+there. Everything else in this change is finished and green.
+<!--tech-->
+`prod-drift` needs repository secret `CLAUDE_RO_DATABASE_URL` (a read-only role — see
+the `claude_ro` recipe). Without it the job refuses loudly (rc=2, "TREAT THIS AS NOT
+RUN"); it never reports a clean production.
+
+⚠ The distinction that keeps the decision honest: the job is not SCHEDULED to run on
+its own until it can pass. It does not quietly report success — not arming an alarm is
+different from arming one that lies. Backlog #56's measured verdict (a gate that fires
+on things people did not change gets disabled) and portable practice §23 both point the
+same way.
+
+To arm, after adding the secret — `.github/workflows/schema-gates.yml`:
+
+    schedule:
+      - cron: '0 9 * * *'      # 09:00 UTC daily
+
+`workflow_dispatch` is retained, so the whole path can be exercised on demand:
+`gh workflow run "Schema gates"`. The job's four steps were already driven locally
+end to end — credential guard, psql client container, the drift check reaching the
+network layer, and cleanup.

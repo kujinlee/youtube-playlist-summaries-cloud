@@ -103,9 +103,22 @@ on:
       - 'docs/superpowers/specs/2026-08-03-stable-blob-addressing/**'
       - 'docs/superpowers/specs/m4/**'
       - '.github/workflows/schema-gates.yml'
-  schedule:
-    # 09:00 UTC daily. Production drift only — see the job's own comment.
-    - cron: '0 9 * * *'
+  # ⛔ THE SCHEDULE IS DELIBERATELY NOT ARMED YET, AND THIS IS NOT THE SILENT-SKIP ANTIPATTERN.
+  # `prod-drift` needs the repository secret CLAUDE_RO_DATABASE_URL, which does not exist. Arming the
+  # cron now would fail at 09:00 UTC every night, for the same reason, until someone adds it — and a
+  # gate that cries wolf nightly is one people learn to scroll past, which is backlog #56's measured
+  # verdict and this repo's portable practice §23.
+  #
+  # ⚠ The distinction that keeps this honest: the job does NOT quietly report success. It still
+  # refuses loudly (rc=2, "TREAT THIS AS NOT RUN") whenever it runs without the credential — it is
+  # simply not SCHEDULED to run on its own until it can pass. Not arming an alarm is different from
+  # arming one that lies.
+  #
+  # TO ARM IT — one line, after adding the secret:
+  #   schedule:
+  #     - cron: '0 9 * * *'      # 09:00 UTC daily
+  # Until then it is reachable by hand (`gh workflow run "Schema gates"`), and `workflow_dispatch`
+  # exists precisely so the path can be exercised on demand rather than only by cron.
   workflow_dispatch:
 
 # ⚠ `github.event_name` IS IN THE KEY, and it is load-bearing — ⟳ r1 MEDIUM 5 (claude). Without it
