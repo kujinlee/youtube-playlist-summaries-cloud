@@ -8690,3 +8690,54 @@ Round 16 was the last review round by the user's decision; round 17 is a verific
 CONVERGED, zero findings, independently reproducing 629/629/0. Its verdict records `head dc9fe107`
 and 29 dirty entries, which is what lets the branch's own gate pass on its own PR by evidence.
 `NO-REVIEW:` was available and deliberately not used. Filed not fixed: backlog **#114**.
+
+## 2026-09-14 [needs-you]
+Two things that went wrong during yesterday's long review were written down rather
+than fixed, because both needed a decision more than they needed code. The first:
+a review was finished, its file was on disk, and the session spent nearly two hours
+reporting that it was "still running" — because it was watching the process instead
+of watching for the file. The rule against doing exactly that already existed and was
+imported into every session; it was broken three times anyway, from memory rather
+than from reading it. The second: the program that wrote that review stayed alive for
+those two hours after it had finished its work, and **nobody knows why** — which is
+recorded as not-known rather than guessed at.
+
+The first one can be fixed two ways and they cost very differently. A proper script
+is about an hour, almost all of it spent satisfying this project's own rules about
+scripts, and nothing in CI would ever run it — its only protection is an agent
+choosing to use it. A written convention is ten minutes and honest about being only
+a convention.
+
+**Decide:** How should the "wait on the artifact, not the process" rule be enforced?
+- write it as a measured snippet in docs/portable-practices.md — ten minutes, and honest that a convention is all it is [recommended]
+- build scripts/await-codex-review.py — about an hour, nearly all ratchet compliance, and it would have no caller in CI
+- leave it as the existing prose in docs/plugins.md, which was broken three times in one session
+<!--tech-->
+Branch `backlog-await-and-hang`, PR #300, docs-only. Both rows filed at the user's
+instruction out of PR #299.
+
+**#115 — a waiter that polls the PROCESS can wait forever.** Measured: the r16 Codex
+review was written at 12:50; the waiter looped on `pgrep -f "r16-prompt"` and the
+process lived until 14:44 — **1h53m** after its deliverable existed. `docs/plugins.md`
+already says *"never passively wait on a background review … read the actual Codex task
+output file … treat as a hang → fall back"*, and `CLAUDE.md` imports it. Broken three
+times in one session — the selection-card shape, reconstructed from recall rather than
+read. Correct predicate: `[ -f "$OUT" ] || [ -f "$VERDICT" ]` with a hard deadline of
+budget + slack; past it the answer is HANG, not "still waiting". ⚠ The falsifier nobody
+ran was one `stat`: *does the output file exist while the waiter still says running?*
+
+**#116 — `codex-review.py` stayed alive 1h53m after writing review AND verdict.**
+`emit()` prints its last line and returns `rc`; no `Popen`, no `Thread`, no daemon —
+only `subprocess.run`, which reaps. So `main` returned and the interpreter did not exit.
+⛔ **Cause UNKNOWN and stated as such.** A plausible story (a grandchild of the `codex`
+CLI holding an inherited pipe) was considered and deliberately **not** recorded as the
+cause. ⚠ One observation, one run — may not reproduce on demand.
+
+⚠ `check-docs` caught a real defect in #115's first draft: an unescaped `|` inside a
+shell snippet made the row 8 columns instead of 6 — the shape that once left #46 and
+#50 marked closed while still open.
+
+Sizing for #115 is measured, not guessed: `check-selftest-counts` globs `scripts/*.py`
+so it cannot be shell, and `discover_self_tested_nonguards` sweeps anything matching
+`--self.test` into R4W — so it needs a `--self-test`, a declared count, and a manifest
+entry or a written escape. ~1 hour, and it would have **no caller**.
