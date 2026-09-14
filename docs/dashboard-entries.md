@@ -8339,3 +8339,39 @@ To arm, after adding the secret — `.github/workflows/schema-gates.yml`:
 `gh workflow run "Schema gates"`. The job's four steps were already driven locally
 end to end — credential guard, psql client container, the drift check reaching the
 network layer, and cleanup.
+
+## 2026-09-13
+A third review round, aimed at the one commit nobody had reviewed yet, found one more
+real problem — and it was the kind worth catching: a check that would have examined the
+wrong file and reported everything fine. Fixed. Four rounds of review on this change
+have now found twenty-four problems, and every single round found its problems in the
+previous round's repairs, which is the whole reason the rounds kept going.
+<!--tech-->
+Codex r3: `docs/reviews/codex/schema-gates-ci-r3-codex.md` — 1 Medium, no Blocking or
+High. Scoped to `fe0785e4` alone, the repairs for r2's Claude half, which no reviewer
+had seen. ⚠ `REVIEW GAP: claude` recorded — the delta was one commit and the Claude half
+had just reviewed everything preceding it.
+
+**MEDIUM.** The generic `$VAR/` strip treated every variable as a repo root. The
+reviewer built a gate reading `"$TMP/docs/real.sql"` from a `mktemp -d`; the strip
+resolved it to the repo's own `docs/real.sql`, which exists and is clean — a CONFIDENT
+CHECK OF THE WRONG SUBJECT, which is worse than a miss. Only root-like assignments
+(`$(cd … && pwd)`, `dirname "$0"`, `git rev-parse --show-toplevel`) are stripped now;
+anything else fails to resolve and is absent from the population.
+
+⚠ It also caught that the r2 fixture proved less than it claimed — its computed variable
+was INTENDED as a root alias, so it could not distinguish root-like from any-variable.
+The new case uses `SCRATCH=$(mktemp -d)` and asserts the decoy is NOT in scope.
+
+⚠ Two further anchor defects while fixing it, both this branch's signature: the fix
+ORPHANED r2's mutation anchor (third occurrence — a refactor moving text a mutation
+binds to), and re-anchoring hit the FIRST LINE of a two-line comprehension, so the
+mutated suite died of SyntaxError, printed no `[FAIL]` line, and the kill attributed to
+NOTHING — portable practice §22, in the anchor rather than the case.
+
+    self-test 50/50 · mutations 16/16 attributable · check-plan-code 128/128
+    suite 73 ✓ / 0 ✗, 15/15, exit 0 · eight repo guards rc=0
+    EXPECTED_MUTATIONS 559 -> 575 across the branch
+
+Guard population across four rounds: 12 -> 21 -> 27 -> 30, every widening bought by a
+measured miss rather than by caution.
