@@ -56,6 +56,7 @@ FIXTURE="scripts/ci/storage-service-fixture.sql"
 AUTH_FIXTURE="scripts/ci/auth-service-fixture.sql"
 SEED="scripts/ci/seed-corpus.sql"
 WAIT_SECONDS="${SCHEMA_DB_WAIT:-180}"
+PULL_ATTEMPTS="${SCHEMA_DB_PULL_ATTEMPTS:-5}"
 
 # ⚠ REFUSE TO TOUCH THE SHARED LOCAL STACK. This script's first act is `docker rm -f`, and the
 # developer's own Supabase container holds every other agent's work. Same rule, and the same reason,
@@ -83,6 +84,35 @@ refuses_name() { # 0 = REFUSE this name
   esac
 }
 
+# The delay sequence, as a PURE function so the policy is testable without a registry. Doubling from
+# 5s gives ~75s of patience across 5 attempts — long enough to outlast a burst, short enough that a
+# genuinely unreachable registry still fails inside the job's timeout.
+backoff_delays() { # $1 = attempts
+  local i=1 d=5
+  while [ "$i" -lt "$1" ]; do printf '%s ' "$d"; d=$((d * 2)); i=$((i + 1)); done
+}
+
+pull_image() {
+  # Already local? Then there is nothing to ask the registry for — the common case, and it must not
+  # pay for the retry logic.
+  docker image inspect "$IMAGE" >/dev/null 2>&1 && return 0
+  local attempt=1 err
+  for d in $(backoff_delays "$PULL_ATTEMPTS") ""; do
+    err=$(docker pull "$IMAGE" 2>&1) && return 0
+    # ⛔ REPORT THE ERROR, DO NOT GUESS AT IT. The first version of this loop printed
+    # "(registry throttling?)" on every failure — and the first time it ran on this machine the
+    # daemon was simply DOWN, so it retried four times over 75 seconds and blamed a registry it had
+    # never contacted. A retry message that asserts a cause it cannot observe sends the next person
+    # to the wrong problem, which is the same defect this branch has now produced at three scales.
+    echo "  pull attempt $attempt/$PULL_ATTEMPTS failed: ${err##*$'\n'}" >&2
+    [ -z "$d" ] && break
+    echo "  retrying in ${d}s" >&2
+    sleep "$d"
+    attempt=$((attempt + 1))
+  done
+  docker image inspect "$IMAGE" >/dev/null 2>&1   # a final, honest re-check
+}
+
 apply_sql() { # container file [role] -> 0 ok, 1 failed
   docker exec -i "$1" psql -U "${3:-postgres}" -d postgres -v ON_ERROR_STOP=1 -q < "$2"
 }
@@ -96,6 +126,13 @@ main() {
     return 2
   fi
   command -v docker >/dev/null 2>&1 || { echo "CANNOT RUN — no docker on PATH." >&2; return 2; }
+  # ⚠ THE CLI EXISTING IS NOT THE DAEMON RUNNING, and the difference costs 75 seconds of backoff
+  # against a registry that will never be reached. Measured: with Docker Desktop stopped, every
+  # `docker pull` fails instantly and the retry loop blamed throttling. Ask the daemon directly.
+  docker info >/dev/null 2>&1 || {
+    echo "CANNOT RUN — the Docker daemon is not reachable (the CLI exists; the daemon is not up)." >&2
+    echo "  On macOS: \`open -a Docker\`, then re-run. This is NOT a registry or schema problem." >&2
+    return 2; }
   [ -d "$MIGRATIONS" ] || { echo "CANNOT RUN — no $MIGRATIONS directory." >&2; return 2; }
   [ -r "$FIXTURE" ]    || { echo "CANNOT RUN — no $FIXTURE." >&2; return 2; }
   [ -r "$AUTH_FIXTURE" ] || { echo "CANNOT RUN — no $AUTH_FIXTURE." >&2; return 2; }
@@ -105,6 +142,21 @@ main() {
   n_mig=$(find "$MIGRATIONS" -name '*.sql' | wc -l | tr -d ' ')
   # An empty corpus is CANNOT RUN, not a clean sweep — a zero over nothing is not a result.
   [ "$n_mig" -gt 0 ] || { echo "CANNOT RUN — $MIGRATIONS holds no .sql files." >&2; return 2; }
+
+  # ⛔ THE IMAGE PULL IS A DEPENDENCY ON SOMEONE ELSE'S RATE LIMITER — measured in CI 2026-09-14:
+  #     docker: Error response from daemon: toomanyrequests: Rate exceeded
+  # `public.ecr.aws` throttles unauthenticated pulls per source IP, and GitHub's runners share
+  # addresses. The script FAILED CORRECTLY (rc=2, CANNOT RUN, no silent green) — but a gate that goes
+  # red on someone else's traffic teaches people to re-run rather than to read, and a gate people
+  # re-run reflexively is one they will eventually re-run past a real failure.
+  # ⚠ A retry is right ONLY because the failure is transient AND distinguishable. Pulling is not
+  # idempotent-ish guesswork: either the image is local afterwards or it is not, and `docker image
+  # inspect` answers that. Nothing here retries the DATABASE build, which would mask real defects.
+  pull_image || {
+    echo "CANNOT RUN — could not obtain $IMAGE after $PULL_ATTEMPTS attempt(s)." >&2
+    echo "  The last error is above. If it says 'toomanyrequests', the registry throttled us and" >&2
+    echo "  this is NOT a schema failure — but treat it as NOT RUN, never as a pass." >&2
+    return 2; }
 
   docker rm -f "$NAME" >/dev/null 2>&1
   docker run -d --name "$NAME" -e POSTGRES_PASSWORD=postgres "$IMAGE" >/dev/null || {
@@ -217,6 +269,12 @@ self_test() {
   t "an EMPTY argument stays empty, so refuses_name gets to refuse it" "" "$(resolve_name "")"
   t "an ABSENT argument falls back to the default" "m4_schema_gates" "$(PGCONTAINER= resolve_name)"
   t "an explicit argument wins" "m4_review_x" "$(resolve_name m4_review_x)"
+  # ⟳ 2026-09-14: the pull-retry policy. The I/O cannot be unit-tested without a registry; the
+  # SCHEDULE can, and it is the part with a decision in it.
+  t "five attempts means four waits" "5 10 20 40 " "$(backoff_delays 5)"
+  t "one attempt means no wait at all" "" "$(backoff_delays 1)"
+  t "the delays double, so patience grows without a long fixed sleep" "5 10 " "$(backoff_delays 3)"
+
   # ⟳ r1 MEDIUM (codex): the allow-list's own cases. Each of these was ALLOWED by the deny-list.
   refuses_name "redis" && r=REFUSE || r=allow
   t "an unrelated container name is REFUSED" REFUSE "$r"
