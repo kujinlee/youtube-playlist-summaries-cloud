@@ -285,5 +285,137 @@
     "expect": [
       "...and the answer NAMES the document, so a stacked pass is visible in the log"
     ]
+  },
+  {
+    "name": "a reverted dirty overlay is compared by nobody",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "return sorted((set(after) | set(reviewed)) & set(branch_delta))",
+        "return sorted(set(after) & set(branch_delta))"
+      ]
+    ],
+    "expect": "a REVERTED dirty overlay is STILL a candidate"
+  },
+  {
+    "name": "the tail is charged over the base's commits again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "return sorted((set(after) | set(reviewed)) & set(branch_delta))",
+        "return sorted(set(after) | set(reviewed))"
+      ]
+    ],
+    "expect": "a path the BASE changed"
+  },
+  {
+    "name": "a gate that did not run becomes testimony",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if not rec.get(\"gate_ran\"):\n        return None, SKIP",
+        "    if False:\n        return None, SKIP"
+      ]
+    ],
+    "expect": "a verdict saying the gate did NOT run is skipped"
+  },
+  {
+    "name": "a failed snapshot reads as a clean tree",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if \"dirty\" in rec and rec[\"dirty\"] is None:\n        return None, UNUSABLE",
+        "    if False:\n        return None, UNUSABLE"
+      ]
+    ],
+    "expect": "a verdict whose dirty map is NULL could not look"
+  },
+  {
+    "name": "a schema-1 verdict is skipped instead of counted",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if not isinstance(head, str) or not head.strip():\n        return None, UNUSABLE",
+        "    if not isinstance(head, str) or not head.strip():\n        return None, SKIP"
+      ]
+    ],
+    "expect": "a schema-1 verdict carries no head"
+  },
+  {
+    "name": "a verdict added then deleted is treated as fine",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if not isinstance(rec, dict):\n        return None, UNUSABLE",
+        "    if not isinstance(rec, dict):\n        return None, SKIP"
+      ]
+    ],
+    "expect": "a verdict added in the range and deleted again cannot testify"
+  },
+  {
+    "name": "the recorded dirty map is ignored",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return {k: v for k, v in d.items() if isinstance(k, str) and isinstance(v, str)}",
+        "    return {}"
+      ]
+    ],
+    "expect": "the dirty map is read from the verdict"
+  },
+  {
+    "name": "an unreachable head is treated as usable",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        if not is_ancestor(head):\n            unusable += 1",
+        "        if False:\n            unusable += 1"
+      ]
+    ],
+    "expect": "a head no longer reachable"
+  },
+  {
+    "name": "the second question is switched off entirely",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if not guarded_changes(changed):\n        return False, None\n    if waiver is not None:",
+        "    if True:\n        return False, None\n    if waiver is not None:"
+      ]
+    ],
+    "expect": "guarded code and no waiver"
+  },
+  {
+    "name": "the NO-REVIEW waiver stops echoing its reason",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        return False, f\"{NO_REVIEW} {waiver} — the final-tree question is WAIVED, not passed\"",
+        "        return False, None"
+      ]
+    ],
+    "expect": "and ECHOES the reason"
+  },
+  {
+    "name": "-z parsing reverts to splitlines, so a quoted path stops being the path",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return [ln for ln in out.split(\"\\0\") if ln.strip()]",
+        "    return [ln for ln in out.splitlines() if ln.strip()]"
+      ]
+    ],
+    "expect": "and a newline inside a path does not split it"
+  },
+  {
+    "name": "a review document that is gone is read anyway",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        text = read(rel)\n        if text is not None:",
+        "        text = read(rel)\n        if True:"
+      ]
+    ],
+    "expect": "a review document that is gone is not read"
   }
 ]

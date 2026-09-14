@@ -2,7 +2,7 @@
 """A branch that changes CODE records a review round, or says in writing why it did not.
 
     python3 scripts/check-review-recorded.py --base origin/master --pr-body-file /tmp/pr-body.md
-    python3 scripts/check-review-recorded.py --self-test
+    python3 scripts/check-review-recorded.py --self-test  # 117 cases
 
 WHY THIS EXISTS
 ---------------
@@ -62,7 +62,20 @@ SCOPE, STATED RATHER THAN IMPLIED
     away cannot be diffed. Both are counted as unusable, never quietly dropped.
   * `NO-REVIEW:` waives BOTH questions. One declaration per concern, deliberately — a second marker
     for "yes it is stale and that is fine" is the duplicate-vocabulary shape
-    `check-vocabulary-collisions.py` exists to refuse.
+    `check-vocabulary-collisions.py` exists to refuse. ⚠ The waiver is now ECHOED (r11 High); it
+    used to clear the second question silently while the log named the review documents, so exit 0
+    was attributed to evidence that had not cleared it.
+  * ⚠ "WAS HANDED", NOT "WAS READ" — r11 High, and the limit this rule's own framing kept omitting.
+    `reviewed_state` stages the whole working tree, so the record says what was IN the tree at
+    dispatch, not what the round's prompt covered. A guarded file merely dirty at dispatch is
+    credited. Each verdict now records the `prompt` it was dispatched with so a human can see the
+    scope; no mechanism can close the rest, and the message says "was in the tree handed to".
+  * THE TAIL IS SCOPED TO THE BRANCH (r11 High) — `merge-base(base, HEAD)`, the same scope the other
+    two questions have always used. Code the merge took verbatim from the base is the base's gate's
+    question, asked on the base's own PR; re-asking it here fired on every upstream pickup, with no
+    merge action by the author under CI's synthesised merge ref. A clean-merge SEMANTIC conflict is
+    given up knowingly — `tsc --noEmit` and the unit suite are the instruments for that, and CI runs
+    both on the same ref.
   * ⚠ IT RUNS ON `pull_request` ONLY (r1 High). The workflow also runs on push to `master`, where
     this step is skipped and neither question is asked. Direct pushes to the default branch are
     refused by `.claude/hooks/block-default-branch-push.sh`, so the path is closed by a different
@@ -225,6 +238,115 @@ def branch_verdicts(added: list[str]) -> list[str]:
     return [p for p in added if p.startswith(VERDICT_DIR) and p.endswith(".json")]
 
 
+# A verdict record is one of three things, and the first version could only tell two apart.
+USABLE, UNUSABLE, SKIP = "usable", "unusable", "skip"
+
+
+def classify_verdict(rec: "object | None") -> "tuple[str | None, str]":
+    """PURE. One verdict record -> `(head, USABLE | UNUSABLE | SKIP)`.
+
+    ⛔ EXTRACTED FROM THE GATHERER — r11 High (lens 3). These four rules lived inside `round_tails`
+    where nothing could reach them, and mutating any of them left the suite at 77/77. Two were live
+    fail-opens: deleting the `gate_ran` test turned a verdict reading `"gate_ran": false` into
+    testimony that a round saw the final tree (exit 2 -> exit 0), and dropping the schema-1 arm
+    stopped counting rounds that cannot answer. This is the r1 Low one instance later — the file
+    already says `guarded_changes` is called in the pure layer *"so this rule … is pure and
+    reachable from a case"*, and the gatherer still held seven more rules when r11 looked.
+
+    `None` means the file named by the diff is not on disk: added in the range and deleted again. It
+    cannot testify, so it is UNUSABLE rather than skipped — silence is what `tail_verdict` refuses
+    to pass.
+
+    ⚠ `dirty is None` IS NOT `dirty == {}` — r11 Medium, found independently by two lenses. Three of
+    `reviewed_state`'s failure paths used to return a real head with an empty map, byte-identical to
+    a round dispatched against a genuinely clean tree, so a FAILED MEASUREMENT read as "nothing was
+    uncommitted" and produced a false accusation aimed at the author who held their fixes back. The
+    producer now writes `null` when it could not look; this is the end that refuses to guess.
+    """
+    if not isinstance(rec, dict):
+        return None, UNUSABLE
+    # A gate that did not run reviewed nothing. The CONTRADICTION of filing its artifact anyway
+    # belongs to check-review-rounds.py and is not re-decided here.
+    if not rec.get("gate_ran"):
+        return None, SKIP
+    head = rec.get("head")
+    if not isinstance(head, str) or not head.strip():
+        return None, UNUSABLE           # schema 1: no commit recorded at all
+    if "dirty" in rec and rec["dirty"] is None:
+        return None, UNUSABLE           # the wrapper could not describe the tree; NOT a clean tree
+    return head.strip(), USABLE
+
+
+def reviewed_map(rec: object) -> dict[str, str]:
+    """PURE. The `path -> "<mode> <object-id>"` map a verdict says the reviewer was handed.
+
+    Extracted for the same reason as `classify_verdict`: r11 measured that replacing this with an
+    empty map inside the gatherer left the suite green, and an empty map is exactly the shape that
+    makes every dirty-overlay comparison vacuous.
+    """
+    d = rec.get("dirty") if isinstance(rec, dict) else None
+    if not isinstance(d, dict):
+        return {}
+    return {k: v for k, v in d.items() if isinstance(k, str) and isinstance(v, str)}
+
+
+def tail_candidates(after: list[str], reviewed: dict[str, str],
+                    branch_delta: list[str]) -> list[str]:
+    """PURE. The paths one round's testimony has to account for.
+
+    ⛔ TWO r11 findings live in this one expression, and they pull in OPPOSITE directions.
+
+    **The union closes r11 Blocking.** The first version asked only about `after` — the paths that
+    changed between the round's commit and HEAD. But `reviewed`'s keys are by construction the paths
+    where the reviewer's view DIFFERED from that commit, so for every one of them "unchanged since
+    `head`" means "NOT what the reviewer read". Reverting a dirty overlay therefore dropped the path
+    out of the compared set entirely and the round was credited with having seen the final tree.
+    Reproduced end to end: a file reviewed as `GOOD`, reverted, merged as `BAD`, exit 0 under the
+    line *"the final tree was reviewed by"*. This is not r1's finding — r1 was *edit it AGAIN and
+    commit*, where the path STAYS in `after` and the entry comparison handles it. Here no comparison
+    happened at all.
+
+    **The intersection closes r11 High.** `after` is a raw two-tree diff, so every commit the BASE
+    made since the branch forked was charged against this branch's rounds — and in CI `HEAD` is
+    GitHub's synthesised merge ref, so it fired with no merge action by the author whatsoever.
+    Measured on this branch: five files named, three of them `origin/master`'s own, already reviewed
+    on their own PR. The two sibling questions have always scoped to the branch via
+    `merge-base(base, HEAD)`; the tail was the one place that did not. A path the merge took
+    VERBATIM from the base has an entry identical to the base's and is absent from the branch delta;
+    a path whose merge resolution invented content is present. That is blob-and-mode identity
+    against the base, computed by git, with no new concept.
+
+    ⚠ WHAT THE INTERSECTION GIVES UP, STATED: a clean-merge SEMANTIC conflict — master changes a
+    signature, the branch changes a caller, no file carries a resolution — is no longer charged. It
+    was never really caught, only carpeted: the unscoped rule fired on every upstream pickup, so its
+    output could not distinguish "master moved" from "your resolution invented code". `tsc --noEmit`
+    and the unit suite are the instruments for "these two changes do not compose", and CI already
+    runs both on the same merge ref.
+    """
+    return sorted((set(after) | set(reviewed)) & set(branch_delta))
+
+
+def second_question(changed: list[str], waiver: "str | None") -> "tuple[bool, str | None]":
+    """PURE. `(ask_the_final_tree_question, line_to_print_when_not)`.
+
+    ⛔ r11 High: `NO-REVIEW:` waived this question SILENTLY, and the pass then named the review
+    documents — attributing exit 0 to evidence that had not cleared it. `verdict()` returns at its
+    review-document branch, so the echo it promises at its own `NO-REVIEW:` arm never ran, while the
+    docstring says *"the reason is ECHOED so it lands in the log"*. Anyone auditing a merge from CI
+    output saw a green final-tree gate that never ran. It compounds with the scoping finding above:
+    the livelock's predictable escape was this waiver, and the escape left no trace.
+
+    ⛔ AND IT IS A RULE, NOT A LINE IN `main` — r11 measured `if True:` in its place leaving the
+    suite at 77/77. `tail_verdict` and `round_tail` are exhaustively cased and manifested; the one
+    line that CALLED them was not, so the whole subsystem was detachable without a red anywhere.
+    """
+    if not guarded_changes(changed):
+        return False, None
+    if waiver is not None:
+        return False, f"{NO_REVIEW} {waiver} — the final-tree question is WAIVED, not passed"
+    return True, None
+
+
 def round_tail(after: list[str], reviewed: dict[str, str], final: dict[str, str]) -> list[str]:
     """PURE. The guarded paths one round cannot have seen.
 
@@ -289,7 +411,15 @@ def tail_verdict(tails: dict[str, list[str]], unusable: int = 0,
     clean = sorted(n for n, paths in tails.items() if not paths)
     if clean:
         extra = f"; {unusable} other round(s) recorded no commit" if unusable else ""
-        return 0, f"the final tree was reviewed by {', '.join(clean)}{extra}"
+        # ⛔ "WAS IN THE TREE HANDED TO", NOT "WAS REVIEWED BY" — r11 High. `reviewed_state` stages
+        # the whole working tree with no scope (`git add -A`, no pathspec), so a guarded file that
+        # was merely dirty at dispatch and never in the round's subject is recorded as handed over.
+        # Reproduced: an unrelated dirty file, in no prompt, cleared the gate under the old wording.
+        # The wrapper cannot know what a reviewer READ and no representation can; the defect was a
+        # green line claiming more than its evidence, in a gate whose whole selling point is stating
+        # its own limits. The `prompt` field each verdict now carries is what a human reads to see
+        # the scope those entries were taken under.
+        return 0, f"the final tree was in the tree handed to {', '.join(clean)}{extra}"
     name, missed = min(tails.items(), key=lambda kv: (len(kv[1]), kv[0]))
     shown = ", ".join(missed[:6]) + (f" (+{len(missed) - 6} more)" if len(missed) > 6 else "")
     return 1, (f"{len(tails)} round(s) ran and guarded code was committed after every one of them.\n"
@@ -349,8 +479,34 @@ def parse_ls_tree(out: str) -> dict[str, str]:
     return entries
 
 
-def round_tails(verdict_files: list[str]) -> tuple[dict[str, list[str]], int]:
-    """`(tails, unusable)` for `tail_verdict`. Reads git and the verdicts; the RULE is `round_tail`.
+def _load_verdict(rel: str) -> "object | None":
+    """Read one verdict record. `None` if the file is gone; RAISES if it is there and unreadable."""
+    p = ROOT / rel
+    if not p.is_file():
+        return None
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"CANNOT RUN — {rel} is unreadable ({exc}), so whether that round "
+                           f"saw the final tree is UNKNOWN.")
+
+
+def _is_ancestor(head: str) -> bool:
+    return _git("merge-base", "--is-ancestor", head, "HEAD").returncode == 0
+
+
+def _changed_since(head: str) -> list[str]:
+    diff = _git("diff", "--name-only", "-z", "--no-renames", head, "HEAD")
+    if diff.returncode != 0:
+        raise RuntimeError(f"CANNOT RUN — git diff against {head[:12]} failed: "
+                           f"{diff.stderr.strip()}")
+    return [ln for ln in diff.stdout.split("\0") if ln]
+
+
+def round_tails(verdict_files: list[str], branch_delta: list[str], *,
+                load=None, is_ancestor=None, changed_since=None,
+                final_entries=None) -> tuple[dict[str, list[str]], int]:
+    """`(tails, unusable)` for `tail_verdict`. **I/O ONLY** — every decision here is a pure rule.
 
     ⚠ NO MERGE-BASE SKIP — r1 High. The first version also skipped a verdict whose head is an
     ancestor of the merge base, which silently discarded the round taken BEFORE the branch's first
@@ -358,42 +514,39 @@ def round_tails(verdict_files: list[str]) -> tuple[dict[str, list[str]], int]:
     reproduced. Membership is now decided entirely by `branch_verdicts` (this branch ADDED the
     file), so reachability from HEAD is the only remaining question: a head we cannot diff against
     is a head we cannot reason about.
+
+    ⛔ THE FOUR SEAMS ARE INJECTABLE BECAUSE r11 MEASURED THE ALTERNATIVE. Eight decision points
+    lived in this function's body and none was reachable from any case; all eight survived mutation
+    with the suite at 77/77, and two of them turned a live refusal into a live pass. The rules are
+    now `classify_verdict`, `reviewed_map`, `tail_candidates` and `round_tail`; the callables below
+    exist so a case can drive this loop without a repository, which is the same idiom
+    `first_codex_gap(docs, parse)` already uses in this file — and r11 confirmed those stub cases
+    are real, not decorative.
+
+    `branch_delta` is `changed_paths(base)`, threaded in from `main` where it is already computed,
+    so scoping the candidate set costs no extra git call.
     """
+    load = load or _load_verdict
+    is_ancestor = is_ancestor or _is_ancestor
+    changed_since = changed_since or _changed_since
+    final_entries = final_entries or _final_entries
     tails: dict[str, list[str]] = {}
     unusable = 0
     for rel in verdict_files:
-        p = ROOT / rel
-        if not p.is_file():
-            # Added in the range and absent now means added then deleted. It cannot testify, and
-            # counting it as unusable is right: silence here is what `tail_verdict` refuses to pass.
+        rec = load(rel)
+        head, kind = classify_verdict(rec)
+        if kind == SKIP:
+            continue
+        if kind != USABLE or head is None:
             unusable += 1
             continue
-        try:
-            rec = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise RuntimeError(f"CANNOT RUN — {rel} is unreadable ({exc}), so whether that round "
-                               f"saw the final tree is UNKNOWN.")
-        # A gate that did not run reviewed nothing. The CONTRADICTION of filing its artifact anyway
-        # belongs to check-review-rounds.py and is not re-decided here.
-        if not isinstance(rec, dict) or not rec.get("gate_ran"):
-            continue
-        head = rec.get("head")
-        if not isinstance(head, str) or not head.strip():
-            unusable += 1
-            continue
-        if _git("merge-base", "--is-ancestor", head, "HEAD").returncode != 0:
+        if not is_ancestor(head):
             unusable += 1                   # unreachable: squashed, rebased or rewritten away
             continue
-        diff = _git("diff", "--name-only", "-z", "--no-renames", head, "HEAD")
-        if diff.returncode != 0:
-            raise RuntimeError(f"CANNOT RUN — git diff against {head[:12]} failed: "
-                               f"{diff.stderr.strip()}")
-        after = [ln for ln in diff.stdout.split("\0") if ln]
-        reviewed = {k: v for k, v in (rec.get("dirty") or {}).items()
-                    if isinstance(k, str) and isinstance(v, str)} \
-            if isinstance(rec.get("dirty"), dict) else {}
+        reviewed = reviewed_map(rec)
+        cands = tail_candidates(changed_since(head), reviewed, branch_delta)
         tails[pathlib.PurePosixPath(rel).name] = round_tail(
-            after, reviewed, _final_entries(guarded_changes(after)))
+            cands, reviewed, final_entries(guarded_changes(cands)))
     return tails, unusable
 
 
@@ -443,7 +596,29 @@ def first_codex_gap(docs: "list[tuple[str, str]]", parse) -> "str | None":
     return None
 
 
-def declared_gap(review_docs: list[str]) -> "str | None":
+def readable_docs(review_docs: list[str], read) -> list[tuple[str, str]]:
+    """PURE given `read`. `(path, text)` for the documents that are actually on disk.
+
+    ⛔ r11 High (lens 3): this filter lived inside `declared_gap` and deleting it left the suite at
+    77/77. A document named by the diff but absent now — added in the range and deleted again —
+    must not be read, and must not be able to declare a gap on this branch's behalf. `read` returns
+    `None` for a path that is gone, which is the one thing a case cannot arrange without a
+    filesystem.
+    """
+    out = []
+    for rel in review_docs:
+        text = read(rel)
+        if text is not None:
+            out.append((rel, text))
+    return out
+
+
+def _read_doc(rel: str) -> "str | None":
+    p = ROOT / rel
+    return p.read_text(encoding="utf-8", errors="replace") if p.is_file() else None
+
+
+def declared_gap(review_docs: list[str], read=_read_doc) -> "str | None":
     """The Codex `REVIEW GAP:` reason recorded in one of this branch's review documents, or None.
 
     The parser is `check-review-rounds.has_gap_line`, IMPORTED. Which emphasis wraps the marker and
@@ -451,15 +626,23 @@ def declared_gap(review_docs: list[str]) -> "str | None":
     drift, and the two gates would then disagree about the same line in the same file.
     """
     mod_parse = _load_gap_line_parser()
-    docs = [(rel, (ROOT / rel).read_text(encoding="utf-8", errors="replace"))
-            for rel in review_docs if (ROOT / rel).is_file()]
+    docs = readable_docs(review_docs, read)
     return first_codex_gap(docs, mod_parse)
     # ⚠ `review_docs` is every review document ADDED IN THE RANGE, which for a stacked branch
     # includes its parent's. Stated in the docstring, named in the message, not papered over.
 
 
 def changed_paths(base: str) -> list[str]:
-    """Paths changed against `base`. RAISES on anything that would understate the answer."""
+    """Paths changed against `base`. RAISES on anything that would understate the answer.
+
+    ⚠ `-z`, NOT `splitlines()` — r11 Medium. With the default `core.quotePath`, any non-ASCII path
+    comes back C-quoted (`"lib/na\\303\\257ve.ts"`) and is no longer the path, so a branch adding a
+    review document whose subject carries an accent was told *"no review round was recorded"* and
+    its verdict was invisible. `round_tails` already used `-z`; these two did not. It is the same
+    defect class r1's Medium #6 fixed in the sibling gatherer — fixed there as an INSTANCE, not
+    searched for as a class, which is this project's own recorded failure shape. Every direction
+    failed closed, which is why it was Medium and not higher.
+    """
     if not (ROOT / ".git").exists():
         raise RuntimeError("CANNOT RUN — no .git directory. Treat this as NOT CHECKED.")
     shallow = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--is-shallow-repository"],
@@ -471,24 +654,29 @@ def changed_paths(base: str) -> list[str]:
     if merge_base.returncode != 0:
         raise RuntimeError(f"CANNOT RUN — cannot resolve a merge base with {base!r}: "
                            f"{merge_base.stderr.strip()}")
-    diff = subprocess.run(["git", "-C", str(ROOT), "diff", "--name-only",
+    diff = subprocess.run(["git", "-C", str(ROOT), "diff", "--name-only", "-z",
                            merge_base.stdout.strip(), "HEAD"], capture_output=True, text=True)
     if diff.returncode != 0:
         raise RuntimeError(f"CANNOT RUN — git diff failed: {diff.stderr.strip()}")
-    return [ln for ln in diff.stdout.splitlines() if ln.strip()]
+    return split_nul(diff.stdout)
+
+
+def split_nul(out: str) -> list[str]:
+    """PURE. `git … -z` output -> paths. The falsifier for the `-z` repair above."""
+    return [ln for ln in out.split("\0") if ln.strip()]
 
 
 def added_paths(base: str) -> list[str]:
-    """Paths ADDED against `base` (status A). RAISES like `changed_paths`."""
+    """Paths ADDED against `base` (status A). RAISES like `changed_paths`; `-z` for the same reason."""
     mb = subprocess.run(["git", "-C", str(ROOT), "merge-base", base, "HEAD"],
                         capture_output=True, text=True)
     if mb.returncode != 0:
         raise RuntimeError(f"CANNOT RUN — cannot resolve a merge base with {base!r}")
-    out = subprocess.run(["git", "-C", str(ROOT), "diff", "--name-only", "--diff-filter=A",
+    out = subprocess.run(["git", "-C", str(ROOT), "diff", "--name-only", "-z", "--diff-filter=A",
                           mb.stdout.strip(), "HEAD"], capture_output=True, text=True)
     if out.returncode != 0:
         raise RuntimeError(f"CANNOT RUN — git diff failed: {out.stderr.strip()}")
-    return [ln for ln in out.stdout.splitlines() if ln.strip()]
+    return split_nul(out.stdout)
 
 
 def main(argv: list[str]) -> int:
@@ -527,11 +715,15 @@ def main(argv: list[str]) -> int:
     # is moot; if the author declared `NO-REVIEW:` it is waived by the same declaration, which is
     # why there is no second marker to write. `reason_of` is called again rather than threaded out
     # of `verdict()` — it is pure, and widening that function's return would break the tuple its
-    # cases pin.
-    if not guarded_changes(changed) or reason_of(body, NO_REVIEW) is not None:
+    # cases pin. The DECISION is `second_question`, which is pure and cased: r11 measured `if True:`
+    # here leaving the suite green, i.e. this whole subsystem detachable with no red anywhere.
+    ask, waived = second_question(changed, reason_of(body, NO_REVIEW))
+    if not ask:
+        if waived:
+            print("ok — " + waived)
         return 0
     try:
-        tails, unusable = round_tails(branch_verdicts(added))
+        tails, unusable = round_tails(branch_verdicts(added), changed)
         gap = declared_gap(review_added(added))
     except (RuntimeError, OSError) as exc:
         print(str(exc) if str(exc).startswith("CANNOT RUN") else f"CANNOT RUN — {exc}",
@@ -691,6 +883,134 @@ def self_test() -> int:
          ["bin/t.sh"])
     case("...and an identical tree entry — same mode, same blob — is not missed",
          round_tail(["bin/t.sh"], {"bin/t.sh": "100755 aaa"}, {"bin/t.sh": "100755 aaa"}), [])
+    # ── r11: the candidate set. TWO findings in one expression, pulling opposite ways ──
+    _DELTA = ["lib/x.ts", "lib/y.ts", "docs/backlog.md"]
+    case("a path that changed since the round is a candidate",
+         tail_candidates(["lib/x.ts"], {}, _DELTA), ["lib/x.ts"])
+    # ⛔ THE r11 BLOCKING. `reviewed`'s keys are the paths where the reviewer's view DIFFERED from
+    # the round's commit, so "unchanged since head" means "not what the reviewer read". Reverting an
+    # overlay used to drop the path out of the compared set and the round was credited with the
+    # final tree — reproduced end to end as GOOD reviewed, BAD merged, exit 0.
+    case("a REVERTED dirty overlay is STILL a candidate, though nothing changed since the round",
+         tail_candidates([], {"lib/x.ts": "100644 aaa"}, _DELTA), ["lib/x.ts"])
+    case("...and without the union nobody compares it at all",
+         tail_candidates([], {"lib/x.ts": "100644 aaa"}, _DELTA) == [], False)
+    # ⛔ THE r11 HIGH, the other direction. Under CI's synthesised merge ref the base's whole
+    # movement landed in `after`, so the branch was charged for code it never touched.
+    case("a path the BASE changed, outside this branch's delta, is not charged",
+         tail_candidates(["scripts/newguard.py"], {}, _DELTA), [])
+    case("...while one in both the diff and the branch delta still is",
+         tail_candidates(["scripts/newguard.py", "lib/y.ts"], {}, _DELTA), ["lib/y.ts"])
+    case("an untracked scratch file dirty at dispatch is not charged forever either",
+         tail_candidates([], {"scratch.tmp": "100644 aaa"}, _DELTA), [])
+    case("the answer is sorted and deduplicated, so one path cannot be charged twice",
+         tail_candidates(["lib/y.ts", "lib/x.ts"], {"lib/x.ts": "100644 aaa"}, _DELTA),
+         ["lib/x.ts", "lib/y.ts"])
+    # ⚠ `branch_delta` IS VARIED, not passed one constant — `check-fixture-variation` refused the
+    # first draft of these cases for exactly that, which is the ratchet doing its job on the repair
+    # for a finding about unreachable rules.
+    case("an EMPTY branch delta charges nothing at all",
+         tail_candidates(["lib/x.ts"], {"lib/y.ts": "100644 aaa"}, []), [])
+    case("...and a delta naming a different file charges that one instead",
+         tail_candidates(["lib/x.ts", "lib/z.ts"], {}, ["lib/z.ts"]), ["lib/z.ts"])
+    # ── r11: classifying one verdict record. Extracted from the gatherer, where all four rules
+    # survived mutation with the suite green and two of them were live fail-opens. ──
+    case("a schema-2 verdict whose gate RAN is usable, and the head comes back stripped",
+         classify_verdict({"gate_ran": True, "head": " abc123 \n"}), ("abc123", USABLE))
+    case("a verdict saying the gate did NOT run is skipped, never read as testimony",
+         classify_verdict({"gate_ran": False, "head": "abc123"}), (None, SKIP))
+    case("...and that rule is the one whose deletion turned exit 2 into exit 0",
+         classify_verdict({"gate_ran": False, "head": "abc123"})[1] == USABLE, False)
+    case("a schema-1 verdict carries no head: UNUSABLE, not skipped",
+         classify_verdict({"gate_ran": True}), (None, UNUSABLE))
+    case("...as is one whose head is blank",
+         classify_verdict({"gate_ran": True, "head": "   "}), (None, UNUSABLE))
+    # ⛔ r11 Medium, found by two lenses independently: a FAILED snapshot used to be byte-identical
+    # to a genuinely clean tree, so it accused the author who held their fixes back.
+    case("a verdict whose dirty map is NULL could not look — unusable, not a clean tree",
+         classify_verdict({"gate_ran": True, "head": "abc", "dirty": None}), (None, UNUSABLE))
+    case("...while an EMPTY map is a real answer: the tree WAS clean",
+         classify_verdict({"gate_ran": True, "head": "abc", "dirty": {}}), ("abc", USABLE))
+    case("a verdict added in the range and deleted again cannot testify",
+         classify_verdict(None), (None, UNUSABLE))
+    case("...and neither can a record that is not an object at all",
+         classify_verdict(["not", "a", "record"]), (None, UNUSABLE))
+    # ── r11: the dirty map, extracted for the same reason — emptying it made every overlay
+    # comparison vacuous and the suite did not notice. ──
+    case("the dirty map is read from the verdict",
+         reviewed_map({"dirty": {"a": "100644 aa"}}), {"a": "100644 aa"})
+    case("...and entries that are not string -> string are dropped rather than trusted",
+         reviewed_map({"dirty": {"a": 1, "c": "100644 cc"}}), {"c": "100644 cc"})
+    case("a null dirty map reads as empty HERE; classify_verdict is what refuses it",
+         reviewed_map({"dirty": None}), {})
+    # ── r11: the second question is a rule, not a line. `if True:` in its place left the suite at
+    # 77/77 — the entire subsystem detachable with no red anywhere. ──
+    case("guarded code and no waiver: the question is asked",
+         second_question(["lib/x.ts"], None), (True, None))
+    case("nothing guarded changed: the question is moot, and says nothing",
+         second_question(["docs/backlog.md"], None), (False, None))
+    case("a NO-REVIEW waiver skips the question",
+         second_question(["lib/x.ts"], "master moved")[0], False)
+    case("...and ECHOES the reason, so exit 0 is not attributed to the review documents",
+         "master moved" in (second_question(["lib/x.ts"], "master moved")[1] or ""), True)
+    case("...saying WAIVED, not passed",
+         "WAIVED" in (second_question(["lib/x.ts"], "master moved")[1] or ""), True)
+    # ── r11: `-z` parsing, the repair for C-quoted paths ──
+    case("NUL-separated output splits on NUL, so an accented path survives whole",
+         split_nul("lib/naïve.ts\0lib/b.ts\0"), ["lib/naïve.ts", "lib/b.ts"])
+    case("...and a newline inside a path does not split it",
+         split_nul("lib/od\nd.ts\0"), ["lib/od\nd.ts"])
+    # ── r11: a review document named by the diff but gone from disk must not be read ──
+    case("a review document that is gone is not read and cannot declare a gap",
+         readable_docs(["gone.md", "here.md"],
+                       lambda r: None if r == "gone.md" else "text"), [("here.md", "text")])
+    case("...and the reader argument is the one used",
+         readable_docs(["here.md"], lambda r: "REVIEW GAP: codex — x"),
+         [("here.md", "REVIEW GAP: codex — x")])
+    # ── r11: the gatherer itself, driven with stubs so every seam is varied without a repository ──
+    _V = ["docs/reviews/verdicts/a.verdict.json"]
+    _CLEAN = {"gate_ran": True, "head": "h1", "dirty": {}}
+    _HELD = {"gate_ran": True, "head": "h1", "dirty": {"lib/x.ts": "100644 aaa"}}
+    _t, _u = round_tails(_V, ["lib/x.ts"], load=lambda r: _CLEAN, is_ancestor=lambda h: True,
+                         changed_since=lambda h: ["lib/x.ts"], final_entries=lambda p: {})
+    case("the gatherer builds one tail per usable verdict", sorted(_t), ["a.verdict.json"])
+    case("...charging a round for a guarded file that changed after it", _t["a.verdict.json"],
+         ["lib/x.ts"])
+    case("...and counts nothing unusable when the verdict is fine", _u, 0)
+    _t2, _u2 = round_tails(_V, ["lib/x.ts"], load=lambda r: _CLEAN, is_ancestor=lambda h: False,
+                           changed_since=lambda h: ["lib/x.ts"], final_entries=lambda p: {})
+    case("a head no longer reachable — rebased or squashed — is UNUSABLE, never a pass",
+         (_t2, _u2), ({}, 1))
+    _t3, _u3 = round_tails(_V, ["lib/x.ts"], load=lambda r: None, is_ancestor=lambda h: True,
+                           changed_since=lambda h: [], final_entries=lambda p: {})
+    case("a verdict file that is gone leaves no tail and is counted", (_t3, _u3), ({}, 1))
+    _t4, _u4 = round_tails(_V, ["lib/x.ts"], load=lambda r: _HELD, is_ancestor=lambda h: True,
+                           changed_since=lambda h: ["lib/x.ts"],
+                           final_entries=lambda p: {"lib/x.ts": "100644 aaa"})
+    case("a round handed the entry that finally merges has an empty tail",
+         _t4["a.verdict.json"], [])
+    _t5, _u5 = round_tails(_V, ["lib/x.ts"], load=lambda r: _HELD, is_ancestor=lambda h: True,
+                           changed_since=lambda h: [],          # the overlay was REVERTED
+                           final_entries=lambda p: {"lib/x.ts": "100644 bbb"})
+    case("THE BLOCKING through the gatherer: a reverted overlay is charged, not silently cleared",
+         _t5["a.verdict.json"], ["lib/x.ts"])
+    _t6, _u6 = round_tails(_V, ["lib/x.ts"], load=lambda r: _CLEAN,
+                           is_ancestor=lambda h: True,
+                           changed_since=lambda h: ["scripts/newguard.py"],
+                           final_entries=lambda p: {})
+    case("THE HIGH through the gatherer: a file only the base changed is not charged",
+         _t6["a.verdict.json"], [])
+    # ⚠ `verdict_files` and `branch_delta` VARIED here for the same reason as above.
+    _t7, _u7 = round_tails([], ["lib/x.ts"], load=lambda r: _CLEAN, is_ancestor=lambda h: True,
+                           changed_since=lambda h: ["lib/x.ts"], final_entries=lambda p: {})
+    case("no verdicts at all leaves an empty map, for tail_verdict to turn into CANNOT RUN",
+         (_t7, _u7), ({}, 0))
+    _t8, _u8 = round_tails(_V + ["docs/reviews/verdicts/b.verdict.json"], ["lib/y.ts"],
+                           load=lambda r: _CLEAN, is_ancestor=lambda h: True,
+                           changed_since=lambda h: ["lib/y.ts"], final_entries=lambda p: {})
+    case("every verdict gets its own tail, each judged against the same branch delta",
+         (sorted(_t8), _t8["b.verdict.json"]),
+         (["a.verdict.json", "b.verdict.json"], ["lib/y.ts"]))
     # ⛔ THE r2 HIGH. A gap about the CLAUDE half explains a different absence: only the Codex half
     # writes the verdict this rule reads, so only a Codex gap can excuse its absence.
     case("a REVIEW GAP naming codex explains a missing verdict",
@@ -732,16 +1052,24 @@ def self_test() -> int:
     # a case feeding `round_tail` literal strings can never see it. Driven by real `ls-tree -z`
     # output rather than a live repository, because the mutation harness runs this suite inside a
     # staged copy that is not a git checkout (measured: the first version's control went red).
-    _LS = ("100644 blob 1111111111111111111111111111111111111111\tlib/a.ts\0"
-           "100755 blob 2222222222222222222222222222222222222222\tbin/t.sh\0"
-           "160000 commit 3333333333333333333333333333333333333333\tvendor/sub\0")
+    # ⛔ ONE SHA ACROSS ALL THREE — r11 Medium, and the reason is that the cases below are NAMED for
+    # collisions they could not have. With three different shas, "two files with identical content
+    # but different modes do not collide" compared entries differing in BOTH, and "...it cannot
+    # compare equal to a blob with the same sha" held under the very mutation it guards: dropping
+    # the mode from `parse_ls_tree` (the r2 Blocking, restored) reds three sibling cases and left
+    # that one green. Sharing the sha is what makes the scenario each case names actually present —
+    # measured: with it, the same mutation takes the case from 74/77 to 73/77.
+    _SHA = "1111111111111111111111111111111111111111"
+    _LS = (f"100644 blob {_SHA}\tlib/a.ts\0"
+           f"100755 blob {_SHA}\tbin/t.sh\0"
+           f"160000 commit {_SHA}\tvendor/sub\0")
     # ⚠ `.get`, NOT `[...]`, AND THAT IS A CONTRACT NOT A STYLE CHOICE. Written with subscripts,
     # the mutation that restores the blob filter raised KeyError — the suite went RED and printed
     # no `[FAIL] <case>` line, so the harness could not see WHICH case killed it and reported every
     # entry for this file as unattributable. A case must FAIL, not crash.
     _tree = parse_ls_tree(_LS)
     case("the lookup answers with an ENTRY — mode and object id, not a bare sha",
-         _tree.get("lib/a.ts"), "100644 1111111111111111111111111111111111111111")
+         _tree.get("lib/a.ts"), f"100644 {_SHA}")
     case("...so two files with identical content but different modes do not collide",
          _tree.get("bin/t.sh", "").split()[:1], ["100755"])
     # ⛔ r4 BLOCKING, inverted into a case. The gitlink used to be FILTERED OUT, so a path holding a
@@ -749,7 +1077,7 @@ def self_test() -> int:
     # that puts a gitlink there. Every entry is kept; the mode is what stops a commit sha from ever
     # equalling a blob's.
     case("a submodule gitlink is KEPT, so a path holding one can never read as absent",
-         _tree.get("vendor/sub"), "160000 3333333333333333333333333333333333333333")
+         _tree.get("vendor/sub"), f"160000 {_SHA}")
     case("...and its mode marks it, so it cannot compare equal to a blob with the same sha",
          _tree.get("vendor/sub", "x").split()[:1] == _tree.get("lib/a.ts", "y").split()[:1], False)
     # ⚠ ABSENCE IS A SHAPE, NOT A WIDTH — r4 Medium. A SHA-256 repository writes 64 zeros.

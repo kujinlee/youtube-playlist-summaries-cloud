@@ -42,7 +42,7 @@ candidate yields a message ends in a loud non-zero exit.
 Usage:
   scripts/codex-review.py --out docs/reviews/task-N-foo-codex.md "<review prompt>"
   scripts/codex-review.py --out <file> --prompt-file <file> [--timeout 900] [--model <slug>]
-  scripts/codex-review.py --self-test  # 75 cases
+  scripts/codex-review.py --self-test  # 92 cases
 
 Exit codes:  0 = a real review was written   |   1 = no candidate produced one (gate did NOT run)
 """
@@ -234,7 +234,8 @@ def verdict_path(out_path: str, override: "str | None" = None) -> str:
 def verdict_record(*, gate_ran: bool, exit_code: int, out_path: str, reason: str,
                    model: "str | None" = None, attempts: "list[str] | None" = None,
                    intrusions_seen: "list[str] | None" = None,
-                   head: "str | None" = None, dirty: "dict[str, str] | None" = None) -> dict:
+                   head: "str | None" = None, dirty: "dict[str, str] | None" = None,
+                   prompt: "str | None" = None) -> dict:
     """The testimony, as data. PURE — no clock, no filesystem, so a case can assert every field.
 
     `gate_ran` is the load-bearing field and is stated SEPARATELY from `exit_code`, not derived
@@ -245,6 +246,18 @@ def verdict_record(*, gate_ran: bool, exit_code: int, out_path: str, reason: str
     always present, `None` when it could not be established — an absent field and a null one read
     the same to a downstream `.get()`, but only the null one distinguishes "no answer" from "old
     schema" when a human opens the file.
+
+    ⛔ `dirty is None` AND `dirty == {}` ARE DIFFERENT ANSWERS, and `dict(dirty or {})` erased the
+    difference — r11 Medium. `None` means the wrapper could not describe the tree; `{}` means it
+    looked and the tree was clean. Collapsing them made a failed measurement read as a clean tree,
+    which is how the gate came to accuse the author who held their fixes back.
+
+    `prompt` is the r11 High that no mechanism can close, recorded rather than hidden: the entries
+    in `dirty` are the whole working tree (`add -A`, no pathspec), so they say what was IN the tree
+    at dispatch, not what the round's prompt covered. A guarded file merely dirty at dispatch is
+    credited by every reviewer dispatched against that tree. The wrapper cannot know what a reviewer
+    READ — no representation can — so the honest move is to record the prompt the run was dispatched
+    with and let a human see the scope those entries were taken under.
     """
     return {
         "schema": VERDICT_SCHEMA,
@@ -257,11 +270,42 @@ def verdict_record(*, gate_ran: bool, exit_code: int, out_path: str, reason: str
         "attempts": list(attempts or []),
         "intrusions": list(intrusions_seen or []),
         "head": head,
-        "dirty": dict(dirty or {}),
+        "dirty": None if dirty is None else dict(dirty),
+        "prompt": prompt,
     }
 
 
-def reviewed_state(repo_root: "str | None" = None) -> "tuple[str | None, dict[str, str]]":
+REDIRECT_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR")
+
+
+def unredirected(env: "dict[str, str] | None" = None) -> dict:
+    """PURE given `env`. The environment with git's REPOSITORY-REDIRECTION variables removed.
+
+    ⛔ `git -C <root>` DOES NOT MEAN "the repository at root" — r11 High, and this one was
+    demonstrated rather than argued. With `GIT_DIR` exported, `reviewed_state` describes a
+    DIFFERENT repository: measured, it returned the other repo's HEAD and fabricated a deletion of
+    a file nobody deleted — and an all-zero entry is the one shape the consumer's `is_absent`
+    credits without an equality check.
+
+    ⚠ IT IS NOT HYPOTHETICAL AND THAT IS THE POINT. r10 closed the same class for config FILES
+    (`GIT_CONFIG_GLOBAL`/`_SYSTEM`/`NOSYSTEM`) and left the env-var door open; during r11 a reviewer
+    probing exactly that ran this file's own `--self-test` under an exported `GIT_DIR` aimed at the
+    live worktree, and the FIXTURE's `git commit` moved a real branch ref off its pushed merge
+    commit onto a scratch fixture commit. Recoverable, and recovered — but the hole was open in the
+    fixture as well as in the subject, which is why both call sites use this.
+
+    `GIT_INDEX_FILE` is deliberately NOT stripped: `reviewed_state` sets it on purpose, to a
+    throwaway index, and stripping it here would fight its own caller. `GIT_CONFIG_*` is likewise
+    left alone in the SUBJECT — r11 measured that `reviewed_state` records exactly what a real
+    commit stores under a host clean filter, so neutralising config there would be the defect.
+    """
+    out = dict(os.environ if env is None else env)
+    for var in REDIRECT_VARS:
+        out.pop(var, None)
+    return out
+
+
+def reviewed_state(repo_root: "str | None" = None) -> "tuple[str | None, dict[str, str] | None]":
     """`(HEAD commit, {uncommitted path: "<mode> <object-id>" the reviewer was handed})`. IMPURE.
 
     WHY BOTH, and the second one is not decoration. `head` alone answers the question for a clean
@@ -278,22 +322,33 @@ def reviewed_state(repo_root: "str | None" = None) -> "tuple[str | None, dict[st
     recorded, and `git` is asked for it rather than reconstructing it here.
 
     ⚠ NEVER RAISES, and never blocks the review. A wrapper that cannot describe the tree still has
-    a gate to run and testimony to file. The cost of failing is a `None` head, which downstream
-    reads as "cannot tell" — reported as CANNOT RUN, never as a pass.
+    a gate to run and testimony to file.
+
+    ⛔ THE COST OF FAILING IS STATED IN TWO PLACES, AND IT USED TO BE WRONG IN THREE — r11 Medium,
+    found independently by two review lenses. The docstring said a failure costs a `None` head; only
+    `rev-parse` honoured that. The other three exits returned a REAL head with an EMPTY map, which
+    is byte-identical to a round dispatched against a genuinely clean tree — so a FAILED measurement
+    read downstream as "nothing was uncommitted", and the gate then accused the author who had done
+    the documented careful thing of shipping unreviewed code. A false accusation indistinguishable
+    from a true one. `CLAUDE.md`: a check that cannot reach what it measures must say so.
+
+    So the second element is now `None` — not `{}` — whenever the tree could not be described, and
+    `check-review-recorded.classify_verdict` counts a null `dirty` as UNUSABLE, which routes to
+    CANNOT RUN rather than to a pass. `{}` keeps its real meaning: the tree WAS clean.
     """
     root = repo_root or REPO_ROOT
 
     def git(*args: str, env: "dict[str, str] | None" = None) -> "str | None":
         try:
-            p = subprocess.run(["git", "-C", root, *args],
-                               capture_output=True, text=True, timeout=60, env=env)
+            p = subprocess.run(["git", "-C", root, *args], capture_output=True, text=True,
+                               timeout=60, env=unredirected(env))
         except (OSError, subprocess.SubprocessError):
             return None
         return p.stdout if p.returncode == 0 else None
 
     head = git("rev-parse", "HEAD")
     if head is None:
-        return None, {}
+        return None, None
     # ⛔ ASK GIT WHAT IT WOULD STORE — do not compute it. r2 broke three attempts at doing this by
     # hand: `git diff --name-only` + `hash-object` recorded a symlink as the hash of its TARGET's
     # contents (git stores the link text), omitted untracked files entirely (a new file present at
@@ -309,7 +364,7 @@ def reviewed_state(repo_root: "str | None" = None) -> "tuple[str | None, dict[st
         with tempfile.TemporaryDirectory() as td:
             env = dict(os.environ, GIT_INDEX_FILE=os.path.join(td, "index"))
             if git("read-tree", "HEAD", env=env) is None:
-                return head.strip(), {}
+                return head.strip(), None
             # ⚠ BEST EFFORT, NOT ALL-OR-NOTHING — r3 Medium. `add -A` fails on an out-of-cone
             # untracked path under a sparse checkout, and returning {} there discarded the entries
             # it HAD staged: one unrelated file turned a full record into no record, and every
@@ -318,9 +373,9 @@ def reviewed_state(repo_root: "str | None" = None) -> "tuple[str | None, dict[st
             git("add", "-A", env=env)
             raw = git("diff-index", "--cached", "-z", "--no-renames", "HEAD", env=env)
     except OSError:
-        return head.strip(), {}
+        return head.strip(), None
     if raw is None:
-        return head.strip(), {}
+        return head.strip(), None
     # Raw `-z` records are `:<srcmode> <dstmode> <srcsha> <dstsha> <status>\0<path>\0`.
     fields = raw.split("\0")
     for i in range(0, len(fields) - 1, 2):
@@ -668,6 +723,7 @@ def main() -> int:
         rec = verdict_record(gate_ran=gate_ran, exit_code=rc, out_path=args.out, reason=reason,
                              model=model, attempts=attempts,
                              head=head_at_dispatch, dirty=dirty_at_dispatch,
+                             prompt=getattr(args, "prompt_file", None),
                              intrusions_seen=[f"{os.path.join(d, n)}: {w}" for d, n, w in (hits or [])])
         err = write_verdict(vpath, rec)
         if err:
@@ -997,6 +1053,12 @@ def self_test() -> int:
     _r = verdict_record(gate_ran=False, exit_code=0, out_path="x/y.md", reason="r")
     chk("gate_ran is independent of exit_code", (_r["gate_ran"], _r["exit_code"]), (False, 0))
     chk("the verdict names the review it is about", _r["review"], "y.md")
+    # ⚠ r11 Low: `VERDICT_SCHEMA` was stamped into every record and asserted by nothing — deleting
+    # the field changed no case and no gate outcome, so it was an unfalsifiable constant. The
+    # LITERAL is the point: comparing against `VERDICT_SCHEMA` would agree with any value it took.
+    # (Full schema VALIDATION stays deferred by r5's and r6's explicit agreement; this is only the
+    # narrower claim that the field is really written.)
+    chk("the record states which schema it is, as a number a reader can check", _r["schema"], 2)
     with tempfile.TemporaryDirectory() as td:
         vp = os.path.join(td, "deep", "v.json")
         chk("write_verdict creates its directory and returns no error",
@@ -1030,11 +1092,44 @@ def self_test() -> int:
     # able to tell "this run could not say" from "this run predates the field".
     chk("a run that could not describe the tree says so with null, not by omitting the field",
         ("head" in _r, _r["head"]), (True, None))
+    # ⛔ `None` AND `{}` ARE DIFFERENT ANSWERS — r11 Medium. `dict(dirty or {})` collapsed them, so a
+    # failed measurement was byte-identical to a clean tree and the gate accused the careful author.
+    _n = verdict_record(gate_ran=True, exit_code=0, out_path="x/y.md", reason="r",
+                        head="abc123", dirty=None)
+    chk("a null dirty map survives into the record as null, not as an empty map",
+        ("dirty" in _n, _n["dirty"]), (True, None))
+    _e = verdict_record(gate_ran=True, exit_code=0, out_path="x/y.md", reason="r",
+                        head="abc123", dirty={})
+    chk("…while an EMPTY map stays empty, because 'the tree was clean' is a real answer",
+        _e["dirty"], {})
+    # ⛔ THE SCOPE THE ENTRIES WERE TAKEN UNDER — r11 High. `dirty` is the whole working tree, so it
+    # says what was IN the tree at dispatch, not what the prompt covered. No mechanism can close
+    # that; recording the prompt lets a human see it.
+    _p = verdict_record(gate_ran=True, exit_code=0, out_path="x/y.md", reason="r",
+                        prompt="/tmp/r11.md")
+    chk("the verdict records the prompt the run was dispatched with", _p["prompt"], "/tmp/r11.md")
+    chk("…and says null rather than omitting it when there was none", _r["prompt"], None)
+    # ⛔ REPOSITORY REDIRECTION IS STRIPPED — r11 High, the finding that moved a real branch ref.
+    _env_in = {"GIT_DIR": "/elsewhere/.git", "GIT_WORK_TREE": "/elsewhere",
+               "GIT_COMMON_DIR": "/elsewhere/.git", "GIT_INDEX_FILE": "/tmp/i", "PATH": "/bin"}
+    chk("git -C means what it says: GIT_DIR, GIT_WORK_TREE and GIT_COMMON_DIR are removed",
+        sorted(unredirected(_env_in)), ["GIT_INDEX_FILE", "PATH"])
+    # ⚠ `.get`, NOT `[...]` — the same contract `check-review-recorded.py` records for its own
+    # fixture: the mutation that adds GIT_INDEX_FILE to REDIRECT_VARS raised KeyError here, so the
+    # suite CRASHED and printed no `[FAIL] <case>` line, and the harness reported the entry as
+    # unattributable rather than as a kill. A case must FAIL, not crash.
+    chk("…GIT_INDEX_FILE is KEPT, because reviewed_state sets it on purpose",
+        unredirected(_env_in).get("GIT_INDEX_FILE"), "/tmp/i")
+    chk("…and the caller's mapping is not mutated in place",
+        "GIT_DIR" in _env_in, True)
     with tempfile.TemporaryDirectory() as td:
         _head, _dirty = reviewed_state(td)
         chk("reviewed_state outside a git repository returns no head rather than raising",
             _head, None)
-        chk("…and claims no dirty files when it has no head to place them against", _dirty, {})
+        # ⛔ `None`, NOT `{}` — r11 Medium. It could not look, and the empty map is reserved for
+        # "it looked and the tree was clean". Downstream `classify_verdict` counts null as UNUSABLE.
+        chk("…and says it could not describe the tree with null, not with an empty map",
+            _dirty, None)
 
     # ⛔ THE SUCCESS PATH HAD NO CASE AT ALL, and `check-fixture-variation` is what said so: every
     # call passed the same `repo_root`, so no case could tell the parameter from a constant — and
@@ -1048,7 +1143,14 @@ def self_test() -> int:
         # red for `commit.gpgsign=true` or a global `core.hooksPath` whose pre-commit hook fails,
         # which is a host policy and not a defect in `reviewed_state`. A guard that goes red for
         # the machine it runs on gets switched off.
-        _env = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_SYSTEM=os.devnull,
+        # ⛔ AND ISOLATED FROM REPOSITORY REDIRECTION — r11 High, DEMONSTRATED rather than argued.
+        # r10 closed config FILES here and left `GIT_DIR`/`GIT_WORK_TREE`/`GIT_COMMON_DIR` inherited,
+        # so running this suite under an exported `GIT_DIR` sent the `git commit` two lines below
+        # into whatever repository that variable named. During r11 that happened to the live
+        # worktree: the fixture's "base" commit moved a real branch ref off its pushed merge commit.
+        # `unredirected` also strips `GIT_INDEX_FILE`'s neighbours without touching it, because
+        # `reviewed_state` sets that one deliberately.
+        _env = dict(unredirected(), GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_SYSTEM=os.devnull,
                     GIT_CONFIG_NOSYSTEM="1", GIT_TERMINAL_PROMPT="0")
 
         def _git(*a):
@@ -1058,8 +1160,18 @@ def self_test() -> int:
         _git("config", "user.name", "t")
         _git("config", "commit.gpgsign", "false")
         _git("config", "core.hooksPath", os.path.join(td2, "no-hooks"))
-        with open(os.path.join(td2, "a.txt"), "w", encoding="utf-8") as f:
-            f.write("one\n")
+        # ⛔ `unchanged.txt` AND `gone.txt` EXIST BECAUSE TWO CASES BELOW WERE NAMED FOR SCENARIOS
+        # THIS FIXTURE DID NOT CONTAIN — r11 High. "a file identical to HEAD is not recorded as
+        # handed over" asserted `"unchanged" in _dirty2` over a repository holding no unchanged file
+        # and no path of that name, so it was False for EVERY possible implementation: measured, a
+        # mutation diffing against the empty tree (recording every tracked file whether it changed
+        # or not) left the suite at 75/75. And the r3 Medium — A DELETION IS RECORDED, NOT SKIPPED —
+        # had no case at all on the producer side, so restoring the skip also survived, even though
+        # the CONSUMER has four cases pinning the all-zero spelling. Two halves of one wire format
+        # with only one end held.
+        for _n, _c in (("a.txt", "one\n"), ("unchanged.txt", "never touched\n"), ("gone.txt", "x\n")):
+            with open(os.path.join(td2, _n), "w", encoding="utf-8") as f:
+                f.write(_c)
         _git("add", "-A")
         _commit = _git("commit", "-q", "--no-verify", "--no-gpg-sign", "-m", "base")
         # ⚠ CHECKED, not assumed — r10 measured an IndexError three cases later when the commit had
@@ -1072,24 +1184,61 @@ def self_test() -> int:
             f.write("two\n")
         with open(os.path.join(td2, "b.txt"), "w", encoding="utf-8") as f:
             f.write("new\n")
+        os.unlink(os.path.join(td2, "gone.txt"))
         _head2, _dirty2 = reviewed_state(td2)
+        _dirty2 = _dirty2 or {}
         chk("in a real repository reviewed_state reports the commit it was handed",
-            bool(_head2) and len(_head2) == 40, True)
+            bool(_head2) and len(_head2 or "") == 40, True)
         chk("…and records the MODIFIED file as a tree entry",
             bool(re.fullmatch(r"\d{6} [0-9a-f]{40}", _dirty2.get("a.txt", ""))), True)
-        chk("…and the UNTRACKED one too, which `git diff HEAD` alone never saw",
-            bool(re.fullmatch(r"\d{6} [0-9a-f]{40}", _dirty2.get("b.txt", ""))), True)
+        # ⛔ THE DESTINATION MODE, AND `\d{6}` WAS NOT ENOUGH TO SAY SO — r11 High. Raw `diff-index`
+        # records are `:<srcmode> <dstmode> <srcsha> <dstsha> <status>`; for an UNTRACKED file the
+        # SOURCE mode is `000000`, so reading `parts[0]` instead of `parts[1]` would record
+        # `000000 <sha>` for every newly-added file — which can never equal the final tree's
+        # `100644 <sha>`, so the gate would falsely fail any branch that adds a file. `000000`
+        # matches `\d{6}`, which is why the old assertion survived that mutation.
+        chk("…and the UNTRACKED one too, at its DESTINATION mode, not the 000000 source mode",
+            _dirty2.get("b.txt", "").split()[:1], ["100644"])
+        # ⛔ r3 Medium, on the producer side at last: absence is a tree state, and the zeros git
+        # writes here are what the consumer's `is_absent` reads.
+        chk("…and a DELETED file is recorded as the all-zero entry, not skipped",
+            _dirty2.get("gone.txt", "").split()[:1], ["000000"])
+        chk("…whose object id is zeros too, which is what absence compares equal to",
+            set((_dirty2.get("gone.txt", "").split() or [""])[-1]), {"0"})
         # The entry must be what git ITSELF would store, or the comparison downstream is against a
         # number of our own invention.
-        _lstree = _git("hash-object", "--", "a.txt").stdout.strip()
+        #
+        # ⚠ `os.environ`, NOT `_env` — r11 Medium, and the fix is what caused the defect. r10 gave
+        # the FIXTURE a config-neutralised environment and left the SUBJECT under the host's, so
+        # this one comparison put the two configurations on opposite sides of a `==`: under a global
+        # clean filter the suite went red for a HOST POLICY, which is precisely what r10 filed.
+        # Measured which side is right — the subject is: `reviewed_state` records exactly what a
+        # real commit stores under that filter, so the repair belongs here, in the case.
+        _lstree = subprocess.run(["git", "-C", td2, "hash-object", "--", "a.txt"],
+                                 capture_output=True, text=True,
+                                 env=unredirected()).stdout.strip()
         chk("…and the recorded object id is the one git computes for that content",
             (_dirty2.get("a.txt", "") .split() or [""])[-1], _lstree)
-        # An UNCHANGED file is not the reviewer's credit to claim.
-        chk("a file identical to HEAD is not recorded as handed over", "unchanged" in _dirty2, False)
+        # An UNCHANGED file is not the reviewer's credit to claim — and there is now one in the
+        # fixture for the assertion to be about.
+        chk("a file identical to HEAD is not recorded as handed over",
+            "unchanged.txt" in _dirty2, False)
+        chk("…while the files that DID change are all there, so that is not vacuous emptiness",
+            sorted(_dirty2), ["a.txt", "b.txt", "gone.txt"])
+        # ⛔ THE INDEX IT STAGES INTO IS NOT THE REPOSITORY'S OWN — r11 High. Removing the
+        # `GIT_INDEX_FILE` isolation left the suite at 75/75, and `review-method.md` hazard 2 is
+        # exactly this: a concurrent agent's `git add` colliding in a shared index. Asked of the
+        # FIXTURE's repository, because that is the one `reviewed_state` was pointed at — a first
+        # draft asked it of the host repo, where the mutation cannot show up at all, and therefore
+        # SURVIVED. A case must be about the thing the mutation moves.
+        _staged = subprocess.run(["git", "-C", td2, "diff", "--cached", "--name-only"],
+                                 capture_output=True, text=True, env=_env)
+        chk("the repository's own index is untouched — the staging went to a throwaway one",
+            _staged.stdout.strip(), "")
         # And the real repo's answer must DIFFER from the non-repo one — the parameter matters.
         chk("the repo_root argument is load-bearing: two roots, two different answers",
             _head2 == _head, False)
-    extra += 8
+    extra += 13
 
     total = len(cases) + extra
     print(f"\n{total - failures}/{total} passed")

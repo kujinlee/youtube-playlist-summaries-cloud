@@ -334,7 +334,7 @@ def check_manifest(path: str, text: str, manifest_stems: set[str]) -> list[Viola
 # evidence of a working suite. Running all eight:
 #
 #     explainer-serve.py          88/88
-#     codex-review.py             63/63   the adversarial-review gate itself
+#     codex-review.py                     the adversarial-review gate itself — debt PAID 2026-09-14
 #     build-m4-schema.py          22/22
 #     verify-exclusion-reasons.py 11/11
 #     prior-art.py                PASS
@@ -347,9 +347,15 @@ def check_manifest(path: str, text: str, manifest_stems: set[str]) -> list[Viola
 # argument; only the absent output can. That file is in this population by PROSE — the documented
 # fail-closed case — and `NO-MUTATIONS:` is the honest escape for it.
 #
-# `codex-review.py` is the sharpest entry: it decides whether a review gate RAN, and this project
-# has measured that gate failing open twice. Its 63 cases have never been asked whether they would
-# go red if it broke.
+# `codex-review.py` WAS the sharpest entry: it decides whether a review gate RAN, and this project
+# has measured that gate failing open twice, while its cases had never been asked whether they
+# would go red if it broke. ⟳ 2026-09-14, r11 — PAID: it has a manifest now and has left
+# `WIDENED_MANIFEST_DEBT`. The debt was not theoretical. Asking the question found three of its
+# rules surviving mutation, two of them regressions of defects earlier rounds had already found and
+# fixed at the other end of the same wire format, plus one case that could not fail under any
+# implementation. ⚠ NO CASE COUNT IS QUOTED HERE ANY MORE: this line said "Its 63 cases" while the
+# suite ran 91. The script declares its own count and `check-selftest-counts.py` verifies it by
+# running it; a number in prose has no owner.
 #
 # ⚠ THE DISCOVERY IS DELIBERATELY THE SAME `SELF_TEST_RE` R1 USES, prose false-positives and all.
 # A second detector would drift from R1's — this repo has measured that seven times — and the
@@ -365,7 +371,13 @@ def check_manifest(path: str, text: str, manifest_stems: set[str]) -> list[Viola
 # rule, and the tool caught it on the first run.
 WIDENED_MANIFEST_DEBT: frozenset[str] = frozenset({
     "scripts/build-m4-schema.py",
-    "scripts/codex-review.py",
+    # ⟳ 2026-09-14, r11: `scripts/codex-review.py` LEAVES this set — it has a manifest now
+    # (`scripts/mutations/codex-review.json`, 9 entries). Removed in the SAME commit that adds the
+    # manifest, which `widened_debt_drift` requires in both directions: a ceiling would let the debt
+    # be paid down silently and re-accrued. The debt that bought this: r11 found three rules in its
+    # new `reviewed_state` surviving mutation, two of them regressions of defects r2 and r3 had
+    # already found and fixed on the consumer side — the two halves of one wire format, with only
+    # one end held.
     "scripts/explainer-serve.py",
     "scripts/gen-m4-manifest.py",
     "scripts/m4_catalog.py",
@@ -646,10 +658,15 @@ ESCAPE_CASES: list[tuple[str, str, bool]] = [
 WIDENED_DRIFT_CASES: list[tuple[str, set[str], set[str], list[str]]] = [
     ("an UNPINNED violator fails",
      {"scripts/new.py"}, {"scripts/new.py"}, ["R4W_no_mutation_manifest"]),
+    # ⚠ THESE TWO NAME A REAL MEMBER OF `WIDENED_MANIFEST_DEBT`, so paying one down moves them.
+    # They said `codex-review.py` until 2026-09-14, when r11 gave that file a manifest and the pin
+    # was removed in the same commit — and both cases went red, correctly: a case whose fixture is
+    # a live set member is a case the set's contents can falsify. Repointed rather than frozen to a
+    # literal, because a synthetic name here would stop proving that the REAL pin is consulted.
     ("a pinned violator is silent — that is what the pin is for",
-     {"scripts/codex-review.py"}, {"scripts/codex-review.py"}, []),
+     {"scripts/explainer-serve.py"}, {"scripts/explainer-serve.py"}, []),
     ("a pinned entry that was EXAMINED and no longer violates fails",
-     set(), {"scripts/codex-review.py"}, ["R4W_debt_paid_not_recorded"]),
+     set(), {"scripts/explainer-serve.py"}, ["R4W_debt_paid_not_recorded"]),
     # ⭐ THE CORPUS CASE, and it is the one that caught a real defect on the first run. Absence
     # from the corpus is NOT-EXAMINED, never "paid". Without the `examined` argument the wiring
     # cases below — which drive evaluate() with a two-entry synthetic corpus — reported all eight

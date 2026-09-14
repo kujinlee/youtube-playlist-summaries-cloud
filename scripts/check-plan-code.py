@@ -774,7 +774,26 @@ EXPECTED_MUTATIONS = {
     # escape in both directions including whose absence it is allowed to explain, and the reviewed
     # DELETION that had no entry to compare against — absence is a tree state, and dropping it
     # failed the careful path for the crime of deleting code.
-    "scripts/check-review-recorded.py": 23,
+    # ⟳ 2026-09-14, r11: 23 -> 35. TWELVE entries, and every one of them aims at a rule that used to
+    # live inside the git-reading gatherer where no case could reach it — measured, eight decision
+    # points all surviving mutation with the suite at 77/77, two of them turning a live refusal into
+    # a live pass. The rules are now `classify_verdict`, `reviewed_map`, `tail_candidates`,
+    # `second_question`, `readable_docs` and `split_nul`; these entries are the proof they can fail.
+    # Two of the twelve are the r11 Blocking and High, which are ONE expression pulling opposite
+    # ways: the union (a reverted overlay must still be compared) and the intersection (the base's
+    # commits must not be charged to this branch).
+    "scripts/check-review-recorded.py": 35,
+    # ⟳ 2026-09-14, r11: this file JOINS the manifest — R4 widened-debt 8 -> 7, removed from
+    # `WIDENED_MANIFEST_DEBT` in this same commit, which that rule requires as an identity and not
+    # a ceiling. It is the producer half of the mechanism the file above consumes, and it had gone
+    # from zero mutations to zero while gaining `reviewed_state`. r11 found THREE of its new rules
+    # surviving mutation — two of them regressions of findings earlier rounds had already paid for
+    # (r3's "a deletion is RECORDED, not skipped" and the producer half of r2's mode contract) —
+    # plus a case that could not fail at all, because the fixture held no file matching its own
+    # subject. Nine entries: the two the earlier rounds bought back, the destination-mode read, the
+    # throwaway index, the unchanged-file rule, the null-vs-empty distinction, the recorded prompt,
+    # and repository redirection in both directions.
+    "scripts/codex-review.py": 9,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
@@ -2525,6 +2544,11 @@ def _self_test() -> int:
                                       "scripts/check-test-counts.py",
                                       "scripts/check-theme-token-coverage.py",
                                       "scripts/check-vocabulary-collisions.py",
+                                      # ⟳ 2026-09-14, r11. A LIVE inventory entry, added with the
+                                      # manifest — and it is NOT a `check-*` guard, so this list is
+                                      # the only place that names it. Its R4 debt is dropped from
+                                      # WIDENED_MANIFEST_DEBT in the same commit.
+                                      "scripts/codex-review.py",
                                       "scripts/coverage_verdict.py",
                                       "scripts/gen-backlog-page.py",
                                       "scripts/gen-dashboard.py",
@@ -3015,8 +3039,10 @@ def _self_test() -> int:
     # ⟳ r2 LOW 2 (claude): this said "559 -> 566 … +7" while the case beside it said 572 — the total
     # moved four times and the prose was updated once. Nothing observes a comment, which is why the
     # number lives next to the case that proves it and nowhere else.
-    # ⟳ 2026-09-13, 559 -> 576: the final-tree rule in `check-review-recorded.py`. FIVE entries for
-    # FOURTEEN behaviours added to an already-manifested file; nine were bought by its own three
+    # ⟳ 2026-09-13, 559 -> 576: the final-tree rule in `check-review-recorded.py`. ⚠ r11 Low: this
+    # sentence said "FIVE entries" over a delta of +17, and the manifest really grew 6 -> 23 — the
+    # line disagreed with itself, which is what a running commentary does when only one of its two
+    # halves is updated. SEVENTEEN entries for fourteen behaviours; nine were bought by its own three
     # review rounds, whose two Blockings were the same class one layer apart — path, then content,
     # then the tree entry that is actually right. A RISE, the ordinary kind. ⚠ The first draft of this line said `421 -> 426`, read off the narration block
     # above rather than off `sum(EXPECTED_MUTATIONS.values())`, and THIS CASE caught it — which is
@@ -3039,7 +3065,16 @@ def _self_test() -> int:
     # source. ENTRY COUNT IS 43 ON ALL THREE SIDES and the key sets are identical, so no file
     # joined or left the manifest here; only per-file counts moved, which is what a merge of
     # two ordinary RISES should look like.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 597)
+    # ⟳ 2026-09-14, r11: 597 -> 618. A RISE, the ordinary kind, and the largest single-round one on
+    # this branch: +12 on `check-review-recorded.py` for rules extracted out of the git-reading
+    # gatherer so a case can reach them, and +9 for `codex-review.py` joining the manifest at last.
+    # Every one of the 21 was PROVEN before it was written down — applied to an isolated copy,
+    # required to go red, and required to make the case it names red and NO OTHER, which is this
+    # harness's own rule (`expect must name EXACTLY ONE`). Two of the 21 did not survive that check
+    # on the first try and were fixed rather than weakened: both CRASHED the suite instead of
+    # failing it, so no `[FAIL] <case>` line was printed and the harness would have reported them
+    # unattributable — the contract this file already states, met from the other side.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 618)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -1,0 +1,101 @@
+[
+  {
+    "name": "repository redirection is left in the environment",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    for var in REDIRECT_VARS:\n        out.pop(var, None)",
+        "    for var in ():\n        out.pop(var, None)"
+      ]
+    ],
+    "expect": "git -C means what it says"
+  },
+  {
+    "name": "the throwaway index variable is stripped along with the redirections",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "REDIRECT_VARS = (\"GIT_DIR\", \"GIT_WORK_TREE\", \"GIT_COMMON_DIR\")",
+        "REDIRECT_VARS = (\"GIT_DIR\", \"GIT_WORK_TREE\", \"GIT_COMMON_DIR\", \"GIT_INDEX_FILE\")"
+      ]
+    ],
+    "expect": "GIT_INDEX_FILE is KEPT"
+  },
+  {
+    "name": "a null dirty map is collapsed into an empty one in the record",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "        \"dirty\": None if dirty is None else dict(dirty),",
+        "        \"dirty\": dict(dirty or {}),"
+      ]
+    ],
+    "expect": "a null dirty map survives into the record as null"
+  },
+  {
+    "name": "the prompt the run was dispatched with is dropped",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "        \"prompt\": prompt,",
+        "        \"prompt\": None,"
+      ]
+    ],
+    "expect": "the verdict records the prompt the run was dispatched with"
+  },
+  {
+    "name": "a deletion is skipped rather than recorded",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "        dirty[path] = f\"{parts[1]} {parts[3]}\"",
+        "        if set(parts[3]) == {\"0\"}:\n            continue\n        dirty[path] = f\"{parts[1]} {parts[3]}\""
+      ]
+    ],
+    "expect": "a DELETED file is recorded as the all-zero entry"
+  },
+  {
+    "name": "the SOURCE mode is recorded instead of the destination mode",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "        dirty[path] = f\"{parts[1]} {parts[3]}\"",
+        "        dirty[path] = f\"{parts[0]} {parts[3]}\""
+      ]
+    ],
+    "expect": "at its DESTINATION mode, not the 000000 source mode"
+  },
+  {
+    "name": "the throwaway index is abandoned, so the host's real index is used",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "            env = dict(os.environ, GIT_INDEX_FILE=os.path.join(td, \"index\"))",
+        "            env = dict(os.environ)"
+      ]
+    ],
+    "expect": "the repository's own index is untouched"
+  },
+  {
+    "name": "every tracked file is recorded, changed or not",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "            raw = git(\"diff-index\", \"--cached\", \"-z\", \"--no-renames\", \"HEAD\", env=env)",
+        "            raw = git(\"diff-index\", \"--cached\", \"-z\", \"--no-renames\",\n                      \"4b825dc642cb6eb9a060e54bf8d69288fbee4904\", env=env)"
+      ]
+    ],
+    "expect": "a file identical to HEAD is not recorded as handed over"
+  },
+  {
+    "name": "a wrapper with no head claims a clean tree instead of saying it could not look",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    head = git(\"rev-parse\", \"HEAD\")\n    if head is None:\n        return None, None",
+        "    head = git(\"rev-parse\", \"HEAD\")\n    if head is None:\n        return None, {}"
+      ]
+    ],
+    "expect": "says it could not describe the tree with null"
+  }
+]

@@ -127,6 +127,15 @@ POPULATION: frozenset[str] = frozenset({
                                     # while the suite ran 51. Now declared AND externally observed.
     "check-plan-task-order.py",
     "check-review-rounds.py",
+    "check-review-recorded.py",      # ⟳ 2026-09-14, r11 Medium. It had a `--self-test`, declared no
+                                     # count, and was in neither direction this file reports:
+                                     # `population_errors` catches pinned-but-no-longer-declaring
+                                     # and declaring-but-not-pinned, and a script that does NEITHER
+                                     # is reported by neither. Its suite went 31 → 113 across one
+                                     # branch — while it acquired the zero-round gate AND the
+                                     # final-tree rule — with nothing anywhere observing the number.
+                                     # Its two closest siblings were both already pinned, and
+                                     # `codex-review.py` was pinned for exactly this drift.
     "check-selftest-counts.py",      # this file — the observer observes itself
     "coverage_verdict.py",           # ⟳ 2026-09-08, backlog #91. Not a `check-*` guard, so
                                      # the ratchet contract never sees it; its cases ARE the
