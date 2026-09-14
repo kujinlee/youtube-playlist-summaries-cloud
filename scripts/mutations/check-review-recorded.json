@@ -291,22 +291,22 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "return sorted((set(after) | set(reviewed)) & set(branch_delta))",
-        "return sorted(set(after) & set(branch_delta))"
+        "(set(after) | set(reviewed))",
+        "set(after)"
       ]
     ],
-    "expect": "a REVERTED dirty overlay is STILL a candidate"
+    "expect": "a REVERTED dirty overlay is STILL a candidate, though nothing changed since the round"
   },
   {
     "name": "the tail is charged over the base's commits again",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "return sorted((set(after) | set(reviewed)) & set(branch_delta))",
-        "return sorted(set(after) | set(reviewed))"
+        " & set(branch_delta))",
+        ")"
       ]
     ],
-    "expect": "a path the BASE changed"
+    "expect": "a path the BASE changed, outside this branch's delta, is not charged"
   },
   {
     "name": "a gate that did not run becomes testimony",
@@ -317,7 +317,7 @@
         "    if False:\n        return None, SKIP"
       ]
     ],
-    "expect": "a verdict saying the gate did NOT run is skipped"
+    "expect": "a verdict saying the gate did NOT run is skipped, never read as testimony"
   },
   {
     "name": "a failed snapshot reads as a clean tree",
@@ -328,7 +328,7 @@
         "    if False:\n        return None, UNUSABLE"
       ]
     ],
-    "expect": "a verdict whose dirty map is NULL could not look"
+    "expect": "a verdict whose dirty map is NULL could not look — unusable, not a clean tree"
   },
   {
     "name": "a schema-1 verdict is skipped instead of counted",
@@ -339,7 +339,7 @@
         "    if not isinstance(head, str) or not head.strip():\n        return None, SKIP"
       ]
     ],
-    "expect": "a schema-1 verdict carries no head"
+    "expect": "a schema-1 verdict carries no head: UNUSABLE, not skipped"
   },
   {
     "name": "a verdict added then deleted is treated as fine",
@@ -372,18 +372,18 @@
         "        if False:\n            unusable += 1"
       ]
     ],
-    "expect": "a head no longer reachable"
+    "expect": "a head no longer reachable — rebased or squashed — is UNUSABLE, never a pass"
   },
   {
     "name": "the second question is switched off entirely",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "    if not guarded_changes(changed):\n        return False, None\n    if waiver is not None:",
-        "    if True:\n        return False, None\n    if waiver is not None:"
+        "    if not guarded_changes(changed):\n        return False, None",
+        "    if True:\n        return False, None"
       ]
     ],
-    "expect": "guarded code and no waiver"
+    "expect": "guarded code and no waiver: the question is asked"
   },
   {
     "name": "the NO-REVIEW waiver stops echoing its reason",
@@ -394,7 +394,7 @@
         "        return False, None"
       ]
     ],
-    "expect": "and ECHOES the reason"
+    "expect": "...and ECHOES the reason, so exit 0 is not attributed to the review documents"
   },
   {
     "name": "-z parsing reverts to splitlines, so a quoted path stops being the path",
@@ -405,7 +405,7 @@
         "    return [ln for ln in out.splitlines() if ln.strip()]"
       ]
     ],
-    "expect": "and a newline inside a path does not split it"
+    "expect": "...and a newline inside a path does not split it"
   },
   {
     "name": "a review document that is gone is read anyway",
@@ -416,6 +416,94 @@
         "        text = read(rel)\n        if True:"
       ]
     ],
-    "expect": "a review document that is gone is not read"
+    "expect": "a review document that is gone is not read and cannot declare a gap"
+  },
+  {
+    "name": "rename detection is left ON, so a guarded file moved to a prose path vanishes from the diff",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    args = [\"diff\", \"--name-only\", \"-z\", \"--no-renames\"]",
+        "    args = [\"diff\", \"--name-only\", \"-z\"]"
+      ]
+    ],
+    "expect": "the diff asks git NOT to pair a deletion with an addition"
+  },
+  {
+    "name": "gate code under docs/ reads as prose again, so changing a schema gate owes no review",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if any(path.startswith(d) for d in CODE_UNDER_PROSE):\n        return path.endswith(\".md\")",
+        "    if False:\n        return path.endswith(\".md\")"
+      ]
+    ],
+    "expect": "gate code at mutate-schema.py is GUARDED, though it lives under docs/"
+  },
+  {
+    "name": "the exception swallows the spec's own prose too, obliging a round for a doc edit",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        return path.endswith(\".md\")",
+        "        return False"
+      ]
+    ],
+    "expect": "...and a hypothetical .md beside them would still be prose (none exists there today)"
+  },
+  {
+    "name": "the anti-drift check stops reporting a docs/ gate directory it does not cover",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        if not any(prefix.startswith(e) or e == prefix.rstrip(\"/\") + \"/\"\n                   for e in CODE_UNDER_PROSE):\n            missing.append(g)",
+        "        if False:\n            missing.append(g)"
+      ]
+    ],
+    "expect": "a NEW docs/ gate directory the tuple does not know about is REPORTED"
+  },
+  {
+    "name": "an empty NO-REVIEW waives the final-tree question again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if waiver is not None and waiver.strip():",
+        "    if waiver is not None:"
+      ]
+    ],
+    "expect": "a bare NO-REVIEW with no reason does NOT waive the final-tree question"
+  },
+  {
+    "name": "a glob BROADER than an exemption is silently cleared again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        if not any(prefix.startswith(e) or e == prefix.rstrip(\"/\") + \"/\"\n                   for e in CODE_UNDER_PROSE):",
+        "        if not any(prefix.startswith(e) or e.startswith(prefix)\n                   for e in CODE_UNDER_PROSE):"
+      ]
+    ],
+    "expect": "...as is a glob BROADER than an exemption, which used to be silently cleared"
+  },
+  {
+    "name": "the workflow extractor stops finding docs/ path filters",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return sorted({m.group(1) for m in re.finditer(r\"^\\s*-\\s*'(docs/[^']*)'\", text, re.M)})",
+        "    return []"
+      ]
+    ],
+    "expect": "the workflow's docs/ path filters are READ, not transcribed into this test"
+  },
+  {
+    "name": "the extractor swallows non-docs globs too, so the check reports paths CI never guarded",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "r\"^\\s*-\\s*'(docs/[^']*)'\"",
+        "r\"^\\s*-\\s*'([^']*)'\""
+      ]
+    ],
+    "expect": "the extractor finds quoted docs/ globs and ignores everything else"
   }
 ]

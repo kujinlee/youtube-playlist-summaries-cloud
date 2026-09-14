@@ -8,7 +8,7 @@
         "    for var in ():\n        out.pop(var, None)"
       ]
     ],
-    "expect": "git -C means what it says"
+    "expect": "git -C means what it says: GIT_DIR, GIT_WORK_TREE and GIT_COMMON_DIR are removed"
   },
   {
     "name": "the throwaway index variable is stripped along with the redirections",
@@ -19,7 +19,7 @@
         "REDIRECT_VARS = (\"GIT_DIR\", \"GIT_WORK_TREE\", \"GIT_COMMON_DIR\", \"GIT_INDEX_FILE\")"
       ]
     ],
-    "expect": "GIT_INDEX_FILE is KEPT"
+    "expect": "…GIT_INDEX_FILE is KEPT, because reviewed_state sets it on purpose"
   },
   {
     "name": "a null dirty map is collapsed into an empty one in the record",
@@ -30,7 +30,7 @@
         "        \"dirty\": dict(dirty or {}),"
       ]
     ],
-    "expect": "a null dirty map survives into the record as null"
+    "expect": "a null dirty map survives into the record as null, not as an empty map"
   },
   {
     "name": "the prompt the run was dispatched with is dropped",
@@ -48,25 +48,25 @@
     "file": "scripts/codex-review.py",
     "edits": [
       [
-        "        dirty[path] = f\"{parts[1]} {parts[3]}\"",
-        "        if set(parts[3]) == {\"0\"}:\n            continue\n        dirty[path] = f\"{parts[1]} {parts[3]}\""
+        "        dirty[path] = f\"{parts[1]} {parts[3]}\"\n    return head.strip(), dirty",
+        "        if set(parts[3]) == {\"0\"}:\n            continue\n        dirty[path] = f\"{parts[1]} {parts[3]}\"\n    return head.strip(), dirty"
       ]
     ],
-    "expect": "a DELETED file is recorded as the all-zero entry"
+    "expect": "…and a DELETED file is recorded as the all-zero entry, not skipped"
   },
   {
     "name": "the SOURCE mode is recorded instead of the destination mode",
     "file": "scripts/codex-review.py",
     "edits": [
       [
-        "        dirty[path] = f\"{parts[1]} {parts[3]}\"",
-        "        dirty[path] = f\"{parts[0]} {parts[3]}\""
+        "f\"{parts[1]} {parts[3]}\"",
+        "f\"{parts[0]} {parts[3]}\""
       ]
     ],
-    "expect": "at its DESTINATION mode, not the 000000 source mode"
+    "expect": "…and the UNTRACKED one too, at its DESTINATION mode, not the 000000 source mode"
   },
   {
-    "name": "the throwaway index is abandoned, so the host's real index is used",
+    "name": "the throwaway index is abandoned, so the repository's own index is used",
     "file": "scripts/codex-review.py",
     "edits": [
       [
@@ -74,7 +74,7 @@
         "            env = dict(os.environ)"
       ]
     ],
-    "expect": "the repository's own index is untouched"
+    "expect": "the repository's own index is untouched — the staging went to a throwaway one"
   },
   {
     "name": "every tracked file is recorded, changed or not",
@@ -96,6 +96,39 @@
         "    head = git(\"rev-parse\", \"HEAD\")\n    if head is None:\n        return None, {}"
       ]
     ],
-    "expect": "says it could not describe the tree with null"
+    "expect": "…and says it could not describe the tree with null, not with an empty map"
+  },
+  {
+    "name": "the reason is dropped, so the classifier half stops reporting WHY a case failed",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    tail = f\" ({reason})\" if reason else \"\"",
+        "    tail = \"\""
+      ]
+    ],
+    "expect": "the line keeps the canonical shape the harness documents"
+  },
+  {
+    "name": "the contract is asserted against a stub instead of the harness's real parser",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    return mod.parse_fail_names",
+        "    return lambda out: []"
+      ]
+    ],
+    "expect": "the FAIL line this suite prints parses back to the case name, via the harness's OWN parser"
+  },
+  {
+    "name": "the one FAIL-line shape reverts to got=, so every kill in this file goes unattributable",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    return f\"  [{'PASS' if ok else 'FAIL'}] {name}: got {got!r} want {want!r}{tail}\"",
+        "    return f\"  [{'PASS' if ok else 'FAIL'}] {name}: got={got!r}{tail}\""
+      ]
+    ],
+    "expect": "the line keeps the canonical shape the harness documents: got=False"
   }
 ]

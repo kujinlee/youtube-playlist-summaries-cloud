@@ -42,7 +42,7 @@ candidate yields a message ends in a loud non-zero exit.
 Usage:
   scripts/codex-review.py --out docs/reviews/task-N-foo-codex.md "<review prompt>"
   scripts/codex-review.py --out <file> --prompt-file <file> [--timeout 900] [--model <slug>]
-  scripts/codex-review.py --self-test  # 92 cases
+  scripts/codex-review.py --self-test  # 85 cases
 
 Exit codes:  0 = a real review was written   |   1 = no candidate produced one (gate did NOT run)
 """
@@ -54,6 +54,7 @@ import json
 import os
 import re
 import subprocess
+import importlib.util
 import sys
 import tempfile
 from importlib import import_module
@@ -836,6 +837,51 @@ def main() -> int:
                 reason="no candidate produced a usable review", attempts=attempts, hits=hits)
 
 
+def case_line(ok: bool, name: str, got, want, reason: str = "") -> str:
+    """PURE. The ONE `[PASS]`/`[FAIL]` line shape this suite prints.
+
+    ⛔ THIS FUNCTION EXISTS BECAUSE THE FIX FOR THE PREVIOUS BREAK COULD NOT FAIL — r13 High, and it
+    was proved by execution rather than argued: reverting the classifier printer to its broken shape
+    left the whole 618-mutation gate at `618 killed, 618 attributed, 0 survivor(s)`, rc=0,
+    byte-identical to the repaired tree. All nine manifest entries for this file name `chk` cases, so
+    nothing measured the printer at all.
+
+    That matters because this file has broken the `[FAIL] <case>` contract TWICE. r11 found `chk`
+    emitting `got={got!r}`; r12 found the classifier printer, twenty-one lines away, still emitting
+    `got={got} ({reason})` — the same defect, in the same function, in the round convened to remove
+    it. Both survived for as long as they did because nothing had tried to attribute a kill here.
+    A third recurrence would have been equally silent.
+
+    TWO printers were TWO copies of one contract, which is the duplicate-mechanism shape this repo
+    refuses everywhere else. There is now one, it is pure, a case can call it, and a mutation can
+    reach it — `scripts/mutations/codex-review.json` names the case it must go red through.
+
+    ⚠ THE CONSUMER IS `check-plan-code.parse_fail_names`, which truncates at the LAST `": got "` —
+    with the trailing space — and attributes by exact equality. `({reason})` after `want` is safe
+    because the last `": got "` is still the one written here; the round-trip cases below assert
+    that against the REAL parser rather than against a second copy of its rule.
+    """
+    tail = f" ({reason})" if reason else ""
+    return f"  [{'PASS' if ok else 'FAIL'}] {name}: got {got!r} want {want!r}{tail}"
+
+
+def _load_fail_parser():
+    """`parse_fail_names` from check-plan-code, so the contract is asserted against its real reader.
+
+    RAISES if it cannot be loaded. A case that quietly fell back to its own copy of the parse rule
+    would be a second implementation of the very contract it is checking — and this file has already
+    paid twice for the two halves of one rule drifting apart. Cannot-load is a failure, never a skip.
+    """
+    path = os.path.join(REPO_ROOT, "scripts", "check-plan-code.py")
+    spec = importlib.util.spec_from_file_location("_cpc", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"CANNOT RUN — cannot load parse_fail_names from {path}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["_cpc"] = mod
+    spec.loader.exec_module(mod)
+    return mod.parse_fail_names
+
+
 def self_test() -> int:
     """Classifier checks. Fixtures mirror runs observed live on 2026-07-19."""
     real_400 = (
@@ -904,9 +950,17 @@ def self_test() -> int:
     for name, code, out, msg, t_out, want in cases:
         got, reason = classify(code, out, msg, MIN_REVIEW_CHARS, t_out, out_path=OUT)
         ok = got == want
-        print(f"  [{'PASS' if ok else 'FAIL'}] {name}: got={got} ({reason})")
+        # ⛔ THE SECOND PRINTER, AND r12 IS WHY THIS COMMENT EXISTS. The r11 Blocking repair fixed
+        # `chk`'s printer 21 lines below and left this one emitting `got={got} ({reason})` — the
+        # exact broken shape the round was convened to remove — so all 17 `classify` cases, the half
+        # that decides whether a review gate RAN, stayed invisible to `parse_fail_names`. The r11
+        # coordinator document and the comment below both asserted "the printer is now canonical",
+        # and both were false about this file. Fixing the instance and calling it the class, inside
+        # the same function, in the round whose brief named that as the question to answer.
+        # ⚠ `({reason})` AFTER `want` is deliberate and safe: the parser truncates at the LAST
+        # `": got "`, which is still the one this line writes, and no `reason` contains that string.
+        print(case_line(ok, name, got, want, reason))
         if not ok:
-            print(f"         expected {want}")
             failures += 1
     # ── backlog #68: the artifact-safety half ──────────────────────────────────────────────────
     extra = 0
@@ -916,9 +970,17 @@ def self_test() -> int:
         nonlocal extra
         extra += 1
         ok = got == want
-        print(f"  [{'PASS' if ok else 'FAIL'}] {name}: got={got!r}")
+        # ⛔ THE CANONICAL LINE, AND IT USED TO BE `got={got!r}` — r11 Blocking (Codex half).
+        # `check-plan-code.parse_fail_names` truncates a case name at the LAST `": got "`, WITH the
+        # trailing space, and attributes a kill by `w == f` — exact equality, not a substring. So
+        # `: got=` never matched, every parsed name kept its `: got=…` tail, and no manifest entry
+        # for this file could EVER be attributed. It went unnoticed because nothing had tried:
+        # `codex-review.py` sat in `WIDENED_MANIFEST_DEBT` with no mutations at all until r11, so
+        # the contract had no consumer. Adding the manifest is what made the producer's silence
+        # audible. This is the recorded *a guard's own output is a CONTRACT* shape, in the file that
+        # decides whether a review gate ran.
+        print(case_line(ok, name, got, want))
         if not ok:
-            print(f"         expected {want!r}")
             failures += 1
 
     # (b) The exact sentence from the round-3 brief must be caught.
@@ -1122,6 +1184,34 @@ def self_test() -> int:
         unredirected(_env_in).get("GIT_INDEX_FILE"), "/tmp/i")
     chk("…and the caller's mapping is not mutated in place",
         "GIT_DIR" in _env_in, True)
+    # ⛔ THE `[FAIL] <case>` CONTRACT, ASSERTED AGAINST ITS REAL READER — r13 High. This file broke
+    # that contract twice (r11: `chk`; r12: the classifier printer, 21 lines away) and the r12 repair
+    # was measurably unfalsifiable: reverting it left the 618-mutation gate green. These cases are
+    # the falsifier, and `scripts/mutations/codex-review.json` names one of them.
+    # ⚠ THE PARSER IS IMPORTED, NOT RE-DERIVED. A local copy of "truncate at the last ': got '" would
+    # be a second implementation of the exact rule whose two copies caused both earlier breaks.
+    _pfn = _load_fail_parser()
+    chk("the FAIL line this suite prints parses back to the case name, via the harness's OWN parser",
+        _pfn(case_line(False, "a plain case", 1, 2)), ["a plain case"])
+    chk("…and the trailing (reason) the classifier printer adds does not disturb that",
+        _pfn(case_line(False, "a classifier case", "ok", "try_next", "323 chars")),
+        ["a classifier case"])
+    chk("…even when the case name itself contains a colon, which truncating at the FIRST would break",
+        _pfn(case_line(False, "r7: a name with a colon", 1, 2, "why")), ["r7: a name with a colon"])
+    chk("a PASS line is not a case name — only a line starting with [FAIL] is",
+        _pfn(case_line(True, "a passing case", 1, 1)), [])
+    # The literal shape, pinned separately: the round-trip above would still hold if BOTH this line
+    # and the parser moved together, and they live in different files precisely so they cannot.
+    #
+    # ⚠ ASSERTED AS BOOLEANS, NOT BY COMPARING THE LINE ITSELF, and that is a contract not a style
+    # choice. A `[FAIL]` line quoted inside a `[FAIL]` line puts a SECOND `": got "` into the output,
+    # and `parse_fail_names` truncates at the LAST one — so the case's own name would be cut at the
+    # quoted text and the kill would be attributed to a name nobody wrote. The same family as the
+    # `.get`-not-`[...]` rule this suite's sibling already records: a case must fail READABLY.
+    chk("the line keeps the canonical shape the harness documents",
+        case_line(False, "n", 1, 2, "r").endswith("[FAIL] n: got 1 want 2 (r)"), True)
+    chk("…and omits the parenthesis entirely when there is no reason",
+        case_line(False, "n", 1, 2).endswith("[FAIL] n: got 1 want 2"), True)
     with tempfile.TemporaryDirectory() as td:
         _head, _dirty = reviewed_state(td)
         chk("reviewed_state outside a git repository returns no head rather than raising",
@@ -1238,8 +1328,21 @@ def self_test() -> int:
         # And the real repo's answer must DIFFER from the non-repo one — the parameter matters.
         chk("the repo_root argument is load-bearing: two roots, two different answers",
             _head2 == _head, False)
-    extra += 13
 
+    # ⛔ THERE WAS AN `extra += 13` HERE AND IT WAS DOUBLE-COUNTING — r12 Medium, and it is worse
+    # than filed. `chk` already does `extra += 1` on every call, so this literal added a second
+    # count for the block above: 13 of the declared 92 cases had no assertion behind them, could
+    # never fail, and printed nothing. The real total is `len(cases) + chk calls` = 79.
+    #
+    # ⚠ I GREW IT. The line read `extra += 8` before this branch and I changed it to 13 when I
+    # added five fixture cases — reasoning about the literal instead of asking what incremented
+    # `extra`. So the inflation is pre-existing and the round that was paying down this file's
+    # measurement debt made it larger.
+    #
+    # ⚠ AND `check-selftest-counts.py` CANNOT SEE THIS, structurally: it compares the suite's own
+    # printed denominator against the suite's own declared count, and both are authored here. A
+    # literal added to `extra` moves them together, so the gate stays green over fiction. That is
+    # the declared-count-drift class this project has paid for three times, one layer in.
     total = len(cases) + extra
     print(f"\n{total - failures}/{total} passed")
     return 1 if failures else 0

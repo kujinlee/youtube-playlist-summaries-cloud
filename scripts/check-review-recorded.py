@@ -2,7 +2,7 @@
 """A branch that changes CODE records a review round, or says in writing why it did not.
 
     python3 scripts/check-review-recorded.py --base origin/master --pr-body-file /tmp/pr-body.md
-    python3 scripts/check-review-recorded.py --self-test  # 117 cases
+    python3 scripts/check-review-recorded.py --self-test  # 139 cases
 
 WHY THIS EXISTS
 ---------------
@@ -105,6 +105,7 @@ import argparse
 import importlib.util
 import json
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -145,15 +146,122 @@ def is_absent(entry: "str | None") -> bool:
 PROSE_DIRS = ("docs/",)
 PROSE_FILES = ("README.md", "CLAUDE.md", "AGENTS.md", "CONTEXT.md", ".gitignore")
 
+# ⛔ `docs/` IS NOT PROSE IN THIS REPOSITORY, AND THE PARAGRAPH ABOVE ARGUES FROM A PREMISE THAT IS
+# FALSE HERE — r15 High, measured. *"A denylist of PROSE can be completed, because prose is the small
+# set: `docs/`"* was never completed. Two of the FIFTEEN schema gates are files under `docs/`:
+#
+#     docs/superpowers/specs/2026-08-03-stable-blob-addressing/verify-schema.sh   gate 1/15
+#     docs/superpowers/specs/2026-08-03-stable-blob-addressing/mutate-schema.py   gate 2/15
+#     docs/superpowers/specs/m4/{live-manifest,accepted-additions}.txt, *.sql     gates 10 and 14
+#
+# `scripts/check-schema-gates.sh:19` resolves `SPEC` to that directory and executes them; both are
+# mode `755`; and `.github/workflows/schema-gates.yml:80-81,103-104` lists both directories as
+# PATH-FILTER TRIGGERS — the workflow itself declares them gate subjects.
+#
+# Measured before the fix: `is_prose` said True for all of them, `guarded_changes` returned `[]`,
+# `verdict` returned *"no guarded path changed — a review round is not required"*, and because
+# `second_question` short-circuits on `not guarded_changes(changed)` the final-tree question was
+# never asked either. **BOTH HALVES OF THIS GATE WENT SILENT OVER EXECUTABLE CI GATE CODE** — a
+# branch weakening a mutation in `mutate-schema.py`, or relaxing a line in `live-manifest.txt` so a
+# gate stops noticing a schema object, merged with no round and no declaration. That is the
+# 2026-09-09 night in WHY THIS EXISTS, reached through the classifier instead of through the diff.
+#
+# ⚠ IT ALSO FALSIFIES A RECORDED REVIEW CLAIM, which is why it is here and not a footnote. The r11
+# Claude half states it *"searched `docs/` for executable or consumed artefacts that would be
+# wrongly exempt: everything found is `*.md` and `docs/reviews/verdicts/*.json`."* Two exist, both
+# are gates, both are named in a CI path filter. r15 found them by RE-DERIVING that claim instead of
+# inheriting it — the same move that found r14's rename fail-open one round earlier.
+#
+# ⚠ STATED LIMIT, NOT PAPERED OVER: this tuple can drift from `schema-gates.yml`. It is a second
+# copy of a path set, which this repo refuses elsewhere — and the honest reason it ships as one is
+# that deriving it needs a YAML read inside a pure classifier, i.e. a new mechanism invented during
+# a convergence round, which is how the last four defects were born. `prose_exceptions_cover()`
+# below is the falsifier that keeps the two honest: it is pure, it takes the workflow's globs as an
+# argument, and its case feeds it the real ones.
+CODE_UNDER_PROSE = (
+    "docs/superpowers/specs/2026-08-03-stable-blob-addressing/",
+    "docs/superpowers/specs/m4/",
+)
+
 
 def is_prose(path: str) -> bool:
     """PURE. Whether `path` is prose, and therefore owes no review round."""
+    # CODE first: a gate script does not stop being code by living in a documentation directory.
+    #
+    # ⚠ EXCEPT `.md`, AND THE CARVE-OUT IS PROSPECTIVE — r16 Medium corrected the justification that
+    # stood here. It said *"the spec's own prose lives beside its gate scripts"*, present tense.
+    # Re-derived: **zero `.md` files are tracked under either exempted directory today**, so the
+    # carve-out protects nothing yet and the case that pins it uses a path that does not exist. It
+    # stays anyway, as policy for the first `.md` anyone writes there: removing it would oblige a
+    # review round for a design-document edit, which is how backlog #56 measured a gate getting
+    # switched off. What the gates actually consume from those two directories was
+    # enumerated from `check-schema-gates.sh` — `helper*.sh`, `mutate-schema.py`,
+    # `verify-schema.sh`, `live-manifest.txt`, `accepted-additions.txt`, `*.sql`. **No `.md` is read
+    # by any gate.** ⚠ The limit that leaves: a `.md` in one of these directories that LATER becomes
+    # a gate input would be wrongly prose again, and `prose_exceptions_cover` cannot see that — it
+    # compares directories, not file roles.
+    if any(path.startswith(d) for d in CODE_UNDER_PROSE):
+        return path.endswith(".md")
     if path in PROSE_FILES:
         return True
     if any(path.startswith(d) for d in PROSE_DIRS):
         return True
     # a Markdown file at the repository ROOT is prose; one inside a package is not necessarily
     return path.endswith(".md") and "/" not in path
+
+
+def prose_exceptions_cover(workflow_globs: list[str]) -> list[str]:
+    """PURE. The `docs/` globs a workflow guards that `CODE_UNDER_PROSE` does NOT — empty is correct.
+
+    The anti-drift falsifier for the tuple above. `schema-gates.yml` path-filters on the directories
+    whose contents are gate subjects; every such `docs/` glob must also be exempt from the prose
+    classifier, or CI runs the gates on a change this file just waved through as documentation.
+
+    Given the globs rather than reading them, so the rule stays pure and a case can drive it with
+    the real ones — the same shape as `first_codex_gap(docs, parse)` elsewhere in this file.
+    """
+    missing = []
+    for g in workflow_globs:
+        prefix = g.split("*")[0]
+        if not prefix.startswith("docs/"):
+            continue
+        # ⛔ `e.startswith(prefix)` USED TO BE THE SECOND DISJUNCT, AND IT CLEARED EVERY BROADER
+        # GLOB — r16 High. `docs/**` in the path filter made this report FULL COVERAGE while
+        # `is_prose("docs/gate.sh")` was still True, and broadening a filter to a parent directory
+        # is the ordinary way that file grows. The clause was also unfalsifiable: all three cases
+        # fed globs equal to or under an exemption, so only `prefix.startswith(e)` was ever
+        # exercised, and DELETING the disjunct left the suite at 134/134.
+        # What it legitimately absorbed is a glob written without its trailing slash, and only
+        # that survives.
+        if not any(prefix.startswith(e) or e == prefix.rstrip("/") + "/"
+                   for e in CODE_UNDER_PROSE):
+            missing.append(g)
+    return missing
+
+
+def workflow_docs_globs(text: str) -> list[str]:
+    """PURE. The `docs/…` path-filter globs a workflow declares. `text` is the workflow file.
+
+    ⛔ THE FALSIFIER WAS FED A TRANSCRIPTION, NOT THE WORKFLOW — r16 High, and it is the sharpest
+    version of this branch's signature defect. `prose_exceptions_cover`'s docstring claimed its case
+    was *"fed the REAL globs from schema-gates.yml"*; it was fed a literal list typed into the test.
+    Copy #1 is the workflow, copy #2 is `CODE_UNDER_PROSE`, copy #3 is the case — and the check
+    compared #3 against #2, **neither of which is the authority**. Measured: adding a `docs/` gate
+    directory to the workflow and touching nothing else left the suite at 134/134, rc=0, while the
+    new gate's code classified as prose and the gate printed *"no guarded path changed"*. That is
+    r15's High reproduced verbatim, inside the mechanism built to prevent it.
+
+    A LINE SCAN, not a YAML parse, and that is deliberate: PyYAML is not installed here, and a
+    sibling guard already reads a workflow as plain text (`check-ratchet-contract.py`'s `ci_path`).
+    The reader is separated from this rule for the same reason `readable_docs(docs, read)` and
+    `first_codex_gap(docs, parse)` are — so the rule stays pure and a case can drive it.
+    """
+    return sorted({m.group(1) for m in re.finditer(r"^\s*-\s*'(docs/[^']*)'", text, re.M)})
+
+
+def _schema_gates_workflow() -> "str | None":
+    p = ROOT / ".github" / "workflows" / "schema-gates.yml"
+    return p.read_text(encoding="utf-8", errors="replace") if p.is_file() else None
 
 
 def _load_declaration_parser():
@@ -342,7 +450,19 @@ def second_question(changed: list[str], waiver: "str | None") -> "tuple[bool, st
     """
     if not guarded_changes(changed):
         return False, None
-    if waiver is not None:
+    # ⛔ AN EMPTY DECLARATION IS NOT A DECLARATION, AND THIS ARM USED TO DISAGREE WITH `verdict()`
+    # ABOUT THAT — r15 Medium, measured end to end. `verdict` refuses a bare `NO-REVIEW:` with no
+    # reason (`"was declared with no reason after it"`, pinned by a case AND a mutation); this arm
+    # tested `waiver is not None`, and `reason_of` returns `''` — not `None` — for a bare marker.
+    # The two rules only ever met when a review document was ALSO added, because then `verdict`
+    # returns 0 at its review-document branch and never reaches its own refusal. So the empty
+    # declaration was rejected nowhere, and it turned the final-tree gate from CANNOT RUN into a
+    # pass: measured `rc=2` -> `rc=0`, with a log line reading `NO-REVIEW:  — the final-tree
+    # question is WAIVED` where only a double space betrays it.
+    #
+    # An author who writes `NO-REVIEW:` with the reason on the NEXT line, or leaves a PR-template
+    # stub, is the likely case — not an evasion. One marker, one meaning, in both questions.
+    if waiver is not None and waiver.strip():
         return False, f"{NO_REVIEW} {waiver} — the final-tree question is WAIVED, not passed"
     return True, None
 
@@ -496,7 +616,13 @@ def _is_ancestor(head: str) -> bool:
 
 
 def _changed_since(head: str) -> list[str]:
-    diff = _git("diff", "--name-only", "-z", "--no-renames", head, "HEAD")
+    # ⛔ THE SAME ARGV AS THE OTHER TWO QUESTIONS, BUILT IN ONE PLACE — r14 exhaustiveness pass.
+    # This function already had `--no-renames` and the other two did not, and that DISAGREEMENT was
+    # the fail-open: `tail_candidates` intersects this list with `changed_paths`', so a renamed path
+    # present in one and absent from the other was silently dropped. Fixing both to agree left the
+    # agreement as a CONVENTION — three call sites that happen to match. Now there is one builder,
+    # so they cannot drift apart again, and the cases on `diff_argv` cover all three.
+    diff = _git(*diff_argv(head))
     if diff.returncode != 0:
         raise RuntimeError(f"CANNOT RUN — git diff against {head[:12]} failed: "
                            f"{diff.stderr.strip()}")
@@ -654,8 +780,8 @@ def changed_paths(base: str) -> list[str]:
     if merge_base.returncode != 0:
         raise RuntimeError(f"CANNOT RUN — cannot resolve a merge base with {base!r}: "
                            f"{merge_base.stderr.strip()}")
-    diff = subprocess.run(["git", "-C", str(ROOT), "diff", "--name-only", "-z",
-                           merge_base.stdout.strip(), "HEAD"], capture_output=True, text=True)
+    diff = subprocess.run(["git", "-C", str(ROOT), *diff_argv(merge_base.stdout.strip())],
+                          capture_output=True, text=True)
     if diff.returncode != 0:
         raise RuntimeError(f"CANNOT RUN — git diff failed: {diff.stderr.strip()}")
     return split_nul(diff.stdout)
@@ -666,14 +792,56 @@ def split_nul(out: str) -> list[str]:
     return [ln for ln in out.split("\0") if ln.strip()]
 
 
+def diff_argv(base_sha: str, *, added_only: bool = False) -> list[str]:
+    """PURE. The `git diff` argv BOTH branch-scoped questions use, so they cannot disagree.
+
+    ⛔ `--no-renames` IS A FAIL-OPEN FIX, NOT TIDINESS — r14 High, measured end to end with a control.
+    Git's rename detection is ON by default (`diff.renames` unset -> true), and `--name-only` then
+    prints ONLY the destination of a rename. So moving a guarded file to a prose path — `lib/x.ts`
+    into `docs/` — deleted a code file from the tree while this gate reported:
+
+        ok — no guarded path changed — a review round is not required          rc=0
+
+    No review document, no `NO-REVIEW:` declaration, exit 0. That is the exact outcome the
+    WHY THIS EXISTS section at the top of this file was written against.
+
+    ⛔ AND IT DEFEATED THE SECOND QUESTION TOO, which is worse because that half is new here.
+    `tail_candidates` intersects `after` with `branch_delta`. `after` comes from `_changed_since`,
+    which passes `--no-renames` and therefore DOES contain the renamed-away path; `branch_delta`
+    came from `changed_paths`, which did not. The intersection silently dropped the path and the
+    round was credited with having seen a file it never could have.
+
+    ⚠ THE SAME TWO LINES WERE EDITED ONE ROUND EARLIER, FOR THE SAME CLASS OF DEFECT. r11 added `-z`
+    to both because a C-quoted path stopped being the path, and its docstring says the sibling was
+    *"fixed there as an INSTANCE, not searched for as a class, which is this project's own recorded
+    failure shape."* `--no-renames` is one flag over, in the same three functions, and the function
+    written in that same round has it. Thirteen rounds attacked the mutation harness and none asked
+    whether this gate's own `git diff` is the diff it reasons about.
+
+    ⚠ IT ALSO CAUSED A FALSE FAIL in the other direction (r14 Medium): with `--diff-filter=A`, a
+    review document MOVED into `docs/reviews/` is classified `R` and never reaches `review_added` —
+    so a branch performing the `docs/reviews/<writer>/` relocation this project actually mandates was
+    told no review round was recorded. A gate that fires on a branch doing the right thing is how
+    backlog #56 measured gates getting switched off. One flag closes both directions.
+
+    The policy now matches the producer: `codex-review.py` already passes `--no-renames` on its
+    `diff-index`, so this is agreement rather than an invented rule.
+    """
+    args = ["diff", "--name-only", "-z", "--no-renames"]
+    if added_only:
+        args.append("--diff-filter=A")
+    return args + [base_sha, "HEAD"]
+
+
 def added_paths(base: str) -> list[str]:
-    """Paths ADDED against `base` (status A). RAISES like `changed_paths`; `-z` for the same reason."""
+    """Paths ADDED against `base` (status A). RAISES like `changed_paths`; shares `diff_argv`."""
     mb = subprocess.run(["git", "-C", str(ROOT), "merge-base", base, "HEAD"],
                         capture_output=True, text=True)
     if mb.returncode != 0:
         raise RuntimeError(f"CANNOT RUN — cannot resolve a merge base with {base!r}")
-    out = subprocess.run(["git", "-C", str(ROOT), "diff", "--name-only", "-z", "--diff-filter=A",
-                          mb.stdout.strip(), "HEAD"], capture_output=True, text=True)
+    out = subprocess.run(["git", "-C", str(ROOT),
+                          *diff_argv(mb.stdout.strip(), added_only=True)],
+                         capture_output=True, text=True)
     if out.returncode != 0:
         raise RuntimeError(f"CANNOT RUN — git diff failed: {out.stderr.strip()}")
     return split_nul(out.stdout)
@@ -691,12 +859,51 @@ def main(argv: list[str]) -> int:
 
     body = ""
     if args.pr_body_file:
-        body = pathlib.Path(args.pr_body_file).read_text(encoding="utf-8", errors="replace")
+        # ⛔ INSIDE ITS OWN CANNOT-RUN, and it was OUTSIDE the one below — r15 Low. A missing
+        # `--pr-body-file` raised `FileNotFoundError` straight out of `main`: rc=1 with a traceback,
+        # where the docstring's FAILS IF list promises exit 2. That is exactly the r1 Major recorded
+        # twelve lines down — *"'Cannot run' collapsing into an ordinary failure is the exact shape
+        # this repo refuses"* — fixed there for the git calls and not searched for as a class, one
+        # statement short. Not reachable from CI (the workflow `printf`s the file in the same step),
+        # and it failed loud rather than open, which is why it is Low and not higher.
+        try:
+            body = pathlib.Path(args.pr_body_file).read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            print(f"CANNOT RUN — the PR body file {args.pr_body_file!r} could not be read ({exc}), "
+                  f"so a `{NO_REVIEW}` declaration in it cannot be seen. Treat this as NOT CHECKED.",
+                  file=sys.stderr)
+            return 2
 
     # ⚠ THE DOCSTRING PROMISES EXIT 2, and the first version raised `RuntimeError` straight out of
     # `main` — rc=1 with a traceback (r1 review, Major). "Cannot run" collapsing into an ordinary
     # failure is the exact shape this repo refuses: a gate that could not reach its subject must
     # say so in its own exit code, not look like a finding.
+    # ⛔ THE ANTI-DRIFT CHECK, WITH A CALLER — r16 High. `prose_exceptions_cover` existed and was
+    # returned to nobody; a rule whose result no one reads is not a gate. It is asked HERE, against
+    # the real workflow, before either question, because a classifier that disagrees with what CI
+    # treats as gate code cannot answer either question correctly.
+    _wf = _schema_gates_workflow()
+    if _wf is None:
+        print("CANNOT RUN — .github/workflows/schema-gates.yml is missing, so the paths CI treats "
+              "as gate subjects cannot be compared against CODE_UNDER_PROSE. NOT CHECKED.",
+              file=sys.stderr)
+        return 2
+    _globs = workflow_docs_globs(_wf)
+    if not _globs:
+        # ⚠ A ZERO OVER NOTHING IS NOT A FINDING — the same rule check-plan-file-tags records for an
+        # empty corpus. If the scan matched nothing, the scan is what broke, not the tuple.
+        print("CANNOT RUN — no `docs/` path filters were found in schema-gates.yml. Either the "
+              "workflow changed shape or the scan is broken; a zero here is not a pass. NOT CHECKED.",
+              file=sys.stderr)
+        return 2
+    _uncovered = prose_exceptions_cover(_globs)
+    if _uncovered:
+        print(f"FAILED — CI path-filters {len(_uncovered)} `docs/` director(ies) as gate subjects "
+              f"that this gate still classifies as PROSE:\n    {', '.join(_uncovered)}\n"
+              f"  Add them to CODE_UNDER_PROSE in scripts/check-review-recorded.py, or a branch "
+              f"changing that gate code\n  owes no review round and skips the final-tree question "
+              f"— measured twice on this branch.", file=sys.stderr)
+        return 1
     try:
         changed = changed_paths(args.base)
         added = added_paths(args.base)
@@ -777,6 +984,52 @@ def self_test() -> int:
     # ⚠ a Markdown file INSIDE a package is not automatically prose — only a root one is
     case("a .md inside a package is still guarded",
          guarded_changes(["lib/README.md"]), ["lib/README.md"])
+    # ⛔ r15 HIGH, as cases. `docs/` holds TWO OF THE FIFTEEN SCHEMA GATES, both mode 755, both
+    # executed by `check-schema-gates.sh` and both named in `schema-gates.yml`'s path filters — and
+    # every one of these was classified PROSE, so a branch changing them owed no round AND skipped
+    # the final-tree question. Seventeen `is_prose` cases existed and not one reached inside `docs/`.
+    _SPEC = "docs/superpowers/specs/2026-08-03-stable-blob-addressing/"
+    for _p in (_SPEC + "mutate-schema.py", _SPEC + "verify-schema.sh",
+               "docs/superpowers/specs/m4/live-manifest.txt",
+               "docs/superpowers/specs/m4/t1-blast-radius.sql",
+               "docs/superpowers/specs/m4/accepted-additions.txt"):
+        case(f"gate code at {_p.split('/')[-1]} is GUARDED, though it lives under docs/",
+             guarded_changes([_p]), [_p])
+    # ⚠ HYPOTHETICAL PATH, SAID SO IN THE NAME — r16 Medium. No `.md` is tracked under either
+    # exempted directory today; this pins the policy for the first one, not an existing file.
+    case("...and a hypothetical .md beside them would still be prose (none exists there today)",
+         guarded_changes([_SPEC + "spec.md"]), [])
+    case("...while ordinary docs are untouched by the exception",
+         guarded_changes(["docs/superpowers/specs/other/notes.md"]), [])
+    # ⛔ AND THE EXCEPTION MUST COVER WHAT CI GUARDS. ⚠ THE GLOBS ARE NOW EXTRACTED FROM THE REAL
+    # WORKFLOW FILE, not transcribed here — r16 High. The previous version typed the globs into the
+    # case, so the check compared a copy against a copy and a new gate directory in the workflow was
+    # invisible: measured, suite green at 134/134 while the new gate's code classified as prose.
+    _WF = _schema_gates_workflow()
+    case("the workflow's docs/ path filters are READ, not transcribed into this test",
+         bool(_WF) and workflow_docs_globs(_WF) != [], True)
+    case("...and every one of them is exempt from the prose classifier",
+         prose_exceptions_cover(workflow_docs_globs(_WF or "")), [])
+    # The pure rule, driven with literals — the reader above proves it sees the real file.
+    case("a NEW docs/ gate directory the tuple does not know about is REPORTED",
+         prose_exceptions_cover(["docs/superpowers/specs/m5/**"]),
+         ["docs/superpowers/specs/m5/**"])
+    # ⛔ r16: a BROADER glob must be reported too. `e.startswith(prefix)` cleared all of these, and
+    # deleting that clause changed no case — the one clause making the hole was unfalsifiable.
+    case("...as is a glob BROADER than an exemption, which used to be silently cleared",
+         prose_exceptions_cover(["docs/**", "docs/superpowers/**",
+                                 "docs/superpowers/specs/**"]),
+         ["docs/**", "docs/superpowers/**", "docs/superpowers/specs/**"])
+    # ...while the one thing that clause legitimately absorbed still passes:
+    case("...but a glob written without its trailing slash still matches its exemption",
+         prose_exceptions_cover(["docs/superpowers/specs/m4"]), [])
+    case("...while a non-docs glob is not this rule's business",
+         prose_exceptions_cover(["supabase/migrations/**"]), [])
+    case("the extractor finds quoted docs/ globs and ignores everything else",
+         workflow_docs_globs("    paths:\n      - 'docs/a/**'\n      - 'scripts/**'\n"
+                             "      - 'docs/b/**'\n"), ["docs/a/**", "docs/b/**"])
+    case("...and returns nothing for a workflow with no docs/ filters, which main treats as CANNOT RUN",
+         workflow_docs_globs("on:\n  push:\n    branches: [master]\n"), [])
     case("only .md counts as a review document",
          review_added(["docs/reviews/verdicts/x.json"]), [])
     # ⭐ THE LIVE CASE: the parser is SHARED, not copied. If check-dashboard-entry stops exporting
@@ -949,6 +1202,12 @@ def self_test() -> int:
          second_question(["lib/x.ts"], None), (True, None))
     case("nothing guarded changed: the question is moot, and says nothing",
          second_question(["docs/backlog.md"], None), (False, None))
+    # ⛔ r15 Medium: an EMPTY declaration is not a declaration, and this arm disagreed with
+    # `verdict()` about it. `reason_of` returns `''` for a bare marker, not None.
+    case("a bare NO-REVIEW with no reason does NOT waive the final-tree question",
+         second_question(["lib/x.ts"], ""), (True, None))
+    case("...nor does one that is only whitespace",
+         second_question(["lib/x.ts"], "   \n"), (True, None))
     case("a NO-REVIEW waiver skips the question",
          second_question(["lib/x.ts"], "master moved")[0], False)
     case("...and ECHOES the reason, so exit 0 is not attributed to the review documents",
@@ -960,6 +1219,22 @@ def self_test() -> int:
          split_nul("lib/naïve.ts\0lib/b.ts\0"), ["lib/naïve.ts", "lib/b.ts"])
     case("...and a newline inside a path does not split it",
          split_nul("lib/od\nd.ts\0"), ["lib/od\nd.ts"])
+    # ── r14: the diff argv both branch-scoped questions use. The rename policy was unreachable from
+    # any case, which is how it stayed wrong through thirteen rounds. ──
+    # ⛔ WITHOUT `--no-renames` A GUARDED FILE MOVED TO A PROSE PATH VANISHES from the diff, and the
+    # gate reports "no guarded path changed" over a DELETED code file. Measured, with a control.
+    case("the diff asks git NOT to pair a deletion with an addition",
+         "--no-renames" in diff_argv("abc123"), True)
+    case("...which is what stops a guarded file renamed into docs/ from disappearing entirely",
+         diff_argv("abc123"),
+         ["diff", "--name-only", "-z", "--no-renames", "abc123", "HEAD"])
+    case("the ADDED-only question asks the same way, plus the status filter",
+         diff_argv("abc123", added_only=True),
+         ["diff", "--name-only", "-z", "--no-renames", "--diff-filter=A", "abc123", "HEAD"])
+    case("...so the two questions cannot disagree about what a rename is",
+         diff_argv("abc123")[:4], diff_argv("abc123", added_only=True)[:4])
+    case("the base sha is passed through, not interpolated into a flag",
+         diff_argv("deadbeef")[-2:], ["deadbeef", "HEAD"])
     # ── r11: a review document named by the diff but gone from disk must not be read ──
     case("a review document that is gone is not read and cannot declare a gap",
          readable_docs(["gone.md", "here.md"],
