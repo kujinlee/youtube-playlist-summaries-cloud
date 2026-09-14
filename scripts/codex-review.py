@@ -42,7 +42,7 @@ candidate yields a message ends in a loud non-zero exit.
 Usage:
   scripts/codex-review.py --out docs/reviews/task-N-foo-codex.md "<review prompt>"
   scripts/codex-review.py --out <file> --prompt-file <file> [--timeout 900] [--model <slug>]
-  scripts/codex-review.py --self-test  # 68 cases
+  scripts/codex-review.py --self-test  # 75 cases
 
 Exit codes:  0 = a real review was written   |   1 = no candidate produced one (gate did NOT run)
 """
@@ -1035,6 +1035,60 @@ def self_test() -> int:
         chk("reviewed_state outside a git repository returns no head rather than raising",
             _head, None)
         chk("…and claims no dirty files when it has no head to place them against", _dirty, {})
+
+    # ⛔ THE SUCCESS PATH HAD NO CASE AT ALL, and `check-fixture-variation` is what said so: every
+    # call passed the same `repo_root`, so no case could tell the parameter from a constant — and
+    # the throwaway-index mechanism, the whole point of this function, was covered only by live
+    # probes run by hand. A real repository is built here so the cases carry it instead.
+    #
+    # ⚠ IF GIT IS ABSENT THESE GO RED, deliberately. A case that quietly passes when it could not
+    # reach its subject is the CANNOT-RUN-as-success shape this project keeps paying for.
+    with tempfile.TemporaryDirectory() as td2:
+        # ⛔ ISOLATED FROM THE HOST'S GIT CONFIG — r10 High, measured. Inheriting it made the suite
+        # red for `commit.gpgsign=true` or a global `core.hooksPath` whose pre-commit hook fails,
+        # which is a host policy and not a defect in `reviewed_state`. A guard that goes red for
+        # the machine it runs on gets switched off.
+        _env = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_SYSTEM=os.devnull,
+                    GIT_CONFIG_NOSYSTEM="1", GIT_TERMINAL_PROMPT="0")
+
+        def _git(*a):
+            return subprocess.run(["git", "-C", td2, *a], capture_output=True, text=True, env=_env)
+        _git("init", "-q", ".")
+        _git("config", "user.email", "t@example.com")
+        _git("config", "user.name", "t")
+        _git("config", "commit.gpgsign", "false")
+        _git("config", "core.hooksPath", os.path.join(td2, "no-hooks"))
+        with open(os.path.join(td2, "a.txt"), "w", encoding="utf-8") as f:
+            f.write("one\n")
+        _git("add", "-A")
+        _commit = _git("commit", "-q", "--no-verify", "--no-gpg-sign", "-m", "base")
+        # ⚠ CHECKED, not assumed — r10 measured an IndexError three cases later when the commit had
+        # silently failed. A fixture that cannot be built is CANNOT RUN and must say so here.
+        chk("the case fixture's own commit succeeded (else everything below is meaningless)",
+            (_commit.returncode, _commit.stderr.strip()[:60]), (0, ""))
+        # modified-and-uncommitted, plus an UNTRACKED file: r2 found `git diff HEAD` missed the
+        # second, and the throwaway index is what fixed it.
+        with open(os.path.join(td2, "a.txt"), "w", encoding="utf-8") as f:
+            f.write("two\n")
+        with open(os.path.join(td2, "b.txt"), "w", encoding="utf-8") as f:
+            f.write("new\n")
+        _head2, _dirty2 = reviewed_state(td2)
+        chk("in a real repository reviewed_state reports the commit it was handed",
+            bool(_head2) and len(_head2) == 40, True)
+        chk("…and records the MODIFIED file as a tree entry",
+            bool(re.fullmatch(r"\d{6} [0-9a-f]{40}", _dirty2.get("a.txt", ""))), True)
+        chk("…and the UNTRACKED one too, which `git diff HEAD` alone never saw",
+            bool(re.fullmatch(r"\d{6} [0-9a-f]{40}", _dirty2.get("b.txt", ""))), True)
+        # The entry must be what git ITSELF would store, or the comparison downstream is against a
+        # number of our own invention.
+        _lstree = _git("hash-object", "--", "a.txt").stdout.strip()
+        chk("…and the recorded object id is the one git computes for that content",
+            (_dirty2.get("a.txt", "") .split() or [""])[-1], _lstree)
+        # An UNCHANGED file is not the reviewer's credit to claim.
+        chk("a file identical to HEAD is not recorded as handed over", "unchanged" in _dirty2, False)
+        # And the real repo's answer must DIFFER from the non-repo one — the parameter matters.
+        chk("the repo_root argument is load-bearing: two roots, two different answers",
+            _head2 == _head, False)
     extra += 8
 
     total = len(cases) + extra

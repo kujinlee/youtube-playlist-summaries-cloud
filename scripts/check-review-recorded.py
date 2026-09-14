@@ -720,6 +720,14 @@ def self_test() -> int:
          first_codex_gap([("a.md", "REVIEW GAP: claude — not invoked"),
                           (_D, "REVIEW GAP: codex — usage limit")], _parse),
          f"{_D} — codex: usage limit")
+    # ⚠ `parse` IS CALLED, not decorative — every case above passes the real parser, so none of them
+    # could tell the difference between using the argument and importing one. Surfaced by
+    # check-fixture-variation: a parameter no case varies is a clause no case guards.
+    case("the parser argument is the one used — a stub that sees a codex gap in anything wins",
+         first_codex_gap([("z.md", "no marker here at all")], lambda _t: "codex: stubbed"),
+         "z.md — codex: stubbed")
+    case("...and a stub that sees nothing finds nothing, in text that really has a gap",
+         first_codex_gap([(_D, "REVIEW GAP: codex — usage limit")], lambda _t: None), None)
     # ⛔ THE FINAL-TREE LOOKUP. The mode half of the r2 Blocking lives HERE, not in `round_tail` —
     # a case feeding `round_tail` literal strings can never see it. Driven by real `ls-tree -z`
     # output rather than a live repository, because the mutation harness runs this suite inside a

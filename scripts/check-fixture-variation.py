@@ -214,7 +214,7 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
         'dir_snapshot.directory', 'intrusions.after', 'intrusions.before',
         'intrusions.ours', 'quarantine.created', 'quarantine.dest',
         'unexpected_writes.before', 'verdict_record.attempts',
-        'verdict_record.exit_code', 'verdict_record.gate_ran',
+        'verdict_record.exit_code',
         'verdict_record.intrusions_seen', 'verdict_record.model',
         'verdict_record.out_path', 'verdict_record.reason', 'write_verdict.record',),
     'explainer-serve.py': (
