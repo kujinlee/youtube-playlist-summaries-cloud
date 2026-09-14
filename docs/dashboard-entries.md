@@ -8287,3 +8287,27 @@ comment detection with the TypeScript compiler and has no fallback, so its depen
 surface is a gate dependency.
 
     suite   73 ✓ / 0 ✗, 15/15, exit 0     guards  10/10 green
+
+## 2026-09-13
+CI caught something my own pre-flight check had missed, for the most instructive
+reason available: I had written my own copy of the rule it uses to decide which test
+failed, and my copy was more generous than the real one. Mine said all eleven checks
+were working; the real one could not see any of them. One line of output format,
+now fixed and re-verified against the actual parser rather than my imitation of it.
+<!--tech-->
+`verify` red on "Mutation manifest against the delivered scripts":
+
+    FAILED — 43 file(s), 570 mutation(s), 570 killed, 559 attributed, 0 survivors
+    ✗ ×11  "the suite went RED but printed no `[FAIL] <case>` line, so NOTHING COULD
+            SEE THE KILL … a report-format defect in check-storage-independence.py"
+
+`check-plan-code.parse_fail_names` takes a line STARTING with `[FAIL] ` and slices
+`[7:]`. My self-test printed `  ✗ <name>`. Every mutation killed; none could be
+attributed, and an unattributable kill is indistinguishable from a mutation nobody
+guarded — portable-practices §22, on my own new guard.
+
+⭐ **Why my local run said 11/11.** My pre-flight verifier matched "the case name
+appears in the output AND a `✗` is present" — a second implementation of the
+attribution rule, more generous than the only one that counts. Re-verified by
+importing `check-plan-code.parse_fail_names` itself: control parses to `[]`, and
+11/11 mutations name their case.

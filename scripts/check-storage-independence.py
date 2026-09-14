@@ -250,12 +250,21 @@ def self_test() -> int:
     passed = failed = 0
 
     def check(name, actual, expected):
+        # ⛔⛔ `[FAIL] <case>` IS A CONTRACT WITH THE MUTATION HARNESS, NOT A STYLE CHOICE.
+        # ⟳ 2026-09-13, measured in CI: this printed `  ✗ <name>` and all ELEVEN mutations for this
+        # file came back "the suite went RED but printed no `[FAIL] <case>` line, so NOTHING COULD
+        # SEE THE KILL". 570 killed, 559 attributed — the eleven missing were all mine.
+        # `check-plan-code.parse_fail_names` takes a line STARTING with `[FAIL] ` and slices [7:].
+        # ⚠ AND THE WAY I MISSED IT IS THE LESSON: my own pre-flight check looked for the case name
+        # plus a `✗`, so it reported 11/11 killed while the real harness could attribute none. A
+        # second implementation of the attribution rule, disagreeing with the only one that counts.
+        # Verify with the CONSUMER, never with a re-typed copy of it.
         nonlocal passed, failed
         if actual == expected:
             passed += 1
         else:
             failed += 1
-            print(f"  ✗ {name}\n      wanted {expected!r}\n      got    {actual!r}")
+            print(f"  [FAIL] {name}: got {actual!r}, want {expected!r}")
 
     # ── the five mutations from r1 HIGH, each by the case it names ──────────────────────────
     check("M1 a storage.* string literal is CAUGHT",
