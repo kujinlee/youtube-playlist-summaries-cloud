@@ -64,5 +64,70 @@
       ]
     ],
     "expect": "docs/backlog.md is prose"
+  },
+  {
+    "name": "a stale round clears the branch, so code committed after EVERY round merges unreviewed — the whole point of the rule",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    clean = sorted(n for n, paths in tails.items() if not paths)",
+        "    clean = sorted(tails)"
+      ]
+    ],
+    "expect": [
+      "code committed after EVERY round FAILS"
+    ]
+  },
+  {
+    "name": "an empty round set is treated as a clean tree instead of NOT CHECKED, so a branch with no round at all reads as reviewed",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        return 0, f\"final-tree rule NOT CHECKED — {why}\"",
+        "        return 0, \"reviewed\""
+      ]
+    ],
+    "expect": [
+      "...and says NOT CHECKED rather than reporting a clean tree"
+    ]
+  },
+  {
+    "name": "rounds that could not say what they saw stop being counted, so `NOT CHECKED` loses the number that makes it honest",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        why = (f\"{unusable} round(s) recorded no commit (verdicts written before schema 2)\"\n               if unusable else \"no Codex round was recorded on this branch\")",
+        "        why = \"no Codex round was recorded on this branch\""
+      ]
+    ],
+    "expect": [
+      "pre-schema-2 verdicts are counted and named, not silently dropped"
+    ]
+  },
+  {
+    "name": "the failure names an arbitrary round rather than the closest one, so the report points away from the shortest way back to green",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    name, missed = min(tails.items(), key=lambda kv: (len(kv[1]), kv[0]))",
+        "    name, missed = max(tails.items(), key=lambda kv: (len(kv[1]), kv[0]))"
+      ]
+    ],
+    "expect": [
+      "the failure reports the CLOSEST round, not an arbitrary one"
+    ]
+  },
+  {
+    "name": "a review document counts as a verdict, so the tail rule reads prose as testimony about what a round saw",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return [p for p in changed if p.startswith(VERDICT_DIR) and p.endswith(\".json\")]",
+        "    return [p for p in changed if p.startswith(REVIEW_DIR)]"
+      ]
+    ],
+    "expect": [
+      "a review document is not a verdict"
+    ]
   }
 ]

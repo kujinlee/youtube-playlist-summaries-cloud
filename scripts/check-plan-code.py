@@ -766,7 +766,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-09-10: the zero-round gate joins the manifest in the SAME commit that adds it. Five
     # PRs merged unreviewed on 2026-09-09 because a guard existed and nothing ran it; shipping its
     # replacement as manifest debt would repeat the shape at one remove.
-    "scripts/check-review-recorded.py": 6,
+    # ⟳ 2026-09-13, 6 -> 11: the final-tree rule. FIVE entries, one per behaviour the rule
+    # adds — the stale-round pass, the NOT-CHECKED line, the unusable count, the closest-round
+    # report, and what counts as a verdict. Each names the case it must go red through.
+    "scripts/check-review-recorded.py": 11,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
@@ -2995,7 +2998,14 @@ def _self_test() -> int:
     # ⚠ This sentence said "The six cover …" over nine entries for two rounds. Both halves filed it
     # twice; the first fix asserted on one string and replaced another, so `str.replace` silently
     # did nothing and the count drifted further (8 -> 9) while reading as fixed.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 559)
+    # ⟳ 2026-09-13, 559 -> 564: the final-tree rule in `check-review-recorded.py`. FIVE entries for
+    # five behaviours added to an already-manifested file — the stale-round pass, the NOT-CHECKED
+    # line, the unusable count, the closest-round report, and what counts as a verdict. A RISE, the
+    # ordinary kind. ⚠ The first draft of this line said `421 -> 426`, read off the narration block
+    # above rather than off `sum(EXPECTED_MUTATIONS.values())`, and THIS CASE caught it — which is
+    # the case working, and a reminder that the running commentary up there is history, not the
+    # total.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 564)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

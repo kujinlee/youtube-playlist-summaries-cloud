@@ -42,7 +42,7 @@ candidate yields a message ends in a loud non-zero exit.
 Usage:
   scripts/codex-review.py --out docs/reviews/task-N-foo-codex.md "<review prompt>"
   scripts/codex-review.py --out <file> --prompt-file <file> [--timeout 900] [--model <slug>]
-  scripts/codex-review.py --self-test  # 63 cases
+  scripts/codex-review.py --self-test  # 68 cases
 
 Exit codes:  0 = a real review was written   |   1 = no candidate produced one (gate did NOT run)
 """
@@ -208,7 +208,10 @@ def _digest(path: str) -> str:
 # It is a subdirectory of `docs/reviews/` on purpose: `dir_snapshot` is non-recursive, so the
 # wrapper's own verdict writes cannot register as agent intrusions into the artifact root.
 VERDICT_DIR = os.path.join("docs", "reviews", "verdicts")
-VERDICT_SCHEMA = 1
+# ⟳ 2 (2026-09-13): `head` and `dirty`. The verdict could say the gate RAN and not what it ran
+# AGAINST, so nothing downstream could tell a review of the tree that will merge from a review of
+# the tree as it stood before three fixes landed. `check-review-recorded.py` reads both.
+VERDICT_SCHEMA = 2
 
 
 def verdict_path(out_path: str, override: "str | None" = None) -> str:
@@ -230,12 +233,18 @@ def verdict_path(out_path: str, override: "str | None" = None) -> str:
 
 def verdict_record(*, gate_ran: bool, exit_code: int, out_path: str, reason: str,
                    model: "str | None" = None, attempts: "list[str] | None" = None,
-                   intrusions_seen: "list[str] | None" = None) -> dict:
+                   intrusions_seen: "list[str] | None" = None,
+                   head: "str | None" = None, dirty: "list[str] | None" = None) -> dict:
     """The testimony, as data. PURE — no clock, no filesystem, so a case can assert every field.
 
     `gate_ran` is the load-bearing field and is stated SEPARATELY from `exit_code`, not derived
     from it by the reader. A reader that re-derives the verdict from a number is a second
     implementation of the rule, and this project has measured what those do.
+
+    `head` and `dirty` describe WHAT was reviewed; `reviewed_state` below gathers them. `head` is
+    always present, `None` when it could not be established — an absent field and a null one read
+    the same to a downstream `.get()`, but only the null one distinguishes "no answer" from "old
+    schema" when a human opens the file.
     """
     return {
         "schema": VERDICT_SCHEMA,
@@ -247,7 +256,44 @@ def verdict_record(*, gate_ran: bool, exit_code: int, out_path: str, reason: str
         "reason": reason,
         "attempts": list(attempts or []),
         "intrusions": list(intrusions_seen or []),
+        "head": head,
+        "dirty": list(dirty or []),
     }
+
+
+def reviewed_state(repo_root: "str | None" = None) -> "tuple[str | None, list[str]]":
+    """`(HEAD commit, uncommitted tracked paths)` — WHAT this run is about to review. IMPURE.
+
+    WHY BOTH, and the second one is not decoration. `head` alone answers the question for a clean
+    tree. But the documented practice is to hold a round's fixes UNCOMMITTED so the reviewer sees
+    the state that will actually merge — measured on backlog #296, where exactly that was done on
+    purpose. Under that practice `head` is the commit BEFORE the reviewed fixes, and a downstream
+    check reading it alone would accuse the careful author of shipping unreviewed code. The dirty
+    list names the files the reviewer saw in a form no commit records.
+
+    ⚠ NEVER RAISES, and never blocks the review. A wrapper that cannot describe the tree still has
+    a gate to run and testimony to file. The cost of failing is a `None` head, which downstream
+    reads as "cannot tell" — reported as NOT CHECKED, never as a pass.
+    """
+    root = repo_root or REPO_ROOT
+
+    def git(*args: str) -> "str | None":
+        try:
+            p = subprocess.run(["git", "-C", root, *args],
+                               capture_output=True, text=True, timeout=15)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return p.stdout if p.returncode == 0 else None
+
+    head = git("rev-parse", "HEAD")
+    if head is None:
+        return None, []
+    # `--untracked-files=no`: an untracked file is not part of the tree that will merge, and
+    # listing one would claim the reviewer saw something the branch does not contain.
+    status = git("status", "--porcelain", "--untracked-files=no") or ""
+    # `R  old -> new` names two paths; the one that survives into the tree is the one on the right.
+    dirty = {ln[3:].split(" -> ")[-1].strip() for ln in status.splitlines() if ln[3:].strip()}
+    return head.strip(), sorted(dirty)
 
 
 def write_verdict(path: str, record: dict) -> "str | None":
@@ -570,10 +616,15 @@ def main() -> int:
     # cannot be written downgrades the run to CANNOT RUN (2) rather than reporting the outcome it
     # was about to report — an unrecorded success is indistinguishable from the failure this fixes.
     vpath = verdict_path(args.out, args.verdict)
+    # Taken ONCE, here, before any candidate runs — this is the tree the reviewer is handed. Taken
+    # at `emit` instead it would describe the tree after the run, and a commit made while a 15-minute
+    # review was in flight would be recorded as something the reviewer had seen.
+    head_at_dispatch, dirty_at_dispatch = reviewed_state()
 
     def emit(rc: int, *, gate_ran: bool, reason: str, model=None, attempts=None, hits=None) -> int:
         rec = verdict_record(gate_ran=gate_ran, exit_code=rc, out_path=args.out, reason=reason,
                              model=model, attempts=attempts,
+                             head=head_at_dispatch, dirty=dirty_at_dispatch,
                              intrusions_seen=[f"{os.path.join(d, n)}: {w}" for d, n, w in (hits or [])])
         err = write_verdict(vpath, rec)
         if err:
@@ -917,6 +968,25 @@ def self_test() -> int:
             f.write("not a directory")
         chk("an unwritable verdict path reports an error rather than passing quietly",
             isinstance(write_verdict(os.path.join(clash, "v.json"), _r), str), True)
+
+    # ── schema 2: WHAT was reviewed, not only THAT it was ──
+    # The pair exists because either one alone is wrong about a real workflow: `head` alone accuses
+    # an author who held fixes uncommitted so the reviewer would see the final state, and `dirty`
+    # alone cannot place the round in the branch's history at all.
+    _s = verdict_record(gate_ran=True, exit_code=0, out_path="x/y.md", reason="r",
+                        head="abc123", dirty=["scripts/a.py"])
+    chk("the verdict records the commit the reviewer was handed", _s["head"], "abc123")
+    chk("…and the uncommitted files it saw, which no commit records", _s["dirty"], ["scripts/a.py"])
+    # ⚠ NULL, NOT ABSENT. Both read as falsey downstream, but an absent field is indistinguishable
+    # from a schema-1 verdict written before the question could be asked, and the reader must be
+    # able to tell "this run could not say" from "this run predates the field".
+    chk("a run that could not describe the tree says so with null, not by omitting the field",
+        ("head" in _r, _r["head"]), (True, None))
+    with tempfile.TemporaryDirectory() as td:
+        _head, _dirty = reviewed_state(td)
+        chk("reviewed_state outside a git repository returns no head rather than raising",
+            _head, None)
+        chk("…and claims no dirty files when it has no head to place them against", _dirty, [])
     extra += 8
 
     total = len(cases) + extra

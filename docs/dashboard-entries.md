@@ -8138,3 +8138,59 @@ corrected in place while accepting the fix.)
 ⚠ `check-review-rounds.py` went RED the moment the r2 Claude half was filed alone
 ("1 review round with one half and no stated reason") and passed once the Codex half
 landed. The gate caught a missing review half before a human had to.
+
+## 2026-09-13
+A review now has to have seen the code that is actually shipping.
+
+Until today a branch passed its review gate by *having* a review — no check asked whether the
+reviewed code was the code about to merge. That gap is where the last two branches' worst defects
+lived: on both of them, the problem that survived furthest was introduced by a **fix** written after
+the round, in code no reviewer had ever looked at.
+
+The measurement behind it is worth stating, because it refutes the obvious economy. Across three
+rounds on two branches the two reviewers produced **zero** overlapping findings — so running both is
+not duplicated effort and dropping one saves nothing real. What they do duplicate is building the
+test environment. The saving is there, not in the reading.
+
+So the rule that shipped is narrow: a branch fails if guarded code was committed after **every**
+round it recorded. Running one more round against the final tree clears it, and so does the existing
+practice of holding the last fixes uncommitted so the reviewer sees the state that will merge — the
+wrapper now records which files it handed over uncommitted, precisely so the careful version of the
+workflow is not the one that gets punished.
+
+The protocol this belongs to — round 1 both reviewers at once, later rounds alternating — is written
+down with **the two observations that would retire it**, and those get re-read at each architecture
+review rather than by a script, because deciding whether two findings are the same finding is not
+something a script can do.
+<!--tech-->
+Branch `record-review-topology`. Ships the *Round topology* section in `docs/review-method.md`, its
+Phase 6 re-examination item in `docs/process-checklists.md`, verdict schema **2** in
+`scripts/codex-review.py` (`head` + `dirty`, captured at dispatch, never at exit), and the
+final-tree rule in `scripts/check-review-recorded.py`.
+
+⛔ **Commit order cannot answer this question, which is why the wrapper had to change.** "Was the
+review document committed after the last code commit?" is defeated by the ordinary act of committing
+the fixes and the review doc together — the likely accident, not an exotic evasion. Only the commit
+recorded at dispatch says what the reviewer was handed.
+
+The rule lives in `check-review-recorded.py` rather than a new script because that file already owns
+base resolution, the guarded-vs-prose classifier and the shallow-clone CANNOT RUN; `guarded_changes`
+is called, not re-derived, so "code that obliges a review" and "code no round saw" cannot drift into
+two different sets. `NO-REVIEW:` waives both questions — one declaration per concern, no second
+marker.
+
+Stated limits, none of them papered over: only the Codex half leaves a verdict, so a round that ran
+as Claude-only is reported **NOT CHECKED**, never as a pass; verdicts older than schema 2 carry no
+commit and are counted and named; only verdicts this branch wrote are considered, so on `master` the
+range is empty and the rule correctly says nothing.
+
+Proved live against real git, each direction with its control: a round that saw the final tree
+passes and is named; a code commit after the only round fails and names the file; a docs commit
+after it does not fire; a file the reviewer was handed uncommitted does not count against it, and
+removing just the `dirty` list from the same tree makes it fire. `EXPECTED_MUTATIONS` for
+`check-review-recorded.py` 6 → 11, declared total 559 → 564.
+
+⚠ The sum line was first written as `421 → 426`, read off the running commentary above the
+assertion instead of off `sum(EXPECTED_MUTATIONS.values())`. The case caught it. Steps 1–4 of the
+protocol have no machine behind them and are convention only — the Phase 6 item is the only thing
+that ever observes whether they are followed.

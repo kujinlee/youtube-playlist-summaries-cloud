@@ -30,10 +30,43 @@ SCOPE IS BLAST RADIUS, which is the user's decision of 2026-09-10 and the same a
 branch does not. Five of the six unreviewed PRs were docs, and requiring a round for those is how a
 gate earns the reputation that gets it switched off — backlog #56 measured exactly that.
 
+THE SECOND QUESTION: DID ANY ROUND SEE THE CODE THAT IS ABOUT TO MERGE? (added 2026-09-13)
+-------------------------------------------------------------------------------------------
+"A review was recorded" and "the reviewed code is the code that merges" are different claims, and
+the gap between them is where this project's late defects actually live. MEASURED across three
+rounds on two consecutive branches (backlog #296, #297): the two review halves produced **zero**
+overlapping findings, so neither was wasted effort — but the two defects that survived furthest were
+both introduced by a FIX, in code no round had ever seen. A concurrent pair reviewing one frozen
+tree cannot find those by construction: nobody is looking at the repair.
+
+⛔ COMMIT ORDER CANNOT ANSWER IT, and that is why `codex-review.py` had to change. "Was the review
+document committed after the last code commit?" is defeated by the ordinary workflow of committing
+the fixes and the review document together — the most likely accident, not an exotic evasion. Only
+the commit recorded by the wrapper AT DISPATCH says what the reviewer was handed, so verdict schema
+2 carries `head` and `dirty`.
+
+`dirty` is load-bearing in the other direction. The documented practice is to hold a round's fixes
+UNCOMMITTED so the reviewer sees the state that will merge; under it `head` is the commit BEFORE
+those fixes, and a check reading `head` alone would accuse the author who did the careful thing.
+
+SCOPE, STATED RATHER THAN IMPLIED
+----------------------------------
+  * Only verdicts THIS branch wrote are considered — a verdict file in the range against the base.
+    History and squashed predecessors are not this branch's rounds, and on `master` the range is
+    empty, so the rule correctly says nothing.
+  * Only the Codex half leaves a verdict. A round whose Codex half was down and ran as Claude is
+    invisible here and is reported as NOT CHECKED, never as a pass.
+  * A verdict older than schema 2 carries no `head`; it is counted and named as unusable.
+  * `NO-REVIEW:` waives BOTH questions. One declaration per concern, deliberately — a second marker
+    for "yes it is stale and that is fine" is the duplicate-vocabulary shape
+    `check-vocabulary-collisions.py` exists to refuse.
+
 FAILS IF
 --------
   * a guarded path changed, no review document was added, and the PR body carries no `NO-REVIEW:`
     reason -> exit 1, naming the files.
+  * every round this branch recorded has guarded code committed after it -> exit 1, naming the
+    files the closest round did not see.
   * git is absent, the base cannot be resolved, or the clone is SHALLOW -> exit **2**, CANNOT RUN.
     A shallow clone sees fewer commits and would report a confident, smaller diff.
 
@@ -47,6 +80,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import pathlib
 import subprocess
 import sys
@@ -54,6 +88,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 NO_REVIEW = "NO-REVIEW:"
 REVIEW_DIR = "docs/reviews/"
+VERDICT_DIR = "docs/reviews/verdicts/"
 
 # ⛔ A DENYLIST OF PROSE, NOT AN ALLOWLIST OF CODE — and the first version got this backwards.
 # It enumerated `lib/ app/ components/ worker/ supabase/ scripts/ tests/ .github/ .claude/hooks/`
@@ -150,6 +185,103 @@ def verdict(changed: list[str], added: list[str], pr_body: str,
                f"  MEASURED 2026-09-09: five PRs merged unreviewed in one night and nothing saw it.")
 
 
+# ── THE SECOND QUESTION, as a pure rule ───────────────────────────────────────────────────────
+def branch_verdicts(changed: list[str]) -> list[str]:
+    """PURE. The Codex verdicts THIS branch wrote — the rounds that are about this work.
+
+    Membership is the DIFF, exactly as `review_added` decides what counts as a recorded review.
+    Not "every verdict on disk": 82 of them predate this branch, and a rule that read those would
+    spend every run reporting that history cannot be placed, which is how a gate earns the
+    reputation that gets it switched off (backlog #56, measured).
+    """
+    return [p for p in changed if p.startswith(VERDICT_DIR) and p.endswith(".json")]
+
+
+def tail_verdict(tails: dict[str, list[str]], unusable: int = 0) -> tuple[int, str]:
+    """PURE. `(exit_code, message)` for "did any round see the code that is about to merge?".
+
+    `tails` maps a round's verdict filename to the guarded paths committed AFTER it — the files
+    that round cannot have reviewed. An EMPTY list is the pass: that round saw everything.
+
+    ⚠ ANY round clears it, not the latest. Two rounds can each be the last to see a different file
+    only if a third thing changed between them, and requiring the newest specifically would make
+    the answer depend on an ordering the verdicts do not record. "Some round saw the final tree" is
+    the property that matters and it is the one that is actually observable here.
+    """
+    if not tails:
+        why = (f"{unusable} round(s) recorded no commit (verdicts written before schema 2)"
+               if unusable else "no Codex round was recorded on this branch")
+        return 0, f"final-tree rule NOT CHECKED — {why}"
+    clean = sorted(n for n, paths in tails.items() if not paths)
+    if clean:
+        extra = f"; {unusable} other round(s) recorded no commit" if unusable else ""
+        return 0, f"the final tree was reviewed by {', '.join(clean)}{extra}"
+    name, missed = min(tails.items(), key=lambda kv: (len(kv[1]), kv[0]))
+    shown = ", ".join(missed[:6]) + (f" (+{len(missed) - 6} more)" if len(missed) > 6 else "")
+    return 1, (f"{len(tails)} round(s) ran and guarded code was committed after every one of them.\n"
+               f"  The closest ({name}) never saw:\n"
+               f"    {shown}\n"
+               f"  Run one more round against the current tree, or put `{NO_REVIEW} <reason>` in "
+               f"the pull-request body.\n"
+               f"  MEASURED 2026-09-13 over three rounds on two branches: the two review halves\n"
+               f"  produced ZERO overlapping findings, and both defects that survived furthest were\n"
+               f"  introduced by a FIX — code no round had seen.")
+
+
+def _git(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True)
+
+
+def _merge_base(base: str) -> str:
+    """The commit this branch forked from. RAISES rather than guessing."""
+    mb = _git("merge-base", base, "HEAD")
+    if mb.returncode != 0:
+        raise RuntimeError(f"CANNOT RUN — cannot resolve a merge base with {base!r}: "
+                           f"{mb.stderr.strip()}")
+    return mb.stdout.strip()
+
+
+def round_tails(base: str, verdict_files: list[str]) -> tuple[dict[str, list[str]], int]:
+    """`(tails, unusable)` for `tail_verdict`. Reads git and the verdicts; the RULE is pure.
+
+    `guarded_changes` is called, never re-derived: what obliges a review and what counts as
+    "unreviewed code" must be the same set, or one of the two answers is about a different repo.
+    """
+    mb = _merge_base(base)
+    tails: dict[str, list[str]] = {}
+    unusable = 0
+    for rel in verdict_files:
+        p = ROOT / rel
+        if not p.is_file():
+            continue                        # the branch deleted it; there is nothing to read
+        try:
+            rec = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"CANNOT RUN — {rel} is unreadable ({exc}), so whether that round "
+                               f"saw the final tree is UNKNOWN.")
+        # A gate that did not run reviewed nothing. The CONTRADICTION of filing its artifact anyway
+        # belongs to check-review-rounds.py and is not re-decided here.
+        if not isinstance(rec, dict) or not rec.get("gate_ran"):
+            continue
+        head = rec.get("head")
+        if not isinstance(head, str) or not head.strip():
+            unusable += 1
+            continue
+        if _git("merge-base", "--is-ancestor", head, "HEAD").returncode != 0:
+            continue                        # unreachable: a squashed or rewritten predecessor
+        if _git("merge-base", "--is-ancestor", head, mb).returncode == 0:
+            continue                        # already on the base; not one of this branch's rounds
+        diff = _git("diff", "--name-only", head, "HEAD")
+        if diff.returncode != 0:
+            raise RuntimeError(f"CANNOT RUN — git diff against {head[:12]} failed: "
+                               f"{diff.stderr.strip()}")
+        after = guarded_changes([ln for ln in diff.stdout.splitlines() if ln.strip()])
+        # Files the reviewer was handed uncommitted are files it SAW, whatever the commit says.
+        seen = {s for s in (rec.get("dirty") or []) if isinstance(s, str)}
+        tails[pathlib.PurePosixPath(rel).name] = sorted(set(after) - seen)
+    return tails, unusable
+
+
 def changed_paths(base: str) -> list[str]:
     """Paths changed against `base`. RAISES on anything that would understate the answer."""
     if not (ROOT / ".git").exists():
@@ -211,7 +343,27 @@ def main(argv: list[str]) -> int:
         return 2
     code, message = verdict(changed, added, body, lambda b: reason_of(b, NO_REVIEW))
     print(("FAILED — " if code else "ok — ") + message, file=sys.stderr if code else sys.stdout)
-    return code
+    if code:
+        return code
+
+    # ── the second question ──
+    # Asked only when the first was answered by a REVIEW. If nothing guarded changed the question
+    # is moot; if the author declared `NO-REVIEW:` it is waived by the same declaration, which is
+    # why there is no second marker to write. `reason_of` is called again rather than threaded out
+    # of `verdict()` — it is pure, and widening that function's return would break the tuple its
+    # cases pin.
+    if not guarded_changes(changed) or reason_of(body, NO_REVIEW) is not None:
+        return 0
+    try:
+        tails, unusable = round_tails(args.base, branch_verdicts(changed))
+    except (RuntimeError, OSError) as exc:
+        print(str(exc) if str(exc).startswith("CANNOT RUN") else f"CANNOT RUN — {exc}",
+              file=sys.stderr)
+        return 2
+    tcode, tmessage = tail_verdict(tails, unusable)
+    print(("FAILED — " if tcode else "ok — ") + tmessage,
+          file=sys.stderr if tcode else sys.stdout)
+    return tcode
 
 
 def self_test() -> int:
@@ -275,6 +427,46 @@ def self_test() -> int:
     # this divergence as one it "has already paid for twice"; this is the case that sees it.
     case("the marker is honoured on the pre-comment head too",
          _reason_of("NO-REVIEW: docs only <!-- agreed with the lead -->", NO_REVIEW), "docs only")
+
+    # ── THE SECOND QUESTION: did any round see the code that is about to merge? ──
+    V = "docs/reviews/verdicts/x-r1-codex.verdict.json"
+    case("a verdict this branch wrote is one of its rounds", branch_verdicts([V]), [V])
+    case("a review document is not a verdict",
+         branch_verdicts(["docs/reviews/codex/x-r1-codex.md"]), [])
+    case("a JSON file elsewhere under docs/ is not a verdict",
+         branch_verdicts(["docs/anchors.json"]), [])
+    # ⛔ THE PASS. A round with nothing committed after it saw the tree that will merge.
+    case("a round with an empty tail passes", tail_verdict({"a.json": []})[0], 0)
+    case("...and the pass NAMES the round that saw it, so a stacked pass is visible in the log",
+         "a.json" in tail_verdict({"a.json": []})[1], True)
+    # ⛔ THE FAILURE THIS EXISTS FOR: every round is stale, so the fixes merged unreviewed.
+    case("code committed after EVERY round FAILS", tail_verdict({"a.json": ["lib/x.ts"]})[0], 1)
+    case("...and the failure names the file no round saw",
+         "lib/x.ts" in tail_verdict({"a.json": ["lib/x.ts"]})[1], True)
+    # ⚠ ANY round clears it. Requiring the NEWEST would need an ordering the verdicts do not carry.
+    case("one clean round among stale ones is enough",
+         tail_verdict({"a.json": ["lib/x.ts"], "b.json": []})[0], 0)
+    # ⚠ The report points at the round that missed LEAST — the shortest way back to green.
+    case("the failure reports the CLOSEST round, not an arbitrary one",
+         "b.json" in tail_verdict({"a.json": ["lib/x.ts", "lib/y.ts"], "b.json": ["lib/y.ts"]})[1],
+         True)
+    # ⛔ "CANNOT RUN" IS NOT A PASS, and it must not read as one either. No rounds, or rounds that
+    # cannot say what they saw, is exit 0 — but the line has to say NOT CHECKED, because a green
+    # line claiming more than its input covers is this project's most-repeated defect.
+    case("no rounds at all is not a failure", tail_verdict({})[0], 0)
+    case("...and says NOT CHECKED rather than reporting a clean tree",
+         "NOT CHECKED" in tail_verdict({})[1], True)
+    case("pre-schema-2 verdicts are counted and named, not silently dropped",
+         "recorded no commit" in tail_verdict({}, unusable=3)[1], True)
+    # ⚠ A clean round does not excuse silence about the others: the pass still reports what it
+    # could not place, or "reviewed" would cover rounds nobody checked.
+    case("...including alongside a clean round",
+         "1 other round(s) recorded no commit" in tail_verdict({"a.json": []}, unusable=1)[1], True)
+    # ⭐ THE LIVE WIRING, not a simulation. `round_tails` must call `guarded_changes`, or the two
+    # questions would disagree about what code is: a docs commit after a round would fail the tail
+    # rule while not obliging a review in the first place.
+    case("the tail rule and the review obligation share one idea of `guarded`",
+         guarded_changes(["docs/reviews/codex/x-r1-codex.md", "lib/x.ts"]), ["lib/x.ts"])
 
     # ⛔ THE FAILURE LINE IS A CONTRACT, NOT A STYLE CHOICE. `check-plan-code`'s mutation harness
     # attributes a kill by reading `l.strip().startswith("[FAIL] ")`, slicing `[7:]`, then
