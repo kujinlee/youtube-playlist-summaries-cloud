@@ -8140,6 +8140,243 @@ corrected in place while accepting the fix.)
 landed. The gate caught a missing review half before a human had to.
 
 ## 2026-09-13
+The fifteen database checks now run automatically on every relevant push, instead of
+only on my machine — which is what the last two weeks of red was really about. Two
+surprises worth knowing. First, this was estimated at about a day and took a couple
+of hours, because the container image already provides most of what was thought to be
+the hard part. Second, the estimate's central claim — that these checks would roughly
+double the time CI takes — was wrong, because CI runs jobs side by side rather than
+one after another. A separate nightly check watches for the live production database
+drifting; it needs a credential added before it can do anything, and it will fail
+loudly every night until it gets one rather than quietly reporting all-clear.
+<!--tech-->
+Branch `schema-gates-in-ci`. New: `.github/workflows/schema-gates.yml` (jobs
+`schema-gates` and `prod-drift`), `scripts/ci/start-schema-db.sh`, and three fixtures
+under `scripts/ci/`.
+
+**Measured, against a database built entirely from the repo in a container:**
+
+    scripts/ci/start-schema-db.sh          14s   27 migrations, M4 PRESENT asserted
+    M4_PHASE=post check-schema-gates.sh   185s   73 ✓ / 0 ✗, exit 0, 15/15 green
+    image                                 0.34 GB  public.ecr.aws/supabase/postgres
+
+**Five scripts hardcoded the container name** — `m4_catalog.py`, `check-anon-exposure.py`
+and three that defined the constant and never read it. The handoff's claim that the
+connection was "already seamed (`m4_base_db.py:40`)" was true of one file and false of
+five, which is why a CI-built database reported `database "m4_rb2" does not exist` for
+one that demonstrably existed: the gate was querying the dev stack. Now one definition
+(`m4_base_db.CONTAINER`), five readers; three dead constants deleted.
+
+**Four gaps between the image and a real Supabase stack**, each found by a gate
+refusing rather than passing vacuously:
+
+    storage.buckets/objects missing   -> 0007 aborts, taking 4 PUBLIC functions with it
+    auth.users lacks is_anonymous     -> handle_new_user raises; 21 vs 35 columns, 1 read
+    auth.uid() reads only the legacy  -> owner cannot read own row; RLS silently off
+      singular GUC, not the JSON         (auth.role/auth.jwt differ the same way)
+    empty database                    -> "no workspaces exist"; seed 2 tenants + playlists
+
+The auth.uid() one is the dangerous class: it would weaken RLS rather than break it.
+The three helper bodies are copied verbatim via `pg_get_functiondef`, never retyped,
+and gate 8's owner-read assertion is their falsifier — it is what caught this.
+
+**`pg_isready` is not a readiness signal for this image, and the image's own
+HEALTHCHECK uses it.** The init phase runs a temporary server that answers yes and
+then shuts down; waiting on it produced `20 of 27` migrations failing with cascading
+`relation "profiles" does not exist`. Readiness is the init marker in the logs, then a
+query that answers. This also rules out a `services:` block with the documented health
+options.
+
+⭐ **I reproduced this repo's own documented `grep -q` under `pipefail` footgun** while
+writing that wait loop: `grep -q` exits on match, SIGPIPEs `docker logs`, and pipefail
+returns the producer's 141 — measured `piped_rc=141` on the very iteration where the
+marker was found. `mutate-live-schema-check.sh:97-102` already carries that warning.
+
+**Found while checking my own work:** `scripts/m4-base-db.sh` declared `# 6 cases` and
+runs **10**. `check-selftest-counts.py` globs `scripts/*.py`, so a declared count in a
+shell script has no outside observer. Instance corrected; the blind spot is not filed.
+
+## 2026-09-13
+Review of the CI work found twelve problems, including two that would have made the
+new checks useless in different ways: the nightly production check could never have
+passed at all, and the check that watches for expensive mistakes was set up to ignore
+the very folders that mistake would appear in. Both are fixed, along with ten smaller
+ones. The part I was most worried about — the stand-ins for the real login service —
+turned out to be sound, and the reviewer proved it rather than taking my word.
+<!--tech-->
+`docs/reviews/claude/schema-gates-ci-r1-claude.md` — 2 Blocking, 1 High, 5 Medium,
+4 Low. All twelve fixed in `a411ba9d`.
+
+**B1 — `prod-drift` could never pass, secret or not.** `--prod` does not open a socket
+from Python: `m4_catalog.psql_cmd` builds `docker exec … psql`, so production needs a
+container to run the CLIENT in and that job created none (`rc=2, No such container`).
+Fixed with an `--entrypoint sleep` client container; the failure then moves to a real
+connection error. I had tested the credential guard and stopped one step short.
+
+**B2 — the money gate was inside a path filter excluding the code it watches.** Gate
+15 walks `lib/ app/ worker/ components/ types/` + `middleware.ts`; the filter admitted
+`scripts/` and `supabase/`. One line under `lib/` flips it 0 → 1 and nothing else in
+CI runs it. ⭐ This falsified my own committed claim "UNDER-FIRING WAS CHECKED, NOT
+ASSUMED" — I enumerated paths the scripts MENTION; gate 15's subject is a tuple of
+directories it WALKS at runtime. Third wrong-predicate measurement this session.
+
+**HIGH — my storage falsifier was a grep and survived 3 of 5 mutations**, including
+the realistic edit: widening `nspname = 'public'` to admit storage contains no
+`storage.` at all. Replaced by `scripts/check-storage-independence.py`, which parses
+with `ast` (so a comment cannot match and a string can) and DERIVES its file set (so a
+new gate is covered the day it is written).
+
+The new guard paid the full contract: 26-case self-test, a caller in `ci.yml`'s
+unfiltered job, `EXAMINED_KEYS` pinned, and a 7-mutation manifest. ⭐ One mutation went
+"RED but NOT via its case" — `problems([], root)[0]` raised IndexError and took the
+suite down, so the kill was unattributable. The case now reports instead of dying.
+7/7 kill via the case each names. `EXPECTED_MUTATIONS` 559 → 566.
+
+Mediums: the spine still listed the schema gates as "not yet in CI"; the "single place
+`PGCONTAINER` is read" claim was false (seven readers — the one other Python gate now
+imports it); `${1:-…}` treated an empty argument as absent so `docker rm -f` hit the
+default while the self-test exercised a path `main()` could not reach; the corrected
+`# 10 cases` restored a stored claim to a place nothing observes; one concurrency
+group let a 09:00 cron and a push to master cancel each other. Lows: `auth.email()`
+left legacy inside a paragraph claiming all three helpers were fixed; "six relation
+queries" was nine; the 14s excludes the image pull; no `permissions:` block.
+
+    suite  73 ✓ / 0 ✗, 15/15, exit 0 against a rebuilt CI database
+
+## 2026-09-13
+The second reviewer found a hole in the safety check I had written an hour earlier:
+it was supposed to prove that no database check reads the storage system, and it was
+only looking at two thirds of them. Fixed, along with a genuinely dangerous one — a
+helper script could delete an unrelated container on your machine if an environment
+variable happened to point at it. Both reviewers have now signed off and every check
+is green.
+<!--tech-->
+Codex r1: `docs/reviews/codex/schema-gates-ci-r1-codex.md` — 1 High, 1 Medium, 1 Low,
+all accepted and fixed. It built its own database, ran the full suite (15/15, 120 live
+assertions, 58/58 schema mutations, 29/29 live-schema mutations) and tore it down.
+
+**HIGH — the guard's STATED BOUND was false.** It claimed "the shell gates reach
+Postgres through these same Python modules". Gate 1 does not: `verify-schema.sh`
+concatenates `05_assert.sql` (2,517 lines, 122 assertion sites) and executes it. So a
+future assertion could read `storage.objects`, pass against the minimal CI fixture,
+and the guard would report green. Three defects had to be fixed to close it:
+
+    population missed the non-Python gates       12 files, 0 spec gates, 0 .sql
+    the WIDENED version still missed them        gates 1-2 are invoked as "$SPEC/…"
+    then it over-fired on migrations             3 hits in 0007, all meaningless
+
+⭐ The middle one is the same miss as the finding itself, one level down: I matched
+literal paths when the file uses a variable. The third inverted the rule — a migration
+is the SUBJECT the gates read the catalog about, and 0007's use of `storage.buckets`
+is *why* the fixture exists. Population is now 21 (12 Python + 6 spec gates +
+05_assert.sql and siblings, 0 migrations), with comment handling per kind: `ast` for
+Python, `--`/`/* */` for SQL, `#` for shell — the last two stated as approximations
+that err toward missing a reference rather than inventing one.
+
+Self-test 26 → 38 cases; manifest 7 → 11 mutations, 11/11 killing via the case each
+names. One new mutation went "RED but NOT via its case" first, because the exclusion
+case asserted the absence of a file the fixture never made a candidate.
+
+**MEDIUM — a deny-list where an allow-list belonged, and it was live.**
+`PGCONTAINER=redis scripts/ci/start-schema-db.sh` would have run `docker rm -f redis`.
+Now only `m4_[a-z0-9_]*` may be destroyed; anything unrecognised is refused. Falsified
+live: `PGCONTAINER=redis_ru202` → refused, container survived.
+
+**LOW** — `package.json`/`package-lock.json` added to the path filter: gate 15 answers
+comment detection with the TypeScript compiler and has no fallback, so its dependency
+surface is a gate dependency.
+
+    suite   73 ✓ / 0 ✗, 15/15, exit 0     guards  10/10 green
+
+## 2026-09-13
+CI caught something my own pre-flight check had missed, for the most instructive
+reason available: I had written my own copy of the rule it uses to decide which test
+failed, and my copy was more generous than the real one. Mine said all eleven checks
+were working; the real one could not see any of them. One line of output format,
+now fixed and re-verified against the actual parser rather than my imitation of it.
+<!--tech-->
+`verify` red on "Mutation manifest against the delivered scripts":
+
+    FAILED — 43 file(s), 570 mutation(s), 570 killed, 559 attributed, 0 survivors
+    ✗ ×11  "the suite went RED but printed no `[FAIL] <case>` line, so NOTHING COULD
+            SEE THE KILL … a report-format defect in check-storage-independence.py"
+
+`check-plan-code.parse_fail_names` takes a line STARTING with `[FAIL] ` and slices
+`[7:]`. My self-test printed `  ✗ <name>`. Every mutation killed; none could be
+attributed, and an unattributable kill is indistinguishable from a mutation nobody
+guarded — portable-practices §22, on my own new guard.
+
+⭐ **Why my local run said 11/11.** My pre-flight verifier matched "the case name
+appears in the output AND a `✗` is present" — a second implementation of the
+attribution rule, more generous than the only one that counts. Re-verified by
+importing `check-plan-code.parse_fail_names` itself: control parses to `[]`, and
+11/11 mutations name their case.
+
+## 2026-09-13 [needs-you]
+The nightly production-drift check is built and works, but it needs one credential
+that only you can add, so I have deliberately NOT switched on its nightly schedule.
+Arming it now would mean a failed job every night until the credential exists, and a
+check that fails every night is one people learn to ignore. It can still be run by
+hand at any time, and turning the schedule on is a one-line change once the secret is
+there. Everything else in this change is finished and green.
+<!--tech-->
+`prod-drift` needs repository secret `CLAUDE_RO_DATABASE_URL` (a read-only role — see
+the `claude_ro` recipe). Without it the job refuses loudly (rc=2, "TREAT THIS AS NOT
+RUN"); it never reports a clean production.
+
+⚠ The distinction that keeps the decision honest: the job is not SCHEDULED to run on
+its own until it can pass. It does not quietly report success — not arming an alarm is
+different from arming one that lies. Backlog #56's measured verdict (a gate that fires
+on things people did not change gets disabled) and portable practice §23 both point the
+same way.
+
+To arm, after adding the secret — `.github/workflows/schema-gates.yml`:
+
+    schedule:
+      - cron: '0 9 * * *'      # 09:00 UTC daily
+
+`workflow_dispatch` is retained, so the whole path can be exercised on demand:
+`gh workflow run "Schema gates"`. The job's four steps were already driven locally
+end to end — credential guard, psql client container, the drift check reaching the
+network layer, and cleanup.
+
+## 2026-09-13
+A third review round, aimed at the one commit nobody had reviewed yet, found one more
+real problem — and it was the kind worth catching: a check that would have examined the
+wrong file and reported everything fine. Fixed. Four rounds of review on this change
+have now found twenty-four problems, and every single round found its problems in the
+previous round's repairs, which is the whole reason the rounds kept going.
+<!--tech-->
+Codex r3: `docs/reviews/codex/schema-gates-ci-r3-codex.md` — 1 Medium, no Blocking or
+High. Scoped to `fe0785e4` alone, the repairs for r2's Claude half, which no reviewer
+had seen. ⚠ `REVIEW GAP: claude` recorded — the delta was one commit and the Claude half
+had just reviewed everything preceding it.
+
+**MEDIUM.** The generic `$VAR/` strip treated every variable as a repo root. The
+reviewer built a gate reading `"$TMP/docs/real.sql"` from a `mktemp -d`; the strip
+resolved it to the repo's own `docs/real.sql`, which exists and is clean — a CONFIDENT
+CHECK OF THE WRONG SUBJECT, which is worse than a miss. Only root-like assignments
+(`$(cd … && pwd)`, `dirname "$0"`, `git rev-parse --show-toplevel`) are stripped now;
+anything else fails to resolve and is absent from the population.
+
+⚠ It also caught that the r2 fixture proved less than it claimed — its computed variable
+was INTENDED as a root alias, so it could not distinguish root-like from any-variable.
+The new case uses `SCRATCH=$(mktemp -d)` and asserts the decoy is NOT in scope.
+
+⚠ Two further anchor defects while fixing it, both this branch's signature: the fix
+ORPHANED r2's mutation anchor (third occurrence — a refactor moving text a mutation
+binds to), and re-anchoring hit the FIRST LINE of a two-line comprehension, so the
+mutated suite died of SyntaxError, printed no `[FAIL]` line, and the kill attributed to
+NOTHING — portable practice §22, in the anchor rather than the case.
+
+    self-test 50/50 · mutations 16/16 attributable · check-plan-code 128/128
+    suite 73 ✓ / 0 ✗, 15/15, exit 0 · eight repo guards rc=0
+    EXPECTED_MUTATIONS 559 -> 575 across the branch
+
+Guard population across four rounds: 12 -> 21 -> 27 -> 30, every widening bought by a
+measured miss rather than by caution.
+
+## 2026-09-13
 A review now has to have seen the code that is actually shipping.
 
 Until today a branch passed its review gate by *having* a review — no check asked whether the

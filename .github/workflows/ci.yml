@@ -289,6 +289,17 @@ jobs:
       - name: check-fixture-variation self-test
         run: python3 scripts/check-fixture-variation.py --self-test
 
+      # The CI storage fixture (`scripts/ci/storage-service-fixture.sql`) is a MINIMAL stand-in for
+      # tables the storage-api service creates and CI does not run. It is safe only while no gate
+      # reads `storage.*`. Run HERE rather than only in `schema-gates.yml`, because this job has no
+      # path filter and the subject is repo code: a gate can start reading storage in a commit that
+      # touches nothing the schema workflow watches.
+      - name: No schema gate reads storage.* (the CI fixture stays scaffolding)
+        run: python3 scripts/check-storage-independence.py
+
+      - name: check-storage-independence self-test
+        run: python3 scripts/check-storage-independence.py --self-test
+
       # backlog #90's adopted grouping policy. A group on the backlog page is a CLAIM; this
       # refuses one with no falsifier, fewer than two open members, or a member that is not a row.
       - name: Every grouping is a claim with a falsifier

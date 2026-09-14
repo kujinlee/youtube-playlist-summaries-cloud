@@ -1,0 +1,18 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 2786 chars"
+  ],
+  "exit_code": 0,
+  "gate_ran": true,
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/62196080-8a63-4c8f-a689-80aa431a832f/scratchpad/base-codex-review.py: CREATED during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/62196080-8a63-4c8f-a689-80aa431a832f/scratchpad/claude-r2-brief.md: CREATED during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/62196080-8a63-4c8f-a689-80aa431a832f/scratchpad/codex-ci-r2.stdout: OVERWRITTEN during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/62196080-8a63-4c8f-a689-80aa431a832f/scratchpad/pr-ci-2.md: OVERWRITTEN during the run (writer unattributed)"
+  ],
+  "model": "gpt-5.5",
+  "reason": "2786 chars",
+  "review": "schema-gates-ci-r2-codex.md",
+  "schema": 1,
+  "tool": "codex-review"
+}

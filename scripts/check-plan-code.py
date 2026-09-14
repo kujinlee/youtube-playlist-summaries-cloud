@@ -826,6 +826,10 @@ EXPECTED_MUTATIONS = {
     # live outside scripts/, so before HARNESS_TREE their control could never be green.
     # One mutation per case — the suite has exactly six, and each is now killed by one.
     "scripts/check-storage-grant-pin.py": 6,
+    # ⟳ 2026-09-13: the CI storage fixture's falsifier, pinned in the commit that creates it.
+    # Its predecessor was a grep inside the workflow that survived 3 of 5 mutations, so this
+    # manifest exists to prove the replacement does not.
+    "scripts/check-storage-independence.py": 16,
     # ⟳ 2026-09-06, backlog #99: the Stop guard and its driver BOTH join the manifest, in the
     # commit that changes their decision paths. Only ONE of them is R4 debt — begin-plan.py is
     # not a `check-*` guard, so `discover_guards` never saw it and it was never counted as owed.
@@ -2517,6 +2521,7 @@ def _self_test() -> int:
                                       "scripts/check-selftest-counts.py",
                                       "scripts/check-sentinel-meanings.py",
                                       "scripts/check-storage-grant-pin.py",
+"scripts/check-storage-independence.py",
                                       "scripts/check-test-counts.py",
                                       "scripts/check-theme-token-coverage.py",
                                       "scripts/check-vocabulary-collisions.py",
@@ -3003,6 +3008,13 @@ def _self_test() -> int:
     # ⚠ This sentence said "The six cover …" over nine entries for two rounds. Both halves filed it
     # twice; the first fix asserted on one string and replaced another, so `str.replace` silently
     # did nothing and the count drifted further (8 -> 9) while reading as fixed.
+    # ⟳ 2026-09-13: 559 -> 574 across this branch. All +15 belong to
+    # `check-storage-independence.py` — the CI storage fixture's falsifier — whose manifest grew
+    # 7 -> 11 -> 13 -> 15 as three review rounds widened the guard it proves. A RISE needs only the
+    # new manifest; a FALL needs the sanctioned reason (see the retire-plan-mode entry above).
+    # ⟳ r2 LOW 2 (claude): this said "559 -> 566 … +7" while the case beside it said 572 — the total
+    # moved four times and the prose was updated once. Nothing observes a comment, which is why the
+    # number lives next to the case that proves it and nowhere else.
     # ⟳ 2026-09-13, 559 -> 576: the final-tree rule in `check-review-recorded.py`. FIVE entries for
     # FOURTEEN behaviours added to an already-manifested file; nine were bought by its own three
     # review rounds, whose two Blockings were the same class one layer apart — path, then content,
@@ -3010,7 +3022,10 @@ def _self_test() -> int:
     # above rather than off `sum(EXPECTED_MUTATIONS.values())`, and THIS CASE caught it — which is
     # the case working, and a reminder that the running commentary up there is history, not the
     # total.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 576)
+    # ⟳ MERGE of master (#297) into this branch: 592, which is master's total plus this
+    # branch's additions. DERIVED from the dict, not added up from either side's
+    # narration — both blocks above are history and neither knew about the other.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 592)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
