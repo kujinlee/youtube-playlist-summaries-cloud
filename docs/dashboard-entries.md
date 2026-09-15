@@ -8935,3 +8935,182 @@ plus its hardcoded manifest list, `check-selftest-counts.POPULATION` +1,
 `check-fixture-variation.EXAMINED_KEYS` +8 keys derived by running its own `analyse()`
 (which reports **no** findings — every parameter is genuinely varied), and
 `check-ratchet-contract`'s R4 debt paid with a manifest rather than a raised baseline.
+
+## 2026-09-14
+You tried to answer a decision on this page and found you could not click anything.
+That was real: the options were plain text dressed as a form, collecting nothing, and
+the small word "open" beside a pull request looked like a link because it was wearing
+the same styling as the ones next to it. Every option now has a **choose** button. It
+fills in the question box with the decision and the option you picked, and you press
+Send — one deliberate step, so a stray click cannot answer something on your behalf.
+
+The page also gained the small badge that says whether Send actually works right now.
+Its styling and its code were already here; only the element itself was missing, so
+the page had no way to tell you the button was live.
+<!--tech-->
+Branch `clickable-dashboard-asks`. Measured on the live page before touching anything:
+**14 options in "What needs you", zero links, zero inputs, zero buttons,
+`cursor:auto`** — an affordance that was not merely unreachable but absent.
+
+**It drives the tray through the TRAY'S OWN entry points, and that is the design.**
+`brief-compose.py` lifts the tray verbatim, so anything assuming its internals is a
+second implementation that drifts. Verified live: `typeof window.openTray ===
+"undefined"`, no tray API on `window` — it exposes exactly two ways in, a heading
+`.askbtn` and a selection. **choose** therefore reproduces what a human does: selects
+the option's text and lets the tray's own `mouseup` handler build its floater with its
+own `nearestHeading()` section and its own quote.
+
+⚠ Writing `#qt`/`#qbox` directly was the obvious shortcut and is **wrong**: the Send
+handler posts the closure's `ctxSection`/`ctxQuote`, not the DOM, so a hand-filled tray
+would look right and post empty context — dead while appearing to work.
+
+⭐ **`<span class="q">` became `<h4 class="q">`, and the tag is load-bearing.**
+`nearestHeading()` walks previous siblings for an H1–H4; as a span the nearest heading
+was the page's own "What needs you" H2, so every answer would have been filed under the
+section rather than the question. CSS resets the heading back to its inline look, so the
+change is invisible to the reader and visible only to the tray.
+
+`class="when"` → `class="prstate"` for a PR's state: `when` is the class wrapping the
+date **and** the entry-id anchor, so a bare word wearing it sat in the one container
+that usually holds a link. Same class, two meanings.
+
+**Measured end to end.** Affordance probe: **14 buttons, 14 distinct positions, 14
+reachable, 0 zero-sized, real `<button>`, `cursor:pointer`**. Driving one produced the
+event `**The nightly production-drift check has been waiting on one credential since
+2026-09-13** | quoted: leave it unarmed and keep running the drift check by hand | Q: …`
+— section is the question, quote is the option. `#modechip` now resolves and reads
+"● live — Send works"; it returned `null` before.
+
+Four mutations added (manifest 64 → 68, declared sum 629 → 633), each proved to go red
+**via the case it names** over a control proved green first: the question reverting to a
+span (2 cases), the choose affordance removed (1), the PR state re-wearing `when` (2), and
+choose no longer refusing a stale floater.
+`gen-dashboard --self-test` 314 → 322; `check-plan-code --self-test` 128/128.
+
+⟳ **2026-09-15, on merging master — and this sentence used to say THREE.** The fourth
+mutation arrived in a later review round; the code and the manifest were updated and both
+prose copies were not, so this entry and a comment in `check-plan-code.py` both described
+work the repo had already done differently. Nothing could catch it: the guard reads the
+dict, never the sentence about the dict. Corrected in both places. The merged declared sum
+is **643** — 629 plus master's 10 for `check-review-decision` plus these 4, a number that
+appears on neither side of the conflict and had to be re-derived rather than chosen.
+
+⚠ An existing guard caught an invented token immediately — `.howto b{color:var(--fg)}`
+where `--fg` is consumed-but-undefined in the emitted stylesheet. And Pyright caught
+`_pr` shadowing a module function in the new test code. Both fixed before commit.
+
+## 2026-09-15
+Yesterday's tool has filed a complaint against itself, and it is a fair one.
+
+The small program written yesterday to read review records and say what to do next was
+asked to read its own. It answered that the part of itself which reads those records
+should be redesigned — twice in a row it had been fixed, and twice in a row the fix
+introduced the next problem, which is the exact pattern it was built to detect.
+
+That is now written down as backlog item 117 rather than remembered. Nothing is broken
+today: nothing automatic uses this program's answer yet, so a misreading would mislead a
+person reading the output and nothing else. The reason it is worth a row anyway is what
+it reads — a record of whether work was reviewed. A misread there does not crash; it
+produces a confident wrong answer, and confident wrong answers about safety records are
+the two most serious problems yesterday's seven rounds found.
+
+Three ways to fix it are recorded with the row. Choosing between them is a trade — how
+easy the file stays to write by hand, against how much of the reading we have to own.
+<!--tech-->
+Branch `file-parse-header-redesign`. Docs-only; one row appended to `docs/backlog.md`.
+
+**Filed as #117 🟠, out of PR #303 r7, at the user's instruction.** `parse_header` in
+`scripts/check-review-decision.py` is a hand-rolled YAML subset over a safety record.
+Running the script on merged master prints its own verdict:
+`ARCHITECTURE_REVIEW — thrashing: 'parse-header' carried fix-induced findings in r6 and r7`.
+
+| round | finding | one defect, twice |
+|---|---|---|
+| r6 M1 | the flow-mapping scan covered the whole YAML body, so a `halves.claude: "GAP: … {disabled}"` VALUE counted as a finding → **false CANNOT RUN** | a hand parser mistaking prose for data |
+| r7 L1 | malformed block-scalar text accepted and read | a hand parser accepting what YAML rejects |
+
+Three reshapings recorded, each of which removes the class rather than the instance:
+fenced `json` + `json.loads`; a vendored YAML-subset parser; or dropping the header for
+command-line counts (Codex's r3 proposal). ⚠ Filed 🟠 not 🟡 **despite an r7 Low grade** —
+the subject is a safety record, and `NO-CALLER` bounds it only until something calls it.
+
+⚠ **The gate caught the filing itself.** The row contained `` `claude: |` `` — a literal
+pipe inside a code span — and `check-docs.py` refused it at `docs/backlog.md:145`: *"item
+#117 has 7 columns but the table opened at line 30 declares 6"*, naming the escape and the
+reason (a row short a Status cell is how #46 and #50 were once marked closed while open).
+Escaped to `\|`; rc=0.
+
+⚠ **Merge-order note, not a defect:** this entry and PR #302's both append to the tail of
+this file, so whichever merges second will conflict here. That is the append-log shape
+already paid for twice today — resolve by keeping both entries, never by picking a side.
+
+## 2026-09-15
+Two more small things about yesterday's tool are now written down rather than remembered.
+
+The first: when the program meets a decision word it does not recognise, it reports that
+as "someone needs to act on this branch" — the same signal it gives for a genuine, correct
+answer. It still prints the unrecognised word, so a person reading the output would spot
+it; only the silent machine-readable part is ambiguous. Nothing automatic reads that part
+yet, which is why it is filed small.
+
+The second came out of running the tool on the other open branch today. It could not read
+that branch's review record at all, and said so plainly instead of guessing. The reason is
+simply age: the format it reads was invented yesterday, and almost none of the existing
+records use it. Measured rather than estimated — 74 of the 81 records have no such header,
+and the seven that do are yesterday's own.
+
+The obvious tidy-up — going back and adding the headers by hand — was considered and
+deliberately not done. Those records say whether work was reviewed. Writing that claim in
+afterwards, from reconstruction, would be inventing the evidence.
+<!--tech-->
+Same branch `file-parse-header-redesign`; two more rows on `docs/backlog.md`.
+
+**#118 🟢** — `exit_code_for()` is `{"STOP": 0, "CANNOT_RUN": 2}.get(decision, 1)`
+(`scripts/check-review-decision.py:391`), so an unknown value exits **1**, which already
+means `ROUND_OWED` *and* `ARCHITECTURE_REVIEW`. The two-line repair is not the hard part —
+what a **fourth** value should mean is, and the row says so rather than prescribing.
+
+**#119 🟢** — measured over `docs/reviews/coordinator/`: **7 of 81** documents carry a
+```yaml header, **74 do not**, and all 7 belong to PR #303, the branch that invented the
+grammar. 6 of 7 subjects have no headered round at all. ⛔ Backfilling REJECTED by the user
+today; the reason is filed so it is not re-proposed as an obvious cleanup.
+
+⚠ **The two open rows about this script hide each other**, and that is recorded in #119:
+until old branches drain, a CANNOT RUN is indistinguishable between *predates the grammar*
+and *the hand-rolled parser of backlog #117 failing on a valid header*.
+
+## 2026-09-15
+A gate told me how to satisfy it, I did exactly that, and nothing happened.
+
+One of the checks that guards this repository can be answered two ways: get the change
+reviewed, or write a sentence in the pull request explaining why it does not need one. I
+wrote the sentence, re-ran the check, and it failed again with the identical complaint —
+having never seen what I wrote.
+
+The reason is small and completely invisible from where a person stands. The check reads
+the pull request's text as it was at the moment the check was triggered, and editing that
+text is not something the system treats as a trigger. So the text sat there, correct and
+unread, and re-running the check simply replayed the old snapshot.
+
+An empty commit fixed it, because a commit *is* a trigger. That works, but nobody would
+guess it from the instruction, which is why this is written down rather than remembered.
+The cheap repair is to make the instruction say the second half out loud; the tidy-looking
+repair — listening for edits too — would also run the whole test suite every time anyone
+fixes a typo in a title.
+<!--tech-->
+Filed as **#120 🟡** on the same branch `file-parse-header-redesign`.
+
+**Measured on PR #302, not reasoned about.** `NO-REVIEW:` was added to the body; the failed
+job was re-run; it failed with the byte-identical message. Two individually correct lines:
+
+| line | what it does |
+|---|---|
+| `.github/workflows/ci.yml:422` | passes `${{ github.event.pull_request.body }}` — the body **as of the event** |
+| `.github/workflows/ci.yml:14` | `on: pull_request:` with **no `types:`** → defaults to `[opened, synchronize, reopened]` |
+
+`edited` is not in that set, and a job re-run replays the **same payload**. Unblocked with
+empty commit `de674310`, whose message carries the diagnosis.
+
+⛔ The tidy fix is not obviously right: `edited` also fires on **title** edits, so every
+typo fix would run full CI. The row proposes naming the extra step in the gate's own
+message instead — cheaper, honest, and it changes nothing about what CI runs.

@@ -556,6 +556,92 @@ PR_NOTE = {
     "exhausted": ' <span class="unknown">could not check — PR lookup budget exhausted</span>',
 }
 
+# --- making a displayed decision answerable ------------------------------------
+# ⛔ THIS DRIVES THE TRAY THROUGH THE TRAY'S OWN ENTRY POINTS, AND THAT IS THE WHOLE
+# DESIGN. `brief-compose.py` lifts the tray VERBATIM from an existing page, so anything
+# this script assumes about its internals is a second implementation that drifts — the
+# failure this repo has now measured thirteen times.
+#
+# The tray exposes exactly two ways in, and `openTray` is closure-private (verified on
+# the live page 2026-09-14: `typeof window.openTray === "undefined"`, no tray API on
+# `window`). So "choose" reproduces what a HUMAN does on the supported path: select the
+# option's text, let the tray's own `mouseup` handler build the floater with its own
+# `nearestHeading()` section and its own quote, then press that floater.
+#
+# ⚠ Writing `#qt`/`#qbox` directly was the obvious shortcut and is WRONG: the Send
+# handler posts the closure's `ctxSection`/`ctxQuote`, not the DOM, so a hand-filled
+# tray would look correct and post empty context — an affordance that is dead while
+# appearing to work, which is the exact class §18 exists for.
+#
+# It is deliberately NOT one-click-sends. The tray opens pre-filled and focused; the
+# human still presses Send. A decision is consequential and a misclick must not fire it.
+PICK_SCRIPT = """
+(function(){
+  // ⛔ NO `file:` EARLY RETURN, and the first version had one (r1 Medium, Codex).
+  // It added `body.nosend` and CSS hid every chooser, on the reasoning that Send does
+  // not work from a bare file. But the tray DEGRADES rather than dying: in local mode
+  // it relabels Send to Copy and puts the composed question on the clipboard. Hiding
+  // the control therefore removed a path that still works — the page's own mode chip
+  // says so in the same breath ("opened as a file -> Send copies instead").
+  // Assert what the thing DOES, not what one delivery mechanism cannot do.
+  function fire(li){
+    var text = li.querySelector('.otext');
+    if (!text) return false;
+    var sel = window.getSelection();
+    if (!sel) return false;
+    sel.removeAllRanges();
+    var r = document.createRange();
+    r.selectNodeContents(text);
+    sel.addRange(r);
+    document.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+    return true;
+  }
+  function floaterNow(){
+    return document.querySelector('button.askbtn[style*="fixed"]');
+  }
+  document.addEventListener('click', function(e){
+    var btn = e.target.closest ? e.target.closest('.pick') : null;
+    if (!btn) return;
+    e.preventDefault();
+    var li = btn.closest('li');
+    // ⛔ REMEMBER THE FLOATER THAT ALREADY EXISTS, AND REFUSE IT. MEASURED BUG, r2.
+    // The tray removes a previous selection's floater inside its OWN mouseup handler,
+    // which is scheduled on a timer; the first poll iteration below runs synchronously
+    // right after `dispatchEvent`, so it used to find the STALE button and click it.
+    // Reproduced live: with unrelated text selected, pressing choose on an option
+    // opened the tray as `Project dashboard — "2026-09-14 18:54 · bb265c08 …"` instead
+    // of the question and the option. It then reported "✓ Sent" — the wrong payload,
+    // delivered confidently. Identity, not a longer delay: a timing assumption is the
+    // thing §24 refuses, and "wait 30ms and hope the other handler ran" is one.
+    var stale = floaterNow();
+    if (!li || !fire(li)) return;
+    // The tray builds its floater inside its own setTimeout, so yield before pressing
+    // it. ⚠ POLL, don't take a single shot: one fixed delay is a race whose losing side
+    // is silent, and "wait a bit then assume" is the shape §24 of portable-practices
+    // exists to refuse. Give up only after a bounded number of tries, and SAY SO.
+    // The selector is safe against grabbing a heading's button: measured on the live
+    // page, zero `.askbtn` carries an inline style containing "fixed" while idle — only
+    // the selection floater is positioned that way, and it is removed on the next
+    // mouseup.
+    var tries = 0;
+    (function poll(){
+      var f = floaterNow();
+      if (f && f !== stale) { f.click(); return; }
+      if (++tries < 12) { setTimeout(poll, 30); return; }
+      // No floater after ~360ms => no tray on this page, or the selection was refused.
+      // Tell the reader the path that still works — then RESTORE the button.
+      // ⚠ An earlier version set `btn.disabled = true` permanently. A transient failure
+      // would then kill that one chooser until a reload, with no way for the reader to
+      // discover it had become retryable. Degrade, do not brick: say what to do, stay
+      // clickable, and put the label back.
+      var was = btn.textContent;
+      btn.textContent = 'select the text and use ask';
+      setTimeout(function(){ btn.textContent = was; }, 4000);
+    })();
+  });
+})();
+"""
+
 
 def pr_state(n: int, cache: dict, budget: dict) -> str:
     """Live state of pull request `n`, bounded (spec §6).
@@ -831,6 +917,13 @@ def build(entries, days, prs, pr_error, git_error, window,
     _cleared = set(_resolvers)
     need = unresolved(entries)
     REC_SPAN = ' <span class="rec">recommended</span>'
+    # ⛔ THE OPTIONS USED TO BE INERT TEXT THAT LOOKED LIKE A FORM (2026-09-14).
+    # Measured on the live page when the user tried to answer one: 14 options in the
+    # section, ZERO links, ZERO inputs, ZERO buttons, `cursor:auto`. The page showed a
+    # decision with lettered choices and collected nothing — §18's shape one level out,
+    # an affordance that is not there at all rather than one that cannot be reached.
+    # A REAL <button>, so it is keyboard-reachable and announces itself.
+    PICK_BTN = ' <button type="button" class="pick">choose</button>'
     _pr_cache: dict[int, str] = {}
     _pr_budget = {"calls": 0, "seconds": 0.0}
     _repo_box: list = []          # [] = slug not looked up yet; filled on first PR #N
@@ -863,7 +956,8 @@ def build(entries, days, prs, pr_error, git_error, window,
                 rec = REC_SPAN if o["recommended"] else ""
                 m = PR_TOKEN.search(o["text"])
                 if not m:
-                    opt_items.append(f'<li>{_inline(o["text"])}{rec}</li>')
+                    opt_items.append(f'<li><span class="otext">{_inline(o["text"])}'
+                                     f'</span>{rec}{PICK_BTN}</li>')
                     continue
                 n = int(m.group(1))
                 note = PR_NOTE[pr_state(n, _pr_cache, _pr_budget)]
@@ -873,9 +967,22 @@ def build(entries, days, prs, pr_error, git_error, window,
                             f'/pull/{n}">{_inline(o["text"])}</a>')
                 else:
                     body = _inline(o["text"])
-                opt_items.append(f'<li>{body}{rec}{note}</li>')
+                opt_items.append(f'<li><span class="otext">{body}</span>'
+                                 f'{rec}{note}{PICK_BTN}</li>')
+            # ⚠ `h4`, NOT `span` — and the tag is LOAD-BEARING, not styling.
+            # The lifted tray resolves a selection's section with `nearestHeading()`,
+            # which walks previous siblings for `/^H[1-4]$/`. As a `span` the nearest
+            # heading was the page's own "What needs you" H2, so every answer would have
+            # arrived tagged with the SECTION instead of the question it answered.
+            # ⭐ `h4` specifically, and the level is measured, not aesthetic: the tray
+            # INJECTS its hover ask button via `querySelectorAll('h2, h3')` while
+            # `nearestHeading` matches H1–H4. An h4 is therefore visible to the section
+            # resolver and invisible to the button injector — it names the decision
+            # without gaining a redundant second ask button beside `choose`.
+            # Verified on the live page: `h4.q .askbtn` -> 0 elements, and a driven
+            # choose produced the question as its section. No tray code is touched.
             rows.append(
-                f'<li><span class="q">{_inline(d["question"])}</span> '
+                f'<li><h4 class="q">{_inline(d["question"])}</h4> '
                 f'<span class="when">{_html.escape(e["date"])} · '
                 f'<a href="#{_slug(e["id"])}">{_html.escape(e["id"])}</a></span>'
                 f'<ul class="opts">{"".join(opt_items)}</ul></li>')
@@ -884,9 +991,14 @@ def build(entries, days, prs, pr_error, git_error, window,
                    f'{_html.escape(pr_error)}. Treat this as NOT CHECKED.</p>')
     else:
         pr_note = ""
+        # ⚠ `prstate`, not `when`. Measured 2026-09-14: the user tried to CLICK this
+        # word. `when` is the class that wraps the date AND the entry-id anchor, so a
+        # bare word wearing it sits in the one container on the page that usually holds
+        # a link — it read as an affordance while being a status label. Same class,
+        # two meanings, which is this repo's named duplicate-vocabulary shape.
         rows += [f'<li>Pull request #{_html.escape(str(p["number"]))} — '
                  f'{_html.escape(str(p["title"]))}'
-                 f' <span class="when">open</span></li>' for p in (prs or [])]
+                 f' <span class="prstate">open</span></li>' for p in (prs or [])]
     # The store is the SOLE source of needs-you items, so an unreadable one makes
     # "Nothing needs you." a green all-clear over the very thing that was not
     # read. Same fall-through shape as `pr_error` above, and it composes: two
@@ -1214,10 +1326,25 @@ padding:14px 18px;margin-bottom:10px}}
 .entry .prose strong{{color:var(--p-mark);font-weight:600}}
 .entry .prose code{{font-family:var(--mono);font-size:.88em;color:var(--p-lede)}}
 .flag{{color:var(--need);font-weight:700}}
-.needs .q{{font-weight:600}}
+.howto{{font-size:13px;color:var(--fg3);margin:.2rem 0 1rem;line-height:1.55}}
+.howto b{{color:var(--p-mark)}}
+#modechip{{font-family:var(--mono);font-size:10.5px;border:1px solid var(--fg3);
+  border-radius:20px;padding:.1em .5em;margin-right:.45em;white-space:nowrap}}
+/* `h4.q` carries the decision question. It is a HEADING for the tray's benefit, so its
+   own heading defaults are reset back to the inline look it had as a span — the tag
+   change must be invisible to the reader and visible only to `nearestHeading()`. */
+.needs h4.q{{font-weight:600;display:inline;margin:0;font-size:inherit;line-height:inherit}}
 .needs .opts{{margin:.35rem 0 .6rem 1.1rem;padding:0}}
 .needs .opts li{{margin:.15rem 0}}
 .needs .rec{{font-size:.78em;opacity:.75;border:1px solid currentColor;border-radius:3px;padding:0 .3em}}
+/* A status label, deliberately NOT styled like the anchors it sits beside. */
+.needs .prstate{{font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--fg3);border:1px solid var(--fg3);
+  border-radius:3px;padding:0 .3em;opacity:.8}}
+.needs .pick{{font:inherit;font-size:.78em;cursor:pointer;color:var(--link);
+  background:none;border:1px solid currentColor;border-radius:3px;padding:0 .4em;
+  margin-left:.35em;opacity:.55;transition:opacity .12s}}
+.needs .opts li:hover .pick, .needs .pick:focus-visible{{opacity:1}}
 .needs .stale{{font-size:.78em;opacity:.8;font-style:italic}}
 .flag.resolved{{color:inherit;font-weight:400;opacity:.55;border:1px solid currentColor;border-radius:3px;padding:0 .3em;font-size:.82em}}
 /* ⛔ BACKLOG #83(B) — EMPHASIS FOLLOWS SETTLED STATE, AND BOTH SIDES MOVE.
@@ -1241,6 +1368,15 @@ pre{{white-space:pre-wrap;font-family:var(--mono);font-size:12.5px;overflow-x:au
 <div class="shell">
 <h1>Project dashboard</h1>
 {page_chrome.chrome_bar("dashboard", generated_at)}
+<!-- STATIC and correct with JavaScript disabled; the lifted tray's script sharpens it
+     to the live/file wording. Its CSS and JS ship INSIDE that tray, so a page that
+     omits this markup gets a styled, scripted element that never exists — measured
+     absent on this page 2026-09-14 (`getElementById('modechip')` -> null) while every
+     other tray id resolved. The delivery contract names this defect; the dashboard had
+     it. -->
+<p class="howto"><span id="modechip">served &rarr; Send works &middot; opened as a file &rarr; Send copies instead</span>
+Pick an option below with <b>choose</b>, or select any text and press <b>ask</b>; then
+say <i>&ldquo;read my questions&rdquo;</i> in the session.</p>
 <h2>What needs you</h2>{needs_html}
 {worth_html}
 <h2>The last {window} days</h2><div class="chart">{chart}</div>{legend}{chart_note}
@@ -1251,7 +1387,8 @@ pre{{white-space:pre-wrap;font-family:var(--mono);font-size:12.5px;overflow-x:au
 <li><a href="/goals">Goals</a></li><li><a href="/backlog-table">Backlog</a></li>
 <li><a href="/latest">Newest briefing</a></li><li><a href="/">All pages</a></li></ul>
 </div>
-<script>{page_chrome.chrome_script()}</script>"""
+<script>{page_chrome.chrome_script()}</script>
+<script>{PICK_SCRIPT}</script>"""
 
 # --- WCAG contrast, measured on the EMITTED stylesheet -------------------------
 # The first version of this guard asserted that `a{color:var(--link)}` was
@@ -1659,6 +1796,84 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     d3 = bucket_days(["2026-08-28"], ents3, 2, "2026-08-28")
     html = _B(ents3, d3)
     case("needs-you surfaces", "Decide the thing." in html, True)
+    # --- a displayed decision must be ANSWERABLE (2026-09-14) -------------------
+    # The user tried to click an option and could not: 14 options on the live page,
+    # zero links, zero buttons, zero handlers. These cases fail if that returns.
+    _sec = _section(html, "What needs you")
+    case("every option carries a choose button",
+         _sec.count('class="pick"'), 2)
+    case("each option's text is wrapped so the script can select exactly it",
+         _sec.count('class="otext"'), 2)
+    # ⚠ Binds to the TAG, not to the text. The tray attaches its ask button to H1-H4
+    # and `nearestHeading()` walks previous siblings for one; as a <span> the nearest
+    # heading was the page's "What needs you" H2, so answers named the section instead
+    # of the question. A case asserting only that the question appears passes either
+    # way — which is why 314/314 stayed green when the tag changed.
+    case("the decision question is a heading, so the tray can name it",
+         '<h4 class="q">' in _sec, True)
+    case("the question is no longer a bare span",
+         '<span class="q">' in _sec, False)
+    # ⚠ Binds to the HANDLER, not to a mode flag. This asserted
+    # `"classList.add('nosend')" in html` until r1's Medium deleted that flag — a case
+    # anchored to an incidental line dies with the line, and would have read as "the
+    # wiring is gone" when only the flag was.
+    case("the choose wiring ships with the page",
+         "closest('.pick')" in html, True)
+    # r1 Medium (Codex): the first version hid every chooser on `file:`, where the tray
+    # relabels Send to Copy and still delivers. Nothing may hide `.pick` by mode.
+    #
+    # ⟳ r2 Low (Codex) REWROTE THIS. It asserted `".pick{display:none" not in html`
+    # despaced — which catches the ONE spelling the deleted rule happened to use and
+    # misses hiding by an ancestor, `visibility:hidden`, `opacity:0`, or a media-scoped
+    # rule. On a branch that had ALREADY regressed through a page-wide substring
+    # assertion, the repair for that regression was itself a substring assertion.
+    # Now every emitted rule whose SELECTOR mentions `.pick` is parsed and its
+    # declarations checked, so the spelling no longer decides whether the guard sees it.
+    # ⟳ r3 Low (Codex) narrowed BOTH halves of this.
+    #   (a) It parsed the whole document, so a SCRIPT string like `.pick{display:none}`
+    #       would have been read as CSS and failed the suite. Scoped to <style> now —
+    #       and the tray's own JS really does contain `.pick`, so the corpus mattered.
+    #   (b) The bad-value list spelled out `opacity:0;` and `opacity:0}` to avoid
+    #       matching `opacity:.55`, and therefore missed CSS-valid `opacity:.0`.
+    #       The VALUE is parsed and compared numerically, so no spelling is privileged.
+    _css = "\n".join(re.findall(r"<style[^>]*>(.*?)</style>", html, re.S))
+    _hiding = []
+    for _sel, _decl in re.findall(r"([^{}]+)\{([^{}]*)\}", _css):
+        if ".pick" not in _sel:
+            continue
+        _flat = _decl.replace(" ", "").replace("\n", "")
+        _bad = "display:none" in _flat or "visibility:hidden" in _flat
+        for _v in re.findall(r"opacity:([0-9.]+)", _flat):
+            try:
+                _bad = _bad or float(_v) == 0.0
+            except ValueError:
+                pass
+        if _bad:
+            _hiding.append(_sel.strip()[:60])
+    case("no emitted rule hides the chooser — it stays usable where the tray falls "
+         "back to Copy", _hiding, [])
+    # ⚠ Asserts the SCRIPT TEXT, which is weaker than asserting the behaviour — a browser
+    # is the only instrument for that, and this defect was found by driving the real page
+    # (r2), not by reading. Same trade-off the collapsed-title case records. It exists so
+    # the identity guard cannot be silently deleted.
+    # THE BUG IT PINS, reproduced live before the fix: with unrelated text selected,
+    # pressing choose opened the tray as `Project dashboard — "2026-09-14 18:54 …"`
+    # instead of the question and the option — then reported "✓ Sent". The first poll
+    # iteration runs synchronously after `dispatchEvent`, before the tray's own timer has
+    # removed the previous selection's floater, so it clicked the STALE button.
+    case("choose refuses a stale floater from a previous selection",
+         ("var stale = floaterNow();" in html, "f !== stale" in html), (True, True))
+    # The tray's chip has CSS and JS but no markup of its own; a page that omits the
+    # element gets a styled, scripted thing that never exists. Measured absent on the
+    # live dashboard 2026-09-14 while every other tray id resolved.
+    case("the tray's mode chip has its markup", 'id="modechip"' in html, True)
+    # A PR row is REQUIRED here: asserting `'class="when">open'` is absent over a page
+    # with no PR rows is vacuous, which is this repo's fixing-a-premise shape.
+    _prow = _section(_B(ents3, d3, prs=[{"number": 7, "title": "T"}]),
+                     "What needs you")
+    case("a PR row renders its state at all", 'prstate">open<' in _prow, True)
+    case("a PR state is not dressed as the anchor-bearing class",
+         'class="when">open' in _prow, False)
     # Was `"<details" in html`, which passed with the tech fold DELETED: `build`
     # always emits <details id="glossary">. Scoping it to the section does not fix
     # that either — the "What this means" fold is unconditional too. Bind to the
@@ -1849,9 +2064,25 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     # ⚠ Asserts the STYLESHEET TEXT, which is weaker than asserting the rendered
     # effect. A browser is the only instrument for that and Phase 4 owns it; this
     # exists so the clip cannot be silently deleted, not to prove it works.
+    # ⛔ SCOPED TO `.entry .title`'s OWN RULE, and it was page-wide until 2026-09-14.
+    # CI caught it the hour a second rule elsewhere in the stylesheet gained
+    # `white-space:nowrap` (`.needs .prstate`): the mutation flipping THIS rule to
+    # `normal` left the page still containing the substring, so the case stayed green
+    # and the mutation SURVIVED. The case had always been this weak — the unrelated
+    # addition merely exposed it, which is why the fix belongs here and not in the new
+    # rule. It is the page-wide-substring failure the comment 6 lines below already
+    # names for the collapsed card; this case sat above that warning without heeding it.
+    _title_rule = ""
+    _i = ht.find(".entry .title{")
+    if _i >= 0:
+        _title_rule = ht[_i:ht.find("}", _i) + 1]
     case("the collapsed title clips rather than wrapping",
-         ("white-space:nowrap" in ht, "text-overflow:ellipsis" in ht,
-          "min-width:0" in ht), (True, True, True))
+         ("white-space:nowrap" in _title_rule, "text-overflow:ellipsis" in _title_rule,
+          "min-width:0" in _title_rule), (True, True, True))
+    # A zero-length slice would make all three assertions vacuously False and the case
+    # would fail loudly — but say so, rather than leaving a silent dependency on find().
+    case("the title rule was actually located, so the clip test is not vacuous",
+         len(_title_rule) > 0, True)
 
     # ── THE COLLAPSED CARD (spec §2) ─────────────────────────────────────────
     # §4's binding rules: locate ONE synthetic entry's fragment and assert INSIDE
