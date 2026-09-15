@@ -84,7 +84,7 @@ must stay in sync — updated proactively, without being asked.
 | 3 | **Implementation** | code + tests | per-task two-stage review to convergence, autonomous. Per-Task Checklist: checklists doc |
 | 4 | **Verification** | evidence | enumerate every UX case as a task list *before* clicking anything; screenshots to `.screenshots/` (gitignored) |
 | 5 | **Final Review + Finish** | PR | full review → commit → push → PR. **Merging is a human gate** |
-| 6 | **Architecture Review** | `docs/reviews/architecture-review-<date>.md` | per **milestone** — **or after 4 review rounds without convergence**, whichever comes first |
+| 6 | **Architecture Review** | `docs/reviews/architecture-review-<date>.md` | per **milestone** — **or on THRASHING: two consecutive rounds whose findings came from the previous round's fix** |
 
 **Phase 3 execution default (set 2026-06-09):** `superpowers:subagent-driven-development` — a fresh
 subagent per task. Proceed automatically; do not ask the user to choose each time.
@@ -104,17 +104,17 @@ A one-line change can be the most dangerous thing in the repo.
   exists as soon as the PR does.
 - Merging stays a **human gate**: open the PR, notify, do not merge.
 
-**⟳ The architecture review also fires on FOUR NON-CONVERGING ROUNDS (added 2026-08-09), and that trigger was bought
-with twelve of them.** The stable-blob-addressing reservation protocol produced a Blocking or High in
-six consecutive rounds — four of them introduced by the previous round's own fix — while every other
-component of the same spec converged and stayed converged. The architecture review describes that failure in its own
-sentence below and never ran, because a spec can burn twelve rounds in a week without crossing a
-milestone. **The inventory was right; the arming condition was wrong.** See
-⚠ **Read the trigger off the CAUSE, not the count** — on a *document*, rounds can be right forever
-because prose has nothing to execute; that is a signal to go build, not to convene the architecture review. Measured
-2026-08-28: Blocking totals ran 4→5→4 while the character shifted entirely. Both shapes, and how to
-tell them apart, are in [`review-method.md`](review-method.md) — also the stop condition, and
-`docs/reviews/blob-addressing-retrospective-2026-08-09.md` for the full account.
+**⟳ THE ARMING CONDITION IS THRASHING, NOT A COUNT (corrected 2026-09-14).** It fires when **two
+consecutive rounds carry findings caused by the previous round's own fix, in one component** — the
+shape that bought it: the stable-blob-addressing reservation produced a Blocking or High in six
+consecutive rounds, four of them introduced by the previous fix, while every other component of the
+same spec converged. **The inventory was right; the arming condition was wrong** — and a count was
+the wrong repair for it. ⚠ **Reaching four rounds OBLIGES ASKING, and does not fire.** Answer
+*thrashing or prose floor?* in the round document, with per-finding evidence. Measured 2026-08-28:
+Blocking totals ran 4→5→4 while the character shifted entirely, so a count would have convened this
+over prose that was improving — and on a document rounds can be right forever, which is a signal to
+go build. Both shapes, the test *can a redesign remove it?* and the stop condition are in
+[`review-method.md`](review-method.md); the full account is in that retrospective's review doc.
 
 **The architecture review — why it is per-milestone:** per-task review is structurally blind to composition defects.
 It only ever sees one change, and every change can be individually correct while the structure they
