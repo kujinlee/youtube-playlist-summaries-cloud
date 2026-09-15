@@ -9145,6 +9145,7 @@ what it did and render the note from that.
 the function is not in #295's diff, and a branch carrying a Blocking fix plus an armed
 architecture review is the wrong place to take on an unrelated defect.
 
+## 2026-09-15
 The nightly production check is armed — and it was proven before it was trusted.
 
 There is one check in this project whose subject nobody ever pushes: whether the live database
