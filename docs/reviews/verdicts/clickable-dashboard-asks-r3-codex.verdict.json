@@ -1,0 +1,16 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 2840 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "1c748e8a12e0e385ded024874d1ac1c0e6c00904",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "prompt": "/tmp/r3-prompt.md",
+  "reason": "2840 chars",
+  "review": "clickable-dashboard-asks-r3-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}

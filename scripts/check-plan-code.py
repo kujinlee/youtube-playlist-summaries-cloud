@@ -569,7 +569,7 @@ EXPECTED_MUTATIONS = {
     #     two agree. The case that looked like it did — `any("relacl" in pat …)` — is a SUBSTRING
     #     test on the pattern text, so either copy could narrow while it stayed green.
     "scripts/check-catalog-coverage.py": 7,
-    "scripts/gen-dashboard.py": 64,
+    "scripts/gen-dashboard.py": 68,
     # ⟳ 2026-09-12. gen-goals-page.py was the last PAGE-PRODUCING generator with no
     # manifest — gen-dashboard, gen-backlog-page, brief-compose, page_chrome and page_markup
     # all had one. ⚠ IT WAS NOT "the ONE generator with no manifest", which both round-1
@@ -3141,7 +3141,20 @@ def _self_test() -> int:
     # that gate's code prose. The globs are now READ; the broader-glob clause that cleared `docs/**`
     # is gone and has a case; and `main` finally CALLS the rule, so its answer is a red rather than
     # a return value nobody reads.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 639)
+    # ⟳ 2026-09-14: 629 -> 633, `gen-dashboard` 64 -> 68. FOUR entries for the dashboard
+    # asks becoming answerable — the question heading the tray resolves, the choose
+    # affordance itself, the PR state label that was wearing the anchor-bearing class, and
+    # choose refusing a stale floater so it cannot click the previous selection's button.
+    # Each was proved to go red VIA THE CASE IT NAMES over a green control first.
+    # ⚠ THIS COMMENT SAID "THREE" AND "64 -> 67" UNTIL 2026-09-15, while the line below it
+    # asserted 633 and the manifest held 68. The fourth entry arrived in a later review
+    # round and only the code was updated. Nothing could see the disagreement: the guard
+    # reads the dict, never the sentence describing it.
+    # ⟳ 2026-09-15: 633 -> 643 on merging master. ⚠ THE NUMBER WAS NOT PICKED FROM EITHER
+    # SIDE OF THE CONFLICT — this branch was right about 633 and master was right about
+    # 639, and neither is right about the merge, which carries both sets of entries
+    # (629 + master's 10 + this branch's 4). Re-derived from the merged dict.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 643)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

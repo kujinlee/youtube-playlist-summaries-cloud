@@ -8873,6 +8873,69 @@ plus its hardcoded manifest list, `check-selftest-counts.POPULATION` +1,
 (which reports **no** findings — every parameter is genuinely varied), and
 `check-ratchet-contract`'s R4 debt paid with a manifest rather than a raised baseline.
 
+## 2026-09-14
+You tried to answer a decision on this page and found you could not click anything.
+That was real: the options were plain text dressed as a form, collecting nothing, and
+the small word "open" beside a pull request looked like a link because it was wearing
+the same styling as the ones next to it. Every option now has a **choose** button. It
+fills in the question box with the decision and the option you picked, and you press
+Send — one deliberate step, so a stray click cannot answer something on your behalf.
+
+The page also gained the small badge that says whether Send actually works right now.
+Its styling and its code were already here; only the element itself was missing, so
+the page had no way to tell you the button was live.
+<!--tech-->
+Branch `clickable-dashboard-asks`. Measured on the live page before touching anything:
+**14 options in "What needs you", zero links, zero inputs, zero buttons,
+`cursor:auto`** — an affordance that was not merely unreachable but absent.
+
+**It drives the tray through the TRAY'S OWN entry points, and that is the design.**
+`brief-compose.py` lifts the tray verbatim, so anything assuming its internals is a
+second implementation that drifts. Verified live: `typeof window.openTray ===
+"undefined"`, no tray API on `window` — it exposes exactly two ways in, a heading
+`.askbtn` and a selection. **choose** therefore reproduces what a human does: selects
+the option's text and lets the tray's own `mouseup` handler build its floater with its
+own `nearestHeading()` section and its own quote.
+
+⚠ Writing `#qt`/`#qbox` directly was the obvious shortcut and is **wrong**: the Send
+handler posts the closure's `ctxSection`/`ctxQuote`, not the DOM, so a hand-filled tray
+would look right and post empty context — dead while appearing to work.
+
+⭐ **`<span class="q">` became `<h4 class="q">`, and the tag is load-bearing.**
+`nearestHeading()` walks previous siblings for an H1–H4; as a span the nearest heading
+was the page's own "What needs you" H2, so every answer would have been filed under the
+section rather than the question. CSS resets the heading back to its inline look, so the
+change is invisible to the reader and visible only to the tray.
+
+`class="when"` → `class="prstate"` for a PR's state: `when` is the class wrapping the
+date **and** the entry-id anchor, so a bare word wearing it sat in the one container
+that usually holds a link. Same class, two meanings.
+
+**Measured end to end.** Affordance probe: **14 buttons, 14 distinct positions, 14
+reachable, 0 zero-sized, real `<button>`, `cursor:pointer`**. Driving one produced the
+event `**The nightly production-drift check has been waiting on one credential since
+2026-09-13** | quoted: leave it unarmed and keep running the drift check by hand | Q: …`
+— section is the question, quote is the option. `#modechip` now resolves and reads
+"● live — Send works"; it returned `null` before.
+
+Four mutations added (manifest 64 → 68, declared sum 629 → 633), each proved to go red
+**via the case it names** over a control proved green first: the question reverting to a
+span (2 cases), the choose affordance removed (1), the PR state re-wearing `when` (2), and
+choose no longer refusing a stale floater.
+`gen-dashboard --self-test` 314 → 322; `check-plan-code --self-test` 128/128.
+
+⟳ **2026-09-15, on merging master — and this sentence used to say THREE.** The fourth
+mutation arrived in a later review round; the code and the manifest were updated and both
+prose copies were not, so this entry and a comment in `check-plan-code.py` both described
+work the repo had already done differently. Nothing could catch it: the guard reads the
+dict, never the sentence about the dict. Corrected in both places. The merged declared sum
+is **643** — 629 plus master's 10 for `check-review-decision` plus these 4, a number that
+appears on neither side of the conflict and had to be re-derived rather than chosen.
+
+⚠ An existing guard caught an invented token immediately — `.howto b{color:var(--fg)}`
+where `--fg` is consumed-but-undefined in the emitted stylesheet. And Pyright caught
+`_pr` shadowing a module function in the new test code. Both fixed before commit.
+
 ## 2026-09-15
 Yesterday's tool has filed a complaint against itself, and it is a fair one.
 
