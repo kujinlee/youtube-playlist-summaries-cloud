@@ -10,6 +10,7 @@ derivable, not remembered. Do not maintain a hand-written tally of it."*
 ````markdown
 ```yaml
 round: 3
+fixes_nontrivial: true
 subject: clickable-dashboard-asks
 halves:
   codex: ran
@@ -22,7 +23,8 @@ findings:
 
 | Field | Values | Definition |
 |---|---|---|
-| `round` | integer | the round number |
+| `round` | integer | the round number; the set must be a gapless `1..N` with no duplicates |
+| `fixes_nontrivial` | `true` `false` | were this round's fixes more than a reworded line? **`true` blocks convergence** — a non-trivial fix is unreviewed code |
 | `subject` | string | the branch or artifact under review |
 | `halves.<name>` | `ran`, or a string starting `GAP:` | whether each half ran; a gap carries its reason |
 | `severity` | `Blocking` `High` `Medium` `Low` | as filed by the reviewer |

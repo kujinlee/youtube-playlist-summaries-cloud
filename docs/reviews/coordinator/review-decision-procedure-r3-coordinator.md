@@ -2,6 +2,7 @@
 
 ```yaml
 round: 3
+fixes_nontrivial: true
 subject: review-decision-procedure
 halves:
   codex: ran

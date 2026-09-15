@@ -75,7 +75,7 @@ it afterwards. ⚠ A reviewer's *proposed* fix is unverified code — see `:348`
 |---|---|
 | a **Blocking or High** | **CONTINUE** |
 | a finding **in the deliverable** | **CONTINUE** |
-| non-trivial fixes (`:409`) | **CONTINUE** |
+| non-trivial fixes — recorded as `fixes_nontrivial: true` in the round header, so the tool enforces it rather than the reader remembering it | **CONTINUE** |
 | **two consecutive rounds** with neither, every finding aimed at the **instrument** | **STOP** |
 
 ⭐ **Judge by AIM, not severity** — `:234` says a clean severity column describes the reviewers,

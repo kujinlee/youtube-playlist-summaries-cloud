@@ -2,7 +2,7 @@
 """What does the review loop do next? — answered from recorded evidence, not recall.
 
     python3 scripts/check-review-decision.py              # decide for the current branch
-    python3 scripts/check-review-decision.py --self-test  # 55 cases
+    python3 scripts/check-review-decision.py --self-test  # 61 cases
 
 WHY THIS EXISTS
 ---------------
@@ -128,6 +128,9 @@ def converged(rounds: list[dict], scope: str) -> tuple[bool, str]:
                 return False, f"r{r.get('round')} produced a {f.get('severity')}"
             if f.get("aim") == "deliverable":
                 return False, f"r{r.get('round')} found a defect in the deliverable"
+        if r.get("fixes_nontrivial"):
+            return False, (f"r{r.get('round')}'s fixes were non-trivial — the card makes "
+                           f"that a CONTINUE, and a fix is unreviewed code")
     return True, (f"{need} round(s) with no Blocking/High and nothing in the deliverable")
 
 
@@ -206,7 +209,11 @@ def parse_header(text: str) -> dict:
     rm = re.search(r"^round:\s*(\d+)\s*$", body, re.M)
     if not rm:
         raise ValueError("header has no `round:` line")
-    findings = [_scalarise(fm.group(1).split(",")) for fm in FINDING_RE.finditer(body)]
+    # ⚠ r6 Medium (Codex): scanning the WHOLE body made
+    # `halves.claude: "GAP: ... {disabled}"` count as a finding — a false CANNOT RUN from
+    # ordinary human gap prose. Braces outside `findings:` are prose.
+    _span = _findings_span(body)
+    findings = [_scalarise(fm.group(1).split(",")) for fm in FINDING_RE.finditer(_span)]
     findings += _block_findings(body)
 
     # ⛔ PARITY, NOT BEST EFFORT. r1 Blocking (Codex): the parser read only `{...}` flow
@@ -231,7 +238,17 @@ def parse_header(text: str) -> dict:
                          f"{len(findings)} parsed — refusing to guess")
     for f in findings:
         _validate(f)
-    return {"round": int(rm.group(1)), "findings": findings}
+    head = {"round": int(rm.group(1)), "findings": findings}
+    for key, allowed in ROUND_REQUIRED.items():
+        mm = re.search(rf"^{key}:\s*(\S+)\s*$", body, re.M)
+        if not mm:
+            raise ValueError(f"header has no `{key}:` — the card makes it a CONTINUE "
+                             f"condition, so it cannot be left to memory")
+        val = {"true": True, "false": False}.get(mm.group(1).strip().strip('"').strip("'"))
+        if val not in allowed:
+            raise ValueError(f"`{key}` must be true or false, got {mm.group(1)!r}")
+        head[key] = val
+    return head
 
 
 # ⛔ r2 Blocking (Codex): PARITY PROVED AN ITEM BECAME A DICT, NOT THAT IT SAYS ANYTHING.
@@ -240,6 +257,11 @@ def parse_header(text: str) -> dict:
 # CLEAN. Codex executed it and reached STOP. The template PROMISES the machine checks the
 # fields are present and well-formed; until now it did not. Same fail-open as r1's B1, one
 # layer deeper: validate the VALUES, not the shape that carried them.
+# ⛔ r6 High (Codex): the card said "non-trivial fixes -> CONTINUE" and the tool could not
+# see it. A rule stated where it cannot be enforced is the drift this branch exists to
+# remove. It is a per-round JUDGEMENT like `aim`, so it belongs in the header.
+ROUND_REQUIRED = {"fixes_nontrivial": {True, False}}
+
 REQUIRED = {
     "severity": {"Blocking", "High", "Medium", "Low"},
     "aim": {"deliverable", "instrument"},
@@ -343,6 +365,20 @@ def _git(*args: str) -> str:
                           text=True, check=True).stdout.strip()
 
 
+def _try(fn):
+    """The value, or a NAMED marker if it raised.
+
+    ⛔ A case that raises kills the suite and reports NOTHING — the runner counts `[FAIL]`
+    lines and a traceback produces none. Found when a mutation that genuinely broke the
+    parser scored "0 cases red": the case that should have failed crashed instead. Same
+    shape as r4's classifier-coupling repair, one level in.
+    """
+    try:
+        return fn()
+    except Exception as exc:                       # noqa: BLE001 - reported, not swallowed
+        return f"RAISED {type(exc).__name__}"
+
+
 def _raises(fn) -> bool:
     try:
         fn()
@@ -352,6 +388,11 @@ def _raises(fn) -> bool:
 
 
 # ------------------------------------------------------------------ self-test
+def exit_code_for(decision: str) -> int:
+    """PURE. r6 Low (Codex): this mapping lived inline in `main()` and no case pinned it."""
+    return {"STOP": 0, "CANNOT_RUN": 2}.get(decision, 1)
+
+
 def _self_test() -> int:
     cases = failures = 0
 
@@ -444,19 +485,23 @@ def _self_test() -> int:
     inst = {"severity": "Low", "aim": "instrument", "fix_induced": False, "component": "t"}
     deliv = {"severity": "Low", "aim": "deliverable", "fix_induced": False, "component": "d"}
     high = {"severity": "High", "aim": "instrument", "fix_induced": False, "component": "t"}
-    two_inst = [{"round": 1, "findings": [inst]}, {"round": 2, "findings": [inst]}]
+    _R = lambda n, fs, nt=False: {"round": n, "findings": fs, "fixes_nontrivial": nt}
+    two_inst = [_R(1, [inst]), _R(2, [inst])]
     case("two consecutive instrument-only rounds converge",
          converged(two_inst, "full-loop")[0], True)
     case("a High blocks convergence even when aimed at the instrument",
-         converged([{"round": 1, "findings": [inst]},
-                    {"round": 2, "findings": [high]}], "full-loop")[0], False)
+         converged([_R(1, [inst]), _R(2, [high])], "full-loop")[0], False)
     case("a deliverable finding blocks convergence",
-         converged([{"round": 1, "findings": [inst]},
-                    {"round": 2, "findings": [deliv]}], "full-loop")[0], False)
+         converged([_R(1, [inst]), _R(2, [deliv])], "full-loop")[0], False)
     case("one clean round is NOT convergence on the full loop",
-         converged([{"round": 1, "findings": []}], "full-loop")[0], False)
+         converged([_R(1, [])], "full-loop")[0], False)
     case("one clean round IS convergence when the scope is one-round",
-         converged([{"round": 1, "findings": []}], "one-round")[0], True)
+         converged([_R(1, [])], "one-round")[0], True)
+    # r6 High (Codex): the card said non-trivial fixes CONTINUE; the tool could not see it.
+    case("non-trivial fixes block convergence, as the card always said",
+         converged([_R(1, [inst]), _R(2, [inst], nt=True)], "full-loop")[0], False)
+    case("...and trivial ones do not",
+         converged([_R(1, [inst]), _R(2, [inst], nt=False)], "full-loop")[0], True)
     case("no rounds never converges",
          converged([], "one-round")[0], False)
 
@@ -487,6 +532,11 @@ def _self_test() -> int:
          decide([{"round": 1, "findings": [{"fix_induced": True, "component": "a"}]},
                  {"round": 3, "findings": [{"fix_induced": True, "component": "a"}]}],
                 "full-loop", True)[0], "CANNOT_RUN")
+    # r6 Low (Codex): the exit-code mapping was inline in main() and pinned by nothing.
+    case("STOP exits 0", exit_code_for("STOP"), 0)
+    case("CANNOT_RUN exits 2 — a refusal is not an ordinary failure",
+         exit_code_for("CANNOT_RUN"), 2)
+    case("a round owed exits 1", exit_code_for("ROUND_OWED"), 1)
     case("every decision carries a non-empty reason",
          all(decide(*a)[1] for a in [([], "one-round", False),
                                      ([fix_a1, fix_a2], "full-loop", True),
@@ -495,7 +545,7 @@ def _self_test() -> int:
 
 
     # --- reading the record -----------------------------------------------
-    good = ("# r3\n\n```yaml\nround: 3\nsubject: s\nfindings:\n"
+    good = ("# r3\n\n```yaml\nround: 3\nfixes_nontrivial: false\nsubject: s\nfindings:\n"
             "  - {id: L1, severity: Low, aim: instrument, fix_induced: true, "
             "component: c, disposition: filed}\n```\n")
     h = parse_header(good)
@@ -508,14 +558,14 @@ def _self_test() -> int:
     case("a header missing `round` raises rather than defaulting",
          _raises(lambda: parse_header("```yaml\nsubject: s\nfindings: []\n```")), True)
     case("an EXPLICIT empty list is a real round, not an error",
-         parse_header("```yaml\nround: 9\nfindings:\n```")["findings"], [])
+         parse_header("```yaml\nround: 9\nfixes_nontrivial: false\nfindings:\n```")["findings"], [])
     # r3 Blocking (Codex): an ABSENT key returned zero findings and validated nothing —
     # r1's B1 a third time, through a third shape. A missing key is a silence, not a claim.
     case("a header with NO findings key REFUSES rather than reading as clean",
-         _raises(lambda: parse_header("```yaml\nround: 1\nsubject: s\n```")), True)
+         _raises(lambda: parse_header("```yaml\nround: 1\nfixes_nontrivial: false\nsubject: s\n```")), True)
     # r1 Blocking (Codex): block-style YAML parsed to ZERO findings, so a recorded High
     # reached STOP. Executed by the reviewer, not reasoned about.
-    _block = ("```yaml\nround: 1\nfindings:\n  - id: H1\n    severity: High\n"
+    _block = ("```yaml\nround: 1\nfixes_nontrivial: false\nfindings:\n  - id: H1\n    severity: High\n"
               "    aim: deliverable\n    fix_induced: false\n    component: c\n"
               "    disposition: fixed\n```")
     case("an ordinary BLOCK-style finding is parsed, not silently dropped",
@@ -523,25 +573,33 @@ def _self_test() -> int:
     case("a block-style High does NOT reach STOP",
          decide([parse_header(_block)], "one-round", True)[0], "ROUND_OWED")
     case("a list item that parses to nothing REFUSES rather than shrinking the round",
-         _raises(lambda: parse_header("```yaml\nround: 1\nfindings:\n  - \n```")), True)
+         _raises(lambda: parse_header("```yaml\nround: 1\nfixes_nontrivial: false\nfindings:\n  - \n```")), True)
     # r2 Blocking (Codex): parity proved a dict appeared, not that it SAYS anything. A
     # missing colon drops the field, and a missing field reads as "not Blocking".
     case("a finding whose severity lost its colon REFUSES, it does not read as clean",
          _raises(lambda: parse_header(
-             "```yaml\nround: 1\nfindings:\n  - id: H1\n    severity High\n"
+             "```yaml\nround: 1\nfixes_nontrivial: false\nfindings:\n  - id: H1\n    severity High\n"
              "    aim: instrument\n    fix_induced: false\n```")), True)
     case("a finding with an out-of-set severity REFUSES",
          _raises(lambda: parse_header(
-             "```yaml\nround: 1\nfindings:\n  - {id: X, severity: Urgent, aim: instrument,"
+             "```yaml\nround: 1\nfixes_nontrivial: false\nfindings:\n  - {id: X, severity: Urgent, aim: instrument,"
              " fix_induced: false, component: c, disposition: fixed}\n```")), True)
     case("a finding with no component REFUSES — thrashing is judged per component",
          _raises(lambda: parse_header(
-             "```yaml\nround: 1\nfindings:\n  - {id: X, severity: Low, aim: instrument,"
+             "```yaml\nround: 1\nfixes_nontrivial: false\nfindings:\n  - {id: X, severity: Low, aim: instrument,"
              " fix_induced: false, disposition: fixed}\n```")), True)
+    # r6 Medium (Codex): braces in ordinary gap prose are not a flow mapping.
+    # ⚠ Wrapped in _try: under the mutation this RAISES, and an unwrapped raise kills the
+    # suite and reports nothing — which is how that mutation first scored "0 cases red".
+    case("braces in a halves GAP string are prose, not a finding",
+         _try(lambda: len(parse_header(
+             "```yaml\nround: 1\nfixes_nontrivial: false\nhalves:\n"
+             '  claude: "GAP: connector returned {disabled}"\nfindings:\n```'
+         )["findings"])), 0)
     # r2 Medium (Codex): a bullet inside a GAP block scalar is not a finding.
     case("a bullet inside a halves block scalar is not counted as a finding",
          len(parse_header(
-             "```yaml\nround: 1\nhalves:\n  claude: |\n    GAP: unavailable\n"
+             "```yaml\nround: 1\nfixes_nontrivial: false\nhalves:\n  claude: |\n    GAP: unavailable\n"
              "    - connector disabled\nfindings:\n  - {id: L1, severity: Low,"
              " aim: instrument, fix_induced: false, component: c, disposition: filed}\n```"
          )["findings"]), 1)
@@ -601,9 +659,7 @@ def main(argv: list[str]) -> int:
     for r in rounds:
         aims = ",".join(f.get("aim", "?") for f in r["findings"]) or "none"
         print(f"    r{r['round']}: {len(r['findings'])} finding(s) [{aims}]")
-    if decision == "CANNOT_RUN":
-        return 2
-    return 0 if decision == "STOP" else 1
+    return exit_code_for(decision)
 
 
 if __name__ == "__main__":

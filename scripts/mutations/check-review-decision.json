@@ -102,5 +102,44 @@
       "r1 + r3 does NOT read as converged \u2014 it CANNOT RUN",
       "r1 + r3 with one fix-induced component does NOT arm an architecture review"
     ]
+  },
+  {
+    "name": "non-trivial fixes stop blocking convergence, so the card and the tool drift again",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "        if r.get(\"fixes_nontrivial\"):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "non-trivial fixes block convergence, as the card always said"
+    ]
+  },
+  {
+    "name": "flow mappings are scanned across the whole body again",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "FINDING_RE.finditer(_span)",
+        "FINDING_RE.finditer(body)"
+      ]
+    ],
+    "expect": [
+      "braces in a halves GAP string are prose, not a finding"
+    ]
+  },
+  {
+    "name": "CANNOT_RUN stops exiting 2, so a refusal reads as an ordinary failure",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "return {\"STOP\": 0, \"CANNOT_RUN\": 2}.get(decision, 1)",
+        "return {\"STOP\": 0}.get(decision, 1)"
+      ]
+    ],
+    "expect": [
+      "CANNOT_RUN exits 2 \u2014 a refusal is not an ordinary failure"
+    ]
   }
 ]
