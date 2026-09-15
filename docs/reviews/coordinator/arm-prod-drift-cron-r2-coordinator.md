@@ -11,6 +11,8 @@ findings:
   - {id: L1, severity: Low, aim: deliverable, fix_induced: true, component: cron-comment, disposition: fixed}
 ```
 
+REVIEW GAP: claude — round 1's Claude half reviewed this branch in full and returned no Blocking or High; round 2's subject is three sentences of prose that half proposed itself, so a second opinion on its own wording is not an independent check. The Codex half tested each sentence against GitHub's documentation and against `check-live-schema.py`, which is the check that mattered — and it found the overclaim.
+
 ## Verdict: CONVERGED on the code — one Low in the prose, fixed
 
 **No new Blocking or High.** Round 2 existed because the tree-identity gate refused: round 1's
