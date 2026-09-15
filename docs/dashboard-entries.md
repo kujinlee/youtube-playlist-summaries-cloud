@@ -8872,3 +8872,48 @@ plus its hardcoded manifest list, `check-selftest-counts.POPULATION` +1,
 `check-fixture-variation.EXAMINED_KEYS` +8 keys derived by running its own `analyse()`
 (which reports **no** findings — every parameter is genuinely varied), and
 `check-ratchet-contract`'s R4 debt paid with a manifest rather than a raised baseline.
+
+## 2026-09-15
+Yesterday's tool has filed a complaint against itself, and it is a fair one.
+
+The small program written yesterday to read review records and say what to do next was
+asked to read its own. It answered that the part of itself which reads those records
+should be redesigned — twice in a row it had been fixed, and twice in a row the fix
+introduced the next problem, which is the exact pattern it was built to detect.
+
+That is now written down as backlog item 117 rather than remembered. Nothing is broken
+today: nothing automatic uses this program's answer yet, so a misreading would mislead a
+person reading the output and nothing else. The reason it is worth a row anyway is what
+it reads — a record of whether work was reviewed. A misread there does not crash; it
+produces a confident wrong answer, and confident wrong answers about safety records are
+the two most serious problems yesterday's seven rounds found.
+
+Three ways to fix it are recorded with the row. Choosing between them is a trade — how
+easy the file stays to write by hand, against how much of the reading we have to own.
+<!--tech-->
+Branch `file-parse-header-redesign`. Docs-only; one row appended to `docs/backlog.md`.
+
+**Filed as #117 🟠, out of PR #303 r7, at the user's instruction.** `parse_header` in
+`scripts/check-review-decision.py` is a hand-rolled YAML subset over a safety record.
+Running the script on merged master prints its own verdict:
+`ARCHITECTURE_REVIEW — thrashing: 'parse-header' carried fix-induced findings in r6 and r7`.
+
+| round | finding | one defect, twice |
+|---|---|---|
+| r6 M1 | the flow-mapping scan covered the whole YAML body, so a `halves.claude: "GAP: … {disabled}"` VALUE counted as a finding → **false CANNOT RUN** | a hand parser mistaking prose for data |
+| r7 L1 | malformed block-scalar text accepted and read | a hand parser accepting what YAML rejects |
+
+Three reshapings recorded, each of which removes the class rather than the instance:
+fenced `json` + `json.loads`; a vendored YAML-subset parser; or dropping the header for
+command-line counts (Codex's r3 proposal). ⚠ Filed 🟠 not 🟡 **despite an r7 Low grade** —
+the subject is a safety record, and `NO-CALLER` bounds it only until something calls it.
+
+⚠ **The gate caught the filing itself.** The row contained `` `claude: |` `` — a literal
+pipe inside a code span — and `check-docs.py` refused it at `docs/backlog.md:145`: *"item
+#117 has 7 columns but the table opened at line 30 declares 6"*, naming the escape and the
+reason (a row short a Status cell is how #46 and #50 were once marked closed while open).
+Escaped to `\|`; rc=0.
+
+⚠ **Merge-order note, not a defect:** this entry and PR #302's both append to the tail of
+this file, so whichever merges second will conflict here. That is the append-log shape
+already paid for twice today — resolve by keeping both entries, never by picking a side.
