@@ -628,10 +628,15 @@ PICK_SCRIPT = """
       var f = floaterNow();
       if (f && f !== stale) { f.click(); return; }
       if (++tries < 12) { setTimeout(poll, 30); return; }
-      // No floater after ~300ms => no tray on this page, or the selection was refused
-      // (it needs 3+ characters). Tell the reader the path that still works.
+      // No floater after ~360ms => no tray on this page, or the selection was refused.
+      // Tell the reader the path that still works — then RESTORE the button.
+      // ⚠ An earlier version set `btn.disabled = true` permanently. A transient failure
+      // would then kill that one chooser until a reload, with no way for the reader to
+      // discover it had become retryable. Degrade, do not brick: say what to do, stay
+      // clickable, and put the label back.
+      var was = btn.textContent;
       btn.textContent = 'select the text and use ask';
-      btn.disabled = true;
+      setTimeout(function(){ btn.textContent = was; }, 4000);
     })();
   });
 })();
