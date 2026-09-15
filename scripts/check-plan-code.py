@@ -831,7 +831,7 @@ EXPECTED_MUTATIONS = {
     # vacuous cases of my own — a "dirty tree" assertion compared against a
     # NON-repo, so it differed by the UNKNOWN text and never by the dirty flag,
     # and the git-cannot-launch branch was unreachable from a temp dir.
-    "scripts/page_chrome.py": 11,
+    "scripts/page_chrome.py": 14,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a
@@ -3154,7 +3154,27 @@ def _self_test() -> int:
     # SIDE OF THE CONFLICT — this branch was right about 633 and master was right about
     # 639, and neither is right about the merge, which carries both sets of entries
     # (629 + master's 10 + this branch's 4). Re-derived from the merged dict.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 643)
+    # ⟳ 2026-09-15: 643 -> 646. THREE entries on PR #295 — two closing the gap r1 H1 named,
+    # and one for `restart_control`, which r6 found was the single new function in the branch
+    # with no manifest entry at all. —
+    # `page_chrome.json` held 11 entries and NONE touched `repo_root`, `restart_commands` or
+    # `restart_control`, so the function whose whole purpose is surviving a worktree was
+    # unreachable by `--mutate .` as well as unfalsifiable by its own cases. Each anchor was
+    # verified present in the DELIVERED file before being written, and each was proved to go
+    # red via the case it names over a control proved green first.
+    # ⚠ A THIRD ENTRY WAS WRITTEN AND THE HARNESS REFUSED IT, correctly: removing `cd`'s `--`
+    # guard and removing its `shlex.quote` are different defects but share ONE source line, so
+    # they share one edit anchor — and the manifest keys on the anchor, not on the intent.
+    # `repeats the edit anchors of an earlier entry — it measures nothing new`. Dropped rather
+    # than splitting the line to manufacture a second anchor: contorting shipped code to suit
+    # the harness is how a manifest starts measuring itself. The `--` guard is still covered by
+    # the `-dashes` CASE in the suite; it is the MUTATION that has no distinct anchor.
+    # ⟳ r2 review supplied a SECOND, independent reason this entry could never have been
+    # admitted, and it is the stronger one: removing `--` reddens FIVE cases, so `expect`
+    # would be refused for matching more than one. Recorded because a rule that happens to
+    # be right for the reason you noticed is one you will misapply the next time the first
+    # reason does not hold.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 646)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

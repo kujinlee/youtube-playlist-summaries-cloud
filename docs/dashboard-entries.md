@@ -8139,6 +8139,69 @@ corrected in place while accepting the fix.)
 ("1 review round with one half and no stated reason") and passed once the Codex half
 landed. The gate caught a missing review half before a human had to.
 
+## 2026-09-12
+Clicking a source link on the goals page did nothing useful for four days — now it opens the document.
+<!--tech-->
+Every `/src/` link on `/goals` answered *no source root* — 55 of them, since the server was last
+started on 8 September. Nothing was broken in the page: the links were correct, and
+`scripts/explainer-serve.py` simply declined to resolve them because `EXPLAINER_DOCS_ROOT` was not
+set. Started the way a person actually types it — `python3 scripts/explainer-serve.py` — the whole
+`/src/` subsystem switched itself off and the page around it kept working, which is why nobody saw it.
+
+**The server already knew the answer.** `REPO` is derived from `__file__` and `/_stale` has always
+used it to find the source a page was built from, so `/src/` was refusing to open files that
+`/_stale` was stat-ing by name in the same process, one handler apart. `src_root()` now falls back
+to that root. The variable keeps its real job — pointing at a *different* checkout — and
+project-independence is untouched, because `SCRIPTS.parent` hardcodes no repo.
+
+A **wrong** value stays an error rather than falling back. Unset means "no opinion"; a path someone
+typed means a specific checkout, and quietly serving a different one would rebuild this same bug
+with better manners.
+
+The remaining 404 now prints the commands to run. The old text said `EXPLAINER_DOCS_ROOT=<dir>` and
+never filled in `<dir>`, although the value was one module constant away — a description of the
+failure wearing the shape of an instruction.
+
+⭐ **`src_root()` had no self-test cases at all**, which is how a green suite coexisted with a dead
+subsystem for four days. Twelve added, **88 → 100**; removing the fallback turns three of them red
+over a control proved green first. One case asserts the exact token `unset EXPLAINER_DOCS_ROOT`
+rather than the word "unset", because the other arm's own prose says "…is unset and the fallback…"
+and a bare substring test passes on the very text it excludes — measured while writing it.
+
+## 2026-09-12
+Every page now has a **Restart server** button — and under it, the command to run when the button itself cannot help.
+<!--tech-->
+Asked for three times: *"user would not remember the script."* An instruction nobody remembers is not
+a fix, so the affordance goes where the reader already is. `page_chrome.chrome_bar()` is the seam —
+it already carried Theme and Refresh, so all five producers gain the control with no change to their
+call sites.
+
+**The fallback is embedded, not linked.** The moment a reader needs it is the moment the server may
+be gone, so a help *link* would be a request to the failing process, and a `/help` page could not be
+served at all. The commands sit in a `<details>` needing no script and no network: a tab still open
+when the server dies can be expanded and read. It is present from the start rather than revealed by
+failure — the reader who cannot remember the command is the one who has not hit an error yet.
+
+**Success is a different pid, never merely a response.** The outgoing server still answers for a
+moment after it replies, so polling "does it respond" resolves against the process being replaced
+and would report a restart that never happened. `GET /_alive` returns the pid; the page waits for one
+that differs.
+
+**The server does not kill itself.** `POST /_restart` replies *first*, then hands its own pid to a
+detached child that does the SIGTERM, waits for the port and starts the replacement — so the
+surviving process is the one doing the work. Self-termination was what made an in-page button look
+unwise: it leaves a window with nothing listening and nothing left to report a failed respawn.
+
+`--restart` joins the CLI and routes to the same `respawn()` as the button — one mechanism, two
+callers. It is the command the pages print, because it works whether the server is up or dead, and a
+reader reaching for it does not know which case they are in.
+
+⭐ **Measured, not anticipated: built from a worktree, the embedded path was the worktree's.** Right
+at that instant and a dead path within the hour — worse than no instruction, because it fails after
+the reader has trusted it. `repo_root()` resolves `--git-common-dir` to the main checkout, so the
+command survives the worktree it was generated from. Suites **100 → 108** and **50 → 67**; all 11
+page_chrome mutation anchors re-checked and none orphaned.
+
 ## 2026-09-13
 The fifteen database checks now run automatically on every relevant push, instead of
 only on my machine — which is what the last two weeks of red was really about. Two

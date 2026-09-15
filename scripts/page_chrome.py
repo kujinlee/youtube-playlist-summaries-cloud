@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
+"""Shared chrome for the generated pages: theme control, stamp, refresh, restart-the-server.
 
-    python3 scripts/page_chrome.py --self-test          # 50 cases
+    python3 scripts/page_chrome.py --self-test          # 76 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -38,6 +38,7 @@ import html as _html
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 
@@ -102,6 +103,99 @@ def refresh_control(slug: str) -> str:
             '<span id="chrome-refresh-say" class="chrome-say" role="status"></span>')
 
 
+def repo_root(start: pathlib.Path | None = None) -> pathlib.Path:
+    """The checkout a reader can still `cd` into tomorrow.
+
+    Derived rather than passed, so the five producers keep their existing
+    `chrome_bar(slug, when)` call and no generator learns an argument to gain the control.
+
+    ⚠ NOT simply `__file__`'s parent, and this was MEASURED, not anticipated: generating
+    these pages from a git WORKTREE — which this project's own workflow does routinely —
+    embedded `/…/scratchpad/wt` in the instructions. Accurate at the moment of writing and
+    a dead path within the hour, which is worse than no instruction, because it fails after
+    the reader has already trusted it. `--git-common-dir` resolves to the MAIN checkout's
+    `.git` from inside any linked worktree, so the command survives the worktree.
+
+    Falls back to the loaded location when git cannot answer — an unusual layout should
+    degrade to the old behaviour, never to a path that is confidently wrong.
+
+    ⛔ `start` IS A PARAMETER BECAUSE WITHOUT ONE THIS FUNCTION CANNOT BE FALSIFIED — r1 H1,
+    mutation-proven by the review's Claude half. The two cases that guarded this read
+    `(repo_root()/"scripts"/"explainer-serve.py").is_file()` and `".git" in str(repo_root())`,
+    and BOTH pass on the exact broken value the docstring above names: a linked worktree *is* a
+    full checkout, so it has `scripts/explainer-serve.py`, and its path does *not* contain
+    `.git` — only `--git-common-dir`'s answer does. Inserting `return here` to delete this
+    entire resolution left the suite at **68/68 green**. Neither predicate could tell the two
+    candidate answers apart, so no rewording could have repaired them.
+
+    Defaulting to `None` keeps every existing call site unchanged; the suite passes a REAL
+    `git worktree add` and asserts the two answers differ, which is a case the mutation kills."""
+    here = pathlib.Path(__file__).resolve().parent.parent if start is None else start
+    try:
+        r = subprocess.run(["git", "-C", str(here), "rev-parse",
+                            "--path-format=absolute", "--git-common-dir"],
+                           capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return here
+    if r.returncode != 0 or not r.stdout.strip():
+        return here
+    common = pathlib.Path(r.stdout.strip())
+    # `.git/` → its parent is the checkout. Confirmed by looking for the directory the
+    # command itself names; a bare-repo common dir has no `scripts/` and must not be used.
+    main = common.parent
+    return main if common.name == ".git" and (main / "scripts").is_dir() else here
+
+
+def restart_commands(root: pathlib.Path) -> str:
+    """The exact terminal commands that bring the server back, with `root` filled in. PURE.
+
+    ⛔ `shlex.quote`, AND THE REASON IS THE WORST FAILURE THIS FUNCTION CAN HAVE — r1 B1, found
+    by BOTH review halves. `_html.escape` at `restart_control` makes this safe for HTML; nothing
+    made it safe for the SHELL it exists to be pasted into. Measured with `/tmp/some repo`:
+    `cd /tmp/some repo` exits 1, **the shell carries on**, and the next line is a RELATIVE
+    invocation — so the paste restarts whatever checkout the reader happened to be standing in,
+    silently. That is the outcome this module's own `repo_root` docstring calls worse than
+    saying nothing, reached by the quoting axis instead of the worktree axis.
+
+    ⚠ `cd --` as well as the quoting: a path beginning with `-` is otherwise read as an option.
+
+    ⚠ ONE command, and it is the same one whether the server is running or dead —
+    `--restart` skips the kill when nothing is alive and goes straight to starting. That
+    matters more than it looks: a reader reaching for this does not know which case they
+    are in, and an instruction that first asks them to diagnose is one they will get wrong.
+    Deliberately not the `--stop && start` pair, which is correct but needs both halves
+    remembered in order."""
+    return (f"cd -- {shlex.quote(str(root))}\n"
+            f"python3 scripts/explainer-serve.py --restart")
+
+
+def restart_control(root: pathlib.Path | None = None) -> str:
+    """The restart button — and the instructions it falls back to, IN THE PAGE.
+
+    ⚠ THE COMMANDS ARE EMBEDDED, NOT FETCHED, AND THAT IS THE ENTIRE DESIGN. The moment a
+    reader needs them is the moment the server may be unreachable, so a help *link* would
+    be a request to the very process that is failing. These sit in a `<details>` that needs
+    no JavaScript and no network: a tab still open when the server dies can be expanded and
+    read. That is also why this is not a separate `/help` page — a page that has to be
+    served cannot document a server that will not serve.
+
+    ⚠ It is always present, never revealed only on failure. The reader who cannot remember
+    the command is the reader who has not hit an error yet, and a fallback you can only
+    find by first failing is not one. The button opens it automatically when a restart
+    fails; a human can open it any time.
+    """
+    cmds = _html.escape(restart_commands(repo_root() if root is None else root))
+    return ('<button id="chrome-restart" type="button" class="chrome-btn" '
+            'title="Stop the local docs server and start it again">'
+            '<span class="chrome-ico" aria-hidden="true">⟲</span>'
+            '<span class="chrome-lbl">Restart server</span></button>'
+            '<span id="chrome-restart-say" class="chrome-say" role="status"></span>'
+            '<details id="chrome-restart-help" class="chrome-help">'
+            '<summary>Server not responding?</summary>'
+            '<p>Run this in a terminal — it works whether or not the server is up:</p>'
+            f'<pre><code>{cmds}</code></pre></details>')
+
+
 def stamp(when: str) -> str:
     """The generated-at line. `when` is passed IN so a page render stays deterministic.
 
@@ -150,6 +244,16 @@ def chrome_css() -> str:
         "outline-offset:2px}"
         ".chrome-when{margin-inline-start:auto}"
         ".chrome-say{min-height:1em}"
+        # The fallback instructions. `--rule`/`--ink-soft`/`currentColor` only — same
+        # constraint as every rule above, and the no-hex case below covers these too.
+        ".chrome-help{font-size:.95em}"
+        ".chrome-help summary{cursor:pointer;color:var(--ink-soft,currentColor)}"
+        ".chrome-help pre{overflow-x:auto;padding:.5rem .6rem;margin:.4rem 0 0;"
+        "border:1px solid var(--rule,currentColor);border-radius:.4rem;"
+        "background:transparent;white-space:pre;font-size:.95em}"
+        # `user-select:all` so the whole block takes one click to select. A reader who
+        # cannot remember the command is not helped by having to drag across two lines.
+        ".chrome-help code{user-select:all}"
         "@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}"
     )
 
@@ -195,6 +299,35 @@ def chrome_script() -> str:
         ".then(function(j){if(j&&j.warning){if(say)say.textContent='rebuilt WITH A WARNING: '+j.warning;return;}location.reload();})"
         ".catch(function(e){r.disabled=false;"
         "if(say)say.textContent='could not rebuild: '+e.message;});});}"
+        # ── restart ───────────────────────────────────────────────────────────────────
+        # ⚠ SUCCESS IS A DIFFERENT PID, NEVER MERELY A RESPONSE. The outgoing server is
+        # still listening for the moment after it replies, so polling for "does it answer"
+        # resolves against the process being replaced and reports a restart that never
+        # happened — the same shape as a gate reporting success because something ran.
+        # /_alive returns the pid; the client waits for one that is not the old one.
+        "var rs=document.getElementById('chrome-restart'),"
+        "rsay=document.getElementById('chrome-restart-say'),"
+        "rhelp=document.getElementById('chrome-restart-help');"
+        "function rfail(m){if(rsay)rsay.textContent=m;"
+        "if(rhelp)rhelp.open=true;if(rs)rs.disabled=false;}"
+        "function rwait(was,deadline){return new Promise(function(res,rej){"
+        "(function poll(){function again(){if(Date.now()>deadline)"
+        "rej(new Error('it did not come back within 25s'));else setTimeout(poll,500);}"
+        "fetch('/_alive',{cache:'no-store'}).then(function(x){"
+        "if(!x.ok)return again();return x.json().then(function(j){"
+        "if(j&&j.pid&&j.pid!==was)res();else again();},again);},again);})();});}"
+        "if(rs){rs.addEventListener('click',function(){"
+        "if(location.protocol==='file:'){"
+        "rfail('opened as a file \\u2014 there is no server here to restart');return;}"
+        "rs.disabled=true;if(rsay)rsay.textContent='restarting\\u2026';"
+        "fetch('/_restart',{method:'POST'})"
+        ".then(function(x){if(!x.ok)return x.text().then(function(t){throw new Error(t);});"
+        "return x.json();})"
+        ".then(function(j){return rwait(j&&j.pid,Date.now()+25000);})"
+        ".then(function(){if(rsay)rsay.textContent='back up \\u2014 reloading';"
+        "location.reload();})"
+        ".catch(function(e){rfail('restart FAILED: '+e.message"
+        "+' \\u2014 run the commands below');});});}"
         "})();"
     )
 
@@ -226,11 +359,20 @@ def provenance(now: str, root: pathlib.Path) -> str:
     return out + (" · uncommitted changes" if d.stdout.strip() else "")
 
 
-def chrome_bar(slug: str, when: str, *, refresh: bool = True) -> str:
-    """The whole bar. `refresh=False` for a page with no generator to call."""
+def chrome_bar(slug: str, when: str, *, refresh: bool = True, restart: bool = True) -> str:
+    """The whole bar. `refresh=False` for a page with no generator to call.
+
+    ⚠ `restart` defaults ON for EVERY page, including the ones that pass `refresh=False`.
+    The two controls answer different questions and their availability does not correlate:
+    refresh is about THIS page being stale, restart is about the SERVER — and a page with
+    no generator is still being served by a process that can be running old code. Making
+    restart ride on `refresh` would have hidden it from exactly the composed pages whose
+    readers have no other route back."""
     parts = [theme_control()]
     if refresh:
         parts.append(refresh_control(slug))
+    if restart:
+        parts.append(restart_control())
     parts.append(stamp(when))
     return '<div class="chrome">' + "".join(parts) + "</div>"
 
@@ -439,6 +581,156 @@ def self_test() -> int:
     case("the tokens it reads are exactly the four foreground/border ones",
          sorted(set(re.findall(r"var\((--[a-z0-9-]+)", css))),
          ["--ink", "--ink-soft", "--rule", "--structural"])
+
+    # ── the restart control, and the instructions that outlive the server ──────────────
+    _root = pathlib.Path("/tmp/some repo")
+    _cmds = restart_commands(_root)
+    case("the commands name the real repo, not a <placeholder>",
+         (str(_root) in _cmds, "<" in _cmds), (True, False))
+    # ⚠ ONE command, and the same one either way. A reader reaching for this does not know
+    # whether the server is up, so an instruction that branches on it is one they get wrong.
+    case("one command covers both running and dead", _cmds.count("explainer-serve.py"), 1)
+    case("…and it is the flag that handles both", "--restart" in _cmds, True)
+    # ⚠ A SECOND ROOT, AND IT IS NOT DECORATION. `check-fixture-variation` refused this file
+    # while `root` took ONE value at every call site, and the objection is exact: a parameter no
+    # case can tell apart from a constant leaves every clause that reads it unguarded. With only
+    # `_root` above, `restart_commands` could ignore its argument and interpolate `repo_root()`
+    # instead — and all three cases above would still pass, on a page telling a stranded reader to
+    # `cd` to the wrong checkout. The second value is what makes "it uses what it is given" a
+    # claim the suite can falsify.
+    _root2 = pathlib.Path("/tmp/another checkout")
+    _cmds2 = restart_commands(_root2)
+    case("the commands name the root they are GIVEN, and no other",
+         (str(_root2) in _cmds2, str(_root) in _cmds2), (True, False))
+
+    # ⛔ r1 B1 — AND NOTE WHAT THE CASES ABOVE COULD NOT SAY. Both fixtures already contain a
+    # SPACE, chosen to be adversarial, and every assertion above is `str(...) in ...` — which is
+    # true of a line no shell can run. A hostile input asserted with a substring test proves
+    # nothing about hostility. These parse the emitted line the way a shell would, which is the
+    # only form in which "pasteable" is a claim rather than a hope.
+    for _hostile in (pathlib.Path("/tmp/some repo"),
+                     pathlib.Path("/tmp/it's here"),
+                     pathlib.Path("/tmp/x; echo PWNED"),
+                     pathlib.Path("/tmp/a$(touch /tmp/pwn)"),
+                     pathlib.Path("/tmp/-dashes")):
+        _line = restart_commands(_hostile).splitlines()[0]
+        # ⛔ r2 Low — NON-RAISING, AND THE REASON IS THE REPORT FORMAT, NOT TIDINESS. Applying this
+        # file's own manifest entry (drop `shlex.quote`) made `shlex.split` raise
+        # `ValueError: No closing quotation` on the `/tmp/it's here` fixture, ABORTING the suite at
+        # this line. The mutation was still attributed only because `/tmp/some repo` happens to come
+        # FIRST and printed its `[FAIL]` before the raise — every case after this point, ~58 of them,
+        # was unmeasured, and one fixture-order swap would have produced `the suite went RED but
+        # printed no [FAIL] line … NOTHING COULD SEE THE KILL`. A harness that reads `[FAIL] <case>`
+        # lines needs one per fixture, so a raise must become a value. Measured after the change:
+        # the same mutation now prints 4 [FAIL] lines and no traceback (72/76 vs an abort at 1).
+        try:
+            _got = shlex.split(_line)
+        except ValueError as _e:
+            _got = f"UNPARSEABLE: {_e}"
+        case(f"`cd` parses to exactly one operand for {_hostile.name!r}",
+             _got, ["cd", "--", str(_hostile)])
+    # ⚠ The SECOND line is relative on purpose, and that is what made B1 Blocking rather than
+    # merely broken: when `cd` fails the shell does not stop, so a relative invocation runs
+    # whatever checkout the reader was standing in. This pins the pair — if the `cd` ever stops
+    # being a single reliable operand, the relative line below becomes a live hazard again.
+    case("…and the second line is the relative invocation the first line makes safe",
+         shlex.split(restart_commands(_root).splitlines()[1]),
+         ["python3", "scripts/explainer-serve.py", "--restart"])
+    _rc = restart_control(_root)
+    case("the control carries a button and a status line",
+         ('id="chrome-restart"' in _rc, 'id="chrome-restart-say"' in _rc), (True, True))
+    # ⛔ THE FALLBACK IS IN THE PAGE. The moment it is needed is the moment the server may
+    # be gone, so a help LINK would be a request to the failing process. `<details>` needs
+    # no script and no network: a tab already open can still be expanded and read.
+    case("the instructions are embedded, not linked", "<details" in _rc and _cmds in
+         _html.unescape(_rc), True)
+    case("…and are present before any failure, not revealed by one",
+         "open" not in _rc.split("<summary>")[0].split("<details")[1], True)
+    case("the root is escaped into the block",
+         "&amp;" in restart_control(pathlib.Path("/a&b")), True)
+    # ⛔ MEASURED, not anticipated: built from a worktree, the default named
+    # `/…/scratchpad/wt` — right at that instant, a dead path within the hour. A path that
+    # fails AFTER the reader trusts it is worse than no instruction at all.
+    case("the default root is a checkout that outlives a worktree",
+         (repo_root() / "scripts" / "explainer-serve.py").is_file(), True)
+    case("…and it is not the linked worktree this may be running from",
+         ".git" in str(repo_root()), False)
+    # ⛔ r1 H1 — THE TWO CASES ABOVE BOTH PASS ON THE BROKEN VALUE, so on their own they guard
+    # nothing. Measured by the review: a linked worktree HAS `scripts/explainer-serve.py`, and
+    # its path does NOT contain `.git`; inserting `return here` to delete the git resolution
+    # entirely left the suite green at 68/68. They are kept because each is still true and cheap,
+    # but the case below is the one that can die.
+    #
+    # ⚠ A REAL `git worktree add`, not a fake directory tree, because `--git-common-dir` is
+    # answered by git and by nothing else — a fixture that only LOOKS like a worktree would
+    # exercise the fallback path instead of the branch under test, which is the shape this repo
+    # calls fixing the premise rather than covering the branch.
+    # ⚠ `_why` NAMES THE STEP THAT FAILED, and it exists because the first version of the message
+    # below said "git is unavailable" — one cause among several. `_git_ok` also goes False when a
+    # commit is REFUSED, and the common real-world reason is gpg signing on a machine that signs by
+    # default. A failure message that names the wrong cause sends the next reader to the wrong place.
+    _git_ok, _why = True, "not attempted"
+    with _tf.TemporaryDirectory() as _td:
+        _main = pathlib.Path(_td) / "main"
+        (_main / "scripts").mkdir(parents=True)
+        (_main / "scripts" / "explainer-serve.py").write_text("# fixture\n")
+        def _g(*a, cwd=_main):
+            return subprocess.run(["git", *a], cwd=str(cwd), capture_output=True, text=True)
+        try:
+            _git_ok, _why = _g("init", "-q", "-b", "main").returncode == 0, "git init failed"
+            if _git_ok:
+                _g("config", "user.email", "t@example.com"); _g("config", "user.name", "t")
+                # ⚠ `commit.gpgsign` off LOCALLY: a machine that signs by default would fail the
+                # commit and report this property as unguarded for a reason nothing to do with it.
+                _g("config", "commit.gpgsign", "false")
+                _g("add", "-A")
+                _c = _g("commit", "-qm", "fixture")
+                _git_ok, _why = _c.returncode == 0, f"git commit failed: {_c.stderr.strip()[:80]}"
+            if _git_ok:
+                _wt = pathlib.Path(_td) / "linked"
+                _w = _g("worktree", "add", "-q", str(_wt), "-d")
+                _git_ok, _why = _w.returncode == 0, f"git worktree add failed: {_w.stderr.strip()[:80]}"
+        except (OSError, subprocess.SubprocessError) as _e:
+            _git_ok, _why = False, f"git could not be run: {type(_e).__name__}"
+        if _git_ok:
+            # THE PROPERTY: from inside a linked worktree, the answer is the MAIN checkout —
+            # not the worktree, which is the value the docstring records as dead within the hour.
+            case("from a linked worktree, repo_root resolves to the MAIN checkout",
+                 (repo_root(_wt).resolve(), repo_root(_wt).resolve() == _wt.resolve()),
+                 (_main.resolve(), False))
+            case("…and from the main checkout it resolves to itself",
+                 repo_root(_main).resolve(), _main.resolve())
+        else:
+            # ⛔ CANNOT RUN IS A FAILURE. A machine that could not build the fixture must not
+            # report this property as guarded.
+            # ⚠ r2 review: the message used to say "git is unavailable", which is ONE cause among
+            # several — `_git_ok` also goes False when `git commit` is refused, and the common
+            # real-world reason is a gpg-signing failure on a machine that signs by default. A
+            # diagnosis in a failure message that names the wrong cause sends the next reader to
+            # the wrong place, so it names the STEP that failed and leaves the cause open.
+            case(f"CANNOT RUN — the git worktree fixture could not be built ({_why}), so the "
+                 f"worktree property was NOT checked",
+                 "git unavailable", "the worktree case must run")
+    _bar = chrome_bar("dashboard", "t")
+    case("the bar carries the restart control too", 'id="chrome-restart"' in _bar, True)
+    # The two controls answer different questions; a page with no generator is still served
+    # by a process that can be running old code.
+    case("restart survives refresh=False",
+         'id="chrome-restart"' in chrome_bar("x", "t", refresh=False), True)
+    case("restart=False drops it, keeping the theme control",
+         ('id="chrome-restart"' in chrome_bar("x", "t", restart=False),
+          has_control(chrome_bar("x", "t", restart=False))), (False, True))
+    _js = chrome_script()
+    case("the script binds the restart button", "chrome-restart" in _js, True)
+    # ⚠ SUCCESS IS A DIFFERENT PID, NOT MERELY A RESPONSE — the outgoing server answers for
+    # a moment after replying, so "did it respond" resolves against the process being
+    # replaced. Asserting the comparison exists is what keeps that from being reintroduced.
+    case("…and waits for a pid that CHANGED", "j.pid!==was" in _js, True)
+    case("…via the endpoint that reports one", "'/_alive'" in _js, True)
+    case("a failure opens the instructions rather than only saying so",
+         "rhelp.open=true" in _js, True)
+    case("file:// is refused with a reason, not silently",
+         "there is no server here to restart" in _js, True)
 
     print(f"\n{ok}/{ok + fail} passed")
     return 1 if fail else 0
