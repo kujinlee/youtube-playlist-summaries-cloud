@@ -12,6 +12,95 @@ How adversarial review is run here, and the classification passes that go betwee
 
 ---
 
+## 0. The decision procedure — read this, do not recall it
+
+**Measured 2026-09-14 (PR #302): a contained single-file change ran FOUR rounds; two were owed.**
+Every rule below already existed, spread across five sections of this file and two others, and was
+recalled instead of read. ⛔ **Consulting this card is the step. If you are about to decide from
+memory, that is the defect.** `scripts/check-review-decision.py` answers Q1, Q4 and Q5 from the
+recorded evidence — run it rather than reasoning.
+
+### Q1 · Full loop, or one round?
+
+Keyed on the **changed path set**, not on judgement.
+
+| The diff touches | Answer |
+|---|---|
+| schema/migrations, auth/RLS/multi-tenant, money or irreversible paths, concurrency/leasing/locking, **or already-merged shared code** | **full loop** |
+| anything else — single-file logic, config, thin wrappers, docs | **ONE round** |
+
+Evidence: the trigger list at `:394`, and the warning at `:398` against over-applying it.
+
+### Q2 · Round 1 — both halves at once
+
+1. Dispatch **both halves concurrently**; isolation per the measured table at `:260`.
+2. ⛔ **Neither half is committed until both finish** (`:332`) — a committed first half leaks
+   its grade to the second through `git log` and the diff.
+3. Codex's final message **is** its review; it writes no file. File each half under
+   `docs/reviews/<writer>/`.
+4. A half that cannot run is recorded `REVIEW GAP: <half>` **with its reason**, never omitted.
+
+### Q3 · Disposition — decided here, not by asking
+
+⟳ **Replaces the instruction at `:387` to present every Medium to the user** (user decision,
+2026-09-14). That line was the mandated interruption.
+
+| Finding | Do |
+|---|---|
+| **Blocking / High** | **FIX** |
+| **Medium / Low**, inside the delta, fix touches only files already in the diff and adds no mechanism | **FIX** |
+| **Medium / Low** needing a new mechanism, script, schema, or a policy call | **FILE** |
+
+Record the disposition **and its reason, per finding**, in the round document; the human overturns
+it afterwards. ⚠ A reviewer's *proposed* fix is unverified code — see `:335`.
+
+### Q4 · Is another round owed? — TWO questions, and they are not the same one
+
+**(a) Convergence — has discovery dried up?**
+
+| Observation | Answer |
+|---|---|
+| a **Blocking or High** | **CONTINUE** |
+| a finding **in the deliverable** | **CONTINUE** |
+| non-trivial fixes (`:396`) | **CONTINUE** |
+| **two consecutive rounds** with neither, every finding aimed at the **instrument** | **STOP** |
+
+⭐ **Judge by AIM, not severity** — `:221` says a clean severity column describes the reviewers,
+not the design. On PR #302 severity read "converged" from round 1 and was useless; aim separated the
+rounds cleanly. Inverted, it is why PR #299 was right to run seventeen.
+
+**(b) Tree identity — has a round seen the code that MERGES?** A different question. Cheapest first:
+
+1. land the editorial fixes **ahead of** the final round (`:355`);
+2. keep the last fixes uncommitted so the reviewer sees what ships — `:341` calls this the
+   documented way;
+3. declare `NO-REVIEW: <reason>` in the PR body;
+4. run another round — **last**.
+
+> ⛔ **Never spend a round on (b) before offering 1–3 to the human.** That is exactly what PR #302
+> cost, twice.
+
+### Q5 · Thrashing → architecture review
+
+Per finding, answer **in the round document**: *did the previous round's fix cause this?*
+
+| Shape | Then |
+|---|---|
+| fix-induced findings, two rounds running, one component | **ARCHITECTURE REVIEW** |
+| *"the rule doesn't say what happens in case X"* | **FIX** + an exhaustiveness pass |
+| findings drifting to *under-specified* while the artifact improves | **STOP REVIEWING — go build** |
+
+Apply the single test at `:156`, never the symptom list; using the list as a checklist produced a
+measured false escalation on 2026-08-14. Reaching four rounds **obliges asking**, and does not fire.
+
+### Q6 · Record the call
+
+Write the reason and the per-finding evidence into the round document (`:439`), and carry the
+header defined in [`docs/reviews/ROUND-HEADER-TEMPLATE.md`](reviews/ROUND-HEADER-TEMPLATE.md) so
+the counters Q4 and Q5 need are derived rather than remembered (`:374`).
+
+---
+
 ## Two rules for PREMISES, not findings (added 2026-08-08)
 
 Both were bought with a full review round. The existing discipline — *a finding you MEASURED beats
