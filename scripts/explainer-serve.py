@@ -2221,28 +2221,50 @@ def _self_test() -> int:
         # both of which stayed TRUE on the tree that wrote a corpse. `K` claims "every step above
         # succeeded"; the defect was a step placed AFTER the byte. So the property is: between the
         # readiness byte and `serve_forever` there is nothing that can fail.
-        def _after_the_byte() -> list[str]:
-            # ⚠ WHOLE LINES. Slicing to the character index of "serve_forever" left a dangling
-            # `httpd.` fragment in the list — a case that fails on its own formatting rather than
-            # on the property. Cut at the line that contains it.
-            lines = _start.splitlines()
-            a = next(i for i, l in enumerate(lines) if 'os.write(w_fd, b"K")' in l)
-            b = next(i for i, l in enumerate(lines) if "serve_forever" in l)
-            out = []
-            for ln in lines[a + 1:b]:
-                s = ln.strip()
-                if not s or s.startswith("#"):
-                    continue
-                out.append(s)
-            return out
-        # Only closing the pipe and entering the context manager may appear. Anything else — a
-        # detach, a chdir, a log open, a umask — is a step whose failure would arrive too late.
+        # ⛔⛔ AST, NOT STRINGS — r8 Low, and the string version was bypassable in two ways the
+        # reviewer MEASURED against the predicate itself:
+        #     os.close(w_fd); detach_streams()                     -> predicate True
+        #     with httpd, open("/missing") as _x:                  -> predicate True
+        # Both add work after the readiness byte that can fail before `serve_forever`, and both
+        # passed a `startswith` allow-list. A case that can be stepped around by a semicolon is not
+        # proving a property, it is recognising a shape — the same distinction this branch has been
+        # correcting all the way down. The tree cannot be fooled by formatting.
+        def _post_ready_statements():
+            """The statements between the readiness byte and `serve_forever`, from the AST."""
+            import ast as _ast
+            fn = next(n for n in _ast.walk(_ast.parse(inspect.getsource(start).lstrip()))
+                      if isinstance(n, _ast.FunctionDef) and n.name == "start")
+            child = next(n for n in _ast.walk(fn)
+                         if isinstance(n, _ast.If)
+                         and _ast.dump(n.test).count("Eq") == 1
+                         and "pid" in _ast.dump(n.test) and "0" in _ast.dump(n.test))
+            body = child.body
+            # ⚠ `ast.dump` renders bytes with SINGLE quotes — searching for `b"K"` finds nothing
+            # and the `next()` raises StopIteration, which the runner reports as a failing case
+            # rather than a passing one. That is the right failure direction, and it is why this
+            # helper is allowed to raise: a case that cannot locate its subject must go RED.
+            k = next(i for i, s in enumerate(body) if "b'K'" in _ast.dump(s))
+            return body[k + 1:]
+
+        def _readiness_tail_is_exact() -> bool:
+            import ast as _ast
+            tail = _post_ready_statements()
+            # Exactly: os.close(w_fd)  ·  with httpd: httpd.serve_forever()  ·  os._exit(0)
+            if len(tail) != 3:
+                return False
+            close_, with_, exit_ = tail
+            ok = (isinstance(close_, _ast.Expr) and isinstance(close_.value, _ast.Call)
+                  and _ast.dump(close_.value.func).count("'close'") == 1)
+            # ⚠ ONE context item, and it must be the bound server — `with httpd, open(...)` is the
+            # shape that slipped past the string test.
+            ok = ok and isinstance(with_, _ast.With) and len(with_.items) == 1
+            ok = ok and getattr(with_.items[0].context_expr, "id", None) == "httpd"
+            ok = ok and len(with_.body) == 1 and "serve_forever" in _ast.dump(with_.body[0])
+            ok = ok and isinstance(exit_, _ast.Expr) and "_exit" in _ast.dump(exit_)
+            return ok
+
         case("nothing that can fail happens after the readiness byte",
-             lambda: all(s.startswith(("os.close(w_fd)", "with httpd", "except OSError",
-                                       "pass", "try:"))
-                         for s in _after_the_byte()))
-        # ⚠ And the steps `K` claims must be INSIDE the guard that sends `X`, or a failure there
-        # never reaches the parent at all.
+             lambda: _readiness_tail_is_exact())
         case("…and every step the byte claims is inside the guard that reports failure",
              lambda: (_start.index("os.setsid()") < _start.index('os.write(w_fd, b"X")')
                       and _start.index("detach_streams()") < _start.index('os.write(w_fd, b"X")')
