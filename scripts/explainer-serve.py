@@ -64,7 +64,7 @@ USAGE
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
     python3 scripts/explainer-serve.py --restart  # the one to remember: works up OR down
-    python3 scripts/explainer-serve.py --self-test   # 131 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 136 cases, binds no port
 
 Every page also carries a **Restart server** button, and — under it — these commands in a
 `<details>` that needs no script and no network, so the instructions survive the server
@@ -1174,21 +1174,31 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                         "error": "a restart is already in flight"}).encode(),
                        "application/json")
             return
-        self._send(200, json.dumps({"ok": True, "pid": pid}).encode(), "application/json")
+        # ⛔ THE RELEASE IS KEYED ON `spawned`, IN A `finally`, AND THE FIRST VERSION OF THIS FIX
+        # WAS NOT. It released only inside the `except` around `Popen`, which misses the path that
+        # actually happens: `_send` ends in `self.wfile.write(body)` and raises `BrokenPipeError`
+        # when the reader navigated away between pressing and the reply. The lock would then be
+        # held by a process that is NOT about to be replaced, and every later press on every open
+        # tab would get a 409 for the life of the server — a permanent refusal, traded for a race
+        # that recovers on the next press. Worse than what it fixed.
+        #
+        # ⚠ The asymmetry is the design, not an oversight: on the SUCCESS path the lock is
+        # deliberately never released, because this process is about to be SIGTERMed and "in
+        # flight" is a one-way door for its remaining life. Releasing it there would re-open the
+        # race for the seconds between the reply and the signal.
+        spawned = False
         try:
-            self.wfile.flush()
-        except OSError:
-            pass                      # the reader navigated away; the restart still proceeds
-        try:
+            self._send(200, json.dumps({"ok": True, "pid": pid}).encode(), "application/json")
+            try:
+                self.wfile.flush()
+            except OSError:
+                pass                  # the reader navigated away; the restart still proceeds
             subprocess.Popen([sys.executable, str(pathlib.Path(__file__).resolve()),
                               "--respawn", str(pid)],
                              start_new_session=True, stdin=subprocess.DEVNULL,
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            spawned = True
         except (OSError, ValueError) as exc:
-            # ⚠ RELEASED HERE AND ONLY HERE: no replacement was spawned, so this process is NOT
-            # about to be replaced and the one-way door above must swing back — otherwise one
-            # failed spawn would refuse every later press for the life of the server.
-            RESTART_LOCK.release()
             # The 200 is already sent, so this cannot be reported in the response. The page
             # finds out the honest way — it waits for a pid that never changes and says the
             # restart failed — and the log says why.
@@ -1199,6 +1209,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                              f"not spawn the replacement: {type(exc).__name__}: {exc}\n")
             except OSError:
                 pass
+        finally:
+            if not spawned:
+                RESTART_LOCK.release()
 
     def _regenerate(self, payload: dict) -> None:
         """Rebuild one derived page. Backlog #77.
@@ -2089,6 +2102,34 @@ def _self_test() -> int:
              lambda: _rst.index("self._send(200") < _rst.index("subprocess.Popen"))
         case("the replacement outlives this process",
              lambda: "start_new_session=True" in _rst)
+
+        # ── r6 High / r7: the restart lock, and the ONE property that makes it safe ────────
+        # ⛔ THESE READ SOURCE because the property is about a lock's lifetime across a process
+        # that deliberately dies, which cannot be asserted from inside it.
+        case("a second press in flight is refused, not silently dropped",
+             lambda: "RESTART_LOCK.acquire(blocking=False)" in _rst and "409" in _rst)
+        # ⛔⛔ THE RELEASE IS KEYED ON `spawned` AND SITS IN A `finally`. The first version of the
+        # r6 fix released only inside the `except` around `Popen`, which misses the path that
+        # actually happens: `_send` ends in `wfile.write` and raises BrokenPipeError when the
+        # reader navigated away. The lock would then be held by a process that is NOT about to be
+        # replaced, and every later press on every open tab gets a 409 for the life of the server
+        # — a PERMANENT refusal traded for a race that recovers on the next press.
+        case("the lock is released whenever no replacement was spawned",
+             lambda: "finally:" in _rst and "if not spawned:" in _rst
+                     and _rst.index("spawned = False") < _rst.index("self._send(200"))
+        # ⚠ And the asymmetry is asserted too, because it looks like a bug to anyone reading it
+        # quickly: on SUCCESS the lock is never released, since this process is about to be
+        # SIGTERMed and "in flight" is a one-way door for its remaining life.
+        case("…and NOT released on the success path — the door is one-way by design",
+             lambda: _rst.count("RESTART_LOCK.release()") == 1)
+        # ⛔ `start()` asks "is MY child alive", not "is A listener there" — the two questions the
+        # r6 High turned on. `waitpid` must come FIRST, or someone else's listener masks a child
+        # that died of EADDRINUSE and the pidfile is written for a corpse.
+        _start = inspect.getsource(start)
+        case("start() asks whether ITS OWN child lives, before trusting the port",
+             lambda: _start.index("os.waitpid") < _start.index("alive = True"))
+        case("…and the pidfile is claimed only after that verification",
+             lambda: _start.index("os.waitpid") < _start.index("PIDFILE.write_text"))
         # This process does NOT kill itself: it hands its pid to the child that replaces it.
         case("the server does not SIGTERM itself", lambda: "os.kill" not in _rst)
         case("a spawn failure is written down, not swallowed",
