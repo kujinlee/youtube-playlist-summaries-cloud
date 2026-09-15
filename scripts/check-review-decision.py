@@ -2,7 +2,7 @@
 """What does the review loop do next? — answered from recorded evidence, not recall.
 
     python3 scripts/check-review-decision.py              # decide for the current branch
-    python3 scripts/check-review-decision.py --self-test  # 23 cases
+    python3 scripts/check-review-decision.py --self-test  # 30 cases
 
 WHY THIS EXISTS
 ---------------
@@ -21,7 +21,7 @@ tree identity has four answers, of which "run another round" is the most expensi
 last. This script keeps them apart so they cannot be merged again.
 
 ⚠ IT CONSUMES JUDGEMENTS, IT DOES NOT MAKE THEM. `aim` and `fix_induced` are recorded by
-the agent in each round document's header (docs/reviews/ROUND-HEADER-TEMPLATE.md). A header
+the agent in each round document's header (docs/round-header-template.md). A header
 filled in dishonestly produces a confident wrong answer and nothing here detects it.
 
 NO-CALLER: an instrument the coordinator consults at a decision point; CI has no decision to
@@ -33,7 +33,12 @@ it is making this a step nobody can skip.
 from __future__ import annotations
 
 import argparse
+import re
+import subprocess
 import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
 
 # ---------------------------------------------------------------- Q1: scope
 # review-method.md's own trigger list, expressed as PATH PREFIXES so the answer is
@@ -125,6 +130,65 @@ def decide(rounds: list[dict], scope: str, tree_reviewed: bool) -> tuple[str, st
     return "STOP", f"converged — {why} — and a round saw the merging tree"
 
 
+# --------------------------------------------------------- reading the record
+FINDING_RE = re.compile(r"\{([^}]*)\}")
+
+
+def parse_header(text: str) -> dict:
+    """The ```yaml block after a round document's title.
+
+    ⛔ RAISES on a missing or malformed header. It must never return an empty round:
+    an empty round reads as "no findings", which reads as convergence — a silent pass
+    over a document nobody could read. "Cannot run" is a failure, never a pass.
+    """
+    m = re.search(r"```yaml\n(.*?)```", text, re.S)
+    if not m:
+        raise ValueError("no ```yaml header block")
+    body = m.group(1)
+    rm = re.search(r"^round:\s*(\d+)\s*$", body, re.M)
+    if not rm:
+        raise ValueError("header has no `round:` line")
+    findings = []
+    for fm in FINDING_RE.finditer(body):
+        f: dict = {}
+        for pair in fm.group(1).split(","):
+            if ":" not in pair:
+                continue
+            k, v = pair.split(":", 1)
+            v = v.strip().strip('"').strip("'")
+            f[k.strip()] = {"true": True, "false": False}.get(v, v)
+        findings.append(f)
+    return {"round": int(rm.group(1)), "findings": findings}
+
+
+def rounds_for(subject: str) -> list[dict]:
+    """Every coordinator round document for `subject`, ordered by round number.
+
+    A document without a header propagates its ValueError — the caller turns that into
+    CANNOT RUN rather than a decision.
+    """
+    d = REPO / "docs" / "reviews" / "coordinator"
+    out = []
+    for f in sorted(d.glob(f"{subject}-r*-coordinator.md")):
+        h = parse_header(f.read_text())
+        h["source"] = f.name
+        out.append(h)
+    return sorted(out, key=lambda r: r["round"])
+
+
+def _git(*args: str) -> str:
+    return subprocess.run(["git", *args], cwd=REPO, capture_output=True,
+                          text=True, check=True).stdout.strip()
+
+
+def _raises(fn) -> bool:
+    try:
+        fn()
+    except Exception:
+        return True
+    return False
+
+
 # ------------------------------------------------------------------ self-test
 def _self_test() -> int:
     cases = failures = 0
@@ -203,6 +267,23 @@ def _self_test() -> int:
                                      (two_inst, "full-loop", False),
                                      (two_inst, "full-loop", True)]), True)
 
+
+    # --- reading the record -----------------------------------------------
+    good = ("# r3\n\n```yaml\nround: 3\nsubject: s\nfindings:\n"
+            "  - {id: L1, severity: Low, aim: instrument, fix_induced: true, "
+            "component: c, disposition: filed}\n```\n")
+    h = parse_header(good)
+    case("a header parses its round number", h["round"], 3)
+    case("a header parses its findings", len(h["findings"]), 1)
+    case("a finding's booleans are real booleans", h["findings"][0]["fix_induced"], True)
+    case("a finding's aim survives parsing", h["findings"][0]["aim"], "instrument")
+    case("a document with NO header raises, never returns an empty round",
+         _raises(lambda: parse_header("# r3\n\nprose only\n")), True)
+    case("a header missing `round` raises rather than defaulting",
+         _raises(lambda: parse_header("```yaml\nsubject: s\nfindings: []\n```")), True)
+    case("a header with no findings is a real round, not an error",
+         parse_header("```yaml\nround: 9\nfindings:\n```")["findings"], [])
+
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
 
@@ -211,11 +292,54 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--self-test", action="store_true")
+    ap.add_argument("--base", default="origin/master")
     args = ap.parse_args(argv)
     if args.self_test:
         return _self_test()
-    print("CANNOT RUN — the live path is not wired yet")
-    return 2
+
+    try:
+        branch = _git("rev-parse", "--abbrev-ref", "HEAD")
+        paths = [p for p in _git("diff", "--name-only",
+                                 f"{args.base}...HEAD").split("\n") if p]
+    except subprocess.CalledProcessError as exc:
+        print(f"CANNOT RUN — git: {exc.stderr.strip() or exc}")
+        return 2
+    try:
+        rounds = rounds_for(branch)
+    except ValueError as exc:
+        print(f"CANNOT RUN — a round document for '{branch}' has no usable header: {exc}")
+        return 2
+
+    scope = scope_for(paths)
+    # `check-review-recorded.py` owns the tree question; read ITS exit code rather than
+    # re-deriving the rule, which is how a weaker second implementation gets written.
+    tree = subprocess.run([sys.executable, str(REPO / "scripts" / "check-review-recorded.py"),
+                           "--base", args.base], cwd=REPO, capture_output=True, text=True)
+    if tree.returncode not in (0, 1):
+        # ⚠ Surface ITS reason, not just its number. A cannot-run that does not say what
+        # is missing leaves the reader to re-derive it, which is how the remedy gets
+        # guessed at instead of applied.
+        # ⚠ BOTH streams. `stdout or stderr` discards the refusal: measured — this
+        # gate prints its `ok` for question one on STDOUT and its CANNOT RUN on
+        # STDERR, so the falsy-or picks the reassuring half and drops the reason.
+        out = (tree.stdout + "\n" + tree.stderr).strip().split("\n")
+        # Prefer the lines that SAY the problem. Printing the first three prints its `ok`
+        # line for question one and buries the refusal underneath it.
+        why = [l for l in out if "CANNOT RUN" in l or l.startswith("FAILED")] or out[:2]
+        print(f"CANNOT RUN — check-review-recorded exited {tree.returncode}:")
+        for line in why[:3]:
+            print(f"    {line.strip()}")
+        return 2
+    tree_reviewed = tree.returncode == 0
+
+    decision, why = decide(rounds, scope, tree_reviewed)
+    print(f"{decision} — {why}")
+    print(f"  branch={branch}  scope={scope}  rounds={len(rounds)}  "
+          f"tree_reviewed={tree_reviewed}")
+    for r in rounds:
+        aims = ",".join(f.get("aim", "?") for f in r["findings"]) or "none"
+        print(f"    r{r['round']}: {len(r['findings'])} finding(s) [{aims}]")
+    return 0 if decision == "STOP" else 1
 
 
 if __name__ == "__main__":

@@ -96,7 +96,7 @@ measured false escalation on 2026-08-14. Reaching four rounds **obliges asking**
 ### Q6 · Record the call
 
 Write the reason and the per-finding evidence into the round document (`:439`), and carry the
-header defined in [`docs/reviews/ROUND-HEADER-TEMPLATE.md`](reviews/ROUND-HEADER-TEMPLATE.md) so
+header defined in [`docs/round-header-template.md`](round-header-template.md) so
 the counters Q4 and Q5 need are derived rather than remembered (`:374`).
 
 ---

@@ -1,0 +1,56 @@
+[
+  {
+    "name": "thrashing unions the two rounds instead of intersecting them",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "shared = induced(rounds[-2]) & induced(rounds[-1])",
+        "shared = induced(rounds[-2]) | induced(rounds[-1])"
+      ]
+    ],
+    "expect": [
+      "two fix-induced rounds in DIFFERENT components is not thrashing",
+      "one fix-induced round is not thrashing",
+      "thrashing reads the LAST two rounds, not any two"
+    ]
+  },
+  {
+    "name": "convergence stops caring where the finding was aimed",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "            if f.get(\"aim\") == \"deliverable\":",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "a deliverable finding blocks convergence"
+    ]
+  },
+  {
+    "name": "a full-loop change converges on one round like a contained one",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "need = 1 if scope == \"one-round\" else 2",
+        "need = 1"
+      ]
+    ],
+    "expect": [
+      "one clean round is NOT convergence on the full loop"
+    ]
+  },
+  {
+    "name": "tree identity stops being asked, so an unreviewed tree reads as STOP",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "    if not tree_reviewed:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "converged but an unreviewed merging tree asks for TREE, never a round"
+    ]
+  }
+]
