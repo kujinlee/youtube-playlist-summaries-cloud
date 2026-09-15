@@ -1,6 +1,6 @@
 # Available Skills Reference
 
-> **Generated** 2026-08-29 · `scripts/regen-skills-doc.py`
+> **Generated** 2026-09-15 · `scripts/regen-skills-doc.py`
 > Re-run after: `/plugin install`, `/plugin update`, `/plugin enable/disable`,
 > or `npx skills@latest add/remove mattpocock/skills`.
 
@@ -128,7 +128,7 @@ Audit and improve CLAUDE.md files across the project.
 | **claude-md-improver** | `claude-md-management:claude-md-improver` | `auto + /slash` | Audit and improve CLAUDE.md files in repositories. Use when user asks to check, audit, update, improve, or fix CLAUDE.md files. Scans for all CLAUDE. |
 | **revise-claude-md** | `/revise-claude-md` | `/command` | Update CLAUDE.md with learnings from this session |
 
-### 🟣 code-review — `code-review@claude-plugins-official` vd45efab8c85b ✅
+### 🟣 code-review — `code-review@claude-plugins-official` v783d3423150b ✅
 
 Automated PR review using 4 parallel agents with confidence-based scoring to filter false positives.
 
@@ -144,7 +144,7 @@ Simplify recently modified code for clarity, consistency, and maintainability.
 |---|---|---|---|
 | **code-simplifier** | `code-simplifier:code-simplifier` | agent (Task tool) | Simplifies and refines code for clarity, consistency, and maintainability while preserving all functionality. |
 
-### 🟣 commit-commands — `commit-commands@claude-plugins-official` vd45efab8c85b ✅
+### 🟣 commit-commands — `commit-commands@claude-plugins-official` v783d3423150b ✅
 
 Streamlined git workflow — commit, push, and open a PR in single commands.
 
@@ -160,7 +160,7 @@ Educational output mode — adds `★ Insight` blocks with implementation ration
 
 *(no skills, agents, or commands found — plugin may need updating)*
 
-### 🟣 feature-dev — `feature-dev@claude-plugins-official` vd45efab8c85b ✅
+### 🟣 feature-dev — `feature-dev@claude-plugins-official` v783d3423150b ✅
 
 Structured 7-phase feature development workflow: explore → clarify → architect → implement → review.
 
@@ -171,15 +171,15 @@ Structured 7-phase feature development workflow: explore → clarify → archite
 | **code-explorer** | `feature-dev:code-explorer` | agent (Task tool) | Deeply analyzes existing codebase features by tracing execution paths, mapping architecture layers, understanding patterns and abstractions, and docum… |
 | **code-reviewer** | `feature-dev:code-reviewer` | agent (Task tool) | Reviews code for bugs, logic errors, security vulnerabilities, code quality issues, and adherence to project conventions, using confidence-based filte… |
 
-### 🟣 frontend-design — `frontend-design@claude-plugins-official` vd45efab8c85b ✅
+### 🟣 frontend-design — `frontend-design@claude-plugins-official` v783d3423150b ✅
 
 Production-grade frontend UI with high design quality; avoids generic AI aesthetics.
 
 | Name | Invoke | Trigger | Description |
 |---|---|---|---|
-| **frontend-design** | `frontend-design:frontend-design` | `auto + /slash` | Create distinctive, production-grade frontend interfaces with high design quality. |
+| **frontend-design** | `frontend-design:frontend-design` | `auto + /slash` | Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one. |
 
-### 🟣 hookify — `hookify@claude-plugins-official` vd45efab8c85b ✅
+### 🟣 hookify — `hookify@claude-plugins-official` v783d3423150b ✅
 
 Hook configuration management — prevent unwanted behaviors via pre/post tool hooks.
 
@@ -192,11 +192,11 @@ Hook configuration management — prevent unwanted behaviors via pre/post tool h
 | **list** | `/list` | `/command` | List all configured hookify rules |
 | **conversation-analyzer** | `hookify:conversation-analyzer` | agent (Task tool) | Use this agent when analyzing conversation transcripts to find behaviors worth preventing with hooks. |
 
-### 🟣 playwright — `playwright@claude-plugins-official` vd45efab8c85b ✅
+### 🟣 playwright — `playwright@claude-plugins-official` v783d3423150b ✅
 
 *(no skills, agents, or commands found — plugin may need updating)*
 
-### 🟣 pr-review-toolkit — `pr-review-toolkit@claude-plugins-official` vd45efab8c85b ✅
+### 🟣 pr-review-toolkit — `pr-review-toolkit@claude-plugins-official` v783d3423150b ✅
 
 Six specialized review agents for thorough PR analysis (comments, tests, errors, types, simplification).
 
@@ -226,7 +226,7 @@ Iterative agent loop — repeatedly feeds Claude a task until a "completion prom
 | **help** | `/help` | `/command` | Explain Ralph Loop plugin and available commands |
 | **ralph-loop** | `/ralph-loop` | `/command` | Start Ralph Loop in current session |
 
-### 🟣 remember — `remember@claude-plugins-official` v0.20.0 ✅
+### 🟣 remember — `remember@claude-plugins-official` v0.32.0 ✅
 
 Session continuity — saves state to `.remember/now.md` for clean resumption next session.
 
@@ -235,13 +235,13 @@ Session continuity — saves state to `.remember/now.md` for clean resumption ne
 | **remember** | `remember:remember` | `auto + /slash` | Save session state for clean continuation next session. |
 | **doctor** | `/doctor` | `/command` | Diagnose the Remember plugin — resolved paths, detected tools, storage mode, and whether capture is actually saving memory. |
 
-### 🟣 security-guidance — `security-guidance@claude-plugins-official` v2.0.7 ✅
+### 🟣 security-guidance — `security-guidance@claude-plugins-official` v2.0.8 ✅
 
 Security-focused code review and vulnerability guidance.
 
 *(no skills, agents, or commands found — plugin may need updating)*
 
-### 🟣 skill-creator — `skill-creator@claude-plugins-official` vd45efab8c85b ✅
+### 🟣 skill-creator — `skill-creator@claude-plugins-official` v783d3423150b ✅
 
 Create, edit, eval, and benchmark Claude Code skills.
 
@@ -274,6 +274,7 @@ Checked into the repo; available only in this project.
 
 | Name | Invoke | Trigger | Description |
 |---|---|---|---|
+| **clean_gone** | `/clean_gone` | `/command` | Delete local branches whose remote branch is gone — with the prune that makes [gone] visible at all |
 | **session-skills** | `/session-skills` | `/command` | Show readable skill and slash-command usage for the current Claude Code session |
 
 ---
@@ -306,9 +307,9 @@ Skills are unavailable until re-enabled.
 
 | Plugin | Version | Re-enable |
 |---|---|---|
-| `asana@claude-plugins-official` | d45efab8c85b — Asana task and project management commands. | `/plugin enable asana@claude-plugins-official` |
+| `asana@claude-plugins-official` | 783d3423150b — Asana task and project management commands. | `/plugin enable asana@claude-plugins-official` |
 | `deploy-on-aws@claude-plugins-official` | 1.3.0 — Deploy to AWS and generate validated architecture diagrams (draw.io with AWS4 icons). | `/plugin enable deploy-on-aws@claude-plugins-official` |
-| `github@claude-plugins-official` | d45efab8c85b — GitHub PR, issue, and repo management commands. | `/plugin enable github@claude-plugins-official` |
+| `github@claude-plugins-official` | 783d3423150b — GitHub PR, issue, and repo management commands. | `/plugin enable github@claude-plugins-official` |
 
 ---
 
