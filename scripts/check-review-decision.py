@@ -2,7 +2,7 @@
 """What does the review loop do next? — answered from recorded evidence, not recall.
 
     python3 scripts/check-review-decision.py              # decide for the current branch
-    python3 scripts/check-review-decision.py --self-test  # 38 cases
+    python3 scripts/check-review-decision.py --self-test  # 43 cases
 
 WHY THIS EXISTS
 ---------------
@@ -53,9 +53,18 @@ REPO = Path(__file__).resolve().parent.parent
 # unrecognised is full-loop, because the two errors are not symmetric —
 #   wrong "full-loop"  costs one review round;
 #   wrong "one-round"  merges unreviewed risky code.
+# ⛔ r2 High (Codex): `scripts/` WAS HERE, AND IT REPEATED THE ALLOWLIST MISTAKE INSIDE
+# THE INVERTED DEFAULT. This repository's guards live in `scripts/`, and some of them
+# protect money: `check-paid-caller-arrival.py`'s own contract says shipping a caller
+# before the backlog decision "silently promotes a summary from 1 paid attempt to 5".
+# `check-live-schema.py` exists because no other gate reads the live database. Both scored
+# one-round. Removing the whole directory is the consistent repair — a carve-out list of
+# risky scripts would be the allowlist again, one level down.
+# ⚠ THE COST IS STATED: a single-file guard change is now full-loop, which sits in tension
+# with `:398`'s "one round is fine" for contained work. It buys ONE extra clean round, and
+# the asymmetry that settled B2 settles this too.
 CONTAINED_PREFIXES = (
     "docs/",        # prose; the record and the instructions
-    "scripts/",     # the harness — `:398`'s "single-file logic, config, thin wrappers"
     "tests/",       # test code, reviewed with whatever it tests
     ".claude/",     # session configuration
     ".agents/",     # vendored skills
@@ -180,11 +189,60 @@ def parse_header(text: str) -> dict:
     # round is clean, and two clean rounds are CONVERGED. A recorded High could reach STOP.
     # That is "cannot parse reads as a pass" inside the tool built to refuse it.
     # So: count the list-item markers and REFUSE unless every one produced a finding.
-    declared = len(re.findall(r"^\s*-\s", body, re.M))
+    # ⚠ r2 Medium (Codex): count markers ONLY inside the `findings:` span. Counting the
+    # whole body refused a legitimate header whose `halves.claude` was a block scalar
+    # containing a bullet — a false CANNOT RUN, and a guard that refuses valid input is a
+    # guard that gets switched off.
+    declared = len(re.findall(r"^\s*-\s", _findings_span(body), re.M))
     if declared != len(findings):
         raise ValueError(f"header declares {declared} finding item(s) but "
                          f"{len(findings)} parsed — refusing to guess")
+    for f in findings:
+        _validate(f)
     return {"round": int(rm.group(1)), "findings": findings}
+
+
+# ⛔ r2 Blocking (Codex): PARITY PROVED AN ITEM BECAME A DICT, NOT THAT IT SAYS ANYTHING.
+# A missing colon — `severity High` — drops the field, `.get("severity")` returns None,
+# the finding reads as neither Blocking nor High nor deliverable, and the round reads as
+# CLEAN. Codex executed it and reached STOP. The template PROMISES the machine checks the
+# fields are present and well-formed; until now it did not. Same fail-open as r1's B1, one
+# layer deeper: validate the VALUES, not the shape that carried them.
+REQUIRED = {
+    "severity": {"Blocking", "High", "Medium", "Low"},
+    "aim": {"deliverable", "instrument"},
+    "fix_induced": {True, False},
+    "disposition": {"fixed", "filed", "declined"},
+}
+
+
+def _validate(f: dict) -> None:
+    """RAISES unless every decision-bearing field is present and in its allowed set."""
+    for key, allowed in REQUIRED.items():
+        if key not in f:
+            raise ValueError(f"finding {f.get('id', '?')!r} has no `{key}` — refusing; a "
+                             f"missing field reads as 'not Blocking, not deliverable'")
+        if f[key] not in allowed:
+            raise ValueError(f"finding {f.get('id', '?')!r} has {key}={f[key]!r}, "
+                             f"not one of {sorted(map(str, allowed))}")
+    if not str(f.get("component", "")).strip():
+        raise ValueError(f"finding {f.get('id', '?')!r} has no `component` — thrashing is "
+                         f"judged per component, so an unnamed one cannot arm it")
+
+
+def _findings_span(body: str) -> str:
+    """Just the `findings:` block. Bullets elsewhere are not findings."""
+    lines = body.split("\n")
+    try:
+        start = next(i for i, l in enumerate(lines) if re.match(r"^findings:\s*$", l))
+    except StopIteration:
+        return ""
+    out = []
+    for line in lines[start + 1:]:
+        if line.strip() and not line.startswith((" ", "\t")):
+            break
+        out.append(line)
+    return "\n".join(out)
 
 
 def _scalarise(pairs) -> dict:
@@ -277,8 +335,11 @@ def _self_test() -> int:
          scope_for(["supabase/migrations/0028_x.sql"]), "full-loop")
     case("a money path needs the full loop",
          scope_for(["lib/spend-ledger.ts"]), "full-loop")
-    case("a page generator alone is one round",
-         scope_for(["scripts/gen-dashboard.py"]), "one-round")
+    # ⟳ r2 High: `scripts/` left CONTAINED_PREFIXES, so a harness script is full-loop now.
+    case("a harness script is no longer assumed contained",
+         scope_for(["scripts/gen-dashboard.py"]), "full-loop")
+    case("a guard that protects paid attempts needs the full loop",
+         scope_for(["scripts/check-paid-caller-arrival.py"]), "full-loop")
     case("docs alone are one round",
          scope_for(["docs/review-method.md"]), "one-round")
     case("one risky path in a mixed set still forces the full loop",
@@ -369,13 +430,35 @@ def _self_test() -> int:
     # r1 Blocking (Codex): block-style YAML parsed to ZERO findings, so a recorded High
     # reached STOP. Executed by the reviewer, not reasoned about.
     _block = ("```yaml\nround: 1\nfindings:\n  - id: H1\n    severity: High\n"
-              "    aim: deliverable\n```")
+              "    aim: deliverable\n    fix_induced: false\n    component: c\n"
+              "    disposition: fixed\n```")
     case("an ordinary BLOCK-style finding is parsed, not silently dropped",
          parse_header(_block)["findings"][0]["severity"], "High")
     case("a block-style High does NOT reach STOP",
          decide([parse_header(_block)], "one-round", True)[0], "ROUND_OWED")
     case("a list item that parses to nothing REFUSES rather than shrinking the round",
          _raises(lambda: parse_header("```yaml\nround: 1\nfindings:\n  - \n```")), True)
+    # r2 Blocking (Codex): parity proved a dict appeared, not that it SAYS anything. A
+    # missing colon drops the field, and a missing field reads as "not Blocking".
+    case("a finding whose severity lost its colon REFUSES, it does not read as clean",
+         _raises(lambda: parse_header(
+             "```yaml\nround: 1\nfindings:\n  - id: H1\n    severity High\n"
+             "    aim: instrument\n    fix_induced: false\n```")), True)
+    case("a finding with an out-of-set severity REFUSES",
+         _raises(lambda: parse_header(
+             "```yaml\nround: 1\nfindings:\n  - {id: X, severity: Urgent, aim: instrument,"
+             " fix_induced: false, component: c, disposition: fixed}\n```")), True)
+    case("a finding with no component REFUSES — thrashing is judged per component",
+         _raises(lambda: parse_header(
+             "```yaml\nround: 1\nfindings:\n  - {id: X, severity: Low, aim: instrument,"
+             " fix_induced: false, disposition: fixed}\n```")), True)
+    # r2 Medium (Codex): a bullet inside a GAP block scalar is not a finding.
+    case("a bullet inside a halves block scalar is not counted as a finding",
+         len(parse_header(
+             "```yaml\nround: 1\nhalves:\n  claude: |\n    GAP: unavailable\n"
+             "    - connector disabled\nfindings:\n  - {id: L1, severity: Low,"
+             " aim: instrument, fix_induced: false, component: c, disposition: filed}\n```"
+         )["findings"]), 1)
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0

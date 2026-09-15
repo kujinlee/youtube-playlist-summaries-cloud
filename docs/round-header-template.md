@@ -49,6 +49,13 @@ Marking everything `deliverable` forces rounds that are not owed; marking everyt
 stops a review that should continue. The machine checks that the fields are **present and
 well-formed**, never that they are **true**. That limit is stated here rather than discovered later.
 
+⟳ **AND FOR TWO ROUNDS THE MACHINE DID NOT EVEN DO THAT.** r1 found that block-style items parsed
+to *zero* findings; r2 found that the repair proved an item had become a dict but not that it said
+anything — a missing colon (`severity High`) dropped the field, and a missing field reads as *"not
+Blocking, not deliverable"*, so a recorded High reached `STOP`. **Every field above is now validated
+against its allowed set, and anything else RAISES.** The sentence promising validation came first;
+the validation came two rounds later.
+
 ## An absent header is CANNOT RUN
 
 `scripts/check-review-decision.py` **raises** on a round document with no header and exits 2. It does
