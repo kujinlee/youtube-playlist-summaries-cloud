@@ -64,7 +64,7 @@ USAGE
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
     python3 scripts/explainer-serve.py --restart  # the one to remember: works up OR down
-    python3 scripts/explainer-serve.py --self-test   # 109 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 113 cases, binds no port
 
 Every page also carries a **Restart server** button, and — under it — these commands in a
 `<details>` that needs no script and no network, so the instructions survive the server
@@ -87,6 +87,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import signal
 import socket
 import subprocess
@@ -206,9 +207,30 @@ def _js_strip_is_sound(js: str) -> bool:
 
 SERVABLE = {".html", ".md", ".css", ".js", ".svg", ".png"}
 
-# OPTIONAL second read-only root, for pages that want to link at the SOURCE they were derived from.
-# Off unless `EXPLAINER_DOCS_ROOT` names a directory, so this file stays project-independent — it
-# still knows nothing about any particular repo, only that it may be pointed at one (backlog #40).
+# A second read-only root, for pages that want to link at the SOURCE they were derived from.
+#
+# ⟳ 2026-09-15, r1 M4 — THIS PARAGRAPH SAID "Off unless `EXPLAINER_DOCS_ROOT` names a directory"
+# AND THAT STOPPED BEING TRUE IN THIS SAME BRANCH. `src_root` (`:456`) now falls back to `REPO`,
+# the checkout the server was loaded from, so /src/ is ON BY DEFAULT for every checkout. The
+# correction lived only in `src_root`'s docstring, which a reader arriving at this constant never
+# sees — and this comment is the only statement of the subsystem's REACH.
+#
+# ⚠ The reach is not rhetorical. Measured on this worktree 2026-09-15: the fallback makes
+# **~1,345 files** servable at /src/ with nobody opting in — 1,290 under `docs/`, 40 under
+# `.agents/`, 5 under `public/`, 2 under `prototype-darkmode/`, 2 under `.claude/`, plus
+# `CONTEXT.md`. ⚠ THE ORDER OF MAGNITUDE IS THE POINT, NOT THE DIGITS: the review reported 1,342
+# an hour earlier and the difference is the three review documents committed in between, because
+# this count is taken INSIDE the corpus it measures and is therefore stale at commit time. Do not
+# "correct" it by re-running; re-derive it if the answer ever has to be exact.
+# Not judged a security finding — `safe_path` resolves BEFORE the containment test so
+# `..` and symlinks collapse, `SERVABLE` excludes `.env*`, the listener is 127.0.0.1, and no CORS
+# header is emitted — but a subsystem that went from reaching nothing to reaching the whole repo
+# while its only description of itself stayed put is the SAME silent-widening shape this branch
+# exists to fix, one level up. ⚠ `node_modules/` is absent here and WOULD be reachable in a real
+# checkout; that is stated rather than measured away.
+#
+# The env var's remaining job is pointing at a DIFFERENT checkout than the one serving. The file
+# stays project-independent: it still knows nothing about any particular repo (backlog #40).
 # Reached at /src/<path>; confinement is `safe_path`, the same helper the primary root uses, so
 # there is ONE path-escape implementation rather than a second one written under time pressure.
 SRC_ROOT_ENV = "EXPLAINER_DOCS_ROOT"
@@ -466,9 +488,18 @@ def src_root_help(env_value: str, repo: pathlib.Path) -> str:
     module constant. A reader who does not already know the answer cannot act on it, which
     makes it a description of the failure wearing the shape of an instruction.
 
+    ⛔ EVERY PATH IS `shlex.quote`d — r1 B1, found by BOTH review halves. This text exists to be
+    PASTED, and nothing here was safe for a shell: with `repo = /Users/me/agentic ai docs/repo`
+    the emitted line handed `python3` the path `/Users/me/agentic`. A checkout path containing a
+    space is ordinary on macOS, this project's stated platform, and its own scratch paths have
+    them. ⚠ The suite had used space-bearing fixtures since before this bug and asserted only
+    that the path APPEARED — a hostile input asserted with a substring test proves nothing about
+    hostility.
+
     PURE, so the self-test asserts on the text rather than on a live 404."""
-    stop = f"python3 {repo}/scripts/explainer-serve.py --stop"
-    start = f"python3 {repo}/scripts/explainer-serve.py"
+    script = shlex.quote(str(repo / "scripts" / "explainer-serve.py"))
+    stop = f"python3 {script} --stop"
+    start = f"python3 {script}"
     if env_value:
         return (f"no source root — {SRC_ROOT_ENV} is set to {env_value!r}, which is not a "
                 f"directory.\n\n"
@@ -479,10 +510,26 @@ def src_root_help(env_value: str, repo: pathlib.Path) -> str:
                 f"Or set it to a checkout that exists.\n")
     # Reachable only if REPO stopped being a directory under a running server — the repo moved
     # or was deleted. Named as its own case: "unset it" would be nonsense advice here.
+    #
+    # ⛔ r1 M1. THIS ARM USED TO PRINT TWO COMMANDS NAMING A FILE INSIDE THE DIRECTORY THE SAME
+    # SENTENCE DECLARES ABSENT — `python3 {repo}/scripts/explainer-serve.py`, where `repo` is
+    # `not a directory` by the branch above. Both lines were guaranteed `[Errno 2]`. And the
+    # second carried `<an-existing-checkout>`, the very unfilled placeholder this function was
+    # written to kill, so the arm reproduced the original defect at the moment the reader has
+    # the LEAST context to repair it.
+    #
+    # The stop command now names the interpreter's OWN file, which necessarily exists — this
+    # process is running out of it — rather than a path derived from the missing directory.
+    # The start instruction is prose, not a paste: no path is known, and inviting someone to
+    # paste a line with a hole in it is what this function exists to stop.
+    live = shlex.quote(str(pathlib.Path(__file__).resolve()))
     return (f"no source root — {SRC_ROOT_ENV} is unset and the fallback {repo} is not a "
             f"directory, so there is nothing to serve sources from.\n\n"
-            f"  {stop}\n"
-            f"  {SRC_ROOT_ENV}=<an-existing-checkout> {start}\n")
+            f"The checkout this server was started from has moved or been deleted, so there is "
+            f"no path left to offer you. Stop it with:\n\n"
+            f"  python3 {live} --stop\n\n"
+            f"then start it again from a checkout that exists, setting {SRC_ROOT_ENV} to that "
+            f"checkout if it is not the one you start from.\n")
 
 
 def source_shell(rel: str, text: str) -> str:
@@ -1652,6 +1699,37 @@ def _self_test() -> int:
              lambda: all(str(_other) in src_root_help(v, _other)
                          and str(root) not in src_root_help(v, _other)
                          for v in ("", "/nope")))
+
+        # ⛔ r1 B1 — the case above is a SUBSTRING test over a fixture that already contains a
+        # space, and it passes on a line no shell can run. `shlex.split` is the only form in
+        # which "pasteable" is a claim: it parses the line the way the shell would, so a quoting
+        # regression changes the ARGV rather than merely the characters.
+        def _paste_ok(repo_: pathlib.Path) -> bool:
+            body = src_root_help("/nope", repo_)
+            want = str(repo_ / "scripts" / "explainer-serve.py")
+            for ln in (l.strip() for l in body.splitlines()):
+                if ln.startswith("python3 "):
+                    argv = shlex.split(ln)
+                    if argv[1] != want:
+                        return False
+            return True
+        case("help: every emitted command parses to the real script path",
+             lambda: all(_paste_ok(pathlib.Path(p)) for p in
+                         ("/tmp/some repo", "/tmp/it's here", "/tmp/x; echo PWNED",
+                          "/tmp/a$(touch /tmp/pwn)")))
+        # ⛔ r1 M1 — the arm reached when the checkout is GONE. It used to print two commands
+        # naming a file inside the missing directory (guaranteed `[Errno 2]`) and to carry
+        # `<an-existing-checkout>`, the unfilled placeholder this whole function exists to kill.
+        # The stop command now names the interpreter's own file, which necessarily exists.
+        case("help: the no-fallback arm offers NO path inside the missing directory",
+             lambda: str(pathlib.Path("/tmp/gone")) not in src_root_help("", pathlib.Path("/tmp/gone")).split("Stop it with:")[1])
+        case("help: the no-fallback arm carries no unfilled <placeholder> either",
+             lambda: "<" not in src_root_help("", pathlib.Path("/tmp/gone")))
+        case("help: its stop command names THIS running file",
+             lambda: shlex.split([l.strip() for l in
+                                  src_root_help("", pathlib.Path("/tmp/gone")).splitlines()
+                                  if l.strip().startswith("python3 ")][0])[1]
+                     == str(pathlib.Path(__file__).resolve()))
 
         # ── restart ──────────────────────────────────────────────────────────────────────
         # These read SOURCE, like the `/_rev` case below, because what has to hold is an

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, stamp, refresh, restart-the-server.
 
-    python3 scripts/page_chrome.py --self-test          # 68 cases
+    python3 scripts/page_chrome.py --self-test          # 76 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -38,6 +38,7 @@ import html as _html
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 
@@ -102,7 +103,7 @@ def refresh_control(slug: str) -> str:
             '<span id="chrome-refresh-say" class="chrome-say" role="status"></span>')
 
 
-def repo_root() -> pathlib.Path:
+def repo_root(start: pathlib.Path | None = None) -> pathlib.Path:
     """The checkout a reader can still `cd` into tomorrow.
 
     Derived rather than passed, so the five producers keep their existing
@@ -116,8 +117,20 @@ def repo_root() -> pathlib.Path:
     `.git` from inside any linked worktree, so the command survives the worktree.
 
     Falls back to the loaded location when git cannot answer — an unusual layout should
-    degrade to the old behaviour, never to a path that is confidently wrong."""
-    here = pathlib.Path(__file__).resolve().parent.parent
+    degrade to the old behaviour, never to a path that is confidently wrong.
+
+    ⛔ `start` IS A PARAMETER BECAUSE WITHOUT ONE THIS FUNCTION CANNOT BE FALSIFIED — r1 H1,
+    mutation-proven by the review's Claude half. The two cases that guarded this read
+    `(repo_root()/"scripts"/"explainer-serve.py").is_file()` and `".git" in str(repo_root())`,
+    and BOTH pass on the exact broken value the docstring above names: a linked worktree *is* a
+    full checkout, so it has `scripts/explainer-serve.py`, and its path does *not* contain
+    `.git` — only `--git-common-dir`'s answer does. Inserting `return here` to delete this
+    entire resolution left the suite at **68/68 green**. Neither predicate could tell the two
+    candidate answers apart, so no rewording could have repaired them.
+
+    Defaulting to `None` keeps every existing call site unchanged; the suite passes a REAL
+    `git worktree add` and asserts the two answers differ, which is a case the mutation kills."""
+    here = pathlib.Path(__file__).resolve().parent.parent if start is None else start
     try:
         r = subprocess.run(["git", "-C", str(here), "rev-parse",
                             "--path-format=absolute", "--git-common-dir"],
@@ -136,13 +149,24 @@ def repo_root() -> pathlib.Path:
 def restart_commands(root: pathlib.Path) -> str:
     """The exact terminal commands that bring the server back, with `root` filled in. PURE.
 
+    ⛔ `shlex.quote`, AND THE REASON IS THE WORST FAILURE THIS FUNCTION CAN HAVE — r1 B1, found
+    by BOTH review halves. `_html.escape` at `restart_control` makes this safe for HTML; nothing
+    made it safe for the SHELL it exists to be pasted into. Measured with `/tmp/some repo`:
+    `cd /tmp/some repo` exits 1, **the shell carries on**, and the next line is a RELATIVE
+    invocation — so the paste restarts whatever checkout the reader happened to be standing in,
+    silently. That is the outcome this module's own `repo_root` docstring calls worse than
+    saying nothing, reached by the quoting axis instead of the worktree axis.
+
+    ⚠ `cd --` as well as the quoting: a path beginning with `-` is otherwise read as an option.
+
     ⚠ ONE command, and it is the same one whether the server is running or dead —
     `--restart` skips the kill when nothing is alive and goes straight to starting. That
     matters more than it looks: a reader reaching for this does not know which case they
     are in, and an instruction that first asks them to diagnose is one they will get wrong.
     Deliberately not the `--stop && start` pair, which is correct but needs both halves
     remembered in order."""
-    return f"cd {root}\npython3 scripts/explainer-serve.py --restart"
+    return (f"cd -- {shlex.quote(str(root))}\n"
+            f"python3 scripts/explainer-serve.py --restart")
 
 
 def restart_control(root: pathlib.Path | None = None) -> str:
@@ -578,6 +602,27 @@ def self_test() -> int:
     _cmds2 = restart_commands(_root2)
     case("the commands name the root they are GIVEN, and no other",
          (str(_root2) in _cmds2, str(_root) in _cmds2), (True, False))
+
+    # ⛔ r1 B1 — AND NOTE WHAT THE CASES ABOVE COULD NOT SAY. Both fixtures already contain a
+    # SPACE, chosen to be adversarial, and every assertion above is `str(...) in ...` — which is
+    # true of a line no shell can run. A hostile input asserted with a substring test proves
+    # nothing about hostility. These parse the emitted line the way a shell would, which is the
+    # only form in which "pasteable" is a claim rather than a hope.
+    for _hostile in (pathlib.Path("/tmp/some repo"),
+                     pathlib.Path("/tmp/it's here"),
+                     pathlib.Path("/tmp/x; echo PWNED"),
+                     pathlib.Path("/tmp/a$(touch /tmp/pwn)"),
+                     pathlib.Path("/tmp/-dashes")):
+        _line = restart_commands(_hostile).splitlines()[0]
+        case(f"`cd` parses to exactly one operand for {_hostile.name!r}",
+             shlex.split(_line), ["cd", "--", str(_hostile)])
+    # ⚠ The SECOND line is relative on purpose, and that is what made B1 Blocking rather than
+    # merely broken: when `cd` fails the shell does not stop, so a relative invocation runs
+    # whatever checkout the reader was standing in. This pins the pair — if the `cd` ever stops
+    # being a single reliable operand, the relative line below becomes a live hazard again.
+    case("…and the second line is the relative invocation the first line makes safe",
+         shlex.split(restart_commands(_root).splitlines()[1]),
+         ["python3", "scripts/explainer-serve.py", "--restart"])
     _rc = restart_control(_root)
     case("the control carries a button and a status line",
          ('id="chrome-restart"' in _rc, 'id="chrome-restart-say"' in _rc), (True, True))
@@ -597,6 +642,44 @@ def self_test() -> int:
          (repo_root() / "scripts" / "explainer-serve.py").is_file(), True)
     case("…and it is not the linked worktree this may be running from",
          ".git" in str(repo_root()), False)
+    # ⛔ r1 H1 — THE TWO CASES ABOVE BOTH PASS ON THE BROKEN VALUE, so on their own they guard
+    # nothing. Measured by the review: a linked worktree HAS `scripts/explainer-serve.py`, and
+    # its path does NOT contain `.git`; inserting `return here` to delete the git resolution
+    # entirely left the suite green at 68/68. They are kept because each is still true and cheap,
+    # but the case below is the one that can die.
+    #
+    # ⚠ A REAL `git worktree add`, not a fake directory tree, because `--git-common-dir` is
+    # answered by git and by nothing else — a fixture that only LOOKS like a worktree would
+    # exercise the fallback path instead of the branch under test, which is the shape this repo
+    # calls fixing the premise rather than covering the branch.
+    _git_ok = True
+    with _tf.TemporaryDirectory() as _td:
+        _main = pathlib.Path(_td) / "main"
+        (_main / "scripts").mkdir(parents=True)
+        (_main / "scripts" / "explainer-serve.py").write_text("# fixture\n")
+        def _g(*a, cwd=_main):
+            return subprocess.run(["git", *a], cwd=str(cwd), capture_output=True, text=True)
+        try:
+            _git_ok = _g("init", "-q", "-b", "main").returncode == 0
+            if _git_ok:
+                _g("config", "user.email", "t@example.com"); _g("config", "user.name", "t")
+                _g("add", "-A"); _g("commit", "-qm", "fixture")
+                _wt = pathlib.Path(_td) / "linked"
+                _git_ok = _g("worktree", "add", "-q", str(_wt), "-d").returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            _git_ok = False
+        if _git_ok:
+            # THE PROPERTY: from inside a linked worktree, the answer is the MAIN checkout —
+            # not the worktree, which is the value the docstring records as dead within the hour.
+            case("from a linked worktree, repo_root resolves to the MAIN checkout",
+                 (repo_root(_wt).resolve(), repo_root(_wt).resolve() == _wt.resolve()),
+                 (_main.resolve(), False))
+            case("…and from the main checkout it resolves to itself",
+                 repo_root(_main).resolve(), _main.resolve())
+        else:
+            # ⛔ CANNOT RUN IS A FAILURE. A machine without git must not report this guarded.
+            case("CANNOT RUN — git is unavailable, so the worktree property was NOT checked",
+                 "git unavailable", "the worktree case must run")
     _bar = chrome_bar("dashboard", "t")
     case("the bar carries the restart control too", 'id="chrome-restart"' in _bar, True)
     # The two controls answer different questions; a page with no generator is still served
