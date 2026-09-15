@@ -9114,3 +9114,96 @@ empty commit `de674310`, whose message carries the diagnosis.
 ⛔ The tidy fix is not obviously right: `edited` also fires on **title** edits, so every
 typo fix would run full CI. The row proposes naming the extra step in the gate's own
 message instead — cheaper, honest, and it changes nothing about what CI runs.
+
+## 2026-09-15
+Two more things worth writing down, both found by machines refusing rather than by reading.
+
+The first is a tool reporting on the wrong thing. When a review is run from a temporary
+copy of the project — which is how work happens here routinely — the tool that records
+"this code was reviewed" writes down the version number of the *other* copy, the permanent
+one it happens to live in. The check that reads those records noticed the number belonged
+to nothing on the branch and refused to accept it. That refusal is the system working; the
+cost is that the error message says nothing about the actual cause, so the next person
+loses the same half hour.
+
+⭐ It is the same mistake the branch being reviewed exists to fix — a tool answering
+"which copy am I?" by looking at itself instead of at what it was asked about.
+
+The second is an absence rather than a defect. The file at the centre of that branch has a
+substantial test suite, and nothing anywhere proves those tests would fail if the code they
+describe were deleted. Its sibling file has that proof; this one has never had it. Two
+proofs were done by hand today and written into a commit message, which is the one place
+nothing will re-run them.
+<!--tech-->
+Branch `file-verdict-head-from-worktree`; rows **#121 🟠** and **#122 🟡**.
+
+**#121** — measured on PR #295: two verdicts recorded `head: 995d8b2f`, a commit on a
+DIFFERENT branch, because `codex-review.py` was invoked by its path in the main checkout
+while the reviewed tree was a linked worktree. `scripts/codex-review.py:340` is
+`root = repo_root or REPO_ROOT` with `REPO_ROOT` derived from the script's own `__file__`,
+so `git -C root rev-parse HEAD` (`:350`) answers about the file's checkout.
+`check-review-recorded` exited **2** — *"Treat this as NOT CHECKED, never as reviewed"* —
+so the wrong head produced a loud refusal, not a false pass. 🟠 for the wasted runs and the
+invisible cause, not for a laundered gate.
+
+**#122** — `explainer-serve.py` has no manifest and no `EXPECTED_MUTATIONS` key: 114 cases,
+zero proof any of them can die. UNRATCHETED, not unguarded. Sibling `page_chrome.py` has 13
+(raised from 11 by PR #295 itself). Four concrete seed candidates are named in the row.
+
+## 2026-09-15
+A setting with a typo in it does not produce an error page — it drops the connection.
+
+If the variable pointing at your source checkout contains `~someone` and that person is not a
+user on this machine, the server does not answer the request at all. The browser reports a
+dropped connection rather than the page explaining what is wrong — which is the same
+frustration this whole line of work has been about: a failure that tells you nothing is worse
+than a failure that tells you what to change.
+
+It has been there for a while and is not part of the work being reviewed today, so it is
+written down rather than fixed in passing. It is also the same symptom as an item already on
+the list, and the two are worth solving together: the small repair is to catch it where the
+setting is read; the real one is a promise that every request gets a response.
+<!--tech-->
+Branch `file-expanduser-crash`; row **#123 🟡**.
+
+Found by PR #295's round-4 Claude half and **measured live**, not reasoned about:
+`EXPLAINER_DOCS_ROOT=~unknownuser/x` → `GET /src/…` returns `RemoteDisconnected`.
+`pathlib.Path(v).expanduser()` RAISES `RuntimeError` for an unresolvable user rather than
+returning the path unchanged, and nothing on the request path catches it.
+
+⚠ **Pre-existing on master since PR #149**, which is why it was filed rather than absorbed into
+a branch already carrying a Blocking fix and an armed architecture review. Same symptom as
+backlog **#87** — a dropped connection where a response was owed — so if #87's repair is a
+handler-level catch-all, this is one of the cases it has to cover.
+
+## 2026-09-15
+A message that tells you what the program did, in a case where it did not do it.
+
+When the local docs server fails to restart, it prints a note explaining what it tried —
+"waited 20 seconds after signalling process such-and-such". Measured today: that sentence
+prints even in the runs where no signal was sent at all, naming a process id that may be
+nothing.
+
+It is small, and it is not a wrong action — the restart itself works, and that was checked
+separately end to end. What it costs is a person's time at the exact moment they are already
+confused, which is when a wrong sentence is most expensive.
+
+⭐ It is also the same mistake, one function away, that today's long review spent four rounds
+and a redesign removing from the neighbouring code: **the message works out what happened
+instead of being told by the part that did it.** The fix there was to have the step that looks
+at the world carry its findings forward. The same shape fits here.
+<!--tech-->
+Branch `file-respawn-message`; row **#124 🟢**.
+
+`respawn()` prints `"20s after SIGTERM to pid {old_pid}"` unconditionally while the kill is
+conditional. Measured live by PR #295's r5 Claude half: `SIGTERM to pid None` and
+`SIGTERM to pid 999999` with no signal sent.
+
+PR #295 answered this class in `src_root`/`src_root_help` by making the observation carry its
+own reason — `SrcRoot(reason, env_value, fallback, fallback_ok)`, every field read once at probe
+time. `respawn` still narrates an action it may not have taken. **WORK:** have the kill report
+what it did and render the note from that.
+
+⚠ Filed rather than absorbed, for the third time today with the same reasoning (see #122, #123):
+the function is not in #295's diff, and a branch carrying a Blocking fix plus an armed
+architecture review is the wrong place to take on an unrelated defect.
