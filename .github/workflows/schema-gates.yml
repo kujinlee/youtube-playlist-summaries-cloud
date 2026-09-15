@@ -133,9 +133,12 @@ on:
   # ⚠ WHO SEES A RED — chased as a possible High and refuted, so the answer is recorded rather than
   # left to be re-derived. GitHub routes scheduled-workflow failures to the user who last modified
   # the cron syntax, and squash-merges land re-authored as the repository owner, so a nightly red
-  # does reach them by email. What is genuinely weak: that channel is undocumented, it transfers
-  # silently to whoever next edits this line, and a scheduled failure appears on NO pull request's
-  # check list — so nobody meets it while reviewing.
+  # does reach them by email. ⟳ r2 Low: this said the channel was "undocumented", which is an
+  # OVERCLAIM and the worst kind to leave in a gate comment — GitHub documents the routing
+  # explicitly (Actions → events-that-trigger-workflows → schedule). What is genuinely weak is
+  # narrower and survives the correction: the recipient TRANSFERS SILENTLY to whoever next edits
+  # this line, and a scheduled failure appears on NO pull request's check list — so nobody meets it
+  # while reviewing, which is the only moment anyone is reliably looking.
   #
   # ⚠ A RED IS NOT ALWAYS DRIFT. The nightly compares production against MASTER's manifest, and
   # `manifest <= live` has no accept-list in that direction — so a schema shipped to master but not
