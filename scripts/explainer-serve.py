@@ -64,7 +64,7 @@ USAGE
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
     python3 scripts/explainer-serve.py --restart  # the one to remember: works up OR down
-    python3 scripts/explainer-serve.py --self-test   # 113 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 114 cases, binds no port
 
 Every page also carries a **Restart server** button, and — under it — these commands in a
 `<details>` that needs no script and no network, so the instructions survive the server
@@ -518,16 +518,29 @@ def src_root_help(env_value: str, repo: pathlib.Path) -> str:
     # written to kill, so the arm reproduced the original defect at the moment the reader has
     # the LEAST context to repair it.
     #
-    # The stop command now names the interpreter's OWN file, which necessarily exists — this
-    # process is running out of it — rather than a path derived from the missing directory.
-    # The start instruction is prose, not a paste: no path is known, and inviting someone to
-    # paste a line with a hole in it is what this function exists to stop.
-    live = shlex.quote(str(pathlib.Path(__file__).resolve()))
+    # ⛔⛔ r2 M1 — AND THE FIRST FIX FOR THIS WAS ITSELF WRONG, which is worth more than the fix.
+    # r1 M1 replaced `{repo}/scripts/explainer-serve.py` with `pathlib.Path(__file__).resolve()`,
+    # commented "which necessarily exists — this process is running out of it". **Both claims were
+    # false.** In production the caller is `src_root_help(..., REPO)` (`:1058`) and `REPO` is
+    # `Path(__file__).resolve().parent.parent` (`:115`) — so the interpreter's own file is INSIDE
+    # the directory this sentence declares missing, and the emitted command hit `[Errno 2]` exactly
+    # as before. A running process also does not keep its source path alive: it can be unlinked
+    # underneath it.
+    #
+    # ⚠ THE r1 CASE PASSED BECAUSE IT ASKED THE FIXTURE, NOT THE CALLER. It used a synthetic
+    # `/tmp/gone` while `__file__` pointed at a live checkout, so "no path under repo" was true for
+    # a repo the code never sees. Fixing the premise is not covering the branch.
+    #
+    # The pidfile is the one anchor that survives: `ROOT = Path.home()/"explainers"` (`:105`), so
+    # `PIDFILE` lives OUTSIDE any checkout and is reachable when every path here is gone.
+    # ⚠ Absolute, not `~`: `shlex.quote("~/explainers/.serve.pid")` quotes the tilde and a quoted
+    # tilde does not expand — the safety measure would silently destroy the command.
     return (f"no source root — {SRC_ROOT_ENV} is unset and the fallback {repo} is not a "
             f"directory, so there is nothing to serve sources from.\n\n"
-            f"The checkout this server was started from has moved or been deleted, so there is "
-            f"no path left to offer you. Stop it with:\n\n"
-            f"  python3 {live} --stop\n\n"
+            f"The checkout this server was started from has moved or been deleted, so no command "
+            f"under it can be offered. Stop the server through its pidfile, which lives outside "
+            f"any checkout:\n\n"
+            f"  kill \"$(cat {shlex.quote(str(PIDFILE))})\"\n\n"
             f"then start it again from a checkout that exists, setting {SRC_ROOT_ENV} to that "
             f"checkout if it is not the one you start from.\n")
 
@@ -1677,8 +1690,14 @@ def _self_test() -> int:
         case("help: names the fallback directory", lambda: str(root) in src_root_help("/nope", root))
         case("help: gives a runnable unset command",
              lambda: f"unset {SRC_ROOT_ENV}" in src_root_help("/nope", root))
-        case("help: both arms name the stop command",
-             lambda: all("--stop" in src_root_help(v, root) for v in ("", "/nope")))
+        # ⟳ r2 M1 — THIS ASSERTED A MECHANISM AND HAD TO CHANGE WHEN THE MECHANISM DID, which is
+        # the tell that it was the wrong assertion. It required the literal `--stop` in BOTH arms;
+        # the no-fallback arm now stops through the pidfile precisely because `--stop` needs a
+        # script path inside the checkout that arm says is gone. The PROPERTY — every arm tells the
+        # reader how to stop the server — survives a mechanism change instead of forbidding one.
+        case("help: every arm tells the reader how to stop the server",
+             lambda: all(("--stop" in src_root_help(v, root)) or ("kill " in src_root_help(v, root))
+                         for v in ("", "/nope")))
         # ⚠ ASSERTS THE EXACT TOKEN `unset EXPLAINER_DOCS_ROOT`, not the word "unset": the
         # no-fallback arm's own prose says "…is unset and the fallback…", so a bare `"unset "`
         # substring test passes on the very text it is meant to exclude. Measured while writing
@@ -1721,15 +1740,24 @@ def _self_test() -> int:
         # naming a file inside the missing directory (guaranteed `[Errno 2]`) and to carry
         # `<an-existing-checkout>`, the unfilled placeholder this whole function exists to kill.
         # The stop command now names the interpreter's own file, which necessarily exists.
-        case("help: the no-fallback arm offers NO path inside the missing directory",
-             lambda: str(pathlib.Path("/tmp/gone")) not in src_root_help("", pathlib.Path("/tmp/gone")).split("Stop it with:")[1])
         case("help: the no-fallback arm carries no unfilled <placeholder> either",
              lambda: "<" not in src_root_help("", pathlib.Path("/tmp/gone")))
-        case("help: its stop command names THIS running file",
-             lambda: shlex.split([l.strip() for l in
-                                  src_root_help("", pathlib.Path("/tmp/gone")).splitlines()
-                                  if l.strip().startswith("python3 ")][0])[1]
-                     == str(pathlib.Path(__file__).resolve()))
+        # ⛔ r2 M1 — ASK THE CALLER'S RELATIONSHIP, NOT A FIXTURE'S. The r1 version used a synthetic
+        # `/tmp/gone` while `__file__` pointed at a live checkout, so it proved "no path under repo"
+        # about a repo production never passes. The real call is `src_root_help(..., REPO)` at
+        # `:1058` with `REPO = Path(__file__).resolve().parent.parent` — under which the r1 fix
+        # emitted a command inside the missing directory and this case STILL PASSED.
+        _gone = pathlib.Path(__file__).resolve().parent.parent
+        _arm = src_root_help("", _gone)
+        case("help: with the REAL repo, the arm emits no command under the missing checkout",
+             lambda: not any(str(_gone) in ln for ln in _arm.splitlines()
+                             if ln.strip() and not ln.startswith("no source root")))
+        case("help: its recovery command is the pidfile, which lives outside every checkout",
+             lambda: (str(PIDFILE) in _arm and str(_gone) not in str(PIDFILE)))
+        # ⚠ An ABSOLUTE pidfile path, because `shlex.quote` turns `~` into a quoted tilde and a
+        # quoted tilde does not expand — the safety measure would have silently broken the command.
+        case("help: the pidfile path is absolute, so quoting cannot disable a `~`",
+             lambda: "~" not in _arm)
 
         # ── restart ──────────────────────────────────────────────────────────────────────
         # These read SOURCE, like the `/_rev` case below, because what has to hold is an

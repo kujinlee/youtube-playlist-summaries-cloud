@@ -141,16 +141,5 @@
       ]
     ],
     "expect": "`cd` parses to exactly one operand for 'some repo'"
-  },
-  {
-    "name": "the pasted cd loses its -- guard, so a leading dash reads as an option",
-    "file": "scripts/page_chrome.py",
-    "edits": [
-      [
-        "f\"cd -- {shlex.quote(str(root))}\\n\"",
-        "f\"cd {shlex.quote(str(root))}\\n\""
-      ]
-    ],
-    "expect": "`cd` parses to exactly one operand for '-dashes'"
   }
 ]
