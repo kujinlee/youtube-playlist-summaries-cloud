@@ -2,7 +2,7 @@
 """What does the review loop do next? — answered from recorded evidence, not recall.
 
     python3 scripts/check-review-decision.py              # decide for the current branch
-    python3 scripts/check-review-decision.py --self-test  # 47 cases
+    python3 scripts/check-review-decision.py --self-test  # 49 cases
 
 WHY THIS EXISTS
 ---------------
@@ -341,7 +341,21 @@ def _self_test() -> int:
     # ⚠ The REAL classifier, deliberately. After the r3 redesign the value of these cases
     # is that check-review-recorded's taxonomy answers THIS question correctly — a fake
     # would assert only that the loop calls it.
-    _prose = _repo_is_prose()
+    #
+    # ⛔ LOADED INSIDE A CASE. r4 Low (Codex) said the coupling was caught only as a runtime
+    # failure; the first repair added cases but left the load at the top, so a rename still
+    # crashed the suite BEFORE any case ran — a traceback, naming nothing. Measured, and it
+    # is why this is a try/except and not an added assertion: the control renamed
+    # check-review-recorded.py and got a bare FileNotFoundError, not a named failure.
+    # The stand-in keeps the remaining cases RUNNING so the report is complete; they will
+    # go red too, which is correct — the rule cannot answer without its classifier.
+    _prose_err = None
+    try:
+        _prose = _repo_is_prose()
+    except Exception as exc:                       # noqa: BLE001 - reported, not swallowed
+        _prose_err, _prose = exc, (lambda _p: True)
+    case("the borrowed classifier LOADS — a rename fails by name, not as a traceback",
+         _prose_err, None)
     case("a migration needs the full loop",
          scope_for(["supabase/migrations/0028_x.sql"], _prose), "full-loop")
     case("a money path needs the full loop",
@@ -366,6 +380,13 @@ def _self_test() -> int:
          scope_for(["docs/review-method.md"], _prose), "one-round")
     case("the classifier is INJECTED, so the rule stays pure",
          scope_for(["anything.ts"], lambda p: True), "one-round")
+    # r4 Low (Codex): the cross-script coupling was caught only as a runtime traceback,
+    # with no case naming it — so a rename of check-review-recorded.py would crash the
+    # suite BEFORE it printed a count, and the failure would not say what broke.
+    case("...and it still answers the question this rule delegates to it",
+         (_prose("docs/review-method.md"),
+          _prose("docs/superpowers/specs/2026-08-03-stable-blob-addressing/"
+                 "mutate-schema.py")), (True, False))
     # r1 Blocking (Codex): an allowlist of risky prefixes silently downgraded a money path.
     case("a serve route that charges money needs the full loop",
          scope_for(["app/api/pdf/[id]/route.ts"], _prose), "full-loop")

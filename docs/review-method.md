@@ -26,15 +26,28 @@ Keyed on the **changed path set**, not on judgement.
 
 | The diff touches | Answer |
 |---|---|
-| schema/migrations, auth/RLS/multi-tenant, money or irreversible paths, concurrency/leasing/locking, **or already-merged shared code** | **full loop** |
-| anything else — single-file logic, config, thin wrappers, docs | **ONE round** |
+| anything that is **not prose** — code, config, tests, tooling, CI, and the executable gates that live under `docs/` | **full loop** |
+| prose only | **ONE round** |
 
-Evidence: the trigger list at `:394`, and the warning at `:398` against over-applying it.
+`scripts/check-review-decision.py` answers this by delegating to
+`check-review-recorded.is_prose()` — the classifier hardened over four rounds of PR #299,
+which already knows that *"a gate script does not stop being code by living in a
+documentation directory"*. **It owns no path list of its own**, because three successive
+hand-kept lists each scored something dangerous as one-round: a money route, a paid-attempt
+guard, and an executable schema gate.
+
+⚠ **This is NARROWER than `:411`'s *"single-file logic, config, thin wrappers"*, and the
+narrowing is recorded rather than quiet.** `tests/`, `.claude/` and `.agents/` were one-round
+and are now full loop. Whether that is right is a **policy** question — `.claude/hooks/` holds
+gate hooks, and deleting the test that proves a spend guard fires is a real risk — so it is
+**filed for a decision, not settled here**. Until it is decided, the code errs toward the
+loop, because a wrong `full-loop` costs one round and a wrong `one-round` merges unreviewed
+risky code.
 
 ### Q2 · Round 1 — both halves at once
 
-1. Dispatch **both halves concurrently**; isolation per the measured table at `:260`.
-2. ⛔ **Neither half is committed until both finish** (`:332`) — a committed first half leaks
+1. Dispatch **both halves concurrently**; isolation per the measured table at `:273`.
+2. ⛔ **Neither half is committed until both finish** (`:345`) — a committed first half leaks
    its grade to the second through `git log` and the diff.
 3. Codex's final message **is** its review; it writes no file. File each half under
    `docs/reviews/<writer>/`.
@@ -42,7 +55,7 @@ Evidence: the trigger list at `:394`, and the warning at `:398` against over-app
 
 ### Q3 · Disposition — decided here, not by asking
 
-⟳ **Replaces the instruction at `:387` to present every Medium to the user** (user decision,
+⟳ **Replaces the instruction at `:400` to present every Medium to the user** (user decision,
 2026-09-14). That line was the mandated interruption.
 
 | Finding | Do |
@@ -52,7 +65,7 @@ Evidence: the trigger list at `:394`, and the warning at `:398` against over-app
 | **Medium / Low** needing a new mechanism, script, schema, or a policy call | **FILE** |
 
 Record the disposition **and its reason, per finding**, in the round document; the human overturns
-it afterwards. ⚠ A reviewer's *proposed* fix is unverified code — see `:335`.
+it afterwards. ⚠ A reviewer's *proposed* fix is unverified code — see `:348`.
 
 ### Q4 · Is another round owed? — TWO questions, and they are not the same one
 
@@ -62,17 +75,17 @@ it afterwards. ⚠ A reviewer's *proposed* fix is unverified code — see `:335`
 |---|---|
 | a **Blocking or High** | **CONTINUE** |
 | a finding **in the deliverable** | **CONTINUE** |
-| non-trivial fixes (`:396`) | **CONTINUE** |
+| non-trivial fixes (`:409`) | **CONTINUE** |
 | **two consecutive rounds** with neither, every finding aimed at the **instrument** | **STOP** |
 
-⭐ **Judge by AIM, not severity** — `:221` says a clean severity column describes the reviewers,
+⭐ **Judge by AIM, not severity** — `:234` says a clean severity column describes the reviewers,
 not the design. On PR #302 severity read "converged" from round 1 and was useless; aim separated the
 rounds cleanly. Inverted, it is why PR #299 was right to run seventeen.
 
 **(b) Tree identity — has a round seen the code that MERGES?** A different question. Cheapest first:
 
-1. land the editorial fixes **ahead of** the final round (`:355`);
-2. keep the last fixes uncommitted so the reviewer sees what ships — `:341` calls this the
+1. land the editorial fixes **ahead of** the final round (`:368`);
+2. keep the last fixes uncommitted so the reviewer sees what ships — `:354` calls this the
    documented way;
 3. declare `NO-REVIEW: <reason>` in the PR body;
 4. run another round — **last**.
@@ -90,14 +103,14 @@ Per finding, answer **in the round document**: *did the previous round's fix cau
 | *"the rule doesn't say what happens in case X"* | **FIX** + an exhaustiveness pass |
 | findings drifting to *under-specified* while the artifact improves | **STOP REVIEWING — go build** |
 
-Apply the single test at `:156`, never the symptom list; using the list as a checklist produced a
+Apply the single test at `:169`, never the symptom list; using the list as a checklist produced a
 measured false escalation on 2026-08-14. Reaching four rounds **obliges asking**, and does not fire.
 
 ### Q6 · Record the call
 
-Write the reason and the per-finding evidence into the round document (`:441`), and carry the
+Write the reason and the per-finding evidence into the round document (`:454`), and carry the
 header defined in [`docs/round-header-template.md`](round-header-template.md) so
-the counters Q4 and Q5 need are derived rather than remembered (`:374`).
+the counters Q4 and Q5 need are derived rather than remembered (`:387`).
 
 ---
 
