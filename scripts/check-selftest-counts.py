@@ -72,7 +72,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "scripts"
 
 # MEASURED 2026-09-01: of 38 scripts accepting --self-test, 8 declared a count canonically; this
-# file is the ninth, so the set below is 9. Pinned, not derived — see the docstring. Add a name
+# file is the ninth, so the set below is 10. Pinned, not derived — see the docstring. Add a name
 # here when a script starts declaring, or the run fails naming it.
 #
 # ⚠ FIVE OF THESE WERE STALE ON THE FIRST RUN, which is the debt backlog #69 predicted:
@@ -127,6 +127,7 @@ POPULATION: frozenset[str] = frozenset({
                                     # while the suite ran 51. Now declared AND externally observed.
     "check-plan-task-order.py",
     "check-review-rounds.py",
+    "check-review-decision.py",
     "check-review-recorded.py",      # ⟳ 2026-09-14, r11 Medium. It had a `--self-test`, declared no
                                      # count, and was in neither direction this file reports:
                                      # `population_errors` catches pinned-but-no-longer-declaring

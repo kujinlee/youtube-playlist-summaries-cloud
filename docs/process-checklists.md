@@ -502,11 +502,11 @@ now*; the **option list** with rationale and trade-offs for *what you must decid
 
 ---
 
-## Phase 6: re-examine the review topology (added 2026-09-13)
+## Architecture review: re-examine the review topology (added 2026-09-13)
 
 The round topology — concurrent r1, alternating r2+ — is written in
 [`review-method.md`](review-method.md) → *Round topology*, and it carries **two observations that
-would retire it**. They are read HERE, at Phase 6, because they need a judgement no script can make:
+would retire it**. They are read HERE, at the architecture review, because they need a judgement no script can make:
 whether two findings are *the same finding*.
 
 | Ask | Retire / revisit if |
