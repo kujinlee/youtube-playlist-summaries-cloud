@@ -224,12 +224,19 @@ names; 6 never did, despite the table naming it **Architecture Review** on the d
 
 | | Action |
 |---|---|
-| **Instructions** — `dev-process.md`, `review-method.md`, `process-checklists.md`, `plugins.md`, hooks and scripts that print it | **rename** to *architecture review*; the number survives only as the phases-table index |
+| **Instructions** — `dev-process.md` (5), `review-method.md` (4), `process-checklists.md` (3) | **rename** to *architecture review*; the number survives only as the phases-table index |
 | **The record** — merged review documents, ADRs, retrospectives, dashboard entries | **leave unchanged** — rewriting them is editing evidence |
 
-⚠ **Grep for machine dependencies first.** `scripts/check-arch-findings.py` exists and something may
-key on the literal string. A rename that silently unhooks a gate is a failure this repo has measured
-and given its own memory file.
+✅ **THE MACHINE-DEPENDENCY GREP WAS RUN, AND IT IS CLEAN** (2026-09-14). Every occurrence in
+`scripts/`, `.claude/hooks/` and `.github/` is inside a **comment** — `check-docs.py:290`,
+`m4_catalog.py:173`, `check-schema-gates.sh:78,81`, `ci.yml:195,220`. No code keys on the string, so
+no gate can unhook. Those comments are provenance and stay as written.
+
+⟳ **Two corrections to this section, measured after it was drafted.** `plugins.md` contains the term
+**zero** times and is removed from the rename list above. And the instruction surface is far smaller
+than the 74-file total suggests: **3 files, 12 occurrences.** `roadmap-to-launch.md` (8) and
+`backlog.md` (9) are **provenance** — *"Phase 6 returned eight findings"*, *"Phase 6's trigger did
+fire"* — and are therefore record, not instruction.
 
 ## §5 — Resolve the trigger contradiction
 
@@ -281,6 +288,14 @@ shape.
 | §2 the header | small — a convention plus its documentation |
 | §3 the script | **~1h**, nearly all ratchet compliance, by backlog #115's measured sizing of a comparable guard |
 
-⚠ `review-method.md` is **524 lines** and `check-docs.py` enforces a budget. Adding the card may
-oblige moving existing evidence into `process-rationale.md`. That is a **move**, not a deletion, and
-it touches files beyond those named above.
+⟳ **CORRECTED 2026-09-14 — the budget claim above was wrong, and the real constraint is elsewhere.**
+`check-docs.py:191` budgets exactly two files, and `review-method.md` is **not** one of them:
+
+```
+docs/dev-process.md : 220 / 220  ok
+docs/plugins.md     : 260 / 260  ok
+```
+
+So §1's card is unconstrained. ⛔ **But `dev-process.md` is AT its budget — 220/220 — so §5's edit
+must be line-neutral or shorter.** A one-line addition there fails CI. The trigger row is therefore
+*rewritten in place to point at the thrashing/prose-floor table*, never expanded.
