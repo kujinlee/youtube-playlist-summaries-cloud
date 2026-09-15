@@ -596,14 +596,24 @@ PICK_SCRIPT = """
     e.preventDefault();
     var li = btn.closest('li');
     if (!li || !fire(li)) return;
-    // The tray builds its floater inside a setTimeout, so yield before pressing it.
-    setTimeout(function(){
+    // The tray builds its floater inside its own setTimeout, so yield before pressing
+    // it. ⚠ POLL, don't take a single shot: one fixed delay is a race whose losing side
+    // is silent, and "wait a bit then assume" is the shape §24 of portable-practices
+    // exists to refuse. Give up only after a bounded number of tries, and SAY SO.
+    // The selector is safe against grabbing a heading's button: measured on the live
+    // page, zero `.askbtn` carries an inline style containing "fixed" while idle — only
+    // the selection floater is positioned that way, and it is removed on the next
+    // mouseup.
+    var tries = 0;
+    (function poll(){
       var f = document.querySelector('button.askbtn[style*="fixed"]');
       if (f) { f.click(); return; }
-      // No floater => no tray on this page. Say so rather than failing silently.
+      if (++tries < 10) { setTimeout(poll, 30); return; }
+      // No floater after ~300ms => no tray on this page, or the selection was refused
+      // (it needs 3+ characters). Tell the reader the path that still works.
       btn.textContent = 'select the text and use ask';
       btn.disabled = true;
-    }, 40);
+    })();
   });
 })();
 """
@@ -936,12 +946,17 @@ def build(entries, days, prs, pr_error, git_error, window,
                 opt_items.append(f'<li><span class="otext">{body}</span>'
                                  f'{rec}{note}{PICK_BTN}</li>')
             # ⚠ `h4`, NOT `span` — and the tag is LOAD-BEARING, not styling.
-            # The lifted tray attaches its own ask button to every H1–H4 and resolves a
-            # selection's section with `nearestHeading()`, which walks previous siblings
-            # looking for H1–H4. As a `span` the nearest heading was the page's
-            # "What needs you" H2, so every answer arrived tagged with the section
-            # instead of the question it answered. Changing the tag is what makes the
-            # tray's OWN machinery name the right decision — no tray code is touched.
+            # The lifted tray resolves a selection's section with `nearestHeading()`,
+            # which walks previous siblings for `/^H[1-4]$/`. As a `span` the nearest
+            # heading was the page's own "What needs you" H2, so every answer would have
+            # arrived tagged with the SECTION instead of the question it answered.
+            # ⭐ `h4` specifically, and the level is measured, not aesthetic: the tray
+            # INJECTS its hover ask button via `querySelectorAll('h2, h3')` while
+            # `nearestHeading` matches H1–H4. An h4 is therefore visible to the section
+            # resolver and invisible to the button injector — it names the decision
+            # without gaining a redundant second ask button beside `choose`.
+            # Verified on the live page: `h4.q .askbtn` -> 0 elements, and a driven
+            # choose produced the question as its section. No tray code is touched.
             rows.append(
                 f'<li><h4 class="q">{_inline(d["question"])}</h4> '
                 f'<span class="when">{_html.escape(e["date"])} · '
