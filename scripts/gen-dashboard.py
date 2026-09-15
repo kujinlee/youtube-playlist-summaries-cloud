@@ -577,7 +577,13 @@ PR_NOTE = {
 # human still presses Send. A decision is consequential and a misclick must not fire it.
 PICK_SCRIPT = """
 (function(){
-  if (location.protocol === 'file:') { document.body.classList.add('nosend'); return; }
+  // ⛔ NO `file:` EARLY RETURN, and the first version had one (r1 Medium, Codex).
+  // It added `body.nosend` and CSS hid every chooser, on the reasoning that Send does
+  // not work from a bare file. But the tray DEGRADES rather than dying: in local mode
+  // it relabels Send to Copy and puts the composed question on the clipboard. Hiding
+  // the control therefore removed a path that still works — the page's own mode chip
+  // says so in the same breath ("opened as a file -> Send copies instead").
+  // Assert what the thing DOES, not what one delivery mechanism cannot do.
   function fire(li){
     var text = li.querySelector('.otext');
     if (!text) return false;
@@ -1321,10 +1327,6 @@ padding:14px 18px;margin-bottom:10px}}
   background:none;border:1px solid currentColor;border-radius:3px;padding:0 .4em;
   margin-left:.35em;opacity:.55;transition:opacity .12s}}
 .needs .opts li:hover .pick, .needs .pick:focus-visible{{opacity:1}}
-/* ⛔ If the page is not served, the tray hides Send and this button cannot deliver
-   anything. `body.nosend` is set by the script below, so the affordance DISAPPEARS
-   rather than lying — the §18 rule applied to the control's own existence. */
-body.nosend .needs .pick{{display:none}}
 .needs .stale{{font-size:.78em;opacity:.8;font-style:italic}}
 .flag.resolved{{color:inherit;font-weight:400;opacity:.55;border:1px solid currentColor;border-radius:3px;padding:0 .3em;font-size:.82em}}
 /* ⛔ BACKLOG #83(B) — EMPHASIS FOLLOWS SETTLED STATE, AND BOTH SIDES MOVE.
@@ -1793,8 +1795,16 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
          '<h4 class="q">' in _sec, True)
     case("the question is no longer a bare span",
          '<span class="q">' in _sec, False)
+    # ⚠ Binds to the HANDLER, not to a mode flag. This asserted
+    # `"classList.add('nosend')" in html` until r1's Medium deleted that flag — a case
+    # anchored to an incidental line dies with the line, and would have read as "the
+    # wiring is gone" when only the flag was.
     case("the choose wiring ships with the page",
-         "classList.add('nosend')" in html, True)
+         "closest('.pick')" in html, True)
+    # r1 Medium (Codex): the first version hid every chooser on `file:`, where the tray
+    # relabels Send to Copy and still delivers. Nothing may hide `.pick` by mode.
+    case("the chooser is not hidden in local-file mode, where the tray falls back to Copy",
+         ".pick{display:none" in html.replace(" ", ""), False)
     # The tray's chip has CSS and JS but no markup of its own; a page that omits the
     # element gets a styled, scripted thing that never exists. Measured absent on the
     # live dashboard 2026-09-14 while every other tray id resolved.
