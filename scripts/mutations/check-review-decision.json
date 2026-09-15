@@ -52,5 +52,41 @@
     "expect": [
       "converged but an unreviewed merging tree asks for TREE, never a round"
     ]
+  },
+  {
+    "name": "scope_for stops consulting the classifier, so everything reads as contained",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "        if not is_prose(p):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "an executable schema gate UNDER docs/ needs the full loop",
+      "a serve route that charges money needs the full loop",
+      "a guard that protects paid attempts needs the full loop",
+      "a harness script is no longer assumed contained",
+      "the paid worker pipeline needs the full loop",
+      "what CI enforces needs the full loop",
+      "an UNLISTED path is risky, never assumed contained",
+      "a top-level config file is risky, never assumed contained",
+      "a migration needs the full loop",
+      "a money path needs the full loop",
+      "one risky path in a mixed set still forces the full loop"
+    ]
+  },
+  {
+    "name": "an absent findings key stops being refused, so silence reads as a clean round",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "    if not re.search(r\"^findings:\", body, re.M):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a header with NO findings key REFUSES rather than reading as clean"
+    ]
   }
 ]

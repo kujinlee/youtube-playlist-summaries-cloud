@@ -2,7 +2,7 @@
 """What does the review loop do next? — answered from recorded evidence, not recall.
 
     python3 scripts/check-review-decision.py              # decide for the current branch
-    python3 scripts/check-review-decision.py --self-test  # 43 cases
+    python3 scripts/check-review-decision.py --self-test  # 47 cases
 
 WHY THIS EXISTS
 ---------------
@@ -43,52 +43,52 @@ REPO = Path(__file__).resolve().parent.parent
 # ---------------------------------------------------------------- Q1: scope
 # review-method.md's own trigger list, expressed as PATH PREFIXES so the answer is
 # observable rather than argued. Anything not named here is a contained change.
-# ⛔ AN ALLOWLIST OF RISKY PREFIXES IS INHERENTLY INCOMPLETE, AND ITS FAILURE IS SILENT.
-# r1 Blocking (Codex): the first version listed only `supabase/`, some `lib/*` stems and
-# `middleware`, so `app/api/pdf/[id]/route.ts` — whose own docstring says "money is charged
-# there", and whose sibling carries a "D4 money invariant" — scored ONE-ROUND. A silent
-# downgrade of a money path is precisely the failure this procedure exists to prevent.
+# ⛔⛔ REDESIGN (round 3 — ARCHITECTURE REVIEW, armed by the branch's own rule).
 #
-# So the DEFAULT IS INVERTED: a path is contained only if it is named as such. Anything
-# unrecognised is full-loop, because the two errors are not symmetric —
-#   wrong "full-loop"  costs one review round;
-#   wrong "one-round"  merges unreviewed risky code.
-# ⛔ r2 High (Codex): `scripts/` WAS HERE, AND IT REPEATED THE ALLOWLIST MISTAKE INSIDE
-# THE INVERTED DEFAULT. This repository's guards live in `scripts/`, and some of them
-# protect money: `check-paid-caller-arrival.py`'s own contract says shipping a caller
-# before the backlog decision "silently promotes a summary from 1 paid attempt to 5".
-# `check-live-schema.py` exists because no other gate reads the live database. Both scored
-# one-round. Removing the whole directory is the consistent repair — a carve-out list of
-# risky scripts would be the allowlist again, one level down.
-# ⚠ THE COST IS STATED: a single-file guard change is now full-loop, which sits in tension
-# with `:398`'s "one round is fine" for contained work. It buys ONE extra clean round, and
-# the asymmetry that settled B2 settles this too.
-CONTAINED_PREFIXES = (
-    "docs/",        # prose; the record and the instructions
-    "tests/",       # test code, reviewed with whatever it tests
-    ".claude/",     # session configuration
-    ".agents/",     # vendored skills
-)
+# THREE ROUNDS, ONE CLASS, EACH FIX CREATING THE NEXT INSTANCE:
+#   r1 B2  a RISKY allowlist missed `app/api/`, where money is charged
+#   r2 H1  the INVERTED default still listed `scripts/`, where money guards live
+#   r3 B1  ...and still listed `docs/`, where two mode-755 schema gates live
+# Inverting the default MOVED the list; it did not remove it. Both the coordinator and
+# Codex reached REDESIGN independently, on the same test: can a redesign remove it? Yes.
+#
+# ⭐ AND THE CLASSIFIER ALREADY EXISTED, HARDENED, IN THIS REPOSITORY.
+# `check-review-recorded.py:187`'s `is_prose()` answers exactly this question, carries
+# `CODE_UNDER_PROSE` for the executable gates under `docs/`, was hardened over four rounds
+# of PR #299, is mutation-covered, and ships `prose_exceptions_cover()` as an anti-drift
+# falsifier against the CI workflow globs. Its own comment states the rule my three lists
+# kept getting wrong: "a gate script does not stop being code by living in a documentation
+# directory."
+#
+# So this file no longer owns a path taxonomy. It asks the one that exists.
+# `contained <=> is_prose` — both are the same axis, blast radius.
+#
+# ⚠ The classifier is INJECTED, so the rule stays PURE and cheap to case; `main()` passes
+# the real one. A default-None that silently imports would make every case depend on the
+# repository, which is how a rule stops being testable.
+def _repo_is_prose():
+    """`check-review-recorded.is_prose`, loaded lazily. RAISES if it cannot be loaded —
+    guessing at blast radius is worse than refusing to answer."""
+    import importlib.util
+    src = REPO / "scripts" / "check-review-recorded.py"
+    spec = importlib.util.spec_from_file_location("_crr", src)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load {src}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["_crr"] = mod
+    spec.loader.exec_module(mod)
+    return mod.is_prose
 
-# Named explicitly so a RISKY path inside a contained root is still caught.
-RISK_PREFIXES = (
-    "supabase/",                                   # schema, migrations, RLS policies
-    "app/api/",                                    # money is charged in the serve routes
-    "worker/",                                     # the paid pipeline
-    ".github/workflows/",                          # what CI enforces
-    "lib/spend", "lib/quota", "lib/ledger",        # money, irreversible paths
-    "lib/lease", "lib/queue", "lib/reservation",   # concurrency, leasing, locking
-    "middleware", "lib/auth",                      # auth / multi-tenant isolation
-)
 
+def scope_for(paths: list[str], is_prose) -> str:
+    """PURE given its classifier. `one-round` only when EVERY path is prose.
 
-def scope_for(paths: list[str]) -> str:
-    """PURE. `one-round` only when EVERY path is recognisably contained."""
+    Anything that is not prose is code, and code changes get the full loop. There is no
+    second list here to drift out of step with the first.
+    """
     for p in paths:
-        if any(p.startswith(pre) for pre in RISK_PREFIXES):
+        if not is_prose(p):
             return "full-loop"
-        if not any(p.startswith(pre) for pre in CONTAINED_PREFIXES):
-            return "full-loop"          # unrecognised is risky, never assumed safe
     return "one-round"
 
 
@@ -193,6 +193,13 @@ def parse_header(text: str) -> dict:
     # whole body refused a legitimate header whose `halves.claude` was a block scalar
     # containing a bullet — a false CANNOT RUN, and a guard that refuses valid input is a
     # guard that gets switched off.
+    # ⛔ r3 Blocking (Codex): `_findings_span` returns "" when the key is ABSENT, so
+    # declared == 0 == len(findings) and nothing validated — a header with no `findings:`
+    # key at all passed as a CLEAN ROUND. r1's B1 for the third time, through a third
+    # shape. An explicit empty list is a claim; a missing key is a silence.
+    if not re.search(r"^findings:", body, re.M):
+        raise ValueError("header has no `findings:` key — an absent list is not an "
+                         "empty round; write `findings:` explicitly to claim zero")
     declared = len(re.findall(r"^\s*-\s", _findings_span(body), re.M))
     if declared != len(findings):
         raise ValueError(f"header declares {declared} finding item(s) but "
@@ -331,32 +338,45 @@ def _self_test() -> int:
             print(f"  [FAIL] {name}\n    got:  {got!r}\n    want: {want!r}")
 
     # --- Q1 scope ---------------------------------------------------------
+    # ⚠ The REAL classifier, deliberately. After the r3 redesign the value of these cases
+    # is that check-review-recorded's taxonomy answers THIS question correctly — a fake
+    # would assert only that the loop calls it.
+    _prose = _repo_is_prose()
     case("a migration needs the full loop",
-         scope_for(["supabase/migrations/0028_x.sql"]), "full-loop")
+         scope_for(["supabase/migrations/0028_x.sql"], _prose), "full-loop")
     case("a money path needs the full loop",
-         scope_for(["lib/spend-ledger.ts"]), "full-loop")
+         scope_for(["lib/spend-ledger.ts"], _prose), "full-loop")
     # ⟳ r2 High: `scripts/` left CONTAINED_PREFIXES, so a harness script is full-loop now.
     case("a harness script is no longer assumed contained",
-         scope_for(["scripts/gen-dashboard.py"]), "full-loop")
+         scope_for(["scripts/gen-dashboard.py"], _prose), "full-loop")
     case("a guard that protects paid attempts needs the full loop",
-         scope_for(["scripts/check-paid-caller-arrival.py"]), "full-loop")
+         scope_for(["scripts/check-paid-caller-arrival.py"], _prose), "full-loop")
     case("docs alone are one round",
-         scope_for(["docs/review-method.md"]), "one-round")
+         scope_for(["docs/review-method.md"], _prose), "one-round")
     case("one risky path in a mixed set still forces the full loop",
-         scope_for(["docs/x.md", "lib/auth/session.ts"]), "full-loop")
+         scope_for(["docs/x.md", "lib/auth/session.ts"], _prose), "full-loop")
     case("an empty diff is one round, not a crash",
-         scope_for([]), "one-round")
+         scope_for([], _prose), "one-round")
+    # ⭐ r3 REDESIGN: the case that three hand-kept lists kept getting wrong. These files
+    # are mode 755 and are gates 1 and 2 of check-schema-gates.sh.
+    case("an executable schema gate UNDER docs/ needs the full loop",
+         scope_for(["docs/superpowers/specs/2026-08-03-stable-blob-addressing/"
+                    "mutate-schema.py"], _prose), "full-loop")
+    case("...while ordinary prose beside it is still one round",
+         scope_for(["docs/review-method.md"], _prose), "one-round")
+    case("the classifier is INJECTED, so the rule stays pure",
+         scope_for(["anything.ts"], lambda p: True), "one-round")
     # r1 Blocking (Codex): an allowlist of risky prefixes silently downgraded a money path.
     case("a serve route that charges money needs the full loop",
-         scope_for(["app/api/pdf/[id]/route.ts"]), "full-loop")
+         scope_for(["app/api/pdf/[id]/route.ts"], _prose), "full-loop")
     case("the paid worker pipeline needs the full loop",
-         scope_for(["worker/run.ts"]), "full-loop")
+         scope_for(["worker/run.ts"], _prose), "full-loop")
     case("what CI enforces needs the full loop",
-         scope_for([".github/workflows/ci.yml"]), "full-loop")
+         scope_for([".github/workflows/ci.yml"], _prose), "full-loop")
     case("an UNLISTED path is risky, never assumed contained",
-         scope_for(["lib/some-new-module.ts"]), "full-loop")
+         scope_for(["lib/some-new-module.ts"], _prose), "full-loop")
     case("a top-level config file is risky, never assumed contained",
-         scope_for(["package.json"]), "full-loop")
+         scope_for(["package.json"], _prose), "full-loop")
 
     # --- Q5 thrashing -----------------------------------------------------
     fix_a1 = {"round": 1, "findings": [{"fix_induced": True, "component": "a"}]}
@@ -425,8 +445,12 @@ def _self_test() -> int:
          _raises(lambda: parse_header("# r3\n\nprose only\n")), True)
     case("a header missing `round` raises rather than defaulting",
          _raises(lambda: parse_header("```yaml\nsubject: s\nfindings: []\n```")), True)
-    case("a header with no findings is a real round, not an error",
+    case("an EXPLICIT empty list is a real round, not an error",
          parse_header("```yaml\nround: 9\nfindings:\n```")["findings"], [])
+    # r3 Blocking (Codex): an ABSENT key returned zero findings and validated nothing —
+    # r1's B1 a third time, through a third shape. A missing key is a silence, not a claim.
+    case("a header with NO findings key REFUSES rather than reading as clean",
+         _raises(lambda: parse_header("```yaml\nround: 1\nsubject: s\n```")), True)
     # r1 Blocking (Codex): block-style YAML parsed to ZERO findings, so a recorded High
     # reached STOP. Executed by the reviewer, not reasoned about.
     _block = ("```yaml\nround: 1\nfindings:\n  - id: H1\n    severity: High\n"
@@ -486,7 +510,7 @@ def main(argv: list[str]) -> int:
         print(f"CANNOT RUN — a round document for '{branch}' has no usable header: {exc}")
         return 2
 
-    scope = scope_for(paths)
+    scope = scope_for(paths, _repo_is_prose())
     # `check-review-recorded.py` owns the tree question; read ITS exit code rather than
     # re-deriving the rule, which is how a weaker second implementation gets written.
     tree = subprocess.run([sys.executable, str(REPO / "scripts" / "check-review-recorded.py"),
