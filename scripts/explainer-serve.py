@@ -64,7 +64,7 @@ USAGE
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
     python3 scripts/explainer-serve.py --restart  # the one to remember: works up OR down
-    python3 scripts/explainer-serve.py --self-test   # 138 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 140 cases, binds no port
 
 Every page also carries a **Restart server** button, and — under it — these commands in a
 `<details>` that needs no script and no network, so the instructions survive the server
@@ -1188,8 +1188,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # race for the seconds between the reply and the signal.
         spawned = False
         try:
-            self._send(200, json.dumps({"ok": True, "pid": pid}).encode(), "application/json")
+            # ⛔ THE REPLY'S FAILURE MUST NOT CANCEL THE RESTART — r7 Medium. Moving `_send` inside
+            # the outer `try` (to fix the never-released lock) quietly changed what a broken pipe
+            # MEANS: `_send` ends in `wfile.write`, so a reader who navigated away made the outer
+            # handler skip `Popen` entirely and write "could not spawn the replacement:
+            # BrokenPipeError" into the log — a cause that never happened, about a spawn that was
+            # never attempted. The docstring three lines up still promised "the restart still
+            # proceeds". Its own `try` restores that, and the outer one keeps the lock correct.
             try:
+                self._send(200, json.dumps({"ok": True, "pid": pid}).encode(),
+                           "application/json")
                 self.wfile.flush()
             except OSError:
                 pass                  # the reader navigated away; the restart still proceeds
@@ -1322,24 +1330,42 @@ def start() -> int:
     pid = os.fork()
     if pid == 0:
         os.close(r_fd)
-        os.setsid()
-        # ⚠ BIND BEFORE DETACHING. `detach_streams` exists because a child on the parent's stdout
-        # wedges on its first access-log line; but a bind failure before it is detached is a
-        # message the operator can still see, and the byte below is what the parent acts on.
+        # ⛔⛔ EVERYTHING THAT CAN FAIL HAPPENS BEFORE THE BYTE, INSIDE ONE GUARD — r7 High, and
+        # the first version of this pipe got it wrong in the most instructive way. It sent `K`
+        # and THEN called `detach_streams()`. `K` is documented as "I am bound, and I am the one
+        # serving"; at that instant only the first half was true, so a child that died detaching
+        # died AFTER announcing it was serving. The parent accepted `K`, wrote the pidfile, printed
+        # `serving … (pid N)` and exited 0 with nothing listening.
+        #
+        # ⚠ MEASURED, and it is the sentence that matters: on that input the fix was STRICTLY WORSE
+        # THAN THE CODE IT REPLACED. With `.serve.log` a directory, `detach_streams` raises
+        # IsADirectoryError — the pre-pipe tree exited 1 and left the pidfile untouched; the pipe
+        # tree exited 0 and wrote a corpse. A repair that loses a case the original handled is not
+        # a repair.
+        #
+        # ⛔ THE RULE THIS ENCODES: A READINESS SIGNAL MAY ONLY BE SENT WHEN EVERY STEP IT CLAIMS
+        # HAS ALREADY SUCCEEDED. Adding a step to this prelude is therefore safe by construction —
+        # it goes inside the guard, and a failure sends `X` — but adding one AFTER the byte
+        # silently re-creates this defect. There is deliberately nothing after it except serving.
+        #
+        # ⚠ `BaseException`, not `OSError`: `setsid`, `detach_streams` and the bind can fail in
+        # more ways than one exception class, and a child that dies of anything at all must not
+        # leave its parent holding a `K`.
         try:
+            os.setsid()
+            detach_streams()
             httpd = http.server.ThreadingHTTPServer((HOST, PORT), Handler)
-        except OSError:
+        except BaseException:                 # noqa: BLE001 — see above
             try:
-                os.write(w_fd, b"X")          # X: I could not bind
+                os.write(w_fd, b"X")          # X: I did not become a server
             except OSError:
                 pass
             os._exit(1)
         try:
-            os.write(w_fd, b"K")              # K: I am bound, and I am the one serving
+            os.write(w_fd, b"K")              # K: every step above succeeded; I am serving
         except OSError:
             pass
         os.close(w_fd)
-        detach_streams()
         with httpd:
             httpd.serve_forever()
         os._exit(0)
@@ -1349,6 +1375,7 @@ def start() -> int:
     # hang the parent forever. The 20 × 0.1s budget is the one the previous shape used.
     import select
     verdict = b""
+    _eof = False
     deadline = 2.0
     while deadline > 0 and not verdict:
         ready, _, _ = select.select([r_fd], [], [], 0.1)
@@ -1357,7 +1384,13 @@ def start() -> int:
             try:
                 verdict = os.read(r_fd, 1)
             except OSError:
+                _eof = True
                 break
+            # ⚠ A ready fd yielding ZERO bytes is EOF: the child closed the pipe without writing,
+            # which means it died before reporting. Distinguished from the timeout because the two
+            # send a reader to different places — one to the child's log, one to a hung process.
+            if verdict == b"":
+                _eof = True
             break
     os.close(r_fd)
     if verdict != b"K":
@@ -1365,8 +1398,19 @@ def start() -> int:
         # server it was asked to start, and a pidfile naming a corpse is the damage r6/r7 are
         # about: after it, `--restart` fails forever and `--stop` reports "not running" about a
         # running server and then unlinks the last pointer to it.
-        why = ("it could not bind — something else is already on the port"
+        # ⚠ THE MESSAGE NAMES WHAT WAS OBSERVED, NOT A CAUSE — r7 Low, and the same defect this
+        # branch fixed in `page_chrome`'s `_why` and in the 404 text. `X` used to read "it could
+        # not bind — something else is already on the port", which was true when only the bind was
+        # guarded; the guard now covers `setsid` and `detach_streams` too, so that sentence would
+        # send a reader to the port when the real cause was a log file they cannot open. The child
+        # knows which step failed and this parent does not, so it says so.
+        # ⚠ An EMPTY verdict is TWO different observations and they are worth distinguishing: a
+        # closed pipe means the child died without reporting, while no bytes at all means it is
+        # still running and has not answered.
+        why = ("it reported that it did not become a server — the bind, the session change or the "
+               "log handoff failed, and only its own output can say which"
                if verdict == b"X" else
+               "it died without reporting" if verdict == b"" and _eof else
                "it never reported back within 2s")
         print(f"FAIL: forked pid {pid} but {why}. NOT RUNNING — the pidfile was left untouched.")
         return 1
@@ -2172,6 +2216,37 @@ def _self_test() -> int:
         # ⚠ A hung child must not hang the parent: the wait is bounded and its failure is loud.
         case("a child that never reports is a bounded FAILURE, not a wait forever",
              lambda: "select.select" in _start and "NOT RUNNING" in _start)
+        # ⛔⛔ THE PROPERTY, NOT THE ORDER — r7 Low, and this is the case that let the r7 High
+        # through: it asserted that the pipe existed and that the pidfile came after the verdict,
+        # both of which stayed TRUE on the tree that wrote a corpse. `K` claims "every step above
+        # succeeded"; the defect was a step placed AFTER the byte. So the property is: between the
+        # readiness byte and `serve_forever` there is nothing that can fail.
+        def _after_the_byte() -> list[str]:
+            # ⚠ WHOLE LINES. Slicing to the character index of "serve_forever" left a dangling
+            # `httpd.` fragment in the list — a case that fails on its own formatting rather than
+            # on the property. Cut at the line that contains it.
+            lines = _start.splitlines()
+            a = next(i for i, l in enumerate(lines) if 'os.write(w_fd, b"K")' in l)
+            b = next(i for i, l in enumerate(lines) if "serve_forever" in l)
+            out = []
+            for ln in lines[a + 1:b]:
+                s = ln.strip()
+                if not s or s.startswith("#"):
+                    continue
+                out.append(s)
+            return out
+        # Only closing the pipe and entering the context manager may appear. Anything else — a
+        # detach, a chdir, a log open, a umask — is a step whose failure would arrive too late.
+        case("nothing that can fail happens after the readiness byte",
+             lambda: all(s.startswith(("os.close(w_fd)", "with httpd", "except OSError",
+                                       "pass", "try:"))
+                         for s in _after_the_byte()))
+        # ⚠ And the steps `K` claims must be INSIDE the guard that sends `X`, or a failure there
+        # never reaches the parent at all.
+        case("…and every step the byte claims is inside the guard that reports failure",
+             lambda: (_start.index("os.setsid()") < _start.index('os.write(w_fd, b"X")')
+                      and _start.index("detach_streams()") < _start.index('os.write(w_fd, b"X")')
+                      and _start.index("ThreadingHTTPServer") < _start.index('os.write(w_fd, b"X")')))
         # This process does NOT kill itself: it hands its pid to the child that replaces it.
         case("the server does not SIGTERM itself", lambda: "os.kill" not in _rst)
         case("a spawn failure is written down, not swallowed",
