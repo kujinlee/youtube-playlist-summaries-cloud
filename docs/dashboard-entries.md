@@ -8811,6 +8811,18 @@ the part that kept going wrong is now a command: a small program reads what each
 recorded and says what to do next. Run on its own branch it answered *"one round is owed"*
 — correctly, and without anyone having to remember why.
 
+⚠ **Seven review rounds later, the thing that stands out is that the tool caught its own
+author.** Every round found a real problem in it, including two that would have made it give
+confident wrong answers — one where a lost review round read as *"finished"*, and one where
+the written rule said *keep going* while the program said *stop*. Three separate judges — the
+reviewer, me, and the program reading its own records — independently reached the same
+verdict at round three: stop patching this, redesign it. The redesign turned out to be
+deleting my work and calling something that already existed.
+
+And at the very last step, after you had decided round seven was the end, **the program
+looked at its own branch and said it was not finished.** It is right, and the reason is
+filed rather than argued away. You are merging it with that disagreement recorded in the open.
+
 Two smaller things. The mysterious **"Phase 6"** is gone from the instructions; it was a row
 number in one table being used as a name, and it is now called an **architecture review**
 everywhere the instructions speak. The historical record keeps its own words. And the two
