@@ -64,7 +64,7 @@ USAGE
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
     python3 scripts/explainer-serve.py --restart  # the one to remember: works up OR down
-    python3 scripts/explainer-serve.py --self-test   # 122 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 128 cases, binds no port
 
 Every page also carries a **Restart server** button, and — under it — these commands in a
 `<details>` that needs no script and no network, so the instructions survive the server
@@ -94,7 +94,7 @@ import subprocess
 import threading
 import sys
 import urllib.parse
-from typing import Callable
+from typing import Callable, NamedTuple
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import page_chrome  # noqa: E402
@@ -448,129 +448,141 @@ def md_blocks(esc: str) -> str:
     return "\n".join(out)
 
 
-def src_root() -> pathlib.Path | None:
-    """The source root: the env var when set, else the repo this server lives in.
+class SrcRoot(NamedTuple):
+    """ONE observation of where `/src/` serves from, carrying WHY it failed.
 
-    PURE given the env and the filesystem.
+    ⛔⛔ THIS TYPE IS THE ARCHITECTURE REVIEW'S ANSWER, ARMED AT ROUND 3 OF PR #295 — and the
+    class it dissolves is worth stating before the fields, because four defects across three
+    rounds were all the same move:
 
-    ⟳ 2026-09-12. THE FALLBACK IS THE FIX, and the bug it closes is that nothing announced
-    itself. Started bare — `python3 scripts/explainer-serve.py`, which is what a person types —
-    this returned None, every `/src/` link on `/goals` answered *no source root*, and the server
-    kept serving the page that generated them. Measured: 55 dead links, four days, pid 18092.
-    A subsystem that silently switches off is worse than one that refuses to start, because the
-    page around it still works and nothing looks broken.
+        THE REASON FOR A FAILURE WAS INFERRED RATHER THAN CARRIED.
 
-    ⚠ IT WAS NEVER MISSING INFORMATION — only unasked-for. `REPO` (:109) is derived from
-    `__file__` and `/_stale` has always used it to find the source a page was built from. So
-    `/src/` was refusing to open files that `/_stale` was already stat-ing by name, in the same
-    process, one handler apart. The two now agree by construction rather than by the reader
-    having remembered a variable.
+    `src_root` observed exactly why it could not serve, returned a bare `None`, and every
+    renderer downstream re-derived the reason from a fresh look at the world. Each patch fixed
+    the instance and left the inference, so the next round found the next instance:
 
-    Project-independence, the reason `:204` gives for the env var, is untouched: `SCRIPTS.parent`
-    hardcodes no repo, it is wherever this file happens to sit. The variable keeps its real job —
-    pointing at a DIFFERENT checkout than the one being run from — and now that is all it does."""
+      r1 M1  the message named `{repo}/scripts/…` — a path RE-DERIVED from the missing repo
+      r2 M1  the fix re-derived `Path(__file__)`, which is inside that same missing repo
+      r3 M1  the fix re-probed `repo.is_dir()`, and DELETED an arm on the strength of it
+      r3 M2  the env var is read twice — the oldest instance, unnamed for three rounds
+
+    ⚠ THE r2 FIX TRADED A GUARANTEE FOR AN OBSERVATION, and that is the sharpest way to see it.
+    At r1 the empty-env arm was ENTAILED by the caller's contract: empty env and `src_root()`
+    returning None implies the fallback was not a directory. It could not be wrong. r2 replaced
+    that entailment with a second live probe and asserted the lost invariant in a comment — a
+    probe that RE-ASKS a question does not answer it.
+
+    Every field below is read ONCE, here, at probe time. Nothing downstream may look again.
+    """
+    root: "pathlib.Path | None"   # the servable root, or None
+    reason: str                   # OK | BAD_ENV | MISSING_FALLBACK — see SRC_REASONS
+    env_value: str                # exactly what the probe read, not a second read of os.environ
+    fallback: pathlib.Path        # the checkout the probe considered
+    fallback_ok: bool             # was `fallback` a directory AT PROBE TIME
+
+
+# ⚠ Named so an unknown member is a REFUSAL rather than a silently-missing branch: Python will
+# not force exhaustiveness on a str, and r3's review flagged that a 3-member sum invites a 4th.
+SRC_REASONS = ("OK", "BAD_ENV", "MISSING_FALLBACK")
+
+
+def src_root() -> SrcRoot:
+    """Where `/src/` serves from, and — when it cannot — why. ONE observation of the world.
+
+    Project-independence is untouched: `SCRIPTS.parent` hardcodes no repo, it is wherever this
+    file happens to sit. `EXPLAINER_DOCS_ROOT` keeps its real job — pointing at a DIFFERENT
+    checkout than the one being run from.
+
+    ⛔ THE ONLY PLACE `os.environ` AND `.is_dir()` ARE CONSULTED for this decision. That is the
+    invariant the architecture review bought; a second reader anywhere downstream reintroduces
+    the whole class.
+    """
     v = os.environ.get(SRC_ROOT_ENV, "").strip()
+    # `.is_dir()` rather than an unconditional return: REPO is a parent of a resolved __file__
+    # so it is a directory in every ordinary case, and a contract of "a directory or None" kept
+    # by luck is not kept. ⚠ Note it is evaluated for BOTH arms — the bad-env arm needs to know
+    # whether the fallback it is about to recommend actually exists, which is r2's M2.
+    fallback_ok = REPO.is_dir()
     if not v:
-        # `.is_dir()` rather than an unconditional return: REPO is a parent of a resolved
-        # __file__ so it is a directory in every ordinary case, and this function's contract
-        # is "a directory or None" — one that returns a path it never checked is a promise
-        # kept by luck.
-        return REPO if REPO.is_dir() else None
+        return SrcRoot(REPO if fallback_ok else None,
+                       "OK" if fallback_ok else "MISSING_FALLBACK", v, REPO, fallback_ok)
     p = pathlib.Path(v).expanduser()
-    return p if p.is_dir() else None
+    return (SrcRoot(p, "OK", v, REPO, fallback_ok) if p.is_dir()
+            else SrcRoot(None, "BAD_ENV", v, REPO, fallback_ok))
 
 
-def src_root_help(env_value: str, repo: pathlib.Path,
-                  pidfile: pathlib.Path = PIDFILE) -> str:
+def src_root_help(observed: SrcRoot, pidfile: pathlib.Path = PIDFILE) -> str:
     """The body of the `/src/` 404 — a remedy that can be PASTED, not a variable name.
 
     The old text was `no source root — start the server with EXPLAINER_DOCS_ROOT=<dir>`, and
-    `<dir>` was never filled in although `src_root` had just read the env and `REPO` was a
-    module constant. A reader who does not already know the answer cannot act on it, which
-    makes it a description of the failure wearing the shape of an instruction.
+    `<dir>` was never filled in although the answer was in hand. A reader who does not already
+    know the answer cannot act on it, which makes it a description of the failure wearing the
+    shape of an instruction.
 
-    ⛔ EVERY PATH IS `shlex.quote`d — r1 B1, found by BOTH review halves. This text exists to be
-    PASTED, and nothing here was safe for a shell: with `repo = /Users/me/agentic ai docs/repo`
-    the emitted line handed `python3` the path `/Users/me/agentic`. A checkout path containing a
-    space is ordinary on macOS, this project's stated platform, and its own scratch paths have
-    them. ⚠ The suite had used space-bearing fixtures since before this bug and asserted only
-    that the path APPEARED — a hostile input asserted with a substring test proves nothing about
-    hostility.
+    ⛔ PURE IN THE STRONG SENSE, AND THAT IS TESTABLE. It reads no environment variable and
+    touches no filesystem: everything it needs is in `observed`. The suite renders it with
+    `os.environ` emptied and `Path.is_dir` patched to RAISE — if it still renders, it carried;
+    if it raises, something re-derived. ⭐ That single case fails on ALL FOUR historical defects
+    of this component, where every previous guard named one instance — which is exactly why the
+    fourth arrived unguarded.
 
-    ⛔ `pidfile` IS A PARAMETER FOR THE REASON `repo_root.start` IS — r2 High. The recovery line
-    was guarded by `str(PIDFILE) in _arm`, the very instrument this branch condemned twice, and it
-    was not merely blind but INVERTED: measured under `HOME=/tmp/it's home`, `shlex.quote` emits
-    `'/tmp/it'"'"'s home/…` so the raw path is no longer a substring — the correct code FAILED
-    (113/114) and the unquoted mutant PASSED (114/114). A guard that rewards the absence of a fix
-    is worse than none. Injectable so the suite can hand it hostile values and compare ARGV.
-
-    PURE, so the self-test asserts on the text rather than on a live 404."""
-    # ⛔ r2 Medium — THE BRANCH IS ON `repo.is_dir()`, NOT ON `env_value`, and that is the whole
-    # repair. The arm below names `{repo}/scripts/explainer-serve.py`; r2 M1 established that such
-    # a path is `[Errno 2]` whenever `repo` is gone. But `src_root` returns None for a set-but-bad
-    # env var WITHOUT consulting REPO (`:479-480`), and the caller is unconditional (`:1071`) — so
-    # a stale `EXPLAINER_DOCS_ROOT` **plus** a moved checkout reached this arm and handed the reader
-    # two dead commands plus the sentence "the repo this server runs from" about a missing
-    # directory. The fix for the sibling arm simply had not been carried up here.
-    # Reachable only if REPO stopped being a directory under a running server — the repo moved
-    # or was deleted. Named as its own case: "unset it" would be nonsense advice here.
-    #
-    # ⛔ r1 M1. THIS ARM USED TO PRINT TWO COMMANDS NAMING A FILE INSIDE THE DIRECTORY THE SAME
-    # SENTENCE DECLARES ABSENT — `python3 {repo}/scripts/explainer-serve.py`, where `repo` is
-    # `not a directory` by the branch above. Both lines were guaranteed `[Errno 2]`. And the
-    # second carried `<an-existing-checkout>`, the very unfilled placeholder this function was
-    # written to kill, so the arm reproduced the original defect at the moment the reader has
-    # the LEAST context to repair it.
-    #
-    # ⛔⛔ r2 M1 — AND THE FIRST FIX FOR THIS WAS ITSELF WRONG, which is worth more than the fix.
-    # r1 M1 replaced `{repo}/scripts/explainer-serve.py` with `pathlib.Path(__file__).resolve()`,
-    # commented "which necessarily exists — this process is running out of it". **Both claims were
-    # false.** In production the caller is `Handler.do_GET`'s `/src/` 404 branch — the only call
-    # site, `src_root_help(os.environ.get(SRC_ROOT_ENV, ''), REPO)` — and `REPO` is
-    # `Path(__file__).resolve().parent.parent` (`REPO = SCRIPTS.parent`) — so the interpreter's own file is INSIDE
-    # the directory this sentence declares missing, and the emitted command hit `[Errno 2]` exactly
-    # as before. A running process also does not keep its source path alive: it can be unlinked
-    # underneath it.
-    #
-    # ⚠ THE r1 CASE PASSED BECAUSE IT ASKED THE FIXTURE, NOT THE CALLER. It used a synthetic
-    # `/tmp/gone` while `__file__` pointed at a live checkout, so "no path under repo" was true for
-    # a repo the code never sees. Fixing the premise is not covering the branch.
-    #
-    # The pidfile is the one anchor that survives: `ROOT = Path.home()/"explainers"` (`:105`), so
-    # `PIDFILE` lives OUTSIDE any checkout and is reachable when every path here is gone.
-    # ⚠ Absolute, not `~`: `shlex.quote("~/explainers/.serve.pid")` quotes the tilde and a quoted
-    # tilde does not expand — the safety measure would silently destroy the command.
-    if not repo.is_dir():
-        return _gone_checkout_help(env_value, repo, pidfile)
-    script = shlex.quote(str(repo / "scripts" / "explainer-serve.py"))
-    stop = f"python3 {script} --stop"
-    start = f"python3 {script}"
-    # `repo` EXISTS here, so a bad `env_value` is the only remaining reason to be in this function:
-    # `src_root` returns None either because the env var names a non-directory (`:479-480`) or
-    # because the fallback is not a directory (`:478`) — and the second is answered above. There is
-    # deliberately NO trailing arm: falling through to the gone-checkout text for a repo that
-    # demonstrably exists would tell the reader their checkout was deleted when it was not.
-    return (f"no source root — {SRC_ROOT_ENV} is set to {env_value!r}, which is not a "
+    ⛔ EVERY PATH IS `shlex.quote`d — r1 B1, found by both review halves. `_html.escape` makes
+    text safe for HTML; nothing made it safe for the SHELL it exists to be pasted into. With a
+    repo at `/Users/me/agentic ai docs/repo` the emitted line handed `python3` the path
+    `/Users/me/agentic`. ⚠ The suite had used space-bearing fixtures since before that bug and
+    asserted only that the path APPEARED — a hostile input asserted with a substring test proves
+    nothing about hostility, so the cases compare ARGV.
+    """
+    if observed.reason not in SRC_REASONS:
+        raise ValueError(f"unknown SrcRoot.reason {observed.reason!r}; expected one of "
+                         f"{SRC_REASONS}. A new member needs a branch here, not a default.")
+    if observed.reason == "OK":
+        raise ValueError("src_root_help called on a successful observation — there is nothing "
+                         "to explain. The caller should render the page instead.")
+    # ⛔ THE BRANCH IS ON WHAT THE PROBE SAW, NOT ON WHAT IS TRUE NOW. r3 M1: the previous shape
+    # asked `repo.is_dir()` a second time, so a fallback that reappeared between the probe and
+    # the render turned an unset-env failure into "is set to '', which is not a directory".
+    if not observed.fallback_ok:
+        return _gone_checkout_help(observed, pidfile)
+    script = shlex.quote(str(observed.fallback / "scripts" / "explainer-serve.py"))
+    return (f"no source root — {SRC_ROOT_ENV} is set to {observed.env_value!r}, which is not a "
             f"directory.\n\n"
-            f"Unset it to serve sources from the repo this server runs from ({repo}):\n\n"
-            f"  {stop}\n"
+            f"Unset it to serve sources from the repo this server runs from "
+            f"({observed.fallback}):\n\n"
+            f"  python3 {script} --stop\n"
             f"  unset {SRC_ROOT_ENV}\n"
-            f"  {start}\n\n"
+            f"  python3 {script}\n\n"
             f"Or set it to a checkout that exists.\n")
 
 
-def _gone_checkout_help(env_value: str, repo: pathlib.Path, pidfile: pathlib.Path) -> str:
-    """The 404 body when the checkout itself is gone. PURE.
+def _gone_checkout_help(observed: SrcRoot, pidfile: pathlib.Path) -> str:
+    """The 404 body when the fallback checkout was not a directory at probe time. PURE.
 
-    ONE arm for that condition, reached from both branches of `src_root_help`, because r2's Medium
-    was exactly the two branches disagreeing about what survives a missing checkout."""
-    why = (f"{SRC_ROOT_ENV} is set to {env_value!r} and the fallback {repo} is not a directory"
-           if env_value else
-           f"{SRC_ROOT_ENV} is unset and the fallback {repo} is not a directory")
+    ONE arm for that condition, reached from both reasons, because r2's Medium was exactly the
+    two branches disagreeing about what survives a missing checkout.
+
+    ⛔ IT DESCRIBES WHAT WAS OBSERVED AND DOES NOT NAME A CAUSE — r3 M3. This text used to say
+    the checkout "has moved or been deleted", which is a diagnosis the code cannot make: the
+    same observation is produced by a permission-denied parent (`Path.is_dir()` swallows the
+    OSError and returns False) or an unmounted volume, and for those the remedy it then gave was
+    unactionable. ⭐ The branch fixed this exact defect in `page_chrome`'s `_why` in the same
+    commit and did not carry it across — the fourth instance of one class, found by a reviewer.
+
+    ⚠ The pidfile is the one anchor that survives: `ROOT = Path.home()/"explainers"`, so it
+    lives OUTSIDE any checkout and is reachable when every path here is gone. Absolute, not
+    `~`: `shlex.quote("~/explainers/.serve.pid")` quotes the tilde, and a quoted tilde does not
+    expand — the safety measure would silently destroy the command.
+    """
+    why = (f"{SRC_ROOT_ENV} is set to {observed.env_value!r} and the fallback "
+           f"{observed.fallback} is not a readable directory"
+           if observed.env_value else
+           f"{SRC_ROOT_ENV} is unset and the fallback {observed.fallback} is not a readable "
+           f"directory")
     return (f"no source root — {why}, so there is nothing to serve sources from.\n\n"
-            f"The checkout this server was started from has moved or been deleted, so no command "
-            f"under it can be offered. Stop the server through its pidfile, which lives outside "
-            f"any checkout:\n\n"
+            f"It may have been moved or deleted, or it may simply not be readable right now — "
+            f"this server cannot tell which, so it will not guess. Either way no command under "
+            f"it can be offered. Stop the server through its pidfile, which lives outside any "
+            f"checkout:\n\n"
             f"  kill \"$(cat {shlex.quote(str(pidfile))})\"\n\n"
             f"then start it again from a checkout that exists, setting {SRC_ROOT_ENV} to that "
             f"checkout if it is not the one you start from.\n")
@@ -1097,9 +1109,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             body = verdict if verdict == "fresh" else f"{verdict} {newest_src}"
             return self._send(200, body.encode(), "text/plain; charset=utf-8")
         if path.startswith("/src/"):
-            root = src_root()
+            observed = src_root()
+            root = observed.root
             if root is None:
-                body = src_root_help(os.environ.get(SRC_ROOT_ENV, "").strip(), REPO)
+                # ⛔ NO SECOND READ. The observation carries the env value and the
+                # fallback's state as they were when the decision was made — r3 M1/M2.
+                body = src_root_help(observed)
                 return self._send(404, body.encode("utf-8"),
                                   "text/plain; charset=utf-8")
             target = safe_path(path[len("/src/"):], root)
@@ -1701,61 +1716,123 @@ def _self_test() -> int:
                     os.environ[SRC_ROOT_ENV] = prev
 
         # THE REGRESSION CASE. Delete the fallback and this one goes red by itself.
+        # ⟳ `.root` since the r3 redesign: `src_root` now returns an OBSERVATION, not a path.
         case("src_root: UNSET falls back to the repo this file lives in",
-             lambda: with_env(None, src_root) == REPO)
+             lambda: with_env(None, src_root).root == REPO)
         case("src_root: empty string is unset, not a path",
-             lambda: with_env("", src_root) == REPO)
-        case("src_root: whitespace is unset", lambda: with_env("   ", src_root) == REPO)
+             lambda: with_env("", src_root).root == REPO)
+        case("src_root: whitespace is unset", lambda: with_env("   ", src_root).root == REPO)
         case("src_root: an explicit directory still OVERRIDES the fallback",
-             lambda: with_env(str(root), src_root) == root)
+             lambda: with_env(str(root), src_root).root == root)
         # ⛔ A WRONG value is None, NOT the fallback — deliberate, and the opposite of the
         # unset case above. Someone who typed a path meant a specific checkout; quietly
         # serving a different one would be the silent-substitution bug this slice exists to
         # kill, rebuilt with better manners. Unset means "no opinion"; wrong means wrong.
         case("src_root: a non-directory path is None, NOT the fallback",
-             lambda: with_env(str(root / "a.html"), src_root) is None)
-        case("src_root: a missing path is None", lambda: with_env(str(root / "nope"), src_root) is None)
+             lambda: with_env(str(root / "a.html"), src_root).root is None)
+        case("src_root: a missing path is None",
+             lambda: with_env(str(root / "nope"), src_root).root is None)
+
+        # ── the OBSERVATION carries the reason, r3's architecture-review answer ────────────
+        case("src_root: a bad env value is reported as BAD_ENV, with the value it read",
+             lambda: (lambda o: o.reason == "BAD_ENV" and o.env_value == str(root / "nope"))(
+                 with_env(str(root / "nope"), src_root)))
+        case("src_root: success carries OK and the value it read",
+             lambda: (lambda o: o.reason == "OK" and o.env_value == str(root))(
+                 with_env(str(root), src_root)))
+        case("src_root: the fallback's state is observed ONCE, and travels with the reason",
+             lambda: with_env(None, src_root).fallback_ok is True)
+        case("src_root: every reason it can return is a declared member",
+             lambda: all(with_env(v, src_root).reason in SRC_REASONS
+                         for v in (None, "", "   ", str(root), str(root / "nope"))))
+
+        # ⛔⛔ THE FALSIFIER FOR THE CLASS, not for an instance. Three rounds produced four
+        # defects of one shape — the reason for a failure inferred rather than carried — and
+        # every guard written for them named a single instance, which is why the fourth arrived
+        # unguarded. This case asks the PROPERTY: render the help with `os.environ` emptied and
+        # `Path.is_dir` patched to RAISE. If it still renders, nothing re-derived. If anything
+        # downstream reads the world again, this goes red — including for defects not yet made.
+        # ⚠ THE ENVIRONMENT MUST RAISE, NOT BE EMPTY — and the first version of this falsifier
+        # got that wrong, which is worth keeping visible. Setting `os.environ = {}` makes a
+        # re-read return `""` SILENTLY, so a mutation that re-reads the env passed 129/129 while
+        # the filesystem mutation was killed. A falsifier that covers half its class is the exact
+        # shape this component has produced four times. Measured both ways after the repair.
+        class _Forbidden(dict):
+            def __init__(self, what): super().__init__(); self._what = what
+            def _raise(self, *_a, **_k):
+                raise AssertionError(f"src_root_help read {self._what} — it must carry, "
+                                     f"not re-derive")
+            get = __getitem__ = __contains__ = keys = items = values = _raise
+
+        def _renders_without_the_world(observed) -> bool:
+            _real_is_dir, _real_env = pathlib.Path.is_dir, os.environ
+            def _boom(self):
+                raise AssertionError("src_root_help read the filesystem — it must carry, "
+                                     "not re-derive")
+            try:
+                pathlib.Path.is_dir = _boom              # type: ignore[assignment]
+                os.environ = _Forbidden("the environment")  # type: ignore[assignment]
+                return bool(src_root_help(observed))
+            finally:
+                pathlib.Path.is_dir = _real_is_dir       # type: ignore[assignment]
+                os.environ = _real_env                   # type: ignore[assignment]
+        _obs_bad = SrcRoot(None, "BAD_ENV", "/nope", root, True)
+        _obs_gone = SrcRoot(None, "MISSING_FALLBACK", "", root, False)
+        case("the help renders with NO environment and NO filesystem — it carries, not re-derives",
+             lambda: _renders_without_the_world(_obs_bad)
+                     and _renders_without_the_world(_obs_gone))
+
+        # ⛔ An unknown reason REFUSES. Python will not force exhaustiveness on a str, so a
+        # fourth member added without a branch here must raise rather than fall into one.
+        case("an unknown reason is refused, not defaulted into an arm",
+             lambda: _raises(lambda: src_root_help(
+                 SrcRoot(None, "SOMETHING_NEW", "", root, True)), ValueError))
+        case("a SUCCESSFUL observation is refused — there is nothing to explain",
+             lambda: _raises(lambda: src_root_help(
+                 SrcRoot(root, "OK", "", root, True)), ValueError))
 
         # The 404 body: an instruction has to be runnable by someone who does not know the answer.
-        case("help: names the offending value", lambda: "/nope" in src_root_help("/nope", root))
-        case("help: names the fallback directory", lambda: str(root) in src_root_help("/nope", root))
+        case("help: names the offending value",
+             lambda: "/nope" in src_root_help(_obs_bad))
+        case("help: names the fallback directory",
+             lambda: str(root) in src_root_help(_obs_bad))
         case("help: gives a runnable unset command",
-             lambda: f"unset {SRC_ROOT_ENV}" in src_root_help("/nope", root))
+             lambda: f"unset {SRC_ROOT_ENV}" in src_root_help(_obs_bad))
         # ⟳ r2 M1 — THIS ASSERTED A MECHANISM AND HAD TO CHANGE WHEN THE MECHANISM DID, which is
         # the tell that it was the wrong assertion. It required the literal `--stop` in BOTH arms;
-        # the no-fallback arm now stops through the pidfile precisely because `--stop` needs a
+        # the gone-checkout arm stops through the pidfile precisely because `--stop` needs a
         # script path inside the checkout that arm says is gone. The PROPERTY — every arm tells the
         # reader how to stop the server — survives a mechanism change instead of forbidding one.
         case("help: every arm tells the reader how to stop the server",
-             lambda: all(("--stop" in src_root_help(v, root)) or ("kill " in src_root_help(v, root))
-                         for v in ("", "/nope")))
+             lambda: all(("--stop" in src_root_help(o)) or ("kill " in src_root_help(o))
+                         for o in (_obs_bad, _obs_gone)))
         # ⚠ ASSERTS THE EXACT TOKEN `unset EXPLAINER_DOCS_ROOT`, not the word "unset": the
-        # no-fallback arm's own prose says "…is unset and the fallback…", so a bare `"unset "`
+        # gone-checkout arm's own prose says "…is unset and the fallback…", so a bare `"unset "`
         # substring test passes on the very text it is meant to exclude. Measured while writing
         # it, which is the only reason it is not in the file that way.
-        case("help: the no-fallback arm does not advise unsetting",
-             lambda: f"unset {SRC_ROOT_ENV}" not in _gone_checkout_help("", root, PIDFILE))
+        case("help: the gone-checkout arm does not advise unsetting",
+             lambda: f"unset {SRC_ROOT_ENV}" not in src_root_help(_obs_gone))
         case("help: the common arm leaves no unfilled <placeholder>",
-             lambda: "<" not in src_root_help("/nope", root))
+             lambda: "<" not in src_root_help(_obs_bad))
         # ⚠ A SECOND REPO, AND IT IS THE POINT OF THE WHOLE SLICE. `check-fixture-variation`
-        # refused this file while `repo` took ONE value across all six call sites above, and it
-        # is right: with a single value, `src_root_help` could ignore its argument and interpolate
-        # the module-level `REPO` — and every case above would still pass. That is precisely the
-        # defect this slice fixes (a remedy that names no directory is not runnable), rebuilt one
-        # level up, in the suite that is supposed to prove it fixed. Both arms are varied, because
-        # each writes the path into different prose.
+        # refused this file while `repo` took ONE value across every call site, and it was right:
+        # with a single value the renderer could ignore what it is given and interpolate the
+        # module-level `REPO`, and every case would still pass. That is precisely the defect this
+        # slice fixes — a remedy that names no directory is not runnable — rebuilt one level up in
+        # the suite meant to prove it fixed. Both arms vary, because each writes the path into
+        # different prose.
         _other = pathlib.Path("/tmp/another checkout")
         case("help: both arms name the repo they are GIVEN, and no other",
-             lambda: all(str(_other) in src_root_help(v, _other)
-                         and str(root) not in src_root_help(v, _other)
-                         for v in ("", "/nope")))
+             lambda: all(str(_other) in src_root_help(o) and str(root) not in src_root_help(o)
+                         for o in (SrcRoot(None, "BAD_ENV", "/nope", _other, True),
+                                   SrcRoot(None, "MISSING_FALLBACK", "", _other, False))))
 
         # ⛔ r1 B1 — the case above is a SUBSTRING test over a fixture that already contains a
         # space, and it passes on a line no shell can run. `shlex.split` is the only form in
         # which "pasteable" is a claim: it parses the line the way the shell would, so a quoting
         # regression changes the ARGV rather than merely the characters.
         def _paste_ok(repo_: pathlib.Path) -> bool:
-            body = src_root_help("/nope", repo_)
+            body = src_root_help(SrcRoot(None, "BAD_ENV", "/nope", repo_, True))
             want = str(repo_ / "scripts" / "explainer-serve.py")
             for ln in (l.strip() for l in body.splitlines()):
                 if ln.startswith("python3 "):
@@ -1772,14 +1849,16 @@ def _self_test() -> int:
         # `<an-existing-checkout>`, the unfilled placeholder this whole function exists to kill.
         # The stop command now names the interpreter's own file, which necessarily exists.
         case("help: the no-fallback arm carries no unfilled <placeholder> either",
-             lambda: "<" not in _gone_checkout_help("", pathlib.Path("/tmp/gone"), PIDFILE))
+             lambda: "<" not in src_root_help(
+                 SrcRoot(None, "MISSING_FALLBACK", "", pathlib.Path("/tmp/gone"), False)))
         # ⛔ r2 M1 — ASK THE CALLER'S RELATIONSHIP, NOT A FIXTURE'S. The r1 version used a synthetic
         # `/tmp/gone` while `__file__` pointed at a live checkout, so it proved "no path under repo"
         # about a repo production never passes. The real call is `src_root_help(..., REPO)` at
         # the `/src/` 404 branch, with `REPO = SCRIPTS.parent` — under which the r1 fix
         # emitted a command inside the missing directory and this case STILL PASSED.
         _gone = pathlib.Path(__file__).resolve().parent.parent
-        _arm = _gone_checkout_help("", _gone, PIDFILE)
+        _obs_real = SrcRoot(None, "MISSING_FALLBACK", "", _gone, False)
+        _arm = src_root_help(_obs_real)
         case("help: with the REAL repo, the arm emits no command under the missing checkout",
              lambda: not any(str(_gone) in ln for ln in _arm.splitlines()
                              if ln.strip() and not ln.startswith("no source root")))
@@ -1806,7 +1885,7 @@ def _self_test() -> int:
             # tests one value — the shape this repo calls a guard's operands sharing one closure.
             case(f"the kill substitution is exactly `cat <pidfile>` for {_pf.parent.name!r}",
                  lambda pf=_pf: _inner_argv(
-                     [l.strip() for l in _gone_checkout_help("", _gone, pf).splitlines()
+                     [l.strip() for l in src_root_help(_obs_real, pf).splitlines()
                       if l.strip().startswith("kill ")][0]) == ["cat", str(pf)])
         # ⚠ An ABSOLUTE pidfile path, because `shlex.quote` turns `~` into a quoted tilde and a
         # quoted tilde does not expand — the safety measure would have silently broken the command.
@@ -1818,7 +1897,8 @@ def _self_test() -> int:
         # A genuinely absent directory, so this goes through `src_root_help`'s OWN branch — the
         # r2 Medium was that a set-but-stale env var skipped the surviving route entirely.
         _missing = pathlib.Path("/tmp/yps-no-such-checkout-2026-09-15")
-        _both = [src_root_help(v, _missing) for v in ("", "/stale/path")]
+        _both = [src_root_help(SrcRoot(None, r, v, _missing, False))
+                 for r, v in (("MISSING_FALLBACK", ""), ("BAD_ENV", "/stale/path"))]
         case("help: a STALE env var with a missing checkout also gets the surviving route",
              lambda: all("kill " in b and str(_missing) not in b.split("kill ")[1] for b in _both))
         case("…and that arm still names why it is there, in both shapes",
@@ -1829,13 +1909,18 @@ def _self_test() -> int:
         # `src_root_help(pidfile=…)` was "passed the SAME value at every call site (10x <omitted,
         # default>)" — an injectable parameter that nothing injects. The delegation is part of the
         # contract: `src_root_help` must hand ITS pidfile to the arm, not reach for the global.
-        case("help: src_root_help passes its own pidfile through to the gone-checkout arm",
-             lambda: "/tmp/injected here/x.pid" in
-                     src_root_help("", _missing, pathlib.Path("/tmp/injected here/x.pid")))
-        case("…and quoted, so an injected hostile path is still one operand",
+        # ⛔ r3 L1 — A SUBSTRING CASE STOOD HERE, `"/tmp/injected here/x.pid" in body`, WRITTEN IN
+        # THE SAME COMMIT THAT CONDEMNED THAT INSTRUMENT as inverted. It passed only because its
+        # fixture had a space and no apostrophe: `shlex.quote` leaves a space-only path intact, so
+        # the raw string survives, and the case would have flipped the moment the fixture gained a
+        # quote — the exact failure mode of the r2 High, reintroduced one screen below its own
+        # post-mortem. Deleted rather than repaired: the ARGV case below asserts the delegation
+        # AND the quoting together, so a second weaker case adds only a way to be wrong.
+        case("help: src_root_help passes its own pidfile through, quoted, as ONE operand",
              lambda: _inner_argv([l.strip() for l in
-                                  src_root_help("/stale", _missing,
-                                                pathlib.Path("/tmp/it's injected/x.pid")).splitlines()
+                                  src_root_help(
+                                      SrcRoot(None, "BAD_ENV", "/stale", _missing, False),
+                                      pathlib.Path("/tmp/it's injected/x.pid")).splitlines()
                                   if l.strip().startswith("kill ")][0])
                      == ["cat", "/tmp/it's injected/x.pid"])
 
@@ -1879,9 +1964,17 @@ def _self_test() -> int:
                 if result:
                     ok += 1
                 else:
-                    print(f"  FAIL: {name}")
+                    # ⛔ `[FAIL] `, NOT `FAIL: ` — r3 M4, and the shape is a CONTRACT, not a style.
+                    # `check-plan-code.parse_fail_names` reads a red case with
+                    # `startswith("[FAIL] ")` then `[7:]`. MEASURED with that function: this file's
+                    # old shape returned `[]` while `page_chrome`'s returned the case name — so
+                    # every mutation of this file would have reported "matched 0 red case(s) —
+                    # caught by something else", i.e. a kill nobody can see. That is why
+                    # `explainer-serve.py` could never join `--mutate .`, in the same branch that
+                    # paid `page_chrome`'s ratchet 11→13 citing exactly that invisibility.
+                    print(f"  [FAIL] {name}")
             except Exception as exc:  # noqa: BLE001
-                print(f"  FAIL: {name} — {type(exc).__name__}: {exc}")
+                print(f"  [FAIL] {name} — {type(exc).__name__}: {exc}")
 
     print(f"self-test: {ok}/{len(cases)} passed")
     return 0 if ok == len(cases) else 1
