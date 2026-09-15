@@ -121,6 +121,14 @@ REGEN_TIMEOUT = 300
 # ⚠ ThreadingHTTPServer, so two tabs pressing Refresh really do run concurrently — Codex
 # Medium. One lock PER PAGE: two rebuilds of the same target would race on its output
 # file, while rebuilding two DIFFERENT pages at once is harmless and stays parallel.
+# ⛔ r6 High — ONE RESTART IN FLIGHT AT A TIME. `_regenerate` below has always taken a lock;
+# `_restart` took none, and this branch is what made that reachable: it puts a restart button on
+# FIVE page types whose design explicitly expects several stale tabs to be open at once. Two
+# presses land as two threads of one `ThreadingHTTPServer`, both respawners pass `start()`'s
+# `port_busy` pre-check, and the loser writes its dead child's pid over the winner's.
+# A plain lock is sufficient BECAUSE the racers are threads of one process — the respawner
+# children are serialised by the parent that spawns them.
+RESTART_LOCK = threading.Lock()
 REGEN_LOCKS: dict[str, "threading.Lock"] = {}
 REGEN_LOCKS_GUARD = threading.Lock()
 REGENERABLE = {
@@ -1155,6 +1163,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         this machine can do is restart a local docs server, which is what the button on the
         page does; `start_new_session` keeps the child alive when this process ends."""
         pid = os.getpid()
+        # ⛔ r6 High — REFUSE A SECOND RESTART WHILE ONE IS IN FLIGHT, and say so in the reply
+        # rather than silently doing nothing. `acquire(blocking=False)` because the reply must not
+        # block (see above): a queued second restart would answer after this process is dead.
+        # ⚠ The lock is NEVER RELEASED on the success path, deliberately — this process is about
+        # to be replaced, so "in flight" is a one-way door for its remaining lifetime. Releasing
+        # it would re-open the race for the seconds between the reply and the SIGTERM.
+        if not RESTART_LOCK.acquire(blocking=False):
+            self._send(409, json.dumps({"ok": False, "pid": pid,
+                                        "error": "a restart is already in flight"}).encode(),
+                       "application/json")
+            return
         self._send(200, json.dumps({"ok": True, "pid": pid}).encode(), "application/json")
         try:
             self.wfile.flush()
@@ -1166,6 +1185,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                              start_new_session=True, stdin=subprocess.DEVNULL,
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except (OSError, ValueError) as exc:
+            # ⚠ RELEASED HERE AND ONLY HERE: no replacement was spawned, so this process is NOT
+            # about to be replaced and the one-way door above must swing back — otherwise one
+            # failed spawn would refuse every later press for the life of the server.
+            RESTART_LOCK.release()
             # The 200 is already sent, so this cannot be reported in the response. The page
             # finds out the honest way — it waits for a pid that never changes and says the
             # restart failed — and the log says why.
@@ -1270,15 +1293,41 @@ def start() -> int:
         return 0
     pid = os.fork()
     if pid > 0:
-        PIDFILE.write_text(str(pid))
+        # ⛔ r6 High — THE PIDFILE IS WRITTEN AFTER THE CHILD IS VERIFIED, NOT BEFORE, AND THE
+        # QUESTION IS "IS MY CHILD ALIVE", NOT "IS A LISTENER THERE". Those are different
+        # questions and the old code asked the second one. Measured: two concurrent `start()`
+        # calls both pass the `port_busy` pre-check; the loser's child dies of EADDRINUSE, but
+        # its pid is already in the pidfile, and `port_busy` then answers TRUE about the
+        # WINNER's listener — so the loser printed `serving … (pid 1110)` for a corpse and left
+        # 1110 in the pidfile. After that `--restart` fails permanently and `--stop` reports
+        # "not running" about a running server, then unlinks the last pointer to it.
+        #
+        # `waitpid(WNOHANG)` is the direct answer: it reports OUR child specifically. It is
+        # checked FIRST each iteration so a child that dies immediately is seen as dead rather
+        # than masked by someone else's listener.
+        #
+        # ⚠ WHAT THIS STILL CANNOT DISTINGUISH, stated rather than implied: a child that is
+        # alive but has not bound, while an unrelated process holds the port. The child dies on
+        # EADDRINUSE, so the case that actually occurs is covered; a foreign listener on 7391
+        # would need the child to report its own bind through a pipe, which is not built.
+        import time
+        alive = False
         for _ in range(20):
+            try:
+                gone, _status = os.waitpid(pid, os.WNOHANG)
+            except ChildProcessError:
+                gone = pid                      # already reaped: treat as gone
+            if gone == pid:
+                break                           # OUR child exited — do not claim the pidfile
             if port_busy(HOST, PORT):
+                alive = True
                 break
-            import time
             time.sleep(0.1)
-        if not port_busy(HOST, PORT):
-            print(f"FAIL: forked pid {pid} but nothing is listening on {HOST}:{PORT}. NOT RUNNING.")
+        if not alive:
+            print(f"FAIL: forked pid {pid} but it did not start serving on {HOST}:{PORT}. "
+                  f"NOT RUNNING — the pidfile was left untouched.")
             return 1
+        PIDFILE.write_text(str(pid))
         print(f"serving {ROOT} on http://{HOST}:{PORT}  (pid {pid})")
         print(f"  one-click:  http://{HOST}:{PORT}/latest")
         print(f"  questions:  {QUESTIONS}")

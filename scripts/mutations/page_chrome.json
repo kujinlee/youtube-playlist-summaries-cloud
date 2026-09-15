@@ -141,5 +141,16 @@
       ]
     ],
     "expect": "`cd` parses to exactly one operand for 'some repo'"
+  },
+  {
+    "name": "the restart fallback stops being embedded in the page",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "'<details id=\"chrome-restart-help\" class=\"chrome-help\">'",
+        "'<a href=\"/help\" id=\"chrome-restart-help\" class=\"chrome-help\">'"
+      ]
+    ],
+    "expect": "the instructions are embedded, not linked"
   }
 ]

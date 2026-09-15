@@ -910,33 +910,32 @@ def _duplicate_ratchet_keys(source: str) -> "list[str]":
     except SyntaxError:
         return ["CANNOT RUN: the source does not parse"]
     wanted = {"EXEMPT", "KNOWN_UNVARIED", "EXAMINED_KEYS"}
-    for node in _ast.walk(tree):
-        if not isinstance(node, _ast.Assign) or not isinstance(node.value, _ast.Dict):
+
+    # ⛔ MODULE BODY ONLY — `tree.body`, NOT `ast.walk` — r6 Low. `walk` descends into function
+    # bodies, so it also scanned `_self_test`'s own FIXTURE literals: a future fixture written to
+    # contain a deliberate duplicate (exactly what the falsifier case below does) would be
+    # reported as a defect in this file. No false positive today; a trap laid for the next person
+    # to add a case. The three ratchets are module-level constants, so the narrower walk is not a
+    # compromise — it is the correct population.
+    for node in tree.body:
+        if isinstance(node, _ast.AnnAssign):
+            names = {getattr(node.target, "id", None)}
+        elif isinstance(node, _ast.Assign):
+            # ⚠ `a = b = {...}` gives several targets, and a target can be a Tuple or Subscript
+            # with no `.id` — r6 Low: the first version put `None` into this set and then
+            # `sorted()` raised TypeError comparing None with str. Filtered, not sorted around.
+            names = {getattr(x, "id", None) for x in node.targets}
+        else:
             continue
-        names = {getattr(t, "id", None) for t in node.targets}
-        if isinstance(node.targets[0], _ast.Name) and node.targets[0].id in wanted:
-            pass
-        elif not (names & wanted):
-            # `X: dict[...] = {...}` is an AnnAssign, handled below
+        names = {n for n in names if isinstance(n, str)}
+        if not (names & wanted) or not isinstance(node.value, _ast.Dict):
             continue
+        label = sorted(names & wanted)[0]
         seen: "set[str]" = set()
         for k in node.value.keys:
             if isinstance(k, _ast.Constant) and isinstance(k.value, str):
                 if k.value in seen:
-                    dupes.append(f"{sorted(names)[0] if names else '?'}: {k.value!r} "
-                                 f"(line {k.lineno})")
-                seen.add(k.value)
-    for node in _ast.walk(tree):
-        if not isinstance(node, _ast.AnnAssign) or not isinstance(node.value, _ast.Dict):
-            continue
-        name = getattr(node.target, "id", None)
-        if name not in wanted:
-            continue
-        seen = set()
-        for k in node.value.keys:
-            if isinstance(k, _ast.Constant) and isinstance(k.value, str):
-                if k.value in seen:
-                    dupes.append(f"{name}: {k.value!r} (line {k.lineno})")
+                    dupes.append(f"{label}: {k.value!r} (line {k.lineno})")
                 seen.add(k.value)
     return dupes
 
