@@ -94,4 +94,35 @@ check-plan-code       --self-test  128/128
 check-docs                          rc=0
 ```
 
-**CONVERGED. No round 8.**
+## ⛔ THE TOOL DISAGREES WITH MERGING, AND IT IS RIGHT
+
+Run against its own branch after r7 was filed:
+
+```
+ARCHITECTURE_REVIEW — thrashing: 'parse-header' carried fix-induced findings in r6 and r7
+```
+
+r6's M1 (the whole-body flow scan) and r7's L1 (the parser is not a YAML parser) are both
+`parse-header`, both fix-induced, consecutive. **The arming condition is met.**
+
+**The test, answered honestly** (`can a redesign remove it?`): **YES.** Both are the same
+statement — *a hand-rolled parser has rough edges* — and both dissolve under the redesign
+Codex named as early as r3: **stop hand-parsing YAML.** Require a fenced JSON block, or
+vendor a real parser, or pass the counts on the command line.
+
+⚠ **This is NOT overridden.** r4's override was upheld because the finding was a *policy*
+input no reshaping could remove. This one is a *mechanism* defect and a reshaping removes
+it. Overriding it would be the symptom-list failure `:169` warns about — reaching for the
+comfortable grade.
+
+**What happens instead:** the human's stopping rule governs the merge, and the tool's verdict
+is **filed rather than suppressed**. The PR states the disagreement in its own body. L1 is
+therefore upgraded from *"a rough edge"* to *"the parser should not be hand-rolled, and the
+branch's own instrument says so"*.
+
+⭐ **This is the procedure working at the last possible moment, against its own author's
+wish to be finished.** A tool that only ever agreed with the person running it would be
+worth nothing.
+
+**CONVERGED on findings; the architecture review is ARMED and FILED. No round 8 — by human
+decision, with the disagreement recorded.**
