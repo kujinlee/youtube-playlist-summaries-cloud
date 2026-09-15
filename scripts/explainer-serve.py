@@ -64,7 +64,7 @@ USAGE
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
     python3 scripts/explainer-serve.py --restart  # the one to remember: works up OR down
-    python3 scripts/explainer-serve.py --self-test   # 120 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 122 cases, binds no port
 
 Every page also carries a **Restart server** button, and — under it — these commands in a
 `<details>` that needs no script and no network, so the instructions survive the server
@@ -1822,6 +1822,21 @@ def _self_test() -> int:
              lambda: all("kill " in b and str(_missing) not in b.split("kill ")[1] for b in _both))
         case("…and that arm still names why it is there, in both shapes",
              lambda: "is unset" in _both[0] and "is set to" in _both[1])
+        # ⛔ THE SEAM MUST BE EXERCISED THROUGH THE PUBLIC FUNCTION, NOT ONLY THE HELPER.
+        # `check-fixture-variation` caught this the moment the parameter was added: every case
+        # above reaches the hostile pidfiles via `_gone_checkout_help` directly, so
+        # `src_root_help(pidfile=…)` was "passed the SAME value at every call site (10x <omitted,
+        # default>)" — an injectable parameter that nothing injects. The delegation is part of the
+        # contract: `src_root_help` must hand ITS pidfile to the arm, not reach for the global.
+        case("help: src_root_help passes its own pidfile through to the gone-checkout arm",
+             lambda: "/tmp/injected here/x.pid" in
+                     src_root_help("", _missing, pathlib.Path("/tmp/injected here/x.pid")))
+        case("…and quoted, so an injected hostile path is still one operand",
+             lambda: _inner_argv([l.strip() for l in
+                                  src_root_help("/stale", _missing,
+                                                pathlib.Path("/tmp/it's injected/x.pid")).splitlines()
+                                  if l.strip().startswith("kill ")][0])
+                     == ["cat", "/tmp/it's injected/x.pid"])
 
         # ── restart ──────────────────────────────────────────────────────────────────────
         # These read SOURCE, like the `/_rev` case below, because what has to hold is an

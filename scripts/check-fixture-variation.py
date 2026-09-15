@@ -270,6 +270,28 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # ⟳ 2026-09-15, PR #295 r2 Low. NOT the full examined set for either file — the SUBSET this
+    # branch made load-bearing, pinned in the branch that made it so. `repo_root.start` is the r1
+    # H1 REMEDY: it exists so the function can be falsified at all, and deleting it takes
+    # `repo_root` out of this guard's field of view entirely while `analyse` stays silent, because
+    # the pin is one-directional (`:829` reports only `pinned - examined`). The partial cover that
+    # already exists is worth stating rather than relying on: if the parameter stops being VARIED
+    # `analyse` says so, and if the worktree cases go, `check-selftest-counts` catches the count
+    # drift — the uncovered path is parameter and cases removed together with the count updated.
+    'page_chrome.py': (
+        'chrome_bar.restart',
+        'repo_root.start',
+        'restart_commands.root',
+        'restart_control.root',
+    ),
+    # ⟳ 2026-09-15, PR #295 r2 High. `src_root_help.pidfile` is the seam that made the recovery
+    # command falsifiable — before it, the guard was a substring test that PASSED on the unquoted
+    # mutant and FAILED on the correct code under a hostile HOME.
+    'explainer-serve.py': (
+        'src_root_help.env_value',
+        'src_root_help.pidfile',
+        'src_root_help.repo',
+    ),
     # ⟳ 2026-09-14: the review decision procedure's rules. Pinned in the commit that
     # creates them — this guard REFUSED the file until it was, which is the population
     # half of the rule doing its job. `analyse()` reports NO findings: every parameter

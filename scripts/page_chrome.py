@@ -614,8 +614,21 @@ def self_test() -> int:
                      pathlib.Path("/tmp/a$(touch /tmp/pwn)"),
                      pathlib.Path("/tmp/-dashes")):
         _line = restart_commands(_hostile).splitlines()[0]
+        # ⛔ r2 Low — NON-RAISING, AND THE REASON IS THE REPORT FORMAT, NOT TIDINESS. Applying this
+        # file's own manifest entry (drop `shlex.quote`) made `shlex.split` raise
+        # `ValueError: No closing quotation` on the `/tmp/it's here` fixture, ABORTING the suite at
+        # this line. The mutation was still attributed only because `/tmp/some repo` happens to come
+        # FIRST and printed its `[FAIL]` before the raise — every case after this point, ~58 of them,
+        # was unmeasured, and one fixture-order swap would have produced `the suite went RED but
+        # printed no [FAIL] line … NOTHING COULD SEE THE KILL`. A harness that reads `[FAIL] <case>`
+        # lines needs one per fixture, so a raise must become a value. Measured after the change:
+        # the same mutation now prints 4 [FAIL] lines and no traceback (72/76 vs an abort at 1).
+        try:
+            _got = shlex.split(_line)
+        except ValueError as _e:
+            _got = f"UNPARSEABLE: {_e}"
         case(f"`cd` parses to exactly one operand for {_hostile.name!r}",
-             shlex.split(_line), ["cd", "--", str(_hostile)])
+             _got, ["cd", "--", str(_hostile)])
     # ⚠ The SECOND line is relative on purpose, and that is what made B1 Blocking rather than
     # merely broken: when `cd` fails the shell does not stop, so a relative invocation runs
     # whatever checkout the reader was standing in. This pins the pair — if the `cd` ever stops
