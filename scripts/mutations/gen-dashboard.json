@@ -757,5 +757,59 @@
       ]
     ],
     "expect": "a settled ask links its resolver"
+  },
+  {
+    "name": "the decision question stops being a heading the tray can find",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "f'<li><h4 class=\"q\">{_inline(d[\"question\"])}</h4> '",
+        "f'<li><span class=\"q\">{_inline(d[\"question\"])}</span> '"
+      ]
+    ],
+    "expect": [
+      "the decision question is a heading, so the tray can name it",
+      "the question is no longer a bare span"
+    ]
+  },
+  {
+    "name": "the choose affordance is removed from every option",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "PICK_BTN = ' <button type=\"button\" class=\"pick\">choose</button>'",
+        "PICK_BTN = ''"
+      ]
+    ],
+    "expect": [
+      "every option carries a choose button"
+    ]
+  },
+  {
+    "name": "a PR state is dressed as the class that carries anchors",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "f' <span class=\"prstate\">open</span></li>'",
+        "f' <span class=\"when\">open</span></li>'"
+      ]
+    ],
+    "expect": [
+      "a PR row renders its state at all",
+      "a PR state is not dressed as the anchor-bearing class"
+    ]
+  },
+  {
+    "name": "choose stops refusing a stale floater, so it clicks the previous selection's button",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "      if (f && f !== stale) { f.click(); return; }",
+        "      if (f) { f.click(); return; }"
+      ]
+    ],
+    "expect": [
+      "choose refuses a stale floater from a previous selection"
+    ]
   }
 ]
