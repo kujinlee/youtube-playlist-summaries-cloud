@@ -3167,6 +3167,11 @@ def _self_test() -> int:
     # than splitting the line to manufacture a second anchor: contorting shipped code to suit
     # the harness is how a manifest starts measuring itself. The `--` guard is still covered by
     # the `-dashes` CASE in the suite; it is the MUTATION that has no distinct anchor.
+    # ⟳ r2 review supplied a SECOND, independent reason this entry could never have been
+    # admitted, and it is the stronger one: removing `--` reddens FIVE cases, so `expect`
+    # would be refused for matching more than one. Recorded because a rule that happens to
+    # be right for the reason you noticed is one you will misapply the next time the first
+    # reason does not hold.
     case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 645)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────

@@ -665,7 +665,11 @@ def self_test() -> int:
     # answered by git and by nothing else — a fixture that only LOOKS like a worktree would
     # exercise the fallback path instead of the branch under test, which is the shape this repo
     # calls fixing the premise rather than covering the branch.
-    _git_ok = True
+    # ⚠ `_why` NAMES THE STEP THAT FAILED, and it exists because the first version of the message
+    # below said "git is unavailable" — one cause among several. `_git_ok` also goes False when a
+    # commit is REFUSED, and the common real-world reason is gpg signing on a machine that signs by
+    # default. A failure message that names the wrong cause sends the next reader to the wrong place.
+    _git_ok, _why = True, "not attempted"
     with _tf.TemporaryDirectory() as _td:
         _main = pathlib.Path(_td) / "main"
         (_main / "scripts").mkdir(parents=True)
@@ -673,14 +677,21 @@ def self_test() -> int:
         def _g(*a, cwd=_main):
             return subprocess.run(["git", *a], cwd=str(cwd), capture_output=True, text=True)
         try:
-            _git_ok = _g("init", "-q", "-b", "main").returncode == 0
+            _git_ok, _why = _g("init", "-q", "-b", "main").returncode == 0, "git init failed"
             if _git_ok:
                 _g("config", "user.email", "t@example.com"); _g("config", "user.name", "t")
-                _g("add", "-A"); _g("commit", "-qm", "fixture")
+                # ⚠ `commit.gpgsign` off LOCALLY: a machine that signs by default would fail the
+                # commit and report this property as unguarded for a reason nothing to do with it.
+                _g("config", "commit.gpgsign", "false")
+                _g("add", "-A")
+                _c = _g("commit", "-qm", "fixture")
+                _git_ok, _why = _c.returncode == 0, f"git commit failed: {_c.stderr.strip()[:80]}"
+            if _git_ok:
                 _wt = pathlib.Path(_td) / "linked"
-                _git_ok = _g("worktree", "add", "-q", str(_wt), "-d").returncode == 0
-        except (OSError, subprocess.SubprocessError):
-            _git_ok = False
+                _w = _g("worktree", "add", "-q", str(_wt), "-d")
+                _git_ok, _why = _w.returncode == 0, f"git worktree add failed: {_w.stderr.strip()[:80]}"
+        except (OSError, subprocess.SubprocessError) as _e:
+            _git_ok, _why = False, f"git could not be run: {type(_e).__name__}"
         if _git_ok:
             # THE PROPERTY: from inside a linked worktree, the answer is the MAIN checkout —
             # not the worktree, which is the value the docstring records as dead within the hour.
@@ -690,8 +701,15 @@ def self_test() -> int:
             case("…and from the main checkout it resolves to itself",
                  repo_root(_main).resolve(), _main.resolve())
         else:
-            # ⛔ CANNOT RUN IS A FAILURE. A machine without git must not report this guarded.
-            case("CANNOT RUN — git is unavailable, so the worktree property was NOT checked",
+            # ⛔ CANNOT RUN IS A FAILURE. A machine that could not build the fixture must not
+            # report this property as guarded.
+            # ⚠ r2 review: the message used to say "git is unavailable", which is ONE cause among
+            # several — `_git_ok` also goes False when `git commit` is refused, and the common
+            # real-world reason is a gpg-signing failure on a machine that signs by default. A
+            # diagnosis in a failure message that names the wrong cause sends the next reader to
+            # the wrong place, so it names the STEP that failed and leaves the cause open.
+            case(f"CANNOT RUN — the git worktree fixture could not be built ({_why}), so the "
+                 f"worktree property was NOT checked",
                  "git unavailable", "the worktree case must run")
     _bar = chrome_bar("dashboard", "t")
     case("the bar carries the restart control too", 'id="chrome-restart"' in _bar, True)

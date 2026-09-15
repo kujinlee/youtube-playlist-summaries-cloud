@@ -525,8 +525,9 @@ def src_root_help(env_value: str, repo: pathlib.Path,
     # ⛔⛔ r2 M1 — AND THE FIRST FIX FOR THIS WAS ITSELF WRONG, which is worth more than the fix.
     # r1 M1 replaced `{repo}/scripts/explainer-serve.py` with `pathlib.Path(__file__).resolve()`,
     # commented "which necessarily exists — this process is running out of it". **Both claims were
-    # false.** In production the caller is `src_root_help(..., REPO)` (`:1058`) and `REPO` is
-    # `Path(__file__).resolve().parent.parent` (`:115`) — so the interpreter's own file is INSIDE
+    # false.** In production the caller is `Handler.do_GET`'s `/src/` 404 branch — the only call
+    # site, `src_root_help(os.environ.get(SRC_ROOT_ENV, ''), REPO)` — and `REPO` is
+    # `Path(__file__).resolve().parent.parent` (`REPO = SCRIPTS.parent`) — so the interpreter's own file is INSIDE
     # the directory this sentence declares missing, and the emitted command hit `[Errno 2]` exactly
     # as before. A running process also does not keep its source path alive: it can be unlinked
     # underneath it.
@@ -1775,7 +1776,7 @@ def _self_test() -> int:
         # ⛔ r2 M1 — ASK THE CALLER'S RELATIONSHIP, NOT A FIXTURE'S. The r1 version used a synthetic
         # `/tmp/gone` while `__file__` pointed at a live checkout, so it proved "no path under repo"
         # about a repo production never passes. The real call is `src_root_help(..., REPO)` at
-        # `:1058` with `REPO = Path(__file__).resolve().parent.parent` — under which the r1 fix
+        # the `/src/` 404 branch, with `REPO = SCRIPTS.parent` — under which the r1 fix
         # emitted a command inside the missing directory and this case STILL PASSED.
         _gone = pathlib.Path(__file__).resolve().parent.parent
         _arm = _gone_checkout_help("", _gone, PIDFILE)
