@@ -63,7 +63,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 123 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 133 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -210,19 +210,33 @@ SERVABLE = {".html", ".md", ".css", ".js", ".svg", ".png"}
 # correction lived only in `src_root`'s docstring, which a reader arriving at this constant never
 # sees — and this comment is the only statement of the subsystem's REACH.
 #
-# ⚠ The reach is not rhetorical. Measured on this worktree 2026-09-15: the fallback makes
-# **~1,345 files** servable at /src/ with nobody opting in — 1,290 under `docs/`, 40 under
-# `.agents/`, 5 under `public/`, 2 under `prototype-darkmode/`, 2 under `.claude/`, plus
-# `CONTEXT.md`. ⚠ THE ORDER OF MAGNITUDE IS THE POINT, NOT THE DIGITS: the review reported 1,342
-# an hour earlier and the difference is the three review documents committed in between, because
-# this count is taken INSIDE the corpus it measures and is therefore stale at commit time. Do not
-# "correct" it by re-running; re-derive it if the answer ever has to be exact.
-# Not judged a security finding — `safe_path` resolves BEFORE the containment test so
-# `..` and symlinks collapse, `SERVABLE` excludes `.env*`, the listener is 127.0.0.1, and no CORS
-# header is emitted — but a subsystem that went from reaching nothing to reaching the whole repo
-# while its only description of itself stayed put is the SAME silent-widening shape this branch
-# exists to fix, one level up. ⚠ `node_modules/` is absent here and WOULD be reachable in a real
-# checkout; that is stated rather than measured away.
+# ⚠ THE REACH, STATED SO IT CANNOT GO STALE: with nobody opting in, /src/ serves EVERY file under
+# the checkout whose suffix is in `SERVABLE` — including `node_modules/`, `.next/`, `.remember/`,
+# `.superpowers/` and `.claude/`. Not "docs and a handful of others": the whole tree, dotfiles and
+# vendored dependencies included.
+#
+# ⟳⛔ 2026-09-15, r1 H1 — THIS PARAGRAPH USED TO CARRY A COUNT, AND THE COUNT WAS WRONG BY 8.5x IN
+# THE DIRECTION THAT MATTERED. It read "~1,345 files … `node_modules/` is absent here and WOULD be
+# reachable in a real checkout", itemised down to `CONTEXT.md`, and instructed the reader NOT to
+# re-run it. Measured in the main checkout: **11,506**, of which **9,528 are `node_modules/`** —
+# present, not absent — plus 379 `.next/`, 105 `.superpowers/`, 76 `.remember/`. Served live, with
+# nothing set: `/src/node_modules/next/dist/docs/index.md` → 200.
+#
+# ⚠ THE CAUSE IS THE CORPUS, NOT THE ARITHMETIC, AND IT IS WHY THE COUNT IS GONE RATHER THAN
+# CORRECTED. The number was taken in a linked `git worktree` that had never had `npm install` run
+# in it, then shipped into the repo where it is false. A count of a tree, written inside that tree,
+# is stale at commit time — the old comment said exactly that about itself and still asserted a
+# digit. A sentence with no number cannot drift; re-derive it if the answer ever has to be exact.
+#
+# Not judged a security finding, and this verdict is now taken against the reach ABOVE rather than
+# against the small one: `safe_path` resolves BEFORE the containment test so `..` and symlinks
+# collapse, `SERVABLE` excludes `.env*` by suffix, the listener is 127.0.0.1, and no CORS header is
+# emitted — so a cross-origin page can cause a request but cannot read the response. ⚠ What changed
+# with the true corpus is the COST of an escape, not its likelihood: `.remember/` holds session
+# notes and `node_modules/` is 9,528 files, so `safe_path` is now the only thing between a loopback
+# request and the whole checkout. It is a subsystem that went from reaching nothing to reaching the
+# whole repo while its only description of itself stayed put — the SAME silent-widening shape this
+# branch exists to fix, one level up.
 #
 # The env var's remaining job is pointing at a DIFFERENT checkout than the one serving. The file
 # stays project-independent: it still knows nothing about any particular repo (backlog #40).
@@ -1917,6 +1931,145 @@ def _self_test() -> int:
                                       pathlib.Path("/tmp/it's injected/x.pid")).splitlines()
                                   if l.strip().startswith("kill ")][0])
                      == ["cat", "/tmp/it's injected/x.pid"])
+
+        # ── the /src/ CALLER — the joint, not the parts ─────────────────────────────────────
+        # ⛔⛔ r1 H2, AND IT IS THE DEFECT THIS WHOLE BRANCH EXISTS FOR, LEFT IN PLACE BY ITS OWN
+        # FIX. Every case above calls `src_root` or `src_root_help` DIRECTLY. Nothing called the
+        # branch of `do_GET` that wires them together — and the four-day outage was a WIRING
+        # defect: `src_root()` returned None and the caller did the wrong thing with it.
+        #
+        # ⚠ MEASURED BEFORE THESE CASES EXISTED, and each of the three passed 123/123:
+        #   · the caller re-emits master's exact broken text, unfilled `<dir>` and all
+        #   · the caller stops calling `src_root_help` entirely and sends `b"no source root"`
+        #   · the caller RE-READS `os.environ` — the one thing `SrcRoot`'s docstring forbids
+        # A seam can be perfect and the joint still open. `_renders_without_the_world` guards the
+        # renderer; nothing guarded the consumer.
+        #
+        # ⚠ NO PORT IS BOUND, and none is needed: `do_GET` touches the socket only through
+        # `self._send`, so an instance-level stub captures the whole reply. `object.__new__`
+        # skips `BaseHTTPRequestHandler.__init__`, which is what would want a socket.
+        def _drive_src(url_path: str, env_value):
+            """GET `url_path` through the REAL do_GET. Returns (code, body, env_reads)."""
+            got = {}
+            h = object.__new__(Handler)
+            h.path = url_path
+            h._send = lambda code, body, ctype: got.update(  # type: ignore[method-assign]
+                code=code, body=body, ctype=ctype)
+            # ⛔ COUNTS READS RATHER THAN FORBIDDING THEM — the caller is ALLOWED exactly one,
+            # the one `src_root` itself makes. `_Forbidden` cannot express "once"; a second read
+            # is the defect, and a mutation that moves the read rather than adding one must not
+            # slip through, so the count is asserted, not the absence.
+            class _Counting(dict):
+                reads = 0
+                def get(self, k, d=None):
+                    if k == SRC_ROOT_ENV:
+                        type(self).reads += 1
+                    return dict.get(self, k, d)
+            env = _Counting(os.environ)
+            if env_value is None:
+                env.pop(SRC_ROOT_ENV, None)
+            else:
+                env[SRC_ROOT_ENV] = env_value
+            _real = os.environ
+            try:
+                os.environ = env                    # type: ignore[assignment]
+                _Counting.reads = 0
+                h.do_GET()
+            finally:
+                os.environ = _real                  # type: ignore[assignment]
+            return got.get("code"), got.get("body", b""), _Counting.reads
+
+        # ⭐ THE BUG ITSELF, END TO END: with NOTHING set, the caller resolves a root and asks the
+        # filesystem — instead of refusing before it ever looks. This is the case whose absence let
+        # 55 links stay dead for four days behind a green suite.
+        #
+        # ⚠ IT ASSERTS THE *404 TEXT*, NOT A 200, AND THAT IS DELIBERATE — the first version did
+        # `GET /src/CONTEXT.md -> 200`, which passes only where that file is staged. The harness
+        # copies a TREE (`HARNESS_TREE`), so a case naming a repo file is a case that reports on
+        # the stager rather than on the code. `no such source file` is reachable only AFTER
+        # `observed.root` resolved; kill the fallback and the same request renders the help
+        # instead, so this discriminates exactly the defect and depends on no file existing.
+        _unset404 = lambda: _drive_src("/src/yps-no-such-file-2026-09-15.md", None)[1]
+        case("/src/ resolves a root with NOTHING set — the four-day outage",
+             lambda: _unset404() == b"no such source file")
+        case("…and it is NOT the no-source-root help, which is what the defect renders",
+             lambda: b"no source root" not in _unset404())
+        # ⛔ THE SERVING PATH ITSELF, hermetically: a root WE populate, so the 200 is about the
+        # code and not about what happens to be checked in.
+        _srcroot = root / "srcroot"
+        _srcroot.mkdir()
+        (_srcroot / "srcfix.md").write_text("# served from the src root\n\nbody text here.\n")
+        case("/src/ serves a real file from the observed root",
+             lambda: _drive_src("/src/srcfix.md", str(_srcroot))[0] == 200)
+        case("…and the body carries the file's text",
+             lambda: b"body text here" in _drive_src("/src/srcfix.md", str(_srcroot))[1])
+        # ⛔ CONFINEMENT, AND THE ESCAPE TARGET MUST EXIST OR THE CASE PROVES NOTHING. A NESTED
+        # root is the whole point: the first version served from `root` and asked for
+        # `/src/../../etc/passwd`, which 404s under a `safe_path` BYPASS too — the traversal
+        # simply landed on a path that does not exist, so the case was green for a reason
+        # unrelated to confinement. MEASURED: replacing `safe_path(...)` with `root / path[...]`
+        # left that case passing. Here `escaped.md` is REAL and sits one level above the served
+        # root, so a bypass serves it and this goes red for the reason it names.
+        (root / "escaped.md").write_text("# outside the served root\n\nsecret.\n")
+        case("/src/ escape is refused — over a target that really exists outside the root",
+             lambda: _drive_src("/src/../escaped.md", str(_srcroot))[1]
+                     == b"no such source file")
+        # ⛔ THE 404 BODY IS `src_root_help`'s, AND NAMING THE TOKEN IS THE POINT — the mutation
+        # that survives a weaker assertion is the one that restores master's `<dir>` placeholder,
+        # which is a plausible 404 body containing the word "source". Assert what only the FIX
+        # produces (a pasteable `--stop` line) and what only the DEFECT produces (`=<dir>`).
+        case("/src/ 404 renders the pasteable help, not the unfilled <dir>",
+             lambda: (lambda b: b"--stop" in b and b"=<dir>" not in b)(
+                 _drive_src("/src/x.md", "/tmp/yps-no-such-docs-root-2026-09-15")[1]))
+        # ⛔⛔ THE INVARIANT AT THE CONSUMER: exactly ONE read of the env var per request, the one
+        # `src_root` makes. Two means the caller looked at the world a second time — the class
+        # the architecture review dissolved, which survived at this call site until r1 H2.
+        case("the caller reads the environment ONCE — src_root is the only reader",
+             lambda: _drive_src("/src/srcfix.md", str(_srcroot))[2] == 1)
+        case("…including on the 404 path, where the help is rendered",
+             lambda: _drive_src("/src/x.md", "/tmp/yps-no-such-docs-root-2026-09-15")[2] == 1)
+
+        # ⛔ r1 L1 — `expanduser()` had NO case, in the commit that took `src_root` from zero cases
+        # to twelve. Deleting it passed 123/123. Distinct from backlog #123, which is about
+        # `~unknownuser` RAISING; this is that the supported spelling was never exercised.
+        #
+        # ⚠ IT POINTS `$HOME` AT THE SANDBOX RATHER THAN TRUSTING THE REAL ONE, and the first
+        # version did not — it asserted `== pathlib.Path.home()`, which is GREEN here and RED
+        # under the harness. `check-selftest-counts` spawns every suite through
+        # `check-plan-code.child_env`, which sets `HOME` to a path it deliberately does not
+        # create; `~` then expands to a directory that is not a directory, `src_root` correctly
+        # returns None, and the case fails over an ambient fact rather than over the code. Caught
+        # by that guard disagreeing with a green local run — the disagreement WAS the finding.
+        def _tilde_expands():
+            _real = os.environ.get("HOME")
+            os.environ["HOME"] = str(root)          # exists, so `.is_dir()` is satisfied
+            try:
+                return with_env("~", src_root).root == root
+            finally:
+                if _real is None:
+                    os.environ.pop("HOME", None)
+                else:
+                    os.environ["HOME"] = _real
+        case("src_root: a `~` path is expanded, not taken literally", _tilde_expands)
+
+        # ⛔ r1 M2 — THE REPORT FORMAT IS A CONTRACT AND NOTHING READ IT. `[FAIL] ` is the shape
+        # `check-plan-code.parse_fail_names` parses; this file has no manifest yet (backlog #122),
+        # so until it does, NOTHING in the repo notices a revert to `FAIL: ` — measured, 123/123.
+        # The person who eventually writes that manifest would see "matched 0 red case(s)" and
+        # have no way to learn why. One case, no manifest required.
+        #
+        # ⚠ TWO CONSTRUCTION HAZARDS, BOTH PAID FOR WHILE WRITING THIS, AND BOTH ARE THE SAME
+        # SHAPE — a case about a token, written by putting the token in the file it searches:
+        #   ① the first version asserted `'"  FAIL: {name}"' not in source` and went RED on
+        #      correct code, because spelling the forbidden literal in the assertion added it to
+        #      the source. The bad token is therefore ASSEMBLED at runtime, never written.
+        #   ② the search is the RUNNER BLOCK, not the whole function: prose above legitimately
+        #      discusses both spellings, so a whole-file search answers about the commentary.
+        def _runner_src():
+            return inspect.getsource(_self_test).split("\n        for name, fn in cases:", 1)[1]
+        _BAD = "  " + "FAIL" + ": {name}"
+        case("the failure line is `[FAIL] `, the shape check-plan-code can parse",
+             lambda: "  [FAIL] {name}" in _runner_src() and _BAD not in _runner_src())
 
         for name, fn in cases:
             try:

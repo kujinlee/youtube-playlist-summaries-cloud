@@ -2210,13 +2210,20 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     # ⚠ BOUND TO THE CARD'S OWN FRAGMENT — the same rule stated at `:2294`, which this
     # case was the one place not to follow. It sliced `_bh2` (the whole PAGE) from the
     # first `<summary>`, which is only the card's while the chrome above it happens to
-    # contain no `<details>`. MEASURED 2026-09-15: adding the restart fallback to the
-    # page chrome put `<summary>Server not responding?` at index 0 and the card's summary
-    # at index 1 — and F3 went red reporting "the badge is not INSIDE the collapsed row"
-    # while the badge sat exactly where it belongs. A positional read is a claim about a
-    # SHAPE, and this one asserted a shape nothing guaranteed: its failure message names
-    # the badge, not the chrome that actually moved. `_fragment` RAISES when the card is
-    # missing, so the anchor cannot silently slide onto someone else's summary again.
+    # contain no `<details>`. A positional read is a claim about a SHAPE, and this one
+    # asserted a shape nothing guaranteed: its failure message names the badge, not the
+    # chrome that actually moved. `_fragment` RAISES when the card is missing, so the
+    # anchor cannot silently slide onto someone else's summary again — verified by
+    # pointing it at an absent card id, which raises rather than returning a stranger's.
+    #
+    # ⚠ HOW IT WAS FOUND IS NOT REPRODUCIBLE IN THIS TREE, AND SAYING SO IS r1 L2. It was
+    # measured on PR #295's worktree, where a restart control put `<summary>Server not
+    # responding?` at index 0 and the card's summary at index 1; F3 went red reporting
+    # "the badge is not INSIDE the collapsed row" while the badge sat exactly where it
+    # belongs. **That chrome is NOT in this branch** — the restart feature is parked — so
+    # reverting this line passes 325/325 here. The fix ships anyway because the defect is
+    # in the READ, not in the chrome: any future `<details>` above the card re-creates it,
+    # and the next one will not come with a review attached.
     _bcard = _fragment(_bh2, "2026-08-31-1")
     _bsum = _bcard[_bcard.index("<summary>"):_bcard.index("</summary>")]
     case("F3: the badge is INSIDE the collapsed row",

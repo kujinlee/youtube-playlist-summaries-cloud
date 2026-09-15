@@ -2,7 +2,7 @@
 """Every parameter of a function under test must be VARIED by its cases, or be exempt in writing.
 
     python3 scripts/check-fixture-variation.py                 # the declared POPULATION
-    python3 scripts/check-fixture-variation.py --self-test     # 64 cases
+    python3 scripts/check-fixture-variation.py --self-test     # 67 cases
 
 ⛔ WHAT THIS EXISTS FOR, AND IT WAS BOUGHT WITH SIX ADVERSARIAL ROUNDS ON ONE FILE.
 Six rounds of review on `check-plan-code.py` produced six Blocking findings, and five of them are
@@ -917,11 +917,17 @@ def _duplicate_ratchet_keys(source: str) -> "list[str]":
             names = {getattr(node.target, "id", None)}
         elif isinstance(node, _ast.Assign):
             # ⚠ `a = b = {...}` gives several targets, and a target can be a Tuple or Subscript
-            # with no `.id` — r6 Low: the first version put `None` into this set and then
-            # `sorted()` raised TypeError comparing None with str. Filtered, not sorted around.
+            # with no `.id`, so this set can contain `None` — r6 Low, where a version that did
+            # `sorted(names)` raised TypeError comparing None with str.
             names = {getattr(x, "id", None) for x in node.targets}
         else:
             continue
+        # ⚠ r1 L3 — THIS FILTER IS BELT-AND-BRACES NOW, NOT THE CRASH FIX ITS OLD COMMENT
+        # CLAIMED. Both remaining uses intersect with `wanted` (`:927`, `:929`), and `wanted`
+        # holds only `str`, so a `None` could never reach `sorted()` even without this line —
+        # measured: deleting it passes the suite. Kept because it makes the set's type honest at
+        # the point it is built rather than relying on every future reader noticing the
+        # intersection, but the comment is corrected so nobody defends it as load-bearing.
         names = {n for n in names if isinstance(n, str)}
         if not (names & wanted) or not isinstance(node.value, _ast.Dict):
             continue
@@ -964,6 +970,29 @@ def _self_test() -> int:
     # ⛔ CANNOT RUN IS A FAILURE: unparseable source must not read as "no duplicates".
     case("unparseable source is CANNOT RUN, not clean",
          _duplicate_ratchet_keys("def ("), ["CANNOT RUN: the source does not parse"])
+    # ⛔⛔ r1 M1 — THE GUARD CLAIMS THREE LITERALS AND ONLY ONE WAS EVER EXERCISED. Every fixture
+    # above spells `EXAMINED_KEYS`, and the real-file case asserts `== []`, which stays `[]` under
+    # a narrowing. MEASURED: `wanted = {"EXEMPT", "KNOWN_UNVARIED", "EXAMINED_KEYS"}` reduced to
+    # `{"EXAMINED_KEYS"}` passed **64/64** — so the cover of `KNOWN_UNVARIED` (127 entries) and
+    # `EXEMPT` (7) was asserted by prose alone. A duplicate in `KNOWN_UNVARIED` is the identical
+    # silent-discard defect the r5 High was filed for, and the guard against it could be deleted
+    # with nothing going red. The finding was about ONE literal and the fix was widened to three;
+    # this is the widening finally being measured rather than asserted.
+    for _lit in ("KNOWN_UNVARIED", "EXEMPT"):
+        # ⚠ Bound as a default arg, not captured — a closure over the loop variable makes both
+        # cases test the LAST name, which is this file's own `guard's operands share one closure`.
+        case(f"a repeated key in {_lit} is detected too, not just in EXAMINED_KEYS",
+             _duplicate_ratchet_keys(
+                 f"{_lit} = {{\n    'a.py': ('x',),\n    'b.py': ('y',),\n    'a.py': ('z',),\n}}\n"),
+             [f"{_lit}: 'a.py' (line 4)"])
+    # ⛔ r1 M1, second half — THE `tree.body` NARROWING WAS UNFALSIFIABLE. Restoring the r6 Low
+    # verbatim (`for node in _ast.walk(tree)`) passed 64/64, because no fixture puts a ratchet-named
+    # literal inside a function. The comment at the loop says it is "a trap laid for the next
+    # person"; a trap nothing springs is a comment. This case does not need a real duplicate in
+    # this file — it needs a duplicate somewhere `walk` would reach and `tree.body` must not.
+    case("a duplicate inside a FUNCTION body is not this guard's subject",
+         _duplicate_ratchet_keys(
+             "def f():\n    EXAMINED_KEYS = {'a.py': (), 'a.py': ()}\n"), [])
 
     SRC = '''
 def progress_line(done, total, label):
