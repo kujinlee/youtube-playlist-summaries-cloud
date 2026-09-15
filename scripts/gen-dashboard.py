@@ -2207,7 +2207,18 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     # derived badges that shipped in PR #186.
     _bfix = parse_entries("## 2026-08-31 [heads-up]\nBadge fixture sentence.\n\nBody here.\n")
     _bh2 = _build1(_bfix)
-    _bsum = _bh2[_bh2.index("<summary>"):_bh2.index("</summary>")]
+    # ⚠ BOUND TO THE CARD'S OWN FRAGMENT — the same rule stated at `:2294`, which this
+    # case was the one place not to follow. It sliced `_bh2` (the whole PAGE) from the
+    # first `<summary>`, which is only the card's while the chrome above it happens to
+    # contain no `<details>`. MEASURED 2026-09-15: adding the restart fallback to the
+    # page chrome put `<summary>Server not responding?` at index 0 and the card's summary
+    # at index 1 — and F3 went red reporting "the badge is not INSIDE the collapsed row"
+    # while the badge sat exactly where it belongs. A positional read is a claim about a
+    # SHAPE, and this one asserted a shape nothing guaranteed: its failure message names
+    # the badge, not the chrome that actually moved. `_fragment` RAISES when the card is
+    # missing, so the anchor cannot silently slide onto someone else's summary again.
+    _bcard = _fragment(_bh2, "2026-08-31-1")
+    _bsum = _bcard[_bcard.index("<summary>"):_bcard.index("</summary>")]
     case("F3: the badge is INSIDE the collapsed row",
          ('class="flag"' in _bsum, "heads-up" in _bsum), (True, True))
     # F5 — a parse failure must get LOUDER, not quieter.

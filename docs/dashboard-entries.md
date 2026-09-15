@@ -9242,3 +9242,50 @@ Filed: **#125** (the green guard), **#126** (the 409 verdict), **#127** (`RESTAR
 the failure the pipe exists to detect — provenance checked, a seven-round blind spot, not fix
 wreckage). All three blocked behind **#122**: no `scripts/mutations/explainer-serve.json`, so
 none of that file's 140 cases has ever been shown load-bearing.
+
+## 2026-09-15
+Clicking a source link on the goals page did nothing useful for four days — now it opens the document.
+<!--tech-->
+This is the shipping half of the split PR **#295** was parked for. The restart button stays parked;
+nothing of it is in this branch.
+
+Every `/src/` link on `/goals` answered *no source root* — 55 of them, since the server was last
+started on 8 September. Nothing was broken in the page: the links were correct, and
+`scripts/explainer-serve.py` simply declined to resolve them because `EXPLAINER_DOCS_ROOT` was not
+set. Started the way a person actually types it — `python3 scripts/explainer-serve.py` — the whole
+`/src/` subsystem switched itself off and the page around it kept working, which is why nobody saw it.
+
+**The server already knew the answer.** `REPO` is derived from `__file__` and `/_stale` has always
+used it to find the source a page was built from, so `/src/` was refusing to open files that
+`/_stale` was stat-ing by name in the same process, one handler apart. `src_root()` now falls back
+to that root. The variable keeps its real job — pointing at a *different* checkout — and
+project-independence is untouched, because `SCRIPTS.parent` hardcodes no repo. Verified live on this
+branch, on port 7893: with nothing set, `/src/CONTEXT.md` and `/src/docs/dev-process.md` return 200
+and `/src/../../etc/passwd` still 404s.
+
+A **wrong** value stays an error rather than falling back. Unset means "no opinion"; a path someone
+typed means a specific checkout, and quietly serving a different one would rebuild this same bug
+with better manners.
+
+The remaining 404 now prints the commands to run. The old text said `EXPLAINER_DOCS_ROOT=<dir>` and
+never filled in `<dir>`, although the value was one module constant away — a description of the
+failure wearing the shape of an instruction.
+
+⭐ **`src_root()` had no self-test cases at all**, which is how a green suite coexisted with a dead
+subsystem for four days. The suite goes **88 → 123**. One case renders the 404 body with `os.environ`
+emptied and `Path.is_dir` patched to *raise*: it passes only if the reason was carried from the one
+observation, and it is red on all four of the historical defects in this component, where every
+earlier guard named a single instance.
+
+Two independent improvements ride along because they are correct on their own merits and were only
+*surfaced* by #295: `gen-dashboard.py`'s F3 case now anchors on the card's own fragment rather than
+the page's first `<summary>` (a positional read that asserted a shape nothing guaranteed), and
+`check-fixture-variation.py` gains a duplicate-key guard — a repeated key in a dict literal is not
+an error, the last silently replaces the first, and that had already discarded three live pins while
+the guard stayed green.
+
+⚠ **Stated, not measured away:** `scripts/explainer-serve.py` still has no mutation manifest, so its
+123 cases have not been shown able to fail. That is backlog **#122** and it is unchanged by this
+branch. What *does* change is that the suite's failure lines are now `[FAIL] `, the shape
+`check-plan-code.parse_fail_names` can read — the precondition for this file ever joining
+`--mutate .`.
