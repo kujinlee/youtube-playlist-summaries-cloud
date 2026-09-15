@@ -9086,3 +9086,29 @@ invisible cause, not for a laundered gate.
 **#122** — `explainer-serve.py` has no manifest and no `EXPECTED_MUTATIONS` key: 114 cases,
 zero proof any of them can die. UNRATCHETED, not unguarded. Sibling `page_chrome.py` has 13
 (raised from 11 by PR #295 itself). Four concrete seed candidates are named in the row.
+
+## 2026-09-15
+A setting with a typo in it does not produce an error page — it drops the connection.
+
+If the variable pointing at your source checkout contains `~someone` and that person is not a
+user on this machine, the server does not answer the request at all. The browser reports a
+dropped connection rather than the page explaining what is wrong — which is the same
+frustration this whole line of work has been about: a failure that tells you nothing is worse
+than a failure that tells you what to change.
+
+It has been there for a while and is not part of the work being reviewed today, so it is
+written down rather than fixed in passing. It is also the same symptom as an item already on
+the list, and the two are worth solving together: the small repair is to catch it where the
+setting is read; the real one is a promise that every request gets a response.
+<!--tech-->
+Branch `file-expanduser-crash`; row **#123 🟡**.
+
+Found by PR #295's round-4 Claude half and **measured live**, not reasoned about:
+`EXPLAINER_DOCS_ROOT=~unknownuser/x` → `GET /src/…` returns `RemoteDisconnected`.
+`pathlib.Path(v).expanduser()` RAISES `RuntimeError` for an unresolvable user rather than
+returning the path unchanged, and nothing on the request path catches it.
+
+⚠ **Pre-existing on master since PR #149**, which is why it was filed rather than absorbed into
+a branch already carrying a Blocking fix and an armed architecture review. Same symptom as
+backlog **#87** — a dropped connection where a response was owed — so if #87's repair is a
+handler-level catch-all, this is one of the cases it has to cover.
