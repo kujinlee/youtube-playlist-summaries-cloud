@@ -1829,15 +1829,27 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     # assertion, the repair for that regression was itself a substring assertion.
     # Now every emitted rule whose SELECTOR mentions `.pick` is parsed and its
     # declarations checked, so the spelling no longer decides whether the guard sees it.
+    # ⟳ r3 Low (Codex) narrowed BOTH halves of this.
+    #   (a) It parsed the whole document, so a SCRIPT string like `.pick{display:none}`
+    #       would have been read as CSS and failed the suite. Scoped to <style> now —
+    #       and the tray's own JS really does contain `.pick`, so the corpus mattered.
+    #   (b) The bad-value list spelled out `opacity:0;` and `opacity:0}` to avoid
+    #       matching `opacity:.55`, and therefore missed CSS-valid `opacity:.0`.
+    #       The VALUE is parsed and compared numerically, so no spelling is privileged.
+    _css = "\n".join(re.findall(r"<style[^>]*>(.*?)</style>", html, re.S))
     _hiding = []
-    for _sel, _decl in re.findall(r"([^{}]+)\{([^{}]*)\}", html):
+    for _sel, _decl in re.findall(r"([^{}]+)\{([^{}]*)\}", _css):
         if ".pick" not in _sel:
             continue
         _flat = _decl.replace(" ", "").replace("\n", "")
-        for _bad in ("display:none", "visibility:hidden", "opacity:0;", "opacity:0}"):
-            if _bad in _flat + "}":
-                _hiding.append(_sel.strip()[:60])
-                break
+        _bad = "display:none" in _flat or "visibility:hidden" in _flat
+        for _v in re.findall(r"opacity:([0-9.]+)", _flat):
+            try:
+                _bad = _bad or float(_v) == 0.0
+            except ValueError:
+                pass
+        if _bad:
+            _hiding.append(_sel.strip()[:60])
     case("no emitted rule hides the chooser — it stays usable where the tray falls "
          "back to Copy", _hiding, [])
     # ⚠ Asserts the SCRIPT TEXT, which is weaker than asserting the behaviour — a browser
