@@ -1640,6 +1640,18 @@ def _self_test() -> int:
              lambda: f"unset {SRC_ROOT_ENV}" not in src_root_help("", root))
         case("help: the common arm leaves no unfilled <placeholder>",
              lambda: "<" not in src_root_help("/nope", root))
+        # ⚠ A SECOND REPO, AND IT IS THE POINT OF THE WHOLE SLICE. `check-fixture-variation`
+        # refused this file while `repo` took ONE value across all six call sites above, and it
+        # is right: with a single value, `src_root_help` could ignore its argument and interpolate
+        # the module-level `REPO` — and every case above would still pass. That is precisely the
+        # defect this slice fixes (a remedy that names no directory is not runnable), rebuilt one
+        # level up, in the suite that is supposed to prove it fixed. Both arms are varied, because
+        # each writes the path into different prose.
+        _other = pathlib.Path("/tmp/another checkout")
+        case("help: both arms name the repo they are GIVEN, and no other",
+             lambda: all(str(_other) in src_root_help(v, _other)
+                         and str(root) not in src_root_help(v, _other)
+                         for v in ("", "/nope")))
 
         # ── restart ──────────────────────────────────────────────────────────────────────
         # These read SOURCE, like the `/_rev` case below, because what has to hold is an

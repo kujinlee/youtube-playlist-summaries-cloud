@@ -567,6 +567,17 @@ def self_test() -> int:
     # whether the server is up, so an instruction that branches on it is one they get wrong.
     case("one command covers both running and dead", _cmds.count("explainer-serve.py"), 1)
     case("…and it is the flag that handles both", "--restart" in _cmds, True)
+    # ⚠ A SECOND ROOT, AND IT IS NOT DECORATION. `check-fixture-variation` refused this file
+    # while `root` took ONE value at every call site, and the objection is exact: a parameter no
+    # case can tell apart from a constant leaves every clause that reads it unguarded. With only
+    # `_root` above, `restart_commands` could ignore its argument and interpolate `repo_root()`
+    # instead — and all three cases above would still pass, on a page telling a stranded reader to
+    # `cd` to the wrong checkout. The second value is what makes "it uses what it is given" a
+    # claim the suite can falsify.
+    _root2 = pathlib.Path("/tmp/another checkout")
+    _cmds2 = restart_commands(_root2)
+    case("the commands name the root they are GIVEN, and no other",
+         (str(_root2) in _cmds2, str(_root) in _cmds2), (True, False))
     _rc = restart_control(_root)
     case("the control carries a button and a status line",
          ('id="chrome-restart"' in _rc, 'id="chrome-restart-say"' in _rc), (True, True))
