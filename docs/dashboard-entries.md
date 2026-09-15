@@ -8952,3 +8952,39 @@ today; the reason is filed so it is not re-proposed as an obvious cleanup.
 ⚠ **The two open rows about this script hide each other**, and that is recorded in #119:
 until old branches drain, a CANNOT RUN is indistinguishable between *predates the grammar*
 and *the hand-rolled parser of backlog #117 failing on a valid header*.
+
+## 2026-09-15
+A gate told me how to satisfy it, I did exactly that, and nothing happened.
+
+One of the checks that guards this repository can be answered two ways: get the change
+reviewed, or write a sentence in the pull request explaining why it does not need one. I
+wrote the sentence, re-ran the check, and it failed again with the identical complaint —
+having never seen what I wrote.
+
+The reason is small and completely invisible from where a person stands. The check reads
+the pull request's text as it was at the moment the check was triggered, and editing that
+text is not something the system treats as a trigger. So the text sat there, correct and
+unread, and re-running the check simply replayed the old snapshot.
+
+An empty commit fixed it, because a commit *is* a trigger. That works, but nobody would
+guess it from the instruction, which is why this is written down rather than remembered.
+The cheap repair is to make the instruction say the second half out loud; the tidy-looking
+repair — listening for edits too — would also run the whole test suite every time anyone
+fixes a typo in a title.
+<!--tech-->
+Filed as **#120 🟡** on the same branch `file-parse-header-redesign`.
+
+**Measured on PR #302, not reasoned about.** `NO-REVIEW:` was added to the body; the failed
+job was re-run; it failed with the byte-identical message. Two individually correct lines:
+
+| line | what it does |
+|---|---|
+| `.github/workflows/ci.yml:422` | passes `${{ github.event.pull_request.body }}` — the body **as of the event** |
+| `.github/workflows/ci.yml:14` | `on: pull_request:` with **no `types:`** → defaults to `[opened, synchronize, reopened]` |
+
+`edited` is not in that set, and a job re-run replays the **same payload**. Unblocked with
+empty commit `de674310`, whose message carries the diagnosis.
+
+⛔ The tidy fix is not obviously right: `edited` also fires on **title** edits, so every
+typo fix would run full CI. The row proposes naming the extra step in the gate's own
+message instead — cheaper, honest, and it changes nothing about what CI runs.
