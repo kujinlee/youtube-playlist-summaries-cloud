@@ -2,7 +2,7 @@
 """What does the review loop do next? — answered from recorded evidence, not recall.
 
     python3 scripts/check-review-decision.py              # decide for the current branch
-    python3 scripts/check-review-decision.py --self-test  # 30 cases
+    python3 scripts/check-review-decision.py --self-test  # 38 cases
 
 WHY THIS EXISTS
 ---------------
@@ -43,8 +43,30 @@ REPO = Path(__file__).resolve().parent.parent
 # ---------------------------------------------------------------- Q1: scope
 # review-method.md's own trigger list, expressed as PATH PREFIXES so the answer is
 # observable rather than argued. Anything not named here is a contained change.
+# ⛔ AN ALLOWLIST OF RISKY PREFIXES IS INHERENTLY INCOMPLETE, AND ITS FAILURE IS SILENT.
+# r1 Blocking (Codex): the first version listed only `supabase/`, some `lib/*` stems and
+# `middleware`, so `app/api/pdf/[id]/route.ts` — whose own docstring says "money is charged
+# there", and whose sibling carries a "D4 money invariant" — scored ONE-ROUND. A silent
+# downgrade of a money path is precisely the failure this procedure exists to prevent.
+#
+# So the DEFAULT IS INVERTED: a path is contained only if it is named as such. Anything
+# unrecognised is full-loop, because the two errors are not symmetric —
+#   wrong "full-loop"  costs one review round;
+#   wrong "one-round"  merges unreviewed risky code.
+CONTAINED_PREFIXES = (
+    "docs/",        # prose; the record and the instructions
+    "scripts/",     # the harness — `:398`'s "single-file logic, config, thin wrappers"
+    "tests/",       # test code, reviewed with whatever it tests
+    ".claude/",     # session configuration
+    ".agents/",     # vendored skills
+)
+
+# Named explicitly so a RISKY path inside a contained root is still caught.
 RISK_PREFIXES = (
     "supabase/",                                   # schema, migrations, RLS policies
+    "app/api/",                                    # money is charged in the serve routes
+    "worker/",                                     # the paid pipeline
+    ".github/workflows/",                          # what CI enforces
     "lib/spend", "lib/quota", "lib/ledger",        # money, irreversible paths
     "lib/lease", "lib/queue", "lib/reservation",   # concurrency, leasing, locking
     "middleware", "lib/auth",                      # auth / multi-tenant isolation
@@ -52,10 +74,12 @@ RISK_PREFIXES = (
 
 
 def scope_for(paths: list[str]) -> str:
-    """PURE. `full-loop` if any changed path is risky, else `one-round`."""
+    """PURE. `one-round` only when EVERY path is recognisably contained."""
     for p in paths:
         if any(p.startswith(pre) for pre in RISK_PREFIXES):
             return "full-loop"
+        if not any(p.startswith(pre) for pre in CONTAINED_PREFIXES):
+            return "full-loop"          # unrecognised is risky, never assumed safe
     return "one-round"
 
 
@@ -148,17 +172,65 @@ def parse_header(text: str) -> dict:
     rm = re.search(r"^round:\s*(\d+)\s*$", body, re.M)
     if not rm:
         raise ValueError("header has no `round:` line")
-    findings = []
-    for fm in FINDING_RE.finditer(body):
-        f: dict = {}
-        for pair in fm.group(1).split(","):
-            if ":" not in pair:
-                continue
-            k, v = pair.split(":", 1)
-            v = v.strip().strip('"').strip("'")
-            f[k.strip()] = {"true": True, "false": False}.get(v, v)
-        findings.append(f)
+    findings = [_scalarise(fm.group(1).split(",")) for fm in FINDING_RE.finditer(body)]
+    findings += _block_findings(body)
+
+    # ⛔ PARITY, NOT BEST EFFORT. r1 Blocking (Codex): the parser read only `{...}` flow
+    # mappings, so an ordinary block-style item parsed to ZERO findings — and an empty
+    # round is clean, and two clean rounds are CONVERGED. A recorded High could reach STOP.
+    # That is "cannot parse reads as a pass" inside the tool built to refuse it.
+    # So: count the list-item markers and REFUSE unless every one produced a finding.
+    declared = len(re.findall(r"^\s*-\s", body, re.M))
+    if declared != len(findings):
+        raise ValueError(f"header declares {declared} finding item(s) but "
+                         f"{len(findings)} parsed — refusing to guess")
     return {"round": int(rm.group(1)), "findings": findings}
+
+
+def _scalarise(pairs) -> dict:
+    """`k: v` strings -> a dict with real booleans."""
+    f: dict = {}
+    for pair in pairs:
+        if ":" not in pair:
+            continue
+        k, v = pair.split(":", 1)
+        v = v.strip().strip('"').strip("'")
+        f[k.strip()] = {"true": True, "false": False}.get(v, v)
+    return f
+
+
+def _block_findings(body: str) -> list[dict]:
+    """Block-style items under `findings:` — the ordinary YAML shape.
+
+        findings:
+          - id: H1
+            severity: High
+    """
+    lines = body.split("\n")
+    try:
+        start = next(i for i, l in enumerate(lines) if re.match(r"^findings:\s*$", l))
+    except StopIteration:
+        return []
+    out: list[dict] = []
+    cur: list[str] = []
+    for line in lines[start + 1:]:
+        if not line.strip():
+            continue
+        if not line.startswith((" ", "\t")):        # dedented out of the list
+            break
+        m = re.match(r"^\s*-\s*(.*)$", line)
+        if m:
+            if cur:
+                out.append(_scalarise(cur))
+            cur = [m.group(1)] if m.group(1).strip() else []
+            if cur and cur[0].startswith("{"):        # a flow mapping; already handled
+                cur = []
+                continue
+        elif cur is not None and ":" in line:
+            cur.append(line.strip())
+    if cur:
+        out.append(_scalarise(cur))
+    return [f for f in out if f]
 
 
 def rounds_for(subject: str) -> list[dict]:
@@ -213,6 +285,17 @@ def _self_test() -> int:
          scope_for(["docs/x.md", "lib/auth/session.ts"]), "full-loop")
     case("an empty diff is one round, not a crash",
          scope_for([]), "one-round")
+    # r1 Blocking (Codex): an allowlist of risky prefixes silently downgraded a money path.
+    case("a serve route that charges money needs the full loop",
+         scope_for(["app/api/pdf/[id]/route.ts"]), "full-loop")
+    case("the paid worker pipeline needs the full loop",
+         scope_for(["worker/run.ts"]), "full-loop")
+    case("what CI enforces needs the full loop",
+         scope_for([".github/workflows/ci.yml"]), "full-loop")
+    case("an UNLISTED path is risky, never assumed contained",
+         scope_for(["lib/some-new-module.ts"]), "full-loop")
+    case("a top-level config file is risky, never assumed contained",
+         scope_for(["package.json"]), "full-loop")
 
     # --- Q5 thrashing -----------------------------------------------------
     fix_a1 = {"round": 1, "findings": [{"fix_induced": True, "component": "a"}]}
@@ -283,6 +366,16 @@ def _self_test() -> int:
          _raises(lambda: parse_header("```yaml\nsubject: s\nfindings: []\n```")), True)
     case("a header with no findings is a real round, not an error",
          parse_header("```yaml\nround: 9\nfindings:\n```")["findings"], [])
+    # r1 Blocking (Codex): block-style YAML parsed to ZERO findings, so a recorded High
+    # reached STOP. Executed by the reviewer, not reasoned about.
+    _block = ("```yaml\nround: 1\nfindings:\n  - id: H1\n    severity: High\n"
+              "    aim: deliverable\n```")
+    case("an ordinary BLOCK-style finding is parsed, not silently dropped",
+         parse_header(_block)["findings"][0]["severity"], "High")
+    case("a block-style High does NOT reach STOP",
+         decide([parse_header(_block)], "one-round", True)[0], "ROUND_OWED")
+    case("a list item that parses to nothing REFUSES rather than shrinking the round",
+         _raises(lambda: parse_header("```yaml\nround: 1\nfindings:\n  - \n```")), True)
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0

@@ -95,7 +95,7 @@ measured false escalation on 2026-08-14. Reaching four rounds **obliges asking**
 
 ### Q6 · Record the call
 
-Write the reason and the per-finding evidence into the round document (`:439`), and carry the
+Write the reason and the per-finding evidence into the round document (`:441`), and carry the
 header defined in [`docs/round-header-template.md`](round-header-template.md) so
 the counters Q4 and Q5 need are derived rather than remembered (`:374`).
 
@@ -384,7 +384,7 @@ Dispatch Codex (`codex:rescue`) with an explicit adversarial mandate at every ph
 - **Plan:** missing tasks, wrong order, underspecified acceptance criteria, implementation risks
 - **Code:** per-task (Claude + Codex independently). Both must complete before marking a task done.
 
-Address all High/P1 findings before showing the user. Present Medium/P2 for a decision.
+Address all High/P1 findings before showing the user. ⟳ **SUPERSEDED 2026-09-14 — Medium/P2 is no longer presented for a decision; §0 Q3 disposes of it by rule and records the disposition per finding.** This sentence is kept because five merged review documents cite it; it states what the process USED to do.
 
 ### Iterative Re-Review (big / critical changes) — required
 
@@ -399,14 +399,16 @@ For small, contained changes (single-file logic, config, thin wrappers), one rou
 
 **The loop:**
 1. Review (Codex + Claude, independent) → group Blocking/High/Medium/Low.
-2. Address all Blocking/High (present Medium for a decision).
+2. Address all Blocking/High. ⟳ Medium is **disposed by §0 Q3**, not presented — see the supersession above.
 3. **Re-review the revised artifact** — both passes again, explicitly scoped to (a) verify each prior finding is *genuinely* fixed, not reworded, and (b) hunt for defects the fixes introduced.
 4. Repeat from 2.
 
 ### ⚠ Non-convergence means different things on a DOCUMENT and on CODE — added 2026-08-28
 
-`docs/dev-process.md` arms the architecture review after **four non-converging rounds**. That
-trigger was bought with the stable-blob-addressing spec and it is correct — but it was written from
+⟳ **CORRECTED 2026-09-14.** `docs/dev-process.md` no longer arms the architecture review on a
+COUNT — it arms on **thrashing**, and reaching four rounds obliges asking rather than firing. The
+paragraph below describes the count trigger it USED to carry; the distinction it draws is why the
+count lost. That trigger was bought with the stable-blob-addressing spec — but it was written from
 one shape of failure and reads as if it covers every shape. **It does not, and the difference decides
 whether a fifth round is worth running.**
 
@@ -414,7 +416,7 @@ whether a fifth round is worth running.**
 
 | Shape | Tell | What it means | Do |
 |---|---|---|---|
-| **Thrashing** | findings are **introduced by the previous round's own fix**; severity stays put | the design is fighting itself — a real architecture problem | **the architecture review.** This is what the four-round trigger was bought for |
+| **Thrashing** | findings are **introduced by the previous round's own fix**; severity stays put | the design is fighting itself — a real architecture problem | **the architecture review.** This is the shape the trigger was bought for, and since 2026-09-14 it is the ARMING CONDITION itself |
 | **Prose floor** | findings shift from *"this cannot work"* to *"this is under-specified"*; each round is right and the artifact keeps improving | the review has reached the limit of what can be settled **without an executable subject** | **Stop reviewing prose. Write the code or the plan, and review THAT** |
 
 **Why the second shape exists at all.** A spec review has nothing to run. A reviewer can verify a
