@@ -1816,8 +1816,25 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
          "closest('.pick')" in html, True)
     # r1 Medium (Codex): the first version hid every chooser on `file:`, where the tray
     # relabels Send to Copy and still delivers. Nothing may hide `.pick` by mode.
-    case("the chooser is not hidden in local-file mode, where the tray falls back to Copy",
-         ".pick{display:none" in html.replace(" ", ""), False)
+    #
+    # ⟳ r2 Low (Codex) REWROTE THIS. It asserted `".pick{display:none" not in html`
+    # despaced — which catches the ONE spelling the deleted rule happened to use and
+    # misses hiding by an ancestor, `visibility:hidden`, `opacity:0`, or a media-scoped
+    # rule. On a branch that had ALREADY regressed through a page-wide substring
+    # assertion, the repair for that regression was itself a substring assertion.
+    # Now every emitted rule whose SELECTOR mentions `.pick` is parsed and its
+    # declarations checked, so the spelling no longer decides whether the guard sees it.
+    _hiding = []
+    for _sel, _decl in re.findall(r"([^{}]+)\{([^{}]*)\}", html):
+        if ".pick" not in _sel:
+            continue
+        _flat = _decl.replace(" ", "").replace("\n", "")
+        for _bad in ("display:none", "visibility:hidden", "opacity:0;", "opacity:0}"):
+            if _bad in _flat + "}":
+                _hiding.append(_sel.strip()[:60])
+                break
+    case("no emitted rule hides the chooser — it stays usable where the tray falls "
+         "back to Copy", _hiding, [])
     # ⚠ Asserts the SCRIPT TEXT, which is weaker than asserting the behaviour — a browser
     # is the only instrument for that, and this defect was found by driving the real page
     # (r2), not by reading. Same trade-off the collapsed-title case records. It exists so
