@@ -9185,3 +9185,60 @@ cron was uncommented:
 above was taken and how the path gets exercised on demand. The concurrency key already includes
 `github.event_name`, so the 09:00 cron and a push to master cannot cancel each other.
 
+
+## 2026-09-15 [needs-you]
+The long review stopped itself, on a rule it wrote down before it knew the answer.
+
+One piece of work today ran eight rounds of review. Partway through, it wrote down a promise:
+*if the next round finds another defect caused by one of our own fixes, we stop and split this
+in two.* It wrote that before running the round, precisely so the answer could not be argued
+with afterwards.
+
+The round found one. So it stopped.
+
+⭐ **The valuable half is finished and the risky half is not.** The original bug — source links
+on the goals page that had been dead for four days — was fixed early and has had nothing said
+against it for five rounds. Everything serious since came from a second feature that travelled
+in the same branch: a button that restarts the local server. That button's fixes kept producing
+the next problem, four times running.
+
+And the deeper reason is worth saying plainly, because it is not about any one bug: **for the
+file those tests live in, nobody has ever shown the tests can fail.** There is a tool here that
+proves a test is real by deliberately breaking the code and checking the test notices. It has
+never been pointed at this file. The last round demonstrated exactly what that costs — a test
+written to catch a specific bug turned out to be *green while that same bug was happening*.
+
+So nothing from that branch ships today. The plan is written down: ship the source-link fix on
+its own, and leave the restart button until its tests can be trusted.
+
+**Waiting on you:** whether to accept that split, or to take the whole branch as it stands. The
+recommendation is the split.
+
+⭐ Separately and much more happily: **the nightly production check is live.** You added the
+credential this morning; it was verified against the real database, dispatched once by hand to
+prove it passes, and is now armed for 09:00 UTC daily. That was the oldest item on the list.
+<!--tech-->
+PR **#295 PARKED** after 8 rounds. PR **#308 MERGED** — cron armed.
+
+**The pre-commitment, recorded in r7's coordinator document before r8 ran:** *if round 8 finds
+another fix-induced defect in `start-restart`, this branch splits.* r8's Claude half found **M1 —
+fix-induced, runtime**: a refused second press (409) renders as `restart FAILED` for a restart
+that is succeeding. It applies; narrowing "defect" to "High" after the fact would be widening a
+framing to fit, which this repo has a memory entry about.
+
+⚠ **"Splits" does not mean doing the surgery now.** `explainer-serve.py` carries 938 changed
+lines and `page_chrome.py` 300, entangled across eight rounds. Reconstructing that at the end of
+a session in which *every one of the last four fixes introduced the next defect* is how the ninth
+gets written. The commitment's purpose was to stop patching; it is honoured by stopping.
+
+**r8 H1, confirmed by the coordinator:** the readiness case written in r7 is GREEN on a live
+reproduction of the r7 High — `httpd.timeout = float(os.environ["EXPLAINER_TIMEOUT"])` after the
+`K` write gives `rc=0`, a pidfile naming a dead pid, nothing listening. It slices `body[k+1:]`
+where `k` indexes the statement *containing* the write, so the write's own `try` body is never
+walked. Codex found two bypasses at the top level; the repair closed those two INSTANCES and the
+CLASS one indent in survived. 2 of 3 mutations survived.
+
+Filed: **#125** (the green guard), **#126** (the 409 verdict), **#127** (`RESTART_LOG` silent on
+the failure the pipe exists to detect — provenance checked, a seven-round blind spot, not fix
+wreckage). All three blocked behind **#122**: no `scripts/mutations/explainer-serve.json`, so
+none of that file's 140 cases has ever been shown load-bearing.
