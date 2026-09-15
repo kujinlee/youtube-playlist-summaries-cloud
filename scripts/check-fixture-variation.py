@@ -2,7 +2,7 @@
 """Every parameter of a function under test must be VARIED by its cases, or be exempt in writing.
 
     python3 scripts/check-fixture-variation.py                 # the declared POPULATION
-    python3 scripts/check-fixture-variation.py --self-test     # 60 cases
+    python3 scripts/check-fixture-variation.py --self-test     # 64 cases
 
 ⛔ WHAT THIS EXISTS FOR, AND IT WAS BOUGHT WITH SIX ADVERSARIAL ROUNDS ON ONE FILE.
 Six rounds of review on `check-plan-code.py` produced six Blocking findings, and five of them are
@@ -270,28 +270,6 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
-    # ⟳ 2026-09-15, PR #295 r2 Low. NOT the full examined set for either file — the SUBSET this
-    # branch made load-bearing, pinned in the branch that made it so. `repo_root.start` is the r1
-    # H1 REMEDY: it exists so the function can be falsified at all, and deleting it takes
-    # `repo_root` out of this guard's field of view entirely while `analyse` stays silent, because
-    # the pin is one-directional (`:829` reports only `pinned - examined`). The partial cover that
-    # already exists is worth stating rather than relying on: if the parameter stops being VARIED
-    # `analyse` says so, and if the worktree cases go, `check-selftest-counts` catches the count
-    # drift — the uncovered path is parameter and cases removed together with the count updated.
-    'page_chrome.py': (
-        'chrome_bar.restart',
-        'repo_root.start',
-        'restart_commands.root',
-        'restart_control.root',
-    ),
-    # ⟳ 2026-09-15, PR #295 r2 High. `src_root_help.pidfile` is the seam that made the recovery
-    # command falsifiable — before it, the guard was a substring test that PASSED on the unquoted
-    # mutant and FAILED on the correct code under a hostile HOME.
-    'explainer-serve.py': (
-        'src_root_help.env_value',
-        'src_root_help.pidfile',
-        'src_root_help.repo',
-    ),
     # ⟳ 2026-09-14: the review decision procedure's rules. Pinned in the commit that
     # creates them — this guard REFUSED the file until it was, which is the population
     # half of the rule doing its job. `analyse()` reports NO findings: every parameter
@@ -473,11 +451,23 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     'coverage_verdict.py': (
         'not_measured_reason.cause', 'not_measured_reason.declared',
         'not_measured_reason.entries',),
+    # ⟳ 2026-09-15, PR #295 — the `src_root_help` keys are pinned HERE, in the entry that
+    # WINS, and the reason is r5's High: they were first added as a SECOND `'explainer-serve.py'`
+    # key earlier in this literal. A duplicate key in a dict literal is not an error — the last
+    # one silently replaces the first — so all three pins were discarded at import, and the guard
+    # stayed green while the remedies for r1 H1 and r2 High were unprotected.
+    #
+    # ⚠ AND THE FIRST ATTEMPT PINNED NAMES THE REDESIGN HAD ALREADY DELETED — `env_value` and
+    # `repo`, copied from a comment written BEFORE r3 changed the signature to `(observed,
+    # pidfile)`. The guard refused immediately and said so by name, which is the pin working in
+    # the direction it is built for: `pinned - examined` is exactly "coverage left and nobody
+    # noticed". A pin copied from prose is a pin about the prose.
     'explainer-serve.py': (
         'explainers.root', 'format_question_entry.now', 'format_question_entry.payload',
         'index_html.root', 'is_fragment.p', 'is_standing.p', 'latest_target.root',
         'md_render.text', 'pid_alive.pid', 'question_text.payload', 'resolve_page.root',
         'resolve_page.url_path', 'revision.p', 'safe_path.root', 'safe_path.url_path',
+        'src_root_help.observed', 'src_root_help.pidfile',
         'stale_verdict.built_ns', 'stale_verdict.newest_source_ns',),
     'gen-backlog-page.py': (
         'build.edited', 'build.generated_at', 'build.rows', 'build.sha', 'build.stamp',
@@ -513,10 +503,15 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'parse_milestones.text', 'parse_registry.text', 'parse_roots.text',),
     'gen-m4-manifest.py': (
         'derive.source', 'has_m4.catalog', 'has_m4.manifest', 'psql.db', 'psql.sql',),
+    # ⟳ 2026-09-15, PR #295 — same story as `explainer-serve.py` above. `repo_root.start` is the
+    # r1 H1 REMEDY: it exists so the function can be falsified at all, and deleting it takes
+    # `repo_root` out of this guard's field of view while `analyse` stays silent, because the pin
+    # is one-directional (only `pinned - examined` is reported).
     'page_chrome.py': (
         'assert_wired.page', 'assert_wired.where', 'chrome_bar.refresh',
-        'chrome_bar.slug', 'chrome_bar.when', 'has_control.page',
-        'missing_palettes.page', 'provenance.now', 'provenance.root', 'stamp.when',),
+        'chrome_bar.restart', 'chrome_bar.slug', 'chrome_bar.when', 'has_control.page',
+        'missing_palettes.page', 'provenance.now', 'provenance.root', 'repo_root.start',
+        'restart_commands.root', 'restart_control.root', 'stamp.when',),
     'page_markup.py': (
         'escape.s', 'safe_href.url', 'scan.s', 'trim_url_tail.url',),
     'prior-art.py': (
@@ -893,6 +888,59 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def _duplicate_ratchet_keys(source: str) -> "list[str]":
+    """Every key written more than once in this file's three ratchet literals. PURE.
+
+    ⛔ WHY THIS EXISTS — PR #295 r5 High, and it is a hole nothing else in this repo could see.
+    A repeated key in a dict literal is NOT an error: the last one silently replaces the first.
+    Two `'explainer-serve.py'` and two `'page_chrome.py'` entries were added to `EXAMINED_KEYS`
+    and every pin in the earlier copy was discarded at import — including `repo_root.start`, the
+    remedy for r1's High, and `src_root_help.pidfile`, the seam for r2's High. The guard stayed
+    GREEN while the things it had just been told to protect were unprotected.
+
+    ⚠ AND NO EXISTING CHECK COULD CATCH IT, which is the reason this is a function and not a
+    convention: `population_drift` and the population case compare NAME SETS, and a collapsed
+    duplicate leaves the name set identical. The defect is invisible to everything that reads the
+    dict — it is only visible in the SOURCE, before Python throws the first copy away.
+    """
+    import ast as _ast
+    dupes: "list[str]" = []
+    try:
+        tree = _ast.parse(source)
+    except SyntaxError:
+        return ["CANNOT RUN: the source does not parse"]
+    wanted = {"EXEMPT", "KNOWN_UNVARIED", "EXAMINED_KEYS"}
+    for node in _ast.walk(tree):
+        if not isinstance(node, _ast.Assign) or not isinstance(node.value, _ast.Dict):
+            continue
+        names = {getattr(t, "id", None) for t in node.targets}
+        if isinstance(node.targets[0], _ast.Name) and node.targets[0].id in wanted:
+            pass
+        elif not (names & wanted):
+            # `X: dict[...] = {...}` is an AnnAssign, handled below
+            continue
+        seen: "set[str]" = set()
+        for k in node.value.keys:
+            if isinstance(k, _ast.Constant) and isinstance(k.value, str):
+                if k.value in seen:
+                    dupes.append(f"{sorted(names)[0] if names else '?'}: {k.value!r} "
+                                 f"(line {k.lineno})")
+                seen.add(k.value)
+    for node in _ast.walk(tree):
+        if not isinstance(node, _ast.AnnAssign) or not isinstance(node.value, _ast.Dict):
+            continue
+        name = getattr(node.target, "id", None)
+        if name not in wanted:
+            continue
+        seen = set()
+        for k in node.value.keys:
+            if isinstance(k, _ast.Constant) and isinstance(k.value, str):
+                if k.value in seen:
+                    dupes.append(f"{name}: {k.value!r} (line {k.lineno})")
+                seen.add(k.value)
+    return dupes
+
+
 def _self_test() -> int:
     global EXEMPT, KNOWN_UNVARIED, EXAMINED_KEYS   # blocks below swap these
     ok = fail = 0
@@ -904,6 +952,24 @@ def _self_test() -> int:
         else:
             fail += 1
             print(f"  [FAIL] {name}: got {got!r} want {want!r}")
+
+    # ── r5 High: a duplicate key silently discards the earlier entry ───────────────────
+    import pathlib as _pl
+    case("this file's own ratchet literals have no repeated key",
+         _duplicate_ratchet_keys(_pl.Path(__file__).read_text()), [])
+    case("a repeated key IS detected — over a literal written to have one",
+         _duplicate_ratchet_keys(
+             "EXAMINED_KEYS: dict[str, tuple[str, ...]] = {\n"
+             "    'a.py': ('x',),\n    'b.py': ('y',),\n    'a.py': ('z',),\n}\n"),
+         ["EXAMINED_KEYS: 'a.py' (line 4)"])
+    case("…and a literal with none is clean",
+         _duplicate_ratchet_keys(
+             "EXAMINED_KEYS: dict[str, tuple[str, ...]] = {\n"
+             "    'a.py': ('x',),\n    'b.py': ('y',),\n}\n"),
+         [])
+    # ⛔ CANNOT RUN IS A FAILURE: unparseable source must not read as "no duplicates".
+    case("unparseable source is CANNOT RUN, not clean",
+         _duplicate_ratchet_keys("def ("), ["CANNOT RUN: the source does not parse"])
 
     SRC = '''
 def progress_line(done, total, label):
@@ -1513,8 +1579,20 @@ def _self_test():
          main(["/nonexistent/nope.py"]), 2)
 
     print(f"\n{ok}/{ok + fail} passed")
-    if ok + fail != 60:
-        print(f"  [DRIFT] the docstring declares 60 cases; the suite ran {ok + fail}")
+    # ⛔ THE DECLARED NUMBER IS READ, NOT REPEATED — and this line used to hold a SECOND copy of
+    # it (`!= 60`, plus "the docstring declares 60" in the message), which is the same
+    # two-copies-of-one-number defect the drift check exists to report. Adding four cases moved
+    # the docstring and left this at 60, so the check reported drift against its own stale twin.
+    # `__doc__` is the one owner; if it cannot be read that is CANNOT RUN, never a pass.
+    import re as _re
+    _m = _re.search(r"--self-test\s+#\s*(\d+)\s+cases", __doc__ or "")
+    if _m is None:
+        print("  CANNOT RUN — this file's docstring no longer declares a case count, so the "
+              "suite size is unverifiable. Treat this as NOT CHECKED.")
+        return 2
+    _declared = int(_m.group(1))
+    if ok + fail != _declared:
+        print(f"  [DRIFT] the docstring declares {_declared} cases; the suite ran {ok + fail}")
         return 1
     return 1 if fail else 0
 
