@@ -64,7 +64,7 @@ USAGE
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
     python3 scripts/explainer-serve.py --restart  # the one to remember: works up OR down
-    python3 scripts/explainer-serve.py --self-test   # 114 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 120 cases, binds no port
 
 Every page also carries a **Restart server** button, and — under it — these commands in a
 `<details>` that needs no script and no network, so the instructions survive the server
@@ -480,7 +480,8 @@ def src_root() -> pathlib.Path | None:
     return p if p.is_dir() else None
 
 
-def src_root_help(env_value: str, repo: pathlib.Path) -> str:
+def src_root_help(env_value: str, repo: pathlib.Path,
+                  pidfile: pathlib.Path = PIDFILE) -> str:
     """The body of the `/src/` 404 — a remedy that can be PASTED, not a variable name.
 
     The old text was `no source root — start the server with EXPLAINER_DOCS_ROOT=<dir>`, and
@@ -496,18 +497,21 @@ def src_root_help(env_value: str, repo: pathlib.Path) -> str:
     that the path APPEARED — a hostile input asserted with a substring test proves nothing about
     hostility.
 
+    ⛔ `pidfile` IS A PARAMETER FOR THE REASON `repo_root.start` IS — r2 High. The recovery line
+    was guarded by `str(PIDFILE) in _arm`, the very instrument this branch condemned twice, and it
+    was not merely blind but INVERTED: measured under `HOME=/tmp/it's home`, `shlex.quote` emits
+    `'/tmp/it'"'"'s home/…` so the raw path is no longer a substring — the correct code FAILED
+    (113/114) and the unquoted mutant PASSED (114/114). A guard that rewards the absence of a fix
+    is worse than none. Injectable so the suite can hand it hostile values and compare ARGV.
+
     PURE, so the self-test asserts on the text rather than on a live 404."""
-    script = shlex.quote(str(repo / "scripts" / "explainer-serve.py"))
-    stop = f"python3 {script} --stop"
-    start = f"python3 {script}"
-    if env_value:
-        return (f"no source root — {SRC_ROOT_ENV} is set to {env_value!r}, which is not a "
-                f"directory.\n\n"
-                f"Unset it to serve sources from the repo this server runs from ({repo}):\n\n"
-                f"  {stop}\n"
-                f"  unset {SRC_ROOT_ENV}\n"
-                f"  {start}\n\n"
-                f"Or set it to a checkout that exists.\n")
+    # ⛔ r2 Medium — THE BRANCH IS ON `repo.is_dir()`, NOT ON `env_value`, and that is the whole
+    # repair. The arm below names `{repo}/scripts/explainer-serve.py`; r2 M1 established that such
+    # a path is `[Errno 2]` whenever `repo` is gone. But `src_root` returns None for a set-but-bad
+    # env var WITHOUT consulting REPO (`:479-480`), and the caller is unconditional (`:1071`) — so
+    # a stale `EXPLAINER_DOCS_ROOT` **plus** a moved checkout reached this arm and handed the reader
+    # two dead commands plus the sentence "the repo this server runs from" about a missing
+    # directory. The fix for the sibling arm simply had not been carried up here.
     # Reachable only if REPO stopped being a directory under a running server — the repo moved
     # or was deleted. Named as its own case: "unset it" would be nonsense advice here.
     #
@@ -535,12 +539,38 @@ def src_root_help(env_value: str, repo: pathlib.Path) -> str:
     # `PIDFILE` lives OUTSIDE any checkout and is reachable when every path here is gone.
     # ⚠ Absolute, not `~`: `shlex.quote("~/explainers/.serve.pid")` quotes the tilde and a quoted
     # tilde does not expand — the safety measure would silently destroy the command.
-    return (f"no source root — {SRC_ROOT_ENV} is unset and the fallback {repo} is not a "
-            f"directory, so there is nothing to serve sources from.\n\n"
+    if not repo.is_dir():
+        return _gone_checkout_help(env_value, repo, pidfile)
+    script = shlex.quote(str(repo / "scripts" / "explainer-serve.py"))
+    stop = f"python3 {script} --stop"
+    start = f"python3 {script}"
+    # `repo` EXISTS here, so a bad `env_value` is the only remaining reason to be in this function:
+    # `src_root` returns None either because the env var names a non-directory (`:479-480`) or
+    # because the fallback is not a directory (`:478`) — and the second is answered above. There is
+    # deliberately NO trailing arm: falling through to the gone-checkout text for a repo that
+    # demonstrably exists would tell the reader their checkout was deleted when it was not.
+    return (f"no source root — {SRC_ROOT_ENV} is set to {env_value!r}, which is not a "
+            f"directory.\n\n"
+            f"Unset it to serve sources from the repo this server runs from ({repo}):\n\n"
+            f"  {stop}\n"
+            f"  unset {SRC_ROOT_ENV}\n"
+            f"  {start}\n\n"
+            f"Or set it to a checkout that exists.\n")
+
+
+def _gone_checkout_help(env_value: str, repo: pathlib.Path, pidfile: pathlib.Path) -> str:
+    """The 404 body when the checkout itself is gone. PURE.
+
+    ONE arm for that condition, reached from both branches of `src_root_help`, because r2's Medium
+    was exactly the two branches disagreeing about what survives a missing checkout."""
+    why = (f"{SRC_ROOT_ENV} is set to {env_value!r} and the fallback {repo} is not a directory"
+           if env_value else
+           f"{SRC_ROOT_ENV} is unset and the fallback {repo} is not a directory")
+    return (f"no source root — {why}, so there is nothing to serve sources from.\n\n"
             f"The checkout this server was started from has moved or been deleted, so no command "
             f"under it can be offered. Stop the server through its pidfile, which lives outside "
             f"any checkout:\n\n"
-            f"  kill \"$(cat {shlex.quote(str(PIDFILE))})\"\n\n"
+            f"  kill \"$(cat {shlex.quote(str(pidfile))})\"\n\n"
             f"then start it again from a checkout that exists, setting {SRC_ROOT_ENV} to that "
             f"checkout if it is not the one you start from.\n")
 
@@ -1703,7 +1733,7 @@ def _self_test() -> int:
         # substring test passes on the very text it is meant to exclude. Measured while writing
         # it, which is the only reason it is not in the file that way.
         case("help: the no-fallback arm does not advise unsetting",
-             lambda: f"unset {SRC_ROOT_ENV}" not in src_root_help("", root))
+             lambda: f"unset {SRC_ROOT_ENV}" not in _gone_checkout_help("", root, PIDFILE))
         case("help: the common arm leaves no unfilled <placeholder>",
              lambda: "<" not in src_root_help("/nope", root))
         # ⚠ A SECOND REPO, AND IT IS THE POINT OF THE WHOLE SLICE. `check-fixture-variation`
@@ -1741,23 +1771,57 @@ def _self_test() -> int:
         # `<an-existing-checkout>`, the unfilled placeholder this whole function exists to kill.
         # The stop command now names the interpreter's own file, which necessarily exists.
         case("help: the no-fallback arm carries no unfilled <placeholder> either",
-             lambda: "<" not in src_root_help("", pathlib.Path("/tmp/gone")))
+             lambda: "<" not in _gone_checkout_help("", pathlib.Path("/tmp/gone"), PIDFILE))
         # ⛔ r2 M1 — ASK THE CALLER'S RELATIONSHIP, NOT A FIXTURE'S. The r1 version used a synthetic
         # `/tmp/gone` while `__file__` pointed at a live checkout, so it proved "no path under repo"
         # about a repo production never passes. The real call is `src_root_help(..., REPO)` at
         # `:1058` with `REPO = Path(__file__).resolve().parent.parent` — under which the r1 fix
         # emitted a command inside the missing directory and this case STILL PASSED.
         _gone = pathlib.Path(__file__).resolve().parent.parent
-        _arm = src_root_help("", _gone)
+        _arm = _gone_checkout_help("", _gone, PIDFILE)
         case("help: with the REAL repo, the arm emits no command under the missing checkout",
              lambda: not any(str(_gone) in ln for ln in _arm.splitlines()
                              if ln.strip() and not ln.startswith("no source root")))
-        case("help: its recovery command is the pidfile, which lives outside every checkout",
-             lambda: (str(PIDFILE) in _arm and str(_gone) not in str(PIDFILE)))
+        # ⛔⛔ r2 High — THE CASE THAT STOOD HERE WAS `str(PIDFILE) in _arm`, AND IT WAS INVERTED.
+        # Measured under `HOME=/tmp/it's home`: `shlex.quote` emits `'/tmp/it'"'"'s home/…`, so the
+        # raw path stops being a substring — the CORRECT code failed (113/114) while the unquoted
+        # mutant PASSED (114/114). It rewarded the absence of the fix. That is the same substring
+        # instrument this branch condemned in `page_chrome` one commit earlier; `explainer-serve`
+        # grew a NEW pasteable command in the next commit and did not get the same treatment.
+        #
+        # ⚠ `shlex.split` CANNOT BE USED ON THE WHOLE LINE, and finding out by running it is the
+        # only reason this case is right: `shlex` does not re-open a quoting context inside `$( )`
+        # the way `sh` does, so it raises `ValueError: No closing quotation` on a line `/bin/sh`
+        # parses correctly. The substitution is split out first, and THAT argv is compared.
+        def _inner_argv(line: str) -> "list[str]":
+            return shlex.split(line[line.index("$(") + 2:line.rindex(")")])
+        for _pf in (pathlib.Path("/tmp/plain/x.pid"),
+                    pathlib.Path("/tmp/fake home/x.pid"),
+                    pathlib.Path("/tmp/it's home/x.pid"),
+                    pathlib.Path("/tmp/x; echo PWNED/x.pid"),
+                    pathlib.Path('/tmp/say "hi"/x.pid')):
+            # ⚠ Bound as a DEFAULT ARG, not captured: a lambda closing over the loop variable
+            # would evaluate every case against the LAST fixture, which is a five-case suite that
+            # tests one value — the shape this repo calls a guard's operands sharing one closure.
+            case(f"the kill substitution is exactly `cat <pidfile>` for {_pf.parent.name!r}",
+                 lambda pf=_pf: _inner_argv(
+                     [l.strip() for l in _gone_checkout_help("", _gone, pf).splitlines()
+                      if l.strip().startswith("kill ")][0]) == ["cat", str(pf)])
         # ⚠ An ABSOLUTE pidfile path, because `shlex.quote` turns `~` into a quoted tilde and a
         # quoted tilde does not expand — the safety measure would have silently broken the command.
         case("help: the pidfile path is absolute, so quoting cannot disable a `~`",
              lambda: "~" not in _arm)
+        # ⛔ r2 Medium — the SIBLING arm. A set-but-stale env var reaches `src_root_help` without
+        # `src_root` ever consulting REPO (`:479-480`), so a stale var PLUS a moved checkout used to
+        # hand the reader two [Errno 2] lines. Both branches now route to one gone-checkout arm.
+        # A genuinely absent directory, so this goes through `src_root_help`'s OWN branch — the
+        # r2 Medium was that a set-but-stale env var skipped the surviving route entirely.
+        _missing = pathlib.Path("/tmp/yps-no-such-checkout-2026-09-15")
+        _both = [src_root_help(v, _missing) for v in ("", "/stale/path")]
+        case("help: a STALE env var with a missing checkout also gets the surviving route",
+             lambda: all("kill " in b and str(_missing) not in b.split("kill ")[1] for b in _both))
+        case("…and that arm still names why it is there, in both shapes",
+             lambda: "is unset" in _both[0] and "is set to" in _both[1])
 
         # ── restart ──────────────────────────────────────────────────────────────────────
         # These read SOURCE, like the `/_rev` case below, because what has to hold is an
