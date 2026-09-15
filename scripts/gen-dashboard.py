@@ -596,11 +596,24 @@ PICK_SCRIPT = """
     document.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
     return true;
   }
+  function floaterNow(){
+    return document.querySelector('button.askbtn[style*="fixed"]');
+  }
   document.addEventListener('click', function(e){
     var btn = e.target.closest ? e.target.closest('.pick') : null;
     if (!btn) return;
     e.preventDefault();
     var li = btn.closest('li');
+    // ⛔ REMEMBER THE FLOATER THAT ALREADY EXISTS, AND REFUSE IT. MEASURED BUG, r2.
+    // The tray removes a previous selection's floater inside its OWN mouseup handler,
+    // which is scheduled on a timer; the first poll iteration below runs synchronously
+    // right after `dispatchEvent`, so it used to find the STALE button and click it.
+    // Reproduced live: with unrelated text selected, pressing choose on an option
+    // opened the tray as `Project dashboard — "2026-09-14 18:54 · bb265c08 …"` instead
+    // of the question and the option. It then reported "✓ Sent" — the wrong payload,
+    // delivered confidently. Identity, not a longer delay: a timing assumption is the
+    // thing §24 refuses, and "wait 30ms and hope the other handler ran" is one.
+    var stale = floaterNow();
     if (!li || !fire(li)) return;
     // The tray builds its floater inside its own setTimeout, so yield before pressing
     // it. ⚠ POLL, don't take a single shot: one fixed delay is a race whose losing side
@@ -612,9 +625,9 @@ PICK_SCRIPT = """
     // mouseup.
     var tries = 0;
     (function poll(){
-      var f = document.querySelector('button.askbtn[style*="fixed"]');
-      if (f) { f.click(); return; }
-      if (++tries < 10) { setTimeout(poll, 30); return; }
+      var f = floaterNow();
+      if (f && f !== stale) { f.click(); return; }
+      if (++tries < 12) { setTimeout(poll, 30); return; }
       // No floater after ~300ms => no tray on this page, or the selection was refused
       // (it needs 3+ characters). Tell the reader the path that still works.
       btn.textContent = 'select the text and use ask';
@@ -1805,6 +1818,17 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     # relabels Send to Copy and still delivers. Nothing may hide `.pick` by mode.
     case("the chooser is not hidden in local-file mode, where the tray falls back to Copy",
          ".pick{display:none" in html.replace(" ", ""), False)
+    # ⚠ Asserts the SCRIPT TEXT, which is weaker than asserting the behaviour — a browser
+    # is the only instrument for that, and this defect was found by driving the real page
+    # (r2), not by reading. Same trade-off the collapsed-title case records. It exists so
+    # the identity guard cannot be silently deleted.
+    # THE BUG IT PINS, reproduced live before the fix: with unrelated text selected,
+    # pressing choose opened the tray as `Project dashboard — "2026-09-14 18:54 …"`
+    # instead of the question and the option — then reported "✓ Sent". The first poll
+    # iteration runs synchronously after `dispatchEvent`, before the tray's own timer has
+    # removed the previous selection's floater, so it clicked the STALE button.
+    case("choose refuses a stale floater from a previous selection",
+         ("var stale = floaterNow();" in html, "f !== stale" in html), (True, True))
     # The tray's chip has CSS and JS but no markup of its own; a page that omits the
     # element gets a styled, scripted thing that never exists. Measured absent on the
     # live dashboard 2026-09-14 while every other tray id resolved.

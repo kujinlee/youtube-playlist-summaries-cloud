@@ -798,5 +798,18 @@
       "a PR row renders its state at all",
       "a PR state is not dressed as the anchor-bearing class"
     ]
+  },
+  {
+    "name": "choose stops refusing a stale floater, so it clicks the previous selection's button",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "      if (f && f !== stale) { f.click(); return; }",
+        "      if (f) { f.click(); return; }"
+      ]
+    ],
+    "expect": [
+      "choose refuses a stale floater from a previous selection"
+    ]
   }
 ]
