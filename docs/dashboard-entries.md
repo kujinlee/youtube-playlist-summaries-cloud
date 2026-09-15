@@ -9051,3 +9051,38 @@ empty commit `de674310`, whose message carries the diagnosis.
 ⛔ The tidy fix is not obviously right: `edited` also fires on **title** edits, so every
 typo fix would run full CI. The row proposes naming the extra step in the gate's own
 message instead — cheaper, honest, and it changes nothing about what CI runs.
+
+## 2026-09-15
+Two more things worth writing down, both found by machines refusing rather than by reading.
+
+The first is a tool reporting on the wrong thing. When a review is run from a temporary
+copy of the project — which is how work happens here routinely — the tool that records
+"this code was reviewed" writes down the version number of the *other* copy, the permanent
+one it happens to live in. The check that reads those records noticed the number belonged
+to nothing on the branch and refused to accept it. That refusal is the system working; the
+cost is that the error message says nothing about the actual cause, so the next person
+loses the same half hour.
+
+⭐ It is the same mistake the branch being reviewed exists to fix — a tool answering
+"which copy am I?" by looking at itself instead of at what it was asked about.
+
+The second is an absence rather than a defect. The file at the centre of that branch has a
+substantial test suite, and nothing anywhere proves those tests would fail if the code they
+describe were deleted. Its sibling file has that proof; this one has never had it. Two
+proofs were done by hand today and written into a commit message, which is the one place
+nothing will re-run them.
+<!--tech-->
+Branch `file-verdict-head-from-worktree`; rows **#121 🟠** and **#122 🟡**.
+
+**#121** — measured on PR #295: two verdicts recorded `head: 995d8b2f`, a commit on a
+DIFFERENT branch, because `codex-review.py` was invoked by its path in the main checkout
+while the reviewed tree was a linked worktree. `scripts/codex-review.py:340` is
+`root = repo_root or REPO_ROOT` with `REPO_ROOT` derived from the script's own `__file__`,
+so `git -C root rev-parse HEAD` (`:350`) answers about the file's checkout.
+`check-review-recorded` exited **2** — *"Treat this as NOT CHECKED, never as reviewed"* —
+so the wrong head produced a loud refusal, not a false pass. 🟠 for the wasted runs and the
+invisible cause, not for a laundered gate.
+
+**#122** — `explainer-serve.py` has no manifest and no `EXPECTED_MUTATIONS` key: 114 cases,
+zero proof any of them can die. UNRATCHETED, not unguarded. Sibling `page_chrome.py` has 13
+(raised from 11 by PR #295 itself). Four concrete seed candidates are named in the row.
