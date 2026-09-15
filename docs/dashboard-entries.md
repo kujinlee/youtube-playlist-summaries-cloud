@@ -8798,3 +8798,77 @@ Dispositions, read off each entry's own text rather than assumed: `2026-09-03/1`
 `2026-09-03/9`, `2026-09-04/2`, `2026-09-04/3`, `2026-09-06/8` and `2026-09-09/8` are
 reports that should have carried `[heads-up]`; `2026-09-13/5` is a live ask, resolved
 here only because it is re-asked above in readable form; `2026-09-14/6` is answered.
+
+## 2026-09-14
+Yesterday's long review ran four rounds on a change that needed two, and you asked the
+question that ended it: *"what is the stopping condition? if reviews were converged, why
+continue?"* The answer was written down already, in a file loaded into every session,
+saying almost exactly what had just gone wrong — and it had been recalled instead of read.
+
+So the rules are now in one place, at the top of the document that holds them, written as
+six questions with answers you can check rather than judgements someone has to make. And
+the part that kept going wrong is now a command: a small program reads what each round
+recorded and says what to do next. Run on its own branch it answered *"one round is owed"*
+— correctly, and without anyone having to remember why.
+
+⚠ **Seven review rounds later, the thing that stands out is that the tool caught its own
+author.** Every round found a real problem in it, including two that would have made it give
+confident wrong answers — one where a lost review round read as *"finished"*, and one where
+the written rule said *keep going* while the program said *stop*. Three separate judges — the
+reviewer, me, and the program reading its own records — independently reached the same
+verdict at round three: stop patching this, redesign it. The redesign turned out to be
+deleting my work and calling something that already existed.
+
+And at the very last step, after you had decided round seven was the end, **the program
+looked at its own branch and said it was not finished.** It is right, and the reason is
+filed rather than argued away. You are merging it with that disagreement recorded in the open.
+
+Two smaller things. The mysterious **"Phase 6"** is gone from the instructions; it was a row
+number in one table being used as a name, and it is now called an **architecture review**
+everywhere the instructions speak. The historical record keeps its own words. And the two
+documents that disagreed about when that review fires now agree.
+<!--tech-->
+Branch `review-decision-procedure`. Spec + plan under `docs/superpowers/`, anchor
+`review-decides-itself`.
+
+⭐ **THE ROOT CAUSE WAS A CONFLATION, NOT A MISSING RULE.** Two questions were merged and
+reported as one: *convergence* (has discovery dried up — `review-method.md:302`) and *tree
+identity* (did a round see the code that MERGES). PR #302's rounds 3 and 4 chased tree
+identity while being narrated as unmet convergence. That question has FOUR answers and
+another round is the most expensive; `:266` predicted the failure verbatim and `:252` calls
+holding fixes uncommitted *"the documented way to do it"*. Neither was offered to the user.
+Q4 now splits them and ranks the tree answers by cost, with another round LAST.
+
+**Q3 replaces `:298`** ("present Medium/P2 for a decision") at the user's direction — that
+line was the mandated interruption. Findings are now disposed by rule: Blocking/High fix;
+Medium/Low fix if contained and in the delta, else file; disposition recorded per finding.
+
+**`scripts/check-review-decision.py`** — 30 cases, four mutations each proved to go red via
+the case that names it. `parse_header` RAISES on a missing header and `main` exits 2: an
+empty round reads as "no findings", which reads as convergence. It reads the tree question
+from `check-review-recorded`'s EXIT CODE rather than re-deriving the rule.
+
+⚠ **Two defects found by RUNNING it, neither by reading it.** `(stdout or stderr)` discarded
+the refusal — that gate prints `ok` for question one on stdout and its CANNOT RUN on stderr,
+so the falsy-or reported the reassuring half. And putting the header template under
+`docs/reviews/` made `check-review-recorded` count a schema document as a recorded review;
+moved to `docs/round-header-template.md`.
+
+**The rename is measured, not stylistic.** The term originated 2026-08-08 in `0b27094e`, the
+same commit as the phases table; no vendored plugin uses it in this sense and the skill it
+maps to never uses it at all. Phase 1 has 62 mentions across `docs/`, Phases 2–5 between 21
+and 33, **Phase 6 has 184** — more than the other five combined. Renamed in 3 instruction
+files (12 occurrences); 64 record files untouched. ⚠ The blind substitution corrupted a
+QUOTATION of historical titles (`process-checklists.md:383`) and the grammar pass caught it;
+the check is now quotation-aware.
+
+**The trigger contradiction** is resolved in favour of cause: thrashing arms the architecture
+review, and four rounds obliges *asking* with per-finding evidence. `dev-process.md` sits at
+220/220 of its budget, so the row and an 11-line paragraph were rewritten 1-for-1 and
+11-for-11.
+
+Four ratchets each refused the new script until paid: `EXPECTED_MUTATIONS` +4 (629 → 633)
+plus its hardcoded manifest list, `check-selftest-counts.POPULATION` +1,
+`check-fixture-variation.EXAMINED_KEYS` +8 keys derived by running its own `analyse()`
+(which reports **no** findings — every parameter is genuinely varied), and
+`check-ratchet-contract`'s R4 debt paid with a manifest rather than a raised baseline.

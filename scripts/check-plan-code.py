@@ -792,6 +792,7 @@ EXPECTED_MUTATIONS = {
     # Two of the twelve are the r11 Blocking and High, which are ONE expression pulling opposite
     # ways: the union (a reverted overlay must still be compared) and the intersection (the base's
     # commits must not be charged to this branch).
+    "scripts/check-review-decision.py": 10,
     "scripts/check-review-recorded.py": 43,
     # ⟳ 2026-09-14, r11: this file JOINS the manifest — R4 widened-debt 8 -> 7, removed from
     # `WIDENED_MANIFEST_DEBT` in this same commit, which that rule requires as an identity and not
@@ -2565,6 +2566,7 @@ def _self_test() -> int:
                                       # ⟳ 2026-09-12: the guard that enforces R4, finally subject
                                       # to it. A LIVE inventory entry, added with the manifest.
                                       "scripts/check-ratchet-contract.py",
+                                      "scripts/check-review-decision.py",
                                       "scripts/check-review-recorded.py",
                                       "scripts/check-review-rounds.py",
                                       "scripts/check-roadmap-consistency.py",
@@ -3139,7 +3141,7 @@ def _self_test() -> int:
     # that gate's code prose. The globs are now READ; the broader-glob clause that cleared `docs/**`
     # is gone and has a case; and `main` finally CALLS the rule, so its answer is a red rather than
     # a return value nobody reads.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 629)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 639)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

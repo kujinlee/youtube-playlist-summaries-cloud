@@ -12,6 +12,112 @@ How adversarial review is run here, and the classification passes that go betwee
 
 ---
 
+## 0. The decision procedure — read this, do not recall it
+
+**Measured 2026-09-14 (PR #302): a contained single-file change ran FOUR rounds; two were owed.**
+Every rule below already existed, spread across five sections of this file and two others, and was
+recalled instead of read. ⛔ **Consulting this card is the step. If you are about to decide from
+memory, that is the defect.** `scripts/check-review-decision.py` answers Q1, Q4 and Q5 from the
+recorded evidence — run it rather than reasoning.
+
+### Q1 · Full loop, or one round?
+
+Keyed on the **changed path set**, not on judgement.
+
+| The diff touches | Answer |
+|---|---|
+| anything that is **not prose** — code, config, tests, tooling, CI, and the executable gates that live under `docs/` | **full loop** |
+| prose only | **ONE round** |
+
+`scripts/check-review-decision.py` answers this by delegating to
+`check-review-recorded.is_prose()` — the classifier hardened over four rounds of PR #299,
+which already knows that *"a gate script does not stop being code by living in a
+documentation directory"*. **It owns no path list of its own**, because three successive
+hand-kept lists each scored something dangerous as one-round: a money route, a paid-attempt
+guard, and an executable schema gate.
+
+⚠ **This is NARROWER than `:415`'s *"single-file logic, config, thin wrappers"*, and the
+narrowing is deliberate.** `tests/`, `.claude/` and `.agents/` were one-round and are now
+full loop.
+
+✅ **DECIDED 2026-09-15 by the user, after it was surfaced as an open policy question:
+they stay full-loop.** The reasoning is recorded so the next person does not re-litigate
+it: `.claude/hooks/` holds the gate hooks, so a change there can switch a guard off, and
+deleting the test that proves a spend guard fires is a real loss of protection. Against a
+standing tax on ordinary test edits, the asymmetry decides it — **a wrong `full-loop` costs
+one review round; a wrong `one-round` merges unreviewed risky code.** The same asymmetry
+settled three earlier findings on the branch that built this.
+
+### Q2 · Round 1 — both halves at once
+
+1. Dispatch **both halves concurrently**; isolation per the measured table at `:277`.
+2. ⛔ **Neither half is committed until both finish** (`:349`) — a committed first half leaks
+   its grade to the second through `git log` and the diff.
+3. Codex's final message **is** its review; it writes no file. File each half under
+   `docs/reviews/<writer>/`.
+4. A half that cannot run is recorded `REVIEW GAP: <half>` **with its reason**, never omitted.
+
+### Q3 · Disposition — decided here, not by asking
+
+⟳ **Replaces the instruction at `:404` to present every Medium to the user** (user decision,
+2026-09-14). That line was the mandated interruption.
+
+| Finding | Do |
+|---|---|
+| **Blocking / High** | **FIX** |
+| **Medium / Low**, inside the delta, fix touches only files already in the diff and adds no mechanism | **FIX** |
+| **Medium / Low** needing a new mechanism, script, schema, or a policy call | **FILE** |
+
+Record the disposition **and its reason, per finding**, in the round document; the human overturns
+it afterwards. ⚠ A reviewer's *proposed* fix is unverified code — see `:352`.
+
+### Q4 · Is another round owed? — TWO questions, and they are not the same one
+
+**(a) Convergence — has discovery dried up?**
+
+| Observation | Answer |
+|---|---|
+| a **Blocking or High** | **CONTINUE** |
+| a finding **in the deliverable** | **CONTINUE** |
+| non-trivial fixes — recorded as `fixes_nontrivial: true` in the round header, so the tool enforces it rather than the reader remembering it | **CONTINUE** |
+| **two consecutive rounds** with neither, every finding aimed at the **instrument** | **STOP** |
+
+⭐ **Judge by AIM, not severity** — `:238` says a clean severity column describes the reviewers,
+not the design. On PR #302 severity read "converged" from round 1 and was useless; aim separated the
+rounds cleanly. Inverted, it is why PR #299 was right to run seventeen.
+
+**(b) Tree identity — has a round seen the code that MERGES?** A different question. Cheapest first:
+
+1. land the editorial fixes **ahead of** the final round (`:372`);
+2. keep the last fixes uncommitted so the reviewer sees what ships — `:358` calls this the
+   documented way;
+3. declare `NO-REVIEW: <reason>` in the PR body;
+4. run another round — **last**.
+
+> ⛔ **Never spend a round on (b) before offering 1–3 to the human.** That is exactly what PR #302
+> cost, twice.
+
+### Q5 · Thrashing → architecture review
+
+Per finding, answer **in the round document**: *did the previous round's fix cause this?*
+
+| Shape | Then |
+|---|---|
+| fix-induced findings, two rounds running, one component | **ARCHITECTURE REVIEW** |
+| *"the rule doesn't say what happens in case X"* | **FIX** + an exhaustiveness pass |
+| findings drifting to *under-specified* while the artifact improves | **STOP REVIEWING — go build** |
+
+Apply the single test at `:173`, never the symptom list; using the list as a checklist produced a
+measured false escalation on 2026-08-14. Reaching four rounds **obliges asking**, and does not fire.
+
+### Q6 · Record the call
+
+Write the reason and the per-finding evidence into the round document (`:458`), and carry the
+header defined in [`docs/round-header-template.md`](round-header-template.md) so
+the counters Q4 and Q5 need are derived rather than remembered (`:391`).
+
+---
+
 ## Two rules for PREMISES, not findings (added 2026-08-08)
 
 Both were bought with a full review round. The existing discipline — *a finding you MEASURED beats
@@ -273,7 +379,7 @@ sees the final tree.
 
 ### ⚠ The observations that would RETIRE this section
 
-A rule with no falsifier is a decision wearing a checkbox. Both of these are read at Phase 6, not
+A rule with no falsifier is a decision wearing a checkbox. Both of these are read at the architecture review, not
 by a script — they need judgement about whether two findings are *the same finding*, which is
 exactly what a script cannot do:
 
@@ -295,7 +401,7 @@ Dispatch Codex (`codex:rescue`) with an explicit adversarial mandate at every ph
 - **Plan:** missing tasks, wrong order, underspecified acceptance criteria, implementation risks
 - **Code:** per-task (Claude + Codex independently). Both must complete before marking a task done.
 
-Address all High/P1 findings before showing the user. Present Medium/P2 for a decision.
+Address all High/P1 findings before showing the user. ⟳ **SUPERSEDED 2026-09-14 — Medium/P2 is no longer presented for a decision; §0 Q3 disposes of it by rule and records the disposition per finding.** This sentence is kept because five merged review documents cite it; it states what the process USED to do.
 
 ### Iterative Re-Review (big / critical changes) — required
 
@@ -310,14 +416,16 @@ For small, contained changes (single-file logic, config, thin wrappers), one rou
 
 **The loop:**
 1. Review (Codex + Claude, independent) → group Blocking/High/Medium/Low.
-2. Address all Blocking/High (present Medium for a decision).
+2. Address all Blocking/High. ⟳ Medium is **disposed by §0 Q3**, not presented — see the supersession above.
 3. **Re-review the revised artifact** — both passes again, explicitly scoped to (a) verify each prior finding is *genuinely* fixed, not reworded, and (b) hunt for defects the fixes introduced.
 4. Repeat from 2.
 
 ### ⚠ Non-convergence means different things on a DOCUMENT and on CODE — added 2026-08-28
 
-`docs/dev-process.md` arms Phase 6 (architecture review) after **four non-converging rounds**. That
-trigger was bought with the stable-blob-addressing spec and it is correct — but it was written from
+⟳ **CORRECTED 2026-09-14.** `docs/dev-process.md` no longer arms the architecture review on a
+COUNT — it arms on **thrashing**, and reaching four rounds obliges asking rather than firing. The
+paragraph below describes the count trigger it USED to carry; the distinction it draws is why the
+count lost. That trigger was bought with the stable-blob-addressing spec — but it was written from
 one shape of failure and reads as if it covers every shape. **It does not, and the difference decides
 whether a fifth round is worth running.**
 
@@ -325,7 +433,7 @@ whether a fifth round is worth running.**
 
 | Shape | Tell | What it means | Do |
 |---|---|---|---|
-| **Thrashing** | findings are **introduced by the previous round's own fix**; severity stays put | the design is fighting itself — a real architecture problem | **Phase 6.** This is what the four-round trigger was bought for |
+| **Thrashing** | findings are **introduced by the previous round's own fix**; severity stays put | the design is fighting itself — a real architecture problem | **the architecture review.** This is the shape the trigger was bought for, and since 2026-09-14 it is the ARMING CONDITION itself |
 | **Prose floor** | findings shift from *"this cannot work"* to *"this is under-specified"*; each round is right and the artifact keeps improving | the review has reached the limit of what can be settled **without an executable subject** | **Stop reviewing prose. Write the code or the plan, and review THAT** |
 
 **Why the second shape exists at all.** A spec review has nothing to run. A reviewer can verify a
@@ -336,7 +444,7 @@ cannot answer back. Continuing is not diligence at that point; it is reviewing t
 
 **⛔ RAW BLOCKING COUNT IS A BAD DISCRIMINATOR, AND THIS WAS MEASURED.** The dashboard spec ran three
 rounds: Blocking totals **4 → 5 → 4**. Flat. By count that looks like thrashing and would argue for
-Phase 6. By cause it was the prose floor — round 1 said *"the first chart is built on a file that
+the architecture review. By cause it was the prose floor — round 1 said *"the first chart is built on a file that
 does not contain what you claim"* and *"bundled is not loadable"*; round 3 said *"define malformed"*
 and *"say how a needs-you item stops needing you"*. **The number said one thing and the character said
 the other.** Do not read the trigger off a count.
