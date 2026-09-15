@@ -64,7 +64,7 @@ USAGE
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
     python3 scripts/explainer-serve.py --restart  # the one to remember: works up OR down
-    python3 scripts/explainer-serve.py --self-test   # 136 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 138 cases, binds no port
 
 Every page also carries a **Restart server** button, and — under it — these commands in a
 `<details>` that needs no script and no network, so the instructions survive the server
@@ -1304,51 +1304,76 @@ def start() -> int:
         print(f"already serving on http://{HOST}:{PORT}" + (f" (pid {pid})" if pid else ""))
         print(f"  one-click:  http://{HOST}:{PORT}/latest")
         return 0
+    # ⛔⛔ THE CHILD REPORTS ITS OWN BIND THROUGH A PIPE — r7 High, and it is THIS BRANCH'S OWN
+    # ARCHITECTURE-REVIEW CLASS one more time: the reason was being INFERRED rather than CARRIED.
+    #
+    # r6 asked `waitpid` ("is my child still alive?") and `port_busy` ("is a listener there?") and
+    # treated the pair as proof that MY child is serving. It is not. Two separate `python3
+    # explainer-serve.py` invocations are different PROCESSES, so `RESTART_LOCK` — in-process —
+    # does not touch them: B's child can still be alive but not yet inside
+    # `ThreadingHTTPServer(...)` while A's child has already bound, so B sees "mine lives" plus "a
+    # listener exists", writes B's pid, and B's child then dies of EADDRINUSE. The pidfile names a
+    # corpse while a real server runs — the r6 High, narrowed but not closed.
+    #
+    # A pipe ends the inference. The child attempts the bind and writes ONE byte saying what
+    # happened to ITS OWN parent; nothing else can send that byte. `port_busy` cannot answer this
+    # question for anyone, and is no longer asked.
+    r_fd, w_fd = os.pipe()
     pid = os.fork()
-    if pid > 0:
-        # ⛔ r6 High — THE PIDFILE IS WRITTEN AFTER THE CHILD IS VERIFIED, NOT BEFORE, AND THE
-        # QUESTION IS "IS MY CHILD ALIVE", NOT "IS A LISTENER THERE". Those are different
-        # questions and the old code asked the second one. Measured: two concurrent `start()`
-        # calls both pass the `port_busy` pre-check; the loser's child dies of EADDRINUSE, but
-        # its pid is already in the pidfile, and `port_busy` then answers TRUE about the
-        # WINNER's listener — so the loser printed `serving … (pid 1110)` for a corpse and left
-        # 1110 in the pidfile. After that `--restart` fails permanently and `--stop` reports
-        # "not running" about a running server, then unlinks the last pointer to it.
-        #
-        # `waitpid(WNOHANG)` is the direct answer: it reports OUR child specifically. It is
-        # checked FIRST each iteration so a child that dies immediately is seen as dead rather
-        # than masked by someone else's listener.
-        #
-        # ⚠ WHAT THIS STILL CANNOT DISTINGUISH, stated rather than implied: a child that is
-        # alive but has not bound, while an unrelated process holds the port. The child dies on
-        # EADDRINUSE, so the case that actually occurs is covered; a foreign listener on 7391
-        # would need the child to report its own bind through a pipe, which is not built.
-        import time
-        alive = False
-        for _ in range(20):
+    if pid == 0:
+        os.close(r_fd)
+        os.setsid()
+        # ⚠ BIND BEFORE DETACHING. `detach_streams` exists because a child on the parent's stdout
+        # wedges on its first access-log line; but a bind failure before it is detached is a
+        # message the operator can still see, and the byte below is what the parent acts on.
+        try:
+            httpd = http.server.ThreadingHTTPServer((HOST, PORT), Handler)
+        except OSError:
             try:
-                gone, _status = os.waitpid(pid, os.WNOHANG)
-            except ChildProcessError:
-                gone = pid                      # already reaped: treat as gone
-            if gone == pid:
-                break                           # OUR child exited — do not claim the pidfile
-            if port_busy(HOST, PORT):
-                alive = True
+                os.write(w_fd, b"X")          # X: I could not bind
+            except OSError:
+                pass
+            os._exit(1)
+        try:
+            os.write(w_fd, b"K")              # K: I am bound, and I am the one serving
+        except OSError:
+            pass
+        os.close(w_fd)
+        detach_streams()
+        with httpd:
+            httpd.serve_forever()
+        os._exit(0)
+
+    os.close(w_fd)
+    # ⚠ `select` rather than a blocking read: a child that hangs between fork and bind must not
+    # hang the parent forever. The 20 × 0.1s budget is the one the previous shape used.
+    import select
+    verdict = b""
+    deadline = 2.0
+    while deadline > 0 and not verdict:
+        ready, _, _ = select.select([r_fd], [], [], 0.1)
+        deadline -= 0.1
+        if ready:
+            try:
+                verdict = os.read(r_fd, 1)
+            except OSError:
                 break
-            time.sleep(0.1)
-        if not alive:
-            print(f"FAIL: forked pid {pid} but it did not start serving on {HOST}:{PORT}. "
-                  f"NOT RUNNING — the pidfile was left untouched.")
-            return 1
-        PIDFILE.write_text(str(pid))
-        print(f"serving {ROOT} on http://{HOST}:{PORT}  (pid {pid})")
-        print(f"  one-click:  http://{HOST}:{PORT}/latest")
-        print(f"  questions:  {QUESTIONS}")
-        return 0
-    os.setsid()
-    detach_streams()
-    with http.server.ThreadingHTTPServer((HOST, PORT), Handler) as httpd:
-        httpd.serve_forever()
+            break
+    os.close(r_fd)
+    if verdict != b"K":
+        # ⛔ THE PIDFILE IS NOT TOUCHED. Whatever else is true, this process did not start the
+        # server it was asked to start, and a pidfile naming a corpse is the damage r6/r7 are
+        # about: after it, `--restart` fails forever and `--stop` reports "not running" about a
+        # running server and then unlinks the last pointer to it.
+        why = ("it could not bind — something else is already on the port"
+               if verdict == b"X" else
+               "it never reported back within 2s")
+        print(f"FAIL: forked pid {pid} but {why}. NOT RUNNING — the pidfile was left untouched.")
+        return 1
+    PIDFILE.write_text(str(pid))
+    print(f"serving {ROOT} on http://{HOST}:{PORT}  (pid {pid})")
+    print(f"  one-click:  http://{HOST}:{PORT}/latest")
+    print(f"  questions:  {QUESTIONS}")
     return 0
 
 
@@ -2122,14 +2147,31 @@ def _self_test() -> int:
         # SIGTERMed and "in flight" is a one-way door for its remaining life.
         case("…and NOT released on the success path — the door is one-way by design",
              lambda: _rst.count("RESTART_LOCK.release()") == 1)
-        # ⛔ `start()` asks "is MY child alive", not "is A listener there" — the two questions the
-        # r6 High turned on. `waitpid` must come FIRST, or someone else's listener masks a child
-        # that died of EADDRINUSE and the pidfile is written for a corpse.
+        # ⛔⛔ THE CHILD REPORTS ITS OWN BIND — r7 High. r6 asked "is my child alive" plus "is a
+        # listener there" and treated the pair as proof that MY child is serving; it is not, and
+        # two separate CLI invocations are different PROCESSES that no in-process lock touches.
+        # Only the child knows whether IT bound, so only the child may say so.
         _start = inspect.getsource(start)
-        case("start() asks whether ITS OWN child lives, before trusting the port",
-             lambda: _start.index("os.waitpid") < _start.index("alive = True"))
-        case("…and the pidfile is claimed only after that verification",
-             lambda: _start.index("os.waitpid") < _start.index("PIDFILE.write_text"))
+        case("the child reports its own bind result through a pipe",
+             lambda: "os.pipe()" in _start and 'os.write(w_fd, b"K")' in _start
+                     and 'os.write(w_fd, b"X")' in _start)
+        case("the pidfile is claimed ONLY after the child says it bound",
+             lambda: _start.index('verdict != b"K"') < _start.index("PIDFILE.write_text"))
+        # ⛔ `port_busy` MUST NOT be the evidence any more. It answers "is A listener there",
+        # which is exactly the question that let the loser claim the pidfile; it survives only as
+        # the cheap pre-check at the top, before any fork.
+        # ⚠ COUNTS CODE, NOT PROSE. The first version of this case counted every occurrence of the
+        # string and went red on the COMMENTS above explaining why the call was removed — a case
+        # that forbids discussing the thing it forbids. Comment lines are dropped first.
+        def _code_lines(src: str) -> str:
+            return "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
+        case("…and no listener probe is used as proof after the fork",
+             lambda: _code_lines(_start).count("port_busy(") == 1
+                     and _code_lines(_start).index("port_busy(")
+                         < _code_lines(_start).index("os.fork()"))
+        # ⚠ A hung child must not hang the parent: the wait is bounded and its failure is loud.
+        case("a child that never reports is a bounded FAILURE, not a wait forever",
+             lambda: "select.select" in _start and "NOT RUNNING" in _start)
         # This process does NOT kill itself: it hands its pid to the child that replaces it.
         case("the server does not SIGTERM itself", lambda: "os.kill" not in _rst)
         case("a spawn failure is written down, not swallowed",
