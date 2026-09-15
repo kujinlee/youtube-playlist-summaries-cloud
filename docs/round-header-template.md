@@ -48,14 +48,27 @@ agent records — not values the header derives.**
 
 ⚠ **A header filled in dishonestly produces confident wrong answers, and nothing detects that.**
 Marking everything `deliverable` forces rounds that are not owed; marking everything `instrument`
-stops a review that should continue. The machine checks that the fields are **present and
-well-formed**, never that they are **true**. That limit is stated here rather than discovered later.
+stops a review that should continue. ⛔ **WHAT IS ACTUALLY VALIDATED — r7 Medium (Codex) caught this paragraph overclaiming.**
+It said *"every field above is now validated"*, which was false, in a document whose subject is a
+machine that refuses unvalidated records:
+
+| Field | Enforced? |
+|---|---|
+| `round` | ✅ required, integer, and the set must be gapless `1..N` with no duplicates |
+| `fixes_nontrivial` | ✅ required, must be `true` or `false` |
+| `severity` `aim` `fix_induced` `disposition` | ✅ required per finding, each against its allowed set |
+| `component` | ✅ required per finding, must be non-empty |
+| `subject` `halves` `id` | ❌ **NOT required and NOT validated** — a header carrying only `round`, `fixes_nontrivial` and `findings` parses |
+
+And none of it checks whether a value is **true**. Marking everything `deliverable` forces rounds
+that are not owed; marking everything `instrument` stops a review that should continue. **Both limits
+are stated here rather than discovered later** — which is the whole point, and is why the overclaim
+was worth a finding.
 
 ⟳ **AND FOR TWO ROUNDS THE MACHINE DID NOT EVEN DO THAT.** r1 found that block-style items parsed
 to *zero* findings; r2 found that the repair proved an item had become a dict but not that it said
 anything — a missing colon (`severity High`) dropped the field, and a missing field reads as *"not
-Blocking, not deliverable"*, so a recorded High reached `STOP`. **Every field above is now validated
-against its allowed set, and anything else RAISES.** The sentence promising validation came first;
+Blocking, not deliverable"*, so a recorded High reached `STOP`. The sentence promising validation came first;
 the validation came two rounds later.
 
 ## An absent header is CANNOT RUN
