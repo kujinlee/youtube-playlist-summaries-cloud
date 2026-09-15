@@ -104,19 +104,19 @@ A one-line change can be the most dangerous thing in the repo.
   exists as soon as the PR does.
 - Merging stays a **human gate**: open the PR, notify, do not merge.
 
-**⟳ Phase 6 also fires on FOUR NON-CONVERGING ROUNDS (added 2026-08-09), and that trigger was bought
+**⟳ The architecture review also fires on FOUR NON-CONVERGING ROUNDS (added 2026-08-09), and that trigger was bought
 with twelve of them.** The stable-blob-addressing reservation protocol produced a Blocking or High in
 six consecutive rounds — four of them introduced by the previous round's own fix — while every other
-component of the same spec converged and stayed converged. Phase 6 describes that failure in its own
+component of the same spec converged and stayed converged. The architecture review describes that failure in its own
 sentence below and never ran, because a spec can burn twelve rounds in a week without crossing a
 milestone. **The inventory was right; the arming condition was wrong.** See
 ⚠ **Read the trigger off the CAUSE, not the count** — on a *document*, rounds can be right forever
-because prose has nothing to execute; that is a signal to go build, not to convene Phase 6. Measured
+because prose has nothing to execute; that is a signal to go build, not to convene the architecture review. Measured
 2026-08-28: Blocking totals ran 4→5→4 while the character shifted entirely. Both shapes, and how to
 tell them apart, are in [`review-method.md`](review-method.md) — also the stop condition, and
 `docs/reviews/blob-addressing-retrospective-2026-08-09.md` for the full account.
 
-**Phase 6 — why it is per-milestone:** per-task review is structurally blind to composition defects.
+**The architecture review — why it is per-milestone:** per-task review is structurally blind to composition defects.
 It only ever sees one change, and every change can be individually correct while the structure they
 add up to degrades. Read `CONTEXT.md` + `docs/adr/` first; ADRs must not be re-litigated. Agent output
 is a **lead, not a finding** — verify every load-bearing claim by hand. Findings that become work go to
@@ -139,7 +139,7 @@ copy that drifts.
 | `.claude/hooks/check-schema-gates.sh` | after editing schema, the gates must run before reporting done |
 | `.claude/hooks/enforce-handoff-path.sh` + `scripts/check-handoff-path.py` | a session handoff is written where the SessionStart hook reads it — blocks `/handoff` if a vendor update reverted the skill's save path (`--self-test`: 10 cases) |
 | `scripts/check-schema-gates.sh` | **one command for all THIRTEEN schema gates** — run this, not the pieces |
-| `scripts/check-guard-coverage.py` | every guard classified SHAPE/SEQUENCE; every SEQUENCE guard reconciles and is mutated. ⟳ 2026-09-04 (Phase 6 #7, finding 4): this row claimed enforcement while `ci.yml` referenced it **zero** times. ⟳⟳ CORRECTED SAME DAY, by CI going red: I then claimed the guard "never uses" the Postgres it was gated behind. **False** — it imports `read_catalog`, and my evidence was taken on a machine with the container running. Its `--self-test` (pure rules) now runs in CI; the catalog-reading run stays in `check-schema-gates.sh` |
+| `scripts/check-guard-coverage.py` | every guard classified SHAPE/SEQUENCE; every SEQUENCE guard reconciles and is mutated. ⟳ 2026-09-04 (architecture review #7, finding 4): this row claimed enforcement while `ci.yml` referenced it **zero** times. ⟳⟳ CORRECTED SAME DAY, by CI going red: I then claimed the guard "never uses" the Postgres it was gated behind. **False** — it imports `read_catalog`, and my evidence was taken on a machine with the container running. Its `--self-test` (pure rules) now runs in CI; the catalog-reading run stays in `check-schema-gates.sh` |
 | `scripts/check-sentinel-meanings.py` | every nullable column means exactly ONE thing (a conjunction in the meaning is the tell) |
 | `scripts/check-vocabulary-collisions.py` | one mechanism per concern — duplicate coordination vocabulary is the shadow of a duplicate protocol. ⟳ 2026-09-04: same finding, and the sharper half — *one mechanism per concern* IS architecture review #7's findings 1 and 2, so the guard for that class was the one CI could not see. ⟳⟳ Its **rules** are pure (`:125`) and now run in CI as a `--self-test`; its **entry point** needs the catalog, which the first attempt at this row got backwards |
 | `scripts/check-producer-enumeration.py` | every guarded value's producer count matches its **defining expression** (`--self-test`: 11 cases) |

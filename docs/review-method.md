@@ -273,7 +273,7 @@ sees the final tree.
 
 ### ⚠ The observations that would RETIRE this section
 
-A rule with no falsifier is a decision wearing a checkbox. Both of these are read at Phase 6, not
+A rule with no falsifier is a decision wearing a checkbox. Both of these are read at the architecture review, not
 by a script — they need judgement about whether two findings are *the same finding*, which is
 exactly what a script cannot do:
 
@@ -316,7 +316,7 @@ For small, contained changes (single-file logic, config, thin wrappers), one rou
 
 ### ⚠ Non-convergence means different things on a DOCUMENT and on CODE — added 2026-08-28
 
-`docs/dev-process.md` arms Phase 6 (architecture review) after **four non-converging rounds**. That
+`docs/dev-process.md` arms the architecture review after **four non-converging rounds**. That
 trigger was bought with the stable-blob-addressing spec and it is correct — but it was written from
 one shape of failure and reads as if it covers every shape. **It does not, and the difference decides
 whether a fifth round is worth running.**
@@ -325,7 +325,7 @@ whether a fifth round is worth running.**
 
 | Shape | Tell | What it means | Do |
 |---|---|---|---|
-| **Thrashing** | findings are **introduced by the previous round's own fix**; severity stays put | the design is fighting itself — a real architecture problem | **Phase 6.** This is what the four-round trigger was bought for |
+| **Thrashing** | findings are **introduced by the previous round's own fix**; severity stays put | the design is fighting itself — a real architecture problem | **the architecture review.** This is what the four-round trigger was bought for |
 | **Prose floor** | findings shift from *"this cannot work"* to *"this is under-specified"*; each round is right and the artifact keeps improving | the review has reached the limit of what can be settled **without an executable subject** | **Stop reviewing prose. Write the code or the plan, and review THAT** |
 
 **Why the second shape exists at all.** A spec review has nothing to run. A reviewer can verify a
@@ -336,7 +336,7 @@ cannot answer back. Continuing is not diligence at that point; it is reviewing t
 
 **⛔ RAW BLOCKING COUNT IS A BAD DISCRIMINATOR, AND THIS WAS MEASURED.** The dashboard spec ran three
 rounds: Blocking totals **4 → 5 → 4**. Flat. By count that looks like thrashing and would argue for
-Phase 6. By cause it was the prose floor — round 1 said *"the first chart is built on a file that
+the architecture review. By cause it was the prose floor — round 1 said *"the first chart is built on a file that
 does not contain what you claim"* and *"bundled is not loadable"*; round 3 said *"define malformed"*
 and *"say how a needs-you item stops needing you"*. **The number said one thing and the character said
 the other.** Do not read the trigger off a count.
