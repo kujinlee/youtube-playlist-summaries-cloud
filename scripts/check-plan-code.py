@@ -569,7 +569,7 @@ EXPECTED_MUTATIONS = {
     #     two agree. The case that looked like it did — `any("relacl" in pat …)` — is a SUBSTRING
     #     test on the pattern text, so either copy could narrow while it stayed green.
     "scripts/check-catalog-coverage.py": 7,
-    "scripts/gen-dashboard.py": 64,
+    "scripts/gen-dashboard.py": 67,
     # ⟳ 2026-09-12. gen-goals-page.py was the last PAGE-PRODUCING generator with no
     # manifest — gen-dashboard, gen-backlog-page, brief-compose, page_chrome and page_markup
     # all had one. ⚠ IT WAS NOT "the ONE generator with no manifest", which both round-1
@@ -3139,7 +3139,11 @@ def _self_test() -> int:
     # that gate's code prose. The globs are now READ; the broader-glob clause that cleared `docs/**`
     # is gone and has a case; and `main` finally CALLS the rule, so its answer is a red rather than
     # a return value nobody reads.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 629)
+    # ⟳ 2026-09-14: 629 -> 632. THREE entries for the dashboard asks becoming
+    # answerable — the question heading the tray resolves, the choose affordance
+    # itself, and the PR state label that was wearing the anchor-bearing class.
+    # Each was proved to go red VIA THE CASE IT NAMES over a green control first.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 632)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
