@@ -8917,3 +8917,38 @@ Escaped to `\|`; rc=0.
 ⚠ **Merge-order note, not a defect:** this entry and PR #302's both append to the tail of
 this file, so whichever merges second will conflict here. That is the append-log shape
 already paid for twice today — resolve by keeping both entries, never by picking a side.
+
+## 2026-09-15
+Two more small things about yesterday's tool are now written down rather than remembered.
+
+The first: when the program meets a decision word it does not recognise, it reports that
+as "someone needs to act on this branch" — the same signal it gives for a genuine, correct
+answer. It still prints the unrecognised word, so a person reading the output would spot
+it; only the silent machine-readable part is ambiguous. Nothing automatic reads that part
+yet, which is why it is filed small.
+
+The second came out of running the tool on the other open branch today. It could not read
+that branch's review record at all, and said so plainly instead of guessing. The reason is
+simply age: the format it reads was invented yesterday, and almost none of the existing
+records use it. Measured rather than estimated — 74 of the 81 records have no such header,
+and the seven that do are yesterday's own.
+
+The obvious tidy-up — going back and adding the headers by hand — was considered and
+deliberately not done. Those records say whether work was reviewed. Writing that claim in
+afterwards, from reconstruction, would be inventing the evidence.
+<!--tech-->
+Same branch `file-parse-header-redesign`; two more rows on `docs/backlog.md`.
+
+**#118 🟢** — `exit_code_for()` is `{"STOP": 0, "CANNOT_RUN": 2}.get(decision, 1)`
+(`scripts/check-review-decision.py:391`), so an unknown value exits **1**, which already
+means `ROUND_OWED` *and* `ARCHITECTURE_REVIEW`. The two-line repair is not the hard part —
+what a **fourth** value should mean is, and the row says so rather than prescribing.
+
+**#119 🟢** — measured over `docs/reviews/coordinator/`: **7 of 81** documents carry a
+```yaml header, **74 do not**, and all 7 belong to PR #303, the branch that invented the
+grammar. 6 of 7 subjects have no headered round at all. ⛔ Backfilling REJECTED by the user
+today; the reason is filed so it is not re-proposed as an obvious cleanup.
+
+⚠ **The two open rows about this script hide each other**, and that is recorded in #119:
+until old branches drain, a CANNOT RUN is indistinguishable between *predates the grammar*
+and *the hand-rolled parser of backlog #117 failing on a valid header*.
