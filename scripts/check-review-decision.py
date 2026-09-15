@@ -2,7 +2,7 @@
 """What does the review loop do next? — answered from recorded evidence, not recall.
 
     python3 scripts/check-review-decision.py              # decide for the current branch
-    python3 scripts/check-review-decision.py --self-test  # 49 cases
+    python3 scripts/check-review-decision.py --self-test  # 55 cases
 
 WHY THIS EXISTS
 ---------------
@@ -140,6 +140,28 @@ TREE_ANSWERS = (
 )
 
 
+def sequence_error(rounds: list[dict]) -> "str | None":
+    """PURE. Why the recorded rounds are not a gapless 1..N sequence, else None.
+
+    ⛔ r5 High (Codex): adjacency was inferred from LIST POSITION. `converged` slices
+    `rounds[-need:]` and `thrashing_component` compares `rounds[-2]`/`rounds[-1]`, so a lost
+    r2 made r1 and r3 "consecutive" — a false STOP — and two documents claiming the same
+    round counted as two consecutive rounds. Measured in-process by the reviewer.
+    A missing input is a failure, never a pass; that is this tool's own posture and it did
+    not hold it about its own inputs.
+    """
+    nums = [r.get("round") for r in rounds]
+    if any(not isinstance(n, int) for n in nums):
+        return "a round document has no usable round number"
+    if len(set(nums)) != len(nums):
+        dupes = sorted({n for n in nums if nums.count(n) > 1})
+        return f"duplicate round number(s) {dupes} — two documents claim one round"
+    want = list(range(1, len(nums) + 1))
+    if sorted(nums) != want:
+        return f"rounds are not gapless: found {sorted(nums)}, expected {want}"
+    return None
+
+
 def decide(rounds: list[dict], scope: str, tree_reviewed: bool) -> tuple[str, str]:
     """PURE. One decision and the reason for it.
 
@@ -149,6 +171,9 @@ def decide(rounds: list[dict], scope: str, tree_reviewed: bool) -> tuple[str, st
     """
     if not rounds:
         return "ROUND_OWED", f"no round recorded; a {scope} change needs at least one"
+    seq = sequence_error(rounds)
+    if seq:
+        return "CANNOT_RUN", f"{seq} — refusing to infer adjacency from list position"
     th = thrashing_component(rounds)
     if th:
         return ("ARCHITECTURE_REVIEW",
@@ -446,6 +471,22 @@ def _self_test() -> int:
          decide(two_inst, "full-loop", True)[0], "STOP")
     case("not converged owes a round",
          decide([{"round": 1, "findings": [high]}], "full-loop", True)[0], "ROUND_OWED")
+    # r5 High (Codex): adjacency was inferred from list position.
+    _r1 = {"round": 1, "findings": [inst]}
+    _r3 = {"round": 3, "findings": [inst]}
+    case("a gapless sequence has no error", sequence_error(two_inst), None)
+    case("a MISSING round is an error, not two consecutive rounds",
+         sequence_error([_r1, _r3]) is not None, True)
+    case("a DUPLICATE round number is an error",
+         sequence_error([_r1, {"round": 1, "findings": []}]) is not None, True)
+    case("a round with no number is an error",
+         sequence_error([{"findings": []}]) is not None, True)
+    case("r1 + r3 does NOT read as converged — it CANNOT RUN",
+         decide([_r1, _r3], "full-loop", True)[0], "CANNOT_RUN")
+    case("r1 + r3 with one fix-induced component does NOT arm an architecture review",
+         decide([{"round": 1, "findings": [{"fix_induced": True, "component": "a"}]},
+                 {"round": 3, "findings": [{"fix_induced": True, "component": "a"}]}],
+                "full-loop", True)[0], "CANNOT_RUN")
     case("every decision carries a non-empty reason",
          all(decide(*a)[1] for a in [([], "one-round", False),
                                      ([fix_a1, fix_a2], "full-loop", True),
@@ -560,6 +601,8 @@ def main(argv: list[str]) -> int:
     for r in rounds:
         aims = ",".join(f.get("aim", "?") for f in r["findings"]) or "none"
         print(f"    r{r['round']}: {len(r['findings'])} finding(s) [{aims}]")
+    if decision == "CANNOT_RUN":
+        return 2
     return 0 if decision == "STOP" else 1
 
 

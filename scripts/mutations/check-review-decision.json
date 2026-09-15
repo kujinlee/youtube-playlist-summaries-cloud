@@ -88,5 +88,19 @@
     "expect": [
       "a header with NO findings key REFUSES rather than reading as clean"
     ]
+  },
+  {
+    "name": "adjacency goes back to list position, so a lost round reads as consecutive",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "    seq = sequence_error(rounds)\n    if seq:",
+        "    seq = None\n    if seq:"
+      ]
+    ],
+    "expect": [
+      "r1 + r3 does NOT read as converged \u2014 it CANNOT RUN",
+      "r1 + r3 with one fix-induced component does NOT arm an architecture review"
+    ]
   }
 ]

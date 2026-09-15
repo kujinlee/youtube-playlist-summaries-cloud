@@ -7,7 +7,7 @@ halves:
   codex: ran
   claude: "GAP: this session spawns no subagents"
 findings:
-  - {id: M1, severity: Medium, aim: deliverable, fix_induced: true, component: scope-policy, disposition: filed}
+  - {id: M1, severity: Medium, aim: deliverable, fix_induced: true, component: scope-for, disposition: filed}
   - {id: L1, severity: Low, aim: instrument, fix_induced: true, component: classifier-coupling, disposition: fixed}
 ```
 
@@ -37,6 +37,15 @@ rule**, after r3's `scope-for` Blocking. By the arming condition that is thrashi
 is:** *this fires to ARCHITECTURE REVIEW if round 5 produces a fix-induced finding in the
 scope rule that a redesign WOULD dissolve — a mechanism defect rather than another argument
 about which directories belong on which side.*
+
+⟳ **CORRECTED AFTER FILING — the override was being enacted INVISIBLY, by a label.** This
+finding was first recorded as `component: scope-policy`, which made
+`thrashing_component` see no overlap with r3's `scope-for` and report `ROUND_OWED`. **The
+tool agreed with the override for the wrong reason: it did not know one existed, it saw two
+names.** That is the metric satisfied by a labelling choice — the defect this header's own
+template warns about. Renamed to `scope-for`, which is what it is. The tool now reports
+`ARCHITECTURE_REVIEW`, this document overrides it in writing with a falsifier, and round 5
+upheld the override independently. **Loud disagreement beats quiet agreement.**
 
 ⚠ **And a limitation this exposes: `check-review-decision.py` cannot see an adjudicated
 override.** It will keep reporting `ARCHITECTURE_REVIEW` from the headers alone. The header
