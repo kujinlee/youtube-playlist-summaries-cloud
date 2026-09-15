@@ -64,7 +64,7 @@ USAGE
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
     python3 scripts/explainer-serve.py --restart  # the one to remember: works up OR down
-    python3 scripts/explainer-serve.py --self-test   # 128 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 131 cases, binds no port
 
 Every page also carries a **Restart server** button, and — under it — these commands in a
 `<details>` that needs no script and no network, so the instructions survive the server
@@ -1511,10 +1511,17 @@ def _self_test() -> int:
         # Assert on the MECHANISM, not a hardcoded page name — the defect was never "the wrong
         # answer for /dashboard specifically", so pin the call site: a mutation reverting `/_rev`
         # to `safe_path` must go red here.
-        _rev_branch_src = inspect.getsource(Handler.do_GET).split('if path == "/_rev":', 1)[1] \
-                                  .split('if path.startswith("/src/"):', 1)[0]
+        # ⛔ LAZY — r4 Medium, the same construction-level contract fixed for `_arm`/`_both`.
+        # `.split(marker, 1)[1]` raises IndexError when the marker moves, and a raise OUT HERE
+        # aborts the suite with no `[FAIL]` line, so `check-plan-code` sees a red suite with
+        # nothing attributable. Inside the thunk, `case()` catches it and prints the line.
+        def _rev_branch_src():
+            src = inspect.getsource(Handler.do_GET)
+            return src.split('if path == "/_rev":', 1)[1] \
+                      .split('if path.startswith("/src/"):', 1)[0]
         case("/_rev resolves THROUGH resolve_page — agrees with the page GET by construction",
-             lambda: "resolve_page(" in _rev_branch_src and "safe_path(" not in _rev_branch_src)
+             lambda: "resolve_page(" in _rev_branch_src()
+                     and "safe_path(" not in _rev_branch_src())
 
         # the daemon's own log lives in ROOT and must never be reachable over http
         (root / SERVE_LOG).write_text("access lines")
@@ -1578,7 +1585,16 @@ def _self_test() -> int:
         rev_file = rev_dir / "rev.html"
         rev_file.write_text("one")
         os.utime(rev_file, (5_000, 5_000))
-        rev_before = revision(rev_file)
+        # ⛔ NOT LAZY — AND TRYING TO MAKE IT LAZY IS HOW I LEARNED WHY. This value is a SNAPSHOT
+        # taken before the file changes; a lambda re-reads it afterwards and the later
+        # "revision changed" cases become vacuously false. Measured: 129/131, two cases red.
+        # The construction-level hazard is real all the same — a `revision()` that raises would
+        # abort the suite with no `[FAIL]` line — so the raise becomes a VALUE instead, which
+        # keeps the snapshot and still reports through the runner.
+        try:
+            rev_before = revision(rev_file)
+        except Exception as _e:  # noqa: BLE001
+            rev_before = f"UNREADABLE: {type(_e).__name__}: {_e}"
         case("revision is stable when nothing changes",
              lambda: revision(rev_file) == rev_before)
 
@@ -1742,6 +1758,33 @@ def _self_test() -> int:
                  with_env(str(root), src_root)))
         case("src_root: the fallback's state is observed ONCE, and travels with the reason",
              lambda: with_env(None, src_root).fallback_ok is True)
+        # ⛔ r4 Medium — THE PROBE'S `MISSING_FALLBACK` ARM HAD NO CASE AT ALL, and every
+        # MISSING_FALLBACK fixture in this suite was a HAND-BUILT `SrcRoot` that never went
+        # through `src_root`. A fixture which bypasses the function under test proves the
+        # fixture. MEASURED: `fallback_ok = REPO.is_dir()` mutated to `= True` survived 128/128,
+        # and the consequence is not cosmetic — with the checkout gone the probe then returns OK
+        # with a non-None root, the caller never renders the remedy at all, and the reader gets
+        # `no such source file` instead of the recovery instructions this whole branch exists to
+        # give them.
+        def _probe_with(fake_repo, env):
+            """Run the real probe against a substituted fallback. `REPO` is a module global, so
+            the swap is in `globals()` — the point is that the PROBE decides, not a fixture."""
+            _real = globals()["REPO"]
+            try:
+                globals()["REPO"] = fake_repo
+                return with_env(env, src_root)
+            finally:
+                globals()["REPO"] = _real
+        _norepo = pathlib.Path("/tmp/yps-no-such-repo-2026-09-15")
+        case("src_root: a missing fallback is MISSING_FALLBACK, root None, fallback_ok False",
+             lambda: (lambda o: (o.reason, o.root, o.fallback_ok)
+                      == ("MISSING_FALLBACK", None, False))(_probe_with(_norepo, None)))
+        case("src_root: a bad env value ALSO records that the fallback was missing",
+             lambda: (lambda o: (o.reason, o.fallback_ok) == ("BAD_ENV", False))(
+                 _probe_with(_norepo, "/nope")))
+        case("src_root: a present fallback with a bad env records fallback_ok True",
+             lambda: (lambda o: (o.reason, o.fallback_ok) == ("BAD_ENV", True))(
+                 _probe_with(root, "/nope")))
         case("src_root: every reason it can return is a declared member",
              lambda: all(with_env(v, src_root).reason in SRC_REASONS
                          for v in (None, "", "   ", str(root), str(root / "nope"))))
@@ -1779,30 +1822,53 @@ def _self_test() -> int:
         # place a reader can see the boundary.
         _PROBES = ("is_dir", "exists", "is_file", "stat", "lstat", "iterdir", "glob",
                    "open", "read_text", "read_bytes", "resolve", "samefile", "owner")
+        # ⚠ AND `pathlib` IS NOT THE ONLY DOOR — r4 Medium, measured: `os.path.isdir`,
+        # `os.path.exists` and `os.access` each survived at 128/128 while the comment above
+        # claimed "every probing entry point a renderer could reach is named". It was false, and
+        # a false coverage claim in a guard's own prose is the least-tested sentence in a file,
+        # because nothing executes a docstring. The alternative was checked and rejected: audit
+        # hooks do not fire for `stat`/`access`/`Path` methods, so a denylist IS the right
+        # mechanism — it simply had half its surface.
+        _OS_PROBES = ("stat", "lstat", "access", "scandir", "listdir", "getcwd", "readlink")
+        _OSPATH_PROBES = ("isdir", "exists", "isfile", "islink", "getsize", "realpath")
 
         def _renders_without_the_world(observed) -> bool:
+            import os.path as _osp
             _real_env = os.environ
-            _saved = {n: getattr(pathlib.Path, n) for n in _PROBES
-                      if hasattr(pathlib.Path, n)}
-            def _boom_for(name):
-                def _boom(self, *_a, **_k):
-                    raise AssertionError(f"src_root_help called Path.{name}() — it must carry, "
+            _saved = [(pathlib.Path, n, getattr(pathlib.Path, n), f"Path.{n}")
+                      for n in _PROBES if hasattr(pathlib.Path, n)]
+            _saved += [(os, n, getattr(os, n), f"os.{n}")
+                       for n in _OS_PROBES if hasattr(os, n)]
+            _saved += [(_osp, n, getattr(_osp, n), f"os.path.{n}")
+                       for n in _OSPATH_PROBES if hasattr(_osp, n)]
+            def _boom_for(label):
+                def _boom(*_a, **_k):
+                    raise AssertionError(f"src_root_help called {label}() — it must carry, "
                                          f"not re-derive")
                 return _boom
             try:
-                for _n in _saved:
-                    setattr(pathlib.Path, _n, _boom_for(_n))
+                for _obj, _n, _fn, _label in _saved:
+                    setattr(_obj, _n, _boom_for(_label))
                 os.environ = _Forbidden("the environment")  # type: ignore[assignment]
                 return bool(src_root_help(observed))
             finally:
-                for _n, _fn in _saved.items():
-                    setattr(pathlib.Path, _n, _fn)
+                for _obj, _n, _fn, _label in _saved:
+                    setattr(_obj, _n, _fn)
                 os.environ = _real_env                     # type: ignore[assignment]
         _obs_bad = SrcRoot(None, "BAD_ENV", "/nope", root, True)
         _obs_gone = SrcRoot(None, "MISSING_FALLBACK", "", root, False)
+        # ⛔ A THIRD FIXTURE, AND WITHOUT IT THE FALSIFIER NEVER RAN ONE OF THE THREE ARMS —
+        # r4 High. `_gone_checkout_help`'s `why` branches on `env_value`, and the non-empty side
+        # is the arm r2's Medium ADDED; neither fixture above reaches it. MEASURED: inserting
+        # `observed.fallback.exists()` there — the SECOND ENTRY OF `_PROBES` — passed 128/128,
+        # while the identical probe in the sibling arm died instantly. ⚠ That is not a denylist
+        # gap: the denylist names the probe and is POWERLESS because the line never executes. A
+        # guard's coverage is the product of what it forbids AND what it runs, and only the first
+        # half was being thought about.
+        _obs_stale = SrcRoot(None, "BAD_ENV", "/stale", root, False)
         case("the help renders with NO environment and NO filesystem — it carries, not re-derives",
-             lambda: _renders_without_the_world(_obs_bad)
-                     and _renders_without_the_world(_obs_gone))
+             lambda: all(_renders_without_the_world(o)
+                         for o in (_obs_bad, _obs_gone, _obs_stale)))
 
         # ⛔ An unknown reason REFUSES. Python will not force exhaustiveness on a str, so a
         # fourth member added without a branch here must raise rather than fall into one.
