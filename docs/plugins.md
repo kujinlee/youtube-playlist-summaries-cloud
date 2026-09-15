@@ -117,7 +117,7 @@ worked example). ⚠ That directory is a real git checkout whose `.gitignore` is
 
 ### Code Review (dual review per task)
 
-Both must complete before marking a task done. **Dispatch them CONCURRENTLY — measured safe.** What is and is not, plus the three operations that must be serialised and are enforced by nothing: [`review-method.md`](review-method.md) → *Running agents concurrently* (backlog #67). Not restated here — a second copy of a safety table is a copy that drifts.
+Both must complete before marking a task done. **Round 1 concurrently — measured safe; rounds 2+ ALTERNATE**, because a concurrent pair never reviews the FIXES, and that is where both of 2026-09-13's surviving defects were. Topology, plus the three operations that must be serialised and are enforced by nothing: [`review-method.md`](review-method.md) → *Round topology* and *Running agents concurrently* (backlog #67). Not restated here — a second copy of a safety table is a copy that drifts.
 
 | Review | Use | Requires |
 |---|---|---|
@@ -182,7 +182,7 @@ writing an empty one, so the mangled run failed **loud**. A caller checking only
 
 It walks every candidate model in priority order, and decides success **solely** by whether
 `codex exec -o/--output-last-message` wrote a substantive final-message file — never the exit code,
-never stdout text. Run `--self-test` (63 cases) after touching it. ⟳ 2026-09-04: this said **35** while the suite ran **51** — measured, not noticed, for an unknown span. `codex-review.py` now declares its count in the canonical form and is pinned in `check-selftest-counts.POPULATION`, so the next drift fails a gate instead of sitting in prose. Prefer it over raw `codex exec`
+never stdout text. Run `--self-test` after touching it — **the count is declared in the script's own docstring and verified by running it**, and is deliberately not repeated here. ⟳ 2026-09-04: this said **35** while the suite ran **51** — measured, not noticed, for an unknown span, so the count was moved into the script and pinned in `check-selftest-counts.POPULATION`. ⟳⟳ 2026-09-14, r13 Medium: **that fix did not hold, and this sentence was the proof.** The pin stops the SCRIPT drifting; it cannot see a second copy in prose, and `check-selftest-counts.py` reads only `scripts/*.py`. This line went on saying **63** while the suite ran **85**, inside the very sentence promising *"the next drift fails a gate instead of sitting in prose"* — and `CLAUDE.md` imports this file, so the wrong number was loaded into every session. The number is now gone rather than corrected: a count with no owner drifts again, and the only durable fix is to have one copy, in the place a gate can run. Prefer it over raw `codex exec`
 for anything that must actually produce a review; `scripts/codex-frontier-model.py` alone cannot
 guarantee a runnable model and says so in its docstring.
 

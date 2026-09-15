@@ -214,7 +214,7 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
         'dir_snapshot.directory', 'intrusions.after', 'intrusions.before',
         'intrusions.ours', 'quarantine.created', 'quarantine.dest',
         'unexpected_writes.before', 'verdict_record.attempts',
-        'verdict_record.exit_code', 'verdict_record.gate_ran',
+        'verdict_record.exit_code',
         'verdict_record.intrusions_seen', 'verdict_record.model',
         'verdict_record.out_path', 'verdict_record.reason', 'write_verdict.record',),
     'explainer-serve.py': (
@@ -270,6 +270,29 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # ⟳ 2026-09-14: the review decision procedure's rules. Pinned in the commit that
+    # creates them — this guard REFUSED the file until it was, which is the population
+    # half of the rule doing its job. `analyse()` reports NO findings: every parameter
+    # below is genuinely varied by the suite, not merely present in a signature.
+    'check-review-decision.py': (
+        'converged.rounds',
+        'converged.scope',
+        'decide.rounds',
+        'decide.scope',
+        'decide.tree_reviewed',
+        'parse_header.text',
+        'scope_for.paths',
+        'thrashing_component.rounds',
+    ),
+    # ⟳ 2026-09-13: the CI storage fixture's falsifier. Pinned in the commit that creates it —
+    # this guard REFUSED the file until it was, which is §21's population half doing its job.
+    'check-storage-independence.py': (
+        'gate_files.root',
+        'namespace_scopes.sql',
+        'problems.files',
+        'problems.root',
+        'storage_refs.src',
+    ),
     'begin-plan.py': (
         'cmd_begin.slug_raw', 'cmd_begin.step_args', 'cmd_pause.why',
         'first_unticked.steps', 'normalise_slug.raw', 'parse_steps.plan_text',

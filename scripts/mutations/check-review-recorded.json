@@ -64,5 +64,446 @@
       ]
     ],
     "expect": "docs/backlog.md is prose"
+  },
+  {
+    "name": "a stale round clears the branch, so code committed after EVERY round merges unreviewed — the whole point of the rule",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    clean = sorted(n for n, paths in tails.items() if not paths)",
+        "    clean = sorted(tails)"
+      ]
+    ],
+    "expect": [
+      "code committed after EVERY round FAILS"
+    ]
+  },
+  {
+    "name": "no usable round returns 0 instead of 2, so `CANNOT RUN` prints while CI reads a pass — the exact fail-open r1 filed",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        return 2, (f\"CANNOT RUN — {why}, so whether any round saw the code about to merge is \"",
+        "        return 0, (f\"CANNOT RUN — {why}, so whether any round saw the code about to merge is \""
+      ]
+    ],
+    "expect": [
+      "no round that can answer is CANNOT RUN, not a pass"
+    ]
+  },
+  {
+    "name": "rounds that could not say what they saw stop being counted, so the report loses the number that makes it honest",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        why = (f\"{unusable} round(s) recorded no commit (verdicts written before schema 2)\"\n               if unusable else \"no Codex verdict was added by this branch\")",
+        "        why = \"no Codex verdict was added by this branch\""
+      ]
+    ],
+    "expect": [
+      "pre-schema-2 verdicts are counted and named, not silently dropped"
+    ]
+  },
+  {
+    "name": "the failure names an arbitrary round rather than the closest one, pointing away from the shortest way back to green",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    name, missed = min(tails.items(), key=lambda kv: (len(kv[1]), kv[0]))",
+        "    name, missed = max(tails.items(), key=lambda kv: (len(kv[1]), kv[0]))"
+      ]
+    ],
+    "expect": [
+      "the failure reports the CLOSEST round, not an arbitrary one"
+    ]
+  },
+  {
+    "name": "a review document counts as a verdict, so prose is read as testimony about what a round saw",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return [p for p in added if p.startswith(VERDICT_DIR) and p.endswith(\".json\")]",
+        "    return [p for p in added if p.startswith(REVIEW_DIR)]"
+      ]
+    ],
+    "expect": [
+      "a review document is not a verdict"
+    ]
+  },
+  {
+    "name": "⛔ the r1 BLOCKING, restored: the tail subtracts by PATH again, so a file edited a second time after the round is certified as reviewed",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        if not seen:\n            return False\n        return (is_absent(seen) and is_absent(now)) or now == seen",
+        "        if not seen:\n            return False\n        return True"
+      ]
+    ],
+    "expect": [
+      "a file edited AGAIN after the round is still missed, though its path matches"
+    ]
+  },
+  {
+    "name": "⛔ the r1 LOW, restored: the tail rule stops asking what counts as guarded, so a docs commit after a round fails a branch that owed no review for it",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    missed = [p for p in guarded_changes(after)",
+        "    missed = [p for p in (after)"
+      ]
+    ],
+    "expect": [
+      "the tail rule and the review obligation share one idea of `guarded`"
+    ]
+  },
+  {
+    "name": "the REVIEW GAP escape stops working, so a Codex-down round — the documented fallback — reds every branch that takes it",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        if gap:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "a declared REVIEW GAP clears it"
+    ]
+  },
+  {
+    "name": "a declared gap excuses a round that EXISTS and is stale, turning `the Codex half could not run` into `the code I committed afterwards is fine`",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if not tails:",
+        "    if not tails or gap:"
+      ]
+    ],
+    "expect": [
+      "a declared gap does NOT excuse a round that exists and is stale"
+    ]
+  },
+  {
+    "name": "⛔ the r2 BLOCKING, restored: the final-tree lookup answers with a bare sha, so flipping the executable bit after the round is credited as reviewed",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "            entries[name] = f\"{parts[0]} {parts[2]}\"",
+        "            entries[name] = parts[2]"
+      ]
+    ],
+    "expect": [
+      "the lookup answers with an ENTRY — mode and object id, not a bare sha"
+    ]
+  },
+  {
+    "name": "⛔ the r4 BLOCKING, restored: entries are filtered to blobs, so a path holding a SUBMODULE reads as absent and a reviewed deletion credits a merge that puts a gitlink there",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        if name and len(parts) >= 3:",
+        "        if name and len(parts) >= 3 and parts[1] == \"blob\":"
+      ]
+    ],
+    "expect": [
+      "a submodule gitlink is KEPT, so a path holding one can never read as absent"
+    ]
+  },
+  {
+    "name": "⛔ the r2 HIGH, restored: any REVIEW GAP clears a missing Codex verdict, so `claude — not invoked` excuses a different absence entirely",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        if gap_names_codex(reason):\n            return f\"{path} — {reason}\"",
+        "        if reason:\n            return f\"{path} — {reason}\""
+      ]
+    ],
+    "expect": [
+      "...a claude-only gap is NOT accepted, however emphatic"
+    ]
+  },
+  {
+    "name": "the gap's WHO is matched against the whole line, so a claude gap whose REASON mentions codex is accepted",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return bool(reason) and reason.split(\":\", 1)[0].strip().lower() == \"codex\"",
+        "    return bool(reason) and \"codex\" in reason.lower()"
+      ]
+    ],
+    "expect": [
+      "the WHO is read, not the reason — a claude gap mentioning codex stays a claude gap"
+    ]
+  },
+  {
+    "name": "⛔ the r3 deletion finding, restored: a path absent from the final tree has no entry to compare, so a reviewed DELETION reads as unseen and the careful path fails for deleting code",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "ABSENT_ENTRY = \"000000 \" + \"0\" * 40",
+        "ABSENT_ENTRY = \"not a tree entry\""
+      ]
+    ],
+    "expect": [
+      "the absent entry is spelled the way git spells a deletion"
+    ]
+  },
+  {
+    "name": "absence is matched by an exact 40-zero literal again, so a reviewed deletion in a SHA-256 repository falsely fails",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return len(parts) == 2 and bool(parts[1]) and set(parts[1]) == {\"0\"}",
+        "    return (entry or \"\") == ABSENT_ENTRY"
+      ]
+    ],
+    "expect": [
+      "...and so is a 64-zero one, because the width is not the meaning"
+    ]
+  },
+  {
+    "name": "two absences stop matching each other, so the reviewed-deletion path returns to failing closed on every branch that deletes code",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        return (is_absent(seen) and is_absent(now)) or now == seen",
+        "        return now == seen"
+      ]
+    ],
+    "expect": [
+      "a deletion recorded at one sha width matches an absence at another"
+    ]
+  },
+  {
+    "name": "⛔ the r4 HIGH, restored: the declared gap loses the document that made it, so a stacked branch's pass is indistinguishable from one that declared for itself",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "            return f\"{path} — {reason}\"",
+        "            return reason"
+      ]
+    ],
+    "expect": [
+      "...and the answer NAMES the document, so a stacked pass is visible in the log"
+    ]
+  },
+  {
+    "name": "a reverted dirty overlay is compared by nobody",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "(set(after) | set(reviewed))",
+        "set(after)"
+      ]
+    ],
+    "expect": "a REVERTED dirty overlay is STILL a candidate, though nothing changed since the round"
+  },
+  {
+    "name": "the tail is charged over the base's commits again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        " & set(branch_delta))",
+        ")"
+      ]
+    ],
+    "expect": "a path the BASE changed, outside this branch's delta, is not charged"
+  },
+  {
+    "name": "a gate that did not run becomes testimony",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if not rec.get(\"gate_ran\"):\n        return None, SKIP",
+        "    if False:\n        return None, SKIP"
+      ]
+    ],
+    "expect": "a verdict saying the gate did NOT run is skipped, never read as testimony"
+  },
+  {
+    "name": "a failed snapshot reads as a clean tree",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if \"dirty\" in rec and rec[\"dirty\"] is None:\n        return None, UNUSABLE",
+        "    if False:\n        return None, UNUSABLE"
+      ]
+    ],
+    "expect": "a verdict whose dirty map is NULL could not look — unusable, not a clean tree"
+  },
+  {
+    "name": "a schema-1 verdict is skipped instead of counted",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if not isinstance(head, str) or not head.strip():\n        return None, UNUSABLE",
+        "    if not isinstance(head, str) or not head.strip():\n        return None, SKIP"
+      ]
+    ],
+    "expect": "a schema-1 verdict carries no head: UNUSABLE, not skipped"
+  },
+  {
+    "name": "a verdict added then deleted is treated as fine",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if not isinstance(rec, dict):\n        return None, UNUSABLE",
+        "    if not isinstance(rec, dict):\n        return None, SKIP"
+      ]
+    ],
+    "expect": "a verdict added in the range and deleted again cannot testify"
+  },
+  {
+    "name": "the recorded dirty map is ignored",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return {k: v for k, v in d.items() if isinstance(k, str) and isinstance(v, str)}",
+        "    return {}"
+      ]
+    ],
+    "expect": "the dirty map is read from the verdict"
+  },
+  {
+    "name": "an unreachable head is treated as usable",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        if not is_ancestor(head):\n            unusable += 1",
+        "        if False:\n            unusable += 1"
+      ]
+    ],
+    "expect": "a head no longer reachable — rebased or squashed — is UNUSABLE, never a pass"
+  },
+  {
+    "name": "the second question is switched off entirely",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if not guarded_changes(changed):\n        return False, None",
+        "    if True:\n        return False, None"
+      ]
+    ],
+    "expect": "guarded code and no waiver: the question is asked"
+  },
+  {
+    "name": "the NO-REVIEW waiver stops echoing its reason",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        return False, f\"{NO_REVIEW} {waiver} — the final-tree question is WAIVED, not passed\"",
+        "        return False, None"
+      ]
+    ],
+    "expect": "...and ECHOES the reason, so exit 0 is not attributed to the review documents"
+  },
+  {
+    "name": "-z parsing reverts to splitlines, so a quoted path stops being the path",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return [ln for ln in out.split(\"\\0\") if ln.strip()]",
+        "    return [ln for ln in out.splitlines() if ln.strip()]"
+      ]
+    ],
+    "expect": "...and a newline inside a path does not split it"
+  },
+  {
+    "name": "a review document that is gone is read anyway",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        text = read(rel)\n        if text is not None:",
+        "        text = read(rel)\n        if True:"
+      ]
+    ],
+    "expect": "a review document that is gone is not read and cannot declare a gap"
+  },
+  {
+    "name": "rename detection is left ON, so a guarded file moved to a prose path vanishes from the diff",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    args = [\"diff\", \"--name-only\", \"-z\", \"--no-renames\"]",
+        "    args = [\"diff\", \"--name-only\", \"-z\"]"
+      ]
+    ],
+    "expect": "the diff asks git NOT to pair a deletion with an addition"
+  },
+  {
+    "name": "gate code under docs/ reads as prose again, so changing a schema gate owes no review",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if any(path.startswith(d) for d in CODE_UNDER_PROSE):\n        return path.endswith(\".md\")",
+        "    if False:\n        return path.endswith(\".md\")"
+      ]
+    ],
+    "expect": "gate code at mutate-schema.py is GUARDED, though it lives under docs/"
+  },
+  {
+    "name": "the exception swallows the spec's own prose too, obliging a round for a doc edit",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        return path.endswith(\".md\")",
+        "        return False"
+      ]
+    ],
+    "expect": "...and a hypothetical .md beside them would still be prose (none exists there today)"
+  },
+  {
+    "name": "the anti-drift check stops reporting a docs/ gate directory it does not cover",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        if not any(prefix.startswith(e) or e == prefix.rstrip(\"/\") + \"/\"\n                   for e in CODE_UNDER_PROSE):\n            missing.append(g)",
+        "        if False:\n            missing.append(g)"
+      ]
+    ],
+    "expect": "a NEW docs/ gate directory the tuple does not know about is REPORTED"
+  },
+  {
+    "name": "an empty NO-REVIEW waives the final-tree question again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if waiver is not None and waiver.strip():",
+        "    if waiver is not None:"
+      ]
+    ],
+    "expect": "a bare NO-REVIEW with no reason does NOT waive the final-tree question"
+  },
+  {
+    "name": "a glob BROADER than an exemption is silently cleared again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        if not any(prefix.startswith(e) or e == prefix.rstrip(\"/\") + \"/\"\n                   for e in CODE_UNDER_PROSE):",
+        "        if not any(prefix.startswith(e) or e.startswith(prefix)\n                   for e in CODE_UNDER_PROSE):"
+      ]
+    ],
+    "expect": "...as is a glob BROADER than an exemption, which used to be silently cleared"
+  },
+  {
+    "name": "the workflow extractor stops finding docs/ path filters",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return sorted({m.group(1) for m in re.finditer(r\"^\\s*-\\s*'(docs/[^']*)'\", text, re.M)})",
+        "    return []"
+      ]
+    ],
+    "expect": "the workflow's docs/ path filters are READ, not transcribed into this test"
+  },
+  {
+    "name": "the extractor swallows non-docs globs too, so the check reports paths CI never guarded",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "r\"^\\s*-\\s*'(docs/[^']*)'\"",
+        "r\"^\\s*-\\s*'([^']*)'\""
+      ]
+    ],
+    "expect": "the extractor finds quoted docs/ globs and ignores everything else"
   }
 ]

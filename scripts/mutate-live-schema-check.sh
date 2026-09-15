@@ -291,21 +291,95 @@ SQL
     # discriminator if the control cannot contain it.* So the probes stop reading the exit code and
     # match the DRIFT SENTENCE, which only `unexpected()` can produce.
     drift_out() { python3 ./scripts/check-live-schema.py --database "$1" --expect-present 2>&1; }
+    # ⛔⛔ THE SECOND HALF IS AN EXPECTED-PASS AND IT WAS UNGUARDED — ⟳ r1 MEDIUM 1 (claude),
+    # 2026-09-12, MEASURED. `probe_kind` emits TWO assertions, not one. The first is expected-RED and
+    # cannot be earned by SQL that never ran; the second — "…and undoing the $1 goes GREEN again" —
+    # is expected-PASS, and the reviewer earned it with a mutation that could not land
+    # (`create index … (no_such_column)`): drift half ✗, undo half ✓. A green statement about undoing
+    # something that never existed is *"a green over an unapplied mutation"*, which the comment at
+    # the FOREIGN bound below calls the exact shape this harness exists to prevent.
+    #
+    # ⚠ THE BRANCH THAT INTRODUCED THIS COMMENT ASSERTED THE SHAPE WAS IMPOSSIBLE. It reasoned about
+    # the drift half and counted one assertion where the code emits two — so the justification for
+    # deleting a previously-reviewed `landed` guard was true of the half it looked at. The property
+    # is NOT new (POLICY, CONSTRAINT and TRIGGER have carried it since backlog 65); the sentence
+    # claiming its absence was.
+    #
+    # TWO GUARDS, and they answer different questions:
+    #   (a) did the mutation SQL even execute?  psql's own exit status under ON_ERROR_STOP=1 —
+    #       generic, so it needs no hand-written predicate per kind, which is what `landed` needed.
+    #       A failure here is NOT RUN, never MUTATION SURVIVED: the accusation belongs to the SQL,
+    #       not to check-live-schema.py. (`landed` said this and the first fix lost it.)
+    #   (b) was the mutation OBSERVED as drift? Only then does undoing it mean anything. If the
+    #       drift half went red, the undo assertion is NOT RUN rather than a tick, because a green
+    #       over nothing is the thing being prevented.
+    # ⛔ THE CLONE IS SHARED BY EVERY PROBE, SO ONE DIRTY PROBE POISONS ITS SIBLINGS — ⟳ r2 LOW 1
+    # (claude), MEASURED on the shipped file with a SINGLE fault. Desyncing the POLICY undo produced
+    # four reds: its own, plus CONSTRAINT, TRIGGER and INDEX, each red for a leftover policy it never
+    # created. The r1 fix set `residue` and read it at the FOREIGN bound only — so the comment saying
+    # "a downstream expected-pass reports NOT RUN" was true of THE bound it guarded and false of
+    # downstream expected-passes in general. **That is this branch's own subject, one scope inward:**
+    # a sentence claiming more reach than the code has, shipped by the fix for a sentence that did.
+    residue=0
     probe_kind() { # label  mutate-sql  undo-sql
-      local out
+      local out mrc seen
+      if [ "$residue" = 1 ]; then
+        echo "  ⚠ the $1 probe — NOT RUN: an earlier undo failed, so the clone is known dirty and"
+        echo "     any verdict here would name the wrong defect. The first failure above is the one."
+        return 1
+      fi
       db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<SQL
 $2
 SQL
+      mrc=$?
+      if [ "$mrc" -ne 0 ]; then
+        echo "  ✗ the $1 mutation DID NOT LAND (psql exit $mrc) — treat this probe as NOT RUN"
+        fail=1
+        db "${PREFIX}_raw" >/dev/null 2>&1 <<SQL
+$3
+SQL
+        # ⚠ OBSERVE, DO NOT ASSERT. A partially-landed mutation leaves residue that the best-effort
+        # undo above may not remove, and r1's flag could never learn about it because the only writer
+        # was an assertion this path skips. Reading the gate here credits nothing and reports nothing
+        # — it only records whether the clone is still usable by the NEXT probe.
+        gate "${PREFIX}_raw" --expect-present || residue=1
+        return 1
+      fi
       # ⚠ CAPTURE FIRST, MATCH SECOND — never pipe into `grep -q` under `set -o pipefail`; this file
       # measured that reporting failure on the very runs where the token WAS found.
       out=$(drift_out "${PREFIX}_raw")
       case "$out" in *"EXIST ON A RELATION M4 OWNS"*) r=pass ;; *) r=fail ;; esac
       report "⭐ backlog 65: an unexpected $1 names DRIFT (not merely a red gate)" pass "$r"
+      seen=$r
       db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<SQL
 $3
 SQL
+      if [ "$seen" != pass ]; then
+        echo "  ⚠ …and undoing the $1 — NOT RUN: the $1 was never observed as drift, so a green"
+        echo "     here would be a green over nothing. The failure above is the finding."
+        # Same observe-don't-assert rule as the DID-NOT-LAND path. r2 LOW 1 (ii) measured this exact
+        # hole: with the gate neutered AND an undo desynced, every probe took this branch, nothing
+        # ever wrote the flag, and the leftover broke the FOREIGN bound through the SUBSET test
+        # rather than through the drift report — a red the flag existed to prevent and could not see.
+        gate "${PREFIX}_raw" --expect-present || residue=1
+        return 1
+      fi
       gate "${PREFIX}_raw" --expect-present && r=pass || r=fail
       report "…and undoing the $1 goes GREEN again" pass "$r"
+      # ⛔ A FAILED UNDO LEAVES THE CLONE DIRTY, AND EVERY EXPECTED-PASS BELOW THEN GOES RED FOR
+      # SOMEONE ELSE'S REASON — ⟳ r1 LOW 1 (claude). The reviewer offered two fixes; the one that
+      # looked cheapest, restoring `drop index if exists` to the cleanup block, was MEASURED HERE and
+      # DOES NOT WORK, because that block runs AFTER the bound it was supposed to protect. A filed
+      # finding's proposed fix is a hypothesis.
+      #
+      # ⚠ WHAT THE FLAG DOES AND DOES NOT SEE, stated narrowly because r2 caught the wide version:
+      # it is written by THREE observations — this failed undo assertion, and the two NOT-RUN paths
+      # above, each of which reads the gate without asserting. All three ask the same question, *is
+      # the clone still clean*, so an undo that SUCCEEDS as a command while leaving the object behind
+      # (a desynced `drop … if exists <wrong-name>`) is caught too — by the gate, not by the exit
+      # status. It is read by every later probe AND by the FOREIGN bound, which is what makes the
+      # sentence "a downstream expected-pass reports NOT RUN" true as written rather than true of one.
+      [ "$r" = pass ] || residue=1
     }
 
     out=$(drift_out "${PREFIX}_raw")
@@ -325,12 +399,38 @@ SQL
          for each row execute function video_artifacts_append_only();" \
       "drop trigger if exists m4_mut_trg on public.video_artifacts;"
 
-    # ⛔ THE STATED BOUNDS, ASSERTED. An unstated bound is read as coverage, so each one that this
-    #    gate deliberately does NOT cover gets a case here — if a later change silently widens the
-    #    scope, these turn red and the widening is a decision instead of an accident.
-    # ⟳ codex Low (backlog 65 review): these two probes assert that the gate PASSES, so if their SQL
-    # never landed they would pass on an UNCHANGED database and certify a bound nothing tested. A
-    # green over an unapplied mutation is the exact shape this harness exists to prevent, so each one
+    # ⟳ 2026-09-12 — THE FOURTH KIND, AND IT ARRIVED HERE BY BEING RED. Until 2026-08-28 an index
+    # was the one ATTRIBUTABLE_KIND with no probe, because it could not be attributed at all:
+    # `idx:` rendered as `idx:<indexname>`, naming no relation. That hole was written down six lines
+    # below as an expected-PASS bound — and when `m4_catalog.CATALOG_SQL` gained `x.indrelid` and
+    # started emitting `idx:<relation>.<index>`, the bound became the only thing in the repo still
+    # asserting the old world. It went ✗ and took the suite red for TWO WEEKS.
+    #
+    # ⭐ THAT RED WAS THE MECHANISM WORKING, NOT FAILING — it is what the stated-bounds block below
+    # promises: *"if a later change silently widens the scope, these turn red and the widening is a
+    # decision instead of an accident."* A widening nobody asserted would have been invisible.
+    # Backlog 65 already ran this same inversion once, for the sibling added-COLUMN case; the index
+    # half of it was simply never carried through.
+    #
+    # ⚠ WHY THIS DROPS `landed`, WHICH A REVIEW ROUND PAID FOR — because `probe_kind` now carries the
+    # same protection for ALL FOUR kinds, generically, off psql's exit status. ⟳ r1 MEDIUM 1 rewrote
+    # this paragraph: it used to argue the polarity SUBSUMED `landed`, which is true of the DRIFT
+    # half and false of the undo half, and the reviewer measured the ✓ that proved it. The claim was
+    # narrower than the code it was justifying. `landed` stays in use below, where the FOREIGN bound
+    # is still a bare expected-pass with no probe wrapped around it.
+    probe_kind "INDEX" \
+      "create index m4_mut_idx on public.workspace_videos (workspace_id);" \
+      "drop index if exists m4_mut_idx;"
+
+    # ⛔ THE STATED BOUND, ASSERTED. An unstated bound is read as coverage, so what this gate
+    #    deliberately does NOT cover gets a case here — if a later change silently widens the
+    #    scope, it turns red and the widening is a decision instead of an accident.
+    # ⟳ 2026-09-12: there were TWO, and the INDEX one is gone because that promise was KEPT — see
+    #    the probe above. One remains, and it is the one that should never move: `videos` is not
+    #    M4's relation, so bounding it would generate false positives forever.
+    # ⟳ codex Low (backlog 65 review): this probe asserts that the gate PASSES, so if its SQL
+    # never landed it would pass on an UNCHANGED database and certify a bound nothing tested. A
+    # green over an unapplied mutation is the exact shape this harness exists to prevent, so it
     # now asserts its own postcondition and reports NOT RUN rather than a tick.
     landed() { # relation predicate-sql label
       local n
@@ -343,27 +443,45 @@ SQL
     db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
 alter table public.videos add column m4_mut_foreign text;
 SQL
-    if landed videos "select count(*) from information_schema.columns where table_schema='public' and table_name='videos' and column_name='m4_mut_foreign';" "the FOREIGN column"; then
+    if [ "$residue" = 1 ]; then
+      # The other half of r1 LOW 1. This assertion expects a GREEN gate, and a probe above already
+      # reported that it could not clean up after itself — so the clone is dirty and this bound would
+      # go red for an index it never heard of. NOT RUN is the honest verdict; `fail` is already 1.
+      echo "  ⚠ BOUND: a new column on a FOREIGN relation (videos) — NOT RUN: a probe's undo failed"
+      echo "     above, so the clone is known dirty and a red here would name the wrong defect."
+    elif landed videos "select count(*) from information_schema.columns where table_schema='public' and table_name='videos' and column_name='m4_mut_foreign';" "the FOREIGN column"; then
       gate "${PREFIX}_raw" --expect-present && r=pass || r=fail
       report "BOUND: a new column on a FOREIGN relation (videos) still PASSES — not M4's to bound" pass "$r"
     fi
 
+    # ⛔ A SECOND BOUND STOOD HERE AND IS GONE — a bare INDEX on an M4-owned relation, asserted to
+    # PASS because `idx:` named no relation. It is now the INDEX probe above, asserting the opposite,
+    # because the hole CLOSED on 2026-08-28 (`check-live-schema.py:273`, kept there as the record of
+    # a hole rather than deleted). Removing the sentence is the whole repair: the bound was not
+    # broken, it was TRUE-THEN and the code outgrew it. Left in place it read as coverage of a
+    # blind spot that no longer exists — the one failure mode a stated bound is supposed to prevent,
+    # turned inside out.
     db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
 alter table public.videos drop column if exists m4_mut_foreign;
-create index m4_mut_idx on public.workspace_videos (workspace_id);
 SQL
-    if landed idx "select count(*) from pg_indexes where schemaname='public' and indexname='m4_mut_idx';" "the bare INDEX"; then
-      gate "${PREFIX}_raw" --expect-present && r=pass || r=fail
-      report "BOUND: a bare INDEX on an M4 relation still PASSES — idx: carries no relation name" pass "$r"
-    fi
 
-    # The direction that was ALREADY guarded — asserting it keeps the bounds above from reading as
+    # The direction that was ALREADY guarded — asserting it keeps the bound above from reading as
     # "the gate sees nothing".
     # ⚠ `if exists` ON THE CLEANUP, so a probe that failed cannot make its NEIGHBOUR red. MEASURED
     # while falsifying `landed`: a deliberately misnamed index left `drop index m4_mut_idx` to abort
     # this block under ON_ERROR_STOP, so the removed-column case never ran and reported MUTATION
     # SURVIVED for a reason that had nothing to do with it. Failing loudly is right; failing loudly
     # in the WRONG ASSERTION sends the next reader to the wrong defect.
+    # ⟳ 2026-09-12: this `drop index` was DELETED and is RESTORED — ⟳ r1 LOW 1 (claude), measured.
+    # The deletion argued *"two droppers for one object is a second owner that can silently
+    # disagree"*. That is wrong for THIS dropper and the word `if exists` is why: it cannot disagree
+    # with the probe, only absorb what the probe missed. Which is the definition of belt-and-braces,
+    # and the reason it was written this way in the first place.
+    # MEASURED with the INDEX probe's undo desynced: branch → TWO reds, the second landing on the
+    # FOREIGN bound, which has nothing to do with indexes; master, same sabotage → ONE red. The
+    # deletion re-created the exact hazard the paragraph above records, in the same commit that kept
+    # the paragraph. (The probe also now runs UPSTREAM of that bound, which is what gives a leftover
+    # anything to corrupt.)
     db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
 drop index if exists m4_mut_idx;
 alter table public.workspace_videos drop column if exists m4_mut_residue;

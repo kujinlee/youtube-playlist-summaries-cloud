@@ -84,7 +84,7 @@ must stay in sync — updated proactively, without being asked.
 | 3 | **Implementation** | code + tests | per-task two-stage review to convergence, autonomous. Per-Task Checklist: checklists doc |
 | 4 | **Verification** | evidence | enumerate every UX case as a task list *before* clicking anything; screenshots to `.screenshots/` (gitignored) |
 | 5 | **Final Review + Finish** | PR | full review → commit → push → PR. **Merging is a human gate** |
-| 6 | **Architecture Review** | `docs/reviews/architecture-review-<date>.md` | per **milestone** — **or after 4 review rounds without convergence**, whichever comes first |
+| 6 | **Architecture Review** | `docs/reviews/architecture-review-<date>.md` | per **milestone** — **or on THRASHING: two consecutive rounds whose findings came from the previous round's fix** |
 
 **Phase 3 execution default (set 2026-06-09):** `superpowers:subagent-driven-development` — a fresh
 subagent per task. Proceed automatically; do not ask the user to choose each time.
@@ -104,19 +104,19 @@ A one-line change can be the most dangerous thing in the repo.
   exists as soon as the PR does.
 - Merging stays a **human gate**: open the PR, notify, do not merge.
 
-**⟳ Phase 6 also fires on FOUR NON-CONVERGING ROUNDS (added 2026-08-09), and that trigger was bought
-with twelve of them.** The stable-blob-addressing reservation protocol produced a Blocking or High in
-six consecutive rounds — four of them introduced by the previous round's own fix — while every other
-component of the same spec converged and stayed converged. Phase 6 describes that failure in its own
-sentence below and never ran, because a spec can burn twelve rounds in a week without crossing a
-milestone. **The inventory was right; the arming condition was wrong.** See
-⚠ **Read the trigger off the CAUSE, not the count** — on a *document*, rounds can be right forever
-because prose has nothing to execute; that is a signal to go build, not to convene Phase 6. Measured
-2026-08-28: Blocking totals ran 4→5→4 while the character shifted entirely. Both shapes, and how to
-tell them apart, are in [`review-method.md`](review-method.md) — also the stop condition, and
-`docs/reviews/blob-addressing-retrospective-2026-08-09.md` for the full account.
+**⟳ THE ARMING CONDITION IS THRASHING, NOT A COUNT (corrected 2026-09-14).** It fires when **two
+consecutive rounds carry findings caused by the previous round's own fix, in one component** — the
+shape that bought it: the stable-blob-addressing reservation produced a Blocking or High in six
+consecutive rounds, four of them introduced by the previous fix, while every other component of the
+same spec converged. **The inventory was right; the arming condition was wrong** — and a count was
+the wrong repair for it. ⚠ **Reaching four rounds OBLIGES ASKING, and does not fire.** Answer
+*thrashing or prose floor?* in the round document, with per-finding evidence. Measured 2026-08-28:
+Blocking totals ran 4→5→4 while the character shifted entirely, so a count would have convened this
+over prose that was improving — and on a document rounds can be right forever, which is a signal to
+go build. Both shapes, the test *can a redesign remove it?* and the stop condition are in
+[`review-method.md`](review-method.md); the full account is in that retrospective's review doc.
 
-**Phase 6 — why it is per-milestone:** per-task review is structurally blind to composition defects.
+**The architecture review — why it is per-milestone:** per-task review is structurally blind to composition defects.
 It only ever sees one change, and every change can be individually correct while the structure they
 add up to degrades. Read `CONTEXT.md` + `docs/adr/` first; ADRs must not be re-litigated. Agent output
 is a **lead, not a finding** — verify every load-bearing claim by hand. Findings that become work go to
@@ -139,7 +139,7 @@ copy that drifts.
 | `.claude/hooks/check-schema-gates.sh` | after editing schema, the gates must run before reporting done |
 | `.claude/hooks/enforce-handoff-path.sh` + `scripts/check-handoff-path.py` | a session handoff is written where the SessionStart hook reads it — blocks `/handoff` if a vendor update reverted the skill's save path (`--self-test`: 10 cases) |
 | `scripts/check-schema-gates.sh` | **one command for all THIRTEEN schema gates** — run this, not the pieces |
-| `scripts/check-guard-coverage.py` | every guard classified SHAPE/SEQUENCE; every SEQUENCE guard reconciles and is mutated. ⟳ 2026-09-04 (Phase 6 #7, finding 4): this row claimed enforcement while `ci.yml` referenced it **zero** times. ⟳⟳ CORRECTED SAME DAY, by CI going red: I then claimed the guard "never uses" the Postgres it was gated behind. **False** — it imports `read_catalog`, and my evidence was taken on a machine with the container running. Its `--self-test` (pure rules) now runs in CI; the catalog-reading run stays in `check-schema-gates.sh` |
+| `scripts/check-guard-coverage.py` | every guard classified SHAPE/SEQUENCE; every SEQUENCE guard reconciles and is mutated. ⟳ 2026-09-04 (architecture review #7, finding 4): this row claimed enforcement while `ci.yml` referenced it **zero** times. ⟳⟳ CORRECTED SAME DAY, by CI going red: I then claimed the guard "never uses" the Postgres it was gated behind. **False** — it imports `read_catalog`, and my evidence was taken on a machine with the container running. Its `--self-test` (pure rules) now runs in CI; the catalog-reading run stays in `check-schema-gates.sh` |
 | `scripts/check-sentinel-meanings.py` | every nullable column means exactly ONE thing (a conjunction in the meaning is the tell) |
 | `scripts/check-vocabulary-collisions.py` | one mechanism per concern — duplicate coordination vocabulary is the shadow of a duplicate protocol. ⟳ 2026-09-04: same finding, and the sharper half — *one mechanism per concern* IS architecture review #7's findings 1 and 2, so the guard for that class was the one CI could not see. ⟳⟳ Its **rules** are pure (`:125`) and now run in CI as a `--self-test`; its **entry point** needs the catalog, which the first attempt at this row got backwards |
 | `scripts/check-producer-enumeration.py` | every guarded value's producer count matches its **defining expression** (`--self-test`: 11 cases) |
@@ -158,10 +158,10 @@ copy that drifts.
 | `scripts/check-plan-code.py` | **`--mutate .` is what CI runs** (backlog #70, 2026-08-29): every mutation in `scripts/mutations/*.json` is applied to the DELIVERED scripts and must go red **via the case it names**, over a control proved green first. Coverage cannot shrink — `EXPECTED_MUTATIONS` pins it, and duplicate names/anchors are refused. ⟳ 2026-08-30: every spawned suite runs under a **redirected `HOME`**, so a mutation cannot reach the reader's live pages under `~/explainers/` — structural, not per-entry, because the per-entry version had already failed once. ⟳ 2026-09-08: `<plan>`/`--evidence`/`--compare`/`--verify-evidence` — **PLAN MODE — are RETIRED and now REFUSE with rc=2** naming the retirement; superseded by `--mutate .` (PR #176), which measures the shipped code rather than a document's copy of it. Refused, not deleted, so an old invocation gets a sentence instead of argparse's "unrecognized arguments" (`--self-test`). ⟳⟳ 2026-09-09 (PR 2 of 2): **the refusals stay; the CODE BEHIND THEM IS NOW DELETED** — 7 functions, 7 constants and 143 cases, `3,607 → 1,983` lines. `EXPECTED_MUTATIONS` for this file falls **44 → 23** and the declared sum **392 → 371**, which is the ONE permitted kind of fall: 20 anchors stop resolving because the code they name is gone, so the entries are *retired with their subject* rather than orphaned, recorded at both sites with the count and the reason. ⟳ 2026-09-07: the harness stages `HARNESS_TREE`, not `scripts/` alone — four guards resolve their SUBJECT from the repo root, so a scripts-only tree gave each a red control and left them unmanifested for weeks. ⚠ That tuple is **not** a containment boundary and reading it as one is what cost the four: `copytree` yields a COPY, and the boundary is `child_env`'s `$HOME` redirect above |
 | `scripts/check-plan-file-tags.py` | no document under `docs/` embeds code through a retired plan-mode tag. Retiring plan mode removed the ONLY reader of the `<!-- file: … -->` grammar, so "no plan embeds code" went from enforced to merely true — measured 2026-09-08 as 0 across 1,115 documents, and an empty corpus is **CANNOT RUN**, because a zero over nothing is not a finding. Prose ABOUT a tag (13 documents, all backticked) must keep passing; a bare substring test breaks every one of them, which `plan-mutation-retarget-r1` already paid for. ⚠ The fence rule is `extract`'s own, taken by RUNNING it: v1 reasoned about the parser instead, and its first live run flagged a committed review doc the parser had never seen (`--self-test`: 21 cases) |
 | `.github/workflows/ci.yml` | `tsc --noEmit`, unit suite, `service_role` confinement, on Node 22 |
+| `.github/workflows/schema-gates.yml` | ⟳ 2026-09-13: **the fifteen schema gates, in CI**, on a database built in a container by `scripts/ci/start-schema-db.sh` (27 migrations + 3 fixtures). Path-filtered to what the gates watch, gate 15's `PRODUCTION_DIRS` included. Its `prod-drift` job is the only SCHEDULED gate — production drift is the one subject no push corresponds to. Runs `scripts/check-storage-independence.py`, which holds the fixture to its own claim: it parses with `ast` and derives its file set, because the `grep` it replaced survived 3 of 5 mutations |
 
-**Not yet in CI:** `test:integration` and `test:e2e` (need a live Supabase stack), and the schema
-gates (need a live Postgres — wiring them in belongs to the promotion slice). Run these locally
-before asking for a merge.
+**Not yet in CI:** `test:integration` and `test:e2e` (need a live Supabase stack); run them locally
+before a merge. ⟳ 2026-09-13 the schema gates LEFT this list — CI builds their Postgres in 14s.
 
 **Anything longer than a line goes in a FILE, never a shell argument** — `--body-file`,
 `git commit -F`, `--prompt-file`. Any backtick inside a double-quoted bash string is command

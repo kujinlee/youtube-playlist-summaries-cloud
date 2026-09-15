@@ -1,0 +1,30 @@
+{
+  "attempts": [
+    "  gpt-5.5: try_next \u2014 timed out \u2014 any partial message is an incomplete review"
+  ],
+  "dirty": {
+    "docs/reviews/claude/record-review-topology-r12-claude.md": "100644 738b8665a37eea7fd9c0f3f88183570b0bdb0966",
+    "docs/reviews/codex/record-review-topology-r11-codex.md": "100644 7f44dc64061ed92a670eb3cecf4fbddd4ac0406d",
+    "docs/reviews/codex/record-review-topology-r12-codex.md": "100644 2395d8512027dfcd4d84a6f9d3c5b6add4e45660",
+    "docs/reviews/coordinator/record-review-topology-r11-coordinator.md": "100644 22cb79bbb23b46b1fdede82103dde8df81304183",
+    "docs/reviews/coordinator/record-review-topology-r12-coordinator.md": "100644 1f464ef08713d49c9bec22f56cbbe2ca255242ae",
+    "docs/reviews/verdicts/record-review-topology-r11-codex.verdict.json": "100644 9ee12370518c6421e114f0281197e20cc54823c8",
+    "docs/reviews/verdicts/record-review-topology-r12-codex.verdict.json": "100644 8a759479dcba1dea3ad5fee7117169529665ac30",
+    "scripts/check-plan-code.py": "100644 80d3e55e81b8b241f92874cd51ef71ced32d5d21",
+    "scripts/codex-review.py": "100755 37d0565b2b6ee131285d4b9f80a58bc088e3bf41",
+    "scripts/mutations/check-review-recorded.json": "100644 ba039f6012232c12583bb039418f565499a61b7e",
+    "scripts/mutations/codex-review.json": "100644 fe333d2b32cd373dd770aba91168acf119c5cde4"
+  },
+  "exit_code": 1,
+  "gate_ran": false,
+  "head": "dc9fe10708795db8b447fab3834b01f4b0db56b3",
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f99c413a-446d-4b36-8225-a04481fe69fa/scratchpad/codexout13/run.log: OVERWRITTEN during the run (writer unattributed)"
+  ],
+  "model": null,
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f99c413a-446d-4b36-8225-a04481fe69fa/scratchpad/r13-prompt.md",
+  "reason": "no candidate produced a usable review",
+  "review": "record-review-topology-r13-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}

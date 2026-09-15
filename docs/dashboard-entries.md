@@ -7969,6 +7969,177 @@ three is asserting on the string you are about to replace.
 cases; `EXPECTED_MUTATIONS` **549 → 559**.
 
 ## 2026-09-12
+The schema suite has been failing for two weeks, and the failure turns out to be the
+alarm doing its job rather than a bug. One of its checks was written to record a
+known gap — "the gate cannot see a bare index added to one of our tables" — so that
+if the gap ever closed by accident, someone would find out. The gap closed on
+purpose on 28 August. Nobody updated the note, so the note went red, which is
+exactly what it was built to do. The note is now inverted: it checks that the gap
+is closed, and that undoing the change puts everything back. All fifteen schema
+gates are green.
+<!--tech-->
+Branch `schema-index-bound-stale`, commit `7f8558da`.
+
+`scripts/mutate-live-schema-check.sh` asserted `BOUND: a bare INDEX on an M4
+relation still PASSES — idx: carries no relation name` as an expected-**pass**.
+The premise died on 2026-08-28 when `m4_catalog.CATALOG_SQL` joined `x.indrelid`
+and began emitting `idx:<relation>.<index>`, `idx` joined
+`check-live-schema.ATTRIBUTABLE_KINDS`, and the 12 `idx:` entries in
+`docs/superpowers/specs/m4/live-manifest.txt` were regenerated with their relations.
+
+**Triaged by measurement against the live local post-M4 database**, not by reading
+the code — control, mutation and undo:
+
+    check-live-schema.py --database postgres --expect-present          rc=0  (161 objects)
+    create index m4_triage_idx on public.workspace_videos (...)        rc=1
+        ⛔ 1 object(s) EXIST ON A RELATION M4 OWNS ...
+           + idx:workspace_videos.m4_triage_idx@117497863c05c6ab98e58db7054aff43
+    drop index m4_triage_idx                                           rc=0
+
+The case is now `probe_kind "INDEX"` beside POLICY/CONSTRAINT/TRIGGER, so it
+asserts the drift SENTENCE (the only thing `unexpected()` can emit) and then that
+undoing it goes green — the discrimination an exit code cannot provide, per this
+file's own r8 B1 lesson. It drops the `landed` postcondition deliberately: `landed`
+defends an expected-**pass** against SQL that never ran, and an expected-**red**
+matched on a sentence has no green left for an unapplied mutation to earn. `landed`
+stays in use for the one surviving bound (a column on foreign `videos`).
+
+`docs/backlog.md` row 65 carried the stale claim in the **present tense** — "`idx:`
+renders as `idx:<indexname>` with no relation ... this hole is on the money path" —
+and was the source the triage brief quoted. Corrected, with the old sentence kept
+inline as the record. Its "Both bounds are asserted as PASSING" line is now
+singular and cites the red as the thing that proved the mechanism.
+
+    harness   71 ✓ / 1 ✗  ->  73 ✓ / 0 ✗   (one bound removed, two probe halves added)
+    suite     M4_PHASE=post scripts/check-schema-gates.sh  exit 0, 15/15 green, ~232s
+
+No declared count needed bumping: `check-schema-gates.sh:130` labels this harness
+"29 mutations" and the probe lives inside mutation 3; `check-catalog-coverage.py`
+reads the harness only for `mutation <N>` labels, none of which moved.
+
+## 2026-09-12
+Correction to the entry above (2026-09-12/4): one of its numbers was labelled as
+coming from the schema test harness when it actually came from the whole suite of
+fifteen checks. The work it describes is unaffected — the harness really did go
+from one failure to none — but the figures quoted belonged to a bigger set than the
+label said. An adversarial review caught it and the counts were re-measured on both
+sides.
+<!--tech-->
+Found by the Codex review of `schema-index-bound-stale`
+(`docs/reviews/codex/schema-index-bound-r1-codex.md`, graded Low; no Blocking, High
+or Medium findings). Entry 2026-09-12/4 reads
+`harness   71 ✓ / 1 ✗  ->  73 ✓ / 0 ✗`. Those are `check-schema-gates.sh` totals,
+which include ticks from the other fourteen gates; `71/1` was itself inherited from
+a session handoff that counted the same way.
+
+Re-measured by running each population on each side, not by reasoning from the diff:
+
+    mutate-live-schema-check.sh alone      master a1a5e1bf   54 ✓ / 1 ✗
+                                           branch 1b4ee329   56 ✓ / 0 ✗
+    M4_PHASE=post check-schema-gates.sh    master a1a5e1bf   71 ✓ / 1 ✗
+                                           branch 1b4ee329   73 ✓ / 0 ✗
+
+Both move +1 net, which is what the diff predicts — one `report` call removed, one
+`probe_kind` (two `report` calls) added — and Codex's independent count of 56 agrees.
+
+This is an append, not an edit: entry ids are positional (`YYYY-MM-DD/N` counting
+blocks that share a date), so rewriting 2026-09-12/4 would renumber ids that other
+entries already point at.
+
+## 2026-09-12
+The second reviewer found a real problem with yesterday's fix, and it was the kind
+that only shows up when someone runs the code rather than reading it: a check that
+was supposed to be impossible to pass by accident could, in fact, be passed by
+accident — on the half of it nobody had counted. Fixed at the mechanism, so all four
+of these checks are now protected rather than just the one that was noticed. While
+fixing it, the reviewer's own suggested repair for a second issue turned out not to
+work when actually run, so a different one was built. All fifteen schema gates are
+green and the change is ready to merge.
+<!--tech-->
+Round 1 Claude adversarial half: `docs/reviews/claude/schema-index-bound-r1-claude.md`
+— 1 Medium, 3 Low, all accepted and fixed. Codex r1 (same round) found no
+Blocking/High/Medium. The `REVIEW GAP: claude` line in the Codex doc was removed once
+the half actually ran; a gap declaration outliving its gap is this branch's own topic.
+
+**MEDIUM 1.** `probe_kind` emits TWO assertions and the second
+(`…and undoing the $1 goes GREEN again`) is an expected-PASS. The comment justifying
+the removal of `landed` claimed "there is no green left for an unapplied mutation to
+earn" — true of the drift half, false of the undo half. The reviewer measured the ✓
+with `create index … (no_such_column)`. Fixed generically in `probe_kind`, so
+POLICY/CONSTRAINT/TRIGGER gain it too:
+
+    (a) psql exit status under ON_ERROR_STOP=1  -> "DID NOT LAND … NOT RUN", which also
+        restores the accusation to the SQL instead of to check-live-schema.py
+    (b) undo assertion runs only if the drift was OBSERVED, else NOT RUN
+
+**LOW 1 — the reviewer's second fix option was REFUTED by running it.** Restoring
+`drop index if exists m4_mut_idx;` to the cleanup block still produced two reds: that
+block runs after the bound it was meant to protect. Fixed instead with a `residue`
+flag — a failed undo marks the clone dirty and downstream expected-passes report NOT
+RUN rather than a red they did not earn. The `if exists` drop was kept anyway, since
+the reviewer is right that it can only absorb, never disagree.
+
+**LOW 2** nested `**` in backlog row 65, verified through `page_markup.render_inline`
+(1 stray → 0). **LOW 3(a)** the "only one artifact still asserts the old world" count
+was short by one (`docs/reviews/backlog-65-live-schema-drift-claude.md:54-57`, same
+class, correctly left as a dated record). **LOW 3(b)** entry 2026-09-12/5 says
+rewriting a block "would renumber ids" — false for a pure text edit; only inserting,
+deleting or reordering renumbers. The append was still mandatory per the dashboard
+skill, and the loose reason is inherited from that skill's wording.
+
+    control (unmodified harness)   56 ✓ / 0 ✗ exit 0   — unchanged by all of the above
+    falsifiers (a)(b)(c)           each fires, each correctly attributed
+    M4_PHASE=post check-schema-gates.sh   73 ✓ / 0 ✗, exit 0, 15/15
+
+⚠ Structural note for future rounds: the Codex half was committed ON the branch under
+review, so its verdict appears in `git log` and its grade in the diff — the second
+reviewer disclosed it could not avoid learning them. True independence needs the
+second half dispatched before the first is committed.
+
+## 2026-09-12
+Round two of review is done and both reviewers came back clean, so this is ready to
+merge. The second round found that my own fix had repeated, in miniature, the exact
+mistake the whole change is about: a comment claiming the safety net covered more
+than it did. Fixed so the net now covers every case the reviewer could construct —
+including two it had to combine faults to reach. Worth noting: for the second round
+running, the reviewer's *suggested* repair turned out not to work when actually run,
+and a different one had to be built. All fifteen schema gates green.
+<!--tech-->
+Round 2: `docs/reviews/claude/schema-index-bound-r2-claude.md` (CONVERGED, no
+Blocking/High/Medium, 2 Low — both fixed) and
+`docs/reviews/codex/schema-index-bound-r2-codex.md` (**no findings**).
+
+r2 LOW 1: the `residue` flag added in r1 had ONE writer (a failed undo assertion) and
+ONE reader (the FOREIGN bound), so its comment — "a downstream expected-pass reports
+NOT RUN" — was true of that bound and false in general. Measured on the shipped file
+with a SINGLE fault: desyncing the POLICY undo produced 4 ✗, three of them siblings
+dying for a leftover policy they never created.
+
+Fixed as one rule at three sites — **observe whether the clone is still clean, credit
+nothing**. Both NOT-RUN paths now read the gate without asserting, plus a top-of-probe
+guard. Reading the *gate* rather than the *exit status* is what closes the desync
+cases; r2's own sketch (capture the undo's exit status) closes only the first, because
+`drop … if exists <wrong-name>` succeeds. It labelled its own fix a partial closer.
+
+    POLICY undo desynced             4 ✗  ->  1 ✗ + siblings and bound NOT RUN
+    neutered gate + POLICY desync    ✗ BOUND MUTATION SURVIVED  ->  ⚠ BOUND NOT RUN
+    partial land + desynced undo     ✗ BOUND MUTATION SURVIVED  ->  DID NOT LAND + NOT RUN
+    control                          56 ✓ / 0 ✗ exit 0, unmoved throughout
+    suite                            73 ✓ / 0 ✗, 15/15, exit 0
+
+The neutered `unexpected()` was validated before anything was inferred from it —
+`104/119` on its own self-test, reproduced independently by all three of us.
+
+r2 LOW 2: removing the `REVIEW GAP:` line deleted its reasoning instead of quoting it,
+the opposite of what this branch did to backlog row 65. Now quoted inline. (The
+finding attributes that paragraph to Codex; it was the coordinator's filing header —
+corrected in place while accepting the fix.)
+
+⚠ `check-review-rounds.py` went RED the moment the r2 Claude half was filed alone
+("1 review round with one half and no stated reason") and passed once the Codex half
+landed. The gate caught a missing review half before a human had to.
+
+## 2026-09-12
 Clicking a source link on the goals page did nothing useful for four days — now it opens the document.
 <!--tech-->
 Every `/src/` link on `/goals` answered *no source root* — 55 of them, since the server was last
@@ -8030,3 +8201,737 @@ at that instant and a dead path within the hour — worse than no instruction, b
 the reader has trusted it. `repo_root()` resolves `--git-common-dir` to the main checkout, so the
 command survives the worktree it was generated from. Suites **100 → 108** and **50 → 67**; all 11
 page_chrome mutation anchors re-checked and none orphaned.
+
+## 2026-09-13
+The fifteen database checks now run automatically on every relevant push, instead of
+only on my machine — which is what the last two weeks of red was really about. Two
+surprises worth knowing. First, this was estimated at about a day and took a couple
+of hours, because the container image already provides most of what was thought to be
+the hard part. Second, the estimate's central claim — that these checks would roughly
+double the time CI takes — was wrong, because CI runs jobs side by side rather than
+one after another. A separate nightly check watches for the live production database
+drifting; it needs a credential added before it can do anything, and it will fail
+loudly every night until it gets one rather than quietly reporting all-clear.
+<!--tech-->
+Branch `schema-gates-in-ci`. New: `.github/workflows/schema-gates.yml` (jobs
+`schema-gates` and `prod-drift`), `scripts/ci/start-schema-db.sh`, and three fixtures
+under `scripts/ci/`.
+
+**Measured, against a database built entirely from the repo in a container:**
+
+    scripts/ci/start-schema-db.sh          14s   27 migrations, M4 PRESENT asserted
+    M4_PHASE=post check-schema-gates.sh   185s   73 ✓ / 0 ✗, exit 0, 15/15 green
+    image                                 0.34 GB  public.ecr.aws/supabase/postgres
+
+**Five scripts hardcoded the container name** — `m4_catalog.py`, `check-anon-exposure.py`
+and three that defined the constant and never read it. The handoff's claim that the
+connection was "already seamed (`m4_base_db.py:40`)" was true of one file and false of
+five, which is why a CI-built database reported `database "m4_rb2" does not exist` for
+one that demonstrably existed: the gate was querying the dev stack. Now one definition
+(`m4_base_db.CONTAINER`), five readers; three dead constants deleted.
+
+**Four gaps between the image and a real Supabase stack**, each found by a gate
+refusing rather than passing vacuously:
+
+    storage.buckets/objects missing   -> 0007 aborts, taking 4 PUBLIC functions with it
+    auth.users lacks is_anonymous     -> handle_new_user raises; 21 vs 35 columns, 1 read
+    auth.uid() reads only the legacy  -> owner cannot read own row; RLS silently off
+      singular GUC, not the JSON         (auth.role/auth.jwt differ the same way)
+    empty database                    -> "no workspaces exist"; seed 2 tenants + playlists
+
+The auth.uid() one is the dangerous class: it would weaken RLS rather than break it.
+The three helper bodies are copied verbatim via `pg_get_functiondef`, never retyped,
+and gate 8's owner-read assertion is their falsifier — it is what caught this.
+
+**`pg_isready` is not a readiness signal for this image, and the image's own
+HEALTHCHECK uses it.** The init phase runs a temporary server that answers yes and
+then shuts down; waiting on it produced `20 of 27` migrations failing with cascading
+`relation "profiles" does not exist`. Readiness is the init marker in the logs, then a
+query that answers. This also rules out a `services:` block with the documented health
+options.
+
+⭐ **I reproduced this repo's own documented `grep -q` under `pipefail` footgun** while
+writing that wait loop: `grep -q` exits on match, SIGPIPEs `docker logs`, and pipefail
+returns the producer's 141 — measured `piped_rc=141` on the very iteration where the
+marker was found. `mutate-live-schema-check.sh:97-102` already carries that warning.
+
+**Found while checking my own work:** `scripts/m4-base-db.sh` declared `# 6 cases` and
+runs **10**. `check-selftest-counts.py` globs `scripts/*.py`, so a declared count in a
+shell script has no outside observer. Instance corrected; the blind spot is not filed.
+
+## 2026-09-13
+Review of the CI work found twelve problems, including two that would have made the
+new checks useless in different ways: the nightly production check could never have
+passed at all, and the check that watches for expensive mistakes was set up to ignore
+the very folders that mistake would appear in. Both are fixed, along with ten smaller
+ones. The part I was most worried about — the stand-ins for the real login service —
+turned out to be sound, and the reviewer proved it rather than taking my word.
+<!--tech-->
+`docs/reviews/claude/schema-gates-ci-r1-claude.md` — 2 Blocking, 1 High, 5 Medium,
+4 Low. All twelve fixed in `a411ba9d`.
+
+**B1 — `prod-drift` could never pass, secret or not.** `--prod` does not open a socket
+from Python: `m4_catalog.psql_cmd` builds `docker exec … psql`, so production needs a
+container to run the CLIENT in and that job created none (`rc=2, No such container`).
+Fixed with an `--entrypoint sleep` client container; the failure then moves to a real
+connection error. I had tested the credential guard and stopped one step short.
+
+**B2 — the money gate was inside a path filter excluding the code it watches.** Gate
+15 walks `lib/ app/ worker/ components/ types/` + `middleware.ts`; the filter admitted
+`scripts/` and `supabase/`. One line under `lib/` flips it 0 → 1 and nothing else in
+CI runs it. ⭐ This falsified my own committed claim "UNDER-FIRING WAS CHECKED, NOT
+ASSUMED" — I enumerated paths the scripts MENTION; gate 15's subject is a tuple of
+directories it WALKS at runtime. Third wrong-predicate measurement this session.
+
+**HIGH — my storage falsifier was a grep and survived 3 of 5 mutations**, including
+the realistic edit: widening `nspname = 'public'` to admit storage contains no
+`storage.` at all. Replaced by `scripts/check-storage-independence.py`, which parses
+with `ast` (so a comment cannot match and a string can) and DERIVES its file set (so a
+new gate is covered the day it is written).
+
+The new guard paid the full contract: 26-case self-test, a caller in `ci.yml`'s
+unfiltered job, `EXAMINED_KEYS` pinned, and a 7-mutation manifest. ⭐ One mutation went
+"RED but NOT via its case" — `problems([], root)[0]` raised IndexError and took the
+suite down, so the kill was unattributable. The case now reports instead of dying.
+7/7 kill via the case each names. `EXPECTED_MUTATIONS` 559 → 566.
+
+Mediums: the spine still listed the schema gates as "not yet in CI"; the "single place
+`PGCONTAINER` is read" claim was false (seven readers — the one other Python gate now
+imports it); `${1:-…}` treated an empty argument as absent so `docker rm -f` hit the
+default while the self-test exercised a path `main()` could not reach; the corrected
+`# 10 cases` restored a stored claim to a place nothing observes; one concurrency
+group let a 09:00 cron and a push to master cancel each other. Lows: `auth.email()`
+left legacy inside a paragraph claiming all three helpers were fixed; "six relation
+queries" was nine; the 14s excludes the image pull; no `permissions:` block.
+
+    suite  73 ✓ / 0 ✗, 15/15, exit 0 against a rebuilt CI database
+
+## 2026-09-13
+The second reviewer found a hole in the safety check I had written an hour earlier:
+it was supposed to prove that no database check reads the storage system, and it was
+only looking at two thirds of them. Fixed, along with a genuinely dangerous one — a
+helper script could delete an unrelated container on your machine if an environment
+variable happened to point at it. Both reviewers have now signed off and every check
+is green.
+<!--tech-->
+Codex r1: `docs/reviews/codex/schema-gates-ci-r1-codex.md` — 1 High, 1 Medium, 1 Low,
+all accepted and fixed. It built its own database, ran the full suite (15/15, 120 live
+assertions, 58/58 schema mutations, 29/29 live-schema mutations) and tore it down.
+
+**HIGH — the guard's STATED BOUND was false.** It claimed "the shell gates reach
+Postgres through these same Python modules". Gate 1 does not: `verify-schema.sh`
+concatenates `05_assert.sql` (2,517 lines, 122 assertion sites) and executes it. So a
+future assertion could read `storage.objects`, pass against the minimal CI fixture,
+and the guard would report green. Three defects had to be fixed to close it:
+
+    population missed the non-Python gates       12 files, 0 spec gates, 0 .sql
+    the WIDENED version still missed them        gates 1-2 are invoked as "$SPEC/…"
+    then it over-fired on migrations             3 hits in 0007, all meaningless
+
+⭐ The middle one is the same miss as the finding itself, one level down: I matched
+literal paths when the file uses a variable. The third inverted the rule — a migration
+is the SUBJECT the gates read the catalog about, and 0007's use of `storage.buckets`
+is *why* the fixture exists. Population is now 21 (12 Python + 6 spec gates +
+05_assert.sql and siblings, 0 migrations), with comment handling per kind: `ast` for
+Python, `--`/`/* */` for SQL, `#` for shell — the last two stated as approximations
+that err toward missing a reference rather than inventing one.
+
+Self-test 26 → 38 cases; manifest 7 → 11 mutations, 11/11 killing via the case each
+names. One new mutation went "RED but NOT via its case" first, because the exclusion
+case asserted the absence of a file the fixture never made a candidate.
+
+**MEDIUM — a deny-list where an allow-list belonged, and it was live.**
+`PGCONTAINER=redis scripts/ci/start-schema-db.sh` would have run `docker rm -f redis`.
+Now only `m4_[a-z0-9_]*` may be destroyed; anything unrecognised is refused. Falsified
+live: `PGCONTAINER=redis_ru202` → refused, container survived.
+
+**LOW** — `package.json`/`package-lock.json` added to the path filter: gate 15 answers
+comment detection with the TypeScript compiler and has no fallback, so its dependency
+surface is a gate dependency.
+
+    suite   73 ✓ / 0 ✗, 15/15, exit 0     guards  10/10 green
+
+## 2026-09-13
+CI caught something my own pre-flight check had missed, for the most instructive
+reason available: I had written my own copy of the rule it uses to decide which test
+failed, and my copy was more generous than the real one. Mine said all eleven checks
+were working; the real one could not see any of them. One line of output format,
+now fixed and re-verified against the actual parser rather than my imitation of it.
+<!--tech-->
+`verify` red on "Mutation manifest against the delivered scripts":
+
+    FAILED — 43 file(s), 570 mutation(s), 570 killed, 559 attributed, 0 survivors
+    ✗ ×11  "the suite went RED but printed no `[FAIL] <case>` line, so NOTHING COULD
+            SEE THE KILL … a report-format defect in check-storage-independence.py"
+
+`check-plan-code.parse_fail_names` takes a line STARTING with `[FAIL] ` and slices
+`[7:]`. My self-test printed `  ✗ <name>`. Every mutation killed; none could be
+attributed, and an unattributable kill is indistinguishable from a mutation nobody
+guarded — portable-practices §22, on my own new guard.
+
+⭐ **Why my local run said 11/11.** My pre-flight verifier matched "the case name
+appears in the output AND a `✗` is present" — a second implementation of the
+attribution rule, more generous than the only one that counts. Re-verified by
+importing `check-plan-code.parse_fail_names` itself: control parses to `[]`, and
+11/11 mutations name their case.
+
+## 2026-09-13 [needs-you]
+The nightly production-drift check is built and works, but it needs one credential
+that only you can add, so I have deliberately NOT switched on its nightly schedule.
+Arming it now would mean a failed job every night until the credential exists, and a
+check that fails every night is one people learn to ignore. It can still be run by
+hand at any time, and turning the schedule on is a one-line change once the secret is
+there. Everything else in this change is finished and green.
+<!--tech-->
+`prod-drift` needs repository secret `CLAUDE_RO_DATABASE_URL` (a read-only role — see
+the `claude_ro` recipe). Without it the job refuses loudly (rc=2, "TREAT THIS AS NOT
+RUN"); it never reports a clean production.
+
+⚠ The distinction that keeps the decision honest: the job is not SCHEDULED to run on
+its own until it can pass. It does not quietly report success — not arming an alarm is
+different from arming one that lies. Backlog #56's measured verdict (a gate that fires
+on things people did not change gets disabled) and portable practice §23 both point the
+same way.
+
+To arm, after adding the secret — `.github/workflows/schema-gates.yml`:
+
+    schedule:
+      - cron: '0 9 * * *'      # 09:00 UTC daily
+
+`workflow_dispatch` is retained, so the whole path can be exercised on demand:
+`gh workflow run "Schema gates"`. The job's four steps were already driven locally
+end to end — credential guard, psql client container, the drift check reaching the
+network layer, and cleanup.
+
+## 2026-09-13
+A third review round, aimed at the one commit nobody had reviewed yet, found one more
+real problem — and it was the kind worth catching: a check that would have examined the
+wrong file and reported everything fine. Fixed. Four rounds of review on this change
+have now found twenty-four problems, and every single round found its problems in the
+previous round's repairs, which is the whole reason the rounds kept going.
+<!--tech-->
+Codex r3: `docs/reviews/codex/schema-gates-ci-r3-codex.md` — 1 Medium, no Blocking or
+High. Scoped to `fe0785e4` alone, the repairs for r2's Claude half, which no reviewer
+had seen. ⚠ `REVIEW GAP: claude` recorded — the delta was one commit and the Claude half
+had just reviewed everything preceding it.
+
+**MEDIUM.** The generic `$VAR/` strip treated every variable as a repo root. The
+reviewer built a gate reading `"$TMP/docs/real.sql"` from a `mktemp -d`; the strip
+resolved it to the repo's own `docs/real.sql`, which exists and is clean — a CONFIDENT
+CHECK OF THE WRONG SUBJECT, which is worse than a miss. Only root-like assignments
+(`$(cd … && pwd)`, `dirname "$0"`, `git rev-parse --show-toplevel`) are stripped now;
+anything else fails to resolve and is absent from the population.
+
+⚠ It also caught that the r2 fixture proved less than it claimed — its computed variable
+was INTENDED as a root alias, so it could not distinguish root-like from any-variable.
+The new case uses `SCRATCH=$(mktemp -d)` and asserts the decoy is NOT in scope.
+
+⚠ Two further anchor defects while fixing it, both this branch's signature: the fix
+ORPHANED r2's mutation anchor (third occurrence — a refactor moving text a mutation
+binds to), and re-anchoring hit the FIRST LINE of a two-line comprehension, so the
+mutated suite died of SyntaxError, printed no `[FAIL]` line, and the kill attributed to
+NOTHING — portable practice §22, in the anchor rather than the case.
+
+    self-test 50/50 · mutations 16/16 attributable · check-plan-code 128/128
+    suite 73 ✓ / 0 ✗, 15/15, exit 0 · eight repo guards rc=0
+    EXPECTED_MUTATIONS 559 -> 575 across the branch
+
+Guard population across four rounds: 12 -> 21 -> 27 -> 30, every widening bought by a
+measured miss rather than by caution.
+
+## 2026-09-13
+A review now has to have seen the code that is actually shipping.
+
+Until today a branch passed its review gate by *having* a review — no check asked whether the
+reviewed code was the code about to merge. That gap is where the last two branches' worst defects
+lived: on both of them, the problem that survived furthest was introduced by a **fix** written after
+the round, in code no reviewer had ever looked at.
+
+The measurement behind it is worth stating, because it refutes the obvious economy. Across three
+rounds on two branches the two reviewers produced **zero** overlapping findings — so running both is
+not duplicated effort and dropping one saves nothing real. What they do duplicate is building the
+test environment. The saving is there, not in the reading.
+
+So the rule that shipped is narrow: a branch fails if guarded code was committed after **every**
+round it recorded. Running one more round against the final tree clears it, and so does the existing
+practice of holding the last fixes uncommitted so the reviewer sees the state that will merge — the
+wrapper now records the exact git tree entry it handed over uncommitted, precisely so the careful
+version of the workflow is not the one that gets punished.
+
+The protocol this belongs to — round 1 both reviewers at once, later rounds alternating — is written
+down with **the two observations that would retire it**, and those get re-read at each architecture
+review rather than by a script, because deciding whether two findings are the same finding is not
+something a script can do.
+<!--tech-->
+Branch `record-review-topology`. Ships the *Round topology* section in `docs/review-method.md`, its
+Phase 6 re-examination item in `docs/process-checklists.md`, verdict schema **2** in
+`scripts/codex-review.py` (`head` + `dirty`, captured at dispatch, never at exit), and the
+final-tree rule in `scripts/check-review-recorded.py`.
+
+⛔ **Commit order cannot answer this question, which is why the wrapper had to change.** "Was the
+review document committed after the last code commit?" is defeated by the ordinary act of committing
+the fixes and the review doc together — the likely accident, not an exotic evasion. Only the commit
+recorded at dispatch says what the reviewer was handed.
+
+The rule lives in `check-review-recorded.py` rather than a new script because that file already owns
+base resolution, the guarded-vs-prose classifier and the shallow-clone CANNOT RUN; `guarded_changes`
+is called, not re-derived, so "code that obliges a review" and "code no round saw" cannot drift into
+two different sets. `NO-REVIEW:` waives both questions — one declaration per concern, no second
+marker.
+
+Stated limits, none of them papered over: only the Codex half leaves a verdict, so a round that ran
+as Claude-only is reported **NOT CHECKED**, never as a pass; verdicts older than schema 2 carry no
+commit and are counted and named; only verdicts this branch wrote are considered, so on `master` the
+range is empty and the rule correctly says nothing.
+
+Proved live against real git, each direction with its control: a round that saw the final tree
+passes and is named; a code commit after the only round fails and names the file; a docs commit
+after it does not fire; a file the reviewer was handed uncommitted does not count against it, and
+removing just the `dirty` list from the same tree makes it fire. `EXPECTED_MUTATIONS` for
+`check-review-recorded.py` 6 → 11, declared total 559 → 564.
+
+Three review rounds then found sixteen defects in it — thirteen fixed, three accepted and written
+down — and **both Blockings were the same class one layer apart**, which is the finding, not an
+aside. r1: the rule subtracted dirty **paths**, so "review a
+file, edit it again, commit" certified code no reviewer had seen, by the ordinary loop rather than
+an exotic evasion. r2: comparing **content** still certified a mode-only change — same bytes, newly
+executable. The answer was to stop reconstructing what git already knows and record the git tree
+entry — mode and object id — taken from a throwaway index. That also fixed two false failures r2 found on
+the careful path: a symlink was being recorded as the hash of its target's contents, and an
+untracked new file present at review time was read as never seen.
+
+The rest, in the rounds' own order: a round taken before the branch's first commit was silently
+discarded; "no usable round" returned 0 while printing CANNOT RUN; the population read MODIFIED
+historical verdicts as this branch's testimony; the working-tree scan broke on quoted paths and
+renames; `docs/plugins.md` still commanded concurrent dispatch with no exception; a case that named
+the live wiring never touched it, so deleting that wiring left the suite green; a `REVIEW GAP:`
+about the **Claude** half cleared a missing **Codex** verdict — one absence excusing a different
+one; a reviewed **deletion** was credited to nobody, so the careful path failed for the crime of
+deleting code; and one unrelated out-of-cone file made the whole record empty instead of partial.
+`EXPECTED_MUTATIONS` 6 → 20, declared total 559 → 573.
+
+Three things were accepted rather than fixed, and are written into the code that has them: the CI
+step runs on pull requests only, so a push to `master` asks neither question (that path is closed by
+a different mechanism, the default-branch push hook); a stacked branch is cleared by its parent's
+declaration, exactly as the existing recorded-review question already is, and the pass now names the
+document it relied on; and a non-deterministic `clean` filter makes content identity impossible for
+git itself, not only for this rule.
+
+⚠ The sum line was first written as `421 → 426`, read off the running commentary above the
+assertion instead of off `sum(EXPECTED_MUTATIONS.values())`. The case caught it. Steps 1–4 of the
+protocol have no machine behind them and are convention only — the Phase 6 item is the only thing
+that ever observes whether they are followed.
+## 2026-09-14
+A check that verifies "every safety rule in the database has been deliberately
+classified" was quietly ignoring five of them — on a table it builds itself. It had
+been reporting all-clear over 41 rules while five sat outside the question it asks.
+Fixed; it now covers 46. Separately measured, and deliberately left alone: the same
+check cannot see any of the 25 safety rules on the money tables, which is a decision
+about what that check is FOR rather than a bug, and now has a price tag.
+<!--tech-->
+Branch `guard-coverage-scope`. Backlog #29's trigger fired when the schema gates
+reached CI (PR #297), which is what made this measurable.
+
+**Half one — CLOSED, and it was never about migrations.** `video_artifact_sources` is
+created by M4's own `04_artifacts.sql`, so `check-guard-coverage.py` BUILT the table
+and then declined to enumerate it — `TRIGGER_TABLES` omitted it. Invisible: three
+trigger functions (`video_artifact_sources_append_only`,
+`video_artifact_sources_insert_once`, `art_summary_has_no_source`) and two FKs
+(`vas_artifact_fk`, `vas_source_generation_fk`), while the gate printed **✅ every
+guard classified** over 41. Now 46, all classified.
+
+⚠ `art_summary_has_no_source` is the sharpest of the five: the script's own deletion
+note records it verified ABSENT as a CONSTRAINT in T5 — true — and it was reborn the
+same day as a constraint TRIGGER that nothing re-enumerated.
+
+⚠ `insert_once` also read UNMUTATED. Its mutations exist; the gate reads only each
+mutation's LABEL, by `ast`, deliberately — round 9 tightened it after a guard name
+surviving in a COMMENT satisfied the ratchet. The labels said "vas: the INSERT
+enforcer". Renamed to name the guard; both go RED in the suite.
+
+⭐ **Third time this enumeration has been short while the gate reported complete** —
+round 9 (`resolve_workspace_from_playlist`), round 11 (the FK clause), now.
+
+**Half two — OPEN, and now sized.** 25 CHECK constraints across 8 tables are outside
+the gate's scope, and they are the money tables: `guardrail_config` (13),
+`correction_spend`, `quota_allowance`, `serve_model_charge`, `serve_owner_budget`,
+`spend_ledger`, `usage_counters`, `share_tokens`. Scoped 20/45 checks, 8/11 trigger
+functions. ⚠ Left alone deliberately: this gate is named for the blob-addressing spec,
+and widening it to all of `public` either re-points it at a different subject or argues
+for a second gate. That is a scope decision, not a defect.
+
+    guard coverage  41 -> 46 guards, self-test 16/16
+    suite           73 ✓ / 0 ✗, 15/15, exit 0
+    mutate-schema   58/58 behaved as expected
+
+## 2026-09-14
+Both reviewers independently found the same problem with my fix — the first time
+they've overlapped in five rounds — and it was that I'd fixed one quarter of the thing
+that was broken. The check has four separate questions it asks the database, and they
+disagreed about which tables they were asking about, so a table could be visible to one
+and invisible to the other three. All four now agree, and the check went from seeing 41
+safety rules to 55. The component that had been wrong three times before also had no
+test of its own; it does now.
+<!--tech-->
+Codex r1: 1 Blocking, 1 High, 1 Medium. Claude r1: 1 Blocking, 1 High, 2 Medium, 2 Low.
+All accepted and fixed. ⭐ Both halves ran CONCURRENTLY on separate databases with the
+tree frozen and neither committed until both finished — the fix for the false Blocking
+and verdict-leakage measured on the previous branch. Neither had a disclosure to make.
+
+**The Blocking, found by both.** `CATALOG_SQL` asks four questions over three scopes:
+CHECKs on `TABLES`, FKs/triggers on `TRIGGER_TABLES`, unique indexes on `TABLES` AND
+only if named `%_uq`. My first commit widened one. That is round 9's defect, round 11's,
+and mine — my own commit message said "the third time" while adding the fourth.
+
+⚠ The `_uq` filter was a NAMING CONVENTION acting as a scope rule: a unique constraint
+on `video_generations` — a table already in scope — was invisible purely for declining
+to be called `_uq`.
+
+⭐ **Codex's invisible PK is the reconciler Claude's HIGH says my note denied.**
+`video_artifact_sources_pkey` is why an idempotent retry succeeds: it inserts nothing,
+so `insert_once`'s transition table is empty and the trigger never fires. The gate
+could not see the object its own classification rests on.
+
+**The scope decision.** One unified set pulled in 17 guards including `jobs_status_chk`
+and `playlists_pkey` — a blob-addressing ratchet policing the jobs queue. Split the way
+M4's own manifest does: OWNED (5 relations, all four clauses) vs FOREIGN (videos, jobs,
+playlists, profiles — only the triggers and FKs M4 adds). **41 → 55 guards**, nine keys
+classified from their WRITERS.
+
+**The component with no falsifier now has one.** All 16 cases and all 5 mutations drove
+`evaluate`; nothing tested `CATALOG_SQL`. `clause_scopes()`/`scope_problems()` read
+which table set each clause interpolates and refuse when they disagree — pure, no
+database needed. Self-test 16 → 27, mutations 5 → 8.
+
+⚠ Stated rather than skipped: three of four new SEQUENCE keys could not be
+mutation-covered. I wrote the mutations, ran them, and all three went GREEN — the
+corpus never exercises the path (a profile cannot be inserted twice; a retry
+short-circuits before re-inserting the generation). They are in `MUTATION_EXEMPT` with
+the measured reason each, which is what that field exists for.
+
+    guards 41 -> 55 · self-test 16 -> 27 · mutations 5 -> 8, all attributable
+    suite 73 ✓ / 0 ✗, 15/15 · mutate-schema 59/59 · EXPECTED_MUTATIONS 575 -> 578
+
+## 2026-09-14
+A second review pass found that the test I added to stop the problem recurring only
+checked half of what "scope" means — it watched which tables a query asks about, but
+not the extra conditions that can quietly exclude things from those same tables. So the
+original bug could have come back invisibly. Fixed, and the fix itself immediately
+produced a smaller version of the same family of mistake, which the repo's own guards
+caught. Everything green.
+<!--tech-->
+Codex r2: `docs/reviews/codex/guard-coverage-scope-r2-codex.md` — 1 Medium, no Blocking
+or High. ⚠ `REVIEW GAP: claude` recorded. Its `--mutate .` run: 578 mutations, 578
+killed, 578 attributed, 0 survivors.
+
+**MEDIUM.** `clause_scopes()` compares the table ARRAY, so the `_uq` defect can return
+without touching it: `… and indisunique and indexrelid::regclass::text like '%_uq'`
+leaves the array identical and narrows the scope. `clause_predicates()` now pins what
+each clause may test besides its array. Measured: shipped CLEAN, the `_uq` filter back
+is CAUGHT and named.
+
+⚠ **The fix copied four lines.** `clause_predicates` duplicated `clause_scopes`'s
+locator — making a mutation anchor ambiguous and creating a second implementation of one
+rule *inside the file arguing that four clauses must not disagree*. Extracted to
+`_clause_body()`: one locator, two readers.
+
+⚠ Then `check-fixture-variation.py` refused the new parameter because every call passed
+`CATALOG_SQL`. The two cases added to satisfy it are the only ones proving the extractor
+finds a narrowing filter in a query it has never seen — a better test than the ones
+written first.
+
+    self-test 27 -> 34 · guard-coverage mutations 8 -> 9, all attributable
+    suite 73 ✓ / 0 ✗, 15/15 · EXPECTED_MUTATIONS 578 -> 579 · eight repo guards rc=0
+
+Both reviewers clean on everything else, including the nine key classifications and the
+three MUTATION_EXEMPT claims — Codex tried to construct a corpus path that invalidates
+one and could not.
+
+## 2026-09-14
+Third review pass, and the reviewer found the one attack I had not thought of — I had
+predicted two ways someone could sneak the old bug back in, asked it to try those, and
+it reported both were already blocked while demonstrating a third that worked. Fixed.
+That is the third round in a row where the useful finding was in the previous round's
+repair rather than in the original work.
+<!--tech-->
+Codex r3: `docs/reviews/codex/guard-coverage-scope-r3-codex.md` — 1 Medium, no Blocking
+or High. ⚠ `REVIEW GAP: claude` recorded.
+
+**MEDIUM.** `clause_predicates()` read only the text after the first `where`, so the
+`_uq` narrowing simply moves earlier:
+
+    join pg_class c on c.oid = indexrelid and c.relname like '%_uq'
+     where indrelid = any (array[...]) and indisunique
+
+Measured on the full query: table array unchanged, predicates returned only
+`['indisunique']`, verdict CLEAN. Conditions now come from every `on` AND `where`.
+
+⚠ Consequence worth stating: the trigger clause's own join condition `p.oid = t.tgfoid`
+is now visible, and is DECLARED in `EXPECTED_PREDICATES` rather than exempted —
+declaring it is what makes an *added* join condition visible.
+
+Not fixed, deliberately: a literal `union all` inside a clause could truncate
+`_clause_body`. It fails closed and no clause contains that text; a guard against a
+string nobody writes is a rule with no falsifier.
+
+    self-test 34 -> 37 · mutations 9 -> 10, all attributable
+    suite 73 ✓ / 0 ✗, 15/15 · nine repo guards rc=0 · EXPECTED_MUTATIONS 579 -> 580
+
+## 2026-09-14
+Six more review rounds found three ways past the rule this branch adds — and the last one was hiding inside the fix for the one before it.
+
+The branch's whole subject is a rule that a review must have seen the code that actually ships. It
+had been through ten adversarial rounds. All ten were run by a single reviewer — it was built by a
+worker fork, which cannot spawn a second one, and every round said so in writing. Running the owed
+second half found that the rule could be walked straight past.
+
+Then running it five more times found three more ways past, each in a different part of the gate,
+and each one sitting inside a sentence an earlier round had already declared clean. One of those
+sentences was written by this branch's own first review: *"searched the documentation folder for
+executable files that would be wrongly exempt — none found."* Two exist. They are schema gates that
+CI runs, and because they live under `docs/` the gate classified them as prose and went silent over
+them entirely.
+
+The fourth is the one worth remembering. Round fifteen built a guard specifically to stop that
+happening again — a check that the exemption list still matches what CI treats as gate code. Round
+sixteen found the check was comparing a *copy* of CI's list against the exemption list, with neither
+being the original. Add a new gate directory to CI and the guard reported everything fine. The
+mechanism built to prevent the defect had rebuilt it.
+
+None of this shipped. The pattern behind all four is the same and it is now written down: a rule can
+be perfectly correct about the cases it names and say nothing at all about a case nobody thought of
+— and the only thing that found them was re-deriving each "we checked, it's clean" instead of
+believing it.
+
+<!--tech-->
+Branch `record-review-topology`, rounds 11-17. r1-r10 all carry a written `REVIEW GAP: claude`; the
+owed half was discharged as ONE whole-branch review against the shipping tree rather than ten
+retroactive ones, because re-running superseded trees would violate the rule under review.
+
+**The four fail-opens, all in `scripts/check-review-recorded.py` unless noted.** r11 Blocking: a
+REVERTED dirty overlay left the compared set entirely — reviewed as GOOD, merged as BAD, exit 0
+under *"the final tree was reviewed by"*. r14 High: `git diff --name-only` with rename detection ON
+by default, so a guarded file moved to a prose path vanished; it also defeated the second question,
+since `tail_candidates` intersected a `--no-renames` list with a rename-detected one. r15 High:
+`docs/` holds two of the fifteen schema gates (mode 755, run by `check-schema-gates.sh`,
+path-filtered by `schema-gates.yml`). r16 High: the r15 anti-drift falsifier was fed a TRANSCRIPTION
+of the workflow's globs typed into its own test — copy #1 the workflow, #2 the tuple, #3 the case,
+comparing #3 to #2 — and `main` never called it at all.
+
+Also: an empty `NO-REVIEW:` (refused by question one) fully waived question two; a missing
+`--pr-body-file` exited 1 with a traceback where the docstring promises CANNOT RUN 2; and
+`codex-review.py` printed `[FAIL] {name}: got={got}` where the harness truncates at the LAST
+`": got "`, so every kill in the file that decides whether a review gate RAN was unattributable —
+found only because the file joined the mutation manifest for the first time.
+
+**Structure, not patches.** Eight decision points came out of the git-reading gatherer into pure
+casable rules (`classify_verdict`, `reviewed_map`, `tail_candidates`, `second_question`,
+`readable_docs`, `split_nul`, `diff_argv`, `workflow_docs_globs`) — all eight had survived mutation
+with the suite green, two turned a live refusal into a live pass. Two `[FAIL]` printers became one
+`case_line`, asserted against `check-plan-code.parse_fail_names` **imported**, not re-derived.
+
+**Measured:** `--mutate .` 44 files / **629 mutations / 629 killed / 629 attributed / 0 survivors**;
+`check-review-recorded` 139/139 (was 31 at the merge-base), `codex-review` 85/85, `check-plan-code`
+128/128, plus six live gates rc=0. `EXPECTED_MUTATIONS` 597 → 629; `codex-review.py` joins the
+manifest with 12 entries and leaves `WIDENED_MANIFEST_DEBT` in the same commit; `HARNESS_TREE` gains
+`.github/workflows` because the anti-drift rule reads it.
+
+⚠ **Three harness refusals, each correct and each worth more than the pass it eventually gave.**
+`NOT MEASURED — 625 of 626` (a fix rewrote a function body; anchors bind by TEXT), `CANNOT RUN —
+control red` (a new case read a file `HARNESS_TREE` did not stage), `NOT MEASURED — 628 of 629` (a
+fix rewrote another body AND renamed a case an entry named). **An entry binds to its target twice —
+by anchor text and by case name — and a pre-flight checking one passes exactly when the other
+breaks.**
+
+⚠ **An incident.** A reviewer probing `GIT_DIR` redirection ran this file's own `--self-test` under
+an exported `GIT_DIR` aimed at the live worktree; the fixture's `git commit` moved the branch's real
+ref onto a scratch commit. Recovered from the reflog, nothing lost, and it upgraded that finding
+from reasoned to demonstrated. A `cp -R` of a git WORKTREE carries a `.git` POINTER FILE and is not
+isolated until it is deleted.
+
+Round 16 was the last review round by the user's decision; round 17 is a verification pass —
+CONVERGED, zero findings, independently reproducing 629/629/0. Its verdict records `head dc9fe107`
+and 29 dirty entries, which is what lets the branch's own gate pass on its own PR by evidence.
+`NO-REVIEW:` was available and deliberately not used. Filed not fixed: backlog **#114**.
+
+## 2026-09-14 [needs-you]
+Two things that went wrong during yesterday's long review were written down rather
+than fixed, because both needed a decision more than they needed code. The first:
+a review was finished, its file was on disk, and the session spent nearly two hours
+reporting that it was "still running" — because it was watching the process instead
+of watching for the file. The rule against doing exactly that already existed and was
+imported into every session; it was broken three times anyway, from memory rather
+than from reading it. The second: the program that wrote that review stayed alive for
+those two hours after it had finished its work, and **nobody knows why** — which is
+recorded as not-known rather than guessed at.
+
+The first one can be fixed two ways and they cost very differently. A proper script
+is about an hour, almost all of it spent satisfying this project's own rules about
+scripts, and nothing in CI would ever run it — its only protection is an agent
+choosing to use it. A written convention is ten minutes and honest about being only
+a convention.
+
+**Decide:** How should the "wait on the artifact, not the process" rule be enforced?
+- write it as a measured snippet in docs/portable-practices.md — ten minutes, and honest that a convention is all it is [recommended]
+- build scripts/await-codex-review.py — about an hour, nearly all ratchet compliance, and it would have no caller in CI
+- leave it as the existing prose in docs/plugins.md, which was broken three times in one session
+<!--tech-->
+Branch `backlog-await-and-hang`, PR #300, docs-only. Both rows filed at the user's
+instruction out of PR #299.
+
+**#115 — a waiter that polls the PROCESS can wait forever.** Measured: the r16 Codex
+review was written at 12:50; the waiter looped on `pgrep -f "r16-prompt"` and the
+process lived until 14:44 — **1h53m** after its deliverable existed. `docs/plugins.md`
+already says *"never passively wait on a background review … read the actual Codex task
+output file … treat as a hang → fall back"*, and `CLAUDE.md` imports it. Broken three
+times in one session — the selection-card shape, reconstructed from recall rather than
+read. Correct predicate: `[ -f "$OUT" ] || [ -f "$VERDICT" ]` with a hard deadline of
+budget + slack; past it the answer is HANG, not "still waiting". ⚠ The falsifier nobody
+ran was one `stat`: *does the output file exist while the waiter still says running?*
+
+**#116 — `codex-review.py` stayed alive 1h53m after writing review AND verdict.**
+`emit()` prints its last line and returns `rc`; no `Popen`, no `Thread`, no daemon —
+only `subprocess.run`, which reaps. So `main` returned and the interpreter did not exit.
+⛔ **Cause UNKNOWN and stated as such.** A plausible story (a grandchild of the `codex`
+CLI holding an inherited pipe) was considered and deliberately **not** recorded as the
+cause. ⚠ One observation, one run — may not reproduce on demand.
+
+⚠ `check-docs` caught a real defect in #115's first draft: an unescaped `|` inside a
+shell snippet made the row 8 columns instead of 6 — the shape that once left #46 and
+#50 marked closed while still open.
+
+Sizing for #115 is measured, not guessed: `check-selftest-counts` globs `scripts/*.py`
+so it cannot be shell, and `discover_self_tested_nonguards` sweeps anything matching
+`--self.test` into R4W — so it needs a `--self-test`, a declared count, and a manifest
+entry or a written escape. ~1 hour, and it would have **no caller**.
+
+## 2026-09-14 [needs-you] [resolved: 2026-09-03/1] [resolved: 2026-09-03/9] [resolved: 2026-09-04/2] [resolved: 2026-09-04/3] [resolved: 2026-09-06/8] [resolved: 2026-09-09/8] [resolved: 2026-09-13/5] [resolved: 2026-09-14/6]
+You reported the "What needs you" section looked broken, and it was — not in its
+rendering, but in what it had filled up with. Seven boxes were error notices saying
+the page could not read an item that claimed to need you. Six of those were never
+questions at all: they were reports of finished work, flagged as if they were asking
+something. One of them literally says "the answer is no — it can be closed". They are
+now closed, and the reason is written down rather than silently dropped.
+
+The seventh was a real question that had never written itself down properly, and it is
+the one that has been outstanding the longest: the nightly production-drift check still
+needs a credential only you can add. It is asked properly below, so it will stay
+visible instead of appearing as an error.
+
+You also chose how to enforce the "wait on the artifact, not the process" rule — as a
+written practice rather than a script — and that is done.
+
+**Decide:** The nightly production-drift check has been waiting on one credential since 2026-09-13
+- add the repository secret CLAUDE_RO_DATABASE_URL, then uncomment two lines in schema-gates.yml to arm the nightly job [recommended]
+- leave it unarmed and keep running the drift check by hand when you want it
+- drop the nightly schedule altogether and delete the commented-out trigger
+<!--tech-->
+Branch `await-artifact-practice`. Two changes, batched as docs.
+
+**1 — `docs/portable-practices.md` §24**, the measured form of backlog #115, chosen
+over `scripts/await-codex-review.py` on cost (10 min vs ~1h, nearly all of the latter
+being ratchet compliance for an instrument with no CI caller). It carries TWO measured
+incidents from 2026-09-14, and the second is the load-bearing one: after committing the
+entry describing the defect, this session wrote a CI waiter whose settled-test was
+`! grep -q "pending"`, ran it against a CLI that answered `no checks reported`, and
+**declared a green that did not exist** — absence of the bad token reading as success.
+§24 states the three-state predicate (DONE / running / NOT SETTLED), the deadline rule
+(past it the answer is HANG, not "still waiting"), subject-pinning to the commit under
+test, and the one-`stat` falsifier. ⚠ It cites §23 rather than restating it: §23 governs
+the status a human READS, §24 the predicate an agent TERMINATES on.
+
+Also completed the file's own status line, which had stopped at §16 while §17–§23
+existed — stale for seventeen days, in the document that warns about exactly this.
+Dates recovered with `git log --reverse -S'## N. '`, per its own instruction.
+
+**2 — the seven unreadable asks.** `gen-dashboard.py:846` renders an ask whose body has
+no `**Decide:**` block as a `Could not read one ask` notice, deliberately placed LAST
+and deliberately loud (`:849` — "a malformed ask is LOUDER, never quieter", because
+setting `e["error"]` would delete it from the tray and show "Nothing needs you." in
+green). The design is right; it assumed such entries would be rare. Seven had
+accumulated between 2026-09-03 and 2026-09-13, so the section became mostly error text
+with one live decision wedged among it.
+
+⚠ Resolving is the in-design fix, not a workaround: `unresolved()` at `:453` filters
+`e["id"] not in cleared`, and `:846` iterates that same filtered list — so a
+`[resolved:]` removes the notice at its source. Nothing is rewritten; the store stays
+append-only and every original entry remains readable in place.
+
+Dispositions, read off each entry's own text rather than assumed: `2026-09-03/1`,
+`2026-09-03/9`, `2026-09-04/2`, `2026-09-04/3`, `2026-09-06/8` and `2026-09-09/8` are
+reports that should have carried `[heads-up]`; `2026-09-13/5` is a live ask, resolved
+here only because it is re-asked above in readable form; `2026-09-14/6` is answered.
+
+## 2026-09-14
+Yesterday's long review ran four rounds on a change that needed two, and you asked the
+question that ended it: *"what is the stopping condition? if reviews were converged, why
+continue?"* The answer was written down already, in a file loaded into every session,
+saying almost exactly what had just gone wrong — and it had been recalled instead of read.
+
+So the rules are now in one place, at the top of the document that holds them, written as
+six questions with answers you can check rather than judgements someone has to make. And
+the part that kept going wrong is now a command: a small program reads what each round
+recorded and says what to do next. Run on its own branch it answered *"one round is owed"*
+— correctly, and without anyone having to remember why.
+
+⚠ **Seven review rounds later, the thing that stands out is that the tool caught its own
+author.** Every round found a real problem in it, including two that would have made it give
+confident wrong answers — one where a lost review round read as *"finished"*, and one where
+the written rule said *keep going* while the program said *stop*. Three separate judges — the
+reviewer, me, and the program reading its own records — independently reached the same
+verdict at round three: stop patching this, redesign it. The redesign turned out to be
+deleting my work and calling something that already existed.
+
+And at the very last step, after you had decided round seven was the end, **the program
+looked at its own branch and said it was not finished.** It is right, and the reason is
+filed rather than argued away. You are merging it with that disagreement recorded in the open.
+
+Two smaller things. The mysterious **"Phase 6"** is gone from the instructions; it was a row
+number in one table being used as a name, and it is now called an **architecture review**
+everywhere the instructions speak. The historical record keeps its own words. And the two
+documents that disagreed about when that review fires now agree.
+<!--tech-->
+Branch `review-decision-procedure`. Spec + plan under `docs/superpowers/`, anchor
+`review-decides-itself`.
+
+⭐ **THE ROOT CAUSE WAS A CONFLATION, NOT A MISSING RULE.** Two questions were merged and
+reported as one: *convergence* (has discovery dried up — `review-method.md:302`) and *tree
+identity* (did a round see the code that MERGES). PR #302's rounds 3 and 4 chased tree
+identity while being narrated as unmet convergence. That question has FOUR answers and
+another round is the most expensive; `:266` predicted the failure verbatim and `:252` calls
+holding fixes uncommitted *"the documented way to do it"*. Neither was offered to the user.
+Q4 now splits them and ranks the tree answers by cost, with another round LAST.
+
+**Q3 replaces `:298`** ("present Medium/P2 for a decision") at the user's direction — that
+line was the mandated interruption. Findings are now disposed by rule: Blocking/High fix;
+Medium/Low fix if contained and in the delta, else file; disposition recorded per finding.
+
+**`scripts/check-review-decision.py`** — 30 cases, four mutations each proved to go red via
+the case that names it. `parse_header` RAISES on a missing header and `main` exits 2: an
+empty round reads as "no findings", which reads as convergence. It reads the tree question
+from `check-review-recorded`'s EXIT CODE rather than re-deriving the rule.
+
+⚠ **Two defects found by RUNNING it, neither by reading it.** `(stdout or stderr)` discarded
+the refusal — that gate prints `ok` for question one on stdout and its CANNOT RUN on stderr,
+so the falsy-or reported the reassuring half. And putting the header template under
+`docs/reviews/` made `check-review-recorded` count a schema document as a recorded review;
+moved to `docs/round-header-template.md`.
+
+**The rename is measured, not stylistic.** The term originated 2026-08-08 in `0b27094e`, the
+same commit as the phases table; no vendored plugin uses it in this sense and the skill it
+maps to never uses it at all. Phase 1 has 62 mentions across `docs/`, Phases 2–5 between 21
+and 33, **Phase 6 has 184** — more than the other five combined. Renamed in 3 instruction
+files (12 occurrences); 64 record files untouched. ⚠ The blind substitution corrupted a
+QUOTATION of historical titles (`process-checklists.md:383`) and the grammar pass caught it;
+the check is now quotation-aware.
+
+**The trigger contradiction** is resolved in favour of cause: thrashing arms the architecture
+review, and four rounds obliges *asking* with per-finding evidence. `dev-process.md` sits at
+220/220 of its budget, so the row and an 11-line paragraph were rewritten 1-for-1 and
+11-for-11.
+
+Four ratchets each refused the new script until paid: `EXPECTED_MUTATIONS` +4 (629 → 633)
+plus its hardcoded manifest list, `check-selftest-counts.POPULATION` +1,
+`check-fixture-variation.EXAMINED_KEYS` +8 keys derived by running its own `analyse()`
+(which reports **no** findings — every parameter is genuinely varied), and
+`check-ratchet-contract`'s R4 debt paid with a manifest rather than a raised baseline.

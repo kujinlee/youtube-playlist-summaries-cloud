@@ -58,7 +58,11 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CONTAINER = os.environ.get("PGCONTAINER", "supabase_db_youtube-playlist-summaries-cloud")
+# ⟳ r1 MEDIUM 2 (claude): this was a SECOND copy of the expression, three files from two comments
+# asserting `m4_base_db.CONTAINER` is "the single place PGCONTAINER is read". It was not — seven
+# places read it, and this was the one other PYTHON reader, i.e. the only one that could take this
+# one-line import. A duplicate-vocabulary claim refuted by the change that introduced it.
+from m4_base_db import CONTAINER  # noqa: E402
 
 # The symbol whose first production caller is the event. Named once.
 SYMBOL = "record_artifact"

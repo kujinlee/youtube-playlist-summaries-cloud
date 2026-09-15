@@ -499,3 +499,25 @@ Three affordances, three moments: the **step banner** (`## ▶ STEP n of N`) for
 now*; the **option list** with rationale and trade-offs for *what you must decide*; this table for
 *what was actually verified*. See *Presenting a DECISION to the human* above, and
 `docs/portable-practices.md` §19–§20.
+
+---
+
+## Architecture review: re-examine the review topology (added 2026-09-13)
+
+The round topology — concurrent r1, alternating r2+ — is written in
+[`review-method.md`](review-method.md) → *Round topology*, and it carries **two observations that
+would retire it**. They are read HERE, at the architecture review, because they need a judgement no script can make:
+whether two findings are *the same finding*.
+
+| Ask | Retire / revisit if |
+|---|---|
+| Did any round's **fix delta** contain a finding? | **no** for five consecutive rounds → alternating buys nothing; go back to concurrent-only |
+| Did the two halves of one round report the **same finding**? | **twice in five rounds** → the independence premise has weakened; concurrent-plus-dedup is cheaper |
+
+**Derive the evidence, do not remember it.** `docs/reviews/verdicts/*.json` names every Codex round
+and the commit it was handed; the halves are under `docs/reviews/<writer>/`. A hand-maintained tally
+is stale at commit time, structurally — this project has measured that on a document counting itself.
+
+⚠ **Only step 5 of the protocol has a machine behind it** (`check-review-recorded.py` refuses a
+branch where guarded code was committed after every round). Steps 1–4 are convention, so this
+re-examination is the only thing that ever observes whether they are being followed.

@@ -1,0 +1,15 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 6484 chars"
+  ],
+  "dirty": [],
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "ad33ba6d9768463fccd1cb9d9bb705a17d39a575",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "reason": "6484 chars",
+  "review": "record-review-topology-r1-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}

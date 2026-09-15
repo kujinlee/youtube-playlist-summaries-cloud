@@ -1,0 +1,16 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 2649 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "801d0717266fb3bf6885e97854e4281ab0e5c28e",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "prompt": "/tmp/rdp-r7.md",
+  "reason": "2649 chars",
+  "review": "review-decision-procedure-r7-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}
