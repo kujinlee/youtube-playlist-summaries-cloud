@@ -1758,24 +1758,46 @@ def _self_test() -> int:
         # the filesystem mutation was killed. A falsifier that covers half its class is the exact
         # shape this component has produced four times. Measured both ways after the repair.
         class _Forbidden(dict):
+            """A mapping that refuses EVERY read, not a few named ones."""
             def __init__(self, what): super().__init__(); self._what = what
             def _raise(self, *_a, **_k):
                 raise AssertionError(f"src_root_help read {self._what} — it must carry, "
                                      f"not re-derive")
+            # ⚠ `copy`, `__iter__` and `__len__` are here because r4 named them: forbidding
+            # `get` alone leaves `dict(os.environ)`, `len(os.environ)` and `for k in os.environ`
+            # as silent ways back to the world.
             get = __getitem__ = __contains__ = keys = items = values = _raise
+            copy = __iter__ = __len__ = setdefault = pop = _raise
+
+        # ⛔ THE DENYLIST IS THE POINT — r4 Medium. The first version patched `Path.is_dir` and
+        # called itself "NO filesystem". MEASURED by the reviewer: a renderer re-deriving through
+        # `observed.fallback.exists()` sailed straight past it; the suite went red only on
+        # narrower downstream cases, so the CLASS falsifier reported the class intact while the
+        # class was violated. That is the same half-covered shape this component has now produced
+        # FIVE times — twice inside the guards written to stop it. Every probing entry point a
+        # renderer could reach is named; a new one is a gap, and naming them here is the only
+        # place a reader can see the boundary.
+        _PROBES = ("is_dir", "exists", "is_file", "stat", "lstat", "iterdir", "glob",
+                   "open", "read_text", "read_bytes", "resolve", "samefile", "owner")
 
         def _renders_without_the_world(observed) -> bool:
-            _real_is_dir, _real_env = pathlib.Path.is_dir, os.environ
-            def _boom(self):
-                raise AssertionError("src_root_help read the filesystem — it must carry, "
-                                     "not re-derive")
+            _real_env = os.environ
+            _saved = {n: getattr(pathlib.Path, n) for n in _PROBES
+                      if hasattr(pathlib.Path, n)}
+            def _boom_for(name):
+                def _boom(self, *_a, **_k):
+                    raise AssertionError(f"src_root_help called Path.{name}() — it must carry, "
+                                         f"not re-derive")
+                return _boom
             try:
-                pathlib.Path.is_dir = _boom              # type: ignore[assignment]
+                for _n in _saved:
+                    setattr(pathlib.Path, _n, _boom_for(_n))
                 os.environ = _Forbidden("the environment")  # type: ignore[assignment]
                 return bool(src_root_help(observed))
             finally:
-                pathlib.Path.is_dir = _real_is_dir       # type: ignore[assignment]
-                os.environ = _real_env                   # type: ignore[assignment]
+                for _n, _fn in _saved.items():
+                    setattr(pathlib.Path, _n, _fn)
+                os.environ = _real_env                     # type: ignore[assignment]
         _obs_bad = SrcRoot(None, "BAD_ENV", "/nope", root, True)
         _obs_gone = SrcRoot(None, "MISSING_FALLBACK", "", root, False)
         case("the help renders with NO environment and NO filesystem — it carries, not re-derives",
@@ -1857,12 +1879,20 @@ def _self_test() -> int:
         # the `/src/` 404 branch, with `REPO = SCRIPTS.parent` — under which the r1 fix
         # emitted a command inside the missing directory and this case STILL PASSED.
         _gone = pathlib.Path(__file__).resolve().parent.parent
+        # ⛔ LAZY, AND THE REASON IS THE REPORT CONTRACT — found in r4 while mutation-testing the
+        # falsifier. These used to be built EAGERLY, outside any thunk. `case(name, fn)` catches
+        # what `fn` raises and prints a `[FAIL]` line; nothing catches a raise out here, so a
+        # mutation that makes the renderer raise — e.g. re-deriving through `Path.stat()` on a
+        # missing path — ABORTED the whole suite with a traceback and NO `[FAIL]` line at all.
+        # `check-plan-code` reads those lines to attribute a kill, so the mutation would have
+        # counted as "the suite went RED but nothing could see the kill". Same contract this
+        # branch repaired at the print level; this is the construction level.
         _obs_real = SrcRoot(None, "MISSING_FALLBACK", "", _gone, False)
-        _arm = src_root_help(_obs_real)
+        _arm = lambda: src_root_help(_obs_real)
         case("help: with the REAL repo, the arm emits no command under the missing checkout",
-             lambda: not any(str(_gone) in ln for ln in _arm.splitlines()
+             lambda: not any(str(_gone) in ln for ln in _arm().splitlines()
                              if ln.strip() and not ln.startswith("no source root")))
-        # ⛔⛔ r2 High — THE CASE THAT STOOD HERE WAS `str(PIDFILE) in _arm`, AND IT WAS INVERTED.
+        # ⛔⛔ r2 High — THE CASE THAT STOOD HERE WAS `str(PIDFILE) in _arm()`, AND IT WAS INVERTED.
         # Measured under `HOME=/tmp/it's home`: `shlex.quote` emits `'/tmp/it'"'"'s home/…`, so the
         # raw path stops being a substring — the CORRECT code failed (113/114) while the unquoted
         # mutant PASSED (114/114). It rewarded the absence of the fix. That is the same substring
@@ -1890,19 +1920,19 @@ def _self_test() -> int:
         # ⚠ An ABSOLUTE pidfile path, because `shlex.quote` turns `~` into a quoted tilde and a
         # quoted tilde does not expand — the safety measure would have silently broken the command.
         case("help: the pidfile path is absolute, so quoting cannot disable a `~`",
-             lambda: "~" not in _arm)
+             lambda: "~" not in _arm())
         # ⛔ r2 Medium — the SIBLING arm. A set-but-stale env var reaches `src_root_help` without
         # `src_root` ever consulting REPO (`:479-480`), so a stale var PLUS a moved checkout used to
         # hand the reader two [Errno 2] lines. Both branches now route to one gone-checkout arm.
         # A genuinely absent directory, so this goes through `src_root_help`'s OWN branch — the
         # r2 Medium was that a set-but-stale env var skipped the surviving route entirely.
         _missing = pathlib.Path("/tmp/yps-no-such-checkout-2026-09-15")
-        _both = [src_root_help(SrcRoot(None, r, v, _missing, False))
-                 for r, v in (("MISSING_FALLBACK", ""), ("BAD_ENV", "/stale/path"))]
+        _both = lambda: [src_root_help(SrcRoot(None, r, v, _missing, False))
+                         for r, v in (("MISSING_FALLBACK", ""), ("BAD_ENV", "/stale/path"))]
         case("help: a STALE env var with a missing checkout also gets the surviving route",
-             lambda: all("kill " in b and str(_missing) not in b.split("kill ")[1] for b in _both))
+             lambda: all("kill " in b and str(_missing) not in b.split("kill ")[1] for b in _both()))
         case("…and that arm still names why it is there, in both shapes",
-             lambda: "is unset" in _both[0] and "is set to" in _both[1])
+             lambda: "is unset" in _both()[0] and "is set to" in _both()[1])
         # ⛔ THE SEAM MUST BE EXERCISED THROUGH THE PUBLIC FUNCTION, NOT ONLY THE HELPER.
         # `check-fixture-variation` caught this the moment the parameter was added: every case
         # above reaches the hostile pidfiles via `_gone_checkout_help` directly, so
