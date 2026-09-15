@@ -9144,3 +9144,44 @@ what it did and render the note from that.
 ⚠ Filed rather than absorbed, for the third time today with the same reasoning (see #122, #123):
 the function is not in #295's diff, and a branch carrying a Blocking fix plus an armed
 architecture review is the wrong place to take on an unrelated defect.
+
+## 2026-09-15
+The nightly production check is armed — and it was proven before it was trusted.
+
+There is one check in this project whose subject nobody ever pushes: whether the live database
+has quietly drifted away from what the code expects. Somebody changing it by hand, a platform
+upgrade — no pull request corresponds to that, so the only way to catch it is to look on a
+schedule.
+
+It has been written and sitting unarmed for two days, because it needs a read-only password
+that only you could add. You added it today. The check now runs at 09:00 UTC every day.
+
+⭐ **The order was the careful part, not the change.** The schedule was armed only after a real
+run passed: the credential was read back and confirmed to point at production rather than a
+throwaway; the check was run by hand against it and reported all 161 objects present; and then
+the whole job was dispatched on demand and came back green — the first time it has ever reached
+a verdict. Arming an alarm you have not tested is how people learn to ignore alarms.
+
+And what it still cannot promise is written down beside it: a green run today shows the job
+*can* pass, not that a future red is real drift. If the password is ever revoked the job refuses
+loudly rather than quietly reporting that nothing has changed — which is the property that made
+arming it safe.
+<!--tech-->
+Branch `arm-prod-drift-cron`. `.github/workflows/schema-gates.yml`: `schedule: - cron: '0 9 * * *'`.
+
+Secret `CLAUDE_RO_DATABASE_URL` added by the user. Evidence taken **in this order**, before the
+cron was uncommented:
+
+1. credential read back from `.env.local`, target verified as prod `uykwcybxqgewmbltroxf` —
+   **not** the deleted `yps-m14-staging` throwaway; user `claude_ro.…`, `sslmode=require`.
+2. `check-live-schema.py --prod --expect-present` by hand: *"M4 is PRESENT as expected — checked
+   all 161 objects, BY DEFINITION not just by name (5 tables · 3 views · 70 columns · 14 triggers
+   · 13 functions · 1 type · 12 indexes · 5 policies · 38 constraints)"*, rc=0, identity line
+   `claude_ro@…, read_only=on`.
+3. `gh workflow run "Schema gates"` on master → run **35008676617**, **`prod-drift: success`** —
+   the first verdict that job has ever produced.
+
+⚠ `workflow_dispatch` is KEPT alongside the schedule, not replaced by it: it is how the evidence
+above was taken and how the path gets exercised on demand. The concurrency key already includes
+`github.event_name`, so the 09:00 cron and a push to master cannot cancel each other.
+

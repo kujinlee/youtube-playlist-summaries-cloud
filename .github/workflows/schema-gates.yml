@@ -103,22 +103,52 @@ on:
       - 'docs/superpowers/specs/2026-08-03-stable-blob-addressing/**'
       - 'docs/superpowers/specs/m4/**'
       - '.github/workflows/schema-gates.yml'
-  # ⛔ THE SCHEDULE IS DELIBERATELY NOT ARMED YET, AND THIS IS NOT THE SILENT-SKIP ANTIPATTERN.
-  # `prod-drift` needs the repository secret CLAUDE_RO_DATABASE_URL, which does not exist. Arming the
-  # cron now would fail at 09:00 UTC every night, for the same reason, until someone adds it — and a
-  # gate that cries wolf nightly is one people learn to scroll past, which is backlog #56's measured
-  # verdict and this repo's portable practice §23.
+  # ✅ ARMED 2026-09-15, AND ONLY AFTER A REAL RUN PASSED — the order matters more than the change.
+  # This block spent two days saying the schedule was deliberately NOT armed because `prod-drift`
+  # needs `CLAUDE_RO_DATABASE_URL` and that secret did not exist: "a gate that cries wolf nightly is
+  # one people learn to scroll past" (backlog #56's measured verdict, portable practice §23), and
+  # "not arming an alarm is different from arming one that lies."
   #
-  # ⚠ The distinction that keeps this honest: the job does NOT quietly report success. It still
-  # refuses loudly (rc=2, "TREAT THIS AS NOT RUN") whenever it runs without the credential — it is
-  # simply not SCHEDULED to run on its own until it can pass. Not arming an alarm is different from
-  # arming one that lies.
+  # The secret now exists, and the schedule was armed only after the path was PROVEN rather than
+  # assumed. Evidence, in the order it was taken:
+  #   1. the credential was read back from `.env.local` and its target verified to be PRODUCTION
+  #      (project `uykwcybxqgewmbltroxf`), not the deleted `yps-m14-staging` throwaway;
+  #   2. `check-live-schema.py --prod --expect-present` run by hand against it —
+  #      "M4 is PRESENT as expected — checked all 161 objects, BY DEFINITION not just by name",
+  #      rc=0, and the identity line read `claude_ro@…, read_only=on`;
+  #   3. `gh workflow run "Schema gates"` dispatched on master — run 35008676617,
+  #      **prod-drift: success**, the first time that job has ever run to a verdict.
   #
-  # TO ARM IT — one line, after adding the secret:
-  #   schedule:
-  #     - cron: '0 9 * * *'      # 09:00 UTC daily
-  # Until then it is reachable by hand (`gh workflow run "Schema gates"`), and `workflow_dispatch`
-  # exists precisely so the path can be exercised on demand rather than only by cron.
+  # ⚠ WHAT THIS DOES NOT PROVE, said rather than left implied: a green run today shows the job CAN
+  # pass, not that a future red is a real drift. The job still refuses loudly (rc=2, "TREAT THIS AS
+  # NOT RUN") if the credential goes missing, so a rotated or revoked secret reads as NOT RUN rather
+  # than as "production has not drifted" — which is the property that made arming safe at all.
+  #
+  # ⛔ THIS SCHEDULE CAN DISARM ITSELF SILENTLY, AND NOTHING HERE WOULD NOTICE — r1 Low. This
+  # repository is PUBLIC, and GitHub disables scheduled workflows after 60 days with no repository
+  # activity. The line above would still read "armed" while nothing ran. Low today only because
+  # this repo sees daily pushes; if that stops being true, the absence of runs is the thing to look
+  # for, and absence is exactly what no gate in here can see.
+  #
+  # ⚠ WHO SEES A RED — chased as a possible High and refuted, so the answer is recorded rather than
+  # left to be re-derived. GitHub routes scheduled-workflow failures to the user who last modified
+  # the cron syntax, and squash-merges land re-authored as the repository owner, so a nightly red
+  # does reach them by email. ⟳ r2 Low: this said the channel was "undocumented", which is an
+  # OVERCLAIM and the worst kind to leave in a gate comment — GitHub documents the routing
+  # explicitly (Actions → events-that-trigger-workflows → schedule). What is genuinely weak is
+  # narrower and survives the correction: the recipient TRANSFERS SILENTLY to whoever next edits
+  # this line, and a scheduled failure appears on NO pull request's check list — so nobody meets it
+  # while reviewing, which is the only moment anyone is reliably looking.
+  #
+  # ⚠ A RED IS NOT ALWAYS DRIFT. The nightly compares production against MASTER's manifest, and
+  # `manifest <= live` has no accept-list in that direction — so a schema shipped to master but not
+  # yet deployed reads the same as production having drifted. Narrow in practice (the manifest is
+  # pinned to M4 and additions go through `accepted-additions.txt`) and stated as a hypothesis: the
+  # scenario was NOT executed. Read a red as "these differ", never as "someone changed production".
+  schedule:
+    - cron: '0 9 * * *'      # 09:00 UTC daily
+  # Kept alongside the schedule, not replaced by it: `workflow_dispatch` is how the path gets
+  # exercised on demand, and is how the evidence above was taken.
   workflow_dispatch:
 
 # ⚠ `github.event_name` IS IN THE KEY, and it is load-bearing — ⟳ r1 MEDIUM 5 (claude). Without it
