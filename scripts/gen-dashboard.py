@@ -1981,9 +1981,25 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     # ⚠ Asserts the STYLESHEET TEXT, which is weaker than asserting the rendered
     # effect. A browser is the only instrument for that and Phase 4 owns it; this
     # exists so the clip cannot be silently deleted, not to prove it works.
+    # ⛔ SCOPED TO `.entry .title`'s OWN RULE, and it was page-wide until 2026-09-14.
+    # CI caught it the hour a second rule elsewhere in the stylesheet gained
+    # `white-space:nowrap` (`.needs .prstate`): the mutation flipping THIS rule to
+    # `normal` left the page still containing the substring, so the case stayed green
+    # and the mutation SURVIVED. The case had always been this weak — the unrelated
+    # addition merely exposed it, which is why the fix belongs here and not in the new
+    # rule. It is the page-wide-substring failure the comment 6 lines below already
+    # names for the collapsed card; this case sat above that warning without heeding it.
+    _title_rule = ""
+    _i = ht.find(".entry .title{")
+    if _i >= 0:
+        _title_rule = ht[_i:ht.find("}", _i) + 1]
     case("the collapsed title clips rather than wrapping",
-         ("white-space:nowrap" in ht, "text-overflow:ellipsis" in ht,
-          "min-width:0" in ht), (True, True, True))
+         ("white-space:nowrap" in _title_rule, "text-overflow:ellipsis" in _title_rule,
+          "min-width:0" in _title_rule), (True, True, True))
+    # A zero-length slice would make all three assertions vacuously False and the case
+    # would fail loudly — but say so, rather than leaving a silent dependency on find().
+    case("the title rule was actually located, so the clip test is not vacuous",
+         len(_title_rule) > 0, True)
 
     # ── THE COLLAPSED CARD (spec §2) ─────────────────────────────────────────
     # §4's binding rules: locate ONE synthetic entry's fragment and assert INSIDE
