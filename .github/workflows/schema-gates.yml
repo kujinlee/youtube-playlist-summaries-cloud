@@ -123,6 +123,25 @@ on:
   # pass, not that a future red is a real drift. The job still refuses loudly (rc=2, "TREAT THIS AS
   # NOT RUN") if the credential goes missing, so a rotated or revoked secret reads as NOT RUN rather
   # than as "production has not drifted" — which is the property that made arming safe at all.
+  #
+  # ⛔ THIS SCHEDULE CAN DISARM ITSELF SILENTLY, AND NOTHING HERE WOULD NOTICE — r1 Low. This
+  # repository is PUBLIC, and GitHub disables scheduled workflows after 60 days with no repository
+  # activity. The line above would still read "armed" while nothing ran. Low today only because
+  # this repo sees daily pushes; if that stops being true, the absence of runs is the thing to look
+  # for, and absence is exactly what no gate in here can see.
+  #
+  # ⚠ WHO SEES A RED — chased as a possible High and refuted, so the answer is recorded rather than
+  # left to be re-derived. GitHub routes scheduled-workflow failures to the user who last modified
+  # the cron syntax, and squash-merges land re-authored as the repository owner, so a nightly red
+  # does reach them by email. What is genuinely weak: that channel is undocumented, it transfers
+  # silently to whoever next edits this line, and a scheduled failure appears on NO pull request's
+  # check list — so nobody meets it while reviewing.
+  #
+  # ⚠ A RED IS NOT ALWAYS DRIFT. The nightly compares production against MASTER's manifest, and
+  # `manifest <= live` has no accept-list in that direction — so a schema shipped to master but not
+  # yet deployed reads the same as production having drifted. Narrow in practice (the manifest is
+  # pinned to M4 and additions go through `accepted-additions.txt`) and stated as a hypothesis: the
+  # scenario was NOT executed. Read a red as "these differ", never as "someone changed production".
   schedule:
     - cron: '0 9 * * *'      # 09:00 UTC daily
   # Kept alongside the schedule, not replaced by it: `workflow_dispatch` is how the path gets

@@ -9114,6 +9114,37 @@ backlog **#87** — a dropped connection where a response was owed — so if #87
 handler-level catch-all, this is one of the cases it has to cover.
 
 ## 2026-09-15
+A message that tells you what the program did, in a case where it did not do it.
+
+When the local docs server fails to restart, it prints a note explaining what it tried —
+"waited 20 seconds after signalling process such-and-such". Measured today: that sentence
+prints even in the runs where no signal was sent at all, naming a process id that may be
+nothing.
+
+It is small, and it is not a wrong action — the restart itself works, and that was checked
+separately end to end. What it costs is a person's time at the exact moment they are already
+confused, which is when a wrong sentence is most expensive.
+
+⭐ It is also the same mistake, one function away, that today's long review spent four rounds
+and a redesign removing from the neighbouring code: **the message works out what happened
+instead of being told by the part that did it.** The fix there was to have the step that looks
+at the world carry its findings forward. The same shape fits here.
+<!--tech-->
+Branch `file-respawn-message`; row **#124 🟢**.
+
+`respawn()` prints `"20s after SIGTERM to pid {old_pid}"` unconditionally while the kill is
+conditional. Measured live by PR #295's r5 Claude half: `SIGTERM to pid None` and
+`SIGTERM to pid 999999` with no signal sent.
+
+PR #295 answered this class in `src_root`/`src_root_help` by making the observation carry its
+own reason — `SrcRoot(reason, env_value, fallback, fallback_ok)`, every field read once at probe
+time. `respawn` still narrates an action it may not have taken. **WORK:** have the kill report
+what it did and render the note from that.
+
+⚠ Filed rather than absorbed, for the third time today with the same reasoning (see #122, #123):
+the function is not in #295's diff, and a branch carrying a Blocking fix plus an armed
+architecture review is the wrong place to take on an unrelated defect.
+
 The nightly production check is armed — and it was proven before it was trusted.
 
 There is one check in this project whose subject nobody ever pushes: whether the live database
@@ -9152,3 +9183,4 @@ cron was uncommented:
 ⚠ `workflow_dispatch` is KEPT alongside the schedule, not replaced by it: it is how the evidence
 above was taken and how the path gets exercised on demand. The concurrency key already includes
 `github.event_name`, so the 09:00 cron and a push to master cannot cancel each other.
+
