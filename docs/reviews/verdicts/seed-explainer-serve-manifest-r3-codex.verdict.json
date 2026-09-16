@@ -1,0 +1,16 @@
+{
+  "attempts": [
+    "  gpt-5.5: try_next \u2014 timed out \u2014 any partial message is an incomplete review"
+  ],
+  "dirty": {},
+  "exit_code": 1,
+  "gate_ran": false,
+  "head": "5357b5c3cd7b2c3824f016c1692eb1f6cbfa1cce",
+  "intrusions": [],
+  "model": null,
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/227fd546-5a6f-429b-bcf1-09fc12283325/scratchpad/m3-prompt.md",
+  "reason": "no candidate produced a usable review",
+  "review": "seed-explainer-serve-manifest-r3-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}

@@ -849,7 +849,7 @@ EXPECTED_MUTATIONS = {
     # specific temp path — and couples the entry to one failure mode of the case even when it does
     # not. That still supports converting the raise to a value (the case `driving /src/ never
     # consults the environment`), which is why the decision stands and only its reason changed.
-    "scripts/explainer-serve.py": 36,
+    "scripts/explainer-serve.py": 42,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a
@@ -3173,11 +3173,11 @@ def _self_test() -> int:
     # SIDE OF THE CONFLICT — this branch was right about 633 and master was right about
     # 639, and neither is right about the merge, which carries both sets of entries
     # (629 + master's 10 + this branch's 4). Re-derived from the merged dict.
-    # ⟳ 2026-09-16: 643 -> 679. THIRTY-SIX entries seed `explainer-serve.py` (backlog #122), the
+    # ⟳ 2026-09-16: 643 -> 685. FORTY-TWO entries seed `explainer-serve.py` (backlog #122), the
     # largest file in `scripts/` that had never been inside `--mutate .`. Every anchor was verified
     # present in the DELIVERED file before being written, and every entry was proved to go red VIA
     # THE CASE IT NAMES over a control proved green first.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 679)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 685)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -63,7 +63,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 188 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 196 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -2323,22 +2323,32 @@ def _self_test() -> int:
         #
         # So the world is BUILT: a page in a sandbox `ROOT`, its source in a sandbox `REPO`, and a
         # `PAGE_SOURCES` entry wiring them — all restored in a `finally`.
-        def _drive_stale(*, declare_source=True, page_newer=True, slug="yps-stale"):
+        def _drive_stale(*, declare_source=True, page_newer=True, slug="yps-stale", suffix=""):
             _root, _repo = root / "stale-root", root / "stale-repo"
             _root.mkdir(exist_ok=True); _repo.mkdir(exist_ok=True)
             (_root / f"{slug}.html").write_text("<p>page</p>")
+            # ⛔ TWO SOURCES, AND THE SECOND ONE IS THE CASE — r3 MEDIUM 3. With a single-source
+            # fixture every multi-source property was unfalsifiable: `max(...)` -> `min(...)`
+            # (the OLDEST source decides, so a stale page reads fresh) and dropping the
+            # `is_file()` filter (one missing source makes a real stale page answer `fresh`) both
+            # survived 188/188. One source makes max and min the same function.
             (_repo / "src.md").write_text("# source\n")
+            (_repo / "other.md").write_text("# a second, OLDER source\n")
             os.utime(_root / f"{slug}.html", (500, 500) if page_newer else (100, 100))
-            os.utime(_repo / "src.md", (100, 100) if page_newer else (500, 500))
+            os.utime(_repo / "src.md", (100, 100) if page_newer else (900, 900))
+            os.utime(_repo / "other.md", (50, 50))       # always the oldest
             _sav = (globals()["ROOT"], globals()["REPO"], dict(PAGE_SOURCES))
             try:
                 globals()["ROOT"], globals()["REPO"] = _root, _repo
                 PAGE_SOURCES.clear(); PAGE_SOURCES.update(_sav[2])
                 if declare_source:
-                    PAGE_SOURCES[slug] = ("src.md",)
+                    # ⚠ A MISSING source is declared too: the `is_file()` filter is what keeps one
+                    # absent file from making a genuinely stale page answer `fresh`, and a fixture
+                    # where every declared source exists cannot tell whether the filter is there.
+                    PAGE_SOURCES[slug] = ("other.md", "src.md", "gone.md")
                 else:
                     PAGE_SOURCES.pop(slug, None)
-                return _drive_get(f"/_stale?p=/{slug}")
+                return _drive_get(f"/_stale?p=/{slug}{suffix}")
             finally:
                 globals()["ROOT"], globals()["REPO"] = _sav[0], _sav[1]
                 PAGE_SOURCES.clear(); PAGE_SOURCES.update(_sav[2])
@@ -2358,6 +2368,20 @@ def _self_test() -> int:
         # handler reaches `for s in sources` with `sources is None` and RAISES `TypeError` — which
         # is both the defect (a dropped connection, #87's symptom) and, unwrapped, an unattributable
         # kill. Asserting "it did not raise, AND it said fresh" names the whole property.
+        # ⛔ THE CLIENT ASKS WITH THE `.html` IT IS SERVED AT, AND THE SLUG MUST STRIP IT — r3 M3.
+        # Dropping `.removesuffix(".html")` survived every case above, because they all requested
+        # the bare slug: a fixture that never sends the form the real client sends cannot test the
+        # normalisation that exists for it. A `.html` request must reach the same verdict.
+        # ⛔ THE NEWEST SOURCE DECIDES, NOT THE OLDEST. `other.md` is always the oldest file in the
+        # fixture, so `max` -> `min` swaps which one the verdict names — a page that really is
+        # behind `src.md` would read as behind the untouched `other.md`, or as fresh. Spelled as
+        # its own case rather than leaning on the naming case above: two entries pointing at one
+        # case is an entry that demonstrates nothing of its own.
+        case("/_stale reports the NEWEST source, not whichever one it happens to see first",
+             lambda: _drive_stale(page_newer=False)[1] == b"stale src.md"
+                     and _drive_stale(page_newer=False)[1] != b"stale other.md")
+        case("/_stale normalises a `.html` request to the same slug the sources are keyed by",
+             lambda: _drive_stale(page_newer=False, suffix=".html")[1] == b"stale src.md")
         case("/_stale is `fresh` for a page with no declared sources, not an alarm",
              lambda: _raises(lambda: _drive_stale(declare_source=False, page_newer=False),
                              Exception) is False
@@ -2380,7 +2404,13 @@ def _self_test() -> int:
         case("a JSON array is refused — the contract is an OBJECT",
              lambda: _raises(lambda: _drive_post("/questions", b"[1,2]"), Exception) is False
                      and _drive_post("/questions", b"[1,2]")[0] == 400)
-        case("undecodable bytes are a 400, not an unhandled UnicodeDecodeError",
+        # ⟳ r3 MEDIUM 2(b) — THE OLD NAME CREDITED THE STRICT DECODE, AND MEASUREMENT SAYS
+        # OTHERWISE: `.decode("utf-8")` -> `.decode("utf-8", "ignore")` survived 188/188, because
+        # `b"\xff\xfe"` decoded leniently is `'\ufffd\ufffd'` and `json.loads` raises
+        # `JSONDecodeError` on that anyway — the 400 comes from the parser either way. The property
+        # that IS real and worth keeping: undecodable bytes get a REPLY rather than a dropped
+        # connection, which is backlog #87's symptom.
+        case("undecodable bytes get a 400 reply, not a dropped connection",
              lambda: _drive_post("/questions", b"\xff\xfe")[0] == 400)
         # ⛔ THE MEASURED 2026-08-17 BUG: the right question under the wrong key. The 400 must NAME
         # the keys it got, or the caller cannot tell a typo from a rejection.
@@ -2388,9 +2418,89 @@ def _self_test() -> int:
              lambda: (lambda r: r[0] == 400 and b"questoin" in r[1])(
                  _drive_post("/questions", b'{"questoin": "hi"}')))
 
-        # ⛔ r2 MEDIUM 6 — `do_GET`'s content-type map and the reload injection had no case.
-        case("an unknown path is a 404, not an unhandled KeyError on the suffix map",
-             lambda: _drive_get("/yps-no-such-page-2026-09-16.md")[0] == 404)
+        # ⛔ r2 MEDIUM 6 — an unknown path must 404 rather than reach anything downstream.
+        # ⟳ r3 MEDIUM 2(a) — THE NAME USED TO CLAIM MORE THAN THE CASE CAN TEST. It said "…not an
+        # unhandled KeyError on the suffix map", and deleting `".md"` from that map survived
+        # 188/188: this fixture returns 404 at `resolved is None`, one line ABOVE the map, and never
+        # reaches it. The map in fact cannot be reached by an unknown path at all — `SERVABLE` and
+        # the map carry the same six keys, so anything resolvable has an entry. The clause described
+        # a property the case is structurally unable to assert, which is a coverage claim that
+        # overstates. Renamed to what it does test.
+        case("an unknown path is a 404", lambda: _drive_get("/yps-no-such-page-2026-09-16.md")[0] == 404)
+
+        # ── /questions: the WRITE, which is the whole point of the channel ──────────────────
+        # ⛔⛔ r3 HIGH 1. `question_text`'s docstring is the longest justification in this file and
+        # its subject is one measured incident: a POST answered `{"ok": true}` and appended
+        # "(empty)", so *"the caller had no way to learn its words were gone"*. EIGHT cases guard
+        # the empty-question half. ZERO guarded the write. MEASURED, each alone at **188/188
+        # SURVIVED**: deleting the append entirely; `"a"` -> `"w"` (truncating every past question);
+        # deleting the `mkdir`; and the success body becoming `{"ok": false}`.
+        # ⭐ Round 2's M5 added seven cases to `do_POST`'s PREAMBLE and none to its SUCCESS ARM —
+        # the same fix-the-instance-miss-the-class this branch has now hit at three different
+        # depths. The channel whose entire job is carrying the user's words back could drop them
+        # and report success, which is `CLAUDE.md`'s *"cannot run" is a FAILURE, never a pass*.
+        #
+        # ⚠ IT BUILDS ITS OWN WORLD, for the reason round 2's `/_stale` cases were rewritten:
+        # `QUESTIONS` and `ROOT` are module globals under the reader's real `$HOME`, and a case
+        # that wrote there would both assert the ambient world and touch the reader's file.
+        def _drive_question(payload_bytes, *, existing=None):
+            """POST /questions through the REAL do_POST against a sandbox ROOT/QUESTIONS.
+
+            Returns (code, body, file_text_or_None). The file is read back — asserting the REPLY
+            is exactly what the 2026-08-17 incident proved insufficient."""
+            _qroot = root / "q-sandbox"
+            _qroot.mkdir(exist_ok=True)
+            _qfile = _qroot / "questions.md"
+            if existing is None:
+                _qfile.unlink(missing_ok=True)
+            else:
+                _qfile.write_text(existing)
+            _sav = (globals()["ROOT"], globals()["QUESTIONS"])
+            try:
+                globals()["ROOT"], globals()["QUESTIONS"] = _qroot, _qfile
+                code, body = _drive_post("/questions", payload_bytes)
+            finally:
+                globals()["ROOT"], globals()["QUESTIONS"] = _sav
+            return code, body, (_qfile.read_text() if _qfile.exists() else None)
+        _q = b'{"doc": "brief.html", "text": "does the reservation ever release?"}'
+        case("/questions actually WRITES the question — the reply is not the evidence",
+             lambda: "does the reservation ever release?" in (_drive_question(_q)[2] or ""))
+        case("…and answers ok only when it did", lambda: _drive_question(_q)[0] == 200)
+        # ⛔ APPEND, NOT TRUNCATE. `"a"` -> `"w"` silently destroys every question ever asked, and
+        # the reply is identical either way — which is exactly the failure mode the docstring names.
+        case("/questions APPENDS — an earlier question survives a later one",
+             lambda: "an older question" in (_drive_question(_q, existing="an older question\n")[2] or ""))
+        # ⛔ THE DIRECTORY IS CREATED, or the append raises and the caller gets a dropped connection.
+        case("/questions creates its directory rather than raising on a fresh machine",
+             lambda: _raises(lambda: _drive_question(_q), Exception) is False)
+
+        # ⛔ r3 MEDIUM 1 — the seven allow-list cases call `_regenerate` DIRECTLY, so nothing proved
+        # `POST /regenerate` reaches it. MEASURED: `if route == "/regenerate":` ->
+        # `"/regenerate-disabled"` survived 188/188 — a real POST would fall into the questions arm
+        # and answer a 400 about a missing "text" field. The argument was cased at the function and
+        # not at the WIRING.
+        def _drive_regen_route(payload_bytes):
+            _regen_calls.clear()
+            _real = subprocess.run
+            def _spy(*a, **k):
+                _regen_calls.append((a, k))
+                return _ok_runner(*a, **k)
+            try:
+                subprocess.run = _spy               # type: ignore[assignment]
+                return _drive_post("/regenerate", payload_bytes)
+            finally:
+                subprocess.run = _real              # type: ignore[assignment]
+        case("POST /regenerate REACHES the allow-list the seven cases above defend",
+             lambda: (_drive_regen_route(json.dumps({"page": _page}).encode()),
+                      len(_regen_calls) == 1
+                      and _regen_calls[0][0][0][1] == str(SCRIPTS / REGENERABLE[_page]))[1])
+
+        # ⛔ r3 MEDIUM 5 — `_send`'s Content-TYPE VALUE was unasserted; only its presence was.
+        # `send_header("Content-Type", ctype)` -> a hardcoded `"text/plain"` survived 188/188, i.e.
+        # every page in the server served as plain text with nothing going red.
+        case("_send passes the caller's content type through, not a hardcoded one",
+             lambda: dict(_sent_headers_for("application/json")).get("content-type")
+                     == "application/json")
 
         # ── the /src/ reach verdict's FOUR clauses ────────────────────────────────────────
         # ⛔⛔ r1 HIGH 1, AND IT IS THIS BRANCH'S OWN HEADLINE MOVE COMMITTED AGAINST ITSELF.
@@ -2412,15 +2522,16 @@ def _self_test() -> int:
         # ⚠ ASSERTED ON WHAT `_send` EMITS, not on the absence of a string in source: the claim at
         # `:1065` is that no OTHER site can read private source through this server, and that is a
         # property of the RESPONSE. A source-text case would pass on a header added via a helper.
-        def _sent_headers(code=200):
+        def _sent_headers_for(ctype, code=200):
             seen = []
             h = object.__new__(Handler)
             h.send_response = lambda c: seen.append(("status", c))
             h.send_header = lambda k, v: seen.append((k.lower(), v))
             h.end_headers = lambda: None
             h.wfile = type("W", (), {"write": staticmethod(lambda b: None)})()
-            Handler._send(h, code, b"x", "text/plain")
+            Handler._send(h, code, b"x", ctype)
             return seen
+        _sent_headers = lambda code=200: _sent_headers_for("text/plain", code)
         case("no CORS header is emitted — clause 4, the one the whole paragraph rests on",
              lambda: not any(k.startswith("access-control-") for k, _ in _sent_headers()))
         case("…and the response still carries the headers it is supposed to",

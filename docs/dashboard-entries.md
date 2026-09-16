@@ -9448,3 +9448,42 @@ Where it ends up: **679 mutations, 679 killed, 679 attributed, 0 survivors.** Ma
 one behaved differently on macOS than elsewhere — and the process layer (`start`, `stop`, the daemon
 detach) is **filed as backlog #129** rather than half-done, because covering it needs a real port and
 that is a different piece of work.
+
+## 2026-09-16
+Third round on the same file: the question box could swallow your question and tell you it saved it. Fixed, and the remainder is filed rather than half-done.
+<!--tech-->
+Backlog **#122 is closed** — `scripts/explainer-serve.py` has **42 mutation entries**, and the full
+sweep reports **685 mutations, 685 killed, 685 attributed to the case each names, 0 survivors**.
+Suite 144 → 196.
+
+⛔ **The find that matters most in this round: `/questions` could record nothing and answer
+`{"ok": true}`.** Four separate mutations survived a fully green suite — deleting the write; changing
+append to *overwrite*, which destroys every question ever asked; deleting the directory creation; and
+the reply simply lying. The longest comment in that file exists because this exact thing happened
+once before, in August: a question was accepted, stored as "(empty)", and the person who asked had no
+way to find out. **Eight tests guarded the half where you send nothing. None guarded the half where
+the file gets written.** The new ones read the file back, because the reply is precisely what was
+proved untrustworthy the first time.
+
+⚠ **Same mistake, third round, third depth.** Round 1: I tested one clause of a four-clause security
+argument and stopped reading the sentence. Round 2: I tested the timeout branch and not the one three
+lines below it. Round 3: the request checks and not the part that writes. Each time the gap was one
+step from where the fix landed.
+
+⚠ **And two of my own test NAMES were claiming things the tests cannot check** — one said it guarded
+a crash on a lookup table the test never reaches; the other credited a strict-decoding rule for a
+rejection that happens for a different reason entirely. Renamed to what they actually do. A test name
+is a claim, and an overstated one is worse than none, because the next reader believes it.
+
+**What is deliberately NOT done, and why.** The reviewer applied 151 mutations and 78 survived. That
+is not a failure to converge — covering a 2,100-line file has no endpoint, and treating it as this
+task's finish line would turn a bounded job into an open one. **#122's actual work is complete and
+its audit is clean: all 42 entries fail for the reason they name.** The remainder is filed as
+**#130** — the sharpest part being the live-reload script in every page, where six documented
+decisions all survive because the tests check that words appear in the script's text rather than that
+the script behaves. Checking a string contains a token is not checking the code does the thing.
+
+⚠ **This branch never got a Codex review.** Three attempts, three timeouts. A fresh independent
+reviewer stood in each round and earned its place — rounds 2 and 3 each found a serious defect in the
+previous round's own work — but the two reviewers historically catch different kinds of problem, and
+that second kind is missing here. Recorded in all three round documents rather than glossed.

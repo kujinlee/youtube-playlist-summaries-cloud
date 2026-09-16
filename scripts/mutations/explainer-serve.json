@@ -394,5 +394,71 @@
    ]
   ],
   "expect": "orders newest first"
+ },
+ {
+  "name": "/questions answers ok without writing anything",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "        with QUESTIONS.open(\"a\", encoding=\"utf-8\") as fh:\n            fh.write(format_question_entry(payload, now))",
+    "        if False:\n            pass"
+   ]
+  ],
+  "expect": "/questions actually WRITES the question \u2014 the reply is not the evidence"
+ },
+ {
+  "name": "/questions TRUNCATES the file instead of appending",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "        with QUESTIONS.open(\"a\", encoding=\"utf-8\") as fh:",
+    "        with QUESTIONS.open(\"w\", encoding=\"utf-8\") as fh:"
+   ]
+  ],
+  "expect": "/questions APPENDS \u2014 an earlier question survives a later one"
+ },
+ {
+  "name": "the POST route stops reaching the /regenerate handler",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "        if route == \"/regenerate\":\n            return self._regenerate(payload)",
+    "        if route == \"/regenerate-disabled\":\n            return self._regenerate(payload)"
+   ]
+  ],
+  "expect": "POST /regenerate REACHES the allow-list the seven cases above defend"
+ },
+ {
+  "name": "_send hardcodes a content type instead of passing the caller's",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "        self.send_header(\"Content-Type\", ctype)",
+    "        self.send_header(\"Content-Type\", \"text/plain\")"
+   ]
+  ],
+  "expect": "_send passes the caller's content type through, not a hardcoded one"
+ },
+ {
+  "name": "/_stale lets the OLDEST source decide, so a stale page reads fresh",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "                newest, newest_src = max(",
+    "                newest, newest_src = min("
+   ]
+  ],
+  "expect": "/_stale reports the NEWEST source, not whichever one it happens to see first"
+ },
+ {
+  "name": "/_stale stops normalising a .html request to its slug",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "            slug = (qs.get(\"p\") or [\"\"])[0].strip(\"/\").removesuffix(\".html\")",
+    "            slug = (qs.get(\"p\") or [\"\"])[0].strip(\"/\")"
+   ]
+  ],
+  "expect": "/_stale normalises a `.html` request to the same slug the sources are keyed by"
  }
 ]
