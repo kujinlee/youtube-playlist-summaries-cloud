@@ -1960,9 +1960,23 @@ def _self_test() -> int:
         # branch repaired at the print level; this is the construction level.
         _obs_real = SrcRoot(None, "MISSING_FALLBACK", "", _gone, False)
         _arm = lambda: src_root_help(_obs_real)
-        case("help: with the REAL repo, the arm emits no command under the missing checkout",
+        # ⛔⛔ THE `kill` LINE IS EXCLUDED, AND CI IS WHAT PROVED IT HAD TO BE — 2026-09-16.
+        # The property is *no RECOMMENDED COMMAND points inside the missing checkout*. The pidfile
+        # is the deliberate exception: `_gone_checkout_help`'s docstring says it is *"the one anchor
+        # that survives … it lives OUTSIDE any checkout"*, which is true of `~/explainers/` in
+        # ordinary use — and FALSE under the mutation harness, which redirects `$HOME` to a
+        # directory INSIDE the staged tree. So the kill line legitimately contains the tree root.
+        #
+        # ⚠ AND THIS CASE PASSED ON macOS FOR AN ACCIDENTAL REASON, WHICH IS WHY ONLY CI FOUND IT.
+        # `_gone` is `.resolve()`d to `/private/var/…` while `$HOME` stays the unresolved
+        # `/var/…`, so the substring test missed on a symlink rather than on the property. Linux
+        # has no such symlink, the two strings matched, and the CONTROL run went red — a
+        # platform-dependent case passing for a reason unrelated to what it asserts. Reproduced
+        # locally afterwards by pointing `$HOME` inside the resolved repo root: 195/196.
+        case("help: with the REAL repo, no RECOMMENDED COMMAND points inside the missing checkout",
              lambda: not any(str(_gone) in ln for ln in _arm().splitlines()
-                             if ln.strip() and not ln.startswith("no source root")))
+                             if ln.strip() and not ln.startswith("no source root")
+                             and not ln.strip().startswith("kill ")))
         # ⛔⛔ r2 High — THE CASE THAT STOOD HERE WAS `str(PIDFILE) in _arm()`, AND IT WAS INVERTED.
         # Measured under `HOME=/tmp/it's home`: `shlex.quote` emits `'/tmp/it'"'"'s home/…`, so the
         # raw path stops being a substring — the CORRECT code failed (113/114) while the unquoted
