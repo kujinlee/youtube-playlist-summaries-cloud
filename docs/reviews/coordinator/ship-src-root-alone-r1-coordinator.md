@@ -188,3 +188,65 @@ rather than run concurrently, because a concurrent pair never reviews the fixes.
 were caught within the round, not across two. The arming condition is two consecutive rounds whose
 findings came from the previous round's fix, in one component. Round 2 will answer whether the
 `src-caller` component is thrashing.
+
+---
+
+## ⟳ CORRECTION, 2026-09-15 — one row of this document's evidence is unsupported by its own instrument
+
+Found by round 2's Claude half, auditing the coordinator's measurement harness rather than its
+conclusions.
+
+**The row `` `[FAIL] ` → `FAIL: ` | 1 `` in the falsifier table above — and the same row in commit
+`78100320`'s message — claims the mutation went red *via the case that names it*. The count is
+numerically correct; the attribution is not supported by the instrument that produced it.**
+
+The harness counted red cases by grepping for `FAIL`-shaped tokens. When the mutation **is** that
+token, the grep breaks in both directions at once: measured, it returned **1 for the control and 1
+for the mutant** — missing both genuine red lines (which now print `FAIL: `) and counting a
+**phantom**, the literal `` `[FAIL] ` `` appearing inside the red case's own *name*. Two errors
+cancelled to the right number for the wrong reason.
+
+⟳⟳ **CORRECTED AGAIN 2026-09-15 by round 3's Codex half — the correction above first said
+"re-measured cleanly: 133 → 131", and that was wrong too.** Re-measured by the coordinator, with
+the context named this time, because the context is the whole error:
+
+| where `78100320` was run | control | `[FAIL] ` → `FAIL: ` |
+|---|---|---|
+| **in-tree** | 133/133 | **132/133** |
+| **out-of-tree** (a copy beside its imports) | 132/133 | **131/133** |
+
+The mutation IS killed, delta exactly one, in both. But "133 → 131" is a pair that occurs in
+neither: it took the in-tree control and the out-of-tree mutant. ⭐ **An out-of-tree run of this
+suite carries one pre-existing red** — a case asserting a declared source is a real file in the repo,
+which cannot pass outside it — so a number from one context is not comparable with a number from the
+other, and neither figure was labelled. **A measurement needs its CONTEXT recorded, not just its
+value.** That is the defect, and it produced a wrong correction *inside a correction about wrong
+measurements*.
+
+⭐ **`check-plan-code.parse_fail_names` is NOT affected** — it requires `startswith("[FAIL] ")` and
+correctly yields zero names; its docstring already records this exact lesson from round 5. **The
+ad-hoc grep re-made a bug the shipped code has a paragraph about not making.**
+
+**Everything else in this document was re-audited and stands.** Every other figure — `123/123`,
+`64/64`, `123 → 133`, `140/140` — is read off the `N/M passed` line, which does not share a token
+with any mutation. The harness now reads only that line.
+
+⚠ **Commit `78100320`'s message is left as written.** It is wrong in the same clause, and correcting
+it would mean rewriting history to hide that the error was made; this note is the correction.
+
+## ⟳ AND HOW THE LOST FIX WAS LOST — reconstructed from artefacts, not from my account
+
+The two-arm `[FAIL] ` repair vanished between two of my own scripted rewrites. The reviewer diffed
+seven timestamped scratchpad copies and established it was **not a revert**: it was an edit computed
+from a **stale base**. `es2.bak` (16:37) contains the fix; `es3.bak` (16:42) does not, and
+`diff es.bak es3.bak` has exactly one hunk — the unrelated reach-comment repair — with zero
+FAIL-matching lines. Line arithmetic agrees: 2152 → 2159 (+7, the fix) → 2160 (= 2152 + 8, the reach
+comment alone). The 16:42 write took the 16:35 file as its input.
+
+⭐ **Why no check caught it, and this is the transferable part: the fix left the case's NAME
+unchanged.** Case count, docstring count, and any grep for the case name were satisfied in *both*
+states — **fixed and reverted were textually indistinguishable to every check in this repo.** The
+hazard closed by accident when the re-application renamed the case. Stated deliberately now:
+
+> **A fix that changes what a case ASSERTS must change the case's NAME too.** Otherwise a lost fix
+> is invisible to every count, every name list, and every grep.

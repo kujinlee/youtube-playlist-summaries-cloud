@@ -9334,3 +9334,41 @@ owner, and this is its third occurrence, so the workaround I am using (branch-sp
 explicitly not the fix.
 
 Suite 88 → 150. Sixteen gates green, including under the redirected `$HOME` the harness spawns with.
+
+## 2026-09-15
+Correction to this morning's entry: the redesign I described failed too, and the guard has been withdrawn rather than rewritten a sixth time.
+<!--tech-->
+The earlier entry today reported that a static source check had closed the problem four runtime
+guards could not. **It had not.** Round 3 broke it in one sitting with two Blocking findings, and the
+architecture review's central claim — that asking the question statically makes the set of answers
+**closed** — was wrong. The *region* is bounded; the set of ways to name the environment from inside
+it is not. One indirection (`_probe = src_root`) defeated a substring count; an aliased import,
+`posix.environ`, an import-time cache and `os.environb` each walked past "in any spelling", in plain
+sight, inside the region.
+
+⛔ **So the property is no longer guarded, and the code now says so in terms** — what dies (a second
+read through the `os.environ` object at request time) and what survives (pre-bound aliases,
+`posix.environ`, `os.environb`, import-time caches, subprocess inheritance, a second probe call).
+**Both lists were verified by mutation by the other reviewer**, which was the one thing that had to
+be true: a false entry in the *guarded* column would have been the sixth false coverage claim on this
+component.
+
+⭐ **The retreat was pre-committed in writing before the round that triggered it ran.** That is the
+only reason it happened — by the time the evidence arrived the decision was already made, so there
+was nothing left to argue with. The argument that should have stopped me was also already in hand:
+the other reviewer had shown that `os.environb` and subprocess inheritance read the environment
+*beneath* the layer any Python guard can reach. I preferred my own reasoning from four failures over
+their mechanism, and was wrong one round later.
+
+**Three of my own recorded measurements were also wrong, and the cause is one missing habit.** The
+mutation table was uniformly one low because I added a passing case and then edited the
+**denominators by hand instead of re-running**. A correction I wrote then quoted a control from one
+run and a mutant from another — an out-of-tree run of this suite carries one pre-existing red, so the
+two are not comparable. **A measurement needs its context recorded, not just its value.** All of it
+is corrected in place, and the correction-of-the-correction is recorded too.
+
+**What this does NOT change: the server works.** The deliverable took zero findings across three
+rounds and was examined directly rather than inherited. `/src/` serves, confinement holds, the 404
+prints a command you can paste. Everything above is about the instrument that proves it.
+
+Suite 88 → 144. Sixteen gates green.

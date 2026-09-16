@@ -70,14 +70,39 @@ Control `150/150`, mutations applied to the delivered file, restored by `cp`, ne
 
 | Mutation | Before (attempt 4) | After |
 |---|---|---|
-| `root = src_root().root` — a second observation | **142/142 SURVIVES** | **148/150 KILLED** |
-| re-read via `os.environb.get(...)` | **142/142 SURVIVES** | **147/150 KILLED** |
-| re-read via `SRC_ROOT_ENV in os.environ` | 136/142 killed | 142/150 killed |
-| re-read via `os.getenv` | 136/142 killed | 142/150 killed |
-| master's broken `<dir>` 404 text | killed | 147/150 killed |
-| `safe_path` bypassed at the caller | killed | 146/150 killed |
+| `root = src_root().root` — a second observation | **142/142 SURVIVES** | **149/150 KILLED** |
+| re-read via `os.environb.get(...)` | **142/142 SURVIVES** | **148/150 KILLED** |
+| re-read via `SRC_ROOT_ENV in os.environ` | 136/142 killed | 143/150 killed |
+| re-read via `os.getenv` | 136/142 killed | 143/150 killed |
+| master's broken `<dir>` 404 text | killed | 148/150 killed |
+| `safe_path` bypassed at the caller | killed | 147/150 killed |
 
-Both previously-invisible escapes now die, and nothing that was caught stopped being caught.
+⟳ **CORRECTED 2026-09-15 by round 3 — every figure in the "After" column was recorded one too low,
+and the cause is worth more than the digits.** The raw runs were made when the suite had **149**
+cases. A floor case was then added (149 → 150), and I updated this table's **denominators by hand
+without re-running it**, leaving the numerators as measured. Adding an always-passing case
+increments *both*. Confirmed by re-running the first row against `c7a474b4` **out-of-tree**:
+control 149/150, mutant 148/150 — a delta of one, matching the reviewer's **in-tree** 150 → 149.
+
+⚠ **Round 3's Codex half filed this sentence as still one low; that finding is REFUTED, and the
+disagreement is itself the lesson.** It measured in-tree (150/150 → 149/150) and read the sentence
+as claiming those numbers. The sentence names its context — *out-of-tree* — and an out-of-tree run
+of this suite carries **one pre-existing red** (a case asserting a declared source is a real file in
+the repo, which cannot pass outside it), so 149/150 → 148/150 is correct there. Re-verified by the
+coordinator. **Both figures are right; only a number carrying its context can be checked**, which is
+exactly what the `[FAIL] ` correction in the round-1 document got wrong in the other direction.
+**No kill/survive verdict changes; every row is still killed.** But this is precisely the recorded
+rule *never write a cost table from memory — derive, don't store*, and it was broken by editing a
+measurement to match a changed world instead of taking it again.
+
+⛔⛔ **AND THE SENTENCE THAT FOLLOWED THIS TABLE WAS FALSE. It read:**
+
+> ~~Both previously-invisible escapes now die, and nothing that was caught stopped being caught.~~
+
+**The second clause is refuted, measured** (round 3, B1): `_probe = src_root` in-region followed by
+`root = _probe().root` **survives 150/150 here** and was **KILLED at the parent commit `78100320`**
+by the two cases this redesign deleted. One level of indirection defeats a literal substring count.
+See the retreat recorded below.
 
 ## What the review also changed, and why each is part of the design rather than a patch
 
@@ -135,3 +160,44 @@ branch-specific stems. The *cause* is in `scripts/codex-review.py`, which derive
 from the caller's `--out` stem with no allocator — this project's recorded *"a guard's evidence path
 is a namespace with no allocator"*, now at its third occurrence. Fixing it is a tooling change with
 a policy call in it (who owns that namespace), so it is a backlog row, not a smuggled edit.
+
+
+---
+
+# ⛔⛔ POSTSCRIPT, 2026-09-15 — THIS REDESIGN ALSO FAILED, AND THE PRE-COMMITTED RETREAT WAS TAKEN
+
+Round 3's Claude half broke it in one sitting: **2 Blocking, both fix-induced, both in
+`src-caller`.**
+
+- **B1** — the static case is `_src_branch_src().count("src_root()") == 1`, a **literal substring
+  count**. `_probe = src_root` in-region defeats it, and the dynamic half cannot help because
+  `_drive_src` still **stubs** `src_root` — the very mechanism this review identified as attempt 4's
+  fatal flaw and did not remove. Confirmed a real production defect, not a test artefact: driving
+  `do_GET` unstubbed with a counting wrapper gave **2** real reads of `EXPLAINER_DOCS_ROOT` against
+  a pristine **1**.
+- **B2** — *"NO ENVIRONMENT API IN THE REGION, IN ANY SPELLING"* is four literal tokens. Four
+  genuine second reads placed **in the region, in plain sight** pass the whole suite: an aliased
+  `from os import environ as _ENV`; `posix.environ`; a value cached at import time; a module-level
+  helper using `os.environb`. Two of those need no helper, so they are not covered by this
+  document's own stated limit.
+
+⭐ **The central claim of this review — that asking statically makes the set CLOSED — was wrong.**
+The *region* is bounded; **the set of ways to name the environment from inside it is not.** This was
+**attempt 5 of the identical shape**, a denylist over an open set, relocated from runtime surfaces to
+source text. I argued the open-set problem from the *history* of four failures, which was inductive
+and could have been four coincidences; round 2's reviewer had already shown it is **structural** —
+`os.environb` and a subprocess read the **C-level environ** beneath `os.environ`, which no Python
+object swap can reach. That argument was available and I did not weigh it heavily enough.
+
+**The retreat, pre-committed in the round-2 coordinator document before round 3 ran, was executed:**
+the property is no longer claimed. `scripts/explainer-serve.py` now states in terms what is guarded
+(a second read through the `os.environ` object at request time — controls die) and what is **not**
+(pre-bound aliases, `posix.environ`, `os.environb`, import-time caches, subprocess inheritance, and
+a second `src_root()` call however spelled). **An unguarded property that says so is worth more than
+a guard reporting a pass it has not earned** — which is this branch's own lesson, the four-day outage
+having been a green suite over a dead subsystem.
+
+⚠ **A whitelist over the region would be closed** — *"the region may name only these tokens"* — and
+round 3 noted it while explicitly declining to propose it, because the stopping rule forbids a sixth
+attempt in the same round that broke the fifth. It is recorded here as the one option not yet tried,
+for whoever picks this up with fresh evidence, **not** as a plan.

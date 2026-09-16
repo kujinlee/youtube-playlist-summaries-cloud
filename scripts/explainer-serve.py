@@ -63,7 +63,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 150 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 144 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -2057,63 +2057,54 @@ def _self_test() -> int:
         case("/src/ 404 renders the pasteable help, not the unfilled <dir>",
              lambda: (lambda b: b"--stop" in b and b"=<dir>" not in b)(
                  _drive_src("/src/x.md", "/tmp/yps-no-such-docs-root-2026-09-15")[1]))
-        # ⛔⛔⛔ THE INVARIANT AT THE CONSUMER — TWO CHECKS, AND THE ARCHITECTURE REVIEW THAT
-        # ARMED IS WHY THERE ARE TWO. Round 2's Claude half found that the previous shape had
-        # retired the coverage round 1 bought: with `src_root` STUBBED, a caller spelled
-        # `root = src_root().root` — a genuine second read of the environment in production,
-        # forbidden in terms by the comment at the call site — passed 142/142.
+        # ⛔⛔⛔ THE PROPERTY "THE CALLER CONSULTS THE WORLD EXACTLY ONCE" IS **NOT GUARDED HERE**,
+        # AND SAYING SO IS THE POINT. Five guards were written for it and all five reported a pass
+        # they had not earned. The retreat was pre-committed in
+        # `docs/reviews/coordinator/ship-src-root-alone-r2-coordinator.md` BEFORE the round that
+        # triggered it, so that this is a rule being followed rather than a result being explained:
         #
-        # ⛔ THE DESIGN FAULT WAS COMMON TO FOUR ATTEMPTS, NOT TO ANY ONE OF THEM, which is why
-        # this is a redesign and not a fifth patch. Each tried to prove a NEGATIVE — "nothing else
-        # consults the world" — by INTERCEPTING the world at runtime, and interception must
-        # enumerate the surfaces through which the world is reachable. That set is OPEN, so every
-        # attempt was defeated by its next member:
+        #   1  `_Forbidden` v1 (#295 r4)   `get` only          -> `dict()`, `len()`, `for k in`
+        #   2  `_Counting`  v1 (r1)        `get` only          -> `SRC_ROOT_ENV in os.environ`
+        #   3  `_Counting`  v2 (r2)        eight surfaces      -> `setdefault`, `pop`, `repr`, `==`
+        #   4  stub + `_Forbidden` (r2)    every env spelling  -> a second `src_root()` call
+        #   5  static source denylist (r2) "any spelling"      -> `_probe = src_root`; an aliased
+        #                                                        `from os import environ as _ENV`;
+        #                                                        `posix.environ`; an import-time
+        #                                                        cache; `os.environb`
         #
-        #   `_Forbidden` v1 (#295 r4)  `get` only            -> `dict()`, `len()`, `for k in`
-        #   `_Counting`  v1 (r1)       `get` only            -> `SRC_ROOT_ENV in os.environ`
-        #   `_Counting`  v2 (r2)       eight surfaces        -> `setdefault`, `pop`, `repr`, `==`
-        #   stub + `_Forbidden` (r2)   every env spelling    -> a second `src_root()` call itself
+        # ⚠ ATTEMPT 5 IS THE ONE THAT SETTLES IT, because it was the redesign that an architecture
+        # review argued was structurally different — it moved the question from runtime surfaces to
+        # SOURCE TEXT, claiming the set of names in a bounded region is closed. The region is
+        # bounded; **the set of ways to name the environment from inside it is not.** Four escapes
+        # were found in one sitting, two of which need no helper at all. It was attempt 5 of the
+        # same shape — a denylist over an open set — relocated.
         #
-        # Four half-covering guards in a row is a property of the approach. So the question is
-        # asked a SECOND way, where the set is CLOSED.
+        # ⛔ AND TWO OF THE ESCAPES CANNOT BE CLOSED BY ANY PYTHON-LEVEL GUARD, which is why
+        # "enumerate harder" was never going to terminate: `os.environb` and a subprocess inheriting
+        # the environment read the **C-level environ** beneath `os.environ`, so no object swap can
+        # observe them. Measured by round 2's reviewer, independently of the argument above.
         #
-        # ── (1) STATIC: the branch's own source. ─────────────────────────────────────────────
-        # "Does this region call `src_root()` more than once, or name an environment API at all?"
-        # is DECIDABLE — the region is ten lines of code we own, and anything new appearing in it
-        # is by definition a change under review. No enumeration of runtime surfaces, so
-        # `os.environb` and any other spelling are caught by the same rule that catches the
-        # second `src_root()`. This is the instrument `_rev_branch_src` above already uses, for
-        # the reason stated there: assert the MECHANISM, not a hardcoded answer.
-        # ⚠ LAZY, for r4's reason — a marker that moves must raise INSIDE the thunk, where
-        # `case()` catches it and prints a `[FAIL]` line, not out here where it aborts the suite.
-        def _src_branch_src():
-            src = inspect.getsource(Handler.do_GET)
-            return src.split('if path.startswith("/src/"):', 1)[1] \
-                      .split("resolved = resolve_page(", 1)[0]
-        case("the /src/ branch observes the world EXACTLY once — one src_root() call",
-             lambda: _src_branch_src().count("src_root()") == 1)
-        # ⚠ `src_root_help(` is deliberately not matched by the count above — it is a RENDERER
-        # taking the observation, not a second probe. Spelled as a separate case so the reader
-        # does not read the `== 1` as forbidding it.
-        case("…and it hands that one observation to the renderer, rather than re-probing",
-             lambda: "src_root_help(observed)" in _src_branch_src())
-        # ⛔ NO ENVIRONMENT API IN THE REGION, IN ANY SPELLING. `environb` is included because the
-        # round-2 review measured it slipping past the runtime guard entirely — a bytes-level view
-        # of the same variable. Static text does not care which view it is.
-        for _api in ("os.environ", "os.getenv", "environb", "putenv"):
-            case(f"the /src/ branch never names `{_api}` — the probe is src_root's job alone",
-                 lambda a=_api: a not in _src_branch_src())
+        # ⭐ WHAT IS GUARDED, STATED NARROWLY AND HONESTLY — this is the whole substance of the
+        # retreat, because an unguarded property that SAYS SO is worth more than a guard that
+        # reports a pass it has not earned. That is this branch's own lesson: the four-day outage
+        # was a green suite over a dead subsystem.
+        #
+        #   GUARDED     a second read spelled through the `os.environ` OBJECT at request time —
+        #               `_drive_src` swaps it for `_Forbidden` below, so every behavioural case
+        #               above is also asserting this. Controls die: an inline `os.environ.get` in
+        #               the region -> 6 red; a module-level helper using `os.environ` -> 6 red;
+        #               `from os import getenv as _getenv` -> 6 red (it reaches `os.environ`).
+        #
+        #   NOT GUARDED a name bound to the environment BEFORE the swap (`from os import environ
+        #               as _ENV`), `posix.environ`, `os.environb`, a value cached at import time,
+        #               a subprocess inheriting the environment, and a second `src_root()` call
+        #               however spelled. Each measured to survive the full suite.
+        #
+        # ⚠ THE DELIVERABLE IS UNAFFECTED AND WAS EXAMINED DIRECTLY IN ROUND 3, not inherited: the
+        # carried-observation design is correct, `src_root_help` branches on `observed.fallback_ok`
+        # rather than re-probing, and the behavioural cases above are mutation-proved. What is being
+        # given up is a CLAIM about the instrument, not any coverage of what the server does.
 
-        # ── (2) DYNAMIC: what the region CALLS. ──────────────────────────────────────────────
-        # The static half cannot see through a helper — a caller that re-derived via some new
-        # `_peek_env()` would satisfy it. `_drive_src` therefore still runs every request above
-        # with `os.environ` replaced by `_Forbidden`, so any env read reachable at RUNTIME raises
-        # instead of returning something plausible. The two halves answer different questions and
-        # neither subsumes the other: (1) is "this region is written correctly", (2) is "nothing
-        # it calls cheats". ⚠ That is why this is not the duplicate-vocabulary shape
-        # `check-vocabulary-collisions.py` catches — they cannot disagree about a shared fact,
-        # because they have no shared fact.
-        #
         # ⚠ ASSERTED ON `_Forbidden` ITSELF, NOT THROUGH THE CALLER, and the distinction is the
         # whole point: the correct caller does NOT read the environment, so driving it can only
         # ever show the mechanism not firing — which is equally what a broken mechanism looks
@@ -2125,15 +2116,26 @@ def _self_test() -> int:
         # `_Forbidden` left the suite at 142/142, so a new surface could arrive unasserted.
         # `vars()` makes the population the class's own.
         _fb = _Forbidden("the environment")
-        _EXERCISE = {
-            "get": lambda: _fb.get("X"), "__getitem__": lambda: _fb["X"],
-            "__contains__": lambda: "X" in _fb, "keys": lambda: list(_fb.keys()),
-            "items": lambda: list(_fb.items()), "values": lambda: list(_fb.values()),
-            "copy": lambda: _fb.copy(), "__len__": lambda: len(_fb),
-            "__iter__": lambda: [k for k in _fb],
-            "setdefault": lambda: _fb.setdefault("X", ""), "pop": lambda: _fb.pop("X", None),
-            "popitem": lambda: _fb.popitem(), "update": lambda: _fb.update({}),
-        }
+        # ⛔ THE PROBE IS DISPATCHED BY THE SURFACE'S OWN NAME — r3 L2. The previous shape mapped
+        # name -> lambda, and NOTHING tied the lambda at key `n` to surface `n`: MEASURED, repointing
+        # `_EXERCISE["setdefault"]` and `["pop"]` at `_fb.get("X")` left the suite at 150/150, with
+        # two cases reading "refuses the `setdefault` read surface" that re-proved `get`. That is the
+        # operands-share-one-closure shape invoked three lines below for the floor, present in the
+        # map the floor is checked against. `getattr(_fb, n)` cannot be pointed anywhere else.
+        # ⚠ Only the ARGUMENTS are per-name now, and a wrong argument raises `TypeError`, not the
+        # `AssertionError` the case demands — so a mis-specified entry fails rather than passing.
+        # ⚠ WHAT THIS DOES NOT BUY, measured rather than implied: rewriting the dispatch line itself
+        # to `getattr(_fb, "get")("X")` still passes 144/144. The improvement is real but bounded —
+        # defeating it now requires editing the one line that does the work, which is visibly wrong,
+        # where before it took editing a DATA entry that looked innocent. It is NOT proof against a
+        # mutation of the guard's own body, and chasing that would be the enumerate-harder trap this
+        # very file has just retreated from, relocated one level further in.
+        _ARGS = {"get": ("X",), "__getitem__": ("X",), "__contains__": ("X",),
+                 "setdefault": ("X", ""), "pop": ("X", None), "update": ({},)}
+        def _exercise(n):
+            """Call `_Forbidden`'s `n` surface, by name. Dunders are not reachable through the
+            instance for implicit syntax, but calling them explicitly hits the same function."""
+            return getattr(_fb, n)(*_ARGS.get(n, ()))
         # ⚠ `n != "_raise"` — the refuser is itself an attribute bound to the refuser, so a
         # naive `v is _raise` walk returns the DEFINITION alongside the surfaces. Measured:
         # it produced a phantom `_raise` surface and two red cases on correct code.
@@ -2154,13 +2156,13 @@ def _self_test() -> int:
             "get", "__getitem__", "__contains__", "keys", "items", "values",
             "copy", "__iter__", "__len__", "setdefault", "pop",
         })
-        case("every surface _Forbidden refuses has a case that exercises it",
-             lambda: [n for n in _DECLARED if n not in _EXERCISE] == [])
+        case("every surface _Forbidden refuses can be exercised by its own name",
+             lambda: [n for n in _DECLARED if not hasattr(_fb, n)] == [])
         case("…and no surface it once refused has been dropped — the floor holds",
              lambda: sorted(_FORBIDDEN_FLOOR - set(_DECLARED)) == [])
         for _nm in _DECLARED:
             case(f"_Forbidden refuses the `{_nm}` read surface — the guard is not vacuous",
-                 lambda n=_nm: n in _EXERCISE and _raises(_EXERCISE[n], AssertionError))
+                 lambda n=_nm: _raises(lambda: _exercise(n), AssertionError))
 
         # ⛔ r1 L1 — `expanduser()` had NO case, in the commit that took `src_root` from zero cases
         # to twelve. Deleting it passed 123/123. Distinct from backlog #123, which is about
