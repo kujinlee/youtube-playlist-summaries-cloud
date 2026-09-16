@@ -838,12 +838,18 @@ EXPECTED_MUTATIONS = {
     # `SERVABLE` could be widened to serve `.env.local`, and `SRC_REASONS` could gain a member —
     # both now cased. ⚠ The 17 entries are deliberately NOT one-per-function: an entry is admitted
     # only when its kill is ATTRIBUTABLE, which `check-plan-code` decides by matching `expect`
-    # against a parsed case name by EXACT EQUALITY. A case that dies by RAISING prints
-    # `[FAIL] {name} — {ExcType}: {msg}`, so its parsed name carries unstable text and can never be
-    # named. That is a real bound on what this manifest can cover, and it is why one case
-    # (`driving /src/ never consults the environment`) was written to convert a raise into a
-    # returned False — the `_Forbidden` property was otherwise guarded and unratchetable.
-    "scripts/explainer-serve.py": 17,
+    # against a parsed case name by EXACT EQUALITY.
+    # ⟳ CORRECTED 2026-09-16 by round 1's review, which MEASURED the claim this comment first made
+    # — that a raise-dying case "can never be named". **False.** Feeding the real `parse_fail_names`
+    # and the real matcher an `expect` carrying the full `{name} — AssertionError: {msg}` string
+    # attributes fine, because `_Forbidden`'s message is built from two call-site literals and is
+    # deterministic. The honest bound is narrower and survives being checked: naming a raise kill
+    # means embedding the exception type AND message, which is unattributable the moment that
+    # message carries runtime data — the same sweep produced a `ValueError` naming a machine-
+    # specific temp path — and couples the entry to one failure mode of the case even when it does
+    # not. That still supports converting the raise to a value (the case `driving /src/ never
+    # consults the environment`), which is why the decision stands and only its reason changed.
+    "scripts/explainer-serve.py": 25,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a
@@ -3167,11 +3173,11 @@ def _self_test() -> int:
     # SIDE OF THE CONFLICT — this branch was right about 633 and master was right about
     # 639, and neither is right about the merge, which carries both sets of entries
     # (629 + master's 10 + this branch's 4). Re-derived from the merged dict.
-    # ⟳ 2026-09-16: 643 -> 660. SEVENTEEN entries seed `explainer-serve.py` (backlog #122), the
+    # ⟳ 2026-09-16: 643 -> 668. TWENTY-FIVE entries seed `explainer-serve.py` (backlog #122), the
     # largest file in `scripts/` that had never been inside `--mutate .`. Every anchor was verified
     # present in the DELIVERED file before being written, and every entry was proved to go red VIA
     # THE CASE IT NAMES over a control proved green first.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 660)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 668)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

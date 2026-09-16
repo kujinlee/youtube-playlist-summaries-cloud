@@ -63,7 +63,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 149 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 167 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -558,12 +558,16 @@ def src_root_help(observed: SrcRoot, pidfile: pathlib.Path = PIDFILE) -> str:
 
     ⛔ EVERY PATH IS `shlex.quote`d — r1 B1, found by both review halves. `_html.escape` makes
     text safe for HTML; nothing made it safe for the SHELL it exists to be pasted into. With a
-    repo at `~me/agentic ai docs/repo` the emitted line handed `python3` the path
-    `~me/agentic`. ⚠ The example is written relative on purpose: an absolute `/Users/…` here is a
-    route `check-plan-code.home_escapes` flags, and a docstring cannot carry the comment-token
-    exemption — measured 2026-09-16, it refused the whole mutation run over these two prose lines.
-    The SPACE is what the example is about, so nothing is lost. ⚠ The suite had used space-bearing
-    fixtures since before that bug and
+    repo at `/srv/me/agentic ai docs/repo` the emitted line handed `python3` the path
+    `/srv/me/agentic`. ⚠ The example avoids `/Users/` and `/home/` on purpose: those are routes
+    `check-plan-code.home_escapes` flags, and a docstring cannot carry the comment-token exemption,
+    so an absolute home path here refuses the whole mutation run — measured 2026-09-16, over these
+    two prose lines. ⚠ AND IT IS ABSOLUTE, which the first repair got wrong: it used `~me/…`, but
+    `observed.fallback` is `SCRIPTS.parent` and therefore always absolute, so that was a value this
+    code cannot hold — and `_gone_checkout_help` below documents that `shlex.quote` leaves a tilde
+    quoted and unexpanded, which would have made the example's own FIXED command broken. The SPACE
+    is what the example is about; the prefix only has to be a path this code could really produce.
+    ⚠ The suite had used space-bearing fixtures since before that bug and
     asserted only that the path APPEARED — a hostile input asserted with a substring test proves
     nothing about hostility, so the cases compare ARGV.
     """
@@ -1466,6 +1470,29 @@ def _self_test() -> int:
              lambda: (root / SERVE_LOG).is_file() and safe_path("/" + SERVE_LOG, root) is None)
         case("the daemon's log is not mistaken for an explainer",
              lambda: SERVE_LOG not in [p.name for p in explainers(root)])
+        # ⛔⛔ CONTAINMENT, ASSERTED AT `safe_path` ITSELF AND OVER A REAL ESCAPE TARGET — r1
+        # MEDIUM 3, and the case exists because the reviewer's proposed fix for it did not work.
+        # The finding was right: the entry for "containment tested before resolving" named a case
+        # about NUL bytes, while the two cases whose names say *traversal* were UNCHANGED by that
+        # mutation — they pass because `passwd` has no suffix, so `SERVABLE` rejects them before
+        # containment is ever consulted. Its suggested repair was to point the entry at the `/src/`
+        # escape case instead. MEASURED: that case dies by `ValueError` under the mutation, so its
+        # parsed name carries a machine-specific temp path and attributes to nothing — the exact
+        # bound corrected three screens up, refuting the fix proposed in the same review that
+        # measured the bound. *A filed finding's proposed fix is a hypothesis.*
+        #
+        # ⚠ SO THE TARGET MUST BE SERVABLE AND MUST REALLY EXIST OUTSIDE THE ROOT. A `.md` file one
+        # level up gets past the suffix allowlist, so containment is the ONLY thing that can refuse
+        # it — which is what makes this case about containment rather than about the allowlist.
+        _outside = root / "sp-outside.md"
+        _outside.write_text("# not yours\n")
+        _inner = root / "sp-inner"
+        _inner.mkdir()
+        (_inner / "ok.md").write_text("# fine\n")
+        case("safe_path refuses a traversal to a SERVABLE file that really exists outside the root",
+             lambda: safe_path("/../sp-outside.md", _inner) is None)
+        case("…while the same root still serves its own file",
+             lambda: safe_path("/ok.md", _inner) == (_inner / "ok.md").resolve())
         # ⛔⛔ THE `.env*` EXCLUSION IS LOAD-BEARING FOR A SECURITY JUDGEMENT AND HAD NO CASE —
         # found 2026-09-16 by seeding this file's mutation manifest (backlog #122). The reach
         # comment at `:240` rests its "not judged a security finding" verdict partly on
@@ -1746,7 +1773,7 @@ def _self_test() -> int:
              lambda: sorted(SRC_REASONS) == sorted({
                  with_env(None, src_root).reason,
                  _probe_with(root, "/nope").reason,
-                 _probe_with(pathlib.Path("/tmp/yps-gone-2026-09-16"), "").reason}))
+                 _probe_with(_norepo, "").reason}))
         case("src_root: every reason it can return is a declared member",
              lambda: all(with_env(v, src_root).reason in SRC_REASONS
                          for v in (None, "", "   ", str(root), str(root / "nope"))))
@@ -2069,11 +2096,15 @@ def _self_test() -> int:
         case("…and the body carries the file's text",
              lambda: b"body text here" in _drive_src("/src/srcfix.md", str(_srcroot))[1])
         # ⛔⛔ THIS CASE EXISTS SO THE `_Forbidden` PROPERTY CAN BE RATCHETED AT ALL — found
-        # 2026-09-16 while seeding the mutation manifest (backlog #122), and it is a constraint
-        # nobody had written down: `check-plan-code` matches an entry's `expect` against a parsed
-        # case name by **exact equality**, and a case that dies by RAISING prints
-        # `[FAIL] {name} — {ExcType}: {msg}`, so its parsed "name" carries unstable text and can
-        # never be named by a manifest entry.
+        # 2026-09-16 while seeding the mutation manifest (backlog #122): `check-plan-code` matches
+        # an entry's `expect` against a parsed case name by **exact equality**, and a case that dies
+        # by RAISING prints `[FAIL] {name} — {ExcType}: {msg}`.
+        # ⟳ CORRECTED by round 1's review, which measured the stronger claim this comment first made
+        # — *"can never be named"* — and refuted it: an `expect` carrying the full
+        # `{name} — AssertionError: {msg}` string DOES attribute, because that message is built from
+        # two call-site literals. The honest bound: naming a raise kill embeds the exception type and
+        # message, which breaks the moment the message carries runtime data (the same sweep produced
+        # a `ValueError` naming a temp path) and couples the entry to one failure mode regardless.
         #
         # ⚠ MEASURED: a caller re-reading the environment reddens SIX cases, and **every one of
         # them dies by AssertionError** — `_Forbidden` works by raising. So the single property
@@ -2086,9 +2117,16 @@ def _self_test() -> int:
         # purpose: it asserts the drive completes *without* `_Forbidden` firing, and it returns
         # False rather than propagating when it does — so the kill lands on the truthy-result
         # print and the manifest can name it.
+        # ⚠ BOTH HALVES, because the comment above claims both and the first version asserted one
+        # — r1 LOW 8. `_raises(fn, AssertionError) is False` is ALSO true when `fn` raises something
+        # else, and when the drive completes but serves nothing: MEASURED, a `/src/` that always
+        # 404s and one that raises `ValueError` both left this case GREEN (their neighbours caught
+        # them, so nothing was unguarded — but the sentence was untrue). Asserting the 200 as well
+        # costs nothing and makes it true.
         case("driving /src/ never consults the environment — the _Forbidden property, RATCHETABLE",
              lambda: _raises(lambda: _drive_src("/src/srcfix.md", str(_srcroot)),
-                             AssertionError) is False)
+                             AssertionError) is False
+                     and _drive_src("/src/srcfix.md", str(_srcroot))[0] == 200)
         # ⛔ CONFINEMENT, AND THE ESCAPE TARGET MUST EXIST OR THE CASE PROVES NOTHING. A NESTED
         # root is the whole point: the first version served from `root` and asked for
         # `/src/../../etc/passwd`, which 404s under a `safe_path` BYPASS too — the traversal
@@ -2236,6 +2274,132 @@ def _self_test() -> int:
                 else:
                     os.environ["HOME"] = _real
         case("src_root: a `~` path is expanded, not taken literally", _tilde_expands)
+
+        # ── the /src/ reach verdict's FOUR clauses ────────────────────────────────────────
+        # ⛔⛔ r1 HIGH 1, AND IT IS THIS BRANCH'S OWN HEADLINE MOVE COMMITTED AGAINST ITSELF.
+        # Seeding the manifest found that `SERVABLE` excludes `.env*` — clause 2 of the security
+        # verdict at `:238` — had no case. That was fixed. But the sentence has FOUR clauses and
+        # the branch stopped at the one it tripped over. MEASURED by the reviewer: `HOST` changed
+        # to `0.0.0.0` passed **149/149**, and `_send` gaining an `Access-Control-Allow-Origin: *`
+        # header passed **149/149**. `after fixing, SEARCH for the class` — enumerate the sentence.
+        case("the listener is loopback — clause 3 of the /src/ reach verdict",
+             lambda: HOST == "127.0.0.1")
+        # ⚠ ASSERTED ON WHAT `_send` EMITS, not on the absence of a string in source: the claim at
+        # `:1065` is that no OTHER site can read private source through this server, and that is a
+        # property of the RESPONSE. A source-text case would pass on a header added via a helper.
+        def _sent_headers(code=200):
+            seen = []
+            h = object.__new__(Handler)
+            h.send_response = lambda c: seen.append(("status", c))
+            h.send_header = lambda k, v: seen.append((k.lower(), v))
+            h.end_headers = lambda: None
+            h.wfile = type("W", (), {"write": staticmethod(lambda b: None)})()
+            Handler._send(h, code, b"x", "text/plain")
+            return seen
+        case("no CORS header is emitted — clause 4, the one the whole paragraph rests on",
+             lambda: not any(k.startswith("access-control-") for k, _ in _sent_headers()))
+        case("…and the response still carries the headers it is supposed to",
+             lambda: {"content-type", "content-length"} <= {k for k, _ in _sent_headers()})
+
+        # ── r1 HIGH 2: `_regenerate` had zero cases, and a timeout reported as success survived ──
+        # ⛔ `:1192` says it in this project's house style — *"A timeout is NOT a failure to report
+        # as 'rebuilt' … silence here reads as success"* — which is `CLAUDE.md`'s **"cannot run" is
+        # a FAILURE, never a pass** written into a handler. MEASURED: turning that 504 arm into a
+        # `200 {"ok": true}` passed **149/149**. The highest-consequence function in the file, and
+        # the manifest written to end this file's unratcheted status did not touch it.
+        def _drive_regen(payload, runner):
+            """POST /regenerate through the REAL handler. `runner` stands in for subprocess.run."""
+            got = {}
+            h = object.__new__(Handler)
+            h._send = lambda code, body, ctype: got.update(code=code, body=body)
+            _real = subprocess.run
+            try:
+                subprocess.run = runner          # type: ignore[assignment]
+                Handler._regenerate(h, payload)
+            finally:
+                subprocess.run = _real           # type: ignore[assignment]
+            return got.get("code"), got.get("body", b"")
+        def _timeout_runner(*_a, **_k):
+            raise subprocess.TimeoutExpired(cmd="x", timeout=REGEN_TIMEOUT)
+        _ok_runner = lambda *_a, **_k: type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+        _warn_runner = lambda *_a, **_k: type(
+            "R", (), {"returncode": 0, "stdout": "⚠ no Ask tray\n", "stderr": ""})()
+        _page = sorted(REGENERABLE)[0]
+        case("a regenerate TIMEOUT is 504 NOT REBUILT, never a reported success",
+             lambda: _drive_regen({"page": _page}, _timeout_runner)[0] == 504)
+        case("…and it says NOT REBUILT, so silence cannot read as success",
+             lambda: b"NOT REBUILT" in _drive_regen({"page": _page}, _timeout_runner)[1])
+        # ⛔ exit 0 is NOT a clean rebuild — a Codex Medium that was FIXED and never cased.
+        # Deleting the warning channel restores the degraded-gate-reports-success shape exactly.
+        case("a rebuild that warns carries the warning to the caller, not a bare ok",
+             lambda: b"warning" in _drive_regen({"page": _page}, _warn_runner)[1])
+        case("…and a clean rebuild carries no warning",
+             lambda: b"warning" not in _drive_regen({"page": _page}, _ok_runner)[1])
+        # ⛔ A NON-STRING `page` MUST BE REFUSED, NOT HASHED — `REGENERABLE.get(["x"])` raises
+        # `TypeError: unhashable type` inside the handler, which is the dropped-connection symptom
+        # of backlog #87/#123 arriving at a third site.
+        case("a non-string page is refused, not passed to a dict lookup that raises",
+             lambda: _drive_regen({"page": ["dashboard"]}, _ok_runner)[0] == 400)
+
+        # ── r1 MEDIUM 6: `status()` reported success with nothing listening ──────────────────
+        # ⛔ `return 0 if running else 1` -> `return 0` passed **149/149**. This is the one command
+        # a human runs to ask whether the server is up, and its exit code is the answer.
+        def _status_rc(listening):
+            _real = globals()["port_busy"]
+            try:
+                globals()["port_busy"] = lambda *_a, **_k: listening
+                import io as _io, contextlib as _ctx
+                with _ctx.redirect_stdout(_io.StringIO()):
+                    return status()
+            finally:
+                globals()["port_busy"] = _real
+        case("--status exits NON-ZERO when nothing is listening — a down server is not a pass",
+             lambda: _status_rc(False) != 0)
+        case("…and exits 0 when it is", lambda: _status_rc(True) == 0)
+
+        # ── r1 MEDIUM 5: the escaping `safe_href` credits `md_render` with ───────────────────
+        # ⛔ `:335` writes down a DIVISION OF LABOUR — *"Quotes are escaped upstream in `md_render`,
+        # which independently closes the attribute break-out"* — and MEASURED, both quote replaces
+        # could be deleted at **149/149**. One half of a documented pair was hardened and cased;
+        # the half being credited had no case in either direction.
+        case("md_render escapes BOTH quote characters — the half safe_href credits it with",
+             lambda: (lambda o: '"' not in o and "'" not in o)(md_render("a \" b ' c")))
+        # ⛔ `source_shell` renders every `/src/` file and had NO cases. Its non-markdown arm
+        # dropping `<`-escaping passed 149/149 — that is CONTENT injected raw into the viewer page
+        # for every `.html`/`.js`/`.svg`/`.css` in the checkout, which the reach verdict's
+        # path-oracle reasoning does not cover.
+        case("source_shell escapes markup in a NON-markdown file",
+             lambda: "<script>" not in source_shell("x.js", "<script>alert(1)</script>"))
+        case("…and still renders a .md file as markdown, not as a code block",
+             lambda: "<h1" in source_shell("x.md", "# heading\n"))
+
+        # ── r1 LOW 7: the `.html` fallback is not a second chance ────────────────────────────
+        # ⛔ `:743` states the rule with a reason and `if False:` passed 149/149. Measured: a
+        # request for `/secret.env` would get a second attempt with `.html` glued on.
+        # ⚠ THE DECOYS ARE THE CASE. A first version asserted `resolve_page("/notes.md") is None`
+        # and went red on CORRECT code, because a direct hit on a real servable file is exactly
+        # what the resolver is FOR — it was testing the wrong half. The rule is about the `.html`
+        # FALLBACK, so the `.html` twin must exist or the mutation has nothing to find.
+        # ⚠ AND IN ITS OWN ROOT, NOT THE SHARED ONE — the first version wrote the decoys into
+        # `root` and reddened a LATER case (`orders newest first`), because `explainers(root)`
+        # lists what is there. `with_env`'s docstring already warns that a case leaking state
+        # corrupts the cases after it; a case leaking FILES does the same thing.
+        _l7 = root / "l7-fallback"
+        _l7.mkdir()
+        (_l7 / "notes.md.html").write_text("<p>decoy</p>")
+        (_l7 / "secret.env.html").write_text("<p>decoy</p>")
+        case("resolve_page does NOT glue .html onto a name that already had an extension",
+             lambda: resolve_page("/notes.md", _l7) is None
+                     and resolve_page("/secret.env", _l7) is None)
+        case("…while the fallback still fires for an extensionless name",
+             lambda: resolve_page("/notes.md.html", _l7) is not None)
+
+        # ── r1 LOW 11: pid_alive's FALSY guard, not merely its None guard ────────────────────
+        # ⛔ `if not pid:` -> `if pid is None:` passed 149/149. With a pidfile containing `0`,
+        # `os.kill(0, 0)` SUCCEEDS, so `pid_alive(0)` becomes True and `stop()` then sends SIGTERM
+        # to pid 0 — the whole process GROUP, including the caller's shell.
+        case("pid_alive refuses 0 — SIGTERM to pid 0 is the whole process group",
+             lambda: pid_alive(0) is False and pid_alive(None) is False)
 
         # ⛔ r1 M2 — THE REPORT FORMAT IS A CONTRACT AND NOTHING READ IT. `[FAIL] ` is the shape
         # `check-plan-code.parse_fail_names` parses; this file has no manifest yet (backlog #122),

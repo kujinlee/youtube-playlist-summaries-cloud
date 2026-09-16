@@ -387,7 +387,10 @@ WIDENED_MANIFEST_DEBT: frozenset[str] = frozenset({
     # unhandled arm. Both are cased now. ⚠ And a bound worth knowing before the next file joins:
     # an entry is admissible only when its kill is ATTRIBUTABLE, and `check-plan-code` matches
     # `expect` by EXACT equality against a parsed case name — so a property guarded by a case that
-    # RAISES cannot be ratcheted until some case reports it as a returned False.
+    # RAISES is awkward to ratchet: naming it requires embedding the exception type and message,
+    # which fails outright once that message carries runtime data. ⟳ Corrected 2026-09-16: an
+    # earlier draft said "cannot be ratcheted", and the review measured that to be false for a
+    # deterministic message. Prefer a case that reports the failure as a returned value.
     "scripts/gen-m4-manifest.py",
     "scripts/m4_catalog.py",
     "scripts/prior-art.py",
