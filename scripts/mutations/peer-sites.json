@@ -174,5 +174,104 @@
       ]
     ],
     "expect": "…via `git diff -U0`, which is what makes the body parse exact"
+  },
+  {
+    "name": "the `else` arm spans its whole first statement, swallowing a nested container",
+    "file": "scripts/peer-sites.py",
+    "edits": [
+      [
+        "        arms.append((cur.orelse[0].lineno, cur.orelse[0].lineno))",
+        "        arms.append(_span(cur.orelse[0]))"
+      ]
+    ],
+    "expect": "an edit to the INNER chain never offers the OUTER `if` as a peer"
+  },
+  {
+    "name": "the body walk runs past the end of its hunk, into the next file's preamble",
+    "file": "scripts/peer-sites.py",
+    "edits": [
+      [
+        "            if new_left > 0:",
+        "            if True:"
+      ]
+    ],
+    "expect": "a multi-file diff does not invent a line from the next file's header"
+  },
+  {
+    "name": "a malformed header leaves the body walk armed at a stale position",
+    "file": "scripts/peer-sites.py",
+    "edits": [
+      [
+        "                cursor = old_left = new_left = 0\n            continue",
+        "                cursor = 0\n            continue"
+      ]
+    ],
+    "expect": "a garbage header mid-diff stops the walk, it does not continue it"
+  },
+  {
+    "name": "the touched-member marker reverts to exact-line equality",
+    "file": "scripts/peer-sites.py",
+    "edits": [
+      [
+        "            mark = \"  >\" if m in hit else \"   \"",
+        "            mark = \"  >\" if m in touched else \"   \""
+      ]
+    ],
+    "expect": "…and the touched member is MARKED, not merely counted"
+  },
+  {
+    "name": "a file that cannot be read as text is treated as empty source",
+    "file": "scripts/peer-sites.py",
+    "edits": [
+      [
+        "    except (OSError, UnicodeDecodeError):\n        return None",
+        "    except (OSError, UnicodeDecodeError):\n        return \"\""
+      ]
+    ],
+    "expect": "an unreadable file reads as None, never as empty source"
+  },
+  {
+    "name": "`changed_lines` stops bounding git",
+    "file": "scripts/peer-sites.py",
+    "edits": [
+      [
+        "[\"git\", \"-C\", str(REPO), \"diff\", \"-U0\", ref, \"--\", path],\n                           capture_output=True, text=True, timeout=30)",
+        "[\"git\", \"-C\", str(REPO), \"diff\", \"-U0\", ref, \"--\", path],\n                           capture_output=True, text=True)"
+      ]
+    ],
+    "expect": "`changed_lines` bounds git at 30s"
+  },
+  {
+    "name": "`_merge_base` stops bounding git",
+    "file": "scripts/peer-sites.py",
+    "edits": [
+      [
+        "[\"git\", \"-C\", str(REPO), \"merge-base\", ref, \"HEAD\"],\n                           capture_output=True, text=True, timeout=30)",
+        "[\"git\", \"-C\", str(REPO), \"merge-base\", ref, \"HEAD\"],\n                           capture_output=True, text=True)"
+      ]
+    ],
+    "expect": "…and so does `_merge_base`"
+  },
+  {
+    "name": "`main --diff`'s first git call becomes unbounded again — r2 R4's exact regression",
+    "file": "scripts/peer-sites.py",
+    "edits": [
+      [
+        "[\"git\", \"-C\", str(REPO), \"diff\", \"--name-only\", base],\n                           capture_output=True, text=True, timeout=30)",
+        "[\"git\", \"-C\", str(REPO), \"diff\", \"--name-only\", base],\n                           capture_output=True, text=True)"
+      ]
+    ],
+    "expect": "…and so does `main --diff`'s FIRST call, the one that used to be unbounded"
+  },
+  {
+    "name": "a `\\ No newline` marker spends budget, eating the next added line",
+    "file": "scripts/peer-sites.py",
+    "edits": [
+      [
+        "        if line.startswith(\"\\\\\"):\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": "a `\\ No newline` marker does not eat the next added line"
   }
 ]

@@ -15,10 +15,6 @@
             "if": "Bash(gh pr create*)",
             "command": "bash .claude/hooks/suggest-explainer.sh",
             "statusMessage": "Checking whether this PR wants an explainer..."
-          },
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/peer-sites-advisory.sh"
           }
         ]
       },

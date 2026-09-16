@@ -3,7 +3,7 @@
 
     python3 scripts/peer-sites.py --diff master      # peers of everything a branch touched
     python3 scripts/peer-sites.py FILE:LINE          # peers of one site
-    python3 scripts/peer-sites.py --self-test        # 59 cases
+    python3 scripts/peer-sites.py --self-test        # 73 cases
 
 ⛔ WHAT THIS EXISTS FOR, AND IT WAS MEASURED BEFORE IT WAS BUILT.
 "Fix the instance, miss the sibling" is this author's dominant failure shape — written down as a
@@ -40,13 +40,13 @@ because the whole point of the section is that the claims are measured:
                                          `if ok: … else: print("[FAIL]")` two-arm self-test
                                          helper, whose "peer" is the success branch. No reader
                                          ever answers that question with anything but "no".
-    "prints 2-4 lines"                   96 of 138 commits print NOTHING; the tail runs to 32
+    "prints 2-4 lines"                   93 of 138 commits print NOTHING; the tail runs to 32
                                          lines, and 10 single containers print 9+ on their own.
 
 **Bounded by syntax buys decidable membership, NOT usefulness** — that is the honest version. The
 distribution still supports the design (70% of commits silent is what makes an always-on advisory
 readable); it is the absolutes that were false. The `branches` shape carries essentially all of the
-noise; `exits`, which produced 61 of the 73 containers, had none the reviewer would call a false
+noise; `exits`, which produced 67 of the 79 containers, had none the reviewer would call a false
 positive.
 
 ⚠ WHAT IT CANNOT SEE, STATED RATHER THAN DISCOVERED LATER — and r1 Medium (M4) found this list was
@@ -72,12 +72,27 @@ itself incomplete, in the one section whose entire claim is that the bounds are 
 **A green run of this script is not evidence that a class was searched** — it is evidence that three
 container shapes were, on python, at member head lines.
 
-⛔ WHO CALLS IT — r1 High (P2), and until that finding this script had **no caller at all**: no hook,
-no CI step, no skill. The premise above is *a written rule did not stop this, so here is a mechanism*
-— and a script someone must remember to run is that same rule with an executable attached. It would
-have failed the same way, for the same reason. `.claude/hooks/peer-sites-advisory.sh` now runs it
-before `git commit`, which is the machine-observable instant the rule describes: while the fix is
-still in your hands. A reminder, never a gate.
+⛔⛔ NOTHING CALLS THIS YET, AND THAT IS THE HONEST STATE — r1 High (P2), still open, filed as
+backlog #134. No hook, no CI step, no skill. **Run it by hand:** `python3 scripts/peer-sites.py
+--diff HEAD` before you commit, which is the moment the rule describes — while the fix is still in
+your hands.
+
+⚠ **A caller WAS built on this branch and was REMOVED before merge, which is worth knowing rather
+than rediscovering.** `.claude/hooks/peer-sites-advisory.sh` ran this before every `git commit` for
+two review rounds. It produced findings in **all three rounds** — a suite covering 1 of its 8
+behaviours that nothing ran (7 of 7 body mutations survived), a window that asked a per-branch
+question while its cost was justified by a per-commit measurement, a 64 ms tax on every Bash call,
+and an rc=1 fail-open that could be reintroduced under a green suite. `check-review-decision.py`
+fired **ARCHITECTURE_REVIEW — thrashing** on it twice, across r1/r2 and again r2/r3. It was lifted
+out so this file — which converged 19 → 14 → 2 findings over the same rounds — could ship without
+carrying a component that was still moving.
+
+⭐ **THE LESSON IS ABOUT WHERE THE RULE LIVES, and the next attempt should start from it:** the
+second version moved the logic out of bash into `scripts/` precisely because
+`check-selftest-counts.py` globs `scripts/*.py` and `check-ratchet-contract.py` reads `scripts/` —
+**neither can see `.claude/hooks/*.sh`**. Both ratchets refused the file the moment it arrived there.
+That part worked and should be repeated. What did not work was building the caller in the same
+breath as fixing the thing it calls.
 
 NOT A GATE — it advises and has nothing to refuse. ⚠ BUT IT EXITS 2 WHEN IT COULD NOT LOOK: if git
 cannot diff a changed file, that file is named on stderr and the run ends non-zero (r1 Medium, M3).
@@ -216,7 +231,20 @@ def _if_chain(node: ast.If) -> "list[tuple[int, int]]":
         cur = cur.orelse[0]
         arms.append(_span(cur.test))
     if cur.orelse:
-        arms.append(_span(cur.orelse[0]))
+        # ⛔⛔ r2: THE HEAD LINE, NOT `_span` — and r1's fix here put B1 STRAIGHT BACK through a
+        # different door. `_span(cur.orelse[0])` spans the else's whole first statement, so when
+        # that statement is a nested `if`, the else member swallows the entire inner container:
+        # MEASURED on B1's own fixture, members were [(3,3), (6,9)], and editing line 8 — the
+        # INNER chain's `elif`, which belongs to no arm of this chain — marked the outer `else`
+        # touched and offered `if x:` as its peer. That is precisely what `_is_elif` was written
+        # to stop, arriving through the RANGE instead of through the AST.
+        # ⚠ IT COULD ALSO SILENCE THE CONTAINER: touching {3, 6} put line 6 inside (6,9), so both
+        # members read as touched, the chain was filtered as "fully touched", and the outer
+        # container vanished. The docstring's stated fear, realised in the arm it exempted.
+        # ⭐ ONE RULE FOR ALL THREE ARMS — a member is its HEAD. A condition's head is its test
+        # (which may legitimately wrap lines); an `else` has no test, so its head is the one line
+        # its first statement starts on. Three rules in one container was the actual defect.
+        arms.append((cur.orelse[0].lineno, cur.orelse[0].lineno))
     return arms
 
 
@@ -229,6 +257,14 @@ def _span(node: "ast.stmt | ast.expr") -> "tuple[int, int]":
     MEASURED: touching the `return` line advised 4 lines; touching its value advised **none**.
     The reviewer found live multi-line returns in `brief-compose.py` and `page_chrome.py`, so the
     miss is reachable in this repo today, not hypothetical.
+
+    ⚠ THE `or node.lineno` FALLBACK IS UNFALSIFIABLE, AND THAT IS SAID HERE RATHER THAN HIDDEN
+    BEHIND A MANIFEST ENTRY. r2 removed it and the suite stayed green, then measured why: across
+    **128,887 nodes** in this repo, `end_lineno` was `None` on **zero**. It is typed `int | None` in
+    typeshed and is genuinely optional on nodes this function never receives, so the fallback is
+    defensive against the TYPE, not against an observed input. It is kept because a `None` here
+    reaches `report`'s `range(lo, hi + 1)` as a TypeError, and it is NOT ratcheted because a
+    manifest entry would pin a branch no case can reach — which is the shape r2 filed elsewhere.
     """
     return (node.lineno, getattr(node, "end_lineno", None) or node.lineno)
 
@@ -242,9 +278,22 @@ def parse_hunks(diff: str) -> "set[int]":
     present, and a git-dependent case is exactly the ambient trap that has bitten this repo four
     times. The harness stages `scripts/` into a temp tree with **no `.git`**, so such a case would
     have passed locally and failed under `--mutate .`. Parsing a fixture string needs no world.
+
+    ⛔⛔ r2 — THE BODY WALK IS BOUNDED BY THE HEADER'S COUNTS, and r1's version was not, which put
+    its own named class back one level down. It walked until something *looked like* a header, so
+    `cursor` stayed armed across a file boundary and the next file's `+++ b/y.py` preamble line was
+    counted as an added line. MEASURED on a real two-file `git diff -U0`: 11 lines reported against
+    10 from the two single-file runs, the extra one **belonging to neither file**. Strictly worse
+    than the `-U3` bug it replaced — that over-reported *within* the right file; this invents a line
+    number in file A out of file B's header.
+    ⚠ AND SNIFFING FOR PREAMBLE CANNOT FIX IT: an added line whose content is `++ x` renders as
+    `+++ x`, so `+++` is genuinely ambiguous with content. The counts are not. `@@ -a,b +c,d @@`
+    declares exactly `b` old-side and `d` new-side lines; a `-` spends one old, a `+` spends one new,
+    a context line spends one of each. When both are spent the hunk is over and nothing outside it is
+    read — preamble, `\\ No newline`, `index`, or anything else.
     """
     out: "set[int]" = set()
-    cursor = 0
+    cursor = old_left = new_left = 0
     for line in diff.split("\n"):
         if line.startswith("@@@"):
             # ⛔ A COMBINED DIFF (a merge, `git diff -c`) HAS TWO OLD SIDES and a different column
@@ -255,15 +304,26 @@ def parse_hunks(diff: str) -> "set[int]":
             continue
         if line.startswith("@@"):
             try:
-                new = line.split("+", 1)[1].split("@@", 1)[0].strip()
+                spec = line.split("@@", 2)[1]
+                old_s, _, new_s = spec.strip().partition(" +")
                 # ⛔ `max(n, 1)` IS ONLY FOR AN ABSENT COUNT, NOT A ZERO ONE. `@@ -4,2 +3,0 @@` is
                 # a pure DELETION: the new side gained nothing, and claiming a line makes the
                 # deletion look like a change to whatever now sits there. `@@ -1 +7 @@` omits the
                 # count and DOES mean one line.
-                start, sep, count = new.partition(",")
-                cursor = int(start) if (int(count) if sep else 1) else 0
+                start, sep, count = new_s.partition(",")
+                new_left = int(count) if sep else 1
+                _, osep, ocount = old_s.lstrip("-").partition(",")
+                old_left = int(ocount) if osep else 1
+                # ⚠ r2: `cursor = int(start) if new_left else 0` STOOD HERE AND IS GONE — the counted
+                # walk made it dead, and r2 measured it surviving mutation for that reason. A hunk
+                # whose new side is 0 lines can never spend a `+`, so the position is unreachable.
+                # Deleted rather than ratcheted: a manifest entry would pin a no-op.
+                cursor = int(start)
             except (IndexError, ValueError):
-                cursor = 0                 # a malformed header is skipped, never fatal
+                # ⚠ r2: A MALFORMED HEADER DISARMS THE WALK COMPLETELY. r1 zeroed `cursor` and left
+                # the loop willing to read the next lines as a body — measured, a garbage header
+                # mid-diff let two following `+` lines be counted against a stale position.
+                cursor = old_left = new_left = 0
             continue
         # ⛔ THE BODY DECIDES, NOT THE HEADER RANGE — r1 Medium. Claiming the whole new-side range
         # is right ONLY under `-U0`; with context it marks unchanged lines as touched. MEASURED:
@@ -271,15 +331,37 @@ def parse_hunks(diff: str) -> "set[int]":
         # `-U0`, so the live path was never wrong — but a pure parser whose contract holds only for
         # its current caller is a landmine for the next one, and this one was split out precisely
         # to be reusable.
-        if not cursor:
+        # ⛔ OUTSIDE A HUNK, ADD NOTHING — r2. Once the header's `+c,d` budget is spent the hunk is
+        # over, so `diff --git`, `index`, `+++ b/…` and `\ No newline` can never be counted as added
+        # lines however much they look like them. `new_left` IS that budget and it is the whole
+        # mechanism. ⚠ A REDUNDANT `if old_left <= 0 and new_left <= 0: continue` GUARD STOOD HERE
+        # AND IS GONE: it read as the protection, but the budget below already refuses every add,
+        # and its manifest entry went GREEN — measured identical output across eight diff shapes
+        # (two-file, three-file, context, deletion, no-count, combined, garbage header, no-newline).
+        # An unfalsifiable guard that LOOKS like the mechanism is worse than none, because the next
+        # reader ratchets it and believes the real one is covered.
+        # ⛔ r4 (N1) — `\ No newline at end of file` ANNOTATES; IT SPENDS NOTHING. It used to fall
+        # through to the context branch, which spends one line of BOTH budgets — so the marker did
+        # not get counted as an added line (the docstring's stated fear, correctly avoided) but it
+        # consumed the budget **the next real `+` needed**, and that `+` was then silently dropped.
+        # MEASURED on real `git diff -U0` where the old side had no trailing newline:
+        #     @@ -3 +3 @@ / -c / \ No newline… / +C     ->  shipped []   correct [3]
+        # A false NEGATIVE in the newly rewritten core, from output git produces unprompted. Latent
+        # rather than live — 0 of 59 `.py` files here lack a trailing newline — which is why r4
+        # called it Low reach, not why it is acceptable.
+        if line.startswith("\\"):
             continue
         if line.startswith("+"):
-            out.add(cursor)
-            cursor += 1
+            if new_left > 0:
+                out.add(cursor)
+                cursor += 1
+                new_left -= 1
         elif line.startswith("-"):
-            pass                           # old side only: the new file gains no line here
+            old_left -= 1                  # old side only: the new file gains no line here
         else:
             cursor += 1                    # context (or a stray blank): present, unchanged
+            old_left -= 1
+            new_left -= 1
     return out
 
 
@@ -300,6 +382,20 @@ def changed_lines(ref: str, path: str) -> "set[int] | None":
     if r.returncode != 0:
         return None
     return parse_hunks(r.stdout)
+
+
+def _read(path: pathlib.Path) -> "str | None":
+    """A file's text, or **None when it could not be read**. A SHELL, like `changed_lines`.
+
+    ⛔ r2 Medium (R6). `read_text()` was unguarded at both entry points, so one non-UTF-8 `.py` in a
+    diff crashed the whole advisory — after it had already printed a real finding for an earlier
+    file, which the traceback then buried. ⚠ NONE, NOT `""`: an empty string is a file this tool
+    read and found nothing in, which is the fail-open spelling this module refuses everywhere else.
+    """
+    try:
+        return path.read_text()
+    except (OSError, UnicodeDecodeError):
+        return None
 
 
 def _merge_base(ref: str) -> "str | None":
@@ -386,8 +482,13 @@ def main(argv: "list[str] | None" = None) -> int:
         # ask *what will this PR merge?*, which is a question about COMMITS. This asks *what have
         # you touched?* — and it is meant to be run BEFORE you commit, so it must see the working
         # tree. Three-dot would be silent on exactly the edit you are about to be advised on.
+        # ⚠ `timeout=30`, LIKE ITS TWO SIBLINGS — r2 High (R4). This was the ONLY unbounded
+        # `subprocess.run` in the module, and it is the one `main` makes unconditionally and FIRST
+        # on every commit. The advisory hook's comment justified running without an outer `timeout`
+        # by saying "peer-sites.py already bounds its own subprocess.run at 30s" — true of the other
+        # two call sites and false of this one, which is the one that would hang.
         r = subprocess.run(["git", "-C", str(REPO), "diff", "--name-only", base],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, timeout=30)
         if r.returncode != 0:
             print(f"CANNOT RUN — `git diff --name-only {base}` failed. Treat this as NOT CHECKED.",
                   file=sys.stderr)
@@ -410,8 +511,18 @@ def main(argv: "list[str] | None" = None) -> int:
                 print(f"CANNOT RUN — `git diff` could not answer for {rel}. NOT CHECKED.",
                       file=sys.stderr)
                 continue
+            # ⛔ AN UNREADABLE FILE IS `unchecked`, NOT A TRACEBACK — r2 Medium (R6). The comment on
+            # `examined` claimed "deleted and unreadable files are skipped above"; only deleted ones
+            # were. MEASURED: one non-UTF-8 `.py` in the diff printed a genuine advisory for the
+            # file before it, then buried it under a `UnicodeDecodeError` and exited 1. A crash is
+            # not a CANNOT RUN — the `unchecked` path exists for exactly this and was not used.
+            src = _read(f)
+            if src is None:
+                unchecked.append(rel)
+                print(f"CANNOT RUN — could not read {rel} as text. NOT CHECKED.", file=sys.stderr)
+                continue
             examined += 1
-            adv = report(f.read_text(), touched)
+            adv = report(src, touched)
             if adv:
                 total += 1
                 print(f"\n── {rel} " + "─" * max(0, 60 - len(rel)))
@@ -425,7 +536,11 @@ def main(argv: "list[str] | None" = None) -> int:
               "lands on a member's HEAD line. A class living in prose, in the levels of an "
               "encoding, or inside an arm's BODY is invisible here — see docs/review-method.md.")
         if unchecked:
-            print(f"\n⛔ NOT CHECKED: {len(unchecked)} file(s) git could not diff — "
+            # ⚠ "COULD NOT BE EXAMINED", not "git could not diff" — `unchecked` now has TWO feeders
+            # (git had no answer; the file is not readable as text) and the narrower sentence was
+            # false about the second the moment R6's fix landed. A summary that names one cause for
+            # two is the *defined, not derived* shape this repo files against.
+            print(f"\n⛔ NOT CHECKED: {len(unchecked)} file(s) could not be examined — "
                   f"{', '.join(unchecked)}. This run is INCOMPLETE.", file=sys.stderr)
             return 2
         return 0
@@ -436,7 +551,13 @@ def main(argv: "list[str] | None" = None) -> int:
         if not f.is_file() or not ln.isdigit():
             print(f"CANNOT RUN — expected FILE:LINE, got {a.site!r}.", file=sys.stderr)
             return 2
-        for line in report(f.read_text(), {int(ln)}) or ["no container holds that line."]:
+        # ⚠ SAME GUARD AS `--diff` — r2's sibling search found both read sites, and fixing only the
+        # one the reviewer demonstrated would be this branch's own subject matter.
+        src = _read(f)
+        if src is None:
+            print(f"CANNOT RUN — could not read {f} as text.", file=sys.stderr)
+            return 2
+        for line in report(src, {int(ln)}) or ["no container holds that line."]:
             print(line)
         return 0
 
@@ -604,6 +725,16 @@ def f(x, y):
     # the inner `elif` belongs to the other container and must not be counted here.
     case("…and the outer chain has TWO arms — `if x:` and its `else`, never the inner `elif`",
          [len(m) for m in chains if _holds(m, 3)], [2])
+    # ⛔⛔ r2 — AND THE SAME BLOCKING CAME BACK THROUGH THE RANGE, on this identical fixture, because
+    # r1's own fix made the `else` member `_span(orelse[0])` — the whole first statement, which here
+    # IS the nested chain. Editing line 8 (the INNER `elif`, a member of no arm of the outer chain)
+    # marked the outer `else` touched and offered `if x:` as its peer. The AST door was shut and the
+    # range door was left open. ⭐ These two cases are the door, not the fix: the fix was one line
+    # and went green under all 59 cases, which is C1 for the third time on this branch.
+    case("an edit to the INNER chain never offers the OUTER `if` as a peer",
+         any(":3 " in l or l.strip().startswith(":3") for l in report(nested_else, {8})), False)
+    case("…because the `else` member is its head LINE, not its whole first statement",
+         [m for m in chains if _holds(m, 3)], [[(3, 3), (6, 6)]])
 
     # ⛔ r1 HIGH, LIKEWISE UNGUARDED UNTIL NOW. A peer is a RANGE: recording only its head line
     # means a diff that touches the VALUE inside a multi-line `return (…)` intersects nothing and
@@ -626,6 +757,11 @@ def f(x):
          any("1 of 3 exits" in l for l in report(multiline, {5})), True)
     case("…because a multi-line member is recorded as a RANGE, not a head line",
          [c[2] for c in containers(multiline) if c[0] == "exits"], [[(4, 6), (8, 10), (11, 11)]])
+    # ⚠ r2 survivor — THE `>` MARKER IS A SECOND READ OF THE SAME QUESTION and it was unguarded.
+    # Reverting the marker to exact-line equality left the header saying "1 of 3" with NOTHING
+    # marked: a reader is then told something changed and shown no candidate for which.
+    case("…and the touched member is MARKED, not merely counted",
+         [l[:3] for l in report(multiline, {5}) if ":4-6" in l], ["  >"])
 
     # ⛔ MALFORMED INPUT IS SILENCE, NOT A CRASH — this runs over whatever a diff touched.
     # ⚠ PASSED AS THUNKS, because a raise out here aborts the suite with NO `[FAIL]` line and
@@ -665,8 +801,10 @@ def f(x):
     # parameters are observable in the argv it is handed. An exemption resting on something untrue
     # is worse than no exemption, because it stops anyone looking again.
     _argv: "list[list[str]]" = []
+    _kwargs: "list[dict]" = []
     def _fake_run(cmd, **_k):
         _argv.append(list(cmd))
+        _kwargs.append(dict(_k))
         return type("R", (), {"returncode": 0, "stdout": "@@ -1 +9 @@\n+x\n"})()
     _real_run = subprocess.run
     try:
@@ -689,11 +827,26 @@ def f(x):
     # ⚠ NO `.git` AND NO REAL REPO: `subprocess.run` is served a script, and REPO is pointed at a
     # temp tree. A case whose premise is the ambient world asserts the world — four instances in
     # this repo, and `--mutate .` stages a tree with no `.git` at all.
+    # ⛔⛔ r3 HIGH — EVERY `subprocess.run` IS BOUNDED, AND NOTHING PROVED IT. r2's R4 finding was
+    # that `main`'s first and unconditional git call was the only unbounded one; I added
+    # `timeout=30` and did NOT ratchet it. Codex stripped `, timeout=30` from all four call sites
+    # across both files and **both suites stayed green** — inside a sweep reporting 718 killed, 0
+    # survivors. The delivered code was right and its protection was absent, which is this repo's
+    # *fixing a PREMISE is not covering the BRANCH*, fourth instance on this branch, and the most
+    # deceptive one because a 0-survivor sweep is exactly what stops you looking.
+    _mb_kwargs: "list[dict]" = []
+
+    def _capture(reply):
+        def _run(*_a, **_kw):
+            _mb_kwargs.append(dict(_kw))
+            return reply()
+        return _run
+
     def _merge_base_of(reply):
         """`_merge_base` over a `subprocess.run` that returns whatever `reply()` says."""
         real = subprocess.run
         try:
-            subprocess.run = lambda *_a, **_kw: reply()    # type: ignore[assignment]
+            subprocess.run = _capture(reply)               # type: ignore[assignment]
             return _merge_base("master")
         finally:
             subprocess.run = real                          # type: ignore[assignment]
@@ -701,10 +854,12 @@ def f(x):
     def _drive_main(diff_ok: bool = True):
         """Run `main --diff master` against a fake git and a temp tree. Returns (rc, out, calls)."""
         calls: "list[list[str]]" = []
+        kws: "list[dict]" = []
         src = 'def h(x):\n    if x:\n        return "one"\n    return "two"\n'
 
         def fake_run(cmd, **_kw):
             calls.append(list(cmd))
+            kws.append(dict(_kw))
             if "merge-base" in cmd:
                 return type("R", (), {"returncode": 0, "stdout": "BASE0000\n"})()
             if "--name-only" in cmd:
@@ -724,9 +879,9 @@ def f(x):
                     rc = main(["--diff", "master"])
             finally:
                 subprocess.run, globals()["REPO"] = real_run, real_repo   # type: ignore[assignment]
-        return rc, buf.getvalue(), calls
+        return rc, buf.getvalue(), calls, kws
 
-    _rc, _out, _calls = _drive_main()
+    _rc, _out, _calls, _kws = _drive_main()
     # ⛔ H2 — THE MERGE BASE REACHES THE DIFF, NOT THE REF. Diffing `master` directly charges this
     # branch for everything master gained since it started; measured in a sandbox, a branch that
     # touched only `other.py` was advised about an `app.py` that MASTER had edited.
@@ -738,7 +893,7 @@ def f(x):
     case("a well-formed advisory run exits 0", _rc, 0)
     # ⛔ M3 — "CANNOT RUN" IS A FAILURE, NEVER A PASS. This used to print the warning and then
     # `return 0`, so a caller reading the exit code saw a clean run over a file it never examined.
-    _rc_bad, _out_bad, _ = _drive_main(diff_ok=False)
+    _rc_bad, _out_bad, _, _ = _drive_main(diff_ok=False)
     case("a file git could not diff makes the whole run exit 2", _rc_bad, 2)
     # ⚠ L4 — and the footer counts what was EXAMINED, not what was listed. With the only file
     # unreadable the honest count is 0, not 1.
@@ -779,6 +934,16 @@ def f(x):
     case("…and that is still a successful run, not a refusal", _rc_none, 0)
     case("a malformed site is CANNOT RUN (rc=2), not an empty advisory", _rc_bad_site, 2)
     case("…and so is a file that does not exist", _rc_missing, 2)
+    # ⛔ r2 Medium (R6) — A NON-UTF-8 `.py` USED TO CRASH THE WHOLE RUN, after printing a real
+    # advisory for an earlier file that the traceback then buried. A crash is not a CANNOT RUN.
+    with tempfile.TemporaryDirectory() as _td2:
+        _bad = pathlib.Path(_td2) / "bad.py"
+        _bad.write_bytes(b"\xff\xfe\x00not text\n")
+        case("an unreadable file reads as None, never as empty source", _read(_bad), None)
+        case("…and `--site` on it is CANNOT RUN (rc=2), not a silent advisory",
+             _drive_site(f"{_bad}:1")[0], 2)
+        case("…while a readable file still comes back as text",
+             _read(pathlib.Path(__file__)) is not None, True)
 
     case("a merge base git cannot answer for is CANNOT RUN, not HEAD",
          _merge_base_of(lambda: type("R", (), {"returncode": 1, "stdout": ""})()), None)
@@ -786,6 +951,34 @@ def f(x):
     # and `""` must not be handed to `git diff` where it would mean HEAD.
     case("…and so is an EMPTY answer that exits 0",
          _merge_base_of(lambda: type("R", (), {"returncode": 0, "stdout": "\n"})()), None)
+    # ⛔ r3 High — THE BOUND ON EVERY GIT CALL, asserted rather than assumed. One case per call
+    # site, because three of the four were bounded before r2 and the fourth is the one that hung.
+    case("`changed_lines` bounds git at 30s", [k.get("timeout") for k in _kwargs], [30, 30])
+    case("…and so does `_merge_base`", {k.get("timeout") for k in _mb_kwargs}, {30})
+    # ⚠ A LITERAL WANT, not `[30] * len(_kws)` — r4 (N3). A want computed FROM the subject passes on
+    # zero evidence: measured, the same assertion over an empty capture is `[] == []`, green. It was
+    # rescued only by sibling cases that require the calls to have happened, and
+    # `check-fixture-variation`'s own docstring lists *"the WANT was derived from the subject"* as a
+    # finding it made against another file. Three calls: merge-base, --name-only, the per-file diff.
+    case("…and so does `main --diff`'s FIRST call, the one that used to be unbounded",
+         [k.get("timeout") for k in _kws], [30, 30, 30])
+    # ⛔ r4 (N2) — THE MODULE, READ AS SOURCE, because the previous version of this case asserted a
+    # module-wide property from three captured paths and could not see a call site no case drives.
+    # MEASURED: a fourth, unbounded `subprocess.run` added to a copy SURVIVED 71/71 under the old
+    # assertion. This project's *assert the PROPERTY, not the mechanism* — and reading the source is
+    # how Codex found the original defect, so it is the method that works being written down.
+    def _unbounded_git_calls() -> "list[int]":
+        tree = ast.parse(pathlib.Path(__file__).read_text())
+        bad = []
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "run"
+                    and isinstance(node.func.value, ast.Name) and node.func.value.id == "subprocess"
+                    and not any(k.arg == "timeout" for k in node.keywords)):
+                bad.append(node.lineno)
+        return bad
+    case("…and NO `subprocess.run` in this module is unbounded — read from its own source",
+         _unbounded_git_calls, [])
 
     # ── parse_hunks: the RULE, testable without a git anywhere ────────────────────────────
     case("a single-line hunk yields that one line",
@@ -802,6 +995,28 @@ def f(x):
     # ⛔ A COMBINED DIFF IS REFUSED, not guessed at — it has two old sides and a different grammar.
     case("a combined diff yields nothing rather than a wrong answer",
          parse_hunks("@@@ -1,2 -1,2 +1,2 @@@\n- a\n+ b\n"), set())
+    # ⛔⛔ r2 — A MULTI-FILE DIFF, which r1's body walk got WRONG in its own named way. It walked
+    # until something LOOKED like a header, so the cursor stayed armed across the file boundary and
+    # `+++ b/y.py` was counted as an added line. MEASURED on a real two-file `git diff -U0`: 11
+    # lines against the 10 of the two single-file runs, the extra belonging to NEITHER file.
+    # ⚠ The fixture carries the full preamble on purpose — r1's fixture omitted it, which is the
+    # only reason its own cases could not see this.
+    _two_file = ("diff --git a/x.py b/x.py\nindex 111..222 100644\n--- a/x.py\n+++ b/x.py\n"
+                 "@@ -1,0 +5,1 @@\n+first\n"
+                 "diff --git a/y.py b/y.py\nindex 333..444 100644\n--- a/y.py\n+++ b/y.py\n"
+                 "@@ -1,0 +50,1 @@\n+second\n")
+    case("a multi-file diff does not invent a line from the next file's header",
+         parse_hunks(_two_file), {5, 50})
+    # ⚠ AND A MALFORMED HEADER DISARMS THE WALK, rather than leaving it pointed at a stale position.
+    case("a garbage header mid-diff stops the walk, it does not continue it",
+         parse_hunks("@@ -1,0 +10,2 @@\n+a\n+b\n@@ garbage @@\n+c\n+d\n"), {10, 11})
+    # ⛔ r4 (N1) — `\ No newline at end of file` MUST SPEND NO BUDGET. Treated as context it
+    # consumed the line the following real `+` needed, and that `+` vanished. This is REAL `git
+    # diff -U0` output, not a synthetic shape: it appears whenever a side lacks a trailing newline.
+    case("a `\\ No newline` marker does not eat the next added line",
+         parse_hunks("@@ -3 +3 @@ b\n-c\n\\ No newline at end of file\n+C\n"), {3})
+    case("…and the same when BOTH sides lack the newline",
+         parse_hunks("@@ -3 +3 @@\n-c\n\\ No newline at end of file\n+C\n\\ No newline at end of file\n"), {3})
     # ⚠ A ZERO-LENGTH hunk is a pure DELETION — the new side gained nothing, and `max(n, 1)` must
     # not invent a line. Measured: without the guard this reported the line after the deletion.
     case("a deletion-only hunk claims no new lines", parse_hunks("@@ -4,2 +3,0 @@\n"), set())

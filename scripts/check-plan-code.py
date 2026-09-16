@@ -837,7 +837,7 @@ EXPECTED_MUTATIONS = {
     # immediately found two live defects. Probing these seven before shipping found three more in
     # the new script itself, one of them a fail-open (`changed_lines` returned an empty set on a
     # git failure, indistinguishable from "nothing changed").
-    "scripts/peer-sites.py": 16,
+    "scripts/peer-sites.py": 25,
     # ⟳ 2026-09-16, backlog #122 — `explainer-serve.py` joins the manifest. It was the largest
     # UNRATCHETED file in `scripts/`: 149 real cases, none ever shown able to fail, on a server
     # that emits pasteable shell commands. Seeding it immediately found TWO surviving mutations —
@@ -3184,7 +3184,7 @@ def _self_test() -> int:
     # largest file in `scripts/` that had never been inside `--mutate .`. Every anchor was verified
     # present in the DELIVERED file before being written, and every entry was proved to go red VIA
     # THE CASE IT NAMES over a control proved green first.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 705)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 714)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
