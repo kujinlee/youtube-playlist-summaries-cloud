@@ -179,6 +179,33 @@ of paying for the other answer.
 | full sweep, final tree | **714 mutations, 714 killed, 714 attributed, 0 survivors**, 47 files |
 | the component that was still moving | **removed** from the branch, not argued about |
 
+## ⚠ The waiver itself nearly failed open, twice, and both are worth the next person's time
+
+**1 — `NO-REVIEW:` INSIDE A `##` HEADING DOES NOT PARSE.** The declaration was written as
+`## NO-REVIEW: <reason>`. The marker is present, a human reads it as a waiver, and
+`_load_declaration_parser()` returns `None`. Measured across forms:
+
+```
+"NO-REVIEW: reason"        -> 'reason'      "## NO-REVIEW: reason"   -> None
+"**NO-REVIEW:** reason"    -> 'reason'      "> NO-REVIEW: reason"    -> None
+                                            "- NO-REVIEW: reason"    -> None
+```
+
+It was caught by running the guard against the **body fetched back from the live PR** rather than
+against the text I had written — the same *measure the population the CODE sees* discipline the
+reviewers used for nearly every finding on this branch. Writing it and reading it back are not the
+same act, and only the second one is evidence.
+
+**2 — CI READS THE EVENT PAYLOAD, SO EDITING THE PR BODY DOES NOT RE-ARM IT.**
+`ci.yml:422` takes `BODY: ${{ github.event.pull_request.body }}`. That is a snapshot from the moment
+the event fired. `gh pr edit` changes what humans see and **not** what a re-run would evaluate — a
+re-run replays the same payload. A **new** `pull_request` event is required, which a push provides.
+
+⛔ **Together these are a fail-open shape worth naming:** a waiver that looks right to every human
+reader, silently does not parse, and a CI fix that appears to have been applied while the gate still
+evaluates the old text. Neither is a defect in this branch's subject; both are ways a reviewer or
+author could conclude a gate had been satisfied when it had not.
+
 ## Final state
 
 | | |
