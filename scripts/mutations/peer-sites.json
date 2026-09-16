@@ -1,0 +1,79 @@
+[
+ {
+  "name": "a single exit is treated as an enumerable set",
+  "file": "scripts/peer-sites.py",
+  "edits": [
+   [
+    "            if len(rets) > 1:",
+    "            if len(rets) > 0:"
+   ]
+  ],
+  "expect": "a single-exit function is not a container"
+ },
+ {
+  "name": "a nested scope's exits are counted as the outer function's",
+  "file": "scripts/peer-sites.py",
+  "edits": [
+   [
+    "        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):\n            continue                                   # a nested scope owns its own exits",
+    "        if False:\n            continue"
+   ]
+  ],
+  "expect": "a nested function's exits are NOT the outer function's"
+ },
+ {
+  "name": "a container the diff touched ENTIRELY is advised on anyway",
+  "file": "scripts/peer-sites.py",
+  "edits": [
+   [
+    "        if len(hit) == len(members):\n            continue            # every member was touched \u2014 there is nothing left to prompt",
+    "        if False:\n            continue"
+   ]
+  ],
+  "expect": "a container touched ENTIRELY is silent"
+ },
+ {
+  "name": "a container the diff never touched is advised on anyway",
+  "file": "scripts/peer-sites.py",
+  "edits": [
+   [
+    "        if not hit:\n            continue            # nothing here was touched \u2014 not this diff's business",
+    "        if False:\n            continue"
+   ]
+  ],
+  "expect": "a container touched NOWHERE is silent"
+ },
+ {
+  "name": "one if/elif chain is reported once per arm",
+  "file": "scripts/peer-sites.py",
+  "edits": [
+   [
+    "        if isinstance(node, ast.If) and node in elifs:\n            continue",
+    "        if False:\n            continue"
+   ]
+  ],
+  "expect": "\u2026and reported once, not once per arm"
+ },
+ {
+  "name": "unparseable source raises instead of refusing",
+  "file": "scripts/peer-sites.py",
+  "edits": [
+   [
+    "    except SyntaxError:\n        return out",
+    "    except SyntaxError:\n        raise"
+   ]
+  ],
+  "expect": "\u2026and it REFUSES rather than raising \u2014 the ratchetable form"
+ },
+ {
+  "name": "a git failure is spelled the same way as a clean diff",
+  "file": "scripts/peer-sites.py",
+  "edits": [
+   [
+    "    if r.returncode != 0:\n        return None",
+    ""
+   ]
+  ],
+  "expect": "a bad ref reports CANNOT RUN (None), never a clean diff"
+ }
+]

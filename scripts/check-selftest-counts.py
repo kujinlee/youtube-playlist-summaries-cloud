@@ -146,6 +146,7 @@ POPULATION: frozenset[str] = frozenset({
     "explainer-serve.py",
     "gen-goals-page.py",
     "page_chrome.py",
+    "peer-sites.py",
     # ⟳ 2026-09-07 — THE FOURTEEN, added together, and the reason is worth more than the names.
     # Paying down the R4 mutation-manifest debt kept hitting output contracts with
     # check-plan-code that bind only when a manifest first points at a file. One of them is

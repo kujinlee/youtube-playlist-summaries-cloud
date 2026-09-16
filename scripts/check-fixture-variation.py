@@ -512,6 +512,12 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'assert_wired.page', 'assert_wired.where', 'chrome_bar.refresh',
         'chrome_bar.slug', 'chrome_bar.when', 'has_control.page',
         'missing_palettes.page', 'provenance.now', 'provenance.root', 'stamp.when',),
+    # ⟳ 2026-09-16 — `peer-sites.py` arrives pinned rather than as debt. Note `parse_hunks.diff`
+    # in this set: the RULE was split out of `changed_lines` because this very guard refused the
+    # welded version, so the pin records not just what is examined but that the split happened.
+    'peer-sites.py': (
+        'changed_lines.path', 'changed_lines.ref', 'containers.src',
+        'parse_hunks.diff', 'report.src', 'report.touched',),
     'page_markup.py': (
         'escape.s', 'safe_href.url', 'scan.s', 'trim_url_tail.url',),
     'prior-art.py': (
@@ -533,6 +539,18 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 # file dimension; a brand-new script defining a function called `run_suite_parts` would have
 # inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
+    # ⟳ 2026-09-16. `changed_lines` is a six-line SHELL: it runs one `git diff` and hands the
+    # output to `parse_hunks`. The RULE was split out precisely because this guard refused the
+    # welded version, and `parse_hunks` is varied across six cases with no world at all. What is
+    # left has one branch — git could not answer -> None — and exercising it with VARIED refs and
+    # paths would require a real `.git`, which the mutation harness's staged tree does not have.
+    # A case that needed one would pass locally and fail under `--mutate .`, which is the ambient
+    # trap this repo has paid for four times. ⚠ The failure branch IS measured: a bad ref returns
+    # None, and deleting the returncode check reddens that case (manifest entry, peer-sites.json).
+    "peer-sites.py:changed_lines.ref": "a subprocess shell over parse_hunks; the rule is varied "
+                              "there, and varying this needs a .git the harness tree lacks",
+    "peer-sites.py:changed_lines.path": "same shell, same reason — the path only reaches `git "
+                              "diff --`, never a decision this file makes",
     "check-plan-code.py:diagnostic_tail.window": "the budget is a module constant with its own boundary cases and "
                               "its own manifest entry; callers never pass it",
     # ⟳ 2026-09-12. TABLE-DRIVEN CASES HAVE ONE SYNTACTIC CALL SITE, and this scan counts call
