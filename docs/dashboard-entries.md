@@ -9579,3 +9579,28 @@ all.
 
 It ships with its mutation manifest rather than as debt, which is the lesson from the file that spent
 months unratcheted. 47 files, 696 mutations, 696 killed, 0 survivors.
+
+## 2026-09-16
+
+The fifteen schema gates run on every pull request that touches schema, report their answer
+correctly, and **nothing stops you merging when they say no**. GitHub only blocks a merge on the
+checks listed as *required*, and that list has exactly one entry — the main test job. The schema
+gates are not on it. The button stays green.
+
+Nobody had seen this because the gates almost always pass, and when a check passes you never find
+out whether anyone was listening.
+
+The obvious fix is wrong, which is the interesting part and why this is a written-up item rather
+than a one-line change. The schema-gates job only runs when a pull request touches schema-ish files.
+On a documentation-only change it does not run at all — and a check that never runs never reports,
+so marking it *required* would leave every documentation pull request waiting forever for an answer
+that is never coming. The repair has to make the job always say something first, even if what it
+says is "nothing here concerns me", and only then can it be required.
+
+Filed as backlog #137 with the measurements and a recommended shape. Two of the three problems it
+would fix are ones that workflow file already warns about in its own comments.
+
+⚠ One claim in the first draft of that item was wrong and is corrected in place: it said the sharp
+edge was the `--auto` merge flag, which merges the moment the required checks pass. That flag turns
+out to be switched off for this repository entirely — found by trying it, not by reading. The flaw
+is unchanged; only its nastiest route is already closed.
