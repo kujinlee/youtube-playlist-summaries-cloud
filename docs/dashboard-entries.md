@@ -9524,3 +9524,58 @@ double"* instead of sending people to the fallback. It also gained tests: that m
 previously be deleted with nothing failing.
 
 Suite 196 → 202. 689 mutations, 689 killed, 0 survivors.
+
+## 2026-09-16
+I keep fixing the thing I was shown and missing the identical thing next to it. This is the first attempt at a mechanism instead of a reminder.
+<!--tech-->
+**The pattern, stated plainly:** across the last three merged PRs, six defects were of one shape — a
+fix that closed exactly what a reviewer pointed at, leaving its twin untouched. The 500 error branch
+three lines below the 504 I had just fixed. The index page's link text, twelve lines from the file
+viewer's title I had just escaped. The second paragraph of a document repeating the advice I had just
+corrected in the first.
+
+⚠ **A written rule already existed and did not help.** I wrote one three weeks ago, after four
+instances in a single slice, and then repeated the pattern on four consecutive branches with the rule
+in hand. So this time the question was whether a machine could do what the reminder could not.
+
+**So I ran the experiment instead of guessing.** All six misses were replayed against candidate
+detectors on their own pre-fix code. The result **refuted my first instinct**: I had proposed a
+general "find similar code anywhere" search, which turned out to be ~90% noise and needs a
+hand-written query per kind of defect. The narrow version is the good one — *"you changed one member
+of an enumerable set; here are the others"* — because a set with a definite boundary has no false
+positives, so it prints three or four lines that are always worth reading.
+
+`scripts/peer-sites.py` does that for three shapes: a function's exits, a try's handlers, an
+if/elif chain. Replayed on the real history, it names the exact branch I missed, at the moment I
+would have missed it.
+
+⚠ **It catches three of the six, and the docstring says so.** The other three lived in the clauses of
+an English sentence and in the levels of a URL encoding — places no parser reaches. Those go to the
+reviewers, via a new numbered step in the review method: every finding must state whether siblings
+were searched for, how, and what turned up. *Not searched* is an acceptable answer; silence is not,
+because it reads the same as *searched and found nothing*.
+
+> ⟳⟳ **CORRECTED IN ROUND 1 — two claims above were measured FALSE, and they are struck rather than
+> rewritten so the record shows what was believed.** ~~"a set with a definite boundary has no false
+> positives, so it prints three or four lines that are always worth reading"~~. The reviewer replayed
+> the tool over **200 master commits** instead of reasoning about it: one idiom
+> (`if ok: … else: print("[FAIL]")`) produced **4 of its 12** `branches` reports, and the output tail
+> runs to **32 lines**, not three or four. A bounded container buys *decidable membership*, which is
+> not the same thing as *worth reading* — and the conflation was mine, asserted from the design
+> rather than from a run. The distribution still supports the design: **96 of 138** python-touching
+> commits print nothing at all, which is what makes an always-on advisory readable. It is the
+> absolutes that had to go. ⛔ A third claim also fell: an edit inside an arm's **body** is invisible
+> — **79 of 84** partially-touched containers in the replay were silent — so "it catches three of the
+> six" describes a hand-picked sample, not a rate.
+
+⭐ **Building it found five more defects — in the new script.** A git failure returned "no lines
+changed", which is indistinguishable from "nothing changed" — the exact fail-open this project
+refuses everywhere else. A test that could not see its own defect. A crash that produced an
+unreadable failure. A deletion-only diff hunk that made the tool invent a line that does not exist.
+And the testability gate refused the first design outright, correctly: I had welded the git call to
+the parsing, so no test could vary the inputs without a real repository present — which the mutation
+harness deliberately does not provide. Splitting them made six new tests possible with no world at
+all.
+
+It ships with its mutation manifest rather than as debt, which is the lesson from the file that spent
+months unratcheted. 47 files, 696 mutations, 696 killed, 0 survivors.

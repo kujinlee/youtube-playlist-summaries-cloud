@@ -512,6 +512,12 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'assert_wired.page', 'assert_wired.where', 'chrome_bar.refresh',
         'chrome_bar.slug', 'chrome_bar.when', 'has_control.page',
         'missing_palettes.page', 'provenance.now', 'provenance.root', 'stamp.when',),
+    # ⟳ 2026-09-16 — `peer-sites.py` arrives pinned rather than as debt. Note `parse_hunks.diff`
+    # in this set: the RULE was split out of `changed_lines` because this very guard refused the
+    # welded version, so the pin records not just what is examined but that the split happened.
+    'peer-sites.py': (
+        'changed_lines.path', 'changed_lines.ref', 'containers.src',
+        'parse_hunks.diff', 'report.src', 'report.touched',),
     'page_markup.py': (
         'escape.s', 'safe_href.url', 'scan.s', 'trim_url_tail.url',),
     'prior-art.py': (
@@ -533,6 +539,14 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 # file dimension; a brand-new script defining a function called `run_suite_parts` would have
 # inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
+    # ⟳⟳ 2026-09-16 — TWO `peer-sites.py:changed_lines.*` EXEMPTIONS STOOD HERE AND ARE GONE,
+    # because round 1's Codex half measured their premise FALSE. They claimed varying `ref` and
+    # `path` "would require a real .git, which the harness tree lacks". It does not:
+    # `subprocess.run` is a module attribute, the reviewer monkeypatched it and read both
+    # parameters straight out of the argv it was handed. `peer-sites.py`'s suite now does exactly
+    # that, so both are genuinely varied and no exemption is owed. ⭐ An exemption resting on
+    # something untrue is worse than none: it is a written reason that stops the next person
+    # looking, and this guard's whole value is that someone looks.
     "check-plan-code.py:diagnostic_tail.window": "the budget is a module constant with its own boundary cases and "
                               "its own manifest entry; callers never pass it",
     # ⟳ 2026-09-12. TABLE-DRIVEN CASES HAVE ONE SYNTACTIC CALL SITE, and this scan counts call

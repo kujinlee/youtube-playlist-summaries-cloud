@@ -832,6 +832,12 @@ EXPECTED_MUTATIONS = {
     # NON-repo, so it differed by the UNKNOWN text and never by the dirty flag,
     # and the git-cannot-launch branch was unreachable from a temp dir.
     "scripts/page_chrome.py": 11,
+    # ⟳ 2026-09-16 — `peer-sites.py` arrives WITH its manifest rather than as debt, which is
+    # backlog #122's lesson applied at birth: that file spent months unratcheted and seeding it
+    # immediately found two live defects. Probing these seven before shipping found three more in
+    # the new script itself, one of them a fail-open (`changed_lines` returned an empty set on a
+    # git failure, indistinguishable from "nothing changed").
+    "scripts/peer-sites.py": 25,
     # ⟳ 2026-09-16, backlog #122 — `explainer-serve.py` joins the manifest. It was the largest
     # UNRATCHETED file in `scripts/`: 149 real cases, none ever shown able to fail, on a server
     # that emits pasteable shell commands. Seeding it immediately found TWO surviving mutations —
@@ -2607,7 +2613,8 @@ def _self_test() -> int:
                                       "scripts/gen-dashboard.py",
                                       "scripts/gen-goals-page.py",
                                       "scripts/page_chrome.py",
-                                      "scripts/page_markup.py"])
+                                      "scripts/page_markup.py",
+                                      "scripts/peer-sites.py"])
     # A literal on purpose: its whole job is that the total cannot move without
     # someone deciding it should. 44 → 53 when the round-1-carried M5 finding added
     # 9 entries for `gen-dashboard.py` (the file had grown 32% with the manifest
@@ -3177,7 +3184,7 @@ def _self_test() -> int:
     # largest file in `scripts/` that had never been inside `--mutate .`. Every anchor was verified
     # present in the DELIVERED file before being written, and every entry was proved to go red VIA
     # THE CASE IT NAMES over a control proved green first.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 689)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 714)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

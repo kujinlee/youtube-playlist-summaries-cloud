@@ -56,6 +56,33 @@ settled three earlier findings on the branch that built this.
 3. Codex's final message **is** its review; it writes no file. File each half under
    `docs/reviews/<writer>/`.
 4. A half that cannot run is recorded `REVIEW GAP: <half>` **with its reason**, never omitted.
+5. ⛔ **EVERY FINDING NAMES A SAMPLE, NOT A SCOPE — say what you did about that.** A finding's
+   boundary is the evidence the reviewer happened to have, never the extent of the defect. **Each
+   finding must state whether siblings were searched for, HOW, and what turned up** — "grepped the
+   other `text/html` producers in this file: one more, same defect" or "no sibling: this is the only
+   call site". *Not searched* is an acceptable answer; **silence is not**, because it is
+   indistinguishable from *searched and found nothing*.
+
+   ⭐ **MEASURED, which is why this is a numbered step and not advice.** Six real misses across
+   three branches were replayed on their own pre-fix trees. All six were eventually caught **by a
+   reviewer, never by the author** — and three of the six had a bounded, zero-noise query that
+   would have named the sibling at the moment of the fix. `scripts/peer-sites.py --diff <ref>`
+   answers those three mechanically; **the other three lived in the clauses of an English sentence
+   and in the levels of an encoding**, where no script reaches and a reader does. That split is the
+   reason both this step and that script exist, and neither replaces the other.
+
+   ⛔ **AND THE SCRIPT ANSWERS THEM ON A NARROWER SET THAN THAT SENTENCE IMPLIES — r1 High/Medium,
+   measured by replaying it over 200 master commits, so ASK THE THREE QUESTIONS YOURSELF EVEN WHEN
+   IT IS SILENT.** It reads **python only**, three shapes only, and **only where your edit lands on
+   a member's HEAD line** — an edit inside an arm's *body* is invisible, which was **79 of the 84**
+   partially-touched containers in the replay. It is also not a zero-noise oracle: one idiom
+   (`if ok: … else: print("[FAIL]")`) accounted for 4 of its 12 `branches` reports. **A green run is
+   not an answer to this step**; it is one cheap input to it. The script's own docstring carries the
+   full bound list.
+
+   ⚠ The three questions worth asking in order, because each found a real miss: another **LEVEL**
+   (an encoding, a nesting, an indirection)? another **SITE** doing the same job? another **COPY**
+   of the same sentence?
 
 ### Q3 · Disposition — decided here, not by asking
 

@@ -1,0 +1,26 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 2954 chars"
+  ],
+  "dirty": {
+    ".claude/hooks/peer-sites-advisory.sh": "100755 e4cf6c4ec74ebb33d204bdee24b1e63a3b6270d6",
+    "docs/reviews/claude/peer-sites-r2-claude.md": "100644 4dfebef58db07b34ce2dcfe758329aa5ca47b663",
+    "scripts/check-fixture-variation.py": "100644 6c1b6bfaeca4856499f10d0f0fd253f39c76fb2a",
+    "scripts/check-plan-code.py": "100644 b0c76c0829e5d2c5ba4f917d9f0518ed19866159",
+    "scripts/check-selftest-counts.py": "100644 422dfd4561fc06fbb6143677def8761aab53f6d6",
+    "scripts/mutations/peer-sites-hook.json": "100644 95df63b65a0356d7fdac4d13660ca96754015623",
+    "scripts/mutations/peer-sites.json": "100644 03a2f3498b1c2776d4e4d17d34a8289910951b68",
+    "scripts/peer-sites-hook.py": "100755 3454bc8a0736e54981d46d2b0abd34f373d63800",
+    "scripts/peer-sites.py": "100755 fcb655f53f2192ef923ae733df7df4f3f597dc3e"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "71378cd34ea1fae5c064637cfc6a308c52989007",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/2776b0c8-fac3-4080-bad3-e313041380a1/scratchpad/ps-r3-prompt.md",
+  "reason": "2954 chars",
+  "review": "peer-sites-r3-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}
