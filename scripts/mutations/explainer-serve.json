@@ -273,5 +273,126 @@
    ]
   ],
   "expect": "pid_alive refuses 0 \u2014 SIGTERM to pid 0 is the whole process group"
+ },
+ {
+  "name": "the allow-list resolves the caller's own string as the script",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "        script = REGENERABLE.get(want) if isinstance(want, str) else None",
+    "        script = want if isinstance(want, str) else None"
+   ]
+  ],
+  "expect": "/regenerate refuses a real script NAME that is not an allow-list KEY"
+ },
+ {
+  "name": "the argv stops being rooted in SCRIPTS, so it resolves against the CWD",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "                r = subprocess.run([sys.executable, str(SCRIPTS / script)],",
+    "                r = subprocess.run([sys.executable, script],"
+   ]
+  ],
+  "expect": "the argv is exactly [python, SCRIPTS/<allow-listed script>] \u2014 nothing else"
+ },
+ {
+  "name": "a generator that exits NON-ZERO is reported as a successful rebuild",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "        if r.returncode != 0:",
+    "        if False:"
+   ]
+  ],
+  "expect": "a generator that exits NON-ZERO is a 500 NOT REBUILT, never a reported success"
+ },
+ {
+  "name": "the 400 stops naming the legal set, leaving the caller guessing",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "            body = (f\"unknown page {want!r}. Rebuildable pages are: \"\n                    f\"{', '.join(sorted(REGENERABLE))}.\")",
+    "            body = f\"unknown page {want!r}.\""
+   ]
+  ],
+  "expect": "\u2026and the 400 names the legal set, so the caller is not left guessing"
+ },
+ {
+  "name": "start() binds a literal of its own instead of the HOST constant",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    with http.server.ThreadingHTTPServer((HOST, PORT), Handler) as httpd:",
+    "    with http.server.ThreadingHTTPServer((\"0.0.0.0\", PORT), Handler) as httpd:"
+   ]
+  ],
+  "expect": "\u2026and start() binds THAT constant, not a literal of its own"
+ },
+ {
+  "name": "/_stale stops naming WHICH source moved",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "            body = verdict if verdict == \"fresh\" else f\"{verdict} {newest_src}\"",
+    "            body = verdict"
+   ]
+  ],
+  "expect": "\u2026and `stale <path>` NAMES the source that moved, never a bare verdict"
+ },
+ {
+  "name": "/_stale raises a banner for a page nobody declared sources for",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "            if target is None or not target.is_file() or not sources:",
+    "            if target is None or not target.is_file():"
+   ]
+  ],
+  "expect": "/_stale is `fresh` for a page with no declared sources, not an alarm"
+ },
+ {
+  "name": "do_POST stops bounding the body size",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "        if length <= 0 or length > MAX_BODY:",
+    "        if length < 0:"
+   ]
+  ],
+  "expect": "a body larger than MAX_BODY is refused before it is read"
+ },
+ {
+  "name": "a non-object JSON body is accepted",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "            if not isinstance(payload, dict):\n                raise ValueError(\"not an object\")",
+    "            pass"
+   ]
+  ],
+  "expect": "a JSON array is refused \u2014 the contract is an OBJECT"
+ },
+ {
+  "name": "the wrong-key 400 stops naming the keys it got",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "            got = \", \".join(sorted(str(k) for k in payload)) or \"(no keys)\"",
+    "            got = \"(hidden)\""
+   ]
+  ],
+  "expect": "a wrong key is refused AND the reply names the keys it actually got"
+ },
+ {
+  "name": "explainers() orders by NAME instead of mtime",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "                  key=lambda p: p.stat().st_mtime, reverse=True)",
+    "                  key=lambda p: p.name, reverse=True)"
+   ]
+  ],
+  "expect": "orders newest first"
  }
 ]

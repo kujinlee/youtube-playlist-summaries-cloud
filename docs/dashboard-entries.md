@@ -9410,3 +9410,41 @@ seventh column to a six-column table.
 
 **Unblocks #125, #126 and #127** — the parked restart feature can now be reviewed against a ratchet
 that works. Suite 144 → 149.
+
+## 2026-09-16
+Correction to this morning's entry: a reviewer applied 73 mutations to that file and 58 survived. The manifest now covers the handlers too.
+<!--tech-->
+The earlier entry today reported backlog #122 closed with 17 manifest entries and two holes found.
+Both true. What it did not say — because I had not measured it — is **how much of the file those 17
+entries did not reach.** Round 2's reviewer applied **73 plausible mutations across the whole file
+and 58 survived at 167/167**, and eleven of them were inside `_regenerate`, the one function round 1
+had just declared fixed.
+
+⛔ **The worst of them: the allow-list that decides which script the server executes could be
+deleted, and nothing went red.** Its own docstring calls it *"THE WHOLE SECURITY ARGUMENT"*. Proved
+by running it, not by reading: a POST of `{"page": "../../../../../../tmp/evil.py"}` put that string
+on the command line and answered `ok: true`, with the suite fully green. Round 1 had added five cases
+to that exact function — and cased the *replies*, not the *argument*.
+
+**Also surviving, and it is the same mistake twice:** round 1 cased the timeout arm that says
+*"NOT REBUILT"*; the arm three lines below it, which says *NOT REBUILT* for a generator that exits
+non-zero, was left uncased. Fix the instance, miss the class — in the commit that cited that rule.
+
+⚠ **And a guard of mine certified something false.** The case for *"the listener is loopback"*
+asserted the value of a constant. Change the line that actually **binds the socket** to `0.0.0.0` and
+the suite stayed green — so the ratchet entry named *"the listener stops being loopback"* was
+vouching for a claim that could be untrue. It now asserts both facts: the constant is loopback, and
+the bind uses the constant.
+
+⚠⚠ **Two of my own new tests passed while testing nothing, and only the harness could see it.** I
+wrote the `/_stale` cases against the real pages directory on the theory that the real thing is the
+honest fixture. The mutation harness runs with `$HOME` pointed at a directory that does not exist, so
+that directory was empty, the handler returned early, and two mutations survived behind green tests.
+Same shape as a defect two PRs ago, caught by the same guard. **A test whose premise depends on the
+surrounding world is testing the world.**
+
+Where it ends up: **679 mutations, 679 killed, 679 attributed, 0 survivors.** Manifest 17 → 36, suite
+144 → 188. Two entries were **dropped rather than forced** — one measured something already measured,
+one behaved differently on macOS than elsewhere — and the process layer (`start`, `stop`, the daemon
+detach) is **filed as backlog #129** rather than half-done, because covering it needs a real port and
+that is a different piece of work.

@@ -379,10 +379,10 @@ WIDENED_MANIFEST_DEBT: frozenset[str] = frozenset({
     # already found and fixed on the consumer side — the two halves of one wire format, with only
     # one end held.
     # ⟳ 2026-09-16, backlog #122: `scripts/explainer-serve.py` LEAVES this set — it has a manifest
-    # now (`scripts/mutations/explainer-serve.json`, 17 entries), removed in the SAME commit that
+    # now (`scripts/mutations/explainer-serve.json`), removed in the SAME commit that
     # adds it, which `widened_debt_drift` requires in both directions. ⭐ The debt was real and the
     # payment proved it: seeding the manifest immediately found TWO surviving mutations on a file
-    # whose 144 cases all passed — `SERVABLE` could be widened until `.env.local` was servable, and
+    # whose every case passed — `SERVABLE` could be widened until `.env.local` was servable, and
     # `SRC_REASONS` could gain a member with the exhaustiveness refusal silently gaining an
     # unhandled arm. Both are cased now. ⚠ And a bound worth knowing before the next file joins:
     # an entry is admissible only when its kill is ATTRIBUTABLE, and `check-plan-code` matches

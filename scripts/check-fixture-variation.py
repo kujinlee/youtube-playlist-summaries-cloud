@@ -218,7 +218,12 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
         'verdict_record.intrusions_seen', 'verdict_record.model',
         'verdict_record.out_path', 'verdict_record.reason', 'write_verdict.record',),
     'explainer-serve.py': (
-        'format_question_entry.now', 'revision.p', 'safe_path.root',),
+        # ⟳ 2026-09-16 — `safe_path.root` LEAVES this pin, and the gate asked for it by name:
+        # *"`safe_path.root` now varies — delete it from KNOWN_UNVARIED"*. It began varying when
+        # backlog #122's round-1 repair added a containment case against a NESTED root, which is
+        # what made the parameter take more than one value. A debt that has become payable and is
+        # not paid is what `widened_debt_drift` refuses in the other direction two files over.
+        'format_question_entry.now', 'revision.p',),
     'gen-backlog-page.py': (
         'build.edited', 'build.generated_at', 'build.sha', 'build.stamp',
         'link_contrast_errors.minimum', 'md.text', 'plain.text', 'report_run.rows',
@@ -466,7 +471,7 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'explainers.root', 'format_question_entry.now', 'format_question_entry.payload',
         'index_html.root', 'is_fragment.p', 'is_standing.p', 'latest_target.root',
         'md_render.text', 'pid_alive.pid', 'question_text.payload', 'resolve_page.root',
-        'resolve_page.url_path', 'revision.p', 'safe_path.root', 'safe_path.url_path',
+        'resolve_page.url_path', 'revision.p', 'safe_path.url_path',
         'src_root_help.observed', 'src_root_help.pidfile',
         'stale_verdict.built_ns', 'stale_verdict.newest_source_ns',),
     'gen-backlog-page.py': (
