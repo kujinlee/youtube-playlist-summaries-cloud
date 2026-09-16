@@ -142,8 +142,8 @@ pass it explicitly: `codex … -m "$(python3 scripts/codex-frontier-model.py)"`.
 model is derived from OpenAI's live model list, so it tracks new frontier releases automatically.
 
 **Fallback — Codex unavailable for ANY reason → never block; auto-fall back to a Claude adversarial review.**
-"Unavailable" covers: not installed, **usage/rate limit hit**, auth failure, HTTP 400/5xx, a hung or
-timed-out run (e.g. a `task` that starts a turn but emits no findings), or any other error. The rule
+"Unavailable" covers: not installed, **usage/rate limit**, auth failure, HTTP 400/5xx, a hung run, or
+any error — ⛔ EXCEPT a TIMEOUT, usually your own `--timeout`: DOUBLE IT and re-run once first. The rule
 (set 2026-06-20): **do not wait, pause the phase, or burn time retrying** — immediately run a rigorous
 **Claude** adversarial review in Codex's place (a fresh subagent with full file access and an explicit
 adversarial mandate), save it to the normal `docs/reviews/...-review.md` path, and **note the Codex gap
@@ -227,12 +227,12 @@ If a review ever reports that it could not run the suite, **treat the gate as no
    CONVERGED as proof; ask what that reviewer would have had to check to find the class of bug you most
    fear, and prefer the reviewer that reports a finding until you have traced the code yourself.
 
-**Bounded wait — never passively wait on a background review.** When a Codex review is dispatched in
-the background, do NOT report "waiting on Codex" across turns or trust the completion ping (it can be
-bogus). Within ~2–3 minutes, **read the actual Codex task output file** (`.../tasks/<bgId>.output`).
-Treat as a hang → fall back immediately if: the file shows only `Thread ready` / `Turn started` with
-no findings, it hasn't grown, the run reports a usage limit / auth / HTTP error, or no output exists.
-The default posture is *make progress*, not *wait* — a Claude adversarial review is always available.
+**Bounded wait — never passively wait on a background review.** Do NOT report "waiting on Codex"
+across turns or trust the completion ping (it can be bogus); **read the task output file**
+(`.../tasks/<bgId>.output`). ⛔ **A QUIET FILE IS NOT A HANG UNTIL `--timeout` HAS ELAPSED** — the
+wrapper buffers, so a 45-minute review is silent for 45 minutes. Falling back at ~2–3 minutes of
+quiet is how three rounds lost their Codex half; see the timeout rule above. Fall back at once only
+on a usage limit / auth / HTTP error, or no output file at all — those are answers, not silence.
 
 ### Domain Terminology Stress-Test (Phase 1)
 

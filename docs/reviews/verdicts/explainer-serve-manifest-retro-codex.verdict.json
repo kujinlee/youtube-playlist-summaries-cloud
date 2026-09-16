@@ -1,0 +1,16 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 2411 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "32c56bfa370fd45ef294db80d2b6aa533ae522bc",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/227fd546-5a6f-429b-bcf1-09fc12283325/scratchpad/retro-codex.md",
+  "reason": "2411 chars",
+  "review": "explainer-serve-manifest-retro-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}

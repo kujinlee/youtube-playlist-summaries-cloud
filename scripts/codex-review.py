@@ -42,7 +42,7 @@ candidate yields a message ends in a loud non-zero exit.
 Usage:
   scripts/codex-review.py --out docs/reviews/task-N-foo-codex.md "<review prompt>"
   scripts/codex-review.py --out <file> --prompt-file <file> [--timeout 900] [--model <slug>]
-  scripts/codex-review.py --self-test  # 85 cases
+  scripts/codex-review.py --self-test  # 91 cases
 
 Exit codes:  0 = a real review was written   |   1 = no candidate produced one (gate did NOT run)
 """
@@ -663,7 +663,13 @@ def main() -> int:
     ap.add_argument("--prompt-file", help="read the prompt from this file instead")
     ap.add_argument("--out", help="write the review here (required unless --self-test)")
     ap.add_argument("--model", help="force a single slug; disables fallback")
-    ap.add_argument("--timeout", type=int, default=900, help="per-attempt timeout in seconds")
+    ap.add_argument("--timeout", type=int, default=900,
+                    help="per-attempt timeout in seconds. The 900s default suits a SMALL "
+                         "review; a full-file sweep that runs a mutation harness needs "
+                         "2700-3600. Measured 2026-09-16: three reviews of a 2,100-line "
+                         "file 'timed out' at 900s and were read as Codex being "
+                         "unavailable; the same review completed first try at 3600s and "
+                         "found two defects three other rounds had missed.")
     ap.add_argument("--min-chars", type=int, default=MIN_REVIEW_CHARS,
                     help="minimum final-message length that counts as a real review")
     ap.add_argument("--allow-overwrite", action="store_true",
@@ -831,10 +837,45 @@ def main() -> int:
     if demand:
         print(f"[codex-review] ⚠ LIKELY CAUSE: the prompt says {demand!r}. See the warning above.",
               file=sys.stderr)
+    # ⛔ A TIMEOUT IS A STATEMENT ABOUT THE BUDGET, NOT ABOUT CODEX — and this message used to send
+    # the caller straight to the fallback without saying so. MEASURED 2026-09-16: three reviews of a
+    # 2,100-line file "timed out" at the 900s default, were read as Codex being unavailable, and the
+    # branch merged on single-half review with `REVIEW GAP: codex` recorded three times. The SAME
+    # review completed on the first attempt at `--timeout 3600` and found two defects the three
+    # Claude rounds had missed — an encoded-dot bypass and an unescaped filename injected into HTML.
+    # The user's note: this had happened before, and doubling the timeout resolved it then too.
+    # ⚠ ADDITIVE, not instead-of — r1 Medium 3. The first version printed this in place of the
+    # fallback line, so a genuinely unavailable Codex lost its instruction.
+    advice = timeout_advice(attempts, args.timeout)
+    if advice:
+        print("[codex-review] " + advice.replace("\n", "\n[codex-review] "), file=sys.stderr)
     print("[codex-review] The Codex gate did NOT run. Fall back to a Claude adversarial review "
           "and note the gap in the review doc.", file=sys.stderr)
     return emit(1, gate_ran=False,
                 reason="no candidate produced a usable review", attempts=attempts, hits=hits)
+
+
+def timeout_advice(attempts: "list[str]", timeout: int) -> "str | None":
+    """The 'raise your budget' message, or None when that is not the diagnosis. PURE.
+
+    ⛔ EXTRACTED SO IT CAN BE FALSIFIED — r1 Medium 4. Inline in `main()`, the whole branch could be
+    deleted and this file's suite stayed at **85/85**: a message nothing asserts is a message that
+    will be quietly removed by the next refactor, which is exactly the class this project's mutation
+    manifests exist to catch. A pure function of (attempts, timeout) is casable; a print inside a
+    failure path is not.
+
+    ⚠ `all`, NOT `any`, and the distinction is the finding: a run where one candidate timed out and
+    another died of auth is NOT a budget problem, and telling the caller to double the timeout would
+    send them round a loop that cannot succeed. Returns None for an empty list too — no attempts
+    means no evidence either way.
+    """
+    if not attempts or not all("timed out" in a for a in attempts):
+        return None
+    return ("⚠ EVERY ATTEMPT TIMED OUT, AND THAT IS PROBABLY THIS CALLER'S BUDGET, NOT CODEX.\n"
+            f"  --timeout was {timeout}s. RE-RUN ONCE AT {timeout * 2}s BEFORE FALLING BACK — a "
+            "full-file sweep that runs a mutation harness needs 2700-3600s.\n"
+            "  Fall back only if it times out again at the larger budget, or fails for a "
+            "non-timeout reason (auth, HTTP 4xx/5xx, usage limit).")
 
 
 def case_line(ok: bool, name: str, got, want, reason: str = "") -> str:
@@ -984,6 +1025,27 @@ def self_test() -> int:
             failures += 1
 
     # (b) The exact sentence from the round-3 brief must be caught.
+    # ── timeout_advice — r1 Medium 4: this branch was deletable at 85/85 before these ──────
+    # ⛔ THE COST OF NOT HAVING THEM IS ON THE RECORD: a 900s default was read as "Codex is
+    # unavailable" three rounds running, a branch merged on single-half review, and the review that
+    # finally ran found two defects the other half had missed. The advice is the fix; these are what
+    # keep it.
+    _to = ["  gpt-5.5: try_next — timed out — any partial message is an incomplete review"]
+    chk("every attempt timed out -> advise raising the budget",
+        timeout_advice(_to, 900) is not None, True)
+    chk("…and it names the DOUBLED number, not a fixed one",
+        "1800s" in (timeout_advice(_to, 900) or ""), True)
+    chk("…which tracks the caller's actual --timeout",
+        "7200s" in (timeout_advice(_to, 3600) or ""), True)
+    # ⛔ `all`, NOT `any` — a mixed failure is not a budget problem, and doubling the timeout would
+    # send the caller round a loop that cannot succeed.
+    chk("a MIXED failure is not a budget diagnosis",
+        timeout_advice(_to + ["  gpt-5.4: try_next — HTTP 401"], 900), None)
+    chk("a non-timeout failure is not a budget diagnosis",
+        timeout_advice(["  gpt-5.5: try_next — usage limit"], 900), None)
+    # ⛔ NO ATTEMPTS IS NO EVIDENCE — not an implicit pass for either reading.
+    chk("no attempts at all yields no advice", timeout_advice([], 900), None)
+
     chk("round 3's actual sentence is caught",
         bool(prompt_demands_a_file("Output\n\nWrite the review to the review path you were given.")),
         True)
