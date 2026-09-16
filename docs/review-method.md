@@ -71,6 +71,15 @@ settled three earlier findings on the branch that built this.
    and in the levels of an encoding**, where no script reaches and a reader does. That split is the
    reason both this step and that script exist, and neither replaces the other.
 
+   ⛔ **AND THE SCRIPT ANSWERS THEM ON A NARROWER SET THAN THAT SENTENCE IMPLIES — r1 High/Medium,
+   measured by replaying it over 200 master commits, so ASK THE THREE QUESTIONS YOURSELF EVEN WHEN
+   IT IS SILENT.** It reads **python only**, three shapes only, and **only where your edit lands on
+   a member's HEAD line** — an edit inside an arm's *body* is invisible, which was **79 of the 84**
+   partially-touched containers in the replay. It is also not a zero-noise oracle: one idiom
+   (`if ok: … else: print("[FAIL]")`) accounted for 4 of its 12 `branches` reports. **A green run is
+   not an answer to this step**; it is one cheap input to it. The script's own docstring carries the
+   full bound list.
+
    ⚠ The three questions worth asking in order, because each found a real miss: another **LEVEL**
    (an encoding, a nesting, an indirection)? another **SITE** doing the same job? another **COPY**
    of the same sentence?

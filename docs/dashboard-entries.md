@@ -9555,6 +9555,19 @@ reviewers, via a new numbered step in the review method: every finding must stat
 were searched for, how, and what turned up. *Not searched* is an acceptable answer; silence is not,
 because it reads the same as *searched and found nothing*.
 
+> ⟳⟳ **CORRECTED IN ROUND 1 — two claims above were measured FALSE, and they are struck rather than
+> rewritten so the record shows what was believed.** ~~"a set with a definite boundary has no false
+> positives, so it prints three or four lines that are always worth reading"~~. The reviewer replayed
+> the tool over **200 master commits** instead of reasoning about it: one idiom
+> (`if ok: … else: print("[FAIL]")`) produced **4 of its 12** `branches` reports, and the output tail
+> runs to **32 lines**, not three or four. A bounded container buys *decidable membership*, which is
+> not the same thing as *worth reading* — and the conflation was mine, asserted from the design
+> rather than from a run. The distribution still supports the design: **96 of 138** python-touching
+> commits print nothing at all, which is what makes an always-on advisory readable. It is the
+> absolutes that had to go. ⛔ A third claim also fell: an edit inside an arm's **body** is invisible
+> — **79 of 84** partially-touched containers in the replay were silent — so "it catches three of the
+> six" describes a hand-picked sample, not a rate.
+
 ⭐ **Building it found five more defects — in the new script.** A git failure returned "no lines
 changed", which is indistinguishable from "nothing changed" — the exact fail-open this project
 refuses everywhere else. A test that could not see its own defect. A crash that produced an
