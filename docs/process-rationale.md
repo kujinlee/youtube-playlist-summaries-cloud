@@ -479,3 +479,37 @@ fix (`CREATED during the run (writer unattributed)`) matters independently of th
 the next unattributable writer is not necessarily a review half. And *when a guard and a workflow
 contradict each other, check whether the layout can be changed before weakening the guard* — the
 predicate was never wrong; the directory was.
+
+
+## The reviewer I starved and then declared absent
+
+`scripts/codex-review.py --timeout` defaults to **900s**. On 2026-09-16 three review rounds of
+`scripts/explainer-serve.py` — a 2,100-line file whose review also runs a ~12-minute mutation
+harness — each returned `timed out` after about fifteen minutes. I read that as Codex being
+unavailable, invoked the fallback rule three times, and merged PR #311 on **single-half review**,
+recording `REVIEW GAP: codex` in all three round documents.
+
+**The timeout was mine.** The Claude half of the same review took 40–60 minutes every round; I had
+given Codex fifteen and never passed the flag. The user pointed out that this had happened before
+and that doubling the limit resolved it. Re-run at `--timeout 3600`, the same review **completed on
+the first attempt** — and found two defects the three Claude rounds had missed:
+
+- `resolve_page` judged "did this name have an extension?" on the **raw, pre-decoded** path, so
+  `/secret%2eenv` bypassed a rule that `/secret.env` obeyed — `safe_path` unquotes first, so the
+  classifier and its resolver disagreed about what the same request said;
+- `source_shell` escaped a file's **contents** and interpolated its **name** raw into `<title>` and
+  `<header>`, so a file called `evil<img src=x onerror=alert(1)>.md` injected markup into the viewer.
+  `safe_path` admits it: nothing in containment or the suffix allow-list has an opinion about the
+  characters in a name.
+
+⭐ **The lesson is not "raise the timeout".** It is that **a timeout is a statement about the budget,
+not about the other side** — the same shape as this project's *a hang is not a diagnosis*, which it
+already had a note about. And the cost was specific rather than abstract: three Claude rounds swept
+that file with 151 mutations and tested hostile *content* and hostile *paths* exhaustively; Codex
+tested a hostile *filename* and an *encoded* spelling of a path already covered. Neither is deeper.
+They are different habits of attack, which is the whole reason `plugins.md` requires both halves —
+and I traded one away for a number I could have changed.
+
+**What changed so it cannot recur by memory alone:** the wrapper detects an all-timeouts failure and
+prints *"that is probably this caller's budget, not Codex — re-run once at `<2x>`s before falling
+back"*, with the doubled number computed. The rule lives where the failure happens.

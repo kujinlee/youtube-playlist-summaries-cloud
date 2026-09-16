@@ -663,7 +663,13 @@ def main() -> int:
     ap.add_argument("--prompt-file", help="read the prompt from this file instead")
     ap.add_argument("--out", help="write the review here (required unless --self-test)")
     ap.add_argument("--model", help="force a single slug; disables fallback")
-    ap.add_argument("--timeout", type=int, default=900, help="per-attempt timeout in seconds")
+    ap.add_argument("--timeout", type=int, default=900,
+                    help="per-attempt timeout in seconds. The 900s default suits a SMALL "
+                         "review; a full-file sweep that runs a mutation harness needs "
+                         "2700-3600. Measured 2026-09-16: three reviews of a 2,100-line "
+                         "file 'timed out' at 900s and were read as Codex being "
+                         "unavailable; the same review completed first try at 3600s and "
+                         "found two defects three other rounds had missed.")
     ap.add_argument("--min-chars", type=int, default=MIN_REVIEW_CHARS,
                     help="minimum final-message length that counts as a real review")
     ap.add_argument("--allow-overwrite", action="store_true",
@@ -831,8 +837,23 @@ def main() -> int:
     if demand:
         print(f"[codex-review] ⚠ LIKELY CAUSE: the prompt says {demand!r}. See the warning above.",
               file=sys.stderr)
-    print("[codex-review] The Codex gate did NOT run. Fall back to a Claude adversarial review "
-          "and note the gap in the review doc.", file=sys.stderr)
+    # ⛔ A TIMEOUT IS A STATEMENT ABOUT THE BUDGET, NOT ABOUT CODEX — and this message used to send
+    # the caller straight to the fallback without saying so. MEASURED 2026-09-16: three reviews of a
+    # 2,100-line file "timed out" at the 900s default, were read as Codex being unavailable, and the
+    # branch merged on single-half review with `REVIEW GAP: codex` recorded three times. The SAME
+    # review completed on the first attempt at `--timeout 3600` and found two defects the three
+    # Claude rounds had missed — an encoded-dot bypass and an unescaped filename injected into HTML.
+    # The user's note: this had happened before, and doubling the timeout resolved it then too.
+    if any("timed out" in a for a in attempts):
+        print("[codex-review] ⚠ EVERY ATTEMPT TIMED OUT, AND THAT IS PROBABLY THIS CALLER'S "
+              f"BUDGET, NOT CODEX.\n[codex-review]   --timeout was {args.timeout}s. RE-RUN ONCE AT "
+              f"{args.timeout * 2}s BEFORE FALLING BACK — a full-file sweep that runs a mutation "
+              "harness needs 2700-3600s.\n[codex-review]   Fall back only if it times out again at "
+              "the larger budget, or fails for a non-timeout reason (auth, HTTP 4xx/5xx, usage "
+              "limit).", file=sys.stderr)
+    else:
+        print("[codex-review] The Codex gate did NOT run. Fall back to a Claude adversarial review "
+              "and note the gap in the review doc.", file=sys.stderr)
     return emit(1, gate_ran=False,
                 reason="no candidate produced a usable review", attempts=attempts, hits=hits)
 

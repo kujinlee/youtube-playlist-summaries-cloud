@@ -460,5 +460,27 @@
    ]
   ],
   "expect": "/_stale normalises a `.html` request to the same slug the sources are keyed by"
+ },
+ {
+  "name": "resolve_page judges the extension on the RAW, pre-decoded spelling",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    bare = urllib.parse.unquote(url_path.split(\"?\", 1)[0].split(\"#\", 1)[0])",
+    "    bare = url_path.split(\"?\", 1)[0].split(\"#\", 1)[0]"
+   ]
+  ],
+  "expect": "\u2026and the encoded spelling of a dot gets the SAME refusal"
+ },
+ {
+  "name": "the /src/ viewer interpolates the filename into HTML unescaped",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    rel = page_markup.escape(rel)",
+    "    rel = rel"
+   ]
+  ],
+  "expect": "source_shell escapes the FILENAME, not just the file's contents"
  }
 ]

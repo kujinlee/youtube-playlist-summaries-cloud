@@ -63,7 +63,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 196 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 199 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -639,6 +639,22 @@ def source_shell(rel: str, text: str) -> str:
     body = md_render(text) if rel.lower().endswith(".md") else (
         "<pre class=\"code\">"
         + text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") + "</pre>")
+    # ⛔⛔ `rel` IS FILESYSTEM-DERIVED AND IS ESCAPED — found 2026-09-16 by the Codex half. The file
+    # CONTENTS were escaped and the file NAME was not, so a filename carrying markup was injected
+    # raw into the two places it appears. MEASURED, pre-fix, with a file literally named
+    # `evil<img src=x onerror=alert(1)>.md`:
+    #     <title>evil<img src=x onerror=alert(1)>.md</title>
+    #     <header><b>evil<img src=x onerror=alert(1)>.md</b>
+    # and `safe_path` admits it, because the suffix is `.md` — nothing in the containment or
+    # allow-list path has any opinion about the characters in a name.
+    # ⚠ THE REACH COMMENT AT `:214` IS WHY THIS IS NOT THEORETICAL: `/src/` serves the whole
+    # checkout including `node_modules/`, and an archive can carry a file whose NAME is the payload.
+    # ⚠ Three Claude review rounds swept this file and none tried a hostile FILENAME — they tested
+    # hostile CONTENT and hostile PATHS. That is the "two halves catch different classes" claim in
+    # `docs/plugins.md`, paid out.
+    # ⚠ `page_markup.escape`, not a local replace-chain: this repo already owns one escaper and a
+    # second implementation of one rule is the shape `check-vocabulary-collisions.py` exists for.
+    rel = page_markup.escape(rel)
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <title>{rel}</title><style>
 :root{{--bg:#f6f5f2;--card:#fffefb;--ink:#1a1c22;--soft:#4b5060;--faint:#838a9b;--rule:#ddd9d0;
@@ -744,7 +760,16 @@ def resolve_page(url_path: str, root: pathlib.Path) -> pathlib.Path | None:
     hit = safe_path(url_path, root)
     if hit is not None and hit.is_file():
         return hit
-    bare = url_path.split("?", 1)[0].split("#", 1)[0]
+    # ⛔ DECODE BEFORE ASKING "DID IT HAVE AN EXTENSION?" — found 2026-09-16 by the Codex half,
+    # retroactively, after three Claude rounds had cased `/secret.env` and never its encoded twin.
+    # MEASURED on the pre-fix code, with `secret.env.html` present in the root:
+    #     resolve_page("/secret.env")   -> None          (the rule holds)
+    #     resolve_page("/secret%2eenv") -> secret.env.html   (the rule is bypassed)
+    # `safe_path` unquotes first (`:276`), so the raw spelling was the ONLY place in this file that
+    # still judged a path by its pre-decoded form — a classifier and its resolver disagreeing about
+    # what the same request says. ⚠ Unquote only; no `.lower()` and no normalisation beyond it,
+    # because the question is the literal presence of a dot in the final segment.
+    bare = urllib.parse.unquote(url_path.split("?", 1)[0].split("#", 1)[0])
     if "." in bare.rsplit("/", 1)[-1]:
         return None                      # it HAD an extension; the fallback is not a second chance
     alt = safe_path(bare + ".html", root)
@@ -2680,6 +2705,20 @@ def _self_test() -> int:
         # path-oracle reasoning does not cover.
         case("source_shell escapes markup in a NON-markdown file",
              lambda: "<script>" not in source_shell("x.js", "<script>alert(1)</script>"))
+        # ⛔⛔ A HOSTILE FILENAME, NOT A HOSTILE FILE — found 2026-09-16 by the Codex half. The file
+        # CONTENTS were escaped and cased; the file NAME was interpolated raw into `<title>` and
+        # `<header><b>`. MEASURED pre-fix on `evil<img src=x onerror=alert(1)>.md`: the payload
+        # appears verbatim in both, and `safe_path` admits the name because the suffix is `.md` —
+        # nothing in containment or the allow-list has any opinion about the characters in a name.
+        # ⚠ NOT THEORETICAL: `/src/` reaches the whole checkout including `node_modules/` (`:214`),
+        # and an archive can carry a file whose NAME is the payload.
+        # ⚠ The payload is slash-free on purpose — a `/` would make it a path segment and the test
+        # would be about `safe_path`, not about the renderer.
+        _evil = "evil<img src=x onerror=alert(1)>.md"
+        case("source_shell escapes the FILENAME, not just the file's contents",
+             lambda: "<img src=x" not in source_shell(_evil, "harmless"))
+        case("…and still shows the reader which file they are looking at",
+             lambda: "evil&lt;img" in source_shell(_evil, "harmless"))
         case("…and still renders a .md file as markdown, not as a code block",
              lambda: "<h1" in source_shell("x.md", "# heading\n"))
 
@@ -2701,6 +2740,16 @@ def _self_test() -> int:
         case("resolve_page does NOT glue .html onto a name that already had an extension",
              lambda: resolve_page("/notes.md", _l7) is None
                      and resolve_page("/secret.env", _l7) is None)
+        # ⛔⛔ THE ENCODED TWIN — found 2026-09-16 by the Codex half, retroactively, after three
+        # Claude rounds cased `/secret.env` and never `/secret%2eenv`. `safe_path` unquotes first,
+        # so the raw spelling was the only place in this file still judging a path by its
+        # pre-decoded form. MEASURED pre-fix: `/secret.env` -> None (rule holds), `/secret%2eenv`
+        # -> `secret.env.html` (rule bypassed). ⭐ The case that existed was not wrong — it was
+        # SINGLE-SPELLING, which is this project's *after fixing, SEARCH for the class* in the
+        # shape a reviewer with a different habit sees and a mutation sweep does not.
+        case("…and the encoded spelling of a dot gets the SAME refusal",
+             lambda: resolve_page("/notes%2emd", _l7) is None
+                     and resolve_page("/secret%2eenv", _l7) is None)
         case("…while the fallback still fires for an extensionless name",
              lambda: resolve_page("/notes.md.html", _l7) is not None)
 

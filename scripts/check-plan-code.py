@@ -849,7 +849,7 @@ EXPECTED_MUTATIONS = {
     # specific temp path — and couples the entry to one failure mode of the case even when it does
     # not. That still supports converting the raise to a value (the case `driving /src/ never
     # consults the environment`), which is why the decision stands and only its reason changed.
-    "scripts/explainer-serve.py": 42,
+    "scripts/explainer-serve.py": 44,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a
@@ -3177,7 +3177,7 @@ def _self_test() -> int:
     # largest file in `scripts/` that had never been inside `--mutate .`. Every anchor was verified
     # present in the DELIVERED file before being written, and every entry was proved to go red VIA
     # THE CASE IT NAMES over a control proved green first.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 685)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 687)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
