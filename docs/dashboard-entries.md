@@ -9289,3 +9289,48 @@ the guard stayed green.
 branch. What *does* change is that the suite's failure lines are now `[FAIL] `, the shape
 `check-plan-code.parse_fail_names` can read — the precondition for this file ever joining
 `--mutate .`.
+
+## 2026-09-15 [heads-up]
+The guard I wrote to prove the fix works was wrong four times in a row — so I stopped patching it and redesigned it.
+<!--tech-->
+`ship-src-root-alone` — the `/src/` half of parked PR #295. **The shipped behaviour has been right
+since round 4 of #295 and took no finding in either round here.** Everything below is about the
+*instrument*: the cases that prove it.
+
+Round 1's review found the branch's own call site had **no coverage at all** — three mutations of
+it, including one restoring the exact broken text the branch exists to delete, passed 123/123. The
+fix for that has now been wrong four consecutive times, and they all failed the same way:
+
+| attempt | defeated by |
+|---|---|
+| refuse env reads via `get` (from #295) | `dict()`, `len()`, `for k in` |
+| count env reads via `get` | `SRC_ROOT_ENV in os.environ` |
+| count via eight surfaces | `setdefault`, `pop`, `repr()`, `==`, `len()` |
+| stub the probe, forbid the env outright | calling the stubbed probe **twice**, and `os.environb` |
+
+⛔ **That is four half-covering guards, so the process stopped the patching rather than trying a
+fifth.** This repo arms an architecture review when two rounds running carry defects caused by the
+previous round's own fix in one component; it armed, and the review is filed at
+`docs/reviews/architecture-review-2026-09-15-src-caller.md`.
+
+Its finding: every attempt tried to prove a **negative** — *nothing else consults the world* — by
+**intercepting the world at runtime**, which requires enumerating an **open** set of surfaces. The
+redesign asks the same question a second way, **statically**, over the ten lines of code we own,
+where the set is closed. Both previously-invisible escapes now die.
+
+⚠ **Two process rules fired in opposite directions and the tie-break is written down**: the rule that
+says *stop reviewing, go build* (the deliverable converged long ago) versus the rule that says *stop
+patching, redesign*. Redesign won, because "go build" on top of a guard that reports a pass it has
+not earned is precisely how the original four-day outage happened — a green suite over a dead
+subsystem.
+
+⛔ **Separately, and it needs your eye: I was destroying other people's review evidence.** Two
+`docs/reviews/verdicts/*.json` files belonging to **unrelated already-merged PRs** were deleted by
+this branch — one of them already committed — because the Codex wrapper derives the verdict filename
+from the caller's `--out` stem and I used a generic one. Those files are what CI reads to know an
+adversarial gate actually ran. **Both restored**, and nothing in the repo noticed the deletion: two
+gates were green straight over it. Filed as backlog **#128**; the cause is a namespace with no
+owner, and this is its third occurrence, so the workaround I am using (branch-specific names) is
+explicitly not the fix.
+
+Suite 88 → 150. Sixteen gates green, including under the redirected `$HOME` the harness spawns with.

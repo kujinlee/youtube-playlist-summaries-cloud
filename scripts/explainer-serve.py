@@ -63,7 +63,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 133 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 150 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -215,28 +215,49 @@ SERVABLE = {".html", ".md", ".css", ".js", ".svg", ".png"}
 # `.superpowers/` and `.claude/`. Not "docs and a handful of others": the whole tree, dotfiles and
 # vendored dependencies included.
 #
-# ⟳⛔ 2026-09-15, r1 H1 — THIS PARAGRAPH USED TO CARRY A COUNT, AND THE COUNT WAS WRONG BY 8.5x IN
-# THE DIRECTION THAT MATTERED. It read "~1,345 files … `node_modules/` is absent here and WOULD be
-# reachable in a real checkout", itemised down to `CONTEXT.md`, and instructed the reader NOT to
-# re-run it. Measured in the main checkout: **11,506**, of which **9,528 are `node_modules/`** —
-# present, not absent — plus 379 `.next/`, 105 `.superpowers/`, 76 `.remember/`. Served live, with
-# nothing set: `/src/node_modules/next/dist/docs/index.md` → 200.
+# ⟳⛔ 2026-09-15, r1 H1 — THIS PARAGRAPH USED TO CARRY A COUNT, AND THE COUNT WAS WRONG BY AN ORDER
+# OF MAGNITUDE IN THE DIRECTION THAT MATTERED. It read "~1,345 files … `node_modules/` is absent
+# here and WOULD be reachable in a real checkout", itemised down to `CONTEXT.md`, and instructed
+# the reader NOT to re-run it. `node_modules/` is in fact PRESENT and is the largest contributor by
+# far. Proved by behaviour rather than by arithmetic, because behaviour does not drift: with
+# nothing set, `GET /src/node_modules/next/dist/docs/index.md` → **200**.
 #
-# ⚠ THE CAUSE IS THE CORPUS, NOT THE ARITHMETIC, AND IT IS WHY THE COUNT IS GONE RATHER THAN
-# CORRECTED. The number was taken in a linked `git worktree` that had never had `npm install` run
-# in it, then shipped into the repo where it is false. A count of a tree, written inside that tree,
-# is stale at commit time — the old comment said exactly that about itself and still asserted a
-# digit. A sentence with no number cannot drift; re-derive it if the answer ever has to be exact.
+# ⚠ THE CAUSE IS THE CORPUS, NOT THE ARITHMETIC. The number was taken in a linked `git worktree`
+# that had never had `npm install` run in it, then shipped into the repo where it is false.
+#
+# ⟳⟳ 2026-09-15, r2 Low — AND THE FIRST REPAIR PUT A NEW COUNT RIGHT BACK, three lines below the
+# sentence explaining why counts do not survive here. It said "Measured in the main checkout: <a
+# number>"; the Codex half re-walked the tree and got a DIFFERENT one, and the difference was the
+# round-1 review document committed in between — this comment is inside the corpus it describes. A
+# count of a tree, written INSIDE that tree, is stale at commit time — stated, then immediately
+# re-violated, which is the fourth instance of this shape on this component. The digits now live
+# only in `docs/reviews/coordinator/ship-src-root-alone-r1-coordinator.md`, where a measurement is
+# dated and is not claiming to be current. A sentence with no number cannot drift; re-derive it if
+# the answer ever has to be exact.
 #
 # Not judged a security finding, and this verdict is now taken against the reach ABOVE rather than
 # against the small one: `safe_path` resolves BEFORE the containment test so `..` and symlinks
 # collapse, `SERVABLE` excludes `.env*` by suffix, the listener is 127.0.0.1, and no CORS header is
-# emitted — so a cross-origin page can cause a request but cannot read the response. ⚠ What changed
-# with the true corpus is the COST of an escape, not its likelihood: `.remember/` holds session
-# notes and `node_modules/` is 9,528 files, so `safe_path` is now the only thing between a loopback
-# request and the whole checkout. It is a subsystem that went from reaching nothing to reaching the
-# whole repo while its only description of itself stayed put — the SAME silent-widening shape this
-# branch exists to fix, one level up.
+# emitted — so a cross-origin page can cause a request but cannot read the response BODY.
+#
+# ⚠⚠ THE BODY IS NOT THE WHOLE CHANNEL, AND THE CLAUSE ABOVE USED TO STOP AT "the response" — r2 L3.
+# STATUS is observable cross-origin without CORS (`<script>`/`<img>`/`<link>` onload-vs-onerror), and
+# this route answers 200 for a file that exists and 404 for one that does not — measured. With the
+# reach above, that is a FILE-EXISTENCE ORACLE over the entire checkout for any page the developer
+# happens to visit, and for `.png` it additionally leaks intrinsic dimensions. The 200/404
+# discrimination is measured; "a cross-origin page can observe it" is reasoning from the same-origin
+# policy, not something this project drove a browser to confirm, and is labelled as such.
+#
+# ⚠ It is still not judged a finding worth blocking on: the oracle reveals PATHS, not contents, on a
+# loopback dev server, and the reader running it already has the checkout. But the sentence now says
+# what is actually true, because the round-1 defect on this very paragraph was a security judgement
+# resting on a claim nobody re-derived — and shortening that sentence is how it happened.
+#
+# ⚠ What changed with the true corpus is the COST of an escape, not its likelihood: `.remember/`
+# holds session notes and vendored dependencies dominate the tree, so `safe_path` is the only thing
+# between a loopback request and the whole checkout. It is a subsystem that went from reaching
+# nothing to reaching the whole repo while its only description of itself stayed put — the SAME
+# silent-widening shape this branch exists to fix, one level up.
 #
 # The env var's remaining job is pointing at a DIFFERENT checkout than the one serving. The file
 # stays project-independent: it still knows nothing about any particular repo (backlog #40).
@@ -1713,10 +1734,18 @@ def _self_test() -> int:
         # the filesystem mutation was killed. A falsifier that covers half its class is the exact
         # shape this component has produced four times. Measured both ways after the repair.
         class _Forbidden(dict):
-            """A mapping that refuses EVERY read, not a few named ones."""
-            def __init__(self, what): super().__init__(); self._what = what
+            """A mapping that refuses EVERY read, not a few named ones.
+
+            ⚠ `by` NAMES THE SUBJECT UNDER TEST — r2 L1. The message hardcoded `src_root_help`,
+            which was true while that was the only user. Round 2 gave it a second one (`do_GET`,
+            via `_drive_src`), and every failure from the new site then told the reader to go and
+            look at the wrong function. That is this file's own rule at `:475` — THE REASON FOR A
+            FAILURE WAS INFERRED RATHER THAN CARRIED — committed inside the guard written for it.
+            """
+            def __init__(self, what, by="src_root_help"):
+                super().__init__(); self._what = what; self._by = by
             def _raise(self, *_a, **_k):
-                raise AssertionError(f"src_root_help read {self._what} — it must carry, "
+                raise AssertionError(f"{self._by} read {self._what} — it must carry, "
                                      f"not re-derive")
             # ⚠ `copy`, `__iter__` and `__len__` are here because r4 named them: forbidding
             # `get` alone leaves `dict(os.environ)`, `len(os.environ)` and `for k in os.environ`
@@ -1955,29 +1984,36 @@ def _self_test() -> int:
             h.path = url_path
             h._send = lambda code, body, ctype: got.update(  # type: ignore[method-assign]
                 code=code, body=body, ctype=ctype)
-            # ⛔ COUNTS READS RATHER THAN FORBIDDING THEM — the caller is ALLOWED exactly one,
-            # the one `src_root` itself makes. `_Forbidden` cannot express "once"; a second read
-            # is the defect, and a mutation that moves the read rather than adding one must not
-            # slip through, so the count is asserted, not the absence.
-            class _Counting(dict):
-                reads = 0
-                def get(self, k, d=None):
-                    if k == SRC_ROOT_ENV:
-                        type(self).reads += 1
-                    return dict.get(self, k, d)
-            env = _Counting(os.environ)
-            if env_value is None:
-                env.pop(SRC_ROOT_ENV, None)
-            else:
-                env[SRC_ROOT_ENV] = env_value
-            _real = os.environ
+            # ⛔⛔ THE ENV IS FORBIDDEN OUTRIGHT, AND `src_root` IS STUBBED SO THAT IS FAIR —
+            # AND THE ROUTE HERE MATTERS MORE THAN THE RESULT. The first two versions COUNTED
+            # reads ("the caller may read once, the one `src_root` makes"), which meant building a
+            # second env-interception class beside `_Forbidden`. It was wrong twice, in the same
+            # way `_Forbidden` itself was wrong at r4: v1 overrode `get` alone and a second read
+            # spelled `SRC_ROOT_ENV in os.environ` passed 133/133 (r2 Codex Medium); v2 added
+            # eight surfaces and `setdefault`, `pop`, `repr()`, `==` and `len()` still passed.
+            #
+            # ⛔ THE LESSON IS NOT "ENUMERATE HARDER". Two mechanisms for one concern is the shape
+            # `check-vocabulary-collisions.py` exists to catch, and the weaker copy is the one that
+            # reports a pass the stronger one refuses. `_Forbidden` above was hardened across two
+            # rounds of PR #295 and already names every surface both versions missed. So: hand the
+            # caller its observation, forbid the environment ENTIRELY, and drive. The question
+            # "does the caller read the env a second time?" becomes "does it read it at all?",
+            # which needs no counter and no threshold — and reuses the guard that was already paid
+            # for instead of maintaining a rival to it.
+            #
+            # ⚠ Only the ENVIRONMENT is forbidden, not the filesystem: unlike `src_root_help`, this
+            # caller legitimately stats and reads files. `_PROBES` stays out of this.
+            _obs = with_env(env_value, src_root)
+            _real_env = os.environ
+            _real_src_root = globals()["src_root"]
             try:
-                os.environ = env                    # type: ignore[assignment]
-                _Counting.reads = 0
+                globals()["src_root"] = lambda: _obs
+                os.environ = _Forbidden("the environment", by="do_GET")  # type: ignore[assignment]
                 h.do_GET()
             finally:
-                os.environ = _real                  # type: ignore[assignment]
-            return got.get("code"), got.get("body", b""), _Counting.reads
+                os.environ = _real_env                       # type: ignore[assignment]
+                globals()["src_root"] = _real_src_root
+            return got.get("code"), got.get("body", b"")
 
         # ⭐ THE BUG ITSELF, END TO END: with NOTHING set, the caller resolves a root and asks the
         # filesystem — instead of refusing before it ever looks. This is the case whose absence let
@@ -2021,13 +2057,110 @@ def _self_test() -> int:
         case("/src/ 404 renders the pasteable help, not the unfilled <dir>",
              lambda: (lambda b: b"--stop" in b and b"=<dir>" not in b)(
                  _drive_src("/src/x.md", "/tmp/yps-no-such-docs-root-2026-09-15")[1]))
-        # ⛔⛔ THE INVARIANT AT THE CONSUMER: exactly ONE read of the env var per request, the one
-        # `src_root` makes. Two means the caller looked at the world a second time — the class
-        # the architecture review dissolved, which survived at this call site until r1 H2.
-        case("the caller reads the environment ONCE — src_root is the only reader",
-             lambda: _drive_src("/src/srcfix.md", str(_srcroot))[2] == 1)
-        case("…including on the 404 path, where the help is rendered",
-             lambda: _drive_src("/src/x.md", "/tmp/yps-no-such-docs-root-2026-09-15")[2] == 1)
+        # ⛔⛔⛔ THE INVARIANT AT THE CONSUMER — TWO CHECKS, AND THE ARCHITECTURE REVIEW THAT
+        # ARMED IS WHY THERE ARE TWO. Round 2's Claude half found that the previous shape had
+        # retired the coverage round 1 bought: with `src_root` STUBBED, a caller spelled
+        # `root = src_root().root` — a genuine second read of the environment in production,
+        # forbidden in terms by the comment at the call site — passed 142/142.
+        #
+        # ⛔ THE DESIGN FAULT WAS COMMON TO FOUR ATTEMPTS, NOT TO ANY ONE OF THEM, which is why
+        # this is a redesign and not a fifth patch. Each tried to prove a NEGATIVE — "nothing else
+        # consults the world" — by INTERCEPTING the world at runtime, and interception must
+        # enumerate the surfaces through which the world is reachable. That set is OPEN, so every
+        # attempt was defeated by its next member:
+        #
+        #   `_Forbidden` v1 (#295 r4)  `get` only            -> `dict()`, `len()`, `for k in`
+        #   `_Counting`  v1 (r1)       `get` only            -> `SRC_ROOT_ENV in os.environ`
+        #   `_Counting`  v2 (r2)       eight surfaces        -> `setdefault`, `pop`, `repr`, `==`
+        #   stub + `_Forbidden` (r2)   every env spelling    -> a second `src_root()` call itself
+        #
+        # Four half-covering guards in a row is a property of the approach. So the question is
+        # asked a SECOND way, where the set is CLOSED.
+        #
+        # ── (1) STATIC: the branch's own source. ─────────────────────────────────────────────
+        # "Does this region call `src_root()` more than once, or name an environment API at all?"
+        # is DECIDABLE — the region is ten lines of code we own, and anything new appearing in it
+        # is by definition a change under review. No enumeration of runtime surfaces, so
+        # `os.environb` and any other spelling are caught by the same rule that catches the
+        # second `src_root()`. This is the instrument `_rev_branch_src` above already uses, for
+        # the reason stated there: assert the MECHANISM, not a hardcoded answer.
+        # ⚠ LAZY, for r4's reason — a marker that moves must raise INSIDE the thunk, where
+        # `case()` catches it and prints a `[FAIL]` line, not out here where it aborts the suite.
+        def _src_branch_src():
+            src = inspect.getsource(Handler.do_GET)
+            return src.split('if path.startswith("/src/"):', 1)[1] \
+                      .split("resolved = resolve_page(", 1)[0]
+        case("the /src/ branch observes the world EXACTLY once — one src_root() call",
+             lambda: _src_branch_src().count("src_root()") == 1)
+        # ⚠ `src_root_help(` is deliberately not matched by the count above — it is a RENDERER
+        # taking the observation, not a second probe. Spelled as a separate case so the reader
+        # does not read the `== 1` as forbidding it.
+        case("…and it hands that one observation to the renderer, rather than re-probing",
+             lambda: "src_root_help(observed)" in _src_branch_src())
+        # ⛔ NO ENVIRONMENT API IN THE REGION, IN ANY SPELLING. `environb` is included because the
+        # round-2 review measured it slipping past the runtime guard entirely — a bytes-level view
+        # of the same variable. Static text does not care which view it is.
+        for _api in ("os.environ", "os.getenv", "environb", "putenv"):
+            case(f"the /src/ branch never names `{_api}` — the probe is src_root's job alone",
+                 lambda a=_api: a not in _src_branch_src())
+
+        # ── (2) DYNAMIC: what the region CALLS. ──────────────────────────────────────────────
+        # The static half cannot see through a helper — a caller that re-derived via some new
+        # `_peek_env()` would satisfy it. `_drive_src` therefore still runs every request above
+        # with `os.environ` replaced by `_Forbidden`, so any env read reachable at RUNTIME raises
+        # instead of returning something plausible. The two halves answer different questions and
+        # neither subsumes the other: (1) is "this region is written correctly", (2) is "nothing
+        # it calls cheats". ⚠ That is why this is not the duplicate-vocabulary shape
+        # `check-vocabulary-collisions.py` catches — they cannot disagree about a shared fact,
+        # because they have no shared fact.
+        #
+        # ⚠ ASSERTED ON `_Forbidden` ITSELF, NOT THROUGH THE CALLER, and the distinction is the
+        # whole point: the correct caller does NOT read the environment, so driving it can only
+        # ever show the mechanism not firing — which is equally what a broken mechanism looks
+        # like. The surfaces are exactly the ones that defeated the two hand-rolled counters.
+        #
+        # ⛔ DERIVED FROM `_Forbidden`, NOT RE-TYPED — r2 L2. A hand-listed copy beside the
+        # definition it mirrors is the same second-copy-drifts shape as `_Counting` beside
+        # `_Forbidden`, one level down: MEASURED, adding `popitem = update = _raise` to
+        # `_Forbidden` left the suite at 142/142, so a new surface could arrive unasserted.
+        # `vars()` makes the population the class's own.
+        _fb = _Forbidden("the environment")
+        _EXERCISE = {
+            "get": lambda: _fb.get("X"), "__getitem__": lambda: _fb["X"],
+            "__contains__": lambda: "X" in _fb, "keys": lambda: list(_fb.keys()),
+            "items": lambda: list(_fb.items()), "values": lambda: list(_fb.values()),
+            "copy": lambda: _fb.copy(), "__len__": lambda: len(_fb),
+            "__iter__": lambda: [k for k in _fb],
+            "setdefault": lambda: _fb.setdefault("X", ""), "pop": lambda: _fb.pop("X", None),
+            "popitem": lambda: _fb.popitem(), "update": lambda: _fb.update({}),
+        }
+        # ⚠ `n != "_raise"` — the refuser is itself an attribute bound to the refuser, so a
+        # naive `v is _raise` walk returns the DEFINITION alongside the surfaces. Measured:
+        # it produced a phantom `_raise` surface and two red cases on correct code.
+        _DECLARED = sorted(n for n, v in vars(_Forbidden).items()
+                           if v is _Forbidden._raise and n != "_raise")
+        # ⛔ THE RECONCILIATION IS THE RATCHET, AND IT RUNS IN BOTH DIRECTIONS — the first version
+        # ran in one, which is the defect deriving the list INTRODUCED. Measured: with the
+        # population derived from `vars(_Forbidden)`, deleting `__iter__` from the class deleted
+        # its case too and the suite reported **148/148 passed** — a guard losing a surface read
+        # as a clean run. Derivation fixes "added and unasserted" and opens "removed and
+        # unnoticed"; only the pair is a ratchet.
+        #   · ADDED, not exercisable -> the reconciliation below goes red
+        #   · REMOVED               -> the floor goes red
+        # ⚠ The floor is a literal ON PURPOSE. Deriving it from the same `vars()` walk would make
+        # it agree with the class by construction and assert nothing — the shape this project
+        # files as a guard whose operands share one closure.
+        _FORBIDDEN_FLOOR = frozenset({
+            "get", "__getitem__", "__contains__", "keys", "items", "values",
+            "copy", "__iter__", "__len__", "setdefault", "pop",
+        })
+        case("every surface _Forbidden refuses has a case that exercises it",
+             lambda: [n for n in _DECLARED if n not in _EXERCISE] == [])
+        case("…and no surface it once refused has been dropped — the floor holds",
+             lambda: sorted(_FORBIDDEN_FLOOR - set(_DECLARED)) == [])
+        for _nm in _DECLARED:
+            case(f"_Forbidden refuses the `{_nm}` read surface — the guard is not vacuous",
+                 lambda n=_nm: n in _EXERCISE and _raises(_EXERCISE[n], AssertionError))
 
         # ⛔ r1 L1 — `expanduser()` had NO case, in the commit that took `src_root` from zero cases
         # to twelve. Deleting it passed 123/123. Distinct from backlog #123, which is about
@@ -2068,8 +2201,18 @@ def _self_test() -> int:
         def _runner_src():
             return inspect.getsource(_self_test).split("\n        for name, fn in cases:", 1)[1]
         _BAD = "  " + "FAIL" + ": {name}"
-        case("the failure line is `[FAIL] `, the shape check-plan-code can parse",
-             lambda: "  [FAIL] {name}" in _runner_src() and _BAD not in _runner_src())
+        # ⛔ BOTH PRINTS, AND ASSERTING ONLY THE FIRST IS THE DEFECT THIS CASE ITSELF HAD. The
+        # runner reports a failure from two places — the falsy-result branch and the `except` that
+        # catches a raising case. MEASURED: mangling ONLY the `except` arm's prefix passed 142/142.
+        # ⚠ THAT IS THE ARM THAT MATTERS MOST HERE: a mutation of the deliverable usually reddens
+        # cases by making them RAISE, not by making them return False — most of this branch's own
+        # mutations report through it. Guarding the easy arm and leaving the exercised one open is
+        # this project's *fixing a premise is not covering the branch*, inside the guard for it.
+        # ⚠ `== 2` rather than `>= 1`: a third legitimate report site is a change to a contract
+        # `check-plan-code.parse_fail_names` reads, so it should arrive with a decision, not
+        # silently satisfy a lower bound.
+        case("the failure line is `[FAIL] ` at BOTH report sites — the shape check-plan-code parses",
+             lambda: _runner_src().count('print(f"  [FAIL] ') == 2 and _BAD not in _runner_src())
 
         for name, fn in cases:
             try:
