@@ -832,6 +832,18 @@ EXPECTED_MUTATIONS = {
     # NON-repo, so it differed by the UNKNOWN text and never by the dirty flag,
     # and the git-cannot-launch branch was unreachable from a temp dir.
     "scripts/page_chrome.py": 11,
+    # ⟳ 2026-09-16, backlog #122 — `explainer-serve.py` joins the manifest. It was the largest
+    # UNRATCHETED file in `scripts/`: 149 real cases, none ever shown able to fail, on a server
+    # that emits pasteable shell commands. Seeding it immediately found TWO surviving mutations —
+    # `SERVABLE` could be widened to serve `.env.local`, and `SRC_REASONS` could gain a member —
+    # both now cased. ⚠ The 17 entries are deliberately NOT one-per-function: an entry is admitted
+    # only when its kill is ATTRIBUTABLE, which `check-plan-code` decides by matching `expect`
+    # against a parsed case name by EXACT EQUALITY. A case that dies by RAISING prints
+    # `[FAIL] {name} — {ExcType}: {msg}`, so its parsed name carries unstable text and can never be
+    # named. That is a real bound on what this manifest can cover, and it is why one case
+    # (`driving /src/ never consults the environment`) was written to convert a raise into a
+    # returned False — the `_Forbidden` property was otherwise guarded and unratchetable.
+    "scripts/explainer-serve.py": 17,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a
@@ -2584,6 +2596,7 @@ def _self_test() -> int:
                                       # WIDENED_MANIFEST_DEBT in the same commit.
                                       "scripts/codex-review.py",
                                       "scripts/coverage_verdict.py",
+                                      "scripts/explainer-serve.py",
                                       "scripts/gen-backlog-page.py",
                                       "scripts/gen-dashboard.py",
                                       "scripts/gen-goals-page.py",
@@ -3154,7 +3167,11 @@ def _self_test() -> int:
     # SIDE OF THE CONFLICT — this branch was right about 633 and master was right about
     # 639, and neither is right about the merge, which carries both sets of entries
     # (629 + master's 10 + this branch's 4). Re-derived from the merged dict.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 643)
+    # ⟳ 2026-09-16: 643 -> 660. SEVENTEEN entries seed `explainer-serve.py` (backlog #122), the
+    # largest file in `scripts/` that had never been inside `--mutate .`. Every anchor was verified
+    # present in the DELIVERED file before being written, and every entry was proved to go red VIA
+    # THE CASE IT NAMES over a control proved green first.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 660)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

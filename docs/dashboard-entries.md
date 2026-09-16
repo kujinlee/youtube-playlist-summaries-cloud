@@ -9372,3 +9372,41 @@ rounds and was examined directly rather than inherited. `/src/` serves, confinem
 prints a command you can paste. Everything above is about the instrument that proves it.
 
 Suite 88 → 144. Sixteen gates green.
+
+## 2026-09-16
+The biggest script in the repo had 149 tests and no proof any of them could fail. Now it has both — and seeding that proof found two real holes.
+<!--tech-->
+Backlog **#122 closed.** `scripts/explainer-serve.py` was the largest file under `scripts/` that had
+never been inside `--mutate .`: 149 real cases, none ever shown able to go red if the code they name
+were deleted. It now carries **17 manifest entries**; the repo-wide declared total goes 643 → 660,
+and the whole sweep reports **660 mutations, 660 killed, 660 attributed to the case each names, 0
+survivors**.
+
+⭐ **The debt was real, and paying it proved that immediately — two mutations SURVIVED a file whose
+every case passed:**
+
+1. **`SERVABLE` could be widened until `/src/.env.local` was servable**, at 144/144 green. The `/src/`
+   reach comment rests its *"not judged a security finding"* verdict partly on *"`SERVABLE` excludes
+   `.env*` by suffix"* — and **that exclusion had no case at all.** Three now exist, asserted through
+   `safe_path` rather than against the constant, because the claim is about what is *reachable*.
+2. **`SRC_REASONS` could gain a fourth member**, also at 144/144, because the only case asking about
+   it is a *subset* test — *is every reason returned declared?* — which any superset satisfies. The
+   exhaustiveness refusal could have grown an unhandled arm unnoticed.
+
+⛔ **And a limit on what any manifest here can cover, found by doing this and not previously written
+down.** An entry names the case that must go red, and the harness matches that name by **exact
+equality** — but a case that dies by *raising* prints its name with the exception appended, so it can
+never be named. Measured: the one property the last PR fought five rounds to guard reddens six cases
+and **every one dies by AssertionError** — genuinely guarded, and structurally impossible to ratchet.
+One case was rewritten to report that failure as a value instead of a raise, so it could join. The
+`[FAIL] ` report format itself still cannot be ratcheted at all: mutating it yields a red suite with
+zero readable failure lines, i.e. it destroys the channel the ratchet reads. Left out deliberately
+rather than forced.
+
+Two self-inflicted defects, both caught by the harness *before* it measured anything, because it
+proves every suite green first: a hardcoded home path in a docstring (prose, but the guard is
+deliberately stricter than "does this read the real home"), and a backlog edit of mine that added a
+seventh column to a six-column table.
+
+**Unblocks #125, #126 and #127** — the parked restart feature can now be reviewed against a ratchet
+that works. Suite 144 → 149.

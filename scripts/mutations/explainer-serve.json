@@ -1,0 +1,189 @@
+[
+ {
+  "name": "src_root stops falling back to the checkout it runs from",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "        return SrcRoot(REPO if fallback_ok else None,\n                       \"OK\" if fallback_ok else \"MISSING_FALLBACK\", v, REPO, fallback_ok)",
+    "        return SrcRoot(None, \"MISSING_FALLBACK\", v, REPO, fallback_ok)"
+   ]
+  ],
+  "expect": "src_root: UNSET falls back to the repo this file lives in"
+ },
+ {
+  "name": "a WRONG env value silently falls back instead of erroring",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    return (SrcRoot(p, \"OK\", v, REPO, fallback_ok) if p.is_dir()\n            else SrcRoot(None, \"BAD_ENV\", v, REPO, fallback_ok))",
+    "    return SrcRoot(p if p.is_dir() else REPO, \"OK\", v, REPO, fallback_ok)"
+   ]
+  ],
+  "expect": "src_root: a non-directory path is None, NOT the fallback"
+ },
+ {
+  "name": "a `~` path is taken literally instead of expanded",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    p = pathlib.Path(v).expanduser()",
+    "    p = pathlib.Path(v)"
+   ]
+  ],
+  "expect": "src_root: a `~` path is expanded, not taken literally"
+ },
+ {
+  "name": "whitespace becomes a path instead of meaning unset",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    v = os.environ.get(SRC_ROOT_ENV, \"\").strip()",
+    "    v = os.environ.get(SRC_ROOT_ENV, \"\")"
+   ]
+  ],
+  "expect": "src_root: whitespace is unset"
+ },
+ {
+  "name": "the fallback's state is ASSERTED rather than observed",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    fallback_ok = REPO.is_dir()",
+    "    fallback_ok = True"
+   ]
+  ],
+  "expect": "src_root: a missing fallback is MISSING_FALLBACK, root None, fallback_ok False"
+ },
+ {
+  "name": "the emitted script path loses its shell quoting",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    script = shlex.quote(str(observed.fallback / \"scripts\" / \"explainer-serve.py\"))",
+    "    script = str(observed.fallback / \"scripts\" / \"explainer-serve.py\")"
+   ]
+  ],
+  "expect": "help: every emitted command parses to the real script path"
+ },
+ {
+  "name": "the gone-checkout arm becomes unreachable",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    if not observed.fallback_ok:\n        return _gone_checkout_help(observed, pidfile)",
+    "    if False:\n        return _gone_checkout_help(observed, pidfile)"
+   ]
+  ],
+  "expect": "help: the gone-checkout arm does not advise unsetting"
+ },
+ {
+  "name": "an unknown reason falls through instead of being refused",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    if observed.reason not in SRC_REASONS:\n        raise ValueError(",
+    "    if False:\n        raise ValueError("
+   ]
+  ],
+  "expect": "an unknown reason is refused, not defaulted into an arm"
+ },
+ {
+  "name": "the caller's pidfile is dropped for the module global",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "        return _gone_checkout_help(observed, pidfile)",
+    "        return _gone_checkout_help(observed, PIDFILE)"
+   ]
+  ],
+  "expect": "help: src_root_help passes its own pidfile through, quoted, as ONE operand"
+ },
+ {
+  "name": "the gone-checkout `why` ternary is inverted",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "           if observed.env_value else",
+    "           if not observed.env_value else"
+   ]
+  ],
+  "expect": "\u2026and that arm still names why it is there, in both shapes"
+ },
+ {
+  "name": "the /src/ 404 re-emits master's unfilled <dir> placeholder",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "                body = src_root_help(observed)",
+    "                body = f\"no source root \u2014 start the server with {SRC_ROOT_ENV}=<dir>\""
+   ]
+  ],
+  "expect": "/src/ 404 renders the pasteable help, not the unfilled <dir>"
+ },
+ {
+  "name": "SERVABLE admits a dotfile suffix, so .env.local becomes servable",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "SERVABLE = {\".html\", \".md\", \".css\", \".js\", \".svg\", \".png\"}",
+    "SERVABLE = {\".html\", \".md\", \".css\", \".js\", \".svg\", \".png\", \".local\"}"
+   ]
+  ],
+  "expect": "a real '.env.local' in the root is NOT servable \u2014 the exclusion the reach comment's security verdict rests on"
+ },
+ {
+  "name": "safe_path drops the suffix allowlist entirely",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    if candidate.suffix.lower() not in SERVABLE:\n        return None",
+    "    if False:\n        return None"
+   ]
+  ],
+  "expect": "refuses a non-servable extension"
+ },
+ {
+  "name": "safe_path tests containment BEFORE resolving",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "        candidate = (root / raw).resolve()\n        candidate.relative_to(root.resolve())",
+    "        candidate = root / raw\n        candidate.relative_to(root)"
+   ]
+  ],
+  "expect": "a raw NUL byte does not escape safe_path"
+ },
+ {
+  "name": "_Forbidden quietly stops refusing one read surface",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "            copy = __iter__ = __len__ = setdefault = pop = _raise",
+    "            copy = __len__ = setdefault = pop = _raise"
+   ]
+  ],
+  "expect": "\u2026and no surface it once refused has been dropped \u2014 the floor holds"
+ },
+ {
+  "name": "revision stops carrying the file's identity",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "def revision(p: pathlib.Path) -> str:",
+    "def revision(p: pathlib.Path) -> str:\n    return \"fixed\"\n"
+   ]
+  ],
+  "expect": "revision changes on a same-mtime rewrite (size is load-bearing)"
+ },
+ {
+  "name": "the /src/ caller consults the environment a SECOND time",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "            root = observed.root",
+    "            root = observed.root if os.environ.get(SRC_ROOT_ENV) or True else None"
+   ]
+  ],
+  "expect": "driving /src/ never consults the environment \u2014 the _Forbidden property, RATCHETABLE"
+ }
+]

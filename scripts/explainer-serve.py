@@ -63,7 +63,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 144 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 149 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -558,8 +558,12 @@ def src_root_help(observed: SrcRoot, pidfile: pathlib.Path = PIDFILE) -> str:
 
     ⛔ EVERY PATH IS `shlex.quote`d — r1 B1, found by both review halves. `_html.escape` makes
     text safe for HTML; nothing made it safe for the SHELL it exists to be pasted into. With a
-    repo at `/Users/me/agentic ai docs/repo` the emitted line handed `python3` the path
-    `/Users/me/agentic`. ⚠ The suite had used space-bearing fixtures since before that bug and
+    repo at `~me/agentic ai docs/repo` the emitted line handed `python3` the path
+    `~me/agentic`. ⚠ The example is written relative on purpose: an absolute `/Users/…` here is a
+    route `check-plan-code.home_escapes` flags, and a docstring cannot carry the comment-token
+    exemption — measured 2026-09-16, it refused the whole mutation run over these two prose lines.
+    The SPACE is what the example is about, so nothing is lost. ⚠ The suite had used space-bearing
+    fixtures since before that bug and
     asserted only that the path APPEARED — a hostile input asserted with a substring test proves
     nothing about hostility, so the cases compare ARGV.
     """
@@ -1462,6 +1466,19 @@ def _self_test() -> int:
              lambda: (root / SERVE_LOG).is_file() and safe_path("/" + SERVE_LOG, root) is None)
         case("the daemon's log is not mistaken for an explainer",
              lambda: SERVE_LOG not in [p.name for p in explainers(root)])
+        # ⛔⛔ THE `.env*` EXCLUSION IS LOAD-BEARING FOR A SECURITY JUDGEMENT AND HAD NO CASE —
+        # found 2026-09-16 by seeding this file's mutation manifest (backlog #122). The reach
+        # comment at `:240` rests its "not judged a security finding" verdict partly on
+        # *"`SERVABLE` excludes `.env*` by suffix"*, and **MEASURED: adding `.local` to `SERVABLE`
+        # passed 144/144** — `/src/.env.local` would have become servable with nothing going red.
+        # ⚠ ASSERTED THROUGH `safe_path`, NOT AGAINST THE SET, because the claim is about what is
+        # REACHABLE: a case reading `".local" not in SERVABLE` re-states the constant instead of
+        # testing the rule, and would pass if the suffix check were deleted entirely.
+        for _secret in (".env", ".env.local", ".env.production"):
+            (root / _secret).write_text("SUPABASE_SERVICE_ROLE_KEY=nope\n")
+            case(f"a real {_secret!r} in the root is NOT servable — the exclusion the reach "
+                 f"comment's security verdict rests on",
+                 lambda s=_secret: (root / s).is_file() and safe_path("/" + s, root) is None)
 
         standing_only = root / "standing"
         standing_only.mkdir()
@@ -1718,6 +1735,18 @@ def _self_test() -> int:
         case("src_root: a present fallback with a bad env records fallback_ok True",
              lambda: (lambda o: (o.reason, o.fallback_ok) == ("BAD_ENV", True))(
                  _probe_with(root, "/nope")))
+        # ⛔ BOTH DIRECTIONS, AND ONLY ONE EXISTED — found 2026-09-16 by seeding this file's
+        # mutation manifest (backlog #122), which is exactly what a manifest is for. The case
+        # below asks *is every reason RETURNED a declared member?* — a subset test, satisfied by
+        # any superset. MEASURED: adding a fourth member to `SRC_REASONS` passed **144/144**, so
+        # the sum type could be widened with nothing going red, and `src_root_help`'s exhaustive
+        # branch — the thing `SRC_REASONS` exists to make a REFUSAL rather than a silent
+        # fallthrough — would have gained an unhandled arm unnoticed.
+        case("SRC_REASONS cannot be widened unnoticed — every declared member is reachable",
+             lambda: sorted(SRC_REASONS) == sorted({
+                 with_env(None, src_root).reason,
+                 _probe_with(root, "/nope").reason,
+                 _probe_with(pathlib.Path("/tmp/yps-gone-2026-09-16"), "").reason}))
         case("src_root: every reason it can return is a declared member",
              lambda: all(with_env(v, src_root).reason in SRC_REASONS
                          for v in (None, "", "   ", str(root), str(root / "nope"))))
@@ -2039,6 +2068,27 @@ def _self_test() -> int:
              lambda: _drive_src("/src/srcfix.md", str(_srcroot))[0] == 200)
         case("…and the body carries the file's text",
              lambda: b"body text here" in _drive_src("/src/srcfix.md", str(_srcroot))[1])
+        # ⛔⛔ THIS CASE EXISTS SO THE `_Forbidden` PROPERTY CAN BE RATCHETED AT ALL — found
+        # 2026-09-16 while seeding the mutation manifest (backlog #122), and it is a constraint
+        # nobody had written down: `check-plan-code` matches an entry's `expect` against a parsed
+        # case name by **exact equality**, and a case that dies by RAISING prints
+        # `[FAIL] {name} — {ExcType}: {msg}`, so its parsed "name" carries unstable text and can
+        # never be named by a manifest entry.
+        #
+        # ⚠ MEASURED: a caller re-reading the environment reddens SIX cases, and **every one of
+        # them dies by AssertionError** — `_Forbidden` works by raising. So the single property
+        # the previous round left genuinely guarded was, by construction, **outside `--mutate .`**:
+        # guarded, and unable to be shown guarded. ⭐ A guard whose kills cannot be ATTRIBUTED is
+        # one refactor away from being a guard nobody can prove exists, which is the whole subject
+        # of backlog #122.
+        #
+        # The fix is to convert the raise into a VALUE. `_raises(...) is False` reads oddly on
+        # purpose: it asserts the drive completes *without* `_Forbidden` firing, and it returns
+        # False rather than propagating when it does — so the kill lands on the truthy-result
+        # print and the manifest can name it.
+        case("driving /src/ never consults the environment — the _Forbidden property, RATCHETABLE",
+             lambda: _raises(lambda: _drive_src("/src/srcfix.md", str(_srcroot)),
+                             AssertionError) is False)
         # ⛔ CONFINEMENT, AND THE ESCAPE TARGET MUST EXIST OR THE CASE PROVES NOTHING. A NESTED
         # root is the whole point: the first version served from `root` and asked for
         # `/src/../../etc/passwd`, which 404s under a `safe_path` BYPASS too — the traversal
