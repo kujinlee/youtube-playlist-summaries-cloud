@@ -1,3 +1,22 @@
+<!-- SUBJECT: master @ 32c56bfa — NOT a review of any branch's fixes -->
+
+# ⚠ WHAT THIS REVIEWED, stated because it was briefly filed as something else
+
+**Subject: `master` at `32c56bfa`** — the merged state of PR #311, *before* the fixes that its own
+findings produced. This is the **retroactive Codex half** for backlog #122, whose three rounds all
+merged with `REVIEW GAP: codex` because a 900s default timeout was read as Codex being unavailable.
+It ran at `--timeout 3600` and completed on the first attempt.
+
+⛔ **It was first filed as `fix-src-viewer-escaping-r1-codex.md`, i.e. as round 1 of the branch that
+FIXES what it found — a review of the parent presented as a review of the child.** Caught by that
+branch's Claude half, which also measured that `check-review-rounds.py` cannot see this class:
+`verdict_problems` returns early on `if rec.get("gate_ran"): continue`, so it only ever asks whether
+a review is filed for a gate that did **not** run. A verdict that ran, against a different commit,
+naming a review file not on disk, produces zero problems. Renamed so the artifact and its verdict
+agree about their subject; the branch's own Codex half is filed separately.
+
+---
+
 <!-- codex-review: model=gpt-5.5 -->
 
 CONVERGED: **No**. I found two real gaps outside backlog #129 and #130.

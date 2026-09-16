@@ -470,7 +470,7 @@
     "    bare = url_path.split(\"?\", 1)[0].split(\"#\", 1)[0]"
    ]
   ],
-  "expect": "\u2026and the encoded spelling of a dot gets the SAME refusal"
+  "expect": "\u2026and the SINGLE-encoded spelling of a dot gets the same refusal"
  },
  {
   "name": "the /src/ viewer interpolates the filename into HTML unescaped",
@@ -482,5 +482,27 @@
    ]
   ],
   "expect": "source_shell escapes the FILENAME, not just the file's contents"
+ },
+ {
+  "name": "the .html fallback resolves a DIFFERENTLY-decoded string than the rule judged",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    alt = safe_path(urllib.parse.quote(bare) + \".html\", root)",
+    "    alt = safe_path(bare + \".html\", root)"
+   ]
+  ],
+  "expect": "\u2026and so does the DOUBLE-encoded spelling, which the first repair served"
+ },
+ {
+  "name": "index_html leaves the link TEXT unescaped while encoding the href",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "f'<li><a href=\"/{urllib.parse.quote(p.name)}\">{page_markup.escape(p.name)}</a>'",
+    "f'<li><a href=\"/{urllib.parse.quote(p.name)}\">{p.name}</a>'"
+   ]
+  ],
+  "expect": "index_html escapes the filename in the LINK TEXT, not only the href"
  }
 ]

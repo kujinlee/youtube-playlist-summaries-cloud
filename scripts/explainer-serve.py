@@ -63,7 +63,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 199 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 202 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -772,7 +772,18 @@ def resolve_page(url_path: str, root: pathlib.Path) -> pathlib.Path | None:
     bare = urllib.parse.unquote(url_path.split("?", 1)[0].split("#", 1)[0])
     if "." in bare.rsplit("/", 1)[-1]:
         return None                      # it HAD an extension; the fallback is not a second chance
-    alt = safe_path(bare + ".html", root)
+    # ⛔⛔ RE-ENCODED, BECAUSE `safe_path` UNQUOTES AGAIN — and the first version of this fix did
+    # not, which MOVED the bypass instead of closing it. `bare` is now decoded (above), and handing
+    # it to `safe_path` decodes a SECOND time, so the classifier judged one decoding and the
+    # resolver performed two. MEASURED end-to-end with `secret.env.html` present:
+    #                        master          first fix        this
+    #   /secret.env          None            None             None
+    #   /secret%2eenv        SERVED          None             None
+    #   /secret%252eenv      None            SERVED           None
+    # The middle and bottom rows INVERTED between master and the first fix — i.e. it was a
+    # regression at `%25`, not a gap it failed to reach. Quoting restores the invariant the rule
+    # needs: the fallback resolves exactly the string the extension test judged.
+    alt = safe_path(urllib.parse.quote(bare) + ".html", root)
     return alt if alt is not None and alt.is_file() else None
 
 
@@ -780,7 +791,15 @@ def index_html(root: pathlib.Path) -> str:
     rows = []
     for p in explainers(root):
         when = _dt.datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
-        rows.append(f'<li><a href="/{urllib.parse.quote(p.name)}">{p.name}</a>'
+        # ⛔ THE HREF WAS ENCODED AND THE LINK TEXT WAS NOT — the identical defect fixed in
+        # `source_shell` twelve lines of diff away, missed because the line LOOKS like it already
+        # handles a hostile name. It handles the half that does not matter here. MEASURED with a
+        # file named `2026-09-16-brief-evil<img src=x onerror=alert(1)>.html`: the payload appears
+        # raw in the index page and nowhere escaped. ⚠ REACHABLE: `brief-compose.py` builds its
+        # output name from `--slug` with no validation, so a slug taken from a topic or a heading
+        # lands verbatim in a filename and thence in this list. `gen-goals-page.py` escapes every
+        # filesystem-derived value it renders — the convention exists and this site was the outlier.
+        rows.append(f'<li><a href="/{urllib.parse.quote(p.name)}">{page_markup.escape(p.name)}</a>'
                     f'<span> · {when}</span></li>')
     body = "\n".join(rows) or "<li><em>No explainers yet.</em></li>"
     doc = (
@@ -2715,6 +2734,18 @@ def _self_test() -> int:
         # ⚠ The payload is slash-free on purpose — a `/` would make it a path segment and the test
         # would be about `safe_path`, not about the renderer.
         _evil = "evil<img src=x onerror=alert(1)>.md"
+        # ⛔⛔ THE OTHER text/html PRODUCER — this file has exactly two, and fixing one and not the
+        # other is the defect this branch has now committed at four different depths. `index_html`
+        # percent-encodes the HREF and left the LINK TEXT raw, which is why the line reads as though
+        # it already handles a hostile name.
+        _evilfile = "2026-09-16-brief-evil<img src=x onerror=alert(1)>.html"
+        _ix = root / "index-esc"
+        _ix.mkdir()
+        (_ix / _evilfile).write_text("<p>x</p>")
+        case("index_html escapes the filename in the LINK TEXT, not only the href",
+             lambda: "<img src=x" not in index_html(_ix))
+        case("…and still links to it correctly, percent-encoded",
+             lambda: "%3Cimg" in index_html(_ix) or "%3cimg" in index_html(_ix))
         case("source_shell escapes the FILENAME, not just the file's contents",
              lambda: "<img src=x" not in source_shell(_evil, "harmless"))
         case("…and still shows the reader which file they are looking at",
@@ -2747,9 +2778,42 @@ def _self_test() -> int:
         # -> `secret.env.html` (rule bypassed). ⭐ The case that existed was not wrong — it was
         # SINGLE-SPELLING, which is this project's *after fixing, SEARCH for the class* in the
         # shape a reviewer with a different habit sees and a mutation sweep does not.
-        case("…and the encoded spelling of a dot gets the SAME refusal",
-             lambda: resolve_page("/notes%2emd", _l7) is None
-                     and resolve_page("/secret%2eenv", _l7) is None)
+        # ⚠ AND THE DOUBLE-ENCODED SPELLING, because the FIRST repair moved the bypass there rather
+        # than closing it: `bare` was decoded once and then handed to `safe_path`, which decodes
+        # again. Master refused `%252e` and the first fix SERVED it — an inversion, i.e. a
+        # regression. A single-spelling case is what let that through, so the case is now the set.
+        # ⚠ SPLIT IN TWO, because the two defects break DIFFERENT spellings and one case naming
+        # both would let either entry borrow the other's kill. Dropping the `unquote` breaks the
+        # single-encoded form; dropping the re-`quote` breaks the double-encoded one.
+        # ⛔⛔ THE DECODED SPELLING IS THE AUTHORITATIVE ONE, AND THAT NEEDED A DECOY TO SAY SO.
+        # The obvious case — `/secret%2eenv is None` — went GREEN with the `unquote` deleted, once
+        # the re-`quote` was added: without decoding, the rule judges the RAW name (no dot, so it
+        # tries the fallback) and `safe_path` then resolves that same raw name, so both sides agree
+        # and the request simply misses. Internally consistent, and WRONG — percent-encoding means
+        # the caller asked for `secret.env`, which HAD an extension. The two readings only diverge
+        # observably when a file whose LITERAL name contains `%2e` exists: decoded-authoritative
+        # refuses, raw-authoritative serves it.
+        # ⚠ ITS OWN ROOT, because the decoy is only correct for THIS question. Putting it in `_l7`
+        # made the double-encoded case below go red on correct code — and rightly: `%252e` decodes
+        # once to `%2e`, so `/secret%252eenv` asks for the resource literally named `secret%2eenv`,
+        # which has no extension, so the `.html` fallback legitimately finds the decoy. Two
+        # questions, two worlds.
+        _pct = root / "pct-decoy"
+        _pct.mkdir()
+        (_pct / "secret%2eenv.html").write_text("<p>decoy</p>")
+        (_pct / "secret.env.html").write_text("<p>SECRET</p>")
+        (_pct / "notes.md.html").write_text("<p>notes</p>")
+        case("…and the SINGLE-encoded spelling of a dot gets the same refusal",
+             lambda: all(resolve_page(u, _pct) is None
+                         for u in ("/notes%2emd", "/secret%2eenv", "/notes%2Emd")))
+        # ⛔ THE DOUBLE-ENCODED CASE ASSERTS *WHICH FILE*, NOT `None` — the first repair served
+        # `secret.env.html` here, the dotted name the rule exists to protect. A decoy named
+        # `secret%2eenv.html` is a legitimate answer for this spelling, so `is None` would be wrong;
+        # what must never happen is reaching the DOTTED file.
+        case("…and so does the DOUBLE-encoded spelling, which the first repair served",
+             lambda: all(resolve_page(u, _l7) is None
+                         for u in ("/secret%252eenv", "/notes%25252emd"))
+                     and resolve_page("/secret%252eenv", _pct) != (_pct / "secret.env.html").resolve())
         case("…while the fallback still fires for an extensionless name",
              lambda: resolve_page("/notes.md.html", _l7) is not None)
 
