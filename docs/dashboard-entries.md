@@ -9487,3 +9487,40 @@ the script behaves. Checking a string contains a token is not checking the code 
 reviewer stood in each round and earned its place — rounds 2 and 3 each found a serious defect in the
 previous round's own work — but the two reviewers historically catch different kinds of problem, and
 that second kind is missing here. Recorded in all three round documents rather than glossed.
+
+## 2026-09-16
+The source viewer would run markup hidden in a filename, and my first fix for a related hole made a different one worse.
+<!--tech-->
+Two defects on master, both found by the **Codex** reviewer — the one that had been missing from
+three rounds because I misread a timeout.
+
+1. **A filename could carry markup into the page.** `/src/` escaped a file's *contents* and dropped
+   its *name* straight into the title and header. A file called
+   `evil<img src=x onerror=alert(1)>.md` put that verbatim into the page, and nothing in the path
+   checks objects to the characters in a name — they only police where a file is, not what it is
+   called. `/src/` reaches the whole checkout including `node_modules/`, and an archive can carry a
+   file whose *name* is the payload.
+2. **An encoded dot skipped a rule.** `/secret.env` was refused; `/secret%2eenv` was served, because
+   the check for "does this name already have an extension" read the address before decoding it
+   while everything downstream read it after.
+
+⛔ **And my first repair of the second one made things worse, which the next reviewer caught.** I
+decoded in the check and handed the decoded name onward — to code that decodes *again*. So the check
+and the lookup still disagreed, one level further up: master refused `%252e`, my fix **served** it.
+The two rows literally swapped places. Fixed by re-encoding before the handoff, so the lookup
+resolves exactly the name the check judged.
+
+⚠ **The same name-handling hole existed a few lines away and I did not look.** The index page escaped
+the *link address* and not the *link text* — which is why the line reads as though it already handles
+a hostile name. It handles the half that does not matter. Reachable the same way: the brief generator
+builds filenames from a `--slug` it never validates.
+
+**On the review process, which is the reason any of this was found.** Codex "timed out" on three
+rounds and I read that as Codex being unavailable. It was my own 15-minute limit on a 45-minute job.
+Raised to an hour, it completed first try and found both defects above. Two documents were telling
+readers to give up early; both now say a quiet output file is not a hang until the budget has
+actually elapsed, and the tool itself now prints *"that is probably your budget — re-run once at
+double"* instead of sending people to the fallback. It also gained tests: that message could
+previously be deleted with nothing failing.
+
+Suite 196 → 202. 689 mutations, 689 killed, 0 survivors.
