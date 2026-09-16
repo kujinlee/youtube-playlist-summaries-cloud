@@ -1,0 +1,24 @@
+{
+  "attempts": [
+    "  gpt-5.5: try_next \u2014 timed out \u2014 any partial message is an incomplete review"
+  ],
+  "dirty": {},
+  "exit_code": 1,
+  "gate_ran": false,
+  "head": "7915f6edfee46fd65d4f721516205b640f8ebcd0",
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/227fd546-5a6f-429b-bcf1-09fc12283325/scratchpad/b1.json: CREATED during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/227fd546-5a6f-429b-bcf1-09fc12283325/scratchpad/mut.py: CREATED during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/227fd546-5a6f-429b-bcf1-09fc12283325/scratchpad/mutate-baseline.txt: CREATED during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/227fd546-5a6f-429b-bcf1-09fc12283325/scratchpad/s1.json: CREATED during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/227fd546-5a6f-429b-bcf1-09fc12283325/scratchpad/s2.json: CREATED during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/227fd546-5a6f-429b-bcf1-09fc12283325/scratchpad/s3.json: CREATED during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/227fd546-5a6f-429b-bcf1-09fc12283325/scratchpad/s4.json: CREATED during the run (writer unattributed)"
+  ],
+  "model": null,
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/227fd546-5a6f-429b-bcf1-09fc12283325/scratchpad/m1-prompt.md",
+  "reason": "no candidate produced a usable review",
+  "review": "seed-explainer-serve-manifest-r1-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}

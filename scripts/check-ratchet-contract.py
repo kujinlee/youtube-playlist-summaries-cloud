@@ -378,7 +378,19 @@ WIDENED_MANIFEST_DEBT: frozenset[str] = frozenset({
     # new `reviewed_state` surviving mutation, two of them regressions of defects r2 and r3 had
     # already found and fixed on the consumer side — the two halves of one wire format, with only
     # one end held.
-    "scripts/explainer-serve.py",
+    # ⟳ 2026-09-16, backlog #122: `scripts/explainer-serve.py` LEAVES this set — it has a manifest
+    # now (`scripts/mutations/explainer-serve.json`), removed in the SAME commit that
+    # adds it, which `widened_debt_drift` requires in both directions. ⭐ The debt was real and the
+    # payment proved it: seeding the manifest immediately found TWO surviving mutations on a file
+    # whose every case passed — `SERVABLE` could be widened until `.env.local` was servable, and
+    # `SRC_REASONS` could gain a member with the exhaustiveness refusal silently gaining an
+    # unhandled arm. Both are cased now. ⚠ And a bound worth knowing before the next file joins:
+    # an entry is admissible only when its kill is ATTRIBUTABLE, and `check-plan-code` matches
+    # `expect` by EXACT equality against a parsed case name — so a property guarded by a case that
+    # RAISES is awkward to ratchet: naming it requires embedding the exception type and message,
+    # which fails outright once that message carries runtime data. ⟳ Corrected 2026-09-16: an
+    # earlier draft said "cannot be ratcheted", and the review measured that to be false for a
+    # deterministic message. Prefer a case that reports the failure as a returned value.
     "scripts/gen-m4-manifest.py",
     "scripts/m4_catalog.py",
     "scripts/prior-art.py",
@@ -663,10 +675,15 @@ WIDENED_DRIFT_CASES: list[tuple[str, set[str], set[str], list[str]]] = [
     # was removed in the same commit — and both cases went red, correctly: a case whose fixture is
     # a live set member is a case the set's contents can falsify. Repointed rather than frozen to a
     # literal, because a synthetic name here would stop proving that the REAL pin is consulted.
+    # ⟳ 2026-09-16, backlog #122 — SECOND repointing, and it happened for the same reason, which is
+    # the evidence that this fixture choice is working rather than merely surviving:
+    # `explainer-serve.py` gained `scripts/mutations/explainer-serve.json` and left the pin, so both
+    # cases went red again on correct code. Now `gen-m4-manifest.py`. **Expect to move these the
+    # next time a debt is paid** — that is the design, not a maintenance burden to engineer away.
     ("a pinned violator is silent — that is what the pin is for",
-     {"scripts/explainer-serve.py"}, {"scripts/explainer-serve.py"}, []),
+     {"scripts/gen-m4-manifest.py"}, {"scripts/gen-m4-manifest.py"}, []),
     ("a pinned entry that was EXAMINED and no longer violates fails",
-     set(), {"scripts/explainer-serve.py"}, ["R4W_debt_paid_not_recorded"]),
+     set(), {"scripts/gen-m4-manifest.py"}, ["R4W_debt_paid_not_recorded"]),
     # ⭐ THE CORPUS CASE, and it is the one that caught a real defect on the first run. Absence
     # from the corpus is NOT-EXAMINED, never "paid". Without the `examined` argument the wiring
     # cases below — which drive evaluate() with a two-entry synthetic corpus — reported all eight

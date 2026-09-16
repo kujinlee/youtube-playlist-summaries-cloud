@@ -1,0 +1,464 @@
+[
+ {
+  "name": "src_root stops falling back to the checkout it runs from",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "        return SrcRoot(REPO if fallback_ok else None,\n                       \"OK\" if fallback_ok else \"MISSING_FALLBACK\", v, REPO, fallback_ok)",
+    "        return SrcRoot(None, \"MISSING_FALLBACK\", v, REPO, fallback_ok)"
+   ]
+  ],
+  "expect": "src_root: UNSET falls back to the repo this file lives in"
+ },
+ {
+  "name": "a WRONG env value silently falls back instead of erroring",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    return (SrcRoot(p, \"OK\", v, REPO, fallback_ok) if p.is_dir()\n            else SrcRoot(None, \"BAD_ENV\", v, REPO, fallback_ok))",
+    "    return SrcRoot(p if p.is_dir() else REPO, \"OK\", v, REPO, fallback_ok)"
+   ]
+  ],
+  "expect": "src_root: a non-directory path is None, NOT the fallback"
+ },
+ {
+  "name": "a `~` path is taken literally instead of expanded",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    p = pathlib.Path(v).expanduser()",
+    "    p = pathlib.Path(v)"
+   ]
+  ],
+  "expect": "src_root: a `~` path is expanded, not taken literally"
+ },
+ {
+  "name": "whitespace becomes a path instead of meaning unset",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    v = os.environ.get(SRC_ROOT_ENV, \"\").strip()",
+    "    v = os.environ.get(SRC_ROOT_ENV, \"\")"
+   ]
+  ],
+  "expect": "src_root: whitespace is unset"
+ },
+ {
+  "name": "the fallback's state is ASSERTED rather than observed",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    fallback_ok = REPO.is_dir()",
+    "    fallback_ok = True"
+   ]
+  ],
+  "expect": "src_root: a missing fallback is MISSING_FALLBACK, root None, fallback_ok False"
+ },
+ {
+  "name": "the emitted script path loses its shell quoting",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    script = shlex.quote(str(observed.fallback / \"scripts\" / \"explainer-serve.py\"))",
+    "    script = str(observed.fallback / \"scripts\" / \"explainer-serve.py\")"
+   ]
+  ],
+  "expect": "help: every emitted command parses to the real script path"
+ },
+ {
+  "name": "the gone-checkout arm becomes unreachable",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    if not observed.fallback_ok:\n        return _gone_checkout_help(observed, pidfile)",
+    "    if False:\n        return _gone_checkout_help(observed, pidfile)"
+   ]
+  ],
+  "expect": "help: the gone-checkout arm does not advise unsetting"
+ },
+ {
+  "name": "an unknown reason falls through instead of being refused",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    if observed.reason not in SRC_REASONS:\n        raise ValueError(",
+    "    if False:\n        raise ValueError("
+   ]
+  ],
+  "expect": "an unknown reason is refused, not defaulted into an arm"
+ },
+ {
+  "name": "the caller's pidfile is dropped for the module global",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "        return _gone_checkout_help(observed, pidfile)",
+    "        return _gone_checkout_help(observed, PIDFILE)"
+   ]
+  ],
+  "expect": "help: src_root_help passes its own pidfile through, quoted, as ONE operand"
+ },
+ {
+  "name": "the gone-checkout `why` ternary is inverted",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "           if observed.env_value else",
+    "           if not observed.env_value else"
+   ]
+  ],
+  "expect": "\u2026and that arm still names why it is there, in both shapes"
+ },
+ {
+  "name": "the /src/ 404 re-emits master's unfilled <dir> placeholder",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "                body = src_root_help(observed)",
+    "                body = f\"no source root \u2014 start the server with {SRC_ROOT_ENV}=<dir>\""
+   ]
+  ],
+  "expect": "/src/ 404 renders the pasteable help, not the unfilled <dir>"
+ },
+ {
+  "name": "SERVABLE admits a dotfile suffix, so .env.local becomes servable",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "SERVABLE = {\".html\", \".md\", \".css\", \".js\", \".svg\", \".png\"}",
+    "SERVABLE = {\".html\", \".md\", \".css\", \".js\", \".svg\", \".png\", \".local\"}"
+   ]
+  ],
+  "expect": "a real '.env.local' in the root is NOT servable \u2014 the exclusion the reach comment's security verdict rests on"
+ },
+ {
+  "name": "safe_path drops the suffix allowlist entirely",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    if candidate.suffix.lower() not in SERVABLE:\n        return None",
+    "    if False:\n        return None"
+   ]
+  ],
+  "expect": "refuses a non-servable extension"
+ },
+ {
+  "name": "safe_path tests containment on the RAW path, before resolving",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "        candidate = (root / raw).resolve()\n        candidate.relative_to(root.resolve())",
+    "        candidate = root / raw\n        candidate.relative_to(root)"
+   ]
+  ],
+  "expect": "safe_path refuses a traversal to a SERVABLE file that really exists outside the root"
+ },
+ {
+  "name": "_Forbidden quietly stops refusing one read surface",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "            copy = __iter__ = __len__ = setdefault = pop = _raise",
+    "            copy = __len__ = setdefault = pop = _raise"
+   ]
+  ],
+  "expect": "\u2026and no surface it once refused has been dropped \u2014 the floor holds"
+ },
+ {
+  "name": "revision stops carrying the file's identity",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "def revision(p: pathlib.Path) -> str:",
+    "def revision(p: pathlib.Path) -> str:\n    return \"fixed\"\n"
+   ]
+  ],
+  "expect": "revision changes on a same-mtime rewrite (size is load-bearing)"
+ },
+ {
+  "name": "the /src/ caller consults the environment a SECOND time",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "            root = observed.root",
+    "            root = observed.root if os.environ.get(SRC_ROOT_ENV) or True else None"
+   ]
+  ],
+  "expect": "driving /src/ never consults the environment \u2014 the _Forbidden property, RATCHETABLE"
+ },
+ {
+  "name": "the listener stops being loopback",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "HOST = \"127.0.0.1\"",
+    "HOST = \"0.0.0.0\""
+   ]
+  ],
+  "expect": "the listener is loopback \u2014 clause 3 of the /src/ reach verdict"
+ },
+ {
+  "name": "a CORS header is emitted, so any origin can read private source",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "        self.send_header(\"Content-Length\", str(len(body)))",
+    "        self.send_header(\"Content-Length\", str(len(body)))\n        self.send_header(\"Access-Control-Allow-Origin\", \"*\")"
+   ]
+  ],
+  "expect": "no CORS header is emitted \u2014 clause 4, the one the whole paragraph rests on"
+ },
+ {
+  "name": "a regenerate TIMEOUT is reported as a successful rebuild",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "            return self._send(504, (f\"{script} did not finish in {REGEN_TIMEOUT}s \u2014 the page \"\n                                    f\"may be unchanged. NOT REBUILT.\").encode(),\n                              \"text/plain; charset=utf-8\")",
+    "            return self._send(200, json.dumps({\"ok\": True, \"page\": want}).encode(),\n                              \"application/json\")"
+   ]
+  ],
+  "expect": "a regenerate TIMEOUT is 504 NOT REBUILT, never a reported success"
+ },
+ {
+  "name": "the rebuild warning channel is dropped, so a degraded rebuild reports clean",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "        warn = [l.strip() for l in (r.stdout or \"\").splitlines() if l.strip().startswith(\"\u26a0\")]",
+    "        warn = []"
+   ]
+  ],
+  "expect": "a rebuild that warns carries the warning to the caller, not a bare ok"
+ },
+ {
+  "name": "--status reports success with nothing listening",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    return 0 if running else 1",
+    "    return 0"
+   ]
+  ],
+  "expect": "--status exits NON-ZERO when nothing is listening \u2014 a down server is not a pass"
+ },
+ {
+  "name": "md_render stops escaping the double quote safe_href credits it with",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    ".replace('\"', \"&quot;\")",
+    ""
+   ]
+  ],
+  "expect": "md_render escapes BOTH quote characters \u2014 the half safe_href credits it with"
+ },
+ {
+  "name": "resolve_page glues .html onto a name that already had an extension",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    if \".\" in bare.rsplit(\"/\", 1)[-1]:\n        return None",
+    "    if False:\n        return None"
+   ]
+  ],
+  "expect": "resolve_page does NOT glue .html onto a name that already had an extension"
+ },
+ {
+  "name": "pid_alive accepts 0, so stop() SIGTERMs the whole process group",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    if not pid:\n        return False",
+    "    if pid is None:\n        return False"
+   ]
+  ],
+  "expect": "pid_alive refuses 0 \u2014 SIGTERM to pid 0 is the whole process group"
+ },
+ {
+  "name": "the allow-list resolves the caller's own string as the script",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "        script = REGENERABLE.get(want) if isinstance(want, str) else None",
+    "        script = want if isinstance(want, str) else None"
+   ]
+  ],
+  "expect": "/regenerate refuses a real script NAME that is not an allow-list KEY"
+ },
+ {
+  "name": "the argv stops being rooted in SCRIPTS, so it resolves against the CWD",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "                r = subprocess.run([sys.executable, str(SCRIPTS / script)],",
+    "                r = subprocess.run([sys.executable, script],"
+   ]
+  ],
+  "expect": "the argv is exactly [python, SCRIPTS/<allow-listed script>] \u2014 nothing else"
+ },
+ {
+  "name": "a generator that exits NON-ZERO is reported as a successful rebuild",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "        if r.returncode != 0:",
+    "        if False:"
+   ]
+  ],
+  "expect": "a generator that exits NON-ZERO is a 500 NOT REBUILT, never a reported success"
+ },
+ {
+  "name": "the 400 stops naming the legal set, leaving the caller guessing",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "            body = (f\"unknown page {want!r}. Rebuildable pages are: \"\n                    f\"{', '.join(sorted(REGENERABLE))}.\")",
+    "            body = f\"unknown page {want!r}.\""
+   ]
+  ],
+  "expect": "\u2026and the 400 names the legal set, so the caller is not left guessing"
+ },
+ {
+  "name": "start() binds a literal of its own instead of the HOST constant",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    with http.server.ThreadingHTTPServer((HOST, PORT), Handler) as httpd:",
+    "    with http.server.ThreadingHTTPServer((\"0.0.0.0\", PORT), Handler) as httpd:"
+   ]
+  ],
+  "expect": "\u2026and start() binds THAT constant, not a literal of its own"
+ },
+ {
+  "name": "/_stale stops naming WHICH source moved",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "            body = verdict if verdict == \"fresh\" else f\"{verdict} {newest_src}\"",
+    "            body = verdict"
+   ]
+  ],
+  "expect": "\u2026and `stale <path>` NAMES the source that moved, never a bare verdict"
+ },
+ {
+  "name": "/_stale raises a banner for a page nobody declared sources for",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "            if target is None or not target.is_file() or not sources:",
+    "            if target is None or not target.is_file():"
+   ]
+  ],
+  "expect": "/_stale is `fresh` for a page with no declared sources, not an alarm"
+ },
+ {
+  "name": "do_POST stops bounding the body size",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "        if length <= 0 or length > MAX_BODY:",
+    "        if length < 0:"
+   ]
+  ],
+  "expect": "a body larger than MAX_BODY is refused before it is read"
+ },
+ {
+  "name": "a non-object JSON body is accepted",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "            if not isinstance(payload, dict):\n                raise ValueError(\"not an object\")",
+    "            pass"
+   ]
+  ],
+  "expect": "a JSON array is refused \u2014 the contract is an OBJECT"
+ },
+ {
+  "name": "the wrong-key 400 stops naming the keys it got",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "            got = \", \".join(sorted(str(k) for k in payload)) or \"(no keys)\"",
+    "            got = \"(hidden)\""
+   ]
+  ],
+  "expect": "a wrong key is refused AND the reply names the keys it actually got"
+ },
+ {
+  "name": "explainers() orders by NAME instead of mtime",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "                  key=lambda p: p.stat().st_mtime, reverse=True)",
+    "                  key=lambda p: p.name, reverse=True)"
+   ]
+  ],
+  "expect": "orders newest first"
+ },
+ {
+  "name": "/questions answers ok without writing anything",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "        with QUESTIONS.open(\"a\", encoding=\"utf-8\") as fh:\n            fh.write(format_question_entry(payload, now))",
+    "        if False:\n            pass"
+   ]
+  ],
+  "expect": "/questions actually WRITES the question \u2014 the reply is not the evidence"
+ },
+ {
+  "name": "/questions TRUNCATES the file instead of appending",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "        with QUESTIONS.open(\"a\", encoding=\"utf-8\") as fh:",
+    "        with QUESTIONS.open(\"w\", encoding=\"utf-8\") as fh:"
+   ]
+  ],
+  "expect": "/questions APPENDS \u2014 an earlier question survives a later one"
+ },
+ {
+  "name": "the POST route stops reaching the /regenerate handler",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "        if route == \"/regenerate\":\n            return self._regenerate(payload)",
+    "        if route == \"/regenerate-disabled\":\n            return self._regenerate(payload)"
+   ]
+  ],
+  "expect": "POST /regenerate REACHES the allow-list the seven cases above defend"
+ },
+ {
+  "name": "_send hardcodes a content type instead of passing the caller's",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "        self.send_header(\"Content-Type\", ctype)",
+    "        self.send_header(\"Content-Type\", \"text/plain\")"
+   ]
+  ],
+  "expect": "_send passes the caller's content type through, not a hardcoded one"
+ },
+ {
+  "name": "/_stale lets the OLDEST source decide, so a stale page reads fresh",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "                newest, newest_src = max(",
+    "                newest, newest_src = min("
+   ]
+  ],
+  "expect": "/_stale reports the NEWEST source, not whichever one it happens to see first"
+ },
+ {
+  "name": "/_stale stops normalising a .html request to its slug",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "            slug = (qs.get(\"p\") or [\"\"])[0].strip(\"/\").removesuffix(\".html\")",
+    "            slug = (qs.get(\"p\") or [\"\"])[0].strip(\"/\")"
+   ]
+  ],
+  "expect": "/_stale normalises a `.html` request to the same slug the sources are keyed by"
+ }
+]

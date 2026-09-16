@@ -9372,3 +9372,118 @@ rounds and was examined directly rather than inherited. `/src/` serves, confinem
 prints a command you can paste. Everything above is about the instrument that proves it.
 
 Suite 88 → 144. Sixteen gates green.
+
+## 2026-09-16
+The biggest script in the repo had 149 tests and no proof any of them could fail. Now it has both — and seeding that proof found two real holes.
+<!--tech-->
+Backlog **#122 closed.** `scripts/explainer-serve.py` was the largest file under `scripts/` that had
+never been inside `--mutate .`: 149 real cases, none ever shown able to go red if the code they name
+were deleted. It now carries **17 manifest entries**; the repo-wide declared total goes 643 → 660,
+and the whole sweep reports **660 mutations, 660 killed, 660 attributed to the case each names, 0
+survivors**.
+
+⭐ **The debt was real, and paying it proved that immediately — two mutations SURVIVED a file whose
+every case passed:**
+
+1. **`SERVABLE` could be widened until `/src/.env.local` was servable**, at 144/144 green. The `/src/`
+   reach comment rests its *"not judged a security finding"* verdict partly on *"`SERVABLE` excludes
+   `.env*` by suffix"* — and **that exclusion had no case at all.** Three now exist, asserted through
+   `safe_path` rather than against the constant, because the claim is about what is *reachable*.
+2. **`SRC_REASONS` could gain a fourth member**, also at 144/144, because the only case asking about
+   it is a *subset* test — *is every reason returned declared?* — which any superset satisfies. The
+   exhaustiveness refusal could have grown an unhandled arm unnoticed.
+
+⛔ **And a limit on what any manifest here can cover, found by doing this and not previously written
+down.** An entry names the case that must go red, and the harness matches that name by **exact
+equality** — but a case that dies by *raising* prints its name with the exception appended, so it can
+never be named. Measured: the one property the last PR fought five rounds to guard reddens six cases
+and **every one dies by AssertionError** — genuinely guarded, and structurally impossible to ratchet.
+One case was rewritten to report that failure as a value instead of a raise, so it could join. The
+`[FAIL] ` report format itself still cannot be ratcheted at all: mutating it yields a red suite with
+zero readable failure lines, i.e. it destroys the channel the ratchet reads. Left out deliberately
+rather than forced.
+
+Two self-inflicted defects, both caught by the harness *before* it measured anything, because it
+proves every suite green first: a hardcoded home path in a docstring (prose, but the guard is
+deliberately stricter than "does this read the real home"), and a backlog edit of mine that added a
+seventh column to a six-column table.
+
+**Unblocks #125, #126 and #127** — the parked restart feature can now be reviewed against a ratchet
+that works. Suite 144 → 149.
+
+## 2026-09-16
+Correction to this morning's entry: a reviewer applied 73 mutations to that file and 58 survived. The manifest now covers the handlers too.
+<!--tech-->
+The earlier entry today reported backlog #122 closed with 17 manifest entries and two holes found.
+Both true. What it did not say — because I had not measured it — is **how much of the file those 17
+entries did not reach.** Round 2's reviewer applied **73 plausible mutations across the whole file
+and 58 survived at 167/167**, and eleven of them were inside `_regenerate`, the one function round 1
+had just declared fixed.
+
+⛔ **The worst of them: the allow-list that decides which script the server executes could be
+deleted, and nothing went red.** Its own docstring calls it *"THE WHOLE SECURITY ARGUMENT"*. Proved
+by running it, not by reading: a POST of `{"page": "../../../../../../tmp/evil.py"}` put that string
+on the command line and answered `ok: true`, with the suite fully green. Round 1 had added five cases
+to that exact function — and cased the *replies*, not the *argument*.
+
+**Also surviving, and it is the same mistake twice:** round 1 cased the timeout arm that says
+*"NOT REBUILT"*; the arm three lines below it, which says *NOT REBUILT* for a generator that exits
+non-zero, was left uncased. Fix the instance, miss the class — in the commit that cited that rule.
+
+⚠ **And a guard of mine certified something false.** The case for *"the listener is loopback"*
+asserted the value of a constant. Change the line that actually **binds the socket** to `0.0.0.0` and
+the suite stayed green — so the ratchet entry named *"the listener stops being loopback"* was
+vouching for a claim that could be untrue. It now asserts both facts: the constant is loopback, and
+the bind uses the constant.
+
+⚠⚠ **Two of my own new tests passed while testing nothing, and only the harness could see it.** I
+wrote the `/_stale` cases against the real pages directory on the theory that the real thing is the
+honest fixture. The mutation harness runs with `$HOME` pointed at a directory that does not exist, so
+that directory was empty, the handler returned early, and two mutations survived behind green tests.
+Same shape as a defect two PRs ago, caught by the same guard. **A test whose premise depends on the
+surrounding world is testing the world.**
+
+Where it ends up: **679 mutations, 679 killed, 679 attributed, 0 survivors.** Manifest 17 → 36, suite
+144 → 188. Two entries were **dropped rather than forced** — one measured something already measured,
+one behaved differently on macOS than elsewhere — and the process layer (`start`, `stop`, the daemon
+detach) is **filed as backlog #129** rather than half-done, because covering it needs a real port and
+that is a different piece of work.
+
+## 2026-09-16
+Third round on the same file: the question box could swallow your question and tell you it saved it. Fixed, and the remainder is filed rather than half-done.
+<!--tech-->
+Backlog **#122 is closed** — `scripts/explainer-serve.py` has **42 mutation entries**, and the full
+sweep reports **685 mutations, 685 killed, 685 attributed to the case each names, 0 survivors**.
+Suite 144 → 196.
+
+⛔ **The find that matters most in this round: `/questions` could record nothing and answer
+`{"ok": true}`.** Four separate mutations survived a fully green suite — deleting the write; changing
+append to *overwrite*, which destroys every question ever asked; deleting the directory creation; and
+the reply simply lying. The longest comment in that file exists because this exact thing happened
+once before, in August: a question was accepted, stored as "(empty)", and the person who asked had no
+way to find out. **Eight tests guarded the half where you send nothing. None guarded the half where
+the file gets written.** The new ones read the file back, because the reply is precisely what was
+proved untrustworthy the first time.
+
+⚠ **Same mistake, third round, third depth.** Round 1: I tested one clause of a four-clause security
+argument and stopped reading the sentence. Round 2: I tested the timeout branch and not the one three
+lines below it. Round 3: the request checks and not the part that writes. Each time the gap was one
+step from where the fix landed.
+
+⚠ **And two of my own test NAMES were claiming things the tests cannot check** — one said it guarded
+a crash on a lookup table the test never reaches; the other credited a strict-decoding rule for a
+rejection that happens for a different reason entirely. Renamed to what they actually do. A test name
+is a claim, and an overstated one is worse than none, because the next reader believes it.
+
+**What is deliberately NOT done, and why.** The reviewer applied 151 mutations and 78 survived. That
+is not a failure to converge — covering a 2,100-line file has no endpoint, and treating it as this
+task's finish line would turn a bounded job into an open one. **#122's actual work is complete and
+its audit is clean: all 42 entries fail for the reason they name.** The remainder is filed as
+**#130** — the sharpest part being the live-reload script in every page, where six documented
+decisions all survive because the tests check that words appear in the script's text rather than that
+the script behaves. Checking a string contains a token is not checking the code does the thing.
+
+⚠ **This branch never got a Codex review.** Three attempts, three timeouts. A fresh independent
+reviewer stood in each round and earned its place — rounds 2 and 3 each found a serious defect in the
+previous round's own work — but the two reviewers historically catch different kinds of problem, and
+that second kind is missing here. Recorded in all three round documents rather than glossed.
