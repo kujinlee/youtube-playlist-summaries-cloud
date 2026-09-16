@@ -9242,3 +9242,133 @@ Filed: **#125** (the green guard), **#126** (the 409 verdict), **#127** (`RESTAR
 the failure the pipe exists to detect — provenance checked, a seven-round blind spot, not fix
 wreckage). All three blocked behind **#122**: no `scripts/mutations/explainer-serve.json`, so
 none of that file's 140 cases has ever been shown load-bearing.
+
+## 2026-09-15
+Clicking a source link on the goals page did nothing useful for four days — now it opens the document.
+<!--tech-->
+This is the shipping half of the split PR **#295** was parked for. The restart button stays parked;
+nothing of it is in this branch.
+
+Every `/src/` link on `/goals` answered *no source root* — 55 of them, since the server was last
+started on 8 September. Nothing was broken in the page: the links were correct, and
+`scripts/explainer-serve.py` simply declined to resolve them because `EXPLAINER_DOCS_ROOT` was not
+set. Started the way a person actually types it — `python3 scripts/explainer-serve.py` — the whole
+`/src/` subsystem switched itself off and the page around it kept working, which is why nobody saw it.
+
+**The server already knew the answer.** `REPO` is derived from `__file__` and `/_stale` has always
+used it to find the source a page was built from, so `/src/` was refusing to open files that
+`/_stale` was stat-ing by name in the same process, one handler apart. `src_root()` now falls back
+to that root. The variable keeps its real job — pointing at a *different* checkout — and
+project-independence is untouched, because `SCRIPTS.parent` hardcodes no repo. Verified live on this
+branch, on port 7893: with nothing set, `/src/CONTEXT.md` and `/src/docs/dev-process.md` return 200
+and `/src/../../etc/passwd` still 404s.
+
+A **wrong** value stays an error rather than falling back. Unset means "no opinion"; a path someone
+typed means a specific checkout, and quietly serving a different one would rebuild this same bug
+with better manners.
+
+The remaining 404 now prints the commands to run. The old text said `EXPLAINER_DOCS_ROOT=<dir>` and
+never filled in `<dir>`, although the value was one module constant away — a description of the
+failure wearing the shape of an instruction.
+
+⭐ **`src_root()` had no self-test cases at all**, which is how a green suite coexisted with a dead
+subsystem for four days. The suite goes **88 → 123**. One case renders the 404 body with `os.environ`
+emptied and `Path.is_dir` patched to *raise*: it passes only if the reason was carried from the one
+observation, and it is red on all four of the historical defects in this component, where every
+earlier guard named a single instance.
+
+Two independent improvements ride along because they are correct on their own merits and were only
+*surfaced* by #295: `gen-dashboard.py`'s F3 case now anchors on the card's own fragment rather than
+the page's first `<summary>` (a positional read that asserted a shape nothing guaranteed), and
+`check-fixture-variation.py` gains a duplicate-key guard — a repeated key in a dict literal is not
+an error, the last silently replaces the first, and that had already discarded three live pins while
+the guard stayed green.
+
+⚠ **Stated, not measured away:** `scripts/explainer-serve.py` still has no mutation manifest, so its
+123 cases have not been shown able to fail. That is backlog **#122** and it is unchanged by this
+branch. What *does* change is that the suite's failure lines are now `[FAIL] `, the shape
+`check-plan-code.parse_fail_names` can read — the precondition for this file ever joining
+`--mutate .`.
+
+## 2026-09-15 [heads-up]
+The guard I wrote to prove the fix works was wrong four times in a row — so I stopped patching it and redesigned it.
+<!--tech-->
+`ship-src-root-alone` — the `/src/` half of parked PR #295. **The shipped behaviour has been right
+since round 4 of #295 and took no finding in either round here.** Everything below is about the
+*instrument*: the cases that prove it.
+
+Round 1's review found the branch's own call site had **no coverage at all** — three mutations of
+it, including one restoring the exact broken text the branch exists to delete, passed 123/123. The
+fix for that has now been wrong four consecutive times, and they all failed the same way:
+
+| attempt | defeated by |
+|---|---|
+| refuse env reads via `get` (from #295) | `dict()`, `len()`, `for k in` |
+| count env reads via `get` | `SRC_ROOT_ENV in os.environ` |
+| count via eight surfaces | `setdefault`, `pop`, `repr()`, `==`, `len()` |
+| stub the probe, forbid the env outright | calling the stubbed probe **twice**, and `os.environb` |
+
+⛔ **That is four half-covering guards, so the process stopped the patching rather than trying a
+fifth.** This repo arms an architecture review when two rounds running carry defects caused by the
+previous round's own fix in one component; it armed, and the review is filed at
+`docs/reviews/architecture-review-2026-09-15-src-caller.md`.
+
+Its finding: every attempt tried to prove a **negative** — *nothing else consults the world* — by
+**intercepting the world at runtime**, which requires enumerating an **open** set of surfaces. The
+redesign asks the same question a second way, **statically**, over the ten lines of code we own,
+where the set is closed. Both previously-invisible escapes now die.
+
+⚠ **Two process rules fired in opposite directions and the tie-break is written down**: the rule that
+says *stop reviewing, go build* (the deliverable converged long ago) versus the rule that says *stop
+patching, redesign*. Redesign won, because "go build" on top of a guard that reports a pass it has
+not earned is precisely how the original four-day outage happened — a green suite over a dead
+subsystem.
+
+⛔ **Separately, and it needs your eye: I was destroying other people's review evidence.** Two
+`docs/reviews/verdicts/*.json` files belonging to **unrelated already-merged PRs** were deleted by
+this branch — one of them already committed — because the Codex wrapper derives the verdict filename
+from the caller's `--out` stem and I used a generic one. Those files are what CI reads to know an
+adversarial gate actually ran. **Both restored**, and nothing in the repo noticed the deletion: two
+gates were green straight over it. Filed as backlog **#128**; the cause is a namespace with no
+owner, and this is its third occurrence, so the workaround I am using (branch-specific names) is
+explicitly not the fix.
+
+Suite 88 → 150. Sixteen gates green, including under the redirected `$HOME` the harness spawns with.
+
+## 2026-09-15
+Correction to this morning's entry: the redesign I described failed too, and the guard has been withdrawn rather than rewritten a sixth time.
+<!--tech-->
+The earlier entry today reported that a static source check had closed the problem four runtime
+guards could not. **It had not.** Round 3 broke it in one sitting with two Blocking findings, and the
+architecture review's central claim — that asking the question statically makes the set of answers
+**closed** — was wrong. The *region* is bounded; the set of ways to name the environment from inside
+it is not. One indirection (`_probe = src_root`) defeated a substring count; an aliased import,
+`posix.environ`, an import-time cache and `os.environb` each walked past "in any spelling", in plain
+sight, inside the region.
+
+⛔ **So the property is no longer guarded, and the code now says so in terms** — what dies (a second
+read through the `os.environ` object at request time) and what survives (pre-bound aliases,
+`posix.environ`, `os.environb`, import-time caches, subprocess inheritance, a second probe call).
+**Both lists were verified by mutation by the other reviewer**, which was the one thing that had to
+be true: a false entry in the *guarded* column would have been the sixth false coverage claim on this
+component.
+
+⭐ **The retreat was pre-committed in writing before the round that triggered it ran.** That is the
+only reason it happened — by the time the evidence arrived the decision was already made, so there
+was nothing left to argue with. The argument that should have stopped me was also already in hand:
+the other reviewer had shown that `os.environb` and subprocess inheritance read the environment
+*beneath* the layer any Python guard can reach. I preferred my own reasoning from four failures over
+their mechanism, and was wrong one round later.
+
+**Three of my own recorded measurements were also wrong, and the cause is one missing habit.** The
+mutation table was uniformly one low because I added a passing case and then edited the
+**denominators by hand instead of re-running**. A correction I wrote then quoted a control from one
+run and a mutant from another — an out-of-tree run of this suite carries one pre-existing red, so the
+two are not comparable. **A measurement needs its context recorded, not just its value.** All of it
+is corrected in place, and the correction-of-the-correction is recorded too.
+
+**What this does NOT change: the server works.** The deliverable took zero findings across three
+rounds and was examined directly rather than inherited. `/src/` serves, confinement holds, the 404
+prints a command you can paste. Everything above is about the instrument that proves it.
+
+Suite 88 → 144. Sixteen gates green.

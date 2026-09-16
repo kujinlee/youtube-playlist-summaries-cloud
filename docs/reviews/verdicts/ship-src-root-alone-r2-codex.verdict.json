@@ -1,0 +1,19 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 3482 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "78100320d99b8a9160b18ff88ba3625932f68d40",
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/227fd546-5a6f-429b-bcf1-09fc12283325/scratchpad/es.bak: OVERWRITTEN during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/227fd546-5a6f-429b-bcf1-09fc12283325/scratchpad/es2.bak: CREATED during the run (writer unattributed)"
+  ],
+  "model": "gpt-5.5",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/227fd546-5a6f-429b-bcf1-09fc12283325/scratchpad/r2-prompt.md",
+  "reason": "3482 chars",
+  "review": "r2-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}

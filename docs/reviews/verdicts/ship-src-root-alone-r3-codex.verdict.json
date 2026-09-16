@@ -1,0 +1,21 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 2453 chars"
+  ],
+  "dirty": {
+    "docs/reviews/architecture-review-2026-09-15-src-caller.md": "100644 abe37331e6d3b1c2bd6cb67248720d66e4e20eb9",
+    "docs/reviews/claude/ship-src-root-alone-r3-claude.md": "100644 5088cb797a20935078b969e5fa253dc8a9730b68",
+    "docs/reviews/coordinator/ship-src-root-alone-r1-coordinator.md": "100644 c6c6535452a9122f3bd8216aa496ea8d9647ab74",
+    "scripts/explainer-serve.py": "100755 7bfa31fa6151f505f27c72abb91978760adaee9e"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "c7a474b41c8ec13581a819b5409f6a1298cc0ece",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/227fd546-5a6f-429b-bcf1-09fc12283325/scratchpad/r3-codex-prompt.md",
+  "reason": "2453 chars",
+  "review": "ship-src-root-alone-r3-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}
