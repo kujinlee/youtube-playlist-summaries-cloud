@@ -37,7 +37,7 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "    return path.endswith(\".md\") and \"/\" not in path",
+        "    return is_root_md",
         "    return True"
       ]
     ],
@@ -736,5 +736,27 @@
       ]
     ],
     "expect": ".gitignore is prose \u2014 the only PROSE_FILES member the root-.md fallback cannot catch"
+  },
+  {
+    "name": "the root-.md prose fallback goes, so a root .md not in PROSE_FILES owes a review round",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    is_root_md = path.endswith(\".md\") and \"/\" not in path",
+        "    is_root_md = False"
+      ]
+    ],
+    "expect": "a root .md NOT named in PROSE_FILES is still prose, via the fallback"
+  },
+  {
+    "name": "verdict stops reading the PR body, so a NO-REVIEW marker in it is ignored",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    reason = reason_of(pr_body)",
+        "    reason = reason_of(\"\")"
+      ]
+    ],
+    "expect": "the pr_body is a real PARAMETER: a NO-REVIEW marker in it waives the round"
   }
 ]

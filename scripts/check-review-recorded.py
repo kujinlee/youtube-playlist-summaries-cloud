@@ -2,7 +2,7 @@
 """A branch that changes CODE records a review round, or says in writing why it did not.
 
     python3 scripts/check-review-recorded.py --base origin/master --pr-body-file /tmp/pr-body.md
-    python3 scripts/check-review-recorded.py --self-test  # 184 cases
+    python3 scripts/check-review-recorded.py --self-test  # 187 cases
 
 WHY THIS EXISTS
 ---------------
@@ -218,7 +218,11 @@ def is_prose(path: str) -> bool:
     if any(path.startswith(d) for d in PROSE_DIRS):
         return True
     # a Markdown file at the repository ROOT is prose; one inside a package is not necessarily
-    return path.endswith(".md") and "/" not in path
+    # ⚠ Two lines so the two DIRECTIONS carry separate anchors: "prose swallows everything"
+    # (too permissive) and "the fallback goes" (too restrictive, r4 Low 4) are different
+    # defects and a single expression cannot hold both entries.
+    is_root_md = path.endswith(".md") and "/" not in path
+    return is_root_md
 
 
 def prose_exceptions_cover(gate_dirs: list[str], declared: "tuple[str, ...]") -> list[str]:
@@ -1335,6 +1339,10 @@ def self_test() -> int:
         cases.append((name, got, want))
 
     none_reason = lambda _b: None
+    # reads the marker out of the body it is GIVEN, so `pr_body` reaching `reason_of` is
+    # observable — the point of r4 Low 1.
+    _declared_reason = lambda b: (b.split("NO-REVIEW:", 1)[1].strip()
+                                  if "NO-REVIEW:" in b else None)
     def reason(r):
         return lambda _b: r
 
@@ -1373,6 +1381,20 @@ def self_test() -> int:
     # the one input that separates them.
     case(".gitignore is prose — the only PROSE_FILES member the root-.md fallback cannot catch",
          guarded_changes([".gitignore"]), [])
+    # ⛔ r4 LOW 4 — THE OTHER HALF OF THE MUTUAL MASK, and this lineage is now three rounds long
+    # (r2 Low 7 -> r3 Low 6 -> here). `.gitignore` falsifies the PROSE_FILES branch; nothing
+    # falsified the root-`.md` FALLBACK, because every `.md` reaching it was also a PROSE_FILES
+    # member. A root `.md` that is NOT named in the tuple is the input that separates them.
+    case("a root .md NOT named in PROSE_FILES is still prose, via the fallback",
+         guarded_changes(["NOTES.md"]), [])
+    # ⛔ r4 LOW 1 — `verdict.pr_body` was the SAME "constant wearing a signature" shape this branch
+    # closed for `prose_exceptions_cover.declared`, still live in the same file: all eight call
+    # sites passed `""`, so `reason_of(pr_body)` -> `reason_of("")` survived. Closing one instance
+    # and leaving the file's only other one is instance-not-class.
+    case("the pr_body is a real PARAMETER: a NO-REVIEW marker in it waives the round",
+         verdict(CODE, [], "NO-REVIEW: infrastructure only", _declared_reason)[0], 0)
+    case("...while the same branch with an EMPTY body does not",
+         verdict(CODE, [], "", _declared_reason)[0], 1)
     # ⚠ a Markdown file INSIDE a package is not automatically prose — only a root one is
     case("a .md inside a package is still guarded",
          guarded_changes(["lib/README.md"]), ["lib/README.md"])

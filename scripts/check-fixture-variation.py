@@ -196,8 +196,11 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
         'check_contract.path', 'check_contract.text', 'discover_guards.script_paths',
         'discover_ratchets.ci_yaml', 'discover_ratchets.script_texts',
         'evaluate.caller_blob_for', 'evaluate.manifest_stems', 'evaluate.texts',),
-    'check-review-recorded.py': (
-        'review_added.paths', 'verdict.pr_body',),
+    # ⟳ 2026-09-16 (#137, r4 Low 7): both entries DELETED — `review_added.paths` began varying
+    # when this branch added a case, and `verdict.pr_body` when r4 Low 1 added two. ⚠ The
+    # ratchet PRINTED 'delete it from KNOWN_UNVARIED' and exited 0, so a dead entry sat here
+    # pre-authorising a regression on a green exit code — debt that has stopped being debt
+    # still reads as permission.
     'check-review-rounds.py': (
         'audit.reviews',),
     'check-roadmap-consistency.py': (

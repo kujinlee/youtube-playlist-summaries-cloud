@@ -853,7 +853,12 @@ EXPECTED_MUTATIONS = {
     # branches mutually masked, each surviving alone). ⚠ My first PATH_LIMIT cases built their
     # input FROM the constant, so the input moved with the mutation and could never pin the value:
     # literal lengths now.
-    "scripts/check-review-recorded.py": 64,
+    # ⟳ r4 (claude) 7 Low: 64 -> 66. The root-`.md` prose fallback (Low 4 — the OTHER half of a
+    # mutual mask this lineage has now visited three rounds running: r2 L7 -> r3 L6 -> r4 L4) and
+    # `verdict.pr_body` (Low 1 — the SAME "constant wearing a signature" shape this branch closed
+    # for `prose_exceptions_cover.declared`, still live in the same file: closing one instance and
+    # leaving the only other one is instance-not-class).
+    "scripts/check-review-recorded.py": 66,
     # ⟳ 2026-09-14, r11: this file JOINS the manifest — R4 widened-debt 8 -> 7, removed from
     # `WIDENED_MANIFEST_DEBT` in this same commit, which that rule requires as an identity and not
     # a ceiling. It is the producer half of the mechanism the file above consumes, and it had gone
@@ -3254,7 +3259,7 @@ def _self_test() -> int:
     # `schema-gates` check unrequireable) and SIX added for the derivation that replaced it. A RISE,
     # so this is not the sanctioned-fall case; the two retirements are recorded beside the per-file
     # count above with the reason, and both orphans were found by RUNNING the anchor check.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 735)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 737)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

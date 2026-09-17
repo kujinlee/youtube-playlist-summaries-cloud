@@ -91,8 +91,12 @@ worst.**
    re-deriving it. *A script beats a claim only when it reads the thing the claim is about.*
 
 **The corrected asymmetry, which still points the same way and is why the retreat is unchanged:**
-2 findings in the `#137` change (both now closed) against 11 of r1-claude's 14, all of r2-claude's
-9, all 8 of r3-claude's, and codex's 1 + 1 + 2 — in the collateral derivation. Reverting the
+~2 findings in the `#137` change (both now closed) against ~27 in the collateral derivation.
+⟳ **r4 Low 6: the first CORRECTION of this sentence was itself wrong** — it said "all of
+r2-claude's 9, all 8 of r3-claude's", and several of those are neither: r2 Low 9 is
+`check-plan-code.py`, r2 Medium 5 and r3 Medium 3 are backlog rows, r3 Medium 4 is this very table,
+and r3 High 1 is the workflow plus the r2 coordinator document — which line 64 of THIS file says
+explicitly. Third time a count in this branch's coordination has been stated rather than derived. Reverting the
 derivation remains the right retreat if it is ever needed. What had to go is the word **ZERO** and
 the invented confirmation.
 
