@@ -9660,3 +9660,43 @@ broken gate should grey the merge button out.
 
 148 self-test cases in the changed guard, six new mutation entries each proved to go red through the
 case it names over a control proved green first, and the manifest total moves 714 to 718.
+
+## 2026-09-16
+
+Correction and follow-up to the entry above, on the same unmerged branch. Two numbers in it are now
+stale and the reason is worth more than the numbers: **the adversarial review found a real hole, and
+it was the one that entry admitted to having left open.**
+
+The check that decides which documentation directories hold gate machinery was recognising gate data
+by its file extension, from a list of two: `.sql` and `.txt`. The reviewer demonstrated — by running
+the function, not by reading it — that a new gate reading a `.json` rules file would be invisible.
+That matters more than it sounds: the existing gates keep the result non-empty, so the "I could not
+run" guard is satisfied, and coverage shrinks silently. A later change to that new gate's rules would
+have been classified as documentation and owed no review round. JSON or YAML config is an ordinary
+shape for a new checker, so this was not an exotic scenario.
+
+It also showed a second shape no extension list could ever have fixed: a path written as a `pathlib`
+join, `ROOT / "docs" / "superpowers" / … / "rules.json"`, contains no recognisable path fragment at
+all — it is five separate one-word strings.
+
+Fixed as a class rather than by adding `.json` and waiting for the next extension. The extension list
+was quietly doing two jobs: deciding what is prose, and deciding what is even a path. Inverting it to
+"anything but Markdown" proves that — it breaks immediately on the real repository, because one gate
+binds a *regular expression* beginning with a documentation path and another binds a *prose message*
+containing one. Neither is a file. So the two jobs are now separate: Markdown answers "is it prose",
+and asking the filesystem whether the file exists answers "is it a path". Any extension now works.
+
+⚠ And one of the new mutation tests was wrong rather than the code. A clause requiring a join to have
+at least two pieces turns out to be **inert** — removing it changes nothing observable, because a
+one-piece join returns exactly what the simpler scan already finds. The test claiming to prove that
+clause mattered was deleted and the clause is now labelled as what it is: a statement of intent with
+no enforcement behind it. Keeping the test would have been an unfalsifiable guard, which is the thing
+this project files findings about.
+
+Current: 153 self-test cases, 50 mutation entries for that file, manifest total 721, every entry
+proved to go red through the case it names over a control proved green first.
+
+⚠ Still outstanding, unchanged: the review round is not complete. The Codex half is filed and returned
+**NOT CONVERGED**; its finding is fixed here and therefore needs a further round rather than closing
+the gate. The Claude half has not run. And the repository setting — making the check required — is
+still a human's to make, still after the merge.

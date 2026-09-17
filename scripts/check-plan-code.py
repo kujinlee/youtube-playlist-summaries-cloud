@@ -807,7 +807,17 @@ EXPECTED_MUTATIONS = {
     # whole-line shell comment is rejected by the `NAME=` match, not by the comment strip, so the
     # case passed for an AMBIENT reason while the clause it appeared to test was unfalsifiable. A
     # case driving a TRAILING comment on a real assignment was added and kills it.
-    "scripts/check-review-recorded.py": 47,
+    # ⟳⟳ 2026-09-16, r1 High (codex): 47 -> 50. The suffix ALLOW-LIST fail-open'd by
+    # OMISSION — a new gate reading a `docs/…/rules.json` was invisible while the existing
+    # gates kept the result non-empty, so the CANNOT-RUN guard passed and coverage shrank
+    # silently. Reproduced by the reviewer, not argued. Fixed as a CLASS: `.md` answers *is
+    # it prose* and an INJECTED existence check answers *is it a path*, the job the allow-list
+    # had been doing by accident. Plus `_joined_path`, because a `pathlib` join holds no
+    # `docs/…` literal at all. ⚠ TWO entries were re-anchored (the fix moved their text) and
+    # ONE was DELETED rather than kept: `len(parts) > 1` is INERT — mutating it to `> 0` left
+    # the suite green, because a one-constant join returns what the per-constant scan already
+    # finds. A clause whose removal changes nothing cannot carry a mutation.
+    "scripts/check-review-recorded.py": 50,
     # ⟳ 2026-09-14, r11: this file JOINS the manifest — R4 widened-debt 8 -> 7, removed from
     # `WIDENED_MANIFEST_DEBT` in this same commit, which that rule requires as an identity and not
     # a ceiling. It is the producer half of the mechanism the file above consumes, and it had gone
@@ -3204,7 +3214,7 @@ def _self_test() -> int:
     # `schema-gates` check unrequireable) and SIX added for the derivation that replaced it. A RISE,
     # so this is not the sanctioned-fall case; the two retirements are recorded beside the per-file
     # count above with the reason, and both orphans were found by RUNNING the anchor check.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 718)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 721)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

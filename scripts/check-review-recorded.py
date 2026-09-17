@@ -2,7 +2,7 @@
 """A branch that changes CODE records a review round, or says in writing why it did not.
 
     python3 scripts/check-review-recorded.py --base origin/master --pr-body-file /tmp/pr-body.md
-    python3 scripts/check-review-recorded.py --self-test  # 148 cases
+    python3 scripts/check-review-recorded.py --self-test  # 153 cases
 
 WHY THIS EXISTS
 ---------------
@@ -109,6 +109,7 @@ import pathlib
 import re
 import subprocess
 import sys
+from typing import Callable
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 NO_REVIEW = "NO-REVIEW:"
@@ -240,12 +241,53 @@ def prose_exceptions_cover(workflow_globs: list[str]) -> list[str]:
     return missing
 
 
-# Suffixes that make a `docs/` file GATE DATA rather than prose. `.md` is deliberately absent and
-# that is this project's own existing rule, not a new one — `is_prose` above already treats a `.md`
-# under an exempted directory as prose (and says why). A gate that READS prose does not make that
-# prose into gate code: `check-docs.py` binds `docs/backlog.md`, `docs/plugins.md` and
-# `docs/dev-process.md`, all of which are exactly what this gate is supposed to wave through.
-GATE_DATA_SUFFIXES = (".sql", ".txt")
+# The ONE suffix that keeps a `docs/` file prose even when a gate reads it. This is not a new rule:
+# `is_prose` above already treats a `.md` under an exempted directory as prose, and says why. A gate
+# that READS prose does not make that prose into gate code — `check-docs.py` binds `docs/backlog.md`,
+# `docs/plugins.md` and `docs/dev-process.md`, all of which this gate is supposed to wave through.
+#
+# ⟳ 2026-09-16, r1 High (codex): THIS WAS AN ALLOW-LIST — `(".sql", ".txt")` — AND IT FAIL-OPEN'd
+# BY OMISSION. Reproduced by the reviewer rather than argued: a new gate reading
+# `docs/superpowers/specs/new-gate/rules.json` is invisible to the derivation, the CURRENT gates keep
+# the result non-empty so the CANNOT-RUN guard is satisfied, and a later PR editing that gate's
+# rules classifies as PROSE and owes no review round. JSON/YAML config is an ordinary shape for a new
+# checker, so the omission was not exotic. ⚠ Inverting it to "any suffix but `.md`" FAILS TODAY, and
+# measuring that is what produced the shape below: `check-docs.py` binds a REGEX
+# (`docs/adr/(\d{4})…`) and `check-sentinel-meanings.py` binds a PROSE MESSAGE containing a path —
+# neither is a path, both would be reported as uncovered gate directories, and the gate would go red
+# over nothing. The old allow-list was accidentally doing two jobs: excluding prose AND excluding
+# strings that are not paths. Those are now separated — `.md` answers *is it prose*, and EXISTENCE
+# answers *is it a path* — which closes the reviewer's finding as a CLASS rather than by adding
+# `.json` and waiting for the next suffix.
+PROSE_SUFFIX = ".md"
+
+
+def _joined_path(node: "ast.AST") -> "str | None":
+    """PURE. A `/`-operator chain of string constants reassembled, or None if it is not one.
+
+    `pathlib`'s `Path("a") / "b" / "c.json"` is an `ast.BinOp` tree of `Div` nodes whose leaves
+    include string constants; joining them in source order reconstructs the path. Non-string leaves
+    (`ROOT`, a call, a variable) contribute nothing, so `DOCSDIR / name` yields no parts at all.
+
+    ⚠ `len(parts) > 1` IS INERT AND IS SAID SO RATHER THAN DEFENDED — measured 2026-09-16 by
+    mutating it to `> 0` and watching the suite stay GREEN. A join with exactly ONE string constant
+    returns that constant, which the per-constant scan in `bound_docs_paths` finds anyway, and the
+    result is added to a `set`, so the two paths cannot disagree. It is kept as a cheap statement of
+    intent (*a join means two or more segments*) and carries NO mutation entry, because a clause
+    whose removal changes no observable behaviour cannot have one — claiming otherwise would be the
+    unfalsifiable-guard shape this repository files findings about.
+    """
+    parts: list[str] = []
+
+    def walk(n: "ast.AST") -> None:
+        if isinstance(n, ast.BinOp) and isinstance(n.op, ast.Div):
+            walk(n.left)
+            walk(n.right)
+        elif isinstance(n, ast.Constant) and isinstance(n.value, str):
+            parts.append(n.value)
+
+    walk(node)
+    return "/".join(parts) if len(parts) > 1 else None
 
 
 def bound_docs_paths(text: str, python: bool) -> list[str]:
@@ -280,6 +322,15 @@ def bound_docs_paths(text: str, python: bool) -> list[str]:
             return []
         for node in ast.walk(tree):
             if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None:
+                # ⟳ 2026-09-16, r1 High (codex): A `pathlib` JOIN CONTAINS NO `docs/…` LITERAL AT
+                # ALL, so the per-constant scan below could not see it and the reviewer demonstrated
+                # the miss: `ROOT / "docs" / "superpowers" / "specs" / "new-gate" / "rules.json"` is
+                # five separate one-word strings. `_joined_path` reassembles a `/` chain so that
+                # shape reads the same as the equivalent single literal. This is the ordinary way a
+                # path is written in the Python gates, which is what made the gap load-bearing.
+                joined = _joined_path(node.value)
+                if joined and "docs/" in joined:
+                    out.add(joined[joined.index("docs/"):])
                 for sub in ast.walk(node.value):
                     if isinstance(sub, ast.Constant) and isinstance(sub.value, str) \
                             and "docs/" in sub.value:
@@ -293,7 +344,8 @@ def bound_docs_paths(text: str, python: bool) -> list[str]:
     return sorted(out)
 
 
-def gate_code_dirs(runner: str, gate_sources: dict[str, str]) -> list[str]:
+def gate_code_dirs(runner: str, gate_sources: dict[str, str],
+                   is_file: "Callable[[str], bool]") -> list[str]:
     """PURE. The `docs/` directories holding GATE MACHINERY, derived from the gates themselves.
 
     ⭐ WHY THIS REPLACED A READ OF `schema-gates.yml` — backlog #137, 2026-09-16. The previous
@@ -318,10 +370,17 @@ def gate_code_dirs(runner: str, gate_sources: dict[str, str]) -> list[str]:
          what recovers `docs/superpowers/specs/m4/`, whose four files are mode 644 and therefore
          invisible to prong 1, while excluding every `.md` a gate merely reads as prose.
 
-    ⚠ STATED LIMIT: prong 2 is a suffix POLICY, so a gate that one day binds a `docs/…/*.txt` which
-    really is prose gets reported here. That fails LOUD — rc=1, naming the directory — and this is
-    the direction to fail in; the alternative errs by classifying gate code as documentation, which
-    is the defect r15 measured and the reason any of this exists.
+    ⚠ `is_file` IS INJECTED, and it is what makes prong 2 safe — ⟳ r1 High (codex). It answers *is
+    this string a path at all*, which the suffix allow-list it replaced was answering by accident.
+    Passed in rather than called directly so the rule stays pure and a case can drive it with a
+    fixture, the same shape as `readable_docs(docs, read)` elsewhere in this file.
+
+    ⚠ STATED LIMIT, NARROWED BUT NOT GONE: a gate that reads a `docs/` file through a path this
+    cannot reconstruct — built in a loop, returned by a function, assembled with `os.path.join`,
+    or `.format()`ted — is still invisible. `_joined_path` covers the `pathlib` `/` chain because
+    that is how these gates actually write paths; the others are not currently used by any gate and
+    would be a real miss if one adopted them. The failure is silent, which is the wrong direction,
+    and it is the reason this rule is worth attacking again in a later round.
     """
     dirs: set[str] = set()
     spec_dirs = [p for p in bound_docs_paths(runner, python=False)
@@ -333,7 +392,9 @@ def gate_code_dirs(runner: str, gate_sources: dict[str, str]) -> list[str]:
             dirs.add(joined.rsplit("/", 1)[0])
     for name, text in gate_sources.items():
         for p in bound_docs_paths(text, python=name.endswith(".py")):
-            if p.endswith(GATE_DATA_SUFFIXES) and "/" in p:
+            suffix = p.rsplit("/", 1)[-1]
+            suffix = suffix[suffix.rindex("."):] if "." in suffix else ""
+            if suffix and suffix != PROSE_SUFFIX and "/" in p and is_file(p):
                 dirs.add(p.rsplit("/", 1)[0])
     return sorted(dirs)
 
@@ -982,7 +1043,7 @@ def main(argv: list[str]) -> int:
               "holding gate machinery cannot be compared against CODE_UNDER_PROSE. NOT CHECKED.",
               file=sys.stderr)
         return 2
-    _dirs = gate_code_dirs(*_gs)
+    _dirs = gate_code_dirs(*_gs, is_file=lambda rel: (ROOT / rel).is_file())
     if not _dirs:
         # ⚠ A ZERO OVER NOTHING IS NOT A FINDING — the same rule check-plan-file-tags records for an
         # empty corpus. If the derivation found nothing, the derivation is what broke, not the tuple:
@@ -1105,10 +1166,12 @@ def self_test() -> int:
     # against a copy and a new gate directory was invisible: measured, suite green at 134/134 while
     # the new gate's code classified as prose.
     _GS = _gate_sources()
+    _real_file = lambda rel: (ROOT / rel).is_file()
+    _all_exist = lambda rel: True      # fixture: every derived path is a real file
     case("the docs/ gate directories are DERIVED from the real gate scripts, not transcribed here",
-         bool(_GS) and gate_code_dirs(*_GS) != [], True)
+         bool(_GS) and gate_code_dirs(*_GS, is_file=_real_file) != [], True)
     case("...and every one of them is exempt from the prose classifier",
-         prose_exceptions_cover(gate_code_dirs(*_GS)) if _GS else [], [])
+         prose_exceptions_cover(gate_code_dirs(*_GS, is_file=_real_file)) if _GS else [], [])
     # The pure rule, driven with literals — the reader above proves it sees the real file.
     case("a NEW docs/ gate directory the tuple does not know about is REPORTED",
          prose_exceptions_cover(["docs/superpowers/specs/m5/**"]),
@@ -1157,15 +1220,50 @@ def self_test() -> int:
     # demanded the whole tree be exempted from the prose classifier.
     case("a .md a gate merely READS is not gate machinery, so docs/ itself is never derived",
          gate_code_dirs('SPEC="docs/superpowers/specs/x"\n',
-                        {"scripts/check-docs.py": 'BACKLOG = "docs/backlog.md"\n'}), [])
+                        {"scripts/check-docs.py": 'BACKLOG = "docs/backlog.md"\n'},
+                        is_file=_all_exist), [])
     case("...while a gate DATA file under docs/ yields its directory",
-         gate_code_dirs("", {"scripts/g.py": 'M = "docs/superpowers/specs/m4/live-manifest.txt"\n'}),
-         ["docs/superpowers/specs/m4"])
+         gate_code_dirs("", {"scripts/g.py": 'M = "docs/superpowers/specs/m4/live-manifest.txt"\n'},
+                        is_file=_all_exist), ["docs/superpowers/specs/m4"])
     case("...and a file the runner EXECUTES from its spec dir yields that dir",
          gate_code_dirs('SPEC="docs/superpowers/specs/x"\nrun "1/15" "$SPEC/verify-schema.sh"\n',
-                        {}), ["docs/superpowers/specs/x"])
+                        {}, is_file=_all_exist), ["docs/superpowers/specs/x"])
     case("...and nothing at all is derived from nothing, which main treats as CANNOT RUN",
-         gate_code_dirs("", {}), [])
+         gate_code_dirs("", {}, is_file=_all_exist), [])
+    # ⛔⛔ r1 HIGH (codex), AS CASES — BOTH SHAPES THE REVIEWER EXECUTED. The suffix ALLOW-LIST
+    # `(".sql", ".txt")` fail-open'd by omission: a new gate reading a `.json` policy file was
+    # invisible, the existing gates kept the result non-empty so the CANNOT-RUN guard passed, and a
+    # later PR editing that gate's rules classified as PROSE. `.json` is the reviewer's own example.
+    case("a gate input under docs/ with ANY non-prose suffix is gate machinery, not just .sql/.txt",
+         gate_code_dirs("", {"scripts/check-new-docs-gate.py":
+                             'RULES = "docs/superpowers/specs/new-gate/rules.json"\n'},
+                        is_file=_all_exist), ["docs/superpowers/specs/new-gate"])
+    # ⛔ ...AND THE SECOND SHAPE, WHICH NO SUFFIX LIST COULD EVER HAVE FIXED: a pathlib join holds
+    # no `docs/…` literal at all, so the per-constant scan saw nothing to classify.
+    case("...and a pathlib / join is reassembled, so it reads like the same path written whole",
+         gate_code_dirs("", {"scripts/g.py":
+                             'RULES = ROOT / "docs" / "superpowers" / "specs" / "new-gate"'
+                             ' / "rules.json"\n'},
+                        is_file=_all_exist), ["docs/superpowers/specs/new-gate"])
+    # ⚠ THIS CASE IS NARROWER THAN ITS FIRST NAME CLAIMED. It said the join "rejects a single
+    # trailing constant", which is FALSE — `DOCSDIR / name` contains no string constants at all, so
+    # there is nothing to reject. What it really pins is that a join built entirely from VARIABLES
+    # invents no path. The `len(parts) > 1` clause is inert and carries no mutation; see the
+    # docstring.
+    case("...while a join built only from variables invents no path",
+         bound_docs_paths('P = DOCSDIR / name\n', python=True), [])
+    # ⛔ THE REGRESSION THAT INVERTING THE ALLOW-LIST WOULD HAVE CAUSED, measured on the real file:
+    # `check-docs.py` binds a REGEX beginning `docs/adr/`. It is not a path, it does not exist, and
+    # reporting `docs/adr` as an uncovered gate directory would turn this gate red over nothing.
+    # EXISTENCE is what rejects it — the job the suffix list had been doing by accident.
+    case("a bound string that is a REGEX, not a path, is rejected because it does not exist",
+         gate_code_dirs("", {"scripts/check-docs.py":
+                             'ADR = r"docs/adr/(\\d{4})(?:[-\\w]*\\.md)?"\n'},
+                        is_file=lambda rel: False), [])
+    case("...while the same shape with a real file behind it IS derived",
+         gate_code_dirs("", {"scripts/g.py": 'M = "docs/superpowers/specs/m4/live-manifest.txt"\n'},
+                        is_file=lambda rel: rel == "docs/superpowers/specs/m4/live-manifest.txt"),
+         ["docs/superpowers/specs/m4"])
     case("only .md counts as a review document",
          review_added(["docs/reviews/verdicts/x.json"]), [])
     # ⭐ THE LIVE CASE: the parser is SHARED, not copied. If check-dashboard-entry stops exporting

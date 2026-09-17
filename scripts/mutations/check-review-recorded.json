@@ -496,12 +496,12 @@
     "expect": "a docs/ path bound to a NAME in python is found"
   },
   {
-    "name": "the python reader walks EVERY string, re-admitting docstrings and the comment trap",
+    "name": "the python reader also walks Expr nodes, re-admitting docstrings and comments",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "            if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None:\n                for sub in ast.walk(node.value):",
-        "            if True:\n                for sub in ast.walk(node):"
+        "            if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None:",
+        "            if isinstance(node, (ast.Assign, ast.AnnAssign, ast.Expr)) and node.value is not None:"
       ]
     ],
     "expect": "...nor one that appears only in a DOCSTRING, which ast.Constant alone would re-admit"
@@ -533,8 +533,8 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "            if p.endswith(GATE_DATA_SUFFIXES) and \"/\" in p:",
-        "            if \"/\" in p:"
+        "            if suffix and suffix != PROSE_SUFFIX and \"/\" in p and is_file(p):",
+        "            if \"/\" in p and is_file(p):"
       ]
     ],
     "expect": "a .md a gate merely READS is not gate machinery, so docs/ itself is never derived"
@@ -549,5 +549,38 @@
       ]
     ],
     "expect": "...and a file the runner EXECUTES from its spec dir yields that dir"
+  },
+  {
+    "name": "the pathlib join is no longer reassembled, so a joined docs/ gate path is invisible",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return \"/\".join(parts) if len(parts) > 1 else None",
+        "    return None"
+      ]
+    ],
+    "expect": "...and a pathlib / join is reassembled, so it reads like the same path written whole"
+  },
+  {
+    "name": "the EXISTENCE filter goes, so a bound REGEX is reported as an uncovered gate directory",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "            if suffix and suffix != PROSE_SUFFIX and \"/\" in p and is_file(p):",
+        "            if suffix and suffix != PROSE_SUFFIX and \"/\" in p:"
+      ]
+    ],
+    "expect": "a bound string that is a REGEX, not a path, is rejected because it does not exist"
+  },
+  {
+    "name": "the prose-suffix rule goes, so a .md a gate merely reads becomes gate machinery",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "            if suffix and suffix != PROSE_SUFFIX and \"/\" in p and is_file(p):",
+        "            if suffix and \"/\" in p and is_file(p):"
+      ]
+    ],
+    "expect": "a .md a gate merely READS is not gate machinery, so docs/ itself is never derived"
   }
 ]
