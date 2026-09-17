@@ -9700,3 +9700,45 @@ proved to go red through the case it names over a control proved green first.
 **NOT CONVERGED**; its finding is fixed here and therefore needs a further round rather than closing
 the gate. The Claude half has not run. And the repository setting — making the check required — is
 still a human's to make, still after the merge.
+
+## 2026-09-16
+
+Second correction on this branch, and the reason to read it is that **the review found the branch
+had switched off the repository's largest gate.**
+
+Round 1 ran both halves. Between them they returned one blocking defect, five serious ones and nine
+smaller. The blocking one was mine and it was invisible to the way I had been checking.
+
+The mutation harness works by applying a recorded edit to the code and confirming a test goes red.
+Three of the edits I added all targeted three different clauses of the **same single line**, so they
+were indistinguishable to the tool that loads them. It refuses edits that repeat one another — and it
+refuses by giving up **before running anything at all**. So every one of the 719 checks across the
+whole repository silently did nothing, inside the one job that gates merges. A branch whose entire
+purpose is making a gate's answer count had turned the biggest gate off.
+
+⚠ The transferable part is *how it hid*. I verified each edit on its own and each one passed. A
+collision is invisible one at a time; only the run that loads the whole set can see it — and that run
+is the one I skipped locally, on the reasonable-sounding grounds that the build server does it.
+
+The other serious finding is subtler and changed the design. The check that decides which
+documentation directories hold gate machinery could not tell when it was **under**-reporting. Its two
+tests asked "did it find anything?" and "is everything it found accounted for?" — and both of those
+get *easier* to pass as it finds less. The reviewer deleted the entire discovery step and the tests
+stayed green while two of three directories vanished and the check reported success.
+
+That cannot be fixed by making the detection smarter, and the measurement says so plainly: there is
+no rule that separates a documentation directory holding gate machinery from one that is ordinary
+prose, because the parent directory *contains* the gate directories and therefore satisfies every
+content-based test you could write. The old path filter managed it only because a person maintained
+it by hand, and because getting it wrong stopped the gate running — pressure no derivation has.
+
+So the fix asserts the property instead: the detection must still find everything we have already
+declared, or it refuses to report at all. Breaking it is now loud. What stays open — a brand new gate
+directory nobody has declared yet — is filed as backlog #138 with both refuted approaches, the shape
+that would actually work, and why it was not done here (it edits the guards on the money path).
+
+Five stale sentences were also corrected: the file still told the next reader that the deleted path
+filter was the authority, in one case pointing at line numbers that now contain something else.
+
+Current: 157 self-test cases, 52 mutation entries, manifest total 723, every entry proved to go red
+through the case it names. Round 2 is running.
