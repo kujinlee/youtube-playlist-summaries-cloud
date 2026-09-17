@@ -9779,3 +9779,43 @@ on this branch; it now says so, and points at the pins a gate actually checks.
 Round 3 found no defect that makes the gate return a wrong answer, and both reviewers said the
 branch is safe to merge on the code. Current: 182 self-test cases, 64 mutation entries, manifest
 total 735, every entry proved to go red through the case it names.
+
+## 2026-09-17
+
+**The fifteen schema gates now count.** Until today they could report a failure and the merge button
+stayed green, because the list of checks that actually block a merge had one entry and this was not
+it. The gates ran, answered correctly, and nobody was listening.
+
+Both halves are done. The code merged yesterday; the repository setting was applied straight after,
+and the order mattered — doing it the other way round would have left every documentation-only
+change waiting forever for an answer that was never coming.
+
+**This change is its own proof.** It touches one documentation file and nothing else. Before the
+merge, a change shaped exactly like this one did not start the schema job at all, so the check was
+simply missing from the list — which is precisely why it could not be made mandatory. It now reports
+in under two minutes. That was the test written down when the problem was filed, and it has been run
+rather than argued.
+
+What it cost is worth recording honestly. The change itself was about thirty lines removed from a
+configuration file and survived every review untouched. Almost all the work came from one discovery:
+the thing being deleted had quietly acquired a **second job** nobody knew about. Another check was
+reading that list to learn which documentation directories hold executable gate code. Deleting the
+list broke it, correctly and loudly.
+
+Rebuilding that second job is what five rounds of review were actually about, and the honest outcome
+is that it cannot be rebuilt perfectly — measured twice, no rule reliably separates a documentation
+directory that holds gate machinery from one that is ordinary prose, because the parent directory
+contains the gate directories and so passes every test you could write. The old list worked because a
+person maintained it, and because getting it wrong stopped the gates running. So the replacement
+asserts something weaker and true — it must still find everything already declared, or refuse to
+answer — and what remains open is written down as its own item rather than implied to be finished.
+
+Along the way the reviews found a defect that had switched the repository's largest gate off
+entirely, a hole in the very function that decides whether a change needs reviewing at all, and a
+claim in my own notes that credited a reviewer with a check it had never performed. Serious findings
+fell to zero across the rounds.
+
+⚠ One thing to expect: two documentation files sit at exactly their line limits. The next change that
+adds a line to either will now be **blocked** rather than quietly ignored. That refusal is correct —
+it is the whole point — but it will be surprising the first time, and the fix is to move detail out
+of the file rather than raise the limit.
