@@ -2,7 +2,7 @@
 """Every CI job pins the Python interpreter, the pins agree, and the pin actually took effect.
 
     python3 scripts/check-python-pin.py              # in CI: asserts. locally: advises.
-    python3 scripts/check-python-pin.py --self-test  # 45 cases
+    python3 scripts/check-python-pin.py --self-test  # 48 cases
 
     exit 0 = pinned, agreeing, and (in CI) in effect   exit 1 = a real disagreement
     exit 2 = CANNOT RUN — no workflow or no pin found, which is never a pass
@@ -94,19 +94,23 @@ def declared_pins(text: str) -> list[str]:
         if not m:
             continue
         step_indent = len(m.group(1))
+        in_with, with_indent = False, 0
         for later in lines[i + 1:]:
-            # ⚠ ONE boundary test, not two. A separate "the next step begins" clause was written
-            # here and MEASURED INERT — deleting it left the suite at 32/32, because a step line
-            # (`      - uses: …`) does not start with `step_indent + 1` spaces and so is already
-            # caught below. It was removed rather than kept with a mutation that could not fail:
-            # r1 codex flagged its entry as surviving, and this branch's predecessor paid for the
-            # same shape (`len(parts) > 1`).
             if later.strip() and not later.startswith(" " * (step_indent + 1)):
-                break                      # dedented out of the step entirely
+                break                      # dedented out of this step
+            here = len(later) - len(later.lstrip())
+            opens = re.match(r"^\s*with:\s*(#.*)?$", later)
+            if opens and here > step_indent:
+                in_with, with_indent = True, here
+                continue
+            if in_with and later.strip() and here <= with_indent:
+                in_with = False            # left the `with:` mapping
+            if not in_with:
+                continue
             got = re.match(r"^\s*python-version:\s*(.+?)\s*$", later)
             if got:
-                # ⚠ strip an inline comment BEFORE quotes — r1 Medium 1 (claude): a pin
-                # written `python-version: '3.12'  # matches the Dockerfile` otherwise parsed as
+                # ⚠ strip an inline comment BEFORE quotes — r1 Medium 1 (claude): a pin written
+                # `python-version: '3.12'  # matches the Dockerfile` otherwise parsed as
                 # `'3.12'  # matches…` and reddened the REQUIRED check with a nonsense message.
                 pins.append(got.group(1).split("#")[0].strip().strip("'\""))
     return pins
@@ -334,6 +338,21 @@ def self_test() -> int:
     # belongs to no `setup-python` step made a job with NO pin at all read as pinned: `unpinned_jobs`
     # returned [] and the verdict returned 0. A guard satisfied by a line of prose reports the
     # absence of the very thing it exists to find.
+    # ⛔⛔ r2 HIGH (codex) — THE PIN MUST BE THE INPUT THE ACTION READS, which is `with.python-version`.
+    # Scoping it to "inside the setup-python step" was the SECOND version of this predicate and still
+    # too loose: a `python-version:` under `env:` in that same step is not an action input, so a job
+    # whose setup-python never declared a version reported `python pin OK`. Third iteration — each
+    # time I narrowed the SPAN instead of naming the THING.
+    case("a python-version under env: in the setup-python step is NOT a pin",
+         declared_pins("      - uses: actions/setup-python@v5\n"
+                       "        env:\n          python-version: '3.12'\n"), [])
+    case("...while the same value under with: is",
+         declared_pins("      - uses: actions/setup-python@v5\n"
+                       "        with:\n          python-version: '3.12'\n"), ["3.12"])
+    case("...and an env: sibling AFTER with: does not add a second, false pin",
+         declared_pins("      - uses: actions/setup-python@v5\n"
+                       "        with:\n          python-version: '3.12'\n"
+                       "        env:\n          python-version: '3.11'\n"), ["3.12"])
     case("a python-version inside a run-block heredoc is NOT a pin",
          declared_pins("      - run: |\n          python-version: '3.12'\n"), [])
     case("...nor is one in an UNRELATED action's with: block",

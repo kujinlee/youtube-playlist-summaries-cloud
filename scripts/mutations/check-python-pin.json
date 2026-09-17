@@ -121,7 +121,7 @@
     "expect": "...but LOCALLY the same mismatch is ADVISORY and exits 0"
   },
   {
-    "name": "the pin no longer has to belong to a setup-python step, so a heredoc line counts as one",
+    "name": "the step's ACTION is no longer checked, so any step's with: block counts as a pin",
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
@@ -129,7 +129,7 @@
         "        m = re.match(r\"^(\\s*)-\\s*\", line)\n        if not m:\n            continue"
       ]
     ],
-    "expect": "a python-version inside a run-block heredoc is NOT a pin"
+    "expect": "...nor is one in an UNRELATED action's with: block"
   },
   {
     "name": "pin_took_effect answers True with no evidence, so an unexported location reads as pinned",
@@ -196,5 +196,16 @@
       ]
     ],
     "expect": "a workflow yielding NO jobs is CANNOT RUN, because an invisible job passes"
+  },
+  {
+    "name": "the pin need not be under with:, so an env: entry counts as an action input",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "            if not in_with:\n                continue",
+        "            if False:\n                continue"
+      ]
+    ],
+    "expect": "a python-version under env: in the setup-python step is NOT a pin"
   }
 ]

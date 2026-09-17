@@ -784,7 +784,12 @@ EXPECTED_MUTATIONS = {
     # guard was calibrated on its own corpus. Tails loosened (measured free), indent kept
     # (measured load-bearing), and a jobless workflow now REFUSES rather than passing.
     # HIGH 3: the single line arming the assertion had no case and no mutation; extracted.
-    "scripts/check-python-pin.py": 18,
+    # ⟳ r2 High (codex): 18 -> 19. The pin must be the input the ACTION READS —
+    # `with.python-version`. Scoping it to "inside the setup-python step" was the SECOND version
+    # of this predicate and still too loose: a `python-version:` under `env:` in that same step
+    # made a job whose setup-python declared nothing report `python pin OK`. Third iteration, and
+    # each time the span was narrowed instead of the THING being named.
+    "scripts/check-python-pin.py": 19,
     "scripts/check-plan-code.py": 76,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
@@ -3283,7 +3288,7 @@ def _self_test() -> int:
     # `schema-gates` check unrequireable) and SIX added for the derivation that replaced it. A RISE,
     # so this is not the sanctioned-fall case; the two retirements are recorded beside the per-file
     # count above with the reason, and both orphans were found by RUNNING the anchor check.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 755)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 756)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
