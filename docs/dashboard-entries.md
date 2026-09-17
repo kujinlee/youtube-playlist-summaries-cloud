@@ -9819,3 +9819,113 @@ fell to zero across the rounds.
 adds a line to either will now be **blocked** rather than quietly ignored. That refusal is correct —
 it is the whole point — but it will be surprising the first time, and the fix is to move detail out
 of the file rather than raise the limit.
+
+## 2026-09-17
+
+**The interpreter that runs every check in this repository was never declared.** Fixing that is the
+follow-up to yesterday's work, and it came out of one concrete embarrassment: the build server and a
+development machine disagreed about the same commit.
+
+The visible symptom was a version difference. The actual defect was that nothing was pinned. The
+main check ran a bare `python3` **45 times** — every guard that gates a merge — and never asked for a
+particular version, so it got whatever the build image happened to ship. That means the behaviour of
+45 guards could change with no commit, no diff, and nothing to blame it on. The one place in the
+repository that *did* pin a version was the nightly job, which runs a single script.
+
+All three jobs now pin the same version, and it is the version they were already running — so
+nothing changes today. What changes is that it can no longer change silently.
+
+A new check enforces it, and the interesting part is the rule it uses. The obvious rule — *a job that
+runs Python must pin it* — **would not have caught the original problem**, because the job running
+the fifteen database checks invokes them through a shell script and never mentions Python at all. So
+the rule is the decidable one instead: every job pins, or is written down as exempt with a reason.
+
+The same check answers two different questions depending on where it runs. On the build server it
+asserts the pin actually took effect, because a setup step that is present but ineffective is the
+kind of green that means nothing. On a developer's machine it just says *"you are on a different
+version than the build server — treat this pass as provisional"* and exits successfully. Failing
+there would be worse than useless: most people will not be on the pinned version, and a check that is
+red from the day it ships gets switched off.
+
+⭐ It found two defects in itself before it was even finished. The existing checker that looks for
+test inputs which never vary flagged two in the new file, one day after that exact defect closed
+elsewhere. Two more of its own test cases turned out to pass for accidental reasons — one asserted an
+outcome that a different code path produces anyway, which is the same defect a reviewer found
+yesterday in unrelated code. All four were fixed rather than excused.
+
+⚠ And adding a single line of documentation for it hit the budget warned about yesterday: the process
+document sits at exactly its limit. The line was paid for by tightening a sentence elsewhere rather
+than raising the limit — which is what that refusal is for.
+
+## 2026-09-17
+
+Correction to the entry above, before it merges. **The new check claimed to prove something it could
+not**, and both reviewers found it.
+
+The entry above says the check "asserts the pin actually took effect" on the build server. It did not.
+It compared version numbers — and the build image's own Python is *already* the version being pinned.
+So the comparison was satisfied whether or not the pin did anything at all: it passed in exactly the
+world the check was written to end.
+
+The scenario is a single word. The setup step takes an option that installs the requested version
+without putting it on the path. Set it, and the step still succeeds, still logs success, and the
+machine still runs its original Python — while the check prints "pin OK" and 45 guards run on an
+undeclared interpreter.
+
+It now asserts **provenance** instead of a number: the setup step publishes where it installed the
+interpreter, nothing else does, and the check confirms the Python actually running lives there. A
+version that merely matches is no longer accepted as proof.
+
+The second finding is the same lesson in a different place. The check recognised a job only when it
+was written exactly the way this repository's two existing files happen to write it. A job key with a
+trailing comment — which nearly every line in those files has — made the job **invisible**, and an
+invisible job silently passes. Four such shapes, all valid, all meaning the same thing. Measured
+rather than argued: loosening the pattern was free, the indentation rule was genuinely doing work, and
+the one remaining shape now makes the check **refuse to answer** rather than quietly approve.
+
+⚠ Two smaller ones worth the same honesty: an exemption was keyed by job name alone, so excusing one
+job would have excused every job with that name in every file, forever. And a pin written with a
+trailing comment would have turned the required check red with a nonsense message.
+
+⚠ And a process mistake of mine: I began folding the first reviewer's findings while the second was
+still reading the same files. It noticed, re-ran every probe against the changed tree, and said so in
+its own document — its findings survived — but that was luck, not method. A reviewer's subject should
+stop moving while it reads.
+
+Current: 45 self-test cases, 18 mutation entries, manifest total 755, every entry proved to go red
+through the case it names.
+
+## 2026-09-17
+
+Second correction on this change, and two of the three are about **this log**, so they belong here
+rather than anywhere else.
+
+⚠ **The entry above states three counts and all three are wrong.** It says 45 test cases, 18 mutation
+entries and a total of 755; by the time it was written the change had already moved past those, and
+it has moved again since. Current: **57 cases, 25 entries, total 762**. This is the fifth time a
+number in this work's write-ups has been stale at the moment of writing, which is why the durable
+copies are the ones a check verifies and these paragraphs are, deliberately, prose.
+
+⚠ **And it credits both reviewers with a finding only one of them made.** The entry says the claim
+about proving the pin took effect was caught by "both reviewers". It was one, working alone; the
+other had cleared that area. Spreading credit is not a kindness — it is the same defect as the
+invented confirmation two days ago, in a softer form, and it makes a single reviewer's catch look
+like independent agreement.
+
+The substantive finding this round is a good one. The refusal added last round — *if a workflow's
+jobs cannot be read, refuse rather than approve* — only fired when **no** job in the file could be
+read. A file with one readable job and one unreadable one is not "unreadable", so nothing refused,
+and the unreadable job's text was folded into its neighbour, crediting that neighbour with a setting
+it does not have. The way in is a **quoted job name**, which the workflow format accepts and the
+check's pattern did not. That restores, exactly, both of the serious findings from the previous
+round. It now counts unreadable names instead of testing for none.
+
+Two smaller ones with the same shape as everything else here: a fix from last round had no test at
+all, so removing it changed nothing visible; and three lines inside the new provenance check were
+undriven, one of which fails **open** — an empty location value would have certified any interpreter
+anywhere, which is precisely the defect that check exists to prevent, reachable by a plausible
+tidy-up.
+
+The review that found these also re-ran its own ten findings from last round rather than trusting
+the report that they were fixed, and found two that had been neither folded nor written off. Both are
+now closed.

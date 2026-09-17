@@ -762,6 +762,40 @@ EXPECTED_MUTATIONS = {
     # underscore test unable to decide anything, measured by its mutation surviving a full
     # suite. The clause stays as a defence; the entry cannot fire, so it goes.
     "scripts/check-fixture-variation.py": 42,
+    # ⟳ 2026-09-17: `check-python-pin.py` JOINS with 11 entries, in the commit that creates it —
+    # `check-ratchet-contract.py` refused the file until it did, which is the manifest half of the
+    # contract doing its job. ⭐ Two of the eleven found AMBIENT cases on the first pass: the
+    # empty-corpus case asserted only an exit code that the NO-PINS prong returns by another route
+    # (backlog #137's `declared_not_derived` defect, recurring), and the jobs-block case used a
+    # fixture key the regex rejected anyway. Both repaired rather than exempted.
+    # ⟳ r1 (codex) 1 Blocking + 2 High: 11 -> 12. ⭐ The High that mattered was a FALSE GREEN —
+    # `declared_pins` matched ANY line shaped like `python-version:`, so one inside a shell
+    # heredoc or an unrelated action's `with:` made a job with NO setup-python read as PINNED.
+    # The predicate is now "a pin attached to an actions/setup-python step", with the reviewer's
+    # two reproduction fixtures as cases. ⚠ A step-boundary clause written alongside it was
+    # MEASURED INERT (deleting it left the suite green, the dedent test already covering it) and
+    # was DELETED rather than kept with an entry that could not fail.
+    # ⟳ r1 (claude) 3 High + 3 Medium + 4 Low: 12 -> 18. ⭐ HIGH 1 was the branch's own central
+    # claim: "the pin TOOK EFFECT" compared major.minor, and the runner's AMBIENT python3 is
+    # already 3.12.3 — so the comparison was satisfied by the exact pre-branch world the guard
+    # exists to end, and `update-environment: false` would have kept it green while 45 guards ran
+    # unpinned. It now asserts PROVENANCE via `pythonLocation`, which only setup-python exports.
+    # HIGH 2: four legitimate YAML job shapes were INVISIBLE, and an invisible job passes — the
+    # guard was calibrated on its own corpus. Tails loosened (measured free), indent kept
+    # (measured load-bearing), and a jobless workflow now REFUSES rather than passing.
+    # HIGH 3: the single line arming the assertion had no case and no mutation; extracted.
+    # ⟳ r2 High (codex): 18 -> 19. The pin must be the input the ACTION READS —
+    # `with.python-version`. Scoping it to "inside the setup-python step" was the SECOND version
+    # of this predicate and still too loose: a `python-version:` under `env:` in that same step
+    # made a job whose setup-python declared nothing report `python pin OK`. Third iteration, and
+    # each time the span was narrowed instead of the THING being named.
+    # ⟳ r2 (claude) 3 Medium + 5 Low: 19 -> 24. Medium 1: the jobless refusal only fired on an
+    # ALL-OR-NOTHING file, so one readable job beside an unreadable one (a QUOTED job key, which
+    # GitHub accepts) restored both r1 Highs at once — it now COUNTS unreadable keys. Medium 3:
+    # r1's inline-comment fix had no case and no entry, so deleting it left the suite green.
+    # Low 2: three clauses of `pin_took_effect` were undriven and the first is FAIL-OPEN — an
+    # EMPTY `pythonLocation` makes `startswith("/")` true for every absolute path on earth.
+    "scripts/check-python-pin.py": 25,
     "scripts/check-plan-code.py": 76,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
@@ -2654,6 +2688,7 @@ def _self_test() -> int:
                                       "scripts/check-producer-enumeration.py",
                                       # ⟳ 2026-09-12: the guard that enforces R4, finally subject
                                       # to it. A LIVE inventory entry, added with the manifest.
+                                      "scripts/check-python-pin.py",
                                       "scripts/check-ratchet-contract.py",
                                       "scripts/check-review-decision.py",
                                       "scripts/check-review-recorded.py",
@@ -3259,7 +3294,7 @@ def _self_test() -> int:
     # `schema-gates` check unrequireable) and SIX added for the derivation that replaced it. A RISE,
     # so this is not the sanctioned-fall case; the two retirements are recorded beside the per-file
     # count above with the reason, and both orphans were found by RUNNING the anchor check.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 737)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 762)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

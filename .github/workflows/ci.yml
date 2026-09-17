@@ -47,6 +47,28 @@ jobs:
           node-version: '22'
           cache: npm
 
+      # ⛔ PYTHON WAS THE ONE RUNTIME THIS JOB DID NOT PIN, AND IT RUNS 45 OF THE GUARDS BELOW.
+      # Node is pinned above and has been since this file was written; `python3` was left to whatever
+      # the runner image happened to ship, so GitHub could change the behaviour of every guard in the
+      # REQUIRED check with no commit, no diff, and nothing to attribute it to.
+      #
+      # ⚠ THE INSTANCE THAT FOUND IT, because it is the reason this is not theoretical. 2026-09-16,
+      # PR #315: CI and a dev machine disagreed on the SAME commit — 723 mutations attributed
+      # locally, 722 in CI. `Path.is_file()` raises OSError (ENAMETOOLONG) for an over-long path
+      # EXCEPT on Python 3.13+, which widened the errno set it swallows. The dev machine ran 3.14 and
+      # returned False; the runner raised, while the case list was still being BUILT, so the suite
+      # went red with no `[FAIL]` line and the kill could not be attributed to any case.
+      #
+      # ⚠ 3.12 IS NOT A PREFERENCE — it is what this job was ALREADY running, so pinning changes no
+      # behaviour today. It only stops the behaviour changing without a commit. `prod-drift` in
+      # schema-gates.yml has pinned the same version since it was written; this makes the repository
+      # consistent rather than introducing a new opinion.
+      # `scripts/check-python-pin.py` asserts the pin actually TOOK EFFECT here, and tells a
+      # developer when their local interpreter differs from it.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       # tests/lib/dig/slide-crop.integration.test.ts shells out to real ffmpeg/ffprobe
       # (lib/dig/slide-crop.ts) and has no skip-gate, so `npm test` is not hermetic —
       # it passes on a dev Mac with ffmpeg installed and fails anywhere else. Installing
@@ -77,6 +99,15 @@ jobs:
           sudo apt-get install -y --no-install-recommends ffmpeg
           ffmpeg -version > /dev/null
           ffprobe -version > /dev/null
+
+      # ⛔ FIRST, because every guard below runs on this interpreter. If the pin did not take
+      # effect, their results are not evidence about anything — and a `setup-python` step that is
+      # present but ineffective is the shape that produces a confident, meaningless green.
+      - name: The Python pin took effect
+        run: python3 scripts/check-python-pin.py
+
+      - name: check-python-pin self-test
+        run: python3 scripts/check-python-pin.py --self-test
 
       - name: Install dependencies
         run: npm ci

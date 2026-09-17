@@ -1,0 +1,16 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 4042 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "a741549ee16d294baccc4eb17ea75ad69ec13157",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "prompt": "/tmp/p317.md",
+  "reason": "4042 chars",
+  "review": "pin-python-interpreter-r1-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}
