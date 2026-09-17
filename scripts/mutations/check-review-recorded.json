@@ -599,10 +599,54 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "        if not any(x.rstrip(\"/\") == stem or x.startswith(stem + \"/\") for x in derived):",
-        "        if not any(x.rstrip(\"/\") == stem or x.startswith(stem) for x in derived):"
+        "        if d.rstrip(\"/\") not in stems:",
+        "        if not any(s.startswith(d.rstrip(\"/\")) for s in stems):"
       ]
     ],
     "expect": "...while a derived path that merely shares a PREFIX does not"
+  },
+  {
+    "name": "the path SHAPE guard goes, so prose is handed to the filesystem and CI crashes",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if not looks_like_path(path):\n        return False",
+        "    if False:\n        return False"
+      ]
+    ],
+    "expect": "prose never reaches the filesystem at all"
+  },
+  {
+    "name": "looks_like_path stops rejecting WHITESPACE, so a prose blob reads as a path",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if not path or any(c.isspace() for c in path):",
+        "    if not path:"
+      ]
+    ],
+    "expect": "...but prose containing a path does not, because no path here has WHITESPACE"
+  },
+  {
+    "name": "the component limit is widened, re-admitting the shape that RAISED in CI",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "COMPONENT_LIMIT = 255",
+        "COMPONENT_LIMIT = 4096"
+      ]
+    ],
+    "expect": "...nor a component over the 255-byte filesystem limit, the shape that actually RAISED"
+  },
+  {
+    "name": "the component width counts CODE POINTS, so multi-byte names slip past the byte limit",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        width = len(component.encode(\"utf-8\", \"replace\"))",
+        "        width = len(component)"
+      ]
+    ],
+    "expect": "...and multi-byte characters are counted as BYTES, not code points"
   }
 ]

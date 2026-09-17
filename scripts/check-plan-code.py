@@ -831,7 +831,13 @@ EXPECTED_MUTATIONS = {
     # first of them is the one the reviewer pointed out did not exist at all: NOTHING
     # targeted `_gate_sources`' discovery loop, so deleting it left the suite green at
     # 153/153 while two of three gate directories vanished and the gate reported success.
-    "scripts/check-review-recorded.py": 52,
+    # ⟳ 2026-09-16: 52 -> 56. FOUR entries for the path-SHAPE guard, which exists because CI
+    # and this machine DISAGREED on the same commit (`99f4da56`): 723 attributed locally,
+    # 722 in CI, one mutation "RED but printed no `[FAIL]` line". A gate script DOCSTRING
+    # mentioning a `docs/` path yields components up to 1450 bytes, and `Path.is_file()`
+    # RAISES ENAMETOOLONG on those — except on Python 3.13+, which swallows that errno.
+    # Shape is now decided before the disk is touched, so no python version can crash it.
+    "scripts/check-review-recorded.py": 56,
     # ⟳ 2026-09-14, r11: this file JOINS the manifest — R4 widened-debt 8 -> 7, removed from
     # `WIDENED_MANIFEST_DEBT` in this same commit, which that rule requires as an identity and not
     # a ceiling. It is the producer half of the mechanism the file above consumes, and it had gone
@@ -3228,7 +3234,7 @@ def _self_test() -> int:
     # `schema-gates` check unrequireable) and SIX added for the derivation that replaced it. A RISE,
     # so this is not the sanctioned-fall case; the two retirements are recorded beside the per-file
     # count above with the reason, and both orphans were found by RUNNING the anchor check.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 723)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 727)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -2,7 +2,7 @@
 """A branch that changes CODE records a review round, or says in writing why it did not.
 
     python3 scripts/check-review-recorded.py --base origin/master --pr-body-file /tmp/pr-body.md
-    python3 scripts/check-review-recorded.py --self-test  # 157 cases
+    python3 scripts/check-review-recorded.py --self-test  # 166 cases
 
 WHY THIS EXISTS
 ---------------
@@ -276,6 +276,11 @@ def prose_exceptions_cover(gate_dirs: list[str]) -> list[str]:
 # `.json` and waiting for the next suffix.
 PROSE_SUFFIX = ".md"
 
+# The per-component byte limit on both Linux and macOS. ⚠ A NAME, not an inline literal, so the
+# byte-width rule and the limit itself carry SEPARATE mutation anchors — sharing one anchor is
+# exactly what made `--mutate .` refuse the entire manifest in r1 Blocking 1.
+COMPONENT_LIMIT = 255
+
 
 def _joined_path(node: "ast.AST") -> "str | None":
     """PURE. A `/`-operator chain of string constants reassembled, or None if it is not one.
@@ -429,6 +434,8 @@ def is_gate_data(path: str, is_file: "Callable[[str], bool]") -> bool:
     ⚠ `"/" in p` was also dropped, not relocated — r1 Low 12 measured it TAUTOLOGICAL. Every path
     reaching here begins `docs/`, so it always contains a slash and no case could distinguish it.
     """
+    if not looks_like_path(path):
+        return False
     tail = path.rsplit("/", 1)[-1]
     suffix = tail[tail.rindex("."):] if "." in tail else ""
     if not suffix:
@@ -436,6 +443,44 @@ def is_gate_data(path: str, is_file: "Callable[[str], bool]") -> bool:
     if suffix == PROSE_SUFFIX:
         return False
     return is_file(path)
+
+
+def looks_like_path(path: str) -> bool:
+    """PURE. Whether `path` can be a real path AT ALL, decided without touching the filesystem.
+
+    ⛔⛔ THIS EXISTS BECAUSE `is_file` WAS BEING HANDED PROSE, AND WHETHER THAT CRASHES DEPENDS ON
+    THE PYTHON VERSION — found 2026-09-16 by CI disagreeing with this machine on the same commit
+    (`99f4da56`): locally `723 killed, 723 attributed`, in CI `722 attributed` with one mutation
+    reported as *"went RED but printed no `[FAIL] <case>` line, so NOTHING COULD SEE THE KILL"*.
+    A suite that CRASHES is unattributable, and this file's own note two functions down says it:
+    *"A case must FAIL, not crash."*
+
+    ⚠ THE CAUSE, MEASURED RATHER THAN GUESSED. A gate script's DOCSTRING that merely mentions a
+    `docs/` path yields a multi-thousand-character blob, and six of them have path components up to
+    **1450 bytes**. `Path.is_file()` raises `OSError` (ENAMETOOLONG) for those — except on Python
+    3.13+, which widened the errno set it swallows. This machine runs 3.14 and returned False; the
+    runner's older Python raised, and the raise happened while BUILDING the case list, before a
+    single line was printed.
+    ⚠ AND THE UNMUTATED CODE WAS SAFE ONLY BY LUCK: the longest component a real gate script binds
+    today is **129 bytes**, 126 short of the limit. `check-sentinel-meanings.py` binds a multi-line
+    prose message containing a path, so this is not a shape only a mutation can produce.
+
+    So the question *is this a path* is answered by SHAPE first and the disk second. Whitespace is
+    the tell that a string is prose — no path in this repository contains any — and 255 bytes is
+    the per-component limit on both Linux and macOS.
+
+    ⚠ ONE CLAUSE PER LINE, AND THAT IS r1's BLOCKING BEING OBEYED RATHER THAN RE-LEARNED. Written
+    as a single `all(len(c.encode(...)) <= 255 ...)` expression, the byte-width mutation and the
+    limit mutation share ONE ANCHOR — and `check-plan-code` then refuses the whole manifest and
+    runs NOTHING. Caught here by the duplicate-anchor check before it could reach CI a second time.
+    """
+    if not path or any(c.isspace() for c in path):
+        return False
+    for component in path.split("/"):
+        width = len(component.encode("utf-8", "replace"))
+        if width > COMPONENT_LIMIT:
+            return False
+    return True
 
 
 def declared_not_derived(derived: list[str], declared: "tuple[str, ...]") -> list[str]:
@@ -462,11 +507,21 @@ def declared_not_derived(derived: list[str], declared: "tuple[str, ...]") -> lis
     directory nobody has declared yet. `CODE_UNDER_PROSE` is the floor, not the ceiling, so this
     catches the derivation BREAKING and not the derivation being INCOMPLETE for a new subject.
     Filed with the measurements rather than hidden here.
+
+    ⛔ A DERIVED CHILD IS NOT EVIDENCE OF ITS PARENT — r2 MEDIUM (codex), and the first version of
+    this function accepted one. It matched a declared directory if ANY derived path was equal to it
+    OR UNDER it, so `docs/…/stable-blob-addressing/schema` alone made
+    `docs/…/stable-blob-addressing` count as found. Executed by the reviewer: with only the GATE
+    DATA prong live, the EXECUTED prong could stop deriving the spec root entirely — losing both
+    mode-755 gate executables — and this still returned `[]`. ⚠ WORSE, A SELF-TEST CASE BLESSED IT
+    (*"a derived path UNDER a declared directory still counts as finding it"*), so the hole was
+    pinned as intended behaviour rather than merely unnoticed. The match is now EXACT: each declared
+    directory must itself be derived, and that case is inverted below.
     """
+    stems = {x.rstrip("/") for x in derived}
     missing = []
     for d in declared:
-        stem = d.rstrip("/")
-        if not any(x.rstrip("/") == stem or x.startswith(stem + "/") for x in derived):
+        if d.rstrip("/") not in stems:
             missing.append(d)
     return missing
 
@@ -1266,10 +1321,46 @@ def self_test() -> int:
     case("a declared directory the derivation missed is REPORTED, which main treats as CANNOT RUN",
          declared_not_derived(["docs/superpowers/specs/m4"], CODE_UNDER_PROSE),
          ["docs/superpowers/specs/2026-08-03-stable-blob-addressing/"])
-    case("...and a derived path UNDER a declared directory still counts as finding it",
+    # ⛔ INVERTED — r2 Medium (codex). This case used to assert a derived CHILD counted as finding
+    # its declared parent, which pinned the hole as INTENDED behaviour: with only the GATE DATA
+    # prong live, `.../schema` alone vouched for the spec root, so the EXECUTED prong could stop
+    # deriving both mode-755 gate executables and this still returned [].
+    case("a derived CHILD is NOT evidence its declared parent was found",
          declared_not_derived(["docs/superpowers/specs/m4/sub",
                                "docs/superpowers/specs/2026-08-03-stable-blob-addressing"],
-                              CODE_UNDER_PROSE), [])
+                              CODE_UNDER_PROSE), ["docs/superpowers/specs/m4/"])
+    # ⛔⛔ THE CASES FOR THE CRASH CI SAW AND THIS MACHINE DID NOT. Same commit, same manifest:
+    # locally 723 attributed, in CI 722, with one mutation "RED but printed no `[FAIL]` line".
+    # Cause, measured: a gate script's DOCSTRING mentioning a `docs/` path yields a multi-thousand
+    # character blob with components up to 1450 bytes, and `Path.is_file()` RAISES ENAMETOOLONG on
+    # it — except on Python 3.13+, which swallows that errno. The raise happened while BUILDING the
+    # case list, so nothing was printed at all. Shape is now decided before the disk is touched.
+    case("a real repo path looks like a path",
+         looks_like_path("docs/superpowers/specs/m4/live-manifest.txt"), True)
+    case("...but prose containing a path does not, because no path here has WHITESPACE",
+         looks_like_path("docs/dev-process.md` says the same thing generally: before adding"), False)
+    case("...nor does anything carrying a NEWLINE, which is how the bound prose blobs present",
+         looks_like_path("docs/adr/`, which is read by the review, and\nunreferenced"), False)
+    case("...nor a component over the 255-byte filesystem limit, the shape that actually RAISED",
+         looks_like_path("docs/" + "a" * 256), False)
+    case("...while 255 bytes exactly is still a path, so the bound is not off by one",
+         looks_like_path("docs/" + "a" * 255), True)
+    case("...and multi-byte characters are counted as BYTES, not code points",
+         looks_like_path("docs/" + "é" * 128), False)
+    case("an empty string is not a path", looks_like_path(""), False)
+    # ⛔ AND THE GUARD IS LOAD-BEARING THROUGH `is_gate_data`: prose must never reach `is_file`.
+    # ⚠ THE FAKE READER RECORDS, IT DOES NOT RAISE — and that distinction cost a measurement. The
+    # first version threw from the lambda to prove the call never happens; removing the guard then
+    # made the suite CRASH while building the case list, so it went red with NO `[FAIL]` line and
+    # BOTH of these mutations came back unattributable. That is the same report-format defect CI
+    # had just caught one fix earlier, reintroduced by the case written to cover it. Recording the
+    # call and asserting on the record makes the case FAIL instead.
+    _probe: list[str] = []
+    case("prose never reaches the filesystem at all",
+         (is_gate_data("docs/x.md` and some prose\nwith a newline",
+                       lambda p: bool(_probe.append(p)) or True), _probe), (False, []))
+    case("...while a real gate data path does reach it",
+         is_gate_data("docs/superpowers/specs/m4/live-manifest.txt", lambda p: True), True)
     case("...while a derived path that merely shares a PREFIX does not",
          declared_not_derived(["docs/superpowers/specs/m4-other"],
                               ("docs/superpowers/specs/m4/",)),
