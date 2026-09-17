@@ -1,0 +1,123 @@
+[
+  {
+    "name": "declared_pins stops stripping quotes, so '3.12' never matches a bare 3.12",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    return [m.group(1).strip().strip(\"'\\\"\")",
+        "    return [m.group(1).strip()"
+      ]
+    ],
+    "expect": "a declared pin is read, quotes stripped"
+  },
+  {
+    "name": "job_names runs past the jobs block, so a later top-level key reads as a job",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "            if line and not line.startswith(\" \") and not line.startswith(\"#\"):\n                break",
+        "            if False:\n                break"
+      ]
+    ],
+    "expect": "...and a top-level key after jobs ends the block"
+  },
+  {
+    "name": "job_blocks stops splitting, so a pin in ONE job is credited to its sibling",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        end = ordered[idx + 1][1] if idx + 1 < len(ordered) else len(lines)",
+        "        end = len(lines)"
+      ]
+    ],
+    "expect": "a pin in a SIBLING job does not cover its neighbour"
+  },
+  {
+    "name": "unpinned_jobs stops honouring the exemption list",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "            if job in exempt:\n                continue",
+        "            if False:\n                continue"
+      ]
+    ],
+    "expect": "...and an exempt job is not reported either"
+  },
+  {
+    "name": "running_version drops the minor, so 3.12 and 3.14 look identical",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    return f\"{version_info[0]}.{version_info[1]}\"",
+        "    return f\"{version_info[0]}\""
+      ]
+    ],
+    "expect": "the running version is major.minor"
+  },
+  {
+    "name": "the empty-corpus refusal goes, so a missing workflow dir reads as a pass",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    if not workflows:",
+        "    if False:"
+      ]
+    ],
+    "expect": "no workflows at all is CANNOT RUN, never a pass"
+  },
+  {
+    "name": "the no-pin-anywhere refusal goes \u2014 the precise state this guard exists to end",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        return 2, (\"CANNOT RUN \u2014 no `python-version:` was found in any workflow",
+        "        return 0, (\"CANNOT RUN \u2014 no `python-version:` was found in any workflow"
+      ]
+    ],
+    "expect": "...and so is a corpus with no pin anywhere"
+  },
+  {
+    "name": "disagreeing pins stop failing, so guards and gates can run different interpreters",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    if len(pins) > 1:",
+        "    if False:"
+      ]
+    ],
+    "expect": "...and the message names both"
+  },
+  {
+    "name": "an unpinned job stops failing, which is the whole subject of this guard",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    if missing:",
+        "    if False:"
+      ]
+    ],
+    "expect": "an unpinned job FAILS"
+  },
+  {
+    "name": "the CI assertion goes, so a setup-python step that did NOT take effect reports green",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    if in_ci and running != pin:",
+        "    if False:"
+      ]
+    ],
+    "expect": "IN CI a mismatch FAILS, because it means the pin did not take effect"
+  },
+  {
+    "name": "the local advisory becomes a FAILURE, which is how a gate gets switched off",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    if running != pin:\n        return 0, (f\"\u26a0 ADVISORY",
+        "    if running != pin:\n        return 1, (f\"\u26a0 ADVISORY"
+      ]
+    ],
+    "expect": "...but LOCALLY the same mismatch is ADVISORY and exits 0"
+  }
+]

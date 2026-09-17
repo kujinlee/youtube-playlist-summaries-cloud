@@ -278,6 +278,15 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # ⟳ 2026-09-17: the python-pin guard, pinned in the commit that creates it — this guard
+    # REFUSED the file until it was. ⭐ And it earned its keep immediately: `analyse()` reported TWO
+    # unvaried parameters on the first draft (`job_blocks.text` passed one value twice,
+    # `verdict.exempt` omitted at all 13 call sites). Both were VARIED rather than exempted, which
+    # is backlog #137's round-4 lesson applied one day later, to its own author.
+    'check-python-pin.py': (
+        'declared_pins.text', 'job_blocks.text', 'job_names.text',
+        'running_version.version_info', 'unpinned_jobs.exempt', 'unpinned_jobs.workflows',
+        'verdict.exempt', 'verdict.in_ci', 'verdict.running', 'verdict.workflows',),
     # ⟳ 2026-09-14: the review decision procedure's rules. Pinned in the commit that
     # creates them — this guard REFUSED the file until it was, which is the population
     # half of the rule doing its job. `analyse()` reports NO findings: every parameter

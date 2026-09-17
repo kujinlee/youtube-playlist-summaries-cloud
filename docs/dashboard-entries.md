@@ -9819,3 +9819,40 @@ fell to zero across the rounds.
 adds a line to either will now be **blocked** rather than quietly ignored. That refusal is correct —
 it is the whole point — but it will be surprising the first time, and the fix is to move detail out
 of the file rather than raise the limit.
+
+## 2026-09-17
+
+**The interpreter that runs every check in this repository was never declared.** Fixing that is the
+follow-up to yesterday's work, and it came out of one concrete embarrassment: the build server and a
+development machine disagreed about the same commit.
+
+The visible symptom was a version difference. The actual defect was that nothing was pinned. The
+main check ran a bare `python3` **45 times** — every guard that gates a merge — and never asked for a
+particular version, so it got whatever the build image happened to ship. That means the behaviour of
+45 guards could change with no commit, no diff, and nothing to blame it on. The one place in the
+repository that *did* pin a version was the nightly job, which runs a single script.
+
+All three jobs now pin the same version, and it is the version they were already running — so
+nothing changes today. What changes is that it can no longer change silently.
+
+A new check enforces it, and the interesting part is the rule it uses. The obvious rule — *a job that
+runs Python must pin it* — **would not have caught the original problem**, because the job running
+the fifteen database checks invokes them through a shell script and never mentions Python at all. So
+the rule is the decidable one instead: every job pins, or is written down as exempt with a reason.
+
+The same check answers two different questions depending on where it runs. On the build server it
+asserts the pin actually took effect, because a setup step that is present but ineffective is the
+kind of green that means nothing. On a developer's machine it just says *"you are on a different
+version than the build server — treat this pass as provisional"* and exits successfully. Failing
+there would be worse than useless: most people will not be on the pinned version, and a check that is
+red from the day it ships gets switched off.
+
+⭐ It found two defects in itself before it was even finished. The existing checker that looks for
+test inputs which never vary flagged two in the new file, one day after that exact defect closed
+elsewhere. Two more of its own test cases turned out to pass for accidental reasons — one asserted an
+outcome that a different code path produces anyway, which is the same defect a reviewer found
+yesterday in unrelated code. All four were fixed rather than excused.
+
+⚠ And adding a single line of documentation for it hit the budget warned about yesterday: the process
+document sits at exactly its limit. The line was paid for by tightening a sentence elsewhere rather
+than raising the limit — which is what that refusal is for.

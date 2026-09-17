@@ -762,6 +762,13 @@ EXPECTED_MUTATIONS = {
     # underscore test unable to decide anything, measured by its mutation surviving a full
     # suite. The clause stays as a defence; the entry cannot fire, so it goes.
     "scripts/check-fixture-variation.py": 42,
+    # ⟳ 2026-09-17: `check-python-pin.py` JOINS with 11 entries, in the commit that creates it —
+    # `check-ratchet-contract.py` refused the file until it did, which is the manifest half of the
+    # contract doing its job. ⭐ Two of the eleven found AMBIENT cases on the first pass: the
+    # empty-corpus case asserted only an exit code that the NO-PINS prong returns by another route
+    # (backlog #137's `declared_not_derived` defect, recurring), and the jobs-block case used a
+    # fixture key the regex rejected anyway. Both repaired rather than exempted.
+    "scripts/check-python-pin.py": 11,
     "scripts/check-plan-code.py": 76,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
@@ -2654,6 +2661,7 @@ def _self_test() -> int:
                                       "scripts/check-producer-enumeration.py",
                                       # ⟳ 2026-09-12: the guard that enforces R4, finally subject
                                       # to it. A LIVE inventory entry, added with the manifest.
+                                      "scripts/check-python-pin.py",
                                       "scripts/check-ratchet-contract.py",
                                       "scripts/check-review-decision.py",
                                       "scripts/check-review-recorded.py",
@@ -3259,7 +3267,7 @@ def _self_test() -> int:
     # `schema-gates` check unrequireable) and SIX added for the derivation that replaced it. A RISE,
     # so this is not the sanctioned-fall case; the two retirements are recorded beside the per-file
     # count above with the reason, and both orphans were found by RUNNING the anchor check.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 737)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 748)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

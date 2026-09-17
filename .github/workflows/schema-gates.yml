@@ -192,6 +192,16 @@ jobs:
           node-version: '22'
           cache: npm
 
+      # ⛔ THE FIFTEEN GATES ARE PYTHON, AND THIS JOB DID NOT PIN THE INTERPRETER — while `prod-drift`
+      # below, which runs ONE script, has pinned 3.12 since it was written. The job that needed it
+      # least was the only one that had it. ⚠ This matters more now than it did last week: as of
+      # backlog #137 this context is a REQUIRED status check, so a runner-image bump can no longer
+      # change a gate's behaviour quietly — it blocks merges.
+      # Same version as `verify` and `prod-drift`, which is what it was already running.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       # ⛔ `node_modules` IS A GATE DEPENDENCY, NOT A CONVENIENCE — measured on this job's first CI
       # run. Gate 15 (`check-paid-caller-arrival.py`) answers "is this line a comment?" with the
       # TYPESCRIPT COMPILER and has NO fallback, because the two hand-written versions before it each

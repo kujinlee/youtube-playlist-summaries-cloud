@@ -43,8 +43,7 @@ notify for routine progress, or for anything you can decide yourself.
 
 ## Session Resume
 
-Verify progress from ground truth before acting — never from a context summary, which is a
-compressed snapshot and can be stale after `/compact`:
+Verify from ground truth, never a context summary — compressed, and stale after `/compact`:
 
 1. `git log --oneline` — which tasks are committed
 2. `ls tests/lib/ docs/reviews/` — what work exists on disk
@@ -146,6 +145,7 @@ copy that drifts.
 | `scripts/check-ratchet-contract.py` | every guard ON DISK has a `--self-test`, no fail-open handler, and **a caller** — or a written `NO-CALLER:` reason. ⟳ 2026-08-30: the population is the FILESYSTEM; CI-step discovery saw 14 of 24 and missed all three guards that nothing ran, one of them listed in THIS table (`--self-test`: 21 cases) |
 | `scripts/check-paid-caller-arrival.py` | backlog 26's trigger: fires when a non-test caller reaches `record_artifact`; refuses if the symbol was renamed away (`--self-test`: 32 cases). ⟳ r12: this row said 9 and, worse, listed the script as *mechanically enforced* while **nothing executed it** — it is now gate 15 of `scripts/check-schema-gates.sh` |
 | `scripts/check-function-revokes.py` | every newly created `public` function revokes PUBLIC in its own migration — **`alter default privileges` CANNOT do this** (measured 2026-08-28: stored entries are additive to PostgreSQL's built-in `PUBLIC` EXECUTE), so the per-function revoke is the only mechanism that works (`--self-test`: 16 cases) |
+| `scripts/check-python-pin.py` | ⟳ 2026-09-17: **every CI job pins the Python interpreter, the pins agree, and in CI the pin TOOK EFFECT** — `ci.yml` ran bare `python3` **45 times** in the required check and never called `setup-python`, so a runner-image bump could change every guard's behaviour with no commit. ⚠ The rule is *every job pins or is exempt with a reason*, NOT *jobs that run python*: the `schema-gates` job invokes the gates through a shell script and contains no literal `python3`. Locally a mismatch is ADVISORY (a gate red from birth gets switched off — #56); in CI it FAILS. Found by CI and a dev machine disagreeing about the same commit (`Path.is_file()` raises ENAMETOOLONG below 3.13, returns False above) |
 | `scripts/check-docs.py` | documentation integrity |
 | `scripts/check-backlog-closure.py` | ⭐ **the INVERTED direction (backlog #98)** — every other backlog rule compares a row to ITSELF (marker vs status), so a stale row agrees with itself and disagrees only with **git**; five shipped that way, none caught by a machine. Reads merged subjects, warns when a row they close lacks `✅`. **WARN-ONLY** by #56's measured verdict (a blocking gate on a docs-only mismatch gets switched off); exits **2** only on CANNOT RUN — shallow clone, no git, or ZERO closing tokens. ⚠ Keys on `(backlog #N)` at the **subject TAIL**: measured, ANY-occurrence matched 18 ids and would have fired on **10**, the tail rule 7 and fired on **1** — a true positive. `--self-test`: 20 cases |
 | `scripts/check-review-rounds.py` | a review round has BOTH halves, or a written `REVIEW GAP:` reason — never blocks when a reviewer cannot run, only when nobody says so. Reads the flat layout AND `docs/reviews/<writer>/`, refusing a basename filed in both (`--self-test`: 27 cases). ⟳ 2026-09-04: this row said **14** while the suite ran **22** — a third declared-count drift, caught by `check-selftest-counts.py` only because backlog #92 happened to touch the file |
