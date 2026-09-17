@@ -37,7 +37,7 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "    return path.endswith(\".md\") and \"/\" not in path",
+        "    return is_root_md",
         "    return True"
       ]
     ],
@@ -66,7 +66,7 @@
     "expect": "docs/backlog.md is prose"
   },
   {
-    "name": "a stale round clears the branch, so code committed after EVERY round merges unreviewed — the whole point of the rule",
+    "name": "a stale round clears the branch, so code committed after EVERY round merges unreviewed \u2014 the whole point of the rule",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -79,12 +79,12 @@
     ]
   },
   {
-    "name": "no usable round returns 0 instead of 2, so `CANNOT RUN` prints while CI reads a pass — the exact fail-open r1 filed",
+    "name": "no usable round returns 0 instead of 2, so `CANNOT RUN` prints while CI reads a pass \u2014 the exact fail-open r1 filed",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "        return 2, (f\"CANNOT RUN — {why}, so whether any round saw the code about to merge is \"",
-        "        return 0, (f\"CANNOT RUN — {why}, so whether any round saw the code about to merge is \""
+        "        return 2, (f\"CANNOT RUN \u2014 {why}, so whether any round saw the code about to merge is \"",
+        "        return 0, (f\"CANNOT RUN \u2014 {why}, so whether any round saw the code about to merge is \""
       ]
     ],
     "expect": [
@@ -131,7 +131,7 @@
     ]
   },
   {
-    "name": "⛔ the r1 BLOCKING, restored: the tail subtracts by PATH again, so a file edited a second time after the round is certified as reviewed",
+    "name": "\u26d4 the r1 BLOCKING, restored: the tail subtracts by PATH again, so a file edited a second time after the round is certified as reviewed",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -144,7 +144,7 @@
     ]
   },
   {
-    "name": "⛔ the r1 LOW, restored: the tail rule stops asking what counts as guarded, so a docs commit after a round fails a branch that owed no review for it",
+    "name": "\u26d4 the r1 LOW, restored: the tail rule stops asking what counts as guarded, so a docs commit after a round fails a branch that owed no review for it",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -157,7 +157,7 @@
     ]
   },
   {
-    "name": "the REVIEW GAP escape stops working, so a Codex-down round — the documented fallback — reds every branch that takes it",
+    "name": "the REVIEW GAP escape stops working, so a Codex-down round \u2014 the documented fallback \u2014 reds every branch that takes it",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -183,7 +183,7 @@
     ]
   },
   {
-    "name": "⛔ the r2 BLOCKING, restored: the final-tree lookup answers with a bare sha, so flipping the executable bit after the round is credited as reviewed",
+    "name": "\u26d4 the r2 BLOCKING, restored: the final-tree lookup answers with a bare sha, so flipping the executable bit after the round is credited as reviewed",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -192,11 +192,11 @@
       ]
     ],
     "expect": [
-      "the lookup answers with an ENTRY — mode and object id, not a bare sha"
+      "the lookup answers with an ENTRY \u2014 mode and object id, not a bare sha"
     ]
   },
   {
-    "name": "⛔ the r4 BLOCKING, restored: entries are filtered to blobs, so a path holding a SUBMODULE reads as absent and a reviewed deletion credits a merge that puts a gitlink there",
+    "name": "\u26d4 the r4 BLOCKING, restored: entries are filtered to blobs, so a path holding a SUBMODULE reads as absent and a reviewed deletion credits a merge that puts a gitlink there",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -209,12 +209,12 @@
     ]
   },
   {
-    "name": "⛔ the r2 HIGH, restored: any REVIEW GAP clears a missing Codex verdict, so `claude — not invoked` excuses a different absence entirely",
+    "name": "\u26d4 the r2 HIGH, restored: any REVIEW GAP clears a missing Codex verdict, so `claude \u2014 not invoked` excuses a different absence entirely",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "        if gap_names_codex(reason):\n            return f\"{path} — {reason}\"",
-        "        if reason:\n            return f\"{path} — {reason}\""
+        "        if gap_names_codex(reason):\n            return f\"{path} \u2014 {reason}\"",
+        "        if reason:\n            return f\"{path} \u2014 {reason}\""
       ]
     ],
     "expect": [
@@ -231,11 +231,11 @@
       ]
     ],
     "expect": [
-      "the WHO is read, not the reason — a claude gap mentioning codex stays a claude gap"
+      "the WHO is read, not the reason \u2014 a claude gap mentioning codex stays a claude gap"
     ]
   },
   {
-    "name": "⛔ the r3 deletion finding, restored: a path absent from the final tree has no entry to compare, so a reviewed DELETION reads as unseen and the careful path fails for deleting code",
+    "name": "\u26d4 the r3 deletion finding, restored: a path absent from the final tree has no entry to compare, so a reviewed DELETION reads as unseen and the careful path fails for deleting code",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -274,11 +274,11 @@
     ]
   },
   {
-    "name": "⛔ the r4 HIGH, restored: the declared gap loses the document that made it, so a stacked branch's pass is indistinguishable from one that declared for itself",
+    "name": "\u26d4 the r4 HIGH, restored: the declared gap loses the document that made it, so a stacked branch's pass is indistinguishable from one that declared for itself",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "            return f\"{path} — {reason}\"",
+        "            return f\"{path} \u2014 {reason}\"",
         "            return reason"
       ]
     ],
@@ -328,7 +328,7 @@
         "    if False:\n        return None, UNUSABLE"
       ]
     ],
-    "expect": "a verdict whose dirty map is NULL could not look — unusable, not a clean tree"
+    "expect": "a verdict whose dirty map is NULL could not look \u2014 unusable, not a clean tree"
   },
   {
     "name": "a schema-1 verdict is skipped instead of counted",
@@ -372,7 +372,7 @@
         "        if False:\n            unusable += 1"
       ]
     ],
-    "expect": "a head no longer reachable — rebased or squashed — is UNUSABLE, never a pass"
+    "expect": "a head no longer reachable \u2014 rebased or squashed \u2014 is UNUSABLE, never a pass"
   },
   {
     "name": "the second question is switched off entirely",
@@ -390,7 +390,7 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "        return False, f\"{NO_REVIEW} {waiver} — the final-tree question is WAIVED, not passed\"",
+        "        return False, f\"{NO_REVIEW} {waiver} \u2014 the final-tree question is WAIVED, not passed\"",
         "        return False, None"
       ]
     ],
@@ -456,7 +456,7 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "        if not any(prefix.startswith(e) or e == prefix.rstrip(\"/\") + \"/\"\n                   for e in CODE_UNDER_PROSE):\n            missing.append(g)",
+        "        if not any(prefix.startswith(e) or e == prefix.rstrip(\"/\") + \"/\"\n                   for e in declared):\n            missing.append(g)",
         "        if False:\n            missing.append(g)"
       ]
     ],
@@ -478,32 +478,285 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "        if not any(prefix.startswith(e) or e == prefix.rstrip(\"/\") + \"/\"\n                   for e in CODE_UNDER_PROSE):",
+        "        if not any(prefix.startswith(e) or e == prefix.rstrip(\"/\") + \"/\"\n                   for e in declared):",
         "        if not any(prefix.startswith(e) or e.startswith(prefix)\n                   for e in CODE_UNDER_PROSE):"
       ]
     ],
     "expect": "...as is a glob BROADER than an exemption, which used to be silently cleared"
   },
   {
-    "name": "the workflow extractor stops finding docs/ path filters",
+    "name": "the python reader stops finding a docs/ path bound to a name",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "    return sorted({m.group(1) for m in re.finditer(r\"^\\s*-\\s*'(docs/[^']*)'\", text, re.M)})",
-        "    return []"
+        "                    if isinstance(sub, ast.Constant) and isinstance(sub.value, str) \\\n                            and \"docs/\" in sub.value:",
+        "                    if False:"
       ]
     ],
-    "expect": "the workflow's docs/ path filters are READ, not transcribed into this test"
+    "expect": "a docs/ path bound to a NAME in python is found"
   },
   {
-    "name": "the extractor swallows non-docs globs too, so the check reports paths CI never guarded",
+    "name": "the python reader also walks Expr nodes, re-admitting docstrings and comments",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "r\"^\\s*-\\s*'(docs/[^']*)'\"",
-        "r\"^\\s*-\\s*'([^']*)'\""
+        "            if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None:",
+        "            if isinstance(node, (ast.Assign, ast.AnnAssign, ast.Expr)) and node.value is not None:"
       ]
     ],
-    "expect": "the extractor finds quoted docs/ globs and ignores everything else"
+    "expect": "...nor one that appears only in a DOCSTRING, which ast.Constant alone would re-admit"
+  },
+  {
+    "name": "the shell reader stops stripping comments, so a commented path counts",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "            line = line.split(\"#\")[0]\n            if not re.match(r\"\\s*[A-Za-z_]\\w*=\", line):",
+        "            line = line\n            if not re.match(r\"\\s*[A-Za-z_]\\w*=\", line):"
+      ]
+    ],
+    "expect": "...and a TRAILING comment on a real assignment does not smuggle a path in"
+  },
+  {
+    "name": "the shell reader stops requiring an ASSIGNMENT, so any mention counts",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "            if not re.match(r\"\\s*[A-Za-z_]\\w*=\", line):\n                continue",
+        "            if False:\n                continue"
+      ]
+    ],
+    "expect": "...and a shell line that is not an assignment at all is not"
+  },
+  {
+    "name": "the EXECUTED prong goes, so a spec dir whose gates are only invoked is missed",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "            dirs.add(joined.rsplit(\"/\", 1)[0])",
+        "            pass"
+      ]
+    ],
+    "expect": "...and a file the runner EXECUTES from its spec dir yields that dir"
+  },
+  {
+    "name": "the pathlib join is no longer reassembled, so a joined docs/ gate path is invisible",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return \"/\".join(parts) if len(parts) > 1 else None",
+        "    return None"
+      ]
+    ],
+    "expect": "...and a pathlib / join is reassembled, so it reads like the same path written whole"
+  },
+  {
+    "name": "the EXISTENCE filter goes, so a bound REGEX is reported as an uncovered gate directory",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return is_file(path)",
+        "    return True"
+      ]
+    ],
+    "expect": "a bound string that is a REGEX, not a path, is rejected because it does not exist"
+  },
+  {
+    "name": "the prose-suffix rule goes, so a .md a gate merely reads becomes gate machinery",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    is_prose_name = suffix == PROSE_SUFFIX",
+        "    is_prose_name = False"
+      ]
+    ],
+    "expect": "a .md a gate merely READS is not gate machinery, so docs/ itself is never derived"
+  },
+  {
+    "name": "the gate-script DISCOVERY loop is emptied, so the derivation silently under-covers",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    for rel in sorted(set(re.findall(r\"(?:\\./)?(scripts/[\\w.-]+\\.(?:py|sh))\", uncommented))):",
+        "    for rel in []:"
+      ]
+    ],
+    "expect": "...and the derivation FINDS every directory already declared as gate code"
+  },
+  {
+    "name": "a declared directory the derivation missed stops being reported",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "            missing.append(d)",
+        "            pass"
+      ]
+    ],
+    "expect": "a declared directory the derivation missed is REPORTED, which main treats as CANNOT RUN"
+  },
+  {
+    "name": "the completeness match loses its separator, so a mere PREFIX counts as found",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        if d.rstrip(\"/\") not in stems:",
+        "        if not any(s.startswith(d.rstrip(\"/\")) for s in stems):"
+      ]
+    ],
+    "expect": "...while a derived path that merely shares a PREFIX does not"
+  },
+  {
+    "name": "the path SHAPE guard goes, so prose is handed to the filesystem and CI crashes",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if not looks_like_path(path):\n        return False",
+        "    if False:\n        return False"
+      ]
+    ],
+    "expect": "prose never reaches the filesystem at all"
+  },
+  {
+    "name": "looks_like_path stops rejecting WHITESPACE, so a prose blob reads as a path",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if not path or any(c.isspace() for c in path):",
+        "    if not path:"
+      ]
+    ],
+    "expect": "...but prose containing a path does not, because no path here has WHITESPACE"
+  },
+  {
+    "name": "the component limit is widened \u2014 PROSPECTIVE cover for a long no-whitespace component, not the CI shape, which whitespace already rejects",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "COMPONENT_LIMIT = 255",
+        "COMPONENT_LIMIT = 4096"
+      ]
+    ],
+    "expect": "...nor a component over the 255-byte filesystem limit, the shape that actually RAISED"
+  },
+  {
+    "name": "the component width counts CODE POINTS, so multi-byte names slip past the byte limit",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        width = len(component.encode(\"utf-8\", \"replace\"))",
+        "        width = len(component)"
+      ]
+    ],
+    "expect": "...and multi-byte characters are counted as BYTES, not code points"
+  },
+  {
+    "name": "review_added stops requiring docs/reviews/, so ANY added .md records a round",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return [p for p in paths if p.startswith(REVIEW_DIR) and p.endswith(\".md\")]",
+        "    return [p for p in paths if p.endswith(\".md\")]"
+      ]
+    ],
+    "expect": "a .md OUTSIDE docs/reviews/ is NOT a review document"
+  },
+  {
+    "name": "the extension-less exclusion comes back, hiding a gate reading a Makefile or a manifest",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if is_prose_name:\n        return False",
+        "    if is_prose_name or not suffix:\n        return False"
+      ]
+    ],
+    "expect": "an extension-less gate FILE is gate data \u2014 the filename shape does not decide"
+  },
+  {
+    "name": "a bare docs is skipped again, so both prongs pass over a directory neither examined",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        if prefix != \"docs\" and not prefix.startswith(\"docs/\"):",
+        "        if not prefix.startswith(\"docs/\"):"
+      ]
+    ],
+    "expect": "a derived bare `docs` is REPORTED, not silently skipped for lacking a slash"
+  },
+  {
+    "name": "the TOTAL path bound goes, so an over-PATH_MAX path reaches the filesystem again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if len(path.encode(\"utf-8\", \"replace\")) > PATH_LIMIT:\n        return False",
+        "    if False:\n        return False"
+      ]
+    ],
+    "expect": "a path over the TOTAL byte limit is rejected, not just one with a long component"
+  },
+  {
+    "name": "the anti-drift verdict asks COVERAGE before COMPLETENESS, so a broken derivation passes",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    undiscovered = declared_not_derived(derived, declared)\n    if undiscovered:",
+        "    undiscovered = []\n    if undiscovered:"
+      ]
+    ],
+    "expect": "when BOTH would fire, COMPLETENESS answers \u2014 a broken derivation is not a coverage pass"
+  },
+  {
+    "name": "the empty-derivation CANNOT-RUN guard goes, leaving a pass over a derivation that found nothing",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if not derived:",
+        "    if False:"
+      ]
+    ],
+    "expect": "...and it refuses even with NOTHING declared, so it is not standing on the other prong"
+  },
+  {
+    "name": "PATH_LIMIT is widened to Linux's PATH_MAX \u2014 the wrong value for the platform that raised",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "PATH_LIMIT = 1024",
+        "PATH_LIMIT = 4096"
+      ]
+    ],
+    "expect": "one byte over the TOTAL limit of 1024 is rejected"
+  },
+  {
+    "name": "PROSE_FILES loses .gitignore, the one member the root-.md fallback cannot mask",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "PROSE_FILES = (\"README.md\", \"CLAUDE.md\", \"AGENTS.md\", \"CONTEXT.md\", \".gitignore\")",
+        "PROSE_FILES = (\"README.md\", \"CLAUDE.md\", \"AGENTS.md\", \"CONTEXT.md\")"
+      ]
+    ],
+    "expect": ".gitignore is prose \u2014 the only PROSE_FILES member the root-.md fallback cannot catch"
+  },
+  {
+    "name": "the root-.md prose fallback goes, so a root .md not in PROSE_FILES owes a review round",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    is_root_md = path.endswith(\".md\") and \"/\" not in path",
+        "    is_root_md = False"
+      ]
+    ],
+    "expect": "a root .md NOT named in PROSE_FILES is still prose, via the fallback"
+  },
+  {
+    "name": "verdict stops reading the PR body, so a NO-REVIEW marker in it is ignored",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    reason = reason_of(pr_body)",
+        "    reason = reason_of(\"\")"
+      ]
+    ],
+    "expect": "the pr_body is a real PARAMETER: a NO-REVIEW marker in it waives the round"
   }
 ]

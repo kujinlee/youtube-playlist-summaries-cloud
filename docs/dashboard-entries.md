@@ -9604,3 +9604,178 @@ would fix are ones that workflow file already warns about in its own comments.
 edge was the `--auto` merge flag, which merges the moment the required checks pass. That flag turns
 out to be switched off for this repository entirely — found by trying it, not by reading. The flaw
 is unchanged; only its nastiest route is already closed.
+
+## 2026-09-16
+
+The schema gates can now be *enforced* — the change that had to land before the repository setting
+can be flipped, and the setting is the part that is still waiting on a human.
+
+Yesterday's item #137 recorded the defect: fifteen schema gates report an answer nobody consumes,
+because GitHub blocks a merge only on checks marked *required*, and that list had one entry. It also
+recorded why the one-line fix was a trap — the job was filtered to schema-ish paths, so on a
+documentation-only pull request it never ran, never reported, and marking it required would have
+left every docs change pending forever.
+
+The filter is gone. The job now runs on every pull request, so the check always reports and can be
+required.
+
+The filter was measured before it was deleted, and it was protecting nothing. This job runs in its
+own workflow beside the main test job, not after it: across ten paired runs it took 98-187 seconds
+against that job's 121-604, and finished first in all ten. On the very pull request that exposed
+this problem — two files, both documentation — the author waited 8m37s for the main job anyway, so a
+110-second parallel job costs them nothing. 13 of the last 40 changes to the main branch will newly
+run it, all documentation-only, which is about 24 extra runner-minutes per 40 merges on a public
+repository where those minutes are free.
+
+⚠ What it costs, said plainly rather than buried: once the check is required, an infrastructure
+failure in it — a container image pull, a dependency install — will block a documentation pull
+request that has nothing to do with schema. The job has not failed in its last 54 completed runs,
+but every one of those was on a change the filter had already let through, so that record is
+evidence and not proof.
+
+⚠ And the filter turned out to have a second job that was not an optimisation, which is why this was
+not a thirty-line deletion. Another guard read the filter's list to learn which documentation
+directories hold executable gate code rather than prose — two of the fifteen gates live under
+`docs/`. Deleting the list made that guard refuse to run, correctly, since a zero over nothing is
+not a pass. It now derives those directories from the scripts that actually execute the files, which
+is the authority the filter was only ever a copy of.
+
+⚠ The first attempt at that derivation was wrong in the noisy direction and was caught by running it
+instead of reasoning about it. Asking "which documentation paths do the gate scripts mention?"
+returns the whole documentation tree, because one gate reads the backlog file as ordinary prose
+input — so the guard would have demanded that nothing under `docs/` is ever prose again. The
+question that works is narrower: which files does the gate runner *execute*, and which does a gate
+bind as data rather than as prose.
+
+⚠ One of the six new mutation tests survived on first measurement, and the case it named was the
+reason. A commented-out shell line is rejected for being the wrong shape, not for being a comment,
+so the case passed without ever exercising the clause it appeared to test. A case driving a trailing
+comment on a real assignment line kills it.
+
+**Still needed from a human, and it is a repository setting rather than code:** add `schema-gates`
+to the required status checks on the main branch. It must happen *after* this merges — the reverse
+order blocks every documentation pull request. Then the falsifier is worth running for real: a
+docs-only pull request should show `schema-gates` succeeding rather than absent, and a deliberately
+broken gate should grey the merge button out.
+
+148 self-test cases in the changed guard, six new mutation entries each proved to go red through the
+case it names over a control proved green first, and the manifest total moves 714 to 718.
+
+## 2026-09-16
+
+Correction and follow-up to the entry above, on the same unmerged branch. Two numbers in it are now
+stale and the reason is worth more than the numbers: **the adversarial review found a real hole, and
+it was the one that entry admitted to having left open.**
+
+The check that decides which documentation directories hold gate machinery was recognising gate data
+by its file extension, from a list of two: `.sql` and `.txt`. The reviewer demonstrated — by running
+the function, not by reading it — that a new gate reading a `.json` rules file would be invisible.
+That matters more than it sounds: the existing gates keep the result non-empty, so the "I could not
+run" guard is satisfied, and coverage shrinks silently. A later change to that new gate's rules would
+have been classified as documentation and owed no review round. JSON or YAML config is an ordinary
+shape for a new checker, so this was not an exotic scenario.
+
+It also showed a second shape no extension list could ever have fixed: a path written as a `pathlib`
+join, `ROOT / "docs" / "superpowers" / … / "rules.json"`, contains no recognisable path fragment at
+all — it is five separate one-word strings.
+
+Fixed as a class rather than by adding `.json` and waiting for the next extension. The extension list
+was quietly doing two jobs: deciding what is prose, and deciding what is even a path. Inverting it to
+"anything but Markdown" proves that — it breaks immediately on the real repository, because one gate
+binds a *regular expression* beginning with a documentation path and another binds a *prose message*
+containing one. Neither is a file. So the two jobs are now separate: Markdown answers "is it prose",
+and asking the filesystem whether the file exists answers "is it a path". Any extension now works.
+
+⚠ And one of the new mutation tests was wrong rather than the code. A clause requiring a join to have
+at least two pieces turns out to be **inert** — removing it changes nothing observable, because a
+one-piece join returns exactly what the simpler scan already finds. The test claiming to prove that
+clause mattered was deleted and the clause is now labelled as what it is: a statement of intent with
+no enforcement behind it. Keeping the test would have been an unfalsifiable guard, which is the thing
+this project files findings about.
+
+Current: 153 self-test cases, 50 mutation entries for that file, manifest total 721, every entry
+proved to go red through the case it names over a control proved green first.
+
+⚠ Still outstanding, unchanged: the review round is not complete. The Codex half is filed and returned
+**NOT CONVERGED**; its finding is fixed here and therefore needs a further round rather than closing
+the gate. The Claude half has not run. And the repository setting — making the check required — is
+still a human's to make, still after the merge.
+
+## 2026-09-16
+
+Second correction on this branch, and the reason to read it is that **the review found the branch
+had switched off the repository's largest gate.**
+
+Round 1 ran both halves. Between them they returned one blocking defect, five serious ones and nine
+smaller. The blocking one was mine and it was invisible to the way I had been checking.
+
+The mutation harness works by applying a recorded edit to the code and confirming a test goes red.
+Three of the edits I added all targeted three different clauses of the **same single line**, so they
+were indistinguishable to the tool that loads them. It refuses edits that repeat one another — and it
+refuses by giving up **before running anything at all**. So every one of the 719 checks across the
+whole repository silently did nothing, inside the one job that gates merges. A branch whose entire
+purpose is making a gate's answer count had turned the biggest gate off.
+
+⚠ The transferable part is *how it hid*. I verified each edit on its own and each one passed. A
+collision is invisible one at a time; only the run that loads the whole set can see it — and that run
+is the one I skipped locally, on the reasonable-sounding grounds that the build server does it.
+
+The other serious finding is subtler and changed the design. The check that decides which
+documentation directories hold gate machinery could not tell when it was **under**-reporting. Its two
+tests asked "did it find anything?" and "is everything it found accounted for?" — and both of those
+get *easier* to pass as it finds less. The reviewer deleted the entire discovery step and the tests
+stayed green while two of three directories vanished and the check reported success.
+
+That cannot be fixed by making the detection smarter, and the measurement says so plainly: there is
+no rule that separates a documentation directory holding gate machinery from one that is ordinary
+prose, because the parent directory *contains* the gate directories and therefore satisfies every
+content-based test you could write. The old path filter managed it only because a person maintained
+it by hand, and because getting it wrong stopped the gate running — pressure no derivation has.
+
+So the fix asserts the property instead: the detection must still find everything we have already
+declared, or it refuses to report at all. Breaking it is now loud. What stays open — a brand new gate
+directory nobody has declared yet — is filed as backlog #138 with both refuted approaches, the shape
+that would actually work, and why it was not done here (it edits the guards on the money path).
+
+Five stale sentences were also corrected: the file still told the next reader that the deleted path
+filter was the authority, in one case pointing at line numbers that now contain something else.
+
+Current: 157 self-test cases, 52 mutation entries, manifest total 723, every entry proved to go red
+through the case it names. Round 2 is running.
+
+## 2026-09-16
+
+Third round of review on this branch, and the finding that matters is one I wrote myself.
+
+A note I had written to justify a process decision said the actual change — deleting the path filter
+— had produced **zero** findings across every review so far, and credited the second reviewer with
+having checked it. Both halves of that were wrong. The first review had already filed two findings
+against the change, one of them against the deletion itself; and the reviewer I credited had listed
+the six things it checked, none of which opened that file at all.
+
+The invented confirmation is the worse half. An unsourced claim invites checking. A claim wearing
+someone else's name does the opposite — it reads as corroboration, and it worked: a second reviewer
+repeated it rather than re-deriving it, and two filed findings stayed invisible for two rounds
+because the note said there was nothing there to look for. Both are now closed.
+
+Closing them turned up something worth knowing before the last step of this work. One of those
+findings said a sentence in the workflow was false: that the job's answer does not depend on what a
+pull request changed. Re-measured today, two documentation files sit at **exactly** their line
+budget — 220 of 220, and 260 of 260. Appending a single line to either turns the schema job red on a
+documentation-only change. Verified by doing it.
+
+That is the feature rather than a trap, and it is worth being clear which. A change that pushes a
+budgeted file over its limit *should* be blocked. Today that refusal is simply ignored, which is the
+entire point of this work. Once the check counts, it stops being ignorable — so the first person to
+meet it is looking at a correct answer, and the fix is to move detail out of the file, not to raise
+the budget.
+
+⚠ Also corrected: a table introduced with the words "measured rather than asserted" was in fact
+asserted — three of its cells were wrong, including one reporting a reviewer's own count back to it.
+Re-derived, the picture is unchanged: serious findings fall 1→0→0 and 4→1→1 across rounds, which is
+the convergence the decision rested on. And a count in the backlog row went stale for the third time
+on this branch; it now says so, and points at the pins a gate actually checks.
+
+Round 3 found no defect that makes the gate return a wrong answer, and both reviewers said the
+branch is safe to merge on the code. Current: 182 self-test cases, 64 mutation entries, manifest
+total 735, every entry proved to go red through the case it names.

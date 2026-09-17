@@ -22,87 +22,99 @@
 # What genuinely belongs on a schedule is the OTHER subject: production drift. Nobody's PR changes
 # what is deployed, so there is no push to hang that check on. Hence `prod-drift` below.
 #
-# ⚠ PATH FILTERS ARE PER-WORKFLOW, NOT PER-JOB — which is the only reason this is not simply a
-# second job inside ci.yml. The filter is deliberately COARSE: over-including costs runner minutes,
-# while under-including makes the gate SILENTLY NOT RUN on the change that breaks it. Those errors
-# are not symmetric, so the list biases wide.
+# ⟳ 2026-09-16, backlog #137: THE PATH FILTER IS GONE — this workflow now runs on EVERY pull request
+# to master. The reason it was separate from ci.yml ("path filters are per-workflow, not per-job")
+# no longer applies to anything, so folding it in is now a live option; it was NOT taken, because
+# `verify` is the one required check and restructuring it to fix an unrelated gate is how a green
+# gate becomes a blocked repository. See the block below `name:` for why the filter went.
 name: Schema gates
 
-# ⚠ THE TWO PATH LISTS ARE DUPLICATED ON PURPOSE, AND IT IS NOT A STYLE CHOICE. GitHub Actions does
-# not support YAML anchors in workflow files, so `paths: &x` / `paths: *x` does not expand — it
-# fails to parse or silently does the wrong thing. Written once, this would be a filter that works
-# in every YAML tool and not in the one that matters.
-# THE HAZARD THAT CREATES: if the two lists ever DRIFT, pull requests and pushes to master filter
-# differently, and the gate can pass on a PR and then not run at all on merge (or the reverse).
-# They are kept adjacent so a one-sided edit is visible in the same screen — which is a convention,
-# i.e. weaker than a check. If this ever bites, the fix is a script that asserts the two lists are
-# equal, not a sterner comment.
+# ⭐⭐ WHY THERE IS NO `paths:` FILTER HERE ANY MORE — backlog #137, 2026-09-16. THE FILTER WAS NOT
+# REMOVED TO SAVE EFFORT; IT WAS REMOVED BECAUSE IT MADE THIS GATE UNENFORCEABLE.
 #
-# ⛔⛔ UNDER-FIRING IS THE DANGEROUS DIRECTION — it makes the gate SILENTLY NOT RUN on the change
-# that breaks it — AND THE FIRST VERSION OF THIS COMMENT GOT IT WRONG WHILE CLAIMING TO HAVE
-# MEASURED IT. ⟳ r1 BLOCKING 2 (claude). It said: *"MEASURED: of the files the suite reaches,
-# exactly ONE lives outside these globs"* — `docs/backlog.md`. That sentence was the output of a
-# check that enumerated paths the gate scripts MENTION IN THEIR SOURCE, and gate 15's subject is not
-# mentioned anywhere: it is a TUPLE OF DIRECTORIES THE GATE WALKS AT RUNTIME
-# (`check-paid-caller-arrival.PRODUCTION_DIRS`). Five of those six directories, plus `middleware.ts`,
-# were outside the filter — so a paid caller could land in `lib/` and this workflow would not run,
-# which is the precise scenario `check-schema-gates.sh:246` says the gate exists for.
+# THE DEFECT IT CAUSED. `schema-gates` was not in `required_status_checks.contexts` — measured live,
+# that list was `["verify"]`, one entry — so the fifteen gates could report RED and the merge button
+# stayed green. Nothing consumed their answer. The one-line fix (add the context) WAS A TRAP: a
+# workflow-level `paths:` filter means the workflow never STARTS on a docs-only PR, so the context
+# never appears, and a *required* check that never reports leaves the pull request PENDING FOREVER —
+# not failed, pending. PR #314 demonstrated it live: two files under `docs/`, exactly one check.
+# So the filter had to go before the context could be required. The order is load-bearing in the
+# other direction too: requiring the context BEFORE this change blocks every docs-only PR.
 #
-# ⚠ THE LESSON IS THE PREDICATE, NOT THE LIST. "Which files does the suite read?" was answered by
-# grepping for path literals — the wrong question twice over: it cannot tell a path the code OPENS
-# from one a comment MENTIONS (13 of its 14 hits were prose), and it cannot see a path COMPUTED at
-# runtime at all. A filter derived from a gate's DECLARED subject is the only version that holds.
+# WHAT THE FILTER WAS PROTECTING, MEASURED RATHER THAN ASSUMED — and the answer is NOTHING:
+#   * this job runs in a SEPARATE WORKFLOW, beside `verify`, on its own runner. Ten paired runs
+#     (same trigger, same second): schema-gates 98-187s, median ~110s; `verify` 121-604s, median
+#     ~516s. schema-gates finished FIRST in all ten. It is never the long pole, so the filter could
+#     never save a human a single second of waiting.
+#   * `ci.yml` has NO path filter, so `verify` runs on docs-only PRs anyway. On PR #314 the author
+#     waited 8m37s for it. A ~110s parallel job makes them wait 8m37s.
+#   * 13 of the last 40 first-parent commits on master touch none of the old globs — all docs-only,
+#     2-4 files, mostly backlog filings. So ~24 extra runner-MINUTES per 40 merges, and this
+#     repository is PUBLIC, where Actions minutes are free.
+# ⚠ THE COST THAT IS REAL, STATED RATHER THAN BURIED: once this context is required, an
+# INFRASTRUCTURE failure here — the 0.34 GB Postgres image pull, `npm ci`, docker — blocks a
+# docs-only PR that has nothing to do with schema. Reliability was 54 success / 0 failure /
+# 6 cancelled over the last 60 runs, but ⚠ that record was earned on a population that EXCLUDED
+# docs-only PRs by construction, so it is evidence and not proof. The job's verdict does not depend
+# on the diff for the SCHEMA gates (they rebuild the same database from the same migrations).
+# ⛔⛔ BUT THAT SENTENCE USED TO CLAIM IT OF THE WHOLE JOB, AND THAT WAS FALSE — r1 Medium 10
+# (claude), filed then and left open for two rounds because a coordinator note wrongly said
+# this file had produced ZERO findings. RE-MEASURED 2026-09-16: gates 3, 6 and 15 DO read the
+# diff's subject, and gate 6 has ZERO SLACK — `check-docs.py`'s LINE_BUDGETS put
+# `docs/dev-process.md` at 220/220 and `docs/plugins.md` at 260/260 TODAY. Appending ONE line
+# to either turns this job RED on a docs-only pull request; measured by doing it, rc=1,
+# `221 / 220 OVER`.
+# ⭐ THAT IS THE FEATURE, NOT A TRAP, and it is worth saying which: a docs-only PR that pushes
+# a budgeted file over its limit SHOULD be blocked. Today that red is simply ignored, which is
+# the whole of backlog #137. Once the context is required it stops being ignorable — so the
+# first person to hit it will be looking at a correct refusal, and should move detail out of
+# the file rather than raise the budget (`check-docs.py` says so in its own message).
 #
-# ⚠ STILL TRUE, AND NOW THE ONLY SUCH CASE: `docs/backlog.md` is read by `check-docs.py:297,406,463`
-# (gate 6) and is not in this filter. That is not a gap — `ci.yml:109` runs the same script in the
-# `verify` job, which has NO path filter.
+# ⛔ AND THE FILTER HAD A SECOND CONSUMER THAT WAS NOT AN OPTIMISATION — this is the part that made
+# the change bigger than a deletion, and it must not be rebuilt by accident. `check-review-recorded`
+# READ the `docs/` globs out of this file as the AUTHORITY for which `docs/` directories hold
+# executable gate code rather than prose (two do: gates 1-2 and 10/14 live under `docs/`). Deleting
+# the globs made it exit rc=2 CANNOT RUN — correctly, since a zero over nothing is not a pass.
+# ⚠ DO NOT SOLVE THAT BY LEAVING A DECORATIVE PATH LIST HERE FOR IT TO READ. A trigger filter is
+# under constant corrective pressure (get it wrong and the gate does not run, so someone notices);
+# a list that nothing enforces drifts silently forever, which is strictly worse than either option.
+# The falsifier now derives those directories from the scripts that actually EXECUTE the files —
+# `check-schema-gates.sh` `SPEC=`, `check-anon-exposure.py` `MANIFEST=`, `run-schema-assertions.sh`
+# `SEED=` — i.e. from the authority instead of from a proxy for it.
+#
+# ⚠ WHAT IS LOST, SAID PLAINLY. Two things, and the second was filed in r1 and left open for two
+# rounds:
+#   1. the log no longer distinguishes "this PR could not have broken a gate" from "the gates
+#      passed". Both now read as green. That signal was worth less than the enforceability it
+#      was costing.
+#   2. ⟳ r1 LOW 14 (claude): the `push:` trigger has no filter either, so a DOCS-ONLY merge to
+#      master now starts a run that can CANCEL a code merge's run — the `concurrency` group
+#      keys on `github.event_name` and `github.ref`, which are identical for both. Before, a
+#      docs-only push did not start one at all. A cancelled run reports nothing, which this
+#      repo treats as worse than a failure. Narrow today (merges are serialised by review),
+#      and the honest mitigation if it ever bites is `cancel-in-progress: false` on the push
+#      path, NOT restoring the filter — that would re-open the defect this branch closed.
+#
+# ⟳ THE HISTORY THIS REPLACES IS KEPT, because it is the reason nobody should re-introduce the
+# filter casually. The list was WRONG ONCE, in the silent direction: r1 BLOCKING 2 found `lib/`,
+# `app/`, `worker/`, `components/`, `types/` and `middleware.ts` MISSING — gate 15's own runtime
+# subject (`check-paid-caller-arrival.PRODUCTION_DIRS`) — so a paid caller could land in `lib/` and
+# this workflow would not run, the precise scenario `check-schema-gates.sh:246` says gate 15 exists
+# for. The lesson recorded then was THE PREDICATE, NOT THE LIST: "which files does the suite read?"
+# had been answered by grepping path literals, which cannot tell a path the code OPENS from one a
+# comment MENTIONS (13 of its 14 hits were prose) and cannot see a path COMPUTED at runtime at all.
+# ⚠ A YAML `paths:` block can never have a `--self-test`, so that list was correct only by
+# inspection, re-verified whenever someone thought to, with nothing able to report when it stopped
+# being correct. Deleting it removes the only copy that could drift.
+# ⟳ Also gone with it: the DUPLICATED pull_request/push lists. GitHub Actions does not expand YAML
+# anchors, so the two could only be kept in step by convention — a hazard this file documented
+# against itself ("the gate can pass on a PR and then not run at all on merge, or the reverse").
+# One trigger pair with no lists cannot drift.
 on:
   pull_request:
     branches: [master]
-    paths:
-      # gate 15's own subject — `check-paid-caller-arrival.PRODUCTION_DIRS/PRODUCTION_FILES`.
-      # ⟳ r1 BLOCKING 2: these six were MISSING, so the money gate lived inside a filter that
-      # excluded the code it watches. Measured: one line added under `lib/` alone flips it 0 -> 1.
-      - 'lib/**'
-      - 'app/**'
-      - 'worker/**'
-      - 'components/**'
-      - 'types/**'
-      - 'middleware.ts'
-      # ⟳ r1 LOW (codex): gate 15 answers "is this a comment?" with the TypeScript compiler and has
-      # no fallback, so `typescript` in package.json is a GATE DEPENDENCY — this workflow's own
-      # comments say so. A dependency-only PR could change that surface without running the gate
-      # whose correctness rests on it.
-      - 'package.json'
-      - 'package-lock.json'
-      - 'scripts/**'
-      - 'supabase/**'
-      - 'docs/superpowers/specs/2026-08-03-stable-blob-addressing/**'
-      - 'docs/superpowers/specs/m4/**'
-      - '.github/workflows/schema-gates.yml'
   push:
     branches: [master]
-    paths:
-      # gate 15's own subject — `check-paid-caller-arrival.PRODUCTION_DIRS/PRODUCTION_FILES`.
-      # ⟳ r1 BLOCKING 2: these six were MISSING, so the money gate lived inside a filter that
-      # excluded the code it watches. Measured: one line added under `lib/` alone flips it 0 -> 1.
-      - 'lib/**'
-      - 'app/**'
-      - 'worker/**'
-      - 'components/**'
-      - 'types/**'
-      - 'middleware.ts'
-      # ⟳ r1 LOW (codex): gate 15 answers "is this a comment?" with the TypeScript compiler and has
-      # no fallback, so `typescript` in package.json is a GATE DEPENDENCY — this workflow's own
-      # comments say so. A dependency-only PR could change that surface without running the gate
-      # whose correctness rests on it.
-      - 'package.json'
-      - 'package-lock.json'
-      - 'scripts/**'
-      - 'supabase/**'
-      - 'docs/superpowers/specs/2026-08-03-stable-blob-addressing/**'
-      - 'docs/superpowers/specs/m4/**'
-      - '.github/workflows/schema-gates.yml'
   # ✅ ARMED 2026-09-15, AND ONLY AFTER A REAL RUN PASSED — the order matters more than the change.
   # This block spent two days saying the schedule was deliberately NOT armed because `prod-drift`
   # needs `CLAUDE_RO_DATABASE_URL` and that secret did not exist: "a gate that cries wolf nightly is
