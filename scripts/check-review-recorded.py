@@ -392,11 +392,35 @@ def gate_code_dirs(runner: str, gate_sources: dict[str, str],
             dirs.add(joined.rsplit("/", 1)[0])
     for name, text in gate_sources.items():
         for p in bound_docs_paths(text, python=name.endswith(".py")):
-            suffix = p.rsplit("/", 1)[-1]
-            suffix = suffix[suffix.rindex("."):] if "." in suffix else ""
-            if suffix and suffix != PROSE_SUFFIX and "/" in p and is_file(p):
+            if is_gate_data(p, is_file):
                 dirs.add(p.rsplit("/", 1)[0])
     return sorted(dirs)
+
+
+def is_gate_data(path: str, is_file: "Callable[[str], bool]") -> bool:
+    """PURE given `is_file`. Whether a bound `docs/` path is a gate INPUT rather than prose.
+
+    ⛔ SPLIT OUT OF ONE `if` LINE — r1 BLOCKING 1 (claude), and the reason is mechanical rather than
+    stylistic. Three manifest entries mutated three different clauses of a single line, so all three
+    shared ONE ANCHOR. `check-plan-code.py:1019` keys its duplicate-anchor refusal on the `old` half
+    alone, so it refused two of them and `--mutate .` then returned BEFORE STAGING ANYTHING —
+    measured, `rc=1`, *"NOT MEASURED … Treat this as NOT CHECKED"*, with **zero of 719 mutations
+    across every target executed**, inside the required `verify` job. The branch whose whole purpose
+    is making a gate's answer consumable had turned the repository's largest gate off.
+    ⚠ It got there because each mutation was verified INDIVIDUALLY and `--mutate .` was skipped
+    locally: a collision is invisible one entry at a time, and visible only to the run that loads
+    the whole manifest. One clause per line so each has its own anchor.
+
+    ⚠ `"/" in p` was also dropped, not relocated — r1 Low 12 measured it TAUTOLOGICAL. Every path
+    reaching here begins `docs/`, so it always contains a slash and no case could distinguish it.
+    """
+    tail = path.rsplit("/", 1)[-1]
+    suffix = tail[tail.rindex("."):] if "." in tail else ""
+    if not suffix:
+        return False
+    if suffix == PROSE_SUFFIX:
+        return False
+    return is_file(path)
 
 
 def _gate_sources() -> "tuple[str, dict[str, str]] | None":

@@ -529,17 +529,6 @@
     "expect": "...and a shell line that is not an assignment at all is not"
   },
   {
-    "name": "the gate-data suffix filter goes, so docs/ itself is derived from a gate reading prose",
-    "file": "scripts/check-review-recorded.py",
-    "edits": [
-      [
-        "            if suffix and suffix != PROSE_SUFFIX and \"/\" in p and is_file(p):",
-        "            if \"/\" in p and is_file(p):"
-      ]
-    ],
-    "expect": "a .md a gate merely READS is not gate machinery, so docs/ itself is never derived"
-  },
-  {
     "name": "the EXECUTED prong goes, so a spec dir whose gates are only invoked is missed",
     "file": "scripts/check-review-recorded.py",
     "edits": [
@@ -566,8 +555,8 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "            if suffix and suffix != PROSE_SUFFIX and \"/\" in p and is_file(p):",
-        "            if suffix and suffix != PROSE_SUFFIX and \"/\" in p:"
+        "    return is_file(path)",
+        "    return True"
       ]
     ],
     "expect": "a bound string that is a REGEX, not a path, is rejected because it does not exist"
@@ -577,8 +566,8 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "            if suffix and suffix != PROSE_SUFFIX and \"/\" in p and is_file(p):",
-        "            if suffix and \"/\" in p and is_file(p):"
+        "    if suffix == PROSE_SUFFIX:\n        return False",
+        "    if False:\n        return False"
       ]
     ],
     "expect": "a .md a gate merely READS is not gate machinery, so docs/ itself is never derived"

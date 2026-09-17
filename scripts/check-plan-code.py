@@ -817,7 +817,17 @@ EXPECTED_MUTATIONS = {
     # ONE was DELETED rather than kept: `len(parts) > 1` is INERT — mutating it to `> 0` left
     # the suite green, because a one-constant join returns what the per-constant scan already
     # finds. A clause whose removal changes nothing cannot carry a mutation.
-    "scripts/check-review-recorded.py": 50,
+    # ⟳⟳⟳ 2026-09-16, r1 BLOCKING 1 (claude): 50 -> 49, and the count was WRONG IN A WAY
+    # NOTHING CHECKED. Three entries mutated three clauses of ONE LINE, so all three shared
+    # one anchor; `:1019` keys the duplicate refusal on the `old` half alone, refused two,
+    # and `--mutate .` returned BEFORE STAGING — zero of 719 mutations ran, in the required
+    # `verify` job. ⚠ Declared 50 while the LOADER ACCEPTED 48: this pin had never been
+    # compared against the accepted population, only against the file. One entry is gone
+    # for cause — the reviewer measured it strictly WEAKER than the entry it collided with
+    # (it removed `suffix and` too, which Low 12 showed is unfalsified) and naming the same
+    # case, so it added no coverage even once split. The predicate is now one clause per
+    # line (`is_gate_data`) so each mutation has its own anchor.
+    "scripts/check-review-recorded.py": 49,
     # ⟳ 2026-09-14, r11: this file JOINS the manifest — R4 widened-debt 8 -> 7, removed from
     # `WIDENED_MANIFEST_DEBT` in this same commit, which that rule requires as an identity and not
     # a ceiling. It is the producer half of the mechanism the file above consumes, and it had gone
@@ -3214,7 +3224,7 @@ def _self_test() -> int:
     # `schema-gates` check unrequireable) and SIX added for the derivation that replaced it. A RISE,
     # so this is not the sanctioned-fall case; the two retirements are recorded beside the per-file
     # count above with the reason, and both orphans were found by RUNNING the anchor check.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 721)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 720)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
