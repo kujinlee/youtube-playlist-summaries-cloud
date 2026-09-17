@@ -2,7 +2,7 @@
 """A branch that changes CODE records a review round, or says in writing why it did not.
 
     python3 scripts/check-review-recorded.py --base origin/master --pr-body-file /tmp/pr-body.md
-    python3 scripts/check-review-recorded.py --self-test  # 182 cases
+    python3 scripts/check-review-recorded.py --self-test  # 184 cases
 
 WHY THIS EXISTS
 ---------------
@@ -1528,6 +1528,16 @@ def self_test() -> int:
          prose_exceptions_cover(["docs/superpowers/specs/m4"], CODE_UNDER_PROSE), [])
     case("...while a non-docs glob is not this rule's business",
          prose_exceptions_cover(["supabase/migrations/**"], CODE_UNDER_PROSE), [])
+    # ⛔⛔ THE PARAMETER MUST BE VARIED, OR IT IS A CONSTANT WEARING A SIGNATURE. r3's Low 7 fix made
+    # `declared` a parameter; every call site then passed `CODE_UNDER_PROSE`, so no case could tell
+    # it from the module global and the fix was COSMETIC. Caught by `check-fixture-variation.py` in
+    # CI — not by round 4's reviewer, which tested the FUNCTION's sensitivity (a different question
+    # from whether the SUITE varies it) and reported it working. These two drive the same input
+    # against two different declarations.
+    case("the exemption tuple is a real PARAMETER: a fixture declaration covers its own directory",
+         prose_exceptions_cover(["docs/x"], ("docs/x/",)), [])
+    case("...while the same input against an EMPTY declaration is uncovered",
+         prose_exceptions_cover(["docs/x"], ()), ["docs/x"])
     # ⛔ r2 MEDIUM 2 — a bare `docs` used to be SKIPPED, so both prongs reported success over a
     # directory neither had examined. The exemption tuple can never legitimately contain `docs/`,
     # so REPORTING it is correct: it turns a silent pass into a human decision.
