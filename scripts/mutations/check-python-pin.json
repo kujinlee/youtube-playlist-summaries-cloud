@@ -4,8 +4,8 @@
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
-        "                pins.append(got.group(1).split(\"#\")[0].strip().strip(\"'\\\"\"))",
-        "                pins.append(got.group(1).split(\"#\")[0].strip())"
+        "                pins.append(value.strip().strip(\"'\\\"\"))",
+        "                pins.append(value.strip())"
       ]
     ],
     "expect": "a declared pin is read, quotes stripped"
@@ -136,8 +136,8 @@
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
-        "    if not tool_location:\n        return None",
-        "    if not tool_location:\n        return True"
+        "    if no_evidence:\n        return None",
+        "    if no_evidence:\n        return True"
       ]
     ],
     "expect": "pin_took_effect says None when nothing exported a location"
@@ -147,8 +147,8 @@
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
-        "    return executable == root or executable.startswith(root + \"/\")",
-        "    return executable == root or executable.startswith(root)"
+        "    return is_the_root or executable.startswith(root + \"/\")",
+        "    return is_the_root or executable.startswith(root)"
       ]
     ],
     "expect": "...and a sibling directory sharing a PREFIX is not under it"
@@ -187,7 +187,7 @@
     "expect": "...and its absence does not"
   },
   {
-    "name": "the jobless refusal goes, so a workflow whose jobs cannot be read passes silently",
+    "name": "the unreadable-job refusal goes, so an invisible job among readable ones passes",
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
@@ -195,7 +195,7 @@
         "    if False:"
       ]
     ],
-    "expect": "a workflow yielding NO jobs is CANNOT RUN, because an invisible job passes"
+    "expect": "...and a workflow containing one is CANNOT RUN even though another job IS readable"
   },
   {
     "name": "the pin need not be under with:, so an env: entry counts as an action input",
@@ -207,5 +207,71 @@
       ]
     ],
     "expect": "a python-version under env: in the setup-python step is NOT a pin"
+  },
+  {
+    "name": "the unreadable-job COUNT is dropped, so only an all-or-nothing file refuses",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "                     if not job_names(text) or unreadable_jobs(text))",
+        "                     if not job_names(text))"
+      ]
+    ],
+    "expect": "...and a workflow containing one is CANNOT RUN even though another job IS readable"
+  },
+  {
+    "name": "the inline-comment strip goes, so a commented pin reds the required check with nonsense",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "                value = got.group(1).split(\"#\")[0]",
+        "                value = got.group(1)"
+      ]
+    ],
+    "expect": "an inline comment on the pin line is stripped from the VALUE"
+  },
+  {
+    "name": "an EMPTY exported location is treated as provenance \u2014 fail-open for every absolute path",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    no_evidence = not tool_location",
+        "    no_evidence = tool_location is None"
+      ]
+    ],
+    "expect": "an EMPTY exported location is no evidence, not proof of provenance"
+  },
+  {
+    "name": "the trailing slash is no longer trimmed, so a slashed location breaks provenance",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    root = tool_location.rstrip(\"/\")",
+        "    root = tool_location"
+      ]
+    ],
+    "expect": "...and a trailing slash on the location does not break it"
+  },
+  {
+    "name": "the equality arm goes, so the location itself stops counting as under itself",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    is_the_root = executable == root",
+        "    is_the_root = False"
+      ]
+    ],
+    "expect": "...and the location itself, as an executable, counts as under it"
+  },
+  {
+    "name": "the .yaml half of the corpus is dropped, so such a workflow is never read at all",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "WORKFLOW_GLOBS = (\"*.yml\", \"*.yaml\")",
+        "WORKFLOW_GLOBS = (\"*.yml\",)"
+      ]
+    ],
+    "expect": "the corpus reads both workflow extensions"
   }
 ]

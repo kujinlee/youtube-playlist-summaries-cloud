@@ -2,7 +2,7 @@
 """Every CI job pins the Python interpreter, the pins agree, and the pin actually took effect.
 
     python3 scripts/check-python-pin.py              # in CI: asserts. locally: advises.
-    python3 scripts/check-python-pin.py --self-test  # 48 cases
+    python3 scripts/check-python-pin.py --self-test  # 57 cases
 
     exit 0 = pinned, agreeing, and (in CI) in effect   exit 1 = a real disagreement
     exit 2 = CANNOT RUN — no workflow or no pin found, which is never a pass
@@ -38,6 +38,13 @@ So the rule is the decidable one: **every job pins, or is exempt with a written 
 genuinely runs no Python says so out loud. A new job fails until someone states which case it is,
 which is the direction that cannot fail silently.
 
+⚠ THE BLAST RADIUS, STATED — r1 Medium 2 (claude), folded as a sentence rather than a behaviour
+change. This guard runs inside the REQUIRED check, so the moment an unpinned workflow ARRIVES it
+reddens every open pull request at once, not just the one that added it. A workflow can arrive
+without anyone in this repository writing it: GitHub's CodeQL default setup and Dependabot both
+author workflow files. The fix is two lines of YAML or one `EXEMPT_JOBS` entry, and the message says
+so — but whoever meets it first will not have caused it.
+
 WHAT IT ASSERTS WHERE — one rule, two questions
 -----------------------------------------------
 ⚠ The same mismatch means different things in the two places, and collapsing them would be wrong:
@@ -60,6 +67,12 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 WORKFLOW_DIR = ROOT / ".github" / "workflows"
+
+# ⚠ BOTH SPELLINGS — r1 Low 2 (claude), and r2 corrected its own guess that the jobless refusal
+# would cover this "for free": a file that is never READ cannot be jobless. GitHub accepts both
+# extensions, this repository happens to use only one, and a guard that reads only what its own
+# corpus happens to contain is the shape this work has already paid for twice.
+WORKFLOW_GLOBS = ("*.yml", "*.yaml")
 
 # Jobs that genuinely run no Python, with the reason. ⚠ A NAME plus a REASON, not a count: a bare
 # count is satisfied by exempting a new job and fixing an old one, which is how an allow-list stops
@@ -112,7 +125,8 @@ def declared_pins(text: str) -> list[str]:
                 # ⚠ strip an inline comment BEFORE quotes — r1 Medium 1 (claude): a pin written
                 # `python-version: '3.12'  # matches the Dockerfile` otherwise parsed as
                 # `'3.12'  # matches…` and reddened the REQUIRED check with a nonsense message.
-                pins.append(got.group(1).split("#")[0].strip().strip("'\""))
+                value = got.group(1).split("#")[0]
+                pins.append(value.strip().strip("'\""))
     return pins
 
 
@@ -142,6 +156,32 @@ def job_names(text: str) -> list[str]:
             if m:
                 out.append(m.group(1))
     return out
+
+
+def unreadable_jobs(text: str) -> int:
+    """PURE. Two-space key-shaped lines inside `jobs:` that the job regex cannot read.
+
+    ⛔ TESTING FOR *ZERO* JOBS WAS NOT ENOUGH — r2 Medium 1 (claude). The refusal it replaced fired
+    only on an all-or-nothing file, and its comment claimed it turned "any future unparseable shape
+    into a loud NOT CHECKED". A file with ONE readable job and one unreadable one is not jobless, so
+    nothing refused — and `job_blocks` then sliced the invisible job's text into its visible
+    neighbour, crediting that neighbour with a pin it does not have. Reproduced with a QUOTED job
+    key (`"prod-drift":`), which GitHub accepts and the regex rejects: rc=0, `python pin OK`, over a
+    job with no `setup-python` at all. That is both r1 Highs at once, restored.
+    """
+    n, in_jobs = 0, False
+    for line in text.split("\n"):
+        if re.match(r"^jobs:\s*(#.*)?$", line):
+            in_jobs = True
+            continue
+        if not in_jobs:
+            continue
+        if line and not line.startswith(" ") and not line.startswith("#"):
+            break
+        if re.match(r"^  \S", line) and ":" in line \
+                and not re.match(r"^  ([A-Za-z_][\w-]*):(\s.*)?$", line):
+            n += 1
+    return n
 
 
 def job_blocks(text: str) -> dict[str, str]:
@@ -215,10 +255,16 @@ def pin_took_effect(executable: str, tool_location: "str | None") -> "bool | Non
     (`/opt/hostedtoolcache/Python/3.12.14/x64` in this branch's log) and nothing else does; an
     interpreter running from under it came from the action.
     """
-    if not tool_location:
+    # ⚠ `not tool_location`, NOT `is None` — r2 Low 2 (claude), and the distinction is FAIL-OPEN.
+    # Narrowed to `is None`, an EMPTY `pythonLocation` gives `root = ""` and `startswith("/")` is
+    # True for every absolute path on earth, certifying provenance for the ambient interpreter —
+    # the precise defect this function exists to stop, restored by a plausible tightening.
+    no_evidence = not tool_location
+    if no_evidence:
         return None
     root = tool_location.rstrip("/")
-    return executable == root or executable.startswith(root + "/")
+    is_the_root = executable == root
+    return is_the_root or executable.startswith(root + "/")
 
 
 def verdict(workflows: dict[str, str], running: str, in_ci: bool,
@@ -247,9 +293,10 @@ def verdict(workflows: dict[str, str], running: str, in_ci: bool,
     # four shapes; this refuses the rest instead of guessing, turning any future unparseable shape
     # from a silent pass into a loud NOT CHECKED. ⚠ It is the guard being calibrated on its own
     # corpus that made this reachable at all.
-    jobless = sorted(f for f, text in workflows.items() if not job_names(text))
+    jobless = sorted(f for f, text in workflows.items()
+                     if not job_names(text) or unreadable_jobs(text))
     if jobless:
-        return 2, ("CANNOT RUN — no jobs could be read from: " + ", ".join(jobless) + "\n"
+        return 2, ("CANNOT RUN — a job could not be read in: " + ", ".join(jobless) + "\n"
                    "  A workflow with no jobs does not exist, so the scan is what broke — most\n"
                    "  likely an indentation or shape this line scan does not handle. Every job in\n"
                    "  such a file would otherwise be invisible, and an invisible job PASSES.\n"
@@ -285,15 +332,21 @@ def verdict(workflows: dict[str, str], running: str, in_ci: bool,
                    "  machine disagree about the same commit.\n"
                    f"  Not a failure: most contributors will not be on {pin}, and a gate that is red\n"
                    "  from birth gets switched off (backlog #56).")
-    return 0, f"python pin OK — every job pins {pin}, and this interpreter is {running}"
+    # ⚠ r2 Low 5 (claude): a passing provenance check printed no provenance, so the log could not
+    # show WHICH interpreter was certified — the evidence was discarded at the moment it was earned.
+    where = f", from {tool_location}" if in_ci and tool_location else ""
+    return 0, f"python pin OK — every job pins {pin}, and this interpreter is {running}{where}"
 
 
 def _read_workflows() -> dict[str, str]:
     """IMPURE. Every workflow file's text, keyed by name."""
     if not WORKFLOW_DIR.is_dir():
         return {}
-    return {p.name: p.read_text(encoding="utf-8", errors="replace")
-            for p in sorted(WORKFLOW_DIR.glob("*.yml")) + sorted(WORKFLOW_DIR.glob("*.yaml"))}
+    found: dict[str, str] = {}
+    for pattern in WORKFLOW_GLOBS:
+        for wf in sorted(WORKFLOW_DIR.glob(pattern)):
+            found[wf.name] = wf.read_text(encoding="utf-8", errors="replace")
+    return found
 
 
 def self_test() -> int:
@@ -472,9 +525,40 @@ def self_test() -> int:
     case("...and its absence does not", asserts_here({}), False)
     case("...and an empty value does not either", asserts_here({"GITHUB_ACTIONS": ""}), False)
     # ⛔ r1 HIGH 2 — a workflow whose jobs cannot be read is CANNOT RUN, not a pass.
+    # ⛔ r2 MEDIUM 1 — an UNREADABLE job among readable ones. A quoted key is accepted by GitHub and
+    # rejected by the job regex; the old refusal only fired on an all-or-nothing file, so this
+    # passed with rc=0 while `job_blocks` credited the invisible job's pin to its neighbour.
+    _QUOTED = ("jobs:\n  verify:\n    steps:\n      - run: echo hi\n"
+               '  "prod-drift":\n    steps:\n      - uses: actions/setup-python@v5\n'
+               "        with:\n          python-version: '3.12'\n")
+    # ⛔ r1 LOW 2 — the corpus must read BOTH extensions; `.yaml` was unguarded and its removal
+    # survived mutation.
+    case("the corpus reads both workflow extensions", sorted(WORKFLOW_GLOBS), ["*.yaml", "*.yml"])
+    case("a job key the scan cannot read is COUNTED, not ignored", unreadable_jobs(_QUOTED), 1)
+    case("...and a workflow containing one is CANNOT RUN even though another job IS readable",
+         verdict({"w.yml": _QUOTED}, "3.12", True, None, _EXE, _LOC)[0], 2)
+    case("...while a workflow whose jobs all parse counts none unreadable",
+         unreadable_jobs(PINNED), 0)
+    # ⛔ r2 MEDIUM 3 — r1's inline-comment fix had no case at all; deleting it left the suite green.
+    case("an inline comment on the pin line is stripped from the VALUE",
+         declared_pins("      - uses: actions/setup-python@v5\n        with:\n"
+                       "          python-version: '3.12'  # matches the Dockerfile\n"), ["3.12"])
+    # ⛔ r2 LOW 2 — three clauses of pin_took_effect were undriven, and the first is FAIL-OPEN:
+    # narrowed to `is None`, an EMPTY location makes startswith("/") true for every absolute path.
+    case("an EMPTY exported location is no evidence, not proof of provenance",
+         pin_took_effect("/usr/bin/python3", ""), None)
+    case("...and a trailing slash on the location does not break it",
+         pin_took_effect(_EXE, _LOC + "/"), True)
+    case("...and the location itself, as an executable, counts as under it",
+         pin_took_effect(_LOC, _LOC), True)
     case("a workflow yielding NO jobs is CANNOT RUN, because an invisible job passes",
          verdict({"w.yml": PINNED, "four.yml": "jobs:\n    deploy:\n        steps: []\n"},
                  "3.12", True, None, _EXE, _LOC)[0], 2)
+    # ⛔ r2 LOW 3 — `verdict`'s docstring says the order "is asserted by its own cases"; the jobless
+    # refusal's POSITION was not. Both conditions hold here, and the jobless one must answer.
+    case("the unreadable-job refusal is asked BEFORE the unpinned-job question",
+         "could not be read" in
+         verdict({"w.yml": _QUOTED}, "3.12", True, None, _EXE, _LOC)[1], True)
     case("...and it names the file that could not be read",
          "four.yml" in verdict({"w.yml": PINNED, "four.yml": "jobs:\n    deploy:\n        steps: []\n"},
                                "3.12", True, None, _EXE, _LOC)[1], True)

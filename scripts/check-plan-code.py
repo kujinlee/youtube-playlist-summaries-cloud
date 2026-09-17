@@ -789,7 +789,13 @@ EXPECTED_MUTATIONS = {
     # of this predicate and still too loose: a `python-version:` under `env:` in that same step
     # made a job whose setup-python declared nothing report `python pin OK`. Third iteration, and
     # each time the span was narrowed instead of the THING being named.
-    "scripts/check-python-pin.py": 19,
+    # ⟳ r2 (claude) 3 Medium + 5 Low: 19 -> 24. Medium 1: the jobless refusal only fired on an
+    # ALL-OR-NOTHING file, so one readable job beside an unreadable one (a QUOTED job key, which
+    # GitHub accepts) restored both r1 Highs at once — it now COUNTS unreadable keys. Medium 3:
+    # r1's inline-comment fix had no case and no entry, so deleting it left the suite green.
+    # Low 2: three clauses of `pin_took_effect` were undriven and the first is FAIL-OPEN — an
+    # EMPTY `pythonLocation` makes `startswith("/")` true for every absolute path on earth.
+    "scripts/check-python-pin.py": 25,
     "scripts/check-plan-code.py": 76,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
@@ -3288,7 +3294,7 @@ def _self_test() -> int:
     # `schema-gates` check unrequireable) and SIX added for the derivation that replaced it. A RISE,
     # so this is not the sanctioned-fall case; the two retirements are recorded beside the per-file
     # count above with the reason, and both orphans were found by RUNNING the anchor check.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 756)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 762)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

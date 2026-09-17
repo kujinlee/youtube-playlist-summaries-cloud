@@ -9894,3 +9894,38 @@ stop moving while it reads.
 
 Current: 45 self-test cases, 18 mutation entries, manifest total 755, every entry proved to go red
 through the case it names.
+
+## 2026-09-17
+
+Second correction on this change, and two of the three are about **this log**, so they belong here
+rather than anywhere else.
+
+⚠ **The entry above states three counts and all three are wrong.** It says 45 test cases, 18 mutation
+entries and a total of 755; by the time it was written the change had already moved past those, and
+it has moved again since. Current: **57 cases, 25 entries, total 762**. This is the fifth time a
+number in this work's write-ups has been stale at the moment of writing, which is why the durable
+copies are the ones a check verifies and these paragraphs are, deliberately, prose.
+
+⚠ **And it credits both reviewers with a finding only one of them made.** The entry says the claim
+about proving the pin took effect was caught by "both reviewers". It was one, working alone; the
+other had cleared that area. Spreading credit is not a kindness — it is the same defect as the
+invented confirmation two days ago, in a softer form, and it makes a single reviewer's catch look
+like independent agreement.
+
+The substantive finding this round is a good one. The refusal added last round — *if a workflow's
+jobs cannot be read, refuse rather than approve* — only fired when **no** job in the file could be
+read. A file with one readable job and one unreadable one is not "unreadable", so nothing refused,
+and the unreadable job's text was folded into its neighbour, crediting that neighbour with a setting
+it does not have. The way in is a **quoted job name**, which the workflow format accepts and the
+check's pattern did not. That restores, exactly, both of the serious findings from the previous
+round. It now counts unreadable names instead of testing for none.
+
+Two smaller ones with the same shape as everything else here: a fix from last round had no test at
+all, so removing it changed nothing visible; and three lines inside the new provenance check were
+undriven, one of which fails **open** — an empty location value would have certified any interpreter
+anywhere, which is precisely the defect that check exists to prevent, reachable by a plausible
+tidy-up.
+
+The review that found these also re-ran its own ten findings from last round rather than trusting
+the report that they were fixed, and found two that had been neither folded nor written off. Both are
+now closed.
