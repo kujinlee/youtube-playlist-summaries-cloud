@@ -2,7 +2,7 @@
 """A branch that changes CODE records a review round, or says in writing why it did not.
 
     python3 scripts/check-review-recorded.py --base origin/master --pr-body-file /tmp/pr-body.md
-    python3 scripts/check-review-recorded.py --self-test  # 139 cases
+    python3 scripts/check-review-recorded.py --self-test  # 148 cases
 
 WHY THIS EXISTS
 ---------------
@@ -102,6 +102,7 @@ re-deriving them would drift.
 from __future__ import annotations
 
 import argparse
+import ast
 import importlib.util
 import json
 import pathlib
@@ -239,29 +240,122 @@ def prose_exceptions_cover(workflow_globs: list[str]) -> list[str]:
     return missing
 
 
-def workflow_docs_globs(text: str) -> list[str]:
-    """PURE. The `docs/…` path-filter globs a workflow declares. `text` is the workflow file.
+# Suffixes that make a `docs/` file GATE DATA rather than prose. `.md` is deliberately absent and
+# that is this project's own existing rule, not a new one — `is_prose` above already treats a `.md`
+# under an exempted directory as prose (and says why). A gate that READS prose does not make that
+# prose into gate code: `check-docs.py` binds `docs/backlog.md`, `docs/plugins.md` and
+# `docs/dev-process.md`, all of which are exactly what this gate is supposed to wave through.
+GATE_DATA_SUFFIXES = (".sql", ".txt")
 
-    ⛔ THE FALSIFIER WAS FED A TRANSCRIPTION, NOT THE WORKFLOW — r16 High, and it is the sharpest
-    version of this branch's signature defect. `prose_exceptions_cover`'s docstring claimed its case
-    was *"fed the REAL globs from schema-gates.yml"*; it was fed a literal list typed into the test.
-    Copy #1 is the workflow, copy #2 is `CODE_UNDER_PROSE`, copy #3 is the case — and the check
-    compared #3 against #2, **neither of which is the authority**. Measured: adding a `docs/` gate
-    directory to the workflow and touching nothing else left the suite at 134/134, rc=0, while the
-    new gate's code classified as prose and the gate printed *"no guarded path changed"*. That is
-    r15's High reproduced verbatim, inside the mechanism built to prevent it.
 
-    A LINE SCAN, not a YAML parse, and that is deliberate: PyYAML is not installed here, and a
-    sibling guard already reads a workflow as plain text (`check-ratchet-contract.py`'s `ci_path`).
-    The reader is separated from this rule for the same reason `readable_docs(docs, read)` and
-    `first_codex_gap(docs, parse)` are — so the rule stays pure and a case can drive it.
+def bound_docs_paths(text: str, python: bool) -> list[str]:
+    """PURE. `docs/…` paths BOUND TO A NAME in `text` — assignments only, never comments.
+
+    ⛔⛔ THE PREDICATE IS THE WHOLE DIFFICULTY, AND A GREP GETS IT WRONG — this is the failure
+    `schema-gates.yml`'s header records against its own first version: *"it cannot tell a path the
+    code OPENS from one a comment MENTIONS (13 of its 14 hits were prose)"*. MEASURED 2026-09-16 on
+    this repository: a plain grep for the m4 spec directory hits `check-live-schema.py:29`,
+    `check-storage-independence.py:96,132,471` and `check-review-recorded.py:155` — **five hits, all
+    of them prose about the path**. This function returns none of them.
+
+    For Python that is `ast` over ASSIGNMENT VALUES, the precedent being
+    `check-storage-independence.py`, which parses with `ast` and derives its file set *because the
+    grep it replaced survived 3 of 5 mutations*. ⚠ `ast` alone is NOT enough and the reason is
+    subtle: a DOCSTRING is also an `ast.Constant`, so walking every string would re-admit
+    `check-live-schema.py:29`, which is a docstring line. Restricting to `Assign`/`AnnAssign` values
+    excludes docstrings structurally, because a docstring is an `ast.Expr`.
+
+    For shell there is no `ast`, so it is a line scan restricted to `NAME=` lines with any `#`
+    comment stripped first — enough for the two real cases (`SPEC=`, `SEED=`) and honest about being
+    a scan rather than a parse.
+
+    Pure, and given the TEXT rather than reading it, for the same reason as `readable_docs(docs,
+    read)` and `first_codex_gap(docs, parse)` elsewhere in this file: so a case can drive it.
     """
-    return sorted({m.group(1) for m in re.finditer(r"^\s*-\s*'(docs/[^']*)'", text, re.M)})
+    out: set[str] = set()
+    if python:
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            return []
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None:
+                for sub in ast.walk(node.value):
+                    if isinstance(sub, ast.Constant) and isinstance(sub.value, str) \
+                            and "docs/" in sub.value:
+                        out.add(sub.value[sub.value.index("docs/"):])
+    else:
+        for line in text.splitlines():
+            line = line.split("#")[0]
+            if not re.match(r"\s*[A-Za-z_]\w*=", line):
+                continue
+            out.update(re.findall(r"(docs/[\w./-]+)", line))
+    return sorted(out)
 
 
-def _schema_gates_workflow() -> "str | None":
-    p = ROOT / ".github" / "workflows" / "schema-gates.yml"
-    return p.read_text(encoding="utf-8", errors="replace") if p.is_file() else None
+def gate_code_dirs(runner: str, gate_sources: dict[str, str]) -> list[str]:
+    """PURE. The `docs/` directories holding GATE MACHINERY, derived from the gates themselves.
+
+    ⭐ WHY THIS REPLACED A READ OF `schema-gates.yml` — backlog #137, 2026-09-16. The previous
+    version took the workflow's `docs/` path-filter globs as the authority for this question. That
+    filter is GONE: it made the `schema-gates` check unrequireable, because a workflow-level
+    `paths:` filter means the context never reports on a docs-only PR and a required check that
+    never reports leaves a pull request pending forever.
+
+    ⚠ AND THE OBVIOUS REPLACEMENT IS WRONG IN THE NOISY DIRECTION — MEASURED, not reasoned.
+    *"Which `docs/` paths do the gate scripts bind?"* is NOT this question. Run that and it returns
+    `docs`, `docs/adr`, `docs/reviews` and `docs/superpowers` as well, because `check-docs.py` binds
+    `docs/backlog.md` and friends — so the gate would demand that the WHOLE documentation tree be
+    added to `CODE_UNDER_PROSE`, i.e. that nothing under `docs/` is ever prose again. That is this
+    file's own recorded lesson (*the lesson is the PREDICATE, not the list*) reproduced one level
+    over, and it was caught by running the derivation before trusting it.
+
+    The two prongs, each reading a property that is TRUE rather than a proxy for one:
+      1. EXECUTED — a file the runner invokes as a gate out of a spec directory (`$SPEC/…`).
+         Measured: the only mode-755 files tracked anywhere under `docs/` are exactly those two
+         (`mutate-schema.py`, `verify-schema.sh`), so this prong has no false positives tree-wide.
+      2. GATE DATA — a `docs/` path a gate binds whose suffix is in `GATE_DATA_SUFFIXES`. This is
+         what recovers `docs/superpowers/specs/m4/`, whose four files are mode 644 and therefore
+         invisible to prong 1, while excluding every `.md` a gate merely reads as prose.
+
+    ⚠ STATED LIMIT: prong 2 is a suffix POLICY, so a gate that one day binds a `docs/…/*.txt` which
+    really is prose gets reported here. That fails LOUD — rc=1, naming the directory — and this is
+    the direction to fail in; the alternative errs by classifying gate code as documentation, which
+    is the defect r15 measured and the reason any of this exists.
+    """
+    dirs: set[str] = set()
+    spec_dirs = [p for p in bound_docs_paths(runner, python=False)
+                 if "." not in p.rsplit("/", 1)[-1]]
+    for rel in re.findall(r"\$SPEC/([\w./-]+)", "\n".join(
+            l.split("#")[0] for l in runner.splitlines())):
+        for spec in spec_dirs:
+            joined = f"{spec.rstrip('/')}/{rel}"
+            dirs.add(joined.rsplit("/", 1)[0])
+    for name, text in gate_sources.items():
+        for p in bound_docs_paths(text, python=name.endswith(".py")):
+            if p.endswith(GATE_DATA_SUFFIXES) and "/" in p:
+                dirs.add(p.rsplit("/", 1)[0])
+    return sorted(dirs)
+
+
+def _gate_sources() -> "tuple[str, dict[str, str]] | None":
+    """IMPURE. The gate runner's text, plus the text of every gate script it invokes.
+
+    `check-schema-gates.sh` is the single authority for what a gate IS — its own header says so
+    (*"One entry point, and it is what the hook and the docs both name"*), so the script list is
+    derived from it rather than kept as a second copy here.
+    """
+    runner_path = ROOT / "scripts" / "check-schema-gates.sh"
+    if not runner_path.is_file():
+        return None
+    runner = runner_path.read_text(encoding="utf-8", errors="replace")
+    uncommented = "\n".join(l.split("#")[0] for l in runner.splitlines())
+    sources: dict[str, str] = {"scripts/check-schema-gates.sh": runner}
+    for rel in sorted(set(re.findall(r"(?:\./)?(scripts/[\w.-]+\.(?:py|sh))", uncommented))):
+        p = ROOT / rel
+        if p.is_file():
+            sources[rel] = p.read_text(encoding="utf-8", errors="replace")
+    return runner, sources
 
 
 def _load_declaration_parser():
@@ -882,24 +976,28 @@ def main(argv: list[str]) -> int:
     # returned to nobody; a rule whose result no one reads is not a gate. It is asked HERE, against
     # the real workflow, before either question, because a classifier that disagrees with what CI
     # treats as gate code cannot answer either question correctly.
-    _wf = _schema_gates_workflow()
-    if _wf is None:
-        print("CANNOT RUN — .github/workflows/schema-gates.yml is missing, so the paths CI treats "
-              "as gate subjects cannot be compared against CODE_UNDER_PROSE. NOT CHECKED.",
+    _gs = _gate_sources()
+    if _gs is None:
+        print("CANNOT RUN — scripts/check-schema-gates.sh is missing, so the `docs/` directories "
+              "holding gate machinery cannot be compared against CODE_UNDER_PROSE. NOT CHECKED.",
               file=sys.stderr)
         return 2
-    _globs = workflow_docs_globs(_wf)
-    if not _globs:
+    _dirs = gate_code_dirs(*_gs)
+    if not _dirs:
         # ⚠ A ZERO OVER NOTHING IS NOT A FINDING — the same rule check-plan-file-tags records for an
-        # empty corpus. If the scan matched nothing, the scan is what broke, not the tuple.
-        print("CANNOT RUN — no `docs/` path filters were found in schema-gates.yml. Either the "
-              "workflow changed shape or the scan is broken; a zero here is not a pass. NOT CHECKED.",
-              file=sys.stderr)
+        # empty corpus. If the derivation found nothing, the derivation is what broke, not the tuple:
+        # two of the fifteen gates have lived under `docs/` since 2026-08, so zero is never the
+        # truth here. ⟳ #137: this used to refuse when `schema-gates.yml` declared no `docs/` path
+        # filters. That file no longer has path filters at all, by design — the authority is now the
+        # gate runner, which cannot stop naming its own gates without breaking every gate.
+        print("CANNOT RUN — no `docs/` gate directories could be derived from the gate scripts. "
+              "Either\n  check-schema-gates.sh changed shape or the derivation is broken; a zero "
+              "here is not a pass. NOT CHECKED.", file=sys.stderr)
         return 2
-    _uncovered = prose_exceptions_cover(_globs)
+    _uncovered = prose_exceptions_cover(_dirs)
     if _uncovered:
-        print(f"FAILED — CI path-filters {len(_uncovered)} `docs/` director(ies) as gate subjects "
-              f"that this gate still classifies as PROSE:\n    {', '.join(_uncovered)}\n"
+        print(f"FAILED — the schema gates treat {len(_uncovered)} `docs/` director(ies) as gate "
+              f"machinery that this gate still classifies as PROSE:\n    {', '.join(_uncovered)}\n"
               f"  Add them to CODE_UNDER_PROSE in scripts/check-review-recorded.py, or a branch "
               f"changing that gate code\n  owes no review round and skips the final-tree question "
               f"— measured twice on this branch.", file=sys.stderr)
@@ -1001,15 +1099,16 @@ def self_test() -> int:
          guarded_changes([_SPEC + "spec.md"]), [])
     case("...while ordinary docs are untouched by the exception",
          guarded_changes(["docs/superpowers/specs/other/notes.md"]), [])
-    # ⛔ AND THE EXCEPTION MUST COVER WHAT CI GUARDS. ⚠ THE GLOBS ARE NOW EXTRACTED FROM THE REAL
-    # WORKFLOW FILE, not transcribed here — r16 High. The previous version typed the globs into the
-    # case, so the check compared a copy against a copy and a new gate directory in the workflow was
-    # invisible: measured, suite green at 134/134 while the new gate's code classified as prose.
-    _WF = _schema_gates_workflow()
-    case("the workflow's docs/ path filters are READ, not transcribed into this test",
-         bool(_WF) and workflow_docs_globs(_WF) != [], True)
+    # ⛔ AND THE EXCEPTION MUST COVER WHAT THE GATES GUARD. ⚠ THE DIRECTORIES ARE DERIVED FROM THE
+    # REAL GATE SCRIPTS, not transcribed here — r16 High, preserved through #137's change of
+    # authority. The pre-r16 version typed the list into the case, so the check compared a copy
+    # against a copy and a new gate directory was invisible: measured, suite green at 134/134 while
+    # the new gate's code classified as prose.
+    _GS = _gate_sources()
+    case("the docs/ gate directories are DERIVED from the real gate scripts, not transcribed here",
+         bool(_GS) and gate_code_dirs(*_GS) != [], True)
     case("...and every one of them is exempt from the prose classifier",
-         prose_exceptions_cover(workflow_docs_globs(_WF or "")), [])
+         prose_exceptions_cover(gate_code_dirs(*_GS)) if _GS else [], [])
     # The pure rule, driven with literals — the reader above proves it sees the real file.
     case("a NEW docs/ gate directory the tuple does not know about is REPORTED",
          prose_exceptions_cover(["docs/superpowers/specs/m5/**"]),
@@ -1025,11 +1124,48 @@ def self_test() -> int:
          prose_exceptions_cover(["docs/superpowers/specs/m4"]), [])
     case("...while a non-docs glob is not this rule's business",
          prose_exceptions_cover(["supabase/migrations/**"]), [])
-    case("the extractor finds quoted docs/ globs and ignores everything else",
-         workflow_docs_globs("    paths:\n      - 'docs/a/**'\n      - 'scripts/**'\n"
-                             "      - 'docs/b/**'\n"), ["docs/a/**", "docs/b/**"])
-    case("...and returns nothing for a workflow with no docs/ filters, which main treats as CANNOT RUN",
-         workflow_docs_globs("on:\n  push:\n    branches: [master]\n"), [])
+    # ⛔⛔ THE CASES THAT WOULD HAVE CAUGHT A GREP. Each of these is a real shape taken from this
+    # repository, and a substring scan passes NONE of the negative ones — measured 2026-09-16: a
+    # plain grep for the m4 spec directory returns five hits and all five are prose about the path.
+    case("a docs/ path bound to a NAME in python is found",
+         bound_docs_paths('MANIFEST = ROOT / "docs/superpowers/specs/m4/live-manifest.txt"\n',
+                          python=True), ["docs/superpowers/specs/m4/live-manifest.txt"])
+    case("...but one that appears only in a COMMENT is NOT",
+         bound_docs_paths("# docs/superpowers/specs/m4/live-manifest.txt   gates 10 and 14\n",
+                          python=True), [])
+    case("...nor one that appears only in a DOCSTRING, which ast.Constant alone would re-admit",
+         bound_docs_paths('"""It compares against docs/superpowers/specs/m4/live-manifest.txt."""\n',
+                          python=True), [])
+    case("a docs/ path bound in SHELL is found",
+         bound_docs_paths('SPEC="docs/superpowers/specs/x"\n', python=False),
+         ["docs/superpowers/specs/x"])
+    case("...but a shell COMMENT mentioning one is not",
+         bound_docs_paths('# SPEC="docs/superpowers/specs/x"\n', python=False), [])
+    # ⛔⛔ THIS CASE EXISTS BECAUSE THE ONE ABOVE IS VACUOUS FOR THE CLAUSE IT LOOKS LIKE IT TESTS —
+    # measured 2026-09-16 by mutating `line.split("#")[0]` away and watching the suite stay GREEN at
+    # 147/147. A whole-line comment is rejected by the `NAME=` match, not by the comment strip, so
+    # the case passed for an AMBIENT reason. The strip is load-bearing for exactly one shape: a real
+    # assignment with a TRAILING comment that mentions a path. That is this case, and the mutation
+    # dies on it.
+    case("...and a TRAILING comment on a real assignment does not smuggle a path in",
+         bound_docs_paths('SPEC="docs/a"  # unlike docs/superpowers/specs/m4/live-manifest.txt\n',
+                          python=False), ["docs/a"])
+    case("...and a shell line that is not an assignment at all is not",
+         bound_docs_paths('run "1/15" "docs/superpowers/specs/x/verify.sh"\n', python=False), [])
+    # ⛔ THE NOISY-DIRECTION CASE, AND IT IS THE ONE THAT KILLED THE FIRST DESIGN. `check-docs.py`
+    # binds `docs/backlog.md`; taking every bound docs/ path would have returned `docs` itself and
+    # demanded the whole tree be exempted from the prose classifier.
+    case("a .md a gate merely READS is not gate machinery, so docs/ itself is never derived",
+         gate_code_dirs('SPEC="docs/superpowers/specs/x"\n',
+                        {"scripts/check-docs.py": 'BACKLOG = "docs/backlog.md"\n'}), [])
+    case("...while a gate DATA file under docs/ yields its directory",
+         gate_code_dirs("", {"scripts/g.py": 'M = "docs/superpowers/specs/m4/live-manifest.txt"\n'}),
+         ["docs/superpowers/specs/m4"])
+    case("...and a file the runner EXECUTES from its spec dir yields that dir",
+         gate_code_dirs('SPEC="docs/superpowers/specs/x"\nrun "1/15" "$SPEC/verify-schema.sh"\n',
+                        {}), ["docs/superpowers/specs/x"])
+    case("...and nothing at all is derived from nothing, which main treats as CANNOT RUN",
+         gate_code_dirs("", {}), [])
     case("only .md counts as a review document",
          review_added(["docs/reviews/verdicts/x.json"]), [])
     # ⭐ THE LIVE CASE: the parser is SHARED, not copied. If check-dashboard-entry stops exporting

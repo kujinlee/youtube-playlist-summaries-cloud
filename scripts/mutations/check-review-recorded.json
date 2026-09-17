@@ -66,7 +66,7 @@
     "expect": "docs/backlog.md is prose"
   },
   {
-    "name": "a stale round clears the branch, so code committed after EVERY round merges unreviewed — the whole point of the rule",
+    "name": "a stale round clears the branch, so code committed after EVERY round merges unreviewed \u2014 the whole point of the rule",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -79,12 +79,12 @@
     ]
   },
   {
-    "name": "no usable round returns 0 instead of 2, so `CANNOT RUN` prints while CI reads a pass — the exact fail-open r1 filed",
+    "name": "no usable round returns 0 instead of 2, so `CANNOT RUN` prints while CI reads a pass \u2014 the exact fail-open r1 filed",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "        return 2, (f\"CANNOT RUN — {why}, so whether any round saw the code about to merge is \"",
-        "        return 0, (f\"CANNOT RUN — {why}, so whether any round saw the code about to merge is \""
+        "        return 2, (f\"CANNOT RUN \u2014 {why}, so whether any round saw the code about to merge is \"",
+        "        return 0, (f\"CANNOT RUN \u2014 {why}, so whether any round saw the code about to merge is \""
       ]
     ],
     "expect": [
@@ -131,7 +131,7 @@
     ]
   },
   {
-    "name": "⛔ the r1 BLOCKING, restored: the tail subtracts by PATH again, so a file edited a second time after the round is certified as reviewed",
+    "name": "\u26d4 the r1 BLOCKING, restored: the tail subtracts by PATH again, so a file edited a second time after the round is certified as reviewed",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -144,7 +144,7 @@
     ]
   },
   {
-    "name": "⛔ the r1 LOW, restored: the tail rule stops asking what counts as guarded, so a docs commit after a round fails a branch that owed no review for it",
+    "name": "\u26d4 the r1 LOW, restored: the tail rule stops asking what counts as guarded, so a docs commit after a round fails a branch that owed no review for it",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -157,7 +157,7 @@
     ]
   },
   {
-    "name": "the REVIEW GAP escape stops working, so a Codex-down round — the documented fallback — reds every branch that takes it",
+    "name": "the REVIEW GAP escape stops working, so a Codex-down round \u2014 the documented fallback \u2014 reds every branch that takes it",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -183,7 +183,7 @@
     ]
   },
   {
-    "name": "⛔ the r2 BLOCKING, restored: the final-tree lookup answers with a bare sha, so flipping the executable bit after the round is credited as reviewed",
+    "name": "\u26d4 the r2 BLOCKING, restored: the final-tree lookup answers with a bare sha, so flipping the executable bit after the round is credited as reviewed",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -192,11 +192,11 @@
       ]
     ],
     "expect": [
-      "the lookup answers with an ENTRY — mode and object id, not a bare sha"
+      "the lookup answers with an ENTRY \u2014 mode and object id, not a bare sha"
     ]
   },
   {
-    "name": "⛔ the r4 BLOCKING, restored: entries are filtered to blobs, so a path holding a SUBMODULE reads as absent and a reviewed deletion credits a merge that puts a gitlink there",
+    "name": "\u26d4 the r4 BLOCKING, restored: entries are filtered to blobs, so a path holding a SUBMODULE reads as absent and a reviewed deletion credits a merge that puts a gitlink there",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -209,12 +209,12 @@
     ]
   },
   {
-    "name": "⛔ the r2 HIGH, restored: any REVIEW GAP clears a missing Codex verdict, so `claude — not invoked` excuses a different absence entirely",
+    "name": "\u26d4 the r2 HIGH, restored: any REVIEW GAP clears a missing Codex verdict, so `claude \u2014 not invoked` excuses a different absence entirely",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "        if gap_names_codex(reason):\n            return f\"{path} — {reason}\"",
-        "        if reason:\n            return f\"{path} — {reason}\""
+        "        if gap_names_codex(reason):\n            return f\"{path} \u2014 {reason}\"",
+        "        if reason:\n            return f\"{path} \u2014 {reason}\""
       ]
     ],
     "expect": [
@@ -231,11 +231,11 @@
       ]
     ],
     "expect": [
-      "the WHO is read, not the reason — a claude gap mentioning codex stays a claude gap"
+      "the WHO is read, not the reason \u2014 a claude gap mentioning codex stays a claude gap"
     ]
   },
   {
-    "name": "⛔ the r3 deletion finding, restored: a path absent from the final tree has no entry to compare, so a reviewed DELETION reads as unseen and the careful path fails for deleting code",
+    "name": "\u26d4 the r3 deletion finding, restored: a path absent from the final tree has no entry to compare, so a reviewed DELETION reads as unseen and the careful path fails for deleting code",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -274,11 +274,11 @@
     ]
   },
   {
-    "name": "⛔ the r4 HIGH, restored: the declared gap loses the document that made it, so a stacked branch's pass is indistinguishable from one that declared for itself",
+    "name": "\u26d4 the r4 HIGH, restored: the declared gap loses the document that made it, so a stacked branch's pass is indistinguishable from one that declared for itself",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "            return f\"{path} — {reason}\"",
+        "            return f\"{path} \u2014 {reason}\"",
         "            return reason"
       ]
     ],
@@ -328,7 +328,7 @@
         "    if False:\n        return None, UNUSABLE"
       ]
     ],
-    "expect": "a verdict whose dirty map is NULL could not look — unusable, not a clean tree"
+    "expect": "a verdict whose dirty map is NULL could not look \u2014 unusable, not a clean tree"
   },
   {
     "name": "a schema-1 verdict is skipped instead of counted",
@@ -372,7 +372,7 @@
         "        if False:\n            unusable += 1"
       ]
     ],
-    "expect": "a head no longer reachable — rebased or squashed — is UNUSABLE, never a pass"
+    "expect": "a head no longer reachable \u2014 rebased or squashed \u2014 is UNUSABLE, never a pass"
   },
   {
     "name": "the second question is switched off entirely",
@@ -390,7 +390,7 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "        return False, f\"{NO_REVIEW} {waiver} — the final-tree question is WAIVED, not passed\"",
+        "        return False, f\"{NO_REVIEW} {waiver} \u2014 the final-tree question is WAIVED, not passed\"",
         "        return False, None"
       ]
     ],
@@ -485,25 +485,69 @@
     "expect": "...as is a glob BROADER than an exemption, which used to be silently cleared"
   },
   {
-    "name": "the workflow extractor stops finding docs/ path filters",
+    "name": "the python reader stops finding a docs/ path bound to a name",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "    return sorted({m.group(1) for m in re.finditer(r\"^\\s*-\\s*'(docs/[^']*)'\", text, re.M)})",
-        "    return []"
+        "                    if isinstance(sub, ast.Constant) and isinstance(sub.value, str) \\\n                            and \"docs/\" in sub.value:",
+        "                    if False:"
       ]
     ],
-    "expect": "the workflow's docs/ path filters are READ, not transcribed into this test"
+    "expect": "a docs/ path bound to a NAME in python is found"
   },
   {
-    "name": "the extractor swallows non-docs globs too, so the check reports paths CI never guarded",
+    "name": "the python reader walks EVERY string, re-admitting docstrings and the comment trap",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "r\"^\\s*-\\s*'(docs/[^']*)'\"",
-        "r\"^\\s*-\\s*'([^']*)'\""
+        "            if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None:\n                for sub in ast.walk(node.value):",
+        "            if True:\n                for sub in ast.walk(node):"
       ]
     ],
-    "expect": "the extractor finds quoted docs/ globs and ignores everything else"
+    "expect": "...nor one that appears only in a DOCSTRING, which ast.Constant alone would re-admit"
+  },
+  {
+    "name": "the shell reader stops stripping comments, so a commented path counts",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "            line = line.split(\"#\")[0]\n            if not re.match(r\"\\s*[A-Za-z_]\\w*=\", line):",
+        "            line = line\n            if not re.match(r\"\\s*[A-Za-z_]\\w*=\", line):"
+      ]
+    ],
+    "expect": "...and a TRAILING comment on a real assignment does not smuggle a path in"
+  },
+  {
+    "name": "the shell reader stops requiring an ASSIGNMENT, so any mention counts",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "            if not re.match(r\"\\s*[A-Za-z_]\\w*=\", line):\n                continue",
+        "            if False:\n                continue"
+      ]
+    ],
+    "expect": "...and a shell line that is not an assignment at all is not"
+  },
+  {
+    "name": "the gate-data suffix filter goes, so docs/ itself is derived from a gate reading prose",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "            if p.endswith(GATE_DATA_SUFFIXES) and \"/\" in p:",
+        "            if \"/\" in p:"
+      ]
+    ],
+    "expect": "a .md a gate merely READS is not gate machinery, so docs/ itself is never derived"
+  },
+  {
+    "name": "the EXECUTED prong goes, so a spec dir whose gates are only invoked is missed",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "            dirs.add(joined.rsplit(\"/\", 1)[0])",
+        "            pass"
+      ]
+    ],
+    "expect": "...and a file the runner EXECUTES from its spec dir yields that dir"
   }
 ]

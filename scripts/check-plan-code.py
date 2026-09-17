@@ -191,15 +191,18 @@ HARNESS_TREE = (
     # `.gitignore` is a bare `*` (backlog #86), and copying a nested repo into the harness tree is
     # a surprise nobody needs.
     ".claude/hooks",
-    # ⟳ 2026-09-14, r16. `check-review-recorded`'s anti-drift rule READS
-    # `.github/workflows/schema-gates.yml` — the paths CI path-filters as schema-gate subjects are
-    # the authority its `CODE_UNDER_PROSE` tuple must match, and the previous version compared a
-    # transcription against a transcription, which is the defect r16 filed. Staging the workflow is
-    # what makes that rule reachable here at all: without it the case sees no file, the CONTROL for
-    # that script goes red at 138/139, and the harness correctly refuses the whole run —
-    # *"every verdict below would be an artefact"*. This tuple's own recorded failure ("a
-    # scripts-only tree gave each a red control"), happening again for a new subject, and caught
-    # the same way. 44 KB, two files.
+    # ⟳ 2026-09-14, r16: staged because `check-review-recorded`'s anti-drift rule READ
+    # `.github/workflows/schema-gates.yml` — without the file the case saw nothing, that script's
+    # CONTROL went red at 138/139, and the harness correctly refused the whole run
+    # (*"every verdict below would be an artefact"*).
+    # ⟳ 2026-09-16, backlog #137: **THAT REASON IS GONE AND THE STAGING STAYS, ON A DIFFERENT ONE.**
+    # The rule no longer reads this workflow — the `paths:` filter it treated as authority is
+    # deleted, and it now derives the `docs/` gate directories from the gate scripts themselves,
+    # which live under `scripts/` and are staged already. ⚠ The surviving reason is
+    # `check-ratchet-contract.py:835`, which reads `.github/workflows/ci.yml` to discover ratchet
+    # CALLERS: drop this entry and that script's control goes red for exactly the old reason.
+    # Recorded rather than silently re-justified, because an entry kept for a reason that has
+    # expired is indistinguishable from one kept by accident. 44 KB, two files.
     ".github/workflows",
 )
 
@@ -793,7 +796,18 @@ EXPECTED_MUTATIONS = {
     # ways: the union (a reverted overlay must still be compared) and the intersection (the base's
     # commits must not be charged to this branch).
     "scripts/check-review-decision.py": 10,
-    "scripts/check-review-recorded.py": 43,
+    # ⟳ 2026-09-16, backlog #137: 43 -> 47. The anti-drift falsifier changed AUTHORITY — it used to
+    # read `schema-gates.yml`'s `docs/` path filters, and that file no longer has path filters,
+    # because a workflow-level filter is what made the `schema-gates` check unrequireable. TWO
+    # entries were RETIRED WITH THEIR SUBJECT (both mutated `workflow_docs_globs`, which is deleted)
+    # and SIX added for the reader that replaced it. ⚠ The orphans were found by RUNNING the anchor
+    # check, not by the keyword grep that preceded it — that grep missed both, which is this repo's
+    # recorded "a refactor ORPHANS the mutation guarding it", anchors binding by TEXT.
+    # ⚠ One of the six SURVIVED on first measurement and the case it named was the reason: a
+    # whole-line shell comment is rejected by the `NAME=` match, not by the comment strip, so the
+    # case passed for an AMBIENT reason while the clause it appeared to test was unfalsifiable. A
+    # case driving a TRAILING comment on a real assignment was added and kills it.
+    "scripts/check-review-recorded.py": 47,
     # ⟳ 2026-09-14, r11: this file JOINS the manifest — R4 widened-debt 8 -> 7, removed from
     # `WIDENED_MANIFEST_DEBT` in this same commit, which that rule requires as an identity and not
     # a ceiling. It is the producer half of the mechanism the file above consumes, and it had gone
@@ -3184,7 +3198,13 @@ def _self_test() -> int:
     # largest file in `scripts/` that had never been inside `--mutate .`. Every anchor was verified
     # present in the DELIVERED file before being written, and every entry was proved to go red VIA
     # THE CASE IT NAMES over a control proved green first.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 714)
+    # ⟳ 2026-09-16: 714 -> 718, backlog #137. `check-review-recorded.py` 43 -> 47: TWO entries
+    # retired with their deleted subject (`workflow_docs_globs`, whose authority — the `paths:`
+    # filter in `schema-gates.yml` — is gone, because a workflow-level filter is what made the
+    # `schema-gates` check unrequireable) and SIX added for the derivation that replaced it. A RISE,
+    # so this is not the sanctioned-fall case; the two retirements are recorded beside the per-file
+    # count above with the reason, and both orphans were found by RUNNING the anchor check.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 718)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

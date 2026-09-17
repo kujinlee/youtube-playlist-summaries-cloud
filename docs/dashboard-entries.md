@@ -9604,3 +9604,59 @@ would fix are ones that workflow file already warns about in its own comments.
 edge was the `--auto` merge flag, which merges the moment the required checks pass. That flag turns
 out to be switched off for this repository entirely — found by trying it, not by reading. The flaw
 is unchanged; only its nastiest route is already closed.
+
+## 2026-09-16
+
+The schema gates can now be *enforced* — the change that had to land before the repository setting
+can be flipped, and the setting is the part that is still waiting on a human.
+
+Yesterday's item #137 recorded the defect: fifteen schema gates report an answer nobody consumes,
+because GitHub blocks a merge only on checks marked *required*, and that list had one entry. It also
+recorded why the one-line fix was a trap — the job was filtered to schema-ish paths, so on a
+documentation-only pull request it never ran, never reported, and marking it required would have
+left every docs change pending forever.
+
+The filter is gone. The job now runs on every pull request, so the check always reports and can be
+required.
+
+The filter was measured before it was deleted, and it was protecting nothing. This job runs in its
+own workflow beside the main test job, not after it: across ten paired runs it took 98-187 seconds
+against that job's 121-604, and finished first in all ten. On the very pull request that exposed
+this problem — two files, both documentation — the author waited 8m37s for the main job anyway, so a
+110-second parallel job costs them nothing. 13 of the last 40 changes to the main branch will newly
+run it, all documentation-only, which is about 24 extra runner-minutes per 40 merges on a public
+repository where those minutes are free.
+
+⚠ What it costs, said plainly rather than buried: once the check is required, an infrastructure
+failure in it — a container image pull, a dependency install — will block a documentation pull
+request that has nothing to do with schema. The job has not failed in its last 54 completed runs,
+but every one of those was on a change the filter had already let through, so that record is
+evidence and not proof.
+
+⚠ And the filter turned out to have a second job that was not an optimisation, which is why this was
+not a thirty-line deletion. Another guard read the filter's list to learn which documentation
+directories hold executable gate code rather than prose — two of the fifteen gates live under
+`docs/`. Deleting the list made that guard refuse to run, correctly, since a zero over nothing is
+not a pass. It now derives those directories from the scripts that actually execute the files, which
+is the authority the filter was only ever a copy of.
+
+⚠ The first attempt at that derivation was wrong in the noisy direction and was caught by running it
+instead of reasoning about it. Asking "which documentation paths do the gate scripts mention?"
+returns the whole documentation tree, because one gate reads the backlog file as ordinary prose
+input — so the guard would have demanded that nothing under `docs/` is ever prose again. The
+question that works is narrower: which files does the gate runner *execute*, and which does a gate
+bind as data rather than as prose.
+
+⚠ One of the six new mutation tests survived on first measurement, and the case it named was the
+reason. A commented-out shell line is rejected for being the wrong shape, not for being a comment,
+so the case passed without ever exercising the clause it appeared to test. A case driving a trailing
+comment on a real assignment line kills it.
+
+**Still needed from a human, and it is a repository setting rather than code:** add `schema-gates`
+to the required status checks on the main branch. It must happen *after* this merges — the reverse
+order blocks every documentation pull request. Then the falsifier is worth running for real: a
+docs-only pull request should show `schema-gates` succeeding rather than absent, and a deliberately
+broken gate should grey the merge button out.
+
+148 self-test cases in the changed guard, six new mutation entries each proved to go red through the
+case it names over a control proved green first, and the manifest total moves 714 to 718.
