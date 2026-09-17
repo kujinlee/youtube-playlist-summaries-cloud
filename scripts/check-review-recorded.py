@@ -2,7 +2,7 @@
 """A branch that changes CODE records a review round, or says in writing why it did not.
 
     python3 scripts/check-review-recorded.py --base origin/master --pr-body-file /tmp/pr-body.md
-    python3 scripts/check-review-recorded.py --self-test  # 153 cases
+    python3 scripts/check-review-recorded.py --self-test  # 157 cases
 
 WHY THIS EXISTS
 ---------------
@@ -156,9 +156,11 @@ PROSE_FILES = ("README.md", "CLAUDE.md", "AGENTS.md", "CONTEXT.md", ".gitignore"
 #     docs/superpowers/specs/2026-08-03-stable-blob-addressing/mutate-schema.py   gate 2/15
 #     docs/superpowers/specs/m4/{live-manifest,accepted-additions}.txt, *.sql     gates 10 and 14
 #
-# `scripts/check-schema-gates.sh:19` resolves `SPEC` to that directory and executes them; both are
-# mode `755`; and `.github/workflows/schema-gates.yml:80-81,103-104` lists both directories as
-# PATH-FILTER TRIGGERS — the workflow itself declares them gate subjects.
+# `scripts/check-schema-gates.sh:19` resolves `SPEC` to that directory and executes them, and both
+# are mode `755` — measured, the ONLY two mode-755 files tracked anywhere under `docs/`.
+# ⟳ 2026-09-16 (#137): this used to cite `schema-gates.yml`'s PATH FILTERS as a third witness.
+# That file HAS no path filters now, and the cited line numbers point at unrelated prose — a stale
+# citation is worse than none, because it reads as corroboration.
 #
 # Measured before the fix: `is_prose` said True for all of them, `guarded_changes` returned `[]`,
 # `verdict` returned *"no guarded path changed — a review round is not required"*, and because
@@ -174,12 +176,19 @@ PROSE_FILES = ("README.md", "CLAUDE.md", "AGENTS.md", "CONTEXT.md", ".gitignore"
 # are gates, both are named in a CI path filter. r15 found them by RE-DERIVING that claim instead of
 # inheriting it — the same move that found r14's rename fail-open one round earlier.
 #
-# ⚠ STATED LIMIT, NOT PAPERED OVER: this tuple can drift from `schema-gates.yml`. It is a second
-# copy of a path set, which this repo refuses elsewhere — and the honest reason it ships as one is
-# that deriving it needs a YAML read inside a pure classifier, i.e. a new mechanism invented during
-# a convergence round, which is how the last four defects were born. `prose_exceptions_cover()`
-# below is the falsifier that keeps the two honest: it is pure, it takes the workflow's globs as an
-# argument, and its case feeds it the real ones.
+# ⚠ STATED LIMIT, NOT PAPERED OVER — AND ⟳ 2026-09-16 (#137) THE AUTHORITY IT DRIFTS FROM MOVED.
+# This tuple was a second copy of `schema-gates.yml`'s path filters; those are deleted, so it is
+# now a DECLARATION checked against what the gate scripts themselves read. TWO falsifiers keep it
+# honest and they run in this order, which is load-bearing:
+#   1. `declared_not_derived()` — does the derivation still FIND everything declared here? Asked
+#      FIRST, because a broken derivation makes question 2 EASIER to pass. ⟳ r1 High 2 (claude):
+#      without it, deleting the gate-script discovery loop left the suite green at 153/153 while
+#      two of three directories vanished and the gate reported success.
+#   2. `prose_exceptions_cover()` — is everything derived also exempt from the prose classifier?
+# ⛔ NEITHER catches a BRAND-NEW `docs/` gate directory nobody has declared. This tuple is the
+# FLOOR, not the ceiling, and no predicate can close that: measured 2026-09-16, accepting bound
+# DIRECTORIES admits `docs/adr`, `docs/reviews` and `docs/superpowers`, and no content rule
+# excludes them either, because `docs/superpowers` CONTAINS the gate directories.
 CODE_UNDER_PROSE = (
     "docs/superpowers/specs/2026-08-03-stable-blob-addressing/",
     "docs/superpowers/specs/m4/",
@@ -212,18 +221,24 @@ def is_prose(path: str) -> bool:
     return path.endswith(".md") and "/" not in path
 
 
-def prose_exceptions_cover(workflow_globs: list[str]) -> list[str]:
-    """PURE. The `docs/` globs a workflow guards that `CODE_UNDER_PROSE` does NOT — empty is correct.
+def prose_exceptions_cover(gate_dirs: list[str]) -> list[str]:
+    """PURE. The `docs/` gate directories that `CODE_UNDER_PROSE` does NOT cover — empty is correct.
 
-    The anti-drift falsifier for the tuple above. `schema-gates.yml` path-filters on the directories
-    whose contents are gate subjects; every such `docs/` glob must also be exempt from the prose
+    The COVERAGE half of the anti-drift pair (`declared_not_derived` is the completeness half, and
+    runs first). Every `docs/` directory holding gate machinery must also be exempt from the prose
     classifier, or CI runs the gates on a change this file just waved through as documentation.
 
-    Given the globs rather than reading them, so the rule stays pure and a case can drive it with
-    the real ones — the same shape as `first_codex_gap(docs, parse)` elsewhere in this file.
+    ⟳ 2026-09-16 (#137): the argument used to be `schema-gates.yml`'s path-filter GLOBS. That file
+    has no path filters now — a workflow-level filter is what made the `schema-gates` check
+    unrequireable — so it is passed DERIVED directories instead. The rule is unchanged and
+    deliberately so: it still accepts a glob's `*` prefix and a directory written without its
+    trailing slash, and its three mutation entries anchor on this body by text.
+
+    Given the directories rather than reading them, so the rule stays pure and a case can drive it
+    with the real ones — the same shape as `first_codex_gap(docs, parse)` elsewhere in this file.
     """
     missing = []
-    for g in workflow_globs:
+    for g in gate_dirs:
         prefix = g.split("*")[0]
         if not prefix.startswith("docs/"):
             continue
@@ -421,6 +436,39 @@ def is_gate_data(path: str, is_file: "Callable[[str], bool]") -> bool:
     if suffix == PROSE_SUFFIX:
         return False
     return is_file(path)
+
+
+def declared_not_derived(derived: list[str], declared: "tuple[str, ...]") -> list[str]:
+    """PURE. Declared gate directories the derivation FAILED TO FIND — empty is correct.
+
+    ⭐⭐ THE COMPLETENESS FALSIFIER, AND IT EXISTS BECAUSE NOTHING COULD SEE UNDER-COVERAGE —
+    r1 HIGH 2 (claude), measured. The two live cases for the derivation were structurally blind to
+    the failure that matters: one asserts the derived set is NON-EMPTY (prong 1 alone satisfies
+    that), and the other asserts `prose_exceptions_cover` finds nothing uncovered — which
+    under-coverage makes MORE likely to pass, not less. So the reviewer deleted `_gate_sources`'
+    entire gate-script discovery loop, and **the suite stayed green at 153/153** while two of the
+    three directories vanished, the result stayed non-empty so the CANNOT-RUN guard was satisfied,
+    and the gate reported success.
+
+    ⚠ THIS DOES NOT MAKE THE DERIVATION SOUND, AND SAYING SO IS THE POINT. Measured 2026-09-16, no
+    predicate over a `docs/` directory can separate gate machinery from prose: accepting bound
+    DIRECTORIES (the dominant shape in this repo) admits `docs/adr`, `docs/reviews` and
+    `docs/superpowers`, and no content rule excludes them either, because `docs/superpowers`
+    CONTAINS the gate directories. The old `paths:` filter worked only because a HUMAN curated it.
+    So this asserts the PROPERTY instead of the mechanism — *the derivation finds at least what we
+    already know* — which is falsifiable in the under-coverage direction without needing soundness.
+
+    ⛔ WHAT IT STILL CANNOT SEE, stated rather than left implied: a BRAND-NEW `docs/` gate
+    directory nobody has declared yet. `CODE_UNDER_PROSE` is the floor, not the ceiling, so this
+    catches the derivation BREAKING and not the derivation being INCOMPLETE for a new subject.
+    Filed with the measurements rather than hidden here.
+    """
+    missing = []
+    for d in declared:
+        stem = d.rstrip("/")
+        if not any(x.rstrip("/") == stem or x.startswith(stem + "/") for x in derived):
+            missing.append(d)
+    return missing
 
 
 def _gate_sources() -> "tuple[str, dict[str, str]] | None":
@@ -1079,6 +1127,18 @@ def main(argv: list[str]) -> int:
               "Either\n  check-schema-gates.sh changed shape or the derivation is broken; a zero "
               "here is not a pass. NOT CHECKED.", file=sys.stderr)
         return 2
+    # ⭐ COMPLETENESS BEFORE COVERAGE — r1 High 2. Asking "does the tuple cover the derivation?"
+    # before asking "did the derivation work?" gets a pass from a BROKEN derivation, because a
+    # smaller derived set is easier to cover. This question has to come first.
+    _undiscovered = declared_not_derived(_dirs, CODE_UNDER_PROSE)
+    if _undiscovered:
+        print("CANNOT RUN — the derivation did not find "
+              f"{len(_undiscovered)} directory(ies) already DECLARED as gate code:\n    "
+              + ", ".join(_undiscovered)
+              + "\n  The gate scripts are the authority and they no longer yield these, so the "
+                "derivation is broken\n  or a gate stopped reading its own subject. A smaller "
+                "answer here is not a cleaner repo.\n  NOT CHECKED.", file=sys.stderr)
+        return 2
     _uncovered = prose_exceptions_cover(_dirs)
     if _uncovered:
         print(f"FAILED — the schema gates treat {len(_uncovered)} `docs/` director(ies) as gate "
@@ -1168,7 +1228,7 @@ def self_test() -> int:
     case("a .md inside a package is still guarded",
          guarded_changes(["lib/README.md"]), ["lib/README.md"])
     # ⛔ r15 HIGH, as cases. `docs/` holds TWO OF THE FIFTEEN SCHEMA GATES, both mode 755, both
-    # executed by `check-schema-gates.sh` and both named in `schema-gates.yml`'s path filters — and
+    # executed by `check-schema-gates.sh` (whose path filters are gone — #137) — and
     # every one of these was classified PROSE, so a branch changing them owed no round AND skipped
     # the final-tree question. Seventeen `is_prose` cases existed and not one reached inside `docs/`.
     _SPEC = "docs/superpowers/specs/2026-08-03-stable-blob-addressing/"
@@ -1196,6 +1256,24 @@ def self_test() -> int:
          bool(_GS) and gate_code_dirs(*_GS, is_file=_real_file) != [], True)
     case("...and every one of them is exempt from the prose classifier",
          prose_exceptions_cover(gate_code_dirs(*_GS, is_file=_real_file)) if _GS else [], [])
+    # ⭐⭐ THE CASE r1 HIGH 2 SAID DID NOT EXIST, AND IT IS THE ONE THAT CAN FAIL. Both cases above
+    # are blind to UNDER-coverage: the first is satisfied by prong 1 alone, and the second gets
+    # EASIER to pass as the derived set shrinks. Deleting `_gate_sources`' discovery loop left the
+    # suite green at 153/153 while two of three directories vanished. This one goes red for it.
+    case("...and the derivation FINDS every directory already declared as gate code",
+         declared_not_derived(gate_code_dirs(*_GS, is_file=_real_file), CODE_UNDER_PROSE)
+         if _GS else [], [])
+    case("a declared directory the derivation missed is REPORTED, which main treats as CANNOT RUN",
+         declared_not_derived(["docs/superpowers/specs/m4"], CODE_UNDER_PROSE),
+         ["docs/superpowers/specs/2026-08-03-stable-blob-addressing/"])
+    case("...and a derived path UNDER a declared directory still counts as finding it",
+         declared_not_derived(["docs/superpowers/specs/m4/sub",
+                               "docs/superpowers/specs/2026-08-03-stable-blob-addressing"],
+                              CODE_UNDER_PROSE), [])
+    case("...while a derived path that merely shares a PREFIX does not",
+         declared_not_derived(["docs/superpowers/specs/m4-other"],
+                              ("docs/superpowers/specs/m4/",)),
+         ["docs/superpowers/specs/m4/"])
     # The pure rule, driven with literals — the reader above proves it sees the real file.
     case("a NEW docs/ gate directory the tuple does not know about is REPORTED",
          prose_exceptions_cover(["docs/superpowers/specs/m5/**"]),

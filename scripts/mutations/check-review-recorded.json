@@ -571,5 +571,38 @@
       ]
     ],
     "expect": "a .md a gate merely READS is not gate machinery, so docs/ itself is never derived"
+  },
+  {
+    "name": "the gate-script DISCOVERY loop is emptied, so the derivation silently under-covers",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    for rel in sorted(set(re.findall(r\"(?:\\./)?(scripts/[\\w.-]+\\.(?:py|sh))\", uncommented))):",
+        "    for rel in []:"
+      ]
+    ],
+    "expect": "...and the derivation FINDS every directory already declared as gate code"
+  },
+  {
+    "name": "a declared directory the derivation missed stops being reported",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "            missing.append(d)",
+        "            pass"
+      ]
+    ],
+    "expect": "a declared directory the derivation missed is REPORTED, which main treats as CANNOT RUN"
+  },
+  {
+    "name": "the completeness match loses its separator, so a mere PREFIX counts as found",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        if not any(x.rstrip(\"/\") == stem or x.startswith(stem + \"/\") for x in derived):",
+        "        if not any(x.rstrip(\"/\") == stem or x.startswith(stem) for x in derived):"
+      ]
+    ],
+    "expect": "...while a derived path that merely shares a PREFIX does not"
   }
 ]

@@ -827,7 +827,11 @@ EXPECTED_MUTATIONS = {
     # (it removed `suffix and` too, which Low 12 showed is unfalsified) and naming the same
     # case, so it added no coverage even once split. The predicate is now one clause per
     # line (`is_gate_data`) so each mutation has its own anchor.
-    "scripts/check-review-recorded.py": 49,
+    # ⟳ r1 High 2 fix: 49 -> 52. THREE entries for the completeness falsifier, and the
+    # first of them is the one the reviewer pointed out did not exist at all: NOTHING
+    # targeted `_gate_sources`' discovery loop, so deleting it left the suite green at
+    # 153/153 while two of three gate directories vanished and the gate reported success.
+    "scripts/check-review-recorded.py": 52,
     # ⟳ 2026-09-14, r11: this file JOINS the manifest — R4 widened-debt 8 -> 7, removed from
     # `WIDENED_MANIFEST_DEBT` in this same commit, which that rule requires as an identity and not
     # a ceiling. It is the producer half of the mechanism the file above consumes, and it had gone
@@ -3224,7 +3228,7 @@ def _self_test() -> int:
     # `schema-gates` check unrequireable) and SIX added for the derivation that replaced it. A RISE,
     # so this is not the sanctioned-fall case; the two retirements are recorded beside the per-file
     # count above with the reason, and both orphans were found by RUNNING the anchor check.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 720)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 723)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
