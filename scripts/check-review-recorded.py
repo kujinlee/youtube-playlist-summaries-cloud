@@ -399,7 +399,12 @@ def gate_code_dirs(runner: str, gate_sources: dict[str, str],
       1. EXECUTED — a file the runner invokes as a gate out of a spec directory (`$SPEC/…`).
          Measured: the only mode-755 files tracked anywhere under `docs/` are exactly those two
          (`mutate-schema.py`, `verify-schema.sh`), so this prong has no false positives tree-wide.
-      2. GATE DATA — a `docs/` path a gate binds whose suffix is in `GATE_DATA_SUFFIXES`. This is
+      2. GATE DATA — a `docs/` path a gate binds that SHAPE accepts, is not `.md`, and EXISTS as
+         a file. ⟳ r3 Low (codex): this said *"whose suffix is in `GATE_DATA_SUFFIXES`"*, and
+         there is no such allow-list any more — r1's codex High retired it and r2's Medium 3
+         deleted the extension-less rule that survived with it. A maintainer reading the stale
+         sentence would think the deletion had not broadened the predicate. It has: an
+         extension-less gate input now counts. This is
          what recovers `docs/superpowers/specs/m4/`, whose four files are mode 644 and therefore
          invisible to prong 1, while excluding every `.md` a gate merely reads as prose.
 
@@ -597,7 +602,7 @@ def antidrift_verdict(derived: list[str], declared: "tuple[str, ...]") -> "tuple
                    f"gate machinery that this gate still classifies as PROSE:\n    "
                    f"{', '.join(uncovered)}\n  Add them to CODE_UNDER_PROSE in "
                    f"scripts/check-review-recorded.py, or a branch changing that gate code\n  "
-                   f"owes no review round and skips the final-tree question — measured twice.")
+                   f"owes no review round and skips the final-tree question — measured twice on this branch.")
     return 0, ""
 
 
