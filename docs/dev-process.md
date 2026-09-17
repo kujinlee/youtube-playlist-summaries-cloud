@@ -43,7 +43,7 @@ notify for routine progress, or for anything you can decide yourself.
 
 ## Session Resume
 
-Verify from ground truth, never a context summary — compressed, and stale after `/compact`:
+Verify from ground truth before acting, never a context summary — it can go stale after `/compact`:
 
 1. `git log --oneline` — which tasks are committed
 2. `ls tests/lib/ docs/reviews/` — what work exists on disk

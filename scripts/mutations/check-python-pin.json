@@ -4,8 +4,8 @@
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
-        "    return [m.group(1).strip().strip(\"'\\\"\")",
-        "    return [m.group(1).strip()"
+        "                pins.append(got.group(1).split(\"#\")[0].strip().strip(\"'\\\"\"))",
+        "                pins.append(got.group(1).split(\"#\")[0].strip())"
       ]
     ],
     "expect": "a declared pin is read, quotes stripped"
@@ -37,7 +37,7 @@
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
-        "            if job in exempt:\n                continue",
+        "            if f\"{fname}:{job}\" in exempt:\n                continue",
         "            if False:\n                continue"
       ]
     ],
@@ -96,18 +96,18 @@
         "    if False:"
       ]
     ],
-    "expect": "an unpinned job FAILS"
+    "expect": "...and the failure names it"
   },
   {
-    "name": "the CI assertion goes, so a setup-python step that did NOT take effect reports green",
+    "name": "the in-CI VERSION check goes, so a pinned-but-wrong interpreter reports green",
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
-        "    if in_ci and running != pin:",
-        "    if False:"
+        "        if running != pin:\n            return 1, (f\"FAILED \u2014 workflows pin {pin}, this interpreter is {running}.\")",
+        "        if False:\n            return 1, (f\"FAILED \u2014 workflows pin {pin}, this interpreter is {running}.\")"
       ]
     ],
-    "expect": "IN CI a mismatch FAILS, because it means the pin did not take effect"
+    "expect": "...and it still FAILS when provenance is fine but the VERSION is wrong"
   },
   {
     "name": "the local advisory becomes a FAILURE, which is how a gate gets switched off",
@@ -119,5 +119,82 @@
       ]
     ],
     "expect": "...but LOCALLY the same mismatch is ADVISORY and exits 0"
+  },
+  {
+    "name": "the pin no longer has to belong to a setup-python step, so a heredoc line counts as one",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        m = re.match(r\"^(\\s*)-\\s+uses:\\s*actions/setup-python\", line)\n        if not m:\n            continue",
+        "        m = re.match(r\"^(\\s*)-\\s*\", line)\n        if not m:\n            continue"
+      ]
+    ],
+    "expect": "a python-version inside a run-block heredoc is NOT a pin"
+  },
+  {
+    "name": "pin_took_effect answers True with no evidence, so an unexported location reads as pinned",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    if not tool_location:\n        return None",
+        "    if not tool_location:\n        return True"
+      ]
+    ],
+    "expect": "pin_took_effect says None when nothing exported a location"
+  },
+  {
+    "name": "the provenance test loses its separator, so a sibling directory counts as under it",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    return executable == root or executable.startswith(root + \"/\")",
+        "    return executable == root or executable.startswith(root)"
+      ]
+    ],
+    "expect": "...and a sibling directory sharing a PREFIX is not under it"
+  },
+  {
+    "name": "the no-provenance refusal goes, so a version match alone passes for the pin taking effect",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        if effect is None:",
+        "        if False:"
+      ]
+    ],
+    "expect": "IN CI, a matching VERSION with no provenance FAILS \u2014 the ambient python matches too"
+  },
+  {
+    "name": "the wrong-interpreter refusal goes, which is update-environment: false reporting green",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        if not effect:",
+        "        if False:"
+      ]
+    ],
+    "expect": "...and an interpreter NOT under the exported location FAILS, which is update-environment: false"
+  },
+  {
+    "name": "asserts_here arms everywhere, turning the local advisory into a failure",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    return bool(env.get(\"GITHUB_ACTIONS\"))",
+        "    return True"
+      ]
+    ],
+    "expect": "...and its absence does not"
+  },
+  {
+    "name": "the jobless refusal goes, so a workflow whose jobs cannot be read passes silently",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    if jobless:",
+        "    if False:"
+      ]
+    ],
+    "expect": "a workflow yielding NO jobs is CANNOT RUN, because an invisible job passes"
   }
 ]

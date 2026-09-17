@@ -9856,3 +9856,41 @@ yesterday in unrelated code. All four were fixed rather than excused.
 ⚠ And adding a single line of documentation for it hit the budget warned about yesterday: the process
 document sits at exactly its limit. The line was paid for by tightening a sentence elsewhere rather
 than raising the limit — which is what that refusal is for.
+
+## 2026-09-17
+
+Correction to the entry above, before it merges. **The new check claimed to prove something it could
+not**, and both reviewers found it.
+
+The entry above says the check "asserts the pin actually took effect" on the build server. It did not.
+It compared version numbers — and the build image's own Python is *already* the version being pinned.
+So the comparison was satisfied whether or not the pin did anything at all: it passed in exactly the
+world the check was written to end.
+
+The scenario is a single word. The setup step takes an option that installs the requested version
+without putting it on the path. Set it, and the step still succeeds, still logs success, and the
+machine still runs its original Python — while the check prints "pin OK" and 45 guards run on an
+undeclared interpreter.
+
+It now asserts **provenance** instead of a number: the setup step publishes where it installed the
+interpreter, nothing else does, and the check confirms the Python actually running lives there. A
+version that merely matches is no longer accepted as proof.
+
+The second finding is the same lesson in a different place. The check recognised a job only when it
+was written exactly the way this repository's two existing files happen to write it. A job key with a
+trailing comment — which nearly every line in those files has — made the job **invisible**, and an
+invisible job silently passes. Four such shapes, all valid, all meaning the same thing. Measured
+rather than argued: loosening the pattern was free, the indentation rule was genuinely doing work, and
+the one remaining shape now makes the check **refuse to answer** rather than quietly approve.
+
+⚠ Two smaller ones worth the same honesty: an exemption was keyed by job name alone, so excusing one
+job would have excused every job with that name in every file, forever. And a pin written with a
+trailing comment would have turned the required check red with a nonsense message.
+
+⚠ And a process mistake of mine: I began folding the first reviewer's findings while the second was
+still reading the same files. It noticed, re-ran every probe against the changed tree, and said so in
+its own document — its findings survived — but that was luck, not method. A reviewer's subject should
+stop moving while it reads.
+
+Current: 45 self-test cases, 18 mutation entries, manifest total 755, every entry proved to go red
+through the case it names.

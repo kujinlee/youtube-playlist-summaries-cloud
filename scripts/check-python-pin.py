@@ -2,7 +2,7 @@
 """Every CI job pins the Python interpreter, the pins agree, and the pin actually took effect.
 
     python3 scripts/check-python-pin.py              # in CI: asserts. locally: advises.
-    python3 scripts/check-python-pin.py --self-test  # 28 cases
+    python3 scripts/check-python-pin.py --self-test  # 45 cases
 
     exit 0 = pinned, agreeing, and (in CI) in effect   exit 1 = a real disagreement
     exit 2 = CANNOT RUN — no workflow or no pin found, which is never a pass
@@ -70,14 +70,46 @@ EXEMPT_JOBS: dict[str, str] = {}
 
 
 def declared_pins(text: str) -> list[str]:
-    """PURE. Every `python-version:` value a workflow declares, in file order.
+    """PURE. Every `python-version:` that BELONGS TO an `actions/setup-python` step, in file order.
 
-    A LINE SCAN, not a YAML parse, and deliberately: PyYAML is not installed in this repository and
-    two sibling guards already read workflows as plain text (`check-ratchet-contract.py`'s
-    `ci_path`, and `check-review-recorded.py` before #137 moved its authority elsewhere).
+    ⛔⛔ IT USED TO MATCH ANY LINE SHAPED LIKE A PIN, WHICH IS A FALSE GREEN — r1 High (codex),
+    reproduced: a `python-version:` inside a shell heredoc, or in an unrelated action's `with:`
+    block, made a job with NO `setup-python` at all read as pinned, `unpinned_jobs` returned `[]`
+    and `verdict` returned 0. A guard that can be satisfied by a line of prose is worse than no
+    guard, because it reports the absence of the thing it was built to find.
+
+    ⚠ THIS IS THE THIRD TIME ON THIS WORK THAT THE PREDICATE WAS THE DEFECT. The rule is not "text
+    that looks like a pin" but "a pin attached to the action that actually installs the
+    interpreter". Backlog #137's filter made the same mistake about paths, and this file's own
+    docstring warns about it for `python3` — then did it one function over.
+
+    A line scan, not a YAML parse: PyYAML is not installed here and sibling guards read workflows as
+    text. A pin counts only between a `- uses: actions/setup-python…` line and the start of the
+    next step at the same or shallower indent.
     """
-    return [m.group(1).strip().strip("'\"")
-            for m in re.finditer(r"^\s*python-version:\s*(.+?)\s*$", text, re.M)]
+    pins: list[str] = []
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
+        m = re.match(r"^(\s*)-\s+uses:\s*actions/setup-python", line)
+        if not m:
+            continue
+        step_indent = len(m.group(1))
+        for later in lines[i + 1:]:
+            # ⚠ ONE boundary test, not two. A separate "the next step begins" clause was written
+            # here and MEASURED INERT — deleting it left the suite at 32/32, because a step line
+            # (`      - uses: …`) does not start with `step_indent + 1` spaces and so is already
+            # caught below. It was removed rather than kept with a mutation that could not fail:
+            # r1 codex flagged its entry as surviving, and this branch's predecessor paid for the
+            # same shape (`len(parts) > 1`).
+            if later.strip() and not later.startswith(" " * (step_indent + 1)):
+                break                      # dedented out of the step entirely
+            got = re.match(r"^\s*python-version:\s*(.+?)\s*$", later)
+            if got:
+                # ⚠ strip an inline comment BEFORE quotes — r1 Medium 1 (claude): a pin
+                # written `python-version: '3.12'  # matches the Dockerfile` otherwise parsed as
+                # `'3.12'  # matches…` and reddened the REQUIRED check with a nonsense message.
+                pins.append(got.group(1).split("#")[0].strip().strip("'\""))
+    return pins
 
 
 def job_names(text: str) -> list[str]:
@@ -89,13 +121,20 @@ def job_names(text: str) -> list[str]:
     out: list[str] = []
     in_jobs = False
     for line in text.split("\n"):
-        if re.match(r"^jobs:\s*$", line):
+        # ⚠ a trailing comment on `jobs:` used to make EVERY job invisible — r1 High 2.
+        if re.match(r"^jobs:\s*(#.*)?$", line):
             in_jobs = True
             continue
         if in_jobs:
             if line and not line.startswith(" ") and not line.startswith("#"):
                 break                      # a new top-level key ends the jobs block
-            m = re.match(r"^  ([A-Za-z_][\w-]*):\s*$", line)
+            # ⛔ THE TAIL IS LOOSE, THE INDENT IS NOT — r1 High 2 (claude), measured both ways.
+            # Requiring nothing after the colon made a job key with a trailing comment, or a YAML
+            # anchor (`deploy: &d`), INVISIBLE — and an invisible job is a PASSING job. The
+            # reviewer mutated the tail loose and the suite stayed green (nothing depended on the
+            # strictness), then mutated the INDENT loose and three cases killed it. So the tail
+            # opens and the two spaces stay.
+            m = re.match(r"^  ([A-Za-z_][\w-]*):(\s.*)?$", line)
             if m:
                 out.append(m.group(1))
     return out
@@ -114,7 +153,7 @@ def job_blocks(text: str) -> dict[str, str]:
     lines = text.split("\n")
     starts = {}
     for i, line in enumerate(lines):
-        m = re.match(r"^  ([A-Za-z_][\w-]*):\s*$", line)
+        m = re.match(r"^  ([A-Za-z_][\w-]*):(\s.*)?$", line)
         if m and m.group(1) in names and m.group(1) not in starts:
             starts[m.group(1)] = i
     ordered = sorted(starts.items(), key=lambda kv: kv[1])
@@ -129,7 +168,9 @@ def unpinned_jobs(workflows: dict[str, str], exempt: dict[str, str]) -> list[str
     missing = []
     for fname, text in sorted(workflows.items()):
         for job, block in sorted(job_blocks(text).items()):
-            if job in exempt:
+            # ⚠ KEYED `file:job` — r1 Medium 3 (claude). Keyed by bare job name, one exemption
+            # covered a same-named job in EVERY workflow, present and future.
+            if f"{fname}:{job}" in exempt:
                 continue
             if not declared_pins(block):
                 missing.append(f"{fname}:{job}")
@@ -141,8 +182,44 @@ def running_version(version_info: "tuple[int, int]") -> str:
     return f"{version_info[0]}.{version_info[1]}"
 
 
+def asserts_here(env: "dict[str, str]") -> bool:
+    """PURE. Whether this run must ASSERT the pin rather than merely advise about it.
+
+    ⛔ EXTRACTED BECAUSE IT WAS THE ONE LINE NOTHING COULD DRIVE — r1 High 3 (claude). It lived
+    inline in `main` as `bool(os.environ.get("GITHUB_ACTIONS"))`: the single decision that arms the
+    whole assertion, with no case and no mutation touching it. A rule nobody can drive is
+    documentation.
+    """
+    return bool(env.get("GITHUB_ACTIONS"))
+
+
+def pin_took_effect(executable: str, tool_location: "str | None") -> "bool | None":
+    """PURE. Did the running interpreter come FROM `setup-python`? `None` = no evidence either way.
+
+    ⛔⛔ THE VERSION COMPARISON CANNOT ANSWER THIS, AND BELIEVING IT COULD WAS THIS BRANCH'S BIGGEST
+    CLAIM — r1 High 1 (claude). `running != pin` compares major.minor, and the runner image's
+    AMBIENT `python3` is already 3.12.3, so the comparison holds whether or not `setup-python` did
+    anything. It is satisfied by the exact pre-branch world this guard exists to end.
+
+    ⚠ THE SCENARIO IS A ONE-WORD EDIT. `actions/setup-python@v5` takes `update-environment`, visible
+    in this branch's own run log. Set it `false` and the action still installs 3.12.14, still logs
+    *"Successfully set up CPython"*, and leaves `PATH` untouched — `python3` stays the system 3.12.3,
+    the version matches, and the guard prints `python pin OK` while all 45 guards run unpinned. The
+    step would be present, ineffective and green: verbatim the shape this file says it catches.
+
+    So provenance, not equality. `setup-python` exports `pythonLocation`
+    (`/opt/hostedtoolcache/Python/3.12.14/x64` in this branch's log) and nothing else does; an
+    interpreter running from under it came from the action.
+    """
+    if not tool_location:
+        return None
+    root = tool_location.rstrip("/")
+    return executable == root or executable.startswith(root + "/")
+
+
 def verdict(workflows: dict[str, str], running: str, in_ci: bool,
-            exempt: "dict[str, str] | None" = None) -> "tuple[int, str]":
+            exempt: "dict[str, str] | None" = None, executable: str = "",
+            tool_location: "str | None" = None) -> "tuple[int, str]":
     """PURE. `(exit code, message)`. Order matters and is asserted by its own cases."""
     exempt = EXEMPT_JOBS if exempt is None else exempt
     if not workflows:
@@ -160,6 +237,19 @@ def verdict(workflows: dict[str, str], running: str, in_ci: bool,
                    "  CI would then run guards on one interpreter and gates on another, and a\n"
                    "  version-dependent defect would surface in only one of them.")
     pin = pins[0]
+    # ⛔ A WORKFLOW WITH NO JOBS IS NOT A THING THAT EXISTS — r1 High 2 (claude). The job scan is a
+    # line scan, so an indentation this repo does not happen to use (four spaces is valid YAML)
+    # makes every job INVISIBLE, and an invisible job is a PASSING job. Loosening the regex fixed
+    # four shapes; this refuses the rest instead of guessing, turning any future unparseable shape
+    # from a silent pass into a loud NOT CHECKED. ⚠ It is the guard being calibrated on its own
+    # corpus that made this reachable at all.
+    jobless = sorted(f for f, text in workflows.items() if not job_names(text))
+    if jobless:
+        return 2, ("CANNOT RUN — no jobs could be read from: " + ", ".join(jobless) + "\n"
+                   "  A workflow with no jobs does not exist, so the scan is what broke — most\n"
+                   "  likely an indentation or shape this line scan does not handle. Every job in\n"
+                   "  such a file would otherwise be invisible, and an invisible job PASSES.\n"
+                   "  NOT CHECKED.")
     missing = unpinned_jobs(workflows, exempt)
     if missing:
         return 1, (f"FAILED — {len(missing)} job(s) pin no Python version:\n    "
@@ -167,10 +257,22 @@ def verdict(workflows: dict[str, str], running: str, in_ci: bool,
                    + f"\n  Add `uses: actions/setup-python@v5` with `python-version: '{pin}'`, or\n"
                      "  add the job to EXEMPT_JOBS with the reason it runs no Python.\n"
                      "  ⚠ A pin in a SIBLING job does not cover this one — measured 2026-09-16.")
-    if in_ci and running != pin:
-        return 1, (f"FAILED — the pin did not take effect: workflows pin {pin}, this interpreter is\n"
-                   f"  {running}. A `setup-python` step that is present but ineffective is a green\n"
-                   "  that means nothing.")
+    if in_ci:
+        # ⛔ PROVENANCE BEFORE VERSION — r1 High 1. The version comparison alone is satisfied by the
+        # runner's ambient 3.12.3, so it cannot tell a working pin from no pin at all.
+        effect = pin_took_effect(executable, tool_location)
+        if effect is None:
+            return 1, ("FAILED — `pythonLocation` is unset, so nothing shows `setup-python` ran.\n"
+                       "  Only that action exports it. Without it the interpreter's PROVENANCE is\n"
+                       "  unknown, and a version match proves nothing: the runner image's own\n"
+                       f"  python3 is already {pin}.x.")
+        if not effect:
+            return 1, (f"FAILED — the pin did not take effect: the running interpreter\n"
+                       f"  ({executable}) is not the one `setup-python` installed ({tool_location}).\n"
+                       "  The step is present and ineffective — e.g. `update-environment: false` —\n"
+                       "  which is a green that means nothing.")
+        if running != pin:
+            return 1, (f"FAILED — workflows pin {pin}, this interpreter is {running}.")
     if running != pin:
         return 0, (f"⚠ ADVISORY — this machine runs Python {running}; CI runs {pin}.\n"
                    "  Treat a local green as PROVISIONAL: interpreter versions differ in ways that\n"
@@ -196,6 +298,16 @@ def self_test() -> int:
     def case(name: str, got, want) -> None:
         cases.append((name, got, want))
 
+    # A provenance pair that satisfies the r1 High 1 check: the interpreter lives under the
+    # location `setup-python` exports. Passed explicitly so the CI-mode cases say which world
+    # they are in.
+    _LOC, _EXE = "/opt/hostedtoolcache/Python/3.12.14/x64", "/opt/hostedtoolcache/Python/3.12.14/x64/bin/python3"
+
+    def _wf(job: str, version: str) -> str:
+        """A minimal workflow with ONE job pinned through a real setup-python step."""
+        return (f"jobs:\n  {job}:\n    steps:\n      - uses: actions/setup-python@v5\n"
+                f"        with:\n          python-version: '{version}'\n")
+
     PINNED = ("jobs:\n"
               "  verify:\n"
               "    steps:\n"
@@ -215,7 +327,31 @@ def self_test() -> int:
     case("a declared pin is read, quotes stripped", declared_pins(PINNED), ["3.12"])
     case("...and a workflow with none declares none", declared_pins("jobs:\n  a:\n"), [])
     case("...and an unquoted pin reads the same",
-         declared_pins("      python-version: 3.12\n"), ["3.12"])
+         declared_pins("      - uses: actions/setup-python@v5\n"
+                       "        with:\n"
+                       "          python-version: 3.12\n"), ["3.12"])
+    # ⛔ r1 HIGH (codex), AS CASES — BOTH FALSE-GREEN SHAPES IT REPRODUCED. A `python-version:` that
+    # belongs to no `setup-python` step made a job with NO pin at all read as pinned: `unpinned_jobs`
+    # returned [] and the verdict returned 0. A guard satisfied by a line of prose reports the
+    # absence of the very thing it exists to find.
+    case("a python-version inside a run-block heredoc is NOT a pin",
+         declared_pins("      - run: |\n          python-version: '3.12'\n"), [])
+    case("...nor is one in an UNRELATED action's with: block",
+         declared_pins("      - uses: someone/not-setup-python@v1\n"
+                       "        with:\n          python-version: '3.12'\n"), [])
+    # ⛔ AND THE STEP BOUNDARY, DRIVEN. The two cases above never reach it — neither fixture has a
+    # `setup-python` step, so the scan loop never starts and the clause that ENDS a step was
+    # unexercised (it survived mutation). Here a real pin is followed by a DIFFERENT action
+    # carrying its own `python-version:`; without the boundary the second bleeds in and the two
+    # read as a disagreement.
+    case("a later step's python-version does NOT bleed into the setup-python step before it",
+         declared_pins("      - uses: actions/setup-python@v5\n"
+                       "        with:\n          python-version: '3.12'\n"
+                       "      - uses: someone/other@v1\n"
+                       "        with:\n          python-version: '3.11'\n"), ["3.12"])
+    case("...and a job holding only those still reports as unpinned",
+         unpinned_jobs({"w.yml": "jobs:\n  verify:\n    steps:\n      - run: |\n"
+                                 "          python-version: '3.12'\n"}, {}), ["w.yml:verify"])
     case("job keys are found", job_names(PINNED), ["verify"])
     case("...and both of two are", job_names(TWO_JOBS_ONE_PIN), ["schema-gates", "prod-drift"])
     case("...while a STEP key is not mistaken for a job",
@@ -233,7 +369,7 @@ def self_test() -> int:
     case("...while a job that pins is not reported",
          unpinned_jobs({"w.yml": PINNED}, {}), [])
     case("...and an exempt job is not reported either",
-         unpinned_jobs({"w.yml": TWO_JOBS_ONE_PIN}, {"schema-gates": "runs no python"}), [])
+         unpinned_jobs({"w.yml": TWO_JOBS_ONE_PIN}, {"w.yml:schema-gates": "runs no python"}), [])
     case("job blocks do not bleed into each other",
          "python-version" in job_blocks(TWO_JOBS_ONE_PIN)["schema-gates"], False)
     case("...and the pinning job's block does contain it",
@@ -258,30 +394,71 @@ def self_test() -> int:
     case("...and THAT is asked before the per-job question, which would only repeat it",
          "no `python-version:`" in verdict({"w.yml": "jobs:\n  a:\n"}, "3.12", True)[1], True)
     case("disagreeing pins FAIL",
-         verdict({"a.yml": "jobs:\n  x:\n          python-version: '3.12'\n",
-                  "b.yml": "jobs:\n  y:\n          python-version: '3.11'\n"}, "3.12", True)[0], 1)
+         verdict({"a.yml": _wf("x", "3.12"), "b.yml": _wf("y", "3.11")}, "3.12", True)[0], 1)
     case("...and the message names both", "3.11, 3.12" in
-         verdict({"a.yml": "jobs:\n  x:\n          python-version: '3.12'\n",
-                  "b.yml": "jobs:\n  y:\n          python-version: '3.11'\n"}, "3.12", True)[1], True)
+         verdict({"a.yml": _wf("x", "3.12"), "b.yml": _wf("y", "3.11")}, "3.12", True)[1], True)
     case("an unpinned job FAILS", verdict({"w.yml": TWO_JOBS_ONE_PIN}, "3.12", True)[0], 1)
     # ⚠ ...and the SAME workflow passes once that job is exempt — which is what varies
     # `verdict.exempt`, and is the only case that proves the verdict consults it at all rather than
     # reading the module constant behind it.
     case("...and the SAME workflow passes once that job is exempt, so the verdict really reads it",
          verdict({"w.yml": TWO_JOBS_ONE_PIN}, "3.12", True,
-                 {"schema-gates": "runs no python"})[0], 0)
+                 {"w.yml:schema-gates": "runs no python"}, _EXE, _LOC)[0], 0)
+    # ⛔ r1 MEDIUM 3 — the key includes the FILE. Keyed by bare job name, one exemption silently
+    # covered a same-named job in every other workflow, present and future.
+    case("...and an exemption in ANOTHER file does not cover this one",
+         unpinned_jobs({"w.yml": TWO_JOBS_ONE_PIN}, {"other.yml:schema-gates": "runs no python"}),
+         ["w.yml:schema-gates"])
     case("...and the failure names it",
          "w.yml:schema-gates" in verdict({"w.yml": TWO_JOBS_ONE_PIN}, "3.12", True)[1], True)
     # ⛔ THE TWO-QUESTIONS-ONE-RULE SPLIT. Same inputs, different place, deliberately different code.
     case("IN CI a mismatch FAILS, because it means the pin did not take effect",
          verdict({"w.yml": PINNED}, "3.14", True)[0], 1)
+    # ⚠ WITH PROVENANCE SATISFIED, so this reaches the VERSION clause rather than stopping at the
+    # provenance one. Without this the version test inside `in_ci` was unreachable and its mutation
+    # survived — every CI case happened to match the pin.
+    case("...and it still FAILS when provenance is fine but the VERSION is wrong",
+         verdict({"w.yml": PINNED}, "3.14", True, None, _EXE, _LOC)[0], 1)
     case("...but LOCALLY the same mismatch is ADVISORY and exits 0",
          verdict({"w.yml": PINNED}, "3.14", False)[0], 0)
     case("...and the advisory names the version CI actually runs",
          "CI runs 3.12" in verdict({"w.yml": PINNED}, "3.14", False)[1], True)
-    case("a matching interpreter is OK in CI", verdict({"w.yml": PINNED}, "3.12", True), (0, verdict({"w.yml": PINNED}, "3.12", True)[1]))
+    # ⚠ THE EXPECTED VALUE IS A LITERAL, NOT A CALL — r1 Low 1 (claude): this case used to compute
+    # its own `want` by invoking the very function under test, so it could not fail.
+    case("a matching interpreter WITH provenance is OK in CI",
+         verdict({"w.yml": PINNED}, "3.12", True, None, _EXE, _LOC)[0], 0)
     case("...and the OK message names the pin",
-         "every job pins 3.12" in verdict({"w.yml": PINNED}, "3.12", True)[1], True)
+         "every job pins 3.12" in verdict({"w.yml": PINNED}, "3.12", True, None, _EXE, _LOC)[1], True)
+    # ⛔⛔ r1 HIGH 1, AS CASES — the version comparison alone is satisfied by the runner's AMBIENT
+    # 3.12.3, so it cannot tell a working pin from no pin. Provenance can.
+    # ⚠ ASSERTS THE MESSAGE — the code alone cannot see this clause, because falling through to the
+    # next one (`not effect`, where `not None` is True) returns the same 1 by another route. Same
+    # masking shape as backlog #137's `declared_not_derived`, third occurrence across the two branches.
+    case("IN CI, a matching VERSION with no provenance FAILS — the ambient python matches too",
+         (verdict({"w.yml": PINNED}, "3.12", True, None, "/usr/bin/python3", None)[0],
+          "`pythonLocation` is unset" in
+          verdict({"w.yml": PINNED}, "3.12", True, None, "/usr/bin/python3", None)[1]), (1, True))
+    case("...and an interpreter NOT under the exported location FAILS, which is update-environment: false",
+         verdict({"w.yml": PINNED}, "3.12", True, None, "/usr/bin/python3", _LOC)[0], 1)
+    case("pin_took_effect says None when nothing exported a location",
+         pin_took_effect("/usr/bin/python3", None), None)
+    case("...True when the interpreter lives under it",
+         pin_took_effect(_EXE, _LOC), True)
+    case("...and False when it does not",
+         pin_took_effect("/usr/bin/python3", _LOC), False)
+    case("...and a sibling directory sharing a PREFIX is not under it",
+         pin_took_effect("/opt/hostedtoolcache/Python/3.12.14/x64-other/bin/python3", _LOC), False)
+    # ⛔ r1 HIGH 3 — the one line that arms the assertion, now drivable.
+    case("GITHUB_ACTIONS arms the assertion", asserts_here({"GITHUB_ACTIONS": "true"}), True)
+    case("...and its absence does not", asserts_here({}), False)
+    case("...and an empty value does not either", asserts_here({"GITHUB_ACTIONS": ""}), False)
+    # ⛔ r1 HIGH 2 — a workflow whose jobs cannot be read is CANNOT RUN, not a pass.
+    case("a workflow yielding NO jobs is CANNOT RUN, because an invisible job passes",
+         verdict({"w.yml": PINNED, "four.yml": "jobs:\n    deploy:\n        steps: []\n"},
+                 "3.12", True, None, _EXE, _LOC)[0], 2)
+    case("...and it names the file that could not be read",
+         "four.yml" in verdict({"w.yml": PINNED, "four.yml": "jobs:\n    deploy:\n        steps: []\n"},
+                               "3.12", True, None, _EXE, _LOC)[1], True)
 
     failed = 0
     for name, got, want in cases:
@@ -299,7 +476,8 @@ def main(argv: list[str]) -> int:
     if args.self_test:
         return self_test()
     rc, msg = verdict(_read_workflows(), running_version(sys.version_info[:2]),
-                      bool(os.environ.get("GITHUB_ACTIONS")))
+                      asserts_here(dict(os.environ)), None,
+                      sys.executable, os.environ.get("pythonLocation"))
     print(msg, file=sys.stderr if rc else sys.stdout)
     return rc
 

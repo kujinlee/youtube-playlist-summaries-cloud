@@ -768,7 +768,23 @@ EXPECTED_MUTATIONS = {
     # empty-corpus case asserted only an exit code that the NO-PINS prong returns by another route
     # (backlog #137's `declared_not_derived` defect, recurring), and the jobs-block case used a
     # fixture key the regex rejected anyway. Both repaired rather than exempted.
-    "scripts/check-python-pin.py": 11,
+    # ⟳ r1 (codex) 1 Blocking + 2 High: 11 -> 12. ⭐ The High that mattered was a FALSE GREEN —
+    # `declared_pins` matched ANY line shaped like `python-version:`, so one inside a shell
+    # heredoc or an unrelated action's `with:` made a job with NO setup-python read as PINNED.
+    # The predicate is now "a pin attached to an actions/setup-python step", with the reviewer's
+    # two reproduction fixtures as cases. ⚠ A step-boundary clause written alongside it was
+    # MEASURED INERT (deleting it left the suite green, the dedent test already covering it) and
+    # was DELETED rather than kept with an entry that could not fail.
+    # ⟳ r1 (claude) 3 High + 3 Medium + 4 Low: 12 -> 18. ⭐ HIGH 1 was the branch's own central
+    # claim: "the pin TOOK EFFECT" compared major.minor, and the runner's AMBIENT python3 is
+    # already 3.12.3 — so the comparison was satisfied by the exact pre-branch world the guard
+    # exists to end, and `update-environment: false` would have kept it green while 45 guards ran
+    # unpinned. It now asserts PROVENANCE via `pythonLocation`, which only setup-python exports.
+    # HIGH 2: four legitimate YAML job shapes were INVISIBLE, and an invisible job passes — the
+    # guard was calibrated on its own corpus. Tails loosened (measured free), indent kept
+    # (measured load-bearing), and a jobless workflow now REFUSES rather than passing.
+    # HIGH 3: the single line arming the assertion had no case and no mutation; extracted.
+    "scripts/check-python-pin.py": 18,
     "scripts/check-plan-code.py": 76,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
@@ -3267,7 +3283,7 @@ def _self_test() -> int:
     # `schema-gates` check unrequireable) and SIX added for the derivation that replaced it. A RISE,
     # so this is not the sanctioned-fall case; the two retirements are recorded beside the per-file
     # count above with the reason, and both orphans were found by RUNNING the anchor check.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 748)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 755)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

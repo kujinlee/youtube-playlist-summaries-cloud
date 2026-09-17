@@ -202,6 +202,14 @@ jobs:
         with:
           python-version: '3.12'
 
+      # ⛔ DECLARING THE PIN IS NOT THE SAME AS THE PIN TAKING EFFECT — r1 High (codex). The first
+      # version of this change added the `setup-python` step above and asserted nothing, so a silent
+      # setup or PATH failure would have left the fifteen gates running on ambient `python3` while
+      # the workflow LOOKED pinned. That is precisely the class this change exists to close, so
+      # leaving it open here — in a REQUIRED check — would have been the guard exempting itself.
+      - name: The Python pin took effect
+        run: python3 scripts/check-python-pin.py
+
       # ⛔ `node_modules` IS A GATE DEPENDENCY, NOT A CONVENIENCE — measured on this job's first CI
       # run. Gate 15 (`check-paid-caller-arrival.py`) answers "is this line a comment?" with the
       # TYPESCRIPT COMPILER and has NO fallback, because the two hand-written versions before it each
@@ -266,6 +274,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      # Same assertion as the other two jobs — this one reads PRODUCTION, so "the pin looked
+      # applied" is the last thing that should be taken on trust here.
+      - name: The Python pin took effect
+        run: python3 scripts/check-python-pin.py
 
       # ⛔⛔ `--prod` DOES NOT OPEN A SOCKET FROM PYTHON — ⟳ r1 BLOCKING 1 (claude), and without this
       # step the job could NEVER pass, secret or no secret. `m4_catalog.psql_cmd` builds
