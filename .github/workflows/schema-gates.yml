@@ -56,8 +56,19 @@ name: Schema gates
 # docs-only PR that has nothing to do with schema. Reliability was 54 success / 0 failure /
 # 6 cancelled over the last 60 runs, but ⚠ that record was earned on a population that EXCLUDED
 # docs-only PRs by construction, so it is evidence and not proof. The job's verdict does not depend
-# on the diff (it rebuilds the same database from the same migrations), which is why the record is
-# expected to transfer.
+# on the diff for the SCHEMA gates (they rebuild the same database from the same migrations).
+# ⛔⛔ BUT THAT SENTENCE USED TO CLAIM IT OF THE WHOLE JOB, AND THAT WAS FALSE — r1 Medium 10
+# (claude), filed then and left open for two rounds because a coordinator note wrongly said
+# this file had produced ZERO findings. RE-MEASURED 2026-09-16: gates 3, 6 and 15 DO read the
+# diff's subject, and gate 6 has ZERO SLACK — `check-docs.py`'s LINE_BUDGETS put
+# `docs/dev-process.md` at 220/220 and `docs/plugins.md` at 260/260 TODAY. Appending ONE line
+# to either turns this job RED on a docs-only pull request; measured by doing it, rc=1,
+# `221 / 220 OVER`.
+# ⭐ THAT IS THE FEATURE, NOT A TRAP, and it is worth saying which: a docs-only PR that pushes
+# a budgeted file over its limit SHOULD be blocked. Today that red is simply ignored, which is
+# the whole of backlog #137. Once the context is required it stops being ignorable — so the
+# first person to hit it will be looking at a correct refusal, and should move detail out of
+# the file rather than raise the budget (`check-docs.py` says so in its own message).
 #
 # ⛔ AND THE FILTER HAD A SECOND CONSUMER THAT WAS NOT AN OPTIMISATION — this is the part that made
 # the change bigger than a deletion, and it must not be rebuilt by accident. `check-review-recorded`
@@ -71,9 +82,18 @@ name: Schema gates
 # `check-schema-gates.sh` `SPEC=`, `check-anon-exposure.py` `MANIFEST=`, `run-schema-assertions.sh`
 # `SEED=` — i.e. from the authority instead of from a proxy for it.
 #
-# ⚠ WHAT IS LOST, SAID PLAINLY: the log no longer distinguishes "this PR could not have broken a
-# gate" from "the gates passed". Both now read as green. That signal was worth less than the
-# enforceability it was costing.
+# ⚠ WHAT IS LOST, SAID PLAINLY. Two things, and the second was filed in r1 and left open for two
+# rounds:
+#   1. the log no longer distinguishes "this PR could not have broken a gate" from "the gates
+#      passed". Both now read as green. That signal was worth less than the enforceability it
+#      was costing.
+#   2. ⟳ r1 LOW 14 (claude): the `push:` trigger has no filter either, so a DOCS-ONLY merge to
+#      master now starts a run that can CANCEL a code merge's run — the `concurrency` group
+#      keys on `github.event_name` and `github.ref`, which are identical for both. Before, a
+#      docs-only push did not start one at all. A cancelled run reports nothing, which this
+#      repo treats as worse than a failure. Narrow today (merges are serialised by review),
+#      and the honest mitigation if it ever bites is `cancel-in-progress: false` on the push
+#      path, NOT restoring the filter — that would re-open the defect this branch closed.
 #
 # ⟳ THE HISTORY THIS REPLACES IS KEPT, because it is the reason nobody should re-introduce the
 # filter casually. The list was WRONG ONCE, in the silent direction: r1 BLOCKING 2 found `lib/`,

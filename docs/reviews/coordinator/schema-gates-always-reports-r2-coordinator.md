@@ -62,6 +62,13 @@ than after it: **revert the derivation to the declared-authority-plus-staleness-
 whole completeness question. Recording it now because a retreat authored after the round that
 triggers it is not a gate.
 
-Note the asymmetry that makes this the right retreat: **the actual #137 change — the deleted
-`paths:` filters — has produced ZERO findings across four review halves.** Every finding in both
-rounds is in the collateral derivation that replaced the authority the filter had been serving.
+Note the asymmetry that makes this the right retreat: the `#137` change itself has produced very
+few findings; almost everything is in the collateral derivation that replaced the authority the
+filter had been serving.
+
+⟳ **CORRECTED 2026-09-16 by r3 High 1 (claude): this sentence originally said "ZERO findings across
+four review halves", and that was FALSE.** r1's claude half had already filed Medium 10 and Low 14
+against the workflow change, and Low 14's subject is the deletion itself. Worse, the overstatement
+kept both findings invisible for two rounds and was then repeated by a second reviewer instead of
+being re-derived. Both are closed as of `HEAD`. The asymmetry is real — 2 against ~30 — but "ZERO"
+was not, and a retreat resting on a number nobody re-derived is the shape this repo files against.

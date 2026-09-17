@@ -456,7 +456,7 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "        if not any(prefix.startswith(e) or e == prefix.rstrip(\"/\") + \"/\"\n                   for e in CODE_UNDER_PROSE):\n            missing.append(g)",
+        "        if not any(prefix.startswith(e) or e == prefix.rstrip(\"/\") + \"/\"\n                   for e in declared):\n            missing.append(g)",
         "        if False:\n            missing.append(g)"
       ]
     ],
@@ -478,7 +478,7 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "        if not any(prefix.startswith(e) or e == prefix.rstrip(\"/\") + \"/\"\n                   for e in CODE_UNDER_PROSE):",
+        "        if not any(prefix.startswith(e) or e == prefix.rstrip(\"/\") + \"/\"\n                   for e in declared):",
         "        if not any(prefix.startswith(e) or e.startswith(prefix)\n                   for e in CODE_UNDER_PROSE):"
       ]
     ],
@@ -703,5 +703,38 @@
       ]
     ],
     "expect": "when BOTH would fire, COMPLETENESS answers \u2014 a broken derivation is not a coverage pass"
+  },
+  {
+    "name": "the empty-derivation CANNOT-RUN guard goes, leaving a pass over a derivation that found nothing",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if not derived:",
+        "    if False:"
+      ]
+    ],
+    "expect": "...and it refuses even with NOTHING declared, so it is not standing on the other prong"
+  },
+  {
+    "name": "PATH_LIMIT is widened to Linux's PATH_MAX \u2014 the wrong value for the platform that raised",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "PATH_LIMIT = 1024",
+        "PATH_LIMIT = 4096"
+      ]
+    ],
+    "expect": "one byte over the TOTAL limit of 1024 is rejected"
+  },
+  {
+    "name": "PROSE_FILES loses .gitignore, the one member the root-.md fallback cannot mask",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "PROSE_FILES = (\"README.md\", \"CLAUDE.md\", \"AGENTS.md\", \"CONTEXT.md\", \".gitignore\")",
+        "PROSE_FILES = (\"README.md\", \"CLAUDE.md\", \"AGENTS.md\", \"CONTEXT.md\")"
+      ]
+    ],
+    "expect": ".gitignore is prose \u2014 the only PROSE_FILES member the root-.md fallback cannot catch"
   }
 ]

@@ -9742,3 +9742,40 @@ filter was the authority, in one case pointing at line numbers that now contain 
 
 Current: 157 self-test cases, 52 mutation entries, manifest total 723, every entry proved to go red
 through the case it names. Round 2 is running.
+
+## 2026-09-16
+
+Third round of review on this branch, and the finding that matters is one I wrote myself.
+
+A note I had written to justify a process decision said the actual change — deleting the path filter
+— had produced **zero** findings across every review so far, and credited the second reviewer with
+having checked it. Both halves of that were wrong. The first review had already filed two findings
+against the change, one of them against the deletion itself; and the reviewer I credited had listed
+the six things it checked, none of which opened that file at all.
+
+The invented confirmation is the worse half. An unsourced claim invites checking. A claim wearing
+someone else's name does the opposite — it reads as corroboration, and it worked: a second reviewer
+repeated it rather than re-deriving it, and two filed findings stayed invisible for two rounds
+because the note said there was nothing there to look for. Both are now closed.
+
+Closing them turned up something worth knowing before the last step of this work. One of those
+findings said a sentence in the workflow was false: that the job's answer does not depend on what a
+pull request changed. Re-measured today, two documentation files sit at **exactly** their line
+budget — 220 of 220, and 260 of 260. Appending a single line to either turns the schema job red on a
+documentation-only change. Verified by doing it.
+
+That is the feature rather than a trap, and it is worth being clear which. A change that pushes a
+budgeted file over its limit *should* be blocked. Today that refusal is simply ignored, which is the
+entire point of this work. Once the check counts, it stops being ignorable — so the first person to
+meet it is looking at a correct answer, and the fix is to move detail out of the file, not to raise
+the budget.
+
+⚠ Also corrected: a table introduced with the words "measured rather than asserted" was in fact
+asserted — three of its cells were wrong, including one reporting a reviewer's own count back to it.
+Re-derived, the picture is unchanged: serious findings fall 1→0→0 and 4→1→1 across rounds, which is
+the convergence the decision rested on. And a count in the backlog row went stale for the third time
+on this branch; it now says so, and points at the pins a gate actually checks.
+
+Round 3 found no defect that makes the gate return a wrong answer, and both reviewers said the
+branch is safe to merge on the code. Current: 182 self-test cases, 64 mutation entries, manifest
+total 735, every entry proved to go red through the case it names.

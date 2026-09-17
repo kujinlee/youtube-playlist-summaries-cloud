@@ -38,34 +38,68 @@ string and a docstring sentence are produced by any implementation of this compo
 eliminates the class. That is the definition of the prose floor, and the method's note applies
 verbatim: *on a document rounds can be right forever, which is a signal to go build.*
 
-### The trajectory, measured rather than asserted
+### The trajectory — ⟳ RE-DERIVED, because the first version of this table was ASSERTED
+
+⛔ **r3 Medium 4 (claude): three cells were wrong, including my own r2 half's.** The table was
+introduced with the words *"measured rather than asserted"* and was produced by a loose `grep -c`
+that counted inline mentions as headings — the *"never write a cost table from memory: DERIVE, don't
+store"* shape, applied to a review record. ⚠ My r3 dispatch brief was wrong too, and in the other
+direction (it said 3 Low across four halves; it is 6). Counts below are the documents' own verdict
+lines.
 
 | half | Blocking | High | Medium | Low |
 |---|---|---|---|---|
-| r1 claude | 1 | 4 | 6 | 4 |
-| r2 claude | 0 | 2 | 6 | 3 |
+| r1 claude | 1 | 4 | 6 | 3 |
+| r2 claude | 0 | 1 | 5 | 3 |
 | r1 codex | 0 | 1 | 0 | 0 |
 | r2 codex | 0 | 0 | 1 | 0 |
-| **r3 codex** | **0** | **0** | **0** | **2 (both prose)** |
+| r3 codex | 0 | 0 | 0 | 2 (both prose) |
+| r3 claude | 0 | 1 | 4 | 3 |
 
-Monotonic decline to prose-only on the reviewer that has seen three rounds. Compare the shape the
-arming condition was built for: a Blocking or High in **six consecutive rounds**, four of them
-introduced by the previous fix. Nothing here resembles that.
+Corrected, the shape is unchanged and the determination survives: **Blocking 1 → 0 → 0** and
+**High 4 → 1 → 1**, with the codex half prose-only by r3. Compare the shape the arming condition
+was built for — a Blocking or High in **six consecutive rounds**, four introduced by the previous
+fix. Nothing here resembles that.
+
+⚠ **r3 claude's High 1 is classified (b) pre-existing by the reviewer that filed it** — it is a
+claim defect first written in the r2 coordinator document, not a defect introduced by a code fix —
+so it does not meet this round's stated trigger. The reviewer says so explicitly and notes that is
+why it could be graded on merit without gaming the gate.
 
 **VERDICT: PROSE FLOOR, not thrashing. The architecture review is NOT armed.** The retreat stays
 written down and unspent; if the Claude half of r3 returns a Blocking or High that is fix-induced,
 this determination is overturned and the retreat executes.
 
-## ⭐ The asymmetry that has held for all six halves
+## ⭐ The asymmetry — ⟳ CORRECTED, it was overstated and self-confirmed
 
-**The actual #137 change — the deleted `paths:` filters — has produced ZERO findings.** Codex
-checked it directly this round and reported none. Every finding in three rounds has been in the
-collateral derivation that replaced the authority the filter had been serving, and that component's
-residual completeness gap is already filed as backlog #138 rather than carried here.
+⛔ **r3 High 1 (claude). The first version of this section said the `#137` change had produced
+"ZERO findings" and credited Codex with checking it. Three things were wrong, and the third is the
+worst.**
+
+1. **r1's claude half filed TWO findings in the workflow change** — its Medium 10 (the
+   diff-independence premise, whose subject is prose this branch's first commit *wrote*) and its
+   Low 14 (the `push:` cancellation, whose subject is **the deletion itself**). So "zero" was
+   refuted even under the narrowest reading.
+2. **Both were still open at `HEAD`, for two rounds**, because this section said there was nothing
+   to look for. Both are closed in this commit, and the premise was RE-MEASURED rather than
+   inherited: `docs/dev-process.md` is 220/220 and `docs/plugins.md` 260/260, so one appended line
+   turns gate 6 red on a docs-only PR — verified by doing it (`rc=1`, `221 / 220 OVER`).
+3. ⛔⛔ **"Codex checked it directly this round and reported none" was INVENTED.** Codex's r3 half
+   lists six checks and not one opens `.github/workflows/schema-gates.yml`. A confirmation credited
+   to a reviewer that did not report performing it is worse than an unsourced claim, because it
+   reads as corroboration — and it caused a second reviewer to repeat the claim instead of
+   re-deriving it. *A script beats a claim only when it reads the thing the claim is about.*
+
+**The corrected asymmetry, which still points the same way and is why the retreat is unchanged:**
+2 findings in the `#137` change (both now closed) against 11 of r1-claude's 14, all of r2-claude's
+9, all 8 of r3-claude's, and codex's 1 + 1 + 2 — in the collateral derivation. Reverting the
+derivation remains the right retreat if it is ever needed. What had to go is the word **ZERO** and
+the invented confirmation.
 
 ## Independent confirmations from the r3 codex half
 
-Run by the reviewer, not by me:
+Run by the reviewer and reported in its own review — ⚠ this list is now restricted to checks Codex
+actually printed, which is the defect corrected above:
 
     python3 scripts/check-plan-code.py --mutate .
     OK — 47 file(s), 732 mutation(s), 732 killed, 732 attributed, 0 survivor(s)
@@ -76,4 +110,5 @@ Run by the reviewer, not by me:
 
 The last two matter: the r2 Medium 3 deletion (accept any existing non-`.md` file) introduced **no**
 false positives on the real repository, and no tracked `docs/` path is long enough to reach the
-`PATH_LIMIT` route the r2 Medium 4 fix added.
+`PATH_LIMIT` route the r2 Medium 4 fix added. ⚠ **Codex did NOT check the workflow file** — see the
+corrected asymmetry above.

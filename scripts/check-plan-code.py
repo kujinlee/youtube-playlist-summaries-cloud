@@ -845,7 +845,15 @@ EXPECTED_MUTATIONS = {
     # because the call site was unfalsifiable and the entry written for it SURVIVED
     # (Medium 6). ⚠ One entry was RENAMED rather than re-anchored: it claimed to re-admit
     # the shape that crashed CI, and measured, whitespace already rejects that (Low 8).
-    "scripts/check-review-recorded.py": 61,
+    # ⟳ r3 (claude) 1 High + 4 Medium + 3 Low: 61 -> 64. The empty-derivation CANNOT-RUN guard
+    # (Medium 2: its case asserted only the exit code, which the COMPLETENESS prong returns by
+    # another route, so deleting the guard left the suite green), `PATH_LIMIT`'s VALUE (Medium 5a:
+    # the two bracketing cases left a 4,545-byte window, so 4096 — Linux's PATH_MAX, the wrong
+    # value for the platform that raised — survived), and `.gitignore` (Low 6: the two prose
+    # branches mutually masked, each surviving alone). ⚠ My first PATH_LIMIT cases built their
+    # input FROM the constant, so the input moved with the mutation and could never pin the value:
+    # literal lengths now.
+    "scripts/check-review-recorded.py": 64,
     # ⟳ 2026-09-14, r11: this file JOINS the manifest — R4 widened-debt 8 -> 7, removed from
     # `WIDENED_MANIFEST_DEBT` in this same commit, which that rule requires as an identity and not
     # a ceiling. It is the producer half of the mechanism the file above consumes, and it had gone
@@ -3246,7 +3254,7 @@ def _self_test() -> int:
     # `schema-gates` check unrequireable) and SIX added for the derivation that replaced it. A RISE,
     # so this is not the sanctioned-fall case; the two retirements are recorded beside the per-file
     # count above with the reason, and both orphans were found by RUNNING the anchor check.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 732)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 735)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

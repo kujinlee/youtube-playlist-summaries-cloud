@@ -2,7 +2,7 @@
 """A branch that changes CODE records a review round, or says in writing why it did not.
 
     python3 scripts/check-review-recorded.py --base origin/master --pr-body-file /tmp/pr-body.md
-    python3 scripts/check-review-recorded.py --self-test  # 178 cases
+    python3 scripts/check-review-recorded.py --self-test  # 182 cases
 
 WHY THIS EXISTS
 ---------------
@@ -221,12 +221,18 @@ def is_prose(path: str) -> bool:
     return path.endswith(".md") and "/" not in path
 
 
-def prose_exceptions_cover(gate_dirs: list[str]) -> list[str]:
+def prose_exceptions_cover(gate_dirs: list[str], declared: "tuple[str, ...]") -> list[str]:
     """PURE. The `docs/` gate directories that `CODE_UNDER_PROSE` does NOT cover — empty is correct.
 
     The COVERAGE half of the anti-drift pair (`declared_not_derived` is the completeness half, and
     runs first). Every `docs/` directory holding gate machinery must also be exempt from the prose
     classifier, or CI runs the gates on a change this file just waved through as documentation.
+
+    ⟳ r3 Low 7 (claude): `declared` IS A PARAMETER NOW. It used to read the module constant while
+    its sibling `declared_not_derived` took the tuple as an argument, so `antidrift_verdict`'s
+    `declared` governed only ONE of its two prongs — and a future case passing a fixture tuple to
+    drive this rule would silently have exercised the real one. That is the "a case can pass for an
+    AMBIENT reason" shape, pre-installed in the fix written to remove it.
 
     ⟳ 2026-09-16 (#137): the argument used to be `schema-gates.yml`'s path-filter GLOBS. That file
     has no path filters now — a workflow-level filter is what made the `schema-gates` check
@@ -239,6 +245,13 @@ def prose_exceptions_cover(gate_dirs: list[str]) -> list[str]:
     """
     missing = []
     for g in gate_dirs:
+        # ⚠ INERT TODAY, AND KEPT AS PROSPECTIVE — r3 Low 8 (claude), measured: dropping the
+        # glob-star split leaves the suite green, because `gate_code_dirs` can no longer produce a
+        # `*`. Prong 1's regex is `[\w./-]+` (no `*`) and prong 2 requires the path to EXIST as a
+        # file. The authority this was written for — `schema-gates.yml`'s globs — is what #137
+        # deleted, so it has been dead since `839bc738`. It stays because the rule is still
+        # documented as glob-tolerant and a future caller may pass one; it carries no mutation
+        # entry, because a clause that cannot receive its input cannot have a falsifier.
         prefix = g.split("*")[0]
         # ⛔ `docs` WITHOUT A TRAILING SLASH IS STILL A `docs/` SUBJECT — r2 Medium 2 (claude).
         # `"docs".startswith("docs/")` is False, so a derived bare `docs` was SKIPPED rather than
@@ -257,7 +270,7 @@ def prose_exceptions_cover(gate_dirs: list[str]) -> list[str]:
         # What it legitimately absorbed is a glob written without its trailing slash, and only
         # that survives.
         if not any(prefix.startswith(e) or e == prefix.rstrip("/") + "/"
-                   for e in CODE_UNDER_PROSE):
+                   for e in declared):
             missing.append(g)
     return missing
 
@@ -421,6 +434,11 @@ def gate_code_dirs(runner: str, gate_sources: dict[str, str],
     and it is the reason this rule is worth attacking again in a later round.
     """
     dirs: set[str] = set()
+    # ⚠ The dot filter is inert today — r3 Low 8. The runner binds exactly one `docs/` path and it
+    # has no dot, so nothing is ever excluded. ⚠ Its direction if it ever fired is NOISY (bogus
+    # `$SPEC`-joined directories would be reported as uncovered, turning the gate red over
+    # nothing), which is the safe direction for an unfalsified clause but is why it is recorded
+    # rather than trusted.
     spec_dirs = [p for p in bound_docs_paths(runner, python=False)
                  if "." not in p.rsplit("/", 1)[-1]]
     for rel in re.findall(r"\$SPEC/([\w./-]+)", "\n".join(
@@ -559,6 +577,10 @@ def declared_not_derived(derived: list[str], declared: "tuple[str, ...]") -> lis
     pinned as intended behaviour rather than merely unnoticed. The match is now EXACT: each declared
     directory must itself be derived, and that case is inverted below.
     """
+    # ⚠ The `rstrip` on the DERIVED side is inert — r3 Low 8. Derived directories come from
+    # `rsplit("/", 1)[0]` and never carry a trailing slash. The DECLARED-side `rstrip` below IS
+    # load-bearing (the reviewer confirmed by removing it: red via two cases), because
+    # `CODE_UNDER_PROSE` writes its entries WITH one. Kept for symmetry, not for effect.
     stems = {x.rstrip("/") for x in derived}
     missing = []
     for d in declared:
@@ -596,7 +618,7 @@ def antidrift_verdict(derived: list[str], declared: "tuple[str, ...]") -> "tuple
                    + "\n  The gate scripts are the authority and they no longer yield these, so "
                      "the derivation is broken\n  or a gate stopped reading its own subject. A "
                      "smaller answer here is not a cleaner repo.\n  NOT CHECKED.")
-    uncovered = prose_exceptions_cover(derived)
+    uncovered = prose_exceptions_cover(derived, declared)
     if uncovered:
         return 1, (f"FAILED — the schema gates treat {len(uncovered)} `docs/` director(ies) as "
                    f"gate machinery that this gate still classifies as PROSE:\n    "
@@ -1250,7 +1272,20 @@ def main(argv: list[str]) -> int:
               "holding gate machinery cannot be compared against CODE_UNDER_PROSE. NOT CHECKED.",
               file=sys.stderr)
         return 2
-    _dirs = gate_code_dirs(*_gs, is_file=lambda rel: (ROOT / rel).is_file())
+    # ⛔ THE BOUNDARY CANNOT RAISE — r3 Medium 5b (claude). `looks_like_path` bounds `rel`, but the
+    # OS receives `ROOT/rel`, which is `len(str(ROOT)) + 1` bytes longer than the string the pure
+    # rule measured; the reviewer executed a path the shape guard ACCEPTS and showed the real
+    # `is_file` still raising on 3.12. The shape guard stays as a cheap pre-filter with its bounds
+    # pinned, but correctness lives HERE: an unstattable string is not a gate file, and saying so
+    # is not "cannot run reporting success" — we are rejecting a non-path, not failing to read a
+    # known one.
+    def _is_file(rel: str) -> bool:
+        try:
+            return (ROOT / rel).is_file()
+        except (OSError, ValueError):
+            return False
+
+    _dirs = gate_code_dirs(*_gs, is_file=_is_file)
     _rc, _msg = antidrift_verdict(_dirs, CODE_UNDER_PROSE)
     if _rc:
         print(_msg, file=sys.stderr)
@@ -1332,6 +1367,12 @@ def self_test() -> int:
     for _p in ("docs/backlog.md", "docs/reviews/claude/x-r1-claude.md", "README.md",
                "CLAUDE.md", "AGENTS.md"):
         case(f"{_p} is prose", guarded_changes([_p]), [])
+    # ⛔ r3 LOW 6 — r2's Low 7 was REPORTED FIXED AND WAS NOT, and the two prose branches mutually
+    # mask: each survives alone and only dies together, because every `.md` member of PROSE_FILES is
+    # also caught by the root-`.md` fallback. `.gitignore` is the ONLY member that is not, so it is
+    # the one input that separates them.
+    case(".gitignore is prose — the only PROSE_FILES member the root-.md fallback cannot catch",
+         guarded_changes([".gitignore"]), [])
     # ⚠ a Markdown file INSIDE a package is not automatically prose — only a root one is
     case("a .md inside a package is still guarded",
          guarded_changes(["lib/README.md"]), ["lib/README.md"])
@@ -1363,7 +1404,7 @@ def self_test() -> int:
     case("the docs/ gate directories are DERIVED from the real gate scripts, not transcribed here",
          bool(_GS) and gate_code_dirs(*_GS, is_file=_real_file) != [], True)
     case("...and every one of them is exempt from the prose classifier",
-         prose_exceptions_cover(gate_code_dirs(*_GS, is_file=_real_file)) if _GS else [], [])
+         prose_exceptions_cover(gate_code_dirs(*_GS, is_file=_real_file), CODE_UNDER_PROSE) if _GS else [], [])
     # ⭐⭐ THE CASE r1 HIGH 2 SAID DID NOT EXIST, AND IT IS THE ONE THAT CAN FAIL. Both cases above
     # are blind to UNDER-coverage: the first is satisfied by prong 1 alone, and the second gets
     # EASIER to pass as the derived set shrinks. Deleting `_gate_sources`' discovery loop left the
@@ -1384,6 +1425,12 @@ def self_test() -> int:
                             "docs/superpowers/specs/m4", "docs/newgate"], CODE_UNDER_PROSE)[0], 1)
     case("an empty derivation is CANNOT RUN before either question is asked",
          antidrift_verdict([], CODE_UNDER_PROSE)[0], 2)
+    # ⛔ r3 MEDIUM 2 — THE CASE ABOVE CANNOT SEE ITS OWN CLAUSE. Delete `if not derived:` and it
+    # still passes, because the COMPLETENESS prong returns the same code by another route. This one
+    # empties the declaration too, so only the guard can answer: with it, 2; without it, 0 — a gate
+    # reporting a pass over a derivation that found nothing.
+    case("...and it refuses even with NOTHING declared, so it is not standing on the other prong",
+         antidrift_verdict([], ())[0], 2)
     case("...and the healthy real derivation answers 0 with nothing to say",
          antidrift_verdict(["docs/superpowers/specs/2026-08-03-stable-blob-addressing",
                             "docs/superpowers/specs/m4"], CODE_UNDER_PROSE), (0, ""))
@@ -1443,30 +1490,49 @@ def self_test() -> int:
          looks_like_path("docs/" + "/".join(["a" * 100] * 50)), False)
     case("...while a long path that stays under the total is still a path",
          looks_like_path("docs/" + "/".join(["a" * 100] * 5)), True)
+    # ⛔ r3 MEDIUM 5a — THE VALUE, PINNED EXACTLY. The two cases above bracket it between 509 and
+    # 5054 bytes, so `PATH_LIMIT = 4096` — Linux's PATH_MAX, precisely the wrong value for the
+    # platform this fix was about — left the suite at 178/178. `COMPONENT_LIMIT` is the model these
+    # failed to follow: 256 rejected, 255 accepted, value pinned to the byte.
+    # ⚠ Built with LEGAL components, because the first version of these two cases used one long
+    # component and was therefore testing COMPONENT_LIMIT — the wrong clause, and it failed.
+    def _path_of(total: int) -> str:
+        whole, rest = divmod(total + 1, 101)       # 100-byte parts joined by "/"
+        parts = ["a" * 100] * whole + ([("a" * (rest - 1))] if rest > 1 else [])
+        return "/".join(parts)
+    # ⛔⛔ LITERAL LENGTHS, NOT `PATH_LIMIT + 1` — and the first version of these two cases made
+    # exactly that mistake. Built from the constant, the INPUT moves with the mutation, so
+    # `PATH_LIMIT = 4096` still rejected 4097 and accepted 4096 and the suite stayed green: a case
+    # that can never pin the value it is named for. Hardcoding is correct here precisely because
+    # pinning the value IS the point.
+    case("one byte over the TOTAL limit of 1024 is rejected",
+         looks_like_path(_path_of(1025)), False)
+    case("...and exactly 1024 is accepted, so the bound is pinned to the byte",
+         looks_like_path(_path_of(1024)), True)
     case("...while a derived path that merely shares a PREFIX does not",
          declared_not_derived(["docs/superpowers/specs/m4-other"],
                               ("docs/superpowers/specs/m4/",)),
          ["docs/superpowers/specs/m4/"])
     # The pure rule, driven with literals — the reader above proves it sees the real file.
     case("a NEW docs/ gate directory the tuple does not know about is REPORTED",
-         prose_exceptions_cover(["docs/superpowers/specs/m5/**"]),
+         prose_exceptions_cover(["docs/superpowers/specs/m5/**"], CODE_UNDER_PROSE),
          ["docs/superpowers/specs/m5/**"])
     # ⛔ r16: a BROADER glob must be reported too. `e.startswith(prefix)` cleared all of these, and
     # deleting that clause changed no case — the one clause making the hole was unfalsifiable.
     case("...as is a glob BROADER than an exemption, which used to be silently cleared",
          prose_exceptions_cover(["docs/**", "docs/superpowers/**",
-                                 "docs/superpowers/specs/**"]),
+                                 "docs/superpowers/specs/**"], CODE_UNDER_PROSE),
          ["docs/**", "docs/superpowers/**", "docs/superpowers/specs/**"])
     # ...while the one thing that clause legitimately absorbed still passes:
     case("...but a glob written without its trailing slash still matches its exemption",
-         prose_exceptions_cover(["docs/superpowers/specs/m4"]), [])
+         prose_exceptions_cover(["docs/superpowers/specs/m4"], CODE_UNDER_PROSE), [])
     case("...while a non-docs glob is not this rule's business",
-         prose_exceptions_cover(["supabase/migrations/**"]), [])
+         prose_exceptions_cover(["supabase/migrations/**"], CODE_UNDER_PROSE), [])
     # ⛔ r2 MEDIUM 2 — a bare `docs` used to be SKIPPED, so both prongs reported success over a
     # directory neither had examined. The exemption tuple can never legitimately contain `docs/`,
     # so REPORTING it is correct: it turns a silent pass into a human decision.
     case("a derived bare `docs` is REPORTED, not silently skipped for lacking a slash",
-         prose_exceptions_cover(["docs"]), ["docs"])
+         prose_exceptions_cover(["docs"], CODE_UNDER_PROSE), ["docs"])
     # ⛔⛔ THE CASES THAT WOULD HAVE CAUGHT A GREP. Each of these is a real shape taken from this
     # repository, and a substring scan passes NONE of the negative ones — measured 2026-09-16: a
     # plain grep for the m4 spec directory returns five hits and all five are prose about the path.
