@@ -566,8 +566,8 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "    if suffix == PROSE_SUFFIX:\n        return False",
-        "    if False:\n        return False"
+        "    is_prose_name = suffix == PROSE_SUFFIX",
+        "    is_prose_name = False"
       ]
     ],
     "expect": "a .md a gate merely READS is not gate machinery, so docs/ itself is never derived"
@@ -628,7 +628,7 @@
     "expect": "...but prose containing a path does not, because no path here has WHITESPACE"
   },
   {
-    "name": "the component limit is widened, re-admitting the shape that RAISED in CI",
+    "name": "the component limit is widened \u2014 PROSPECTIVE cover for a long no-whitespace component, not the CI shape, which whitespace already rejects",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -648,5 +648,60 @@
       ]
     ],
     "expect": "...and multi-byte characters are counted as BYTES, not code points"
+  },
+  {
+    "name": "review_added stops requiring docs/reviews/, so ANY added .md records a round",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return [p for p in paths if p.startswith(REVIEW_DIR) and p.endswith(\".md\")]",
+        "    return [p for p in paths if p.endswith(\".md\")]"
+      ]
+    ],
+    "expect": "a .md OUTSIDE docs/reviews/ is NOT a review document"
+  },
+  {
+    "name": "the extension-less exclusion comes back, hiding a gate reading a Makefile or a manifest",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if is_prose_name:\n        return False",
+        "    if is_prose_name or not suffix:\n        return False"
+      ]
+    ],
+    "expect": "an extension-less gate FILE is gate data \u2014 the filename shape does not decide"
+  },
+  {
+    "name": "a bare docs is skipped again, so both prongs pass over a directory neither examined",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        if prefix != \"docs\" and not prefix.startswith(\"docs/\"):",
+        "        if not prefix.startswith(\"docs/\"):"
+      ]
+    ],
+    "expect": "a derived bare `docs` is REPORTED, not silently skipped for lacking a slash"
+  },
+  {
+    "name": "the TOTAL path bound goes, so an over-PATH_MAX path reaches the filesystem again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if len(path.encode(\"utf-8\", \"replace\")) > PATH_LIMIT:\n        return False",
+        "    if False:\n        return False"
+      ]
+    ],
+    "expect": "a path over the TOTAL byte limit is rejected, not just one with a long component"
+  },
+  {
+    "name": "the anti-drift verdict asks COVERAGE before COMPLETENESS, so a broken derivation passes",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    undiscovered = declared_not_derived(derived, declared)\n    if undiscovered:",
+        "    undiscovered = []\n    if undiscovered:"
+      ]
+    ],
+    "expect": "when BOTH would fire, COMPLETENESS answers \u2014 a broken derivation is not a coverage pass"
   }
 ]

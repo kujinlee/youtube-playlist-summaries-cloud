@@ -837,7 +837,15 @@ EXPECTED_MUTATIONS = {
     # mentioning a `docs/` path yields components up to 1450 bytes, and `Path.is_file()`
     # RAISES ENAMETOOLONG on those — except on Python 3.13+, which swallows that errno.
     # Shape is now decided before the disk is touched, so no python version can crash it.
-    "scripts/check-review-recorded.py": 56,
+    # ⟳ r2 (claude) 1 High + 5 Medium + 3 Low: 56 -> 61. FIVE entries — the `review_added`
+    # DIRECTORY clause (High 1: dropping `p.startswith(REVIEW_DIR)` left the suite green, so
+    # ANY added `.md` would have recorded a review round), the retired extension-less rule
+    # (Medium 3), the bare-`docs` skip (Medium 2), the TOTAL path bound (Medium 4), and the
+    # anti-drift ORDER — which needed `antidrift_verdict` extracted out of `main` first,
+    # because the call site was unfalsifiable and the entry written for it SURVIVED
+    # (Medium 6). ⚠ One entry was RENAMED rather than re-anchored: it claimed to re-admit
+    # the shape that crashed CI, and measured, whitespace already rejects that (Low 8).
+    "scripts/check-review-recorded.py": 61,
     # ⟳ 2026-09-14, r11: this file JOINS the manifest — R4 widened-debt 8 -> 7, removed from
     # `WIDENED_MANIFEST_DEBT` in this same commit, which that rule requires as an identity and not
     # a ceiling. It is the producer half of the mechanism the file above consumes, and it had gone
@@ -3228,13 +3236,17 @@ def _self_test() -> int:
     # largest file in `scripts/` that had never been inside `--mutate .`. Every anchor was verified
     # present in the DELIVERED file before being written, and every entry was proved to go red VIA
     # THE CASE IT NAMES over a control proved green first.
-    # ⟳ 2026-09-16: 714 -> 718, backlog #137. `check-review-recorded.py` 43 -> 47: TWO entries
+    # ⟳ 2026-09-16: 714 -> 732 across four review halves, backlog #137. ⚠ r2 Low 9: this
+    # sentence said `714 -> 718` and `43 -> 47` for three commits after the pinned numbers
+    # moved on — a count in prose beside the count a gate checks. The chain, once:
+    # 43 -> 47 (r1 codex) -> 49 (r1 Blocking, one retired) -> 52 (r1 High 2) -> 56 (the CI
+    # crash) -> 61 (r2). Original note follows. `check-review-recorded.py` 43 -> 47: TWO entries
     # retired with their deleted subject (`workflow_docs_globs`, whose authority — the `paths:`
     # filter in `schema-gates.yml` — is gone, because a workflow-level filter is what made the
     # `schema-gates` check unrequireable) and SIX added for the derivation that replaced it. A RISE,
     # so this is not the sanctioned-fall case; the two retirements are recorded beside the per-file
     # count above with the reason, and both orphans were found by RUNNING the anchor check.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 727)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 732)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
