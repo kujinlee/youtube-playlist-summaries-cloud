@@ -207,7 +207,9 @@ describe('runOnce honours the sweep policy', () => {
     const q = throwingSweepQueue();
     const p = policy(true);
 
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
     await runOnce(q, echoHandler, { workerId: 'w1', sweepPolicy: p });
+    err.mockRestore();
     expect(p.onSwept).not.toHaveBeenCalled();
   });
 
@@ -223,7 +225,9 @@ describe('runOnce honours the sweep policy', () => {
   test('still claims when the sweep throws — a broken sweep must not gate job intake', async () => {
     const q = throwingSweepQueue();
 
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
     const outcome = await runOnce(q, echoHandler, { workerId: 'w1', sweepPolicy: policy(true) });
+    err.mockRestore();
 
     expect(q.sweepExpired).toHaveBeenCalledTimes(1);
     expect(q.claim).toHaveBeenCalledTimes(1); // reached DESPITE the sweep failing
@@ -360,7 +364,17 @@ describe('runWorkerLoop wires the gate in by default', () => {
       // ⟳ The abort fires from the CLAIM, not the sweep. Aborting mid-sweep would trip the r2
       // shutdown guard and legitimately skip that iteration's claim, so the counters would differ
       // by one for a reason that has nothing to do with what this test is about.
-      sweepExpired: async () => { sweepAttempts++; throw new Error('transient PostgREST failure'); },
+      // ⚠ BACKSTOP (r2 Low): the primary stop condition lives in `claim`, which sits BEHIND the
+      // shutdown guard. A guard that wrongly fires would mean claim is never reached, `ac` never
+      // aborts, and runWorkerLoop spins forever — measured: jest HANGS past 150s rather than
+      // failing, and CI runs `jest` with no --forceExit, so that stalls the job instead of
+      // reddening it. This abort runs BEFORE the guard on every iteration, so the test always
+      // terminates no matter what the guard does.
+      sweepExpired: async () => {
+        sweepAttempts++;
+        if (sweepAttempts >= 50) ac.abort();
+        throw new Error('transient PostgREST failure');
+      },
       claim: async () => { claims++; if (claims >= 5) ac.abort(); return null; },
     } as unknown as JobQueue;
     const handler: JobHandler = async () => ({ ok: true });

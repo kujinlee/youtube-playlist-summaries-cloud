@@ -26,10 +26,18 @@ export interface RunnerOpts {
   videoFilter?: string | null;
   shutdownSignal?: AbortSignal;
   wallClockMs?: number;
-  /** Cadence for the pre-claim lease sweep. DEFAULTS TO ALWAYS-SWEEP, and that default is
-   *  load-bearing: every other caller (both integration suites, and anything added later)
-   *  depends on runOnce reclaiming expired leases for it. A caller that polls far faster than
-   *  a lease can expire — i.e. the worker loop — supplies a cadence here instead. */
+  /** Cadence for the pre-claim lease sweep. Defaults to always-sweep as a FAIL-SAFE — sweeping
+   *  too often is cheap, never sweeping strands crashed jobs — not because anything depends on it.
+   *
+   *  ⟳ r2 Medium: this comment used to claim "every other caller depends on runOnce reclaiming
+   *  expired leases for it", and that was MEASURABLY FALSE. Every call site was enumerated by grep
+   *  and opened: the integration suites either enqueue a fresh `queued` job or use a fully mocked
+   *  queue whose `sweepExpired` stub is never asserted; the only genuine reclamation in the repo
+   *  calls `sweep_expired_leases` DIRECTLY (reservation-release.test.ts). No caller relies on this.
+   *
+   *  ⚠ Why the correction matters more than the sentence: the false version is exactly what a
+   *  future reader would cite to decline moving the sweep out of runOnce. Keep the default; do not
+   *  keep the reason. */
   sweepPolicy?: SweepPolicy;
 }
 

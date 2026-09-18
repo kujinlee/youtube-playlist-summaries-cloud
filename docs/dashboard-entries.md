@@ -10172,3 +10172,85 @@ resolved lease. It named the killed mutation for each of the 7 tests added in th
 the `Date.now` reassignment as worker-process-local under jest.
 
 Suite: 2,838 → 2,841.
+
+## 2026-09-18
+Fifth and last correction on this piece of work, and it is a correction to the alarm I raised in the
+fourth: **I said this work was thrashing. A reviewer checked that claim against the project's own
+rules and it does not hold.**
+
+I wrote "four rounds, four times." There have been **two** review rounds, not four, and only two of
+the four fixes actually caused the next problem. The rule I invoked is written in *rounds*, and by
+that rule this work is not in trouble — it is converging. The severity of what gets found has been
+falling, which is what converging looks like.
+
+I also proposed a redesign — moving the cleanup step out of the job-runner entirely — and asked the
+reviewer to evaluate it. It took the proposal apart: **all three problems would follow the code to
+its new home.** The guards would be in a different file doing exactly the same job. It is a tidiness
+improvement, not a fix, and I had presented it as a fix.
+
+**What the reviewer found instead is bigger than anything in two rounds of reviewing this function,
+and it is already in production today:** when the server restarts, a summary job that is mid-flight
+is not finished gracefully — it is cut off, marked dead, and **the money spent on it is still
+counted**. The deployment configuration claims the opposite in a comment, and allows two minutes for
+a graceful finish that never happens. Every deploy that lands while a summary is running destroys
+that summary and bills you for it.
+
+That is not something this change caused and not something it should fix in passing. It needs a
+decision about what a restart is *supposed* to do, which is yours to make.
+
+So: this branch is finished and correct as far as four independent reviews can establish. What comes
+out of it is a short list of things to look at next, with the restart problem at the top.
+<!--tech-->
+**r2 Claude verdict: 0 Blocking, 1 High (PRE-EXISTING, explicitly not for folding), 2 Medium, 4 Low.
+Recommendation: SHIP AS-IS, file three follow-ups. Do NOT convene the architecture review.**
+
+**Why the thrashing alarm was wrong, on the project's own terms.** `dev-process.md`'s arming
+condition is *"two consecutive ROUNDS whose findings came from the previous round's fix"*. Round 1
+cannot qualify — there is no previous round. Only round 2 qualifies: **one, not two**, and we are at
+round two, not four. `review-method.md` also makes *"severity stays put"* part of the tell; severity
+**fell** — High (measured 40 sweeps / 0 claims) → Medium (a ~50 ms shutdown race). And the decisive
+test, *can a redesign remove it?*, answers **NO**.
+
+**The proposed redesign, refuted in detail.** Hoisting `sweepExpired()` into `runWorkerLoop`:
+finding 2 survives (commit-on-success is a discipline, not a structure; `finally` is equally
+available at the new site); finding 3 survives (drop the inner catch and the outer loop catch
+swallows the rejection and skips the claim — *the identical total outage, at a new address*);
+finding 4 survives (shutdown still lands between the `while` check and the claim). Three guards in
+one function become three guards in another. It buys legibility, not correctness.
+
+⭐ **r2 M2 — a comment I wrote was measurably false, and it was the sentence blocking the right
+refactor.** `RunnerOpts.sweepPolicy` claimed *"every other caller depends on runOnce reclaiming
+expired leases for it."* The reviewer enumerated every call site by grep and opened each: the
+integration suites enqueue fresh `queued` jobs or use fully mocked queues whose `sweepExpired` stub
+is never asserted; the only real reclamation in the repo calls `sweep_expired_leases` **directly**.
+**No caller depends on it.** Corrected in place — the fail-safe default stays, the false reason goes.
+
+**r1 High (pre-existing, filed not folded) — SIGTERM aborts the in-flight handler.** `fly.toml:45-46`
+promises *"finishes the in-flight job"*; `worker-runner.ts:91-93` folds `shutdownSignal` into the
+handler's signal, `summary-handler.ts:170` throws `AbortError`, `isNonRetryable` says retryable,
+`fail_job` (`0008:152-156`) hits `elsif v_attempts >= v_max` with `summary_max_attempts = 1` →
+**`dead_letter`**. And `classifyGeminiFailure` returns `'keep'` once aborted
+(`gemini-failure.ts:77`) → `billableSucceeded: true`, so **the spend is kept too**. Window: the whole
+handler duration, minutes, on every deploy. The r2 guard protects ~50 ms on 1 poll in 30.
+
+**r2 M1 — the r2 guard narrows its window and leaves an equal one at `queue.claim`.** Also
+pre-existing, and **not fixable at this layer**: the damage is `claim_next_job`'s
+`attempts = attempts + 1` (`0008:104`) and there is no un-claim; letting the lease expire reaches the
+same `dead_letter` branch. The complete fix is SQL.
+
+**r2 L2 — fixed, and it was a CI hazard.** All three loop tests aborted from `claim`, which sits
+*behind* the shutdown guard, so a guard that wrongly fires means `claim` is never reached, the abort
+never happens, and `runWorkerLoop` spins forever. Measured: jest alive past **150 s**; CI runs `jest`
+with no `--forceExit`, so a broken guard would **stall** the job rather than redden it. A backstop
+abort now fires from `sweepExpired`, which runs before the guard unconditionally.
+
+**r2 L3 — fixed:** two throwing-sweep tests still sprayed a stack trace through green output.
+**r2 L1 — noted:** the "third case pins the no-signal path" claim was overstated; four existing tests
+already killed every mutation of it. Harmless documentation, not new coverage.
+
+⚠ **THE OVERRIDE'S FALSIFIER, pre-committed by the reviewer and recorded here so it binds:** this
+declines the architecture review on the ground that findings 2–4 are branch-coverage defects in a
+concurrent protocol, not mechanism defects. **It FIRES TO REDESIGN if round 3 produces any finding in
+`runOnce`'s sweep/claim sequence introduced by the r2 shutdown-guard fix** — three fix-induced links
+in a row in one ~18-line component, at which point the shape is the defect whatever the round counter
+says.
