@@ -454,6 +454,26 @@ Not a feature slice — this is the machinery that stops hard-won lessons from d
 
 ## Dev-infrastructure debt (NOT tied to any feature slice — survives every merge)
 
+**⭐ 2026-09-18 — TWO NEW ITEMS FROM PR #318's REVIEW, and the first is LIVE IN PRODUCTION.**
+Both are PRE-EXISTING, neither was introduced by #318, and both are deliberately NOT folded into it
+on the round-2 reviewer's own disposition. Filed in `docs/backlog.md` the same turn.
+
+- [ ] **backlog #139 — 🔴 a deploy kills the summary it interrupts AND keeps the money.**
+  `fly.toml:45-46` promises the worker *"finishes the in-flight job"* on SIGTERM and `:49` buys 120s
+  of grace for it. It does not: `shutdownSignal` is folded into the handler's signal, so the handler
+  **aborts**, `fail_job` (`0008:152-156`) takes the `attempts >= max_attempts` branch, and with the
+  MEASURED live `summary_max_attempts = 1` that is **`dead_letter` on the first interruption, every
+  deploy** — with `billableSucceeded: true`, because `classifyGeminiFailure` returns `'keep'` once
+  aborted. ⚠ A **design** call (drain vs abort-and-don't-charge-the-attempt), not a patch, and the
+  complete fix is SQL — `claim_next_job` increments `attempts` with no un-claim.
+  **Falsifier:** SIGTERM a worker mid-summary; assert the job is not `dead_letter` and the ledger
+  was not charged.
+- [ ] **backlog #140 — 🟢 collapse `SweepPolicy` to a single `run(fn)`.** The only proposed change
+  that removes a finding BY CONSTRUCTION rather than by a guard. ⚠ Not to be confused with the
+  redesign that was REFUTED in #318 r2 (hoisting the sweep into `runWorkerLoop` dissolves none of
+  the three findings). The obstacle is gone: the comment claiming callers depend on `runOnce`
+  sweeping was measured false and corrected.
+
 **STATUS: two open items (`exec_sql` 2026-07-20; an UNIDENTIFIED unit-suite flake 2026-07-30).**
 `middleware-2a` red suite FIXED 2026-07-23 · integration-vs-migrations FIXED 2026-08-04 (PR #46) ·
 the two 2026-07-19 items are CLOSED.
