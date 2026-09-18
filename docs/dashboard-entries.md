@@ -9819,3 +9819,438 @@ fell to zero across the rounds.
 adds a line to either will now be **blocked** rather than quietly ignored. That refusal is correct —
 it is the whole point — but it will be surprising the first time, and the fix is to move detail out
 of the file rather than raise the limit.
+
+## 2026-09-18
+Your database was being contacted every two seconds all day, on a day you did no work — and it turns
+out half of those calls could never have accomplished anything. That half is now gone.
+
+You spotted it from a log screenshot and asked what was doing it. The answer was the background
+worker on the server: it sits in a loop asking the database "is there a job for me?", and while
+you sleep the answer is always no. That part is normal and worth keeping — it is why pressing a
+button starts work almost immediately rather than a minute later.
+
+But the worker was also doing a second thing on every single one of those checks: looking for jobs
+abandoned by a crashed worker so they can be picked up again. Abandoned jobs can only appear on a
+two-minute timescale, so asking about them every two seconds was asking sixty times more often than
+there could possibly be anything to find. It now asks once a minute. Nothing waits longer for
+anything a person can see.
+
+Worth knowing why this matters at all, since nothing was broken. Measuring it showed the idle worker
+was not just the biggest source of database traffic — it was **one hundred percent of it**. About
+79,800 requests a day, with no other activity of any kind. On the free plan that was consuming
+somewhere between a third and a half of the month's entire bandwidth allowance while doing nothing,
+which is allowance that summaries and PDFs would otherwise have. Roughly 48% of it is now removed.
+
+One honest trade, stated because it is a real one: if the worker ever crashes mid-job, that job is
+now rescued up to a minute later than before. Recovery goes from about two minutes to at most three.
+Nothing else changes, and this does not affect how fast your work starts.
+
+This does **not** change the server bill. The worker machine runs around the clock either way — how
+often it asks the database questions has nothing to do with what the machine costs.
+<!--tech-->
+**Measured first, then changed.** `usage.api-counts` over six full days: 80,289 / 80,758 / 76,040 /
+79,724 / 80,543 / 81,313 REST requests per day. `edge_logs` grouped by path: **50 of 51** sampled
+requests were an exact **25/25** pair of `sweep_expired_leases` and `claim_next_job`; `auth`,
+`realtime` and `storage` were all **0** (the 51st was the probe taking the measurement). Response
+size measured live: **919 B headers + 2 B body**. Org plan read from the API: **`free`** — 5 GB
+egress included, and "all plans include unlimited API requests", so request COUNT was never the
+cost; egress was, at 1.5–2.2 GB/month.
+
+`worker-runner.ts:24` ran `await queue.sweepExpired()` unconditionally, immediately before
+`queue.claim(...)`. The two were coupled by nothing but adjacency. Now gated by
+`RunnerOpts.shouldSweep`, with `makeSweepGate(SWEEP_MS = 60_000)` living in `worker/main.ts` where
+the long-lived loop owns time.
+
+Three things the design is deliberate about, each with a test in
+`tests/lib/lease-sweep-cadence.test.ts`:
+
+- **The default is always-sweep.** Both integration suites — and any caller added later — depend on
+  `runOnce` reclaiming leases on their behalf. A `?? false` would have disabled lease reclamation
+  repo-wide with every existing test still green.
+- **`?? true`, not `|| true`.** `false || true` is `true`; the gate would never close and the change
+  would be inert while the default-path tests stayed green. The closed gate is asserted directly.
+- ⚠ **The cursor advances only when the gate OPENS.** Advancing it per call makes `now - last`
+  perpetually one poll interval, never reaching 60s — the sweep would never run again for the life
+  of the process, lease reclamation silently dead with nothing to report it. A 3-minute simulated
+  run at the real 2s poll rate pins that it re-opens exactly 4 times.
+
+Tests are in `tests/lib/` because `jest.config.ts`'s `testMatch` is what CI's `verify` runs;
+`tests/integration/` is not in CI. The gate is a pure predicate over an injected clock precisely so
+it can be guarded there rather than behind a live Supabase stack.
+
+`tests/integration/worker-main.test.ts` asserted `sweepCalls >= 2`, which encoded the old
+one-sweep-per-poll cadence rather than the loop resilience that test exists for; corrected to the
+new contract, with resilience still carried by `claimCalls`.
+
+**Not attempted here, and why.** Idle backoff on `claim_next_job` itself (2s → 30s) would remove
+most of the remaining traffic, but costs up to 30s of job-start latency — a user-visible regression
+on exactly the first press after a quiet night. That is a genuine trade-off and was left as the
+user's call; this change was taken because it has no downside at all. Fly cost is unaffected by
+either: `auto_stop_machines` sits inside `[http_service]`, scoped to `processes = ["web"]`, so the
+worker machine has no idle-stop path and bills the same at any poll rate.
+
+## 2026-09-18
+Correction to the entry above, and a defect the review caught in it — appended rather than edited,
+because this file is append-only for exactly this reason.
+
+**The bandwidth figure was wrong, and wrong in the direction that flattered it.** I wrote that idle
+polling was consuming "between a third and a half" of the month's allowance. From the evidence
+actually recorded — 921 bytes per response, 76,040 to 81,313 requests a day — the number is
+**2.13 to 2.28 GB a month, which is 43 to 46%**. The lower end of the range I published came from an
+assumption I never measured and never wrote down, so nobody reading it could have checked it. The
+honest figure is close to half, not a third.
+
+**And the fix had a bug of its own.** The worker now sweeps once a minute instead of every two
+seconds. But if that once-a-minute sweep failed — a brief network problem, nothing unusual — the
+worker counted it as done and waited another full minute before trying again. So the "recovers a
+crashed job within about three minutes" promise was not something the code actually guaranteed; one
+hiccup made it four, and hiccups landing at the wrong moment made it worse. It now only counts a
+sweep that genuinely succeeded, so a failure is retried on the very next poll.
+
+A third, smaller one: the clock it used could be moved backwards by the machine's time
+synchronisation, which would have quietly suppressed sweeps until the clock caught up. It now uses a
+clock that cannot run backwards, and treats a backwards jump as "sweep now" rather than "wait".
+
+None of these were caught by me. All three came from the adversarial review round, which is the
+argument for having one.
+<!--tech-->
+Round 1, Codex half (`docs/reviews/codex/decouple-lease-sweep-r1-codex.md`): 0 Blocking, 0 High,
+1 Medium, 2 Low.
+
+**Medium — the sweep window was spent on intent, not outcome.** `makeSweepGate` advanced its cursor
+inside the due-check, so a `sweepExpired()` that threw propagated to `runWorkerLoop`'s catch with
+the window already consumed. Worst-case crash recovery became ~240s rather than the stated ~180s,
+and worse when failures land on window boundaries.
+
+Fixed by splitting the seam into `SweepPolicy { due(); onSwept() }`, with `onSwept()` called only
+after the await resolves. ⚠ Deliberately ONE object rather than Codex's suggested two callbacks:
+a caller supplying `shouldSweep` but forgetting `markSweepSucceeded` would hold a cursor that never
+advances — permanently due, silently back to sweeping every poll, with every default-path test
+still green. The invalid state is now unrepresentable.
+
+**Low — wall clock.** `Date.now()` under an NTP step-back yields a negative delta, which compares as
+"inside the window". Default is now `performance.now()`, AND the delta is floored
+(`!(elapsed >= 0 && elapsed < intervalMs)`) so the gate fails safe even under an injected wall
+clock — which the tests use.
+
+**Low — the range was not derivable from its own evidence.** Corrected above and in
+`worker/main.ts`, now stated with the assumption attached: 921 B measured on a FRESH TLS connection,
+which always carries the ~295 B `set-cookie: __cf_bm`; a keep-alive client that does not receive it
+per response would give ~1.45-1.55 GB (29-31%). Unmeasured, and labelled as such.
+
+Three new tests, all watched failing first: `stays due until a sweep is ACKNOWLEDGED, not merely
+attempted`; `comes due immediately if the clock steps backwards`; and, through the shipped loop,
+`retries the sweep on the next poll when it throws, rather than spending the window`. Suite for this
+file: 8 → 12.
+
+Codex also confirmed what the change does NOT break, by reading the SQL: `claim_next_job`
+(`0008:105`) claims only `status='queued'`, so `sweep_expired_leases` is the sole reclaim path and
+the up-to-60s window is real but is not a double-claim hole; production `main()` never passes
+`leaseSeconds`, so the 120s default stands against a 60s sweep; and the `pollMs` test seam does not
+reach production.
+
+## 2026-09-18
+Second correction, and this one matters more than the first: **the fix I shipped this morning broke
+something the bug it fixed had been accidentally protecting.**
+
+The story in plain terms. The worker does two things each cycle — tidy up jobs abandoned by a
+crashed worker, then pick up new work. This morning's change made the tidy-up happen once a minute
+instead of every two seconds. The first review round found that a *failed* tidy-up was being counted
+as a success, so I fixed that: a failure is now retried immediately.
+
+That fix was correct and it created a worse problem. Previously a broken tidy-up wasted its turn and
+then stayed quiet for a minute — so the worker spent 29 out of every 30 cycles getting on with
+actual work. After the fix it retried constantly, and because picking up work happened *after* the
+tidy-up, a tidy-up that kept failing meant the worker **never picked up any work at all**. Measured
+directly: 40 attempts, 0 jobs claimed, where the previous version managed 20 jobs out of 20.
+
+Nothing would have told you. The site would accept your request, the job would sit there, and the
+only sign would be a log line whose own comment says the loop is healthy.
+
+It is now genuinely separated: if the tidy-up fails, it is logged and the worker carries straight on
+to pick up work. Cleanup degrades; your jobs still run. That is what "decoupling" was supposed to
+mean, and the first version only did half of it.
+
+Two other things the review found, both of the same kind — **a promise with nothing behind it**:
+
+The claim that a crashed job recovers within about three minutes depended on the once-a-minute
+timer staying shorter than the two-minute deadline it guards. Those two numbers live in different
+files and nothing compared them. Setting the timer to thirty minutes left every check green while
+the real answer became half an hour. There is now a test that fails if that relationship breaks.
+
+And the fix for the clock problem — from the *first* round, this morning — turned out to be covered
+by no test at all. It could have been silently reverted by anyone tidying up, with a green build.
+Now covered.
+
+None of this was found by me, twice over. Two independent reviewers looked at the same code; both
+found the big one, and one of them graded it higher than the other. The higher grade was right.
+<!--tech-->
+⚠ **Retraction of a dead symbol in the entry above** (r1 Low, Claude half 2): that entry says
+*"Now gated by `RunnerOpts.shouldSweep`"* and its correction block discusses `shouldSweep` /
+`markSweepSucceeded`. **None of those three names ever shipped.** The field is
+`RunnerOpts.sweepPolicy: SweepPolicy` (`lib/job-queue/worker-runner.ts`); the cursor advances in
+`onSwept()`, not "when the gate opens"; and the gate is a two-method object, not "a pure predicate".
+`grep -rn shouldSweep --include=*.ts` returns zero. `check-docs.py` passes, so no gate saw it.
+
+**r1 High — `runOnce` let a sweep rejection escape, skipping `queue.claim` entirely.** Measured by
+the reviewer across two commits with a persistently-failing sweep and a healthy claim:
+
+    42e0722c (after the r1 Medium fix)  -> {"sweepAttempts":40, "claims":0}
+    2a2df6d6 (before it)                -> {"sweepAttempts":1,  "claims":20}
+
+⭐ The burned-window bug was accidentally load-bearing. Fixing it traded a 60s bound violation for a
+total claim outage, and that trade was stated nowhere. Not a regression from `master` — a regression
+from this branch's own previous commit, introduced by a fix. That is why it graded High.
+
+Fixed by isolating the sweep in BOTH directions: `onSwept()` inside the `try` and after the `await`
+(unacknowledged on throw — the r1 Medium property survives), and a `catch` that logs without
+rethrowing. ⚠ `try { … } finally { onSwept() }` is the tempting wrong shape and is killed by
+`does NOT acknowledge a sweep that threw`.
+
+This also makes `runOnce`'s own long-standing contract comment true again — it says the outcome
+union must be uniform so the loop never sees an unhandled rejection, and the escaping sweep had
+quietly falsified it (r1 Low, half 2). Now pinned by `never rejects out of runOnce`.
+
+**r1 Medium, found INDEPENDENTLY BY BOTH Claude halves — `SWEEP_MS` vs the lease.** Mutation-proven
+survivors: 60s → 600s, and 60s → 30 minutes, tsc clean and all gates green. `DEFAULT_LEASE_SECONDS`
+is now exported from `worker-runner.ts` (replacing two bare `?? 120` literals), `SWEEP_MS` is
+exported, and a test asserts `SWEEP_MS <= DEFAULT_LEASE_SECONDS * 1000 / 2`.
+
+**r1 Medium (half 1) — the monotonic-clock fix from earlier in this same round was covered by
+nothing.** All six gate constructions injected a clock, so the default — the only clock production
+uses — was exercised by zero tests and `performance.now() -> Date.now()` survived all 2,831. Killed
+now by a case that moves `Date.now` backwards an hour and asserts the gate does not notice; the
+fail-safe floor is good defence and is exactly why nothing else could tell the two apart.
+
+**r1 Low (half 2) — `pollMs` default.** Mutating it away survived (an explicit cast is needed; the
+natural form is caught by tsc). Failure mode if it ever opened: `setTimeout(fn, undefined)` fires at
+~1ms — a ~2000× increase in precisely the traffic this branch removes. Now asserted by a
+deliberately slow ~2s case.
+
+**r1 Low (half 2) — the sweep-retry test was bounded by a 50ms wall-clock timeout** while every
+sibling uses an injected clock. Re-bounded on a counter; asserts `toBe(5)` rather than an
+inequality, and now carries BOTH properties at once (`sweepAttempts` climbing AND
+`claims === sweepAttempts`), which is what stops the two findings cancelling each other out.
+
+**r1 Low (half 2) — `onSwept()` re-samples the clock**, so the period runs from completion and the
+real cadence is `SWEEP_MS + latency`. Kept (correct rate-limiter semantics; measuring from the
+due-check would allow overlapping sweeps) and now stated in the docblock rather than left for a
+test to imply.
+
+Suite for this file: 12 → 19. Both review halves are at
+`docs/reviews/claude/decouple-lease-sweep-r1-claude{,-2}.md`; half 2 ran as a replacement after the
+first dispatch stalled, then the original delivered too — both are kept, since two independent
+adversarial reads that agree are evidence, not duplication.
+
+## 2026-09-18
+Third correction, and it retracts something I told you twice: **"recovery goes from about two
+minutes to at most three" was wrong, and for summary jobs there is no recovery to speak of at all.**
+
+A third reviewer checked the claim against the database rather than against the code comment, and
+found the comment had never described what the database does. Checking their correction against the
+live configuration then showed their version was not right either — so here is what the system
+actually does, measured today.
+
+When a worker crashes mid-job, the cleanup pass does not simply hand the job back. It looks at how
+many attempts the job is allowed. Your live setting for summary jobs — the ordinary kind, 13 of the
+15 jobs this project has ever run — is **one attempt**. So a crashed summary job is not retried at
+all. It is marked dead and stays dead, and you would have to ask for it again.
+
+That means the thing my change delays is not a rescue. It is how quickly a doomed job is declared
+dead: about two minutes before, about three minutes now. For "dig" jobs, which are allowed two
+attempts, there is a genuine retry, and a ten-second penalty applies before it can start — so those
+go from about two and a quarter minutes to about three and a quarter.
+
+The part I was right about, and the part worth keeping: **the extra delay this change adds is at
+most one minute, in every case.** That was always the number that mattered. The trouble is I dressed
+it up in an absolute figure I had not checked, and "at most three minutes" reads as a promise.
+
+This is the third number in this piece of work that reached you before it was verified. The first
+was the bandwidth range, the second was this recovery figure, and the pattern in both is the same:
+the measurement was real and the sentence around it was not.
+
+**Separately, and worth your attention more than any of the above:** a crashed summary job being
+dead-lettered also leaves its reserved budget held, because the cleanup pass does not release
+reservations — only the normal failure path does. That is pre-existing, not something this change
+introduced, and it self-clears when the daily ledger rolls over at midnight UTC. I have not filed it;
+say the word if you want it chased.
+<!--tech-->
+**r1 Medium (Claude half 3) — the `~180s` bound omitted the crash-reclaim backoff.** Their evidence:
+`sweep_expired_leases` is 0009's `create or replace`, not 0008's, and 0009 ADDED a backoff 0008
+explicitly did not have (`0009:70-73`):
+
+    run_after = case when j.cancel_requested or j.attempts >= j.max_attempts then j.run_after
+                     else now() + make_interval(secs => (10 * power(4, least(greatest(j.attempts - 1, 0), 15)))::bigint) end
+
+`claim_next_job` (`0008:106`) will not touch the row until `run_after <= now()`, and `attempts` is
+already >= 1 (incremented at claim, `0008:104`). Backoff curve confirmed by running it:
+attempts 1 -> 10s, 2 -> 40s, 3 -> 160s.
+
+⭐ **But their table is itself unreachable, and measuring beat reasoning again.** Live
+`guardrail_config`: `summary_max_attempts = 1`, `dig_max_attempts = 2`. All 15 jobs ever run:
+`max_attempts = 1`, `max(attempts) = 1`. So `attempts >= max_attempts` is TRUE on the first crash
+for a summary job — the sweep takes the `dead_letter` branch and leaves `run_after` untouched. No
+requeue, no backoff, no retry. The 40s and 160s rungs need `max_attempts >= 3` and cannot occur.
+
+Corrected, per kind:
+
+| kind | max_attempts | first crash | before | after |
+|---|---|---|---|---|
+| summary | 1 | `dead_letter`, never retried | ~122s to dead | **~182s to dead** |
+| dig | 2 | requeue + 10s backoff | ~134s | **~192s** |
+
+The delta (<= SWEEP_MS) is correct in every reachable row, which is why this graded Medium and not
+High. The absolute figure was the defect. `worker/main.ts` now derives all of this from the two
+migrations by file:line so a reader can reproduce it without external input — which was the
+reviewer's stated falsifier for the fix.
+
+**r1 Low (half 3) — "Three new tests, all watched failing first" was four.** `8 -> 12` in the same
+paragraph gives it away. The unnamed fourth is `does NOT acknowledge a sweep that threw`, which is
+the `runOnce`-boundary half of the r1 Medium fix and kills both the hoisted-`onSwept` mutation and
+the `try/finally` variant — arguably the most load-bearing new test on the branch, and the one
+nobody claimed to have watched go red. It WAS watched failing; the count in the prose was wrong, not
+the practice. `check-test-counts.py` cannot see a narrative count, only a total.
+
+**r1 Low (half 3) — the monotonic-clock fix was covered in the wrong half.** The `elapsed >= 0`
+floor was tested but can only fire under a backwards-stepping clock, which production's monotonic
+clock cannot produce; the default clock, which production always uses, was untested. So the green
+`steps backwards` test READ as coverage of the NTP fix without being it. Closed by the two default-
+clock cases added in the previous fold.
+
+**r1 Low (half 3) — `performance.now()` in the esbuild bundle**: verified clean (`platform: node`,
+`target: node22`, `format: cjs`; `performance` is a Node global from 16, esbuild does not rewrite
+globals; the `() => performance.now()` wrapper avoids any unbound-receiver hazard). Filed only
+because nothing observed it — also closed by the default-clock cases.
+
+Three independent Claude halves plus Codex ran on this branch. All four agreed the claim-starvation
+finding was real; they split on its grade (Medium / High / "Medium-as-branch-finding,
+High-as-latent-bug") and the High reading was the one that measured it.
+
+## 2026-09-18
+Fourth correction, and by now the pattern is the story: **every problem found on this branch was
+created by the fix for the previous one.** Four rounds, four times.
+
+This one: when the worker is shutting down, it could pick up a brand-new job on its way out — and
+because an ordinary summary job is allowed exactly one attempt, picking it up and then immediately
+abandoning it would burn that attempt and mark the job dead. A job you asked for, killed by a
+restart, with nothing to say so.
+
+It was introduced by this morning's fix. Previously, a failed cleanup pass threw an error that
+happened to make the worker exit before reaching the pick-up step. That exit was an accident nobody
+had designed, and when I stopped the error from escaping, the accident went with it.
+
+The worker now checks whether it is shutting down immediately before picking up work. It also covers
+the case where the cleanup pass *succeeds* and the shutdown arrives during it — a version of the
+same race that the accident never protected, and that a fix written only for the error path would
+have missed.
+<!--tech-->
+**r2 Medium (Codex) — shutdown mid-sweep fell through to `queue.claim`.** `claim_next_job` increments
+`attempts` at claim time (`0008:104`); with `summary_max_attempts = 1` that consumes the job's only
+attempt, so a draining worker could lease a fresh job and drive it to `dead_letter`.
+
+Introduced by the r1 High fix: before it, the sweep rejection escaped to `runWorkerLoop`'s catch,
+`sleep()` resolved at once on the aborted signal, and the loop exited without claiming. Swallowing
+the error removed that exit.
+
+Fixed with `if (opts.shutdownSignal?.aborted) return 'idle';` between the sweep block and the claim.
+
+⭐ **Two tests, because Codex's scenario is the instance and not the class.** Its repro needs a
+THROWING sweep; the race does not — a SIGTERM during a perfectly successful sweep reaches the same
+claim, and that half was pre-existing and never protected by the accidental exit. A guard written
+only for the throw path would have left it, which is this repo's recurring instance-not-class
+defect. A third case pins that the guard does not fire when no shutdown signal is supplied at all.
+
+⚠ **The new guard turned an existing test red, and the test was right.** `keeps sweeping AND keeps
+claiming when every sweep throws` aborted from inside the stub's `sweepExpired` on the 5th attempt,
+so the guard correctly skipped that iteration's claim and the counters read 5/4. The abort now fires
+from the `claim` side instead: the entanglement was in the test, not the behaviour.
+
+Codex also verified, rather than took, the corrected recovery arithmetic from the previous fold
+(`0008:104`, `0008:106`, `0009:70-73`, the `~2s` claim-poll term) and confirmed `DEFAULT_LEASE_SECONDS`
+replaced both production literals with no third site missed and the heartbeat still deriving from the
+resolved lease. It named the killed mutation for each of the 7 tests added in that fold, and cleared
+the `Date.now` reassignment as worker-process-local under jest.
+
+Suite: 2,838 → 2,841.
+
+## 2026-09-18
+Fifth and last correction on this piece of work, and it is a correction to the alarm I raised in the
+fourth: **I said this work was thrashing. A reviewer checked that claim against the project's own
+rules and it does not hold.**
+
+I wrote "four rounds, four times." There have been **two** review rounds, not four, and only two of
+the four fixes actually caused the next problem. The rule I invoked is written in *rounds*, and by
+that rule this work is not in trouble — it is converging. The severity of what gets found has been
+falling, which is what converging looks like.
+
+I also proposed a redesign — moving the cleanup step out of the job-runner entirely — and asked the
+reviewer to evaluate it. It took the proposal apart: **all three problems would follow the code to
+its new home.** The guards would be in a different file doing exactly the same job. It is a tidiness
+improvement, not a fix, and I had presented it as a fix.
+
+**What the reviewer found instead is bigger than anything in two rounds of reviewing this function,
+and it is already in production today:** when the server restarts, a summary job that is mid-flight
+is not finished gracefully — it is cut off, marked dead, and **the money spent on it is still
+counted**. The deployment configuration claims the opposite in a comment, and allows two minutes for
+a graceful finish that never happens. Every deploy that lands while a summary is running destroys
+that summary and bills you for it.
+
+That is not something this change caused and not something it should fix in passing. It needs a
+decision about what a restart is *supposed* to do, which is yours to make.
+
+So: this branch is finished and correct as far as four independent reviews can establish. What comes
+out of it is a short list of things to look at next, with the restart problem at the top.
+<!--tech-->
+**r2 Claude verdict: 0 Blocking, 1 High (PRE-EXISTING, explicitly not for folding), 2 Medium, 4 Low.
+Recommendation: SHIP AS-IS, file three follow-ups. Do NOT convene the architecture review.**
+
+**Why the thrashing alarm was wrong, on the project's own terms.** `dev-process.md`'s arming
+condition is *"two consecutive ROUNDS whose findings came from the previous round's fix"*. Round 1
+cannot qualify — there is no previous round. Only round 2 qualifies: **one, not two**, and we are at
+round two, not four. `review-method.md` also makes *"severity stays put"* part of the tell; severity
+**fell** — High (measured 40 sweeps / 0 claims) → Medium (a ~50 ms shutdown race). And the decisive
+test, *can a redesign remove it?*, answers **NO**.
+
+**The proposed redesign, refuted in detail.** Hoisting `sweepExpired()` into `runWorkerLoop`:
+finding 2 survives (commit-on-success is a discipline, not a structure; `finally` is equally
+available at the new site); finding 3 survives (drop the inner catch and the outer loop catch
+swallows the rejection and skips the claim — *the identical total outage, at a new address*);
+finding 4 survives (shutdown still lands between the `while` check and the claim). Three guards in
+one function become three guards in another. It buys legibility, not correctness.
+
+⭐ **r2 M2 — a comment I wrote was measurably false, and it was the sentence blocking the right
+refactor.** `RunnerOpts.sweepPolicy` claimed *"every other caller depends on runOnce reclaiming
+expired leases for it."* The reviewer enumerated every call site by grep and opened each: the
+integration suites enqueue fresh `queued` jobs or use fully mocked queues whose `sweepExpired` stub
+is never asserted; the only real reclamation in the repo calls `sweep_expired_leases` **directly**.
+**No caller depends on it.** Corrected in place — the fail-safe default stays, the false reason goes.
+
+**r1 High (pre-existing, filed not folded) — SIGTERM aborts the in-flight handler.** `fly.toml:45-46`
+promises *"finishes the in-flight job"*; `worker-runner.ts:91-93` folds `shutdownSignal` into the
+handler's signal, `summary-handler.ts:170` throws `AbortError`, `isNonRetryable` says retryable,
+`fail_job` (`0008:152-156`) hits `elsif v_attempts >= v_max` with `summary_max_attempts = 1` →
+**`dead_letter`**. And `classifyGeminiFailure` returns `'keep'` once aborted
+(`gemini-failure.ts:77`) → `billableSucceeded: true`, so **the spend is kept too**. Window: the whole
+handler duration, minutes, on every deploy. The r2 guard protects ~50 ms on 1 poll in 30.
+
+**r2 M1 — the r2 guard narrows its window and leaves an equal one at `queue.claim`.** Also
+pre-existing, and **not fixable at this layer**: the damage is `claim_next_job`'s
+`attempts = attempts + 1` (`0008:104`) and there is no un-claim; letting the lease expire reaches the
+same `dead_letter` branch. The complete fix is SQL.
+
+**r2 L2 — fixed, and it was a CI hazard.** All three loop tests aborted from `claim`, which sits
+*behind* the shutdown guard, so a guard that wrongly fires means `claim` is never reached, the abort
+never happens, and `runWorkerLoop` spins forever. Measured: jest alive past **150 s**; CI runs `jest`
+with no `--forceExit`, so a broken guard would **stall** the job rather than redden it. A backstop
+abort now fires from `sweepExpired`, which runs before the guard unconditionally.
+
+**r2 L3 — fixed:** two throwing-sweep tests still sprayed a stack trace through green output.
+**r2 L1 — noted:** the "third case pins the no-signal path" claim was overstated; four existing tests
+already killed every mutation of it. Harmless documentation, not new coverage.
+
+⚠ **THE OVERRIDE'S FALSIFIER, pre-committed by the reviewer and recorded here so it binds:** this
+declines the architecture review on the ground that findings 2–4 are branch-coverage defects in a
+concurrent protocol, not mechanism defects. **It FIRES TO REDESIGN if round 3 produces any finding in
+`runOnce`'s sweep/claim sequence introduced by the r2 shutdown-guard fix** — three fix-induced links
+in a row in one ~18-line component, at which point the shape is the defect whatever the round counter
+says.

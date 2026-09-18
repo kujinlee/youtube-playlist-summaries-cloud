@@ -75,7 +75,12 @@ test('runWorkerLoop survives a throwing claim and continues until shutdown', asy
   ).resolves.toBeUndefined();
 
   expect(claimCalls).toBeGreaterThanOrEqual(2); // recovered and ran at least one more iteration
-  expect(sweepCalls).toBeGreaterThanOrEqual(2);
+  // ⟳ 2026-09-18: this asserted `sweepCalls >= 2`, which encoded the old one-sweep-per-poll
+  // cadence rather than the resilience this test is about. The sweep is now gated to SWEEP_MS
+  // (60s) and both iterations here land inside one window, so exactly one fires. Loop resilience
+  // is carried by claimCalls above; what the sweep owes this test is only that it still runs.
+  // Cadence itself is pinned in tests/lib/lease-sweep-cadence.test.ts, where CI can see it.
+  expect(sweepCalls).toBe(1);
 });
 
 // --- abort-aware idle sleep (the idle-backoff path runWorkerLoop uses between polls) ---
