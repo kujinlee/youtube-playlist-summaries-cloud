@@ -9819,3 +9819,72 @@ fell to zero across the rounds.
 adds a line to either will now be **blocked** rather than quietly ignored. That refusal is correct —
 it is the whole point — but it will be surprising the first time, and the fix is to move detail out
 of the file rather than raise the limit.
+
+## 2026-09-18
+Your database was being contacted every two seconds all day, on a day you did no work — and it turns
+out half of those calls could never have accomplished anything. That half is now gone.
+
+You spotted it from a log screenshot and asked what was doing it. The answer was the background
+worker on the server: it sits in a loop asking the database "is there a job for me?", and while
+you sleep the answer is always no. That part is normal and worth keeping — it is why pressing a
+button starts work almost immediately rather than a minute later.
+
+But the worker was also doing a second thing on every single one of those checks: looking for jobs
+abandoned by a crashed worker so they can be picked up again. Abandoned jobs can only appear on a
+two-minute timescale, so asking about them every two seconds was asking sixty times more often than
+there could possibly be anything to find. It now asks once a minute. Nothing waits longer for
+anything a person can see.
+
+Worth knowing why this matters at all, since nothing was broken. Measuring it showed the idle worker
+was not just the biggest source of database traffic — it was **one hundred percent of it**. About
+79,800 requests a day, with no other activity of any kind. On the free plan that was consuming
+somewhere between a third and a half of the month's entire bandwidth allowance while doing nothing,
+which is allowance that summaries and PDFs would otherwise have. Roughly 48% of it is now removed.
+
+One honest trade, stated because it is a real one: if the worker ever crashes mid-job, that job is
+now rescued up to a minute later than before. Recovery goes from about two minutes to at most three.
+Nothing else changes, and this does not affect how fast your work starts.
+
+This does **not** change the server bill. The worker machine runs around the clock either way — how
+often it asks the database questions has nothing to do with what the machine costs.
+<!--tech-->
+**Measured first, then changed.** `usage.api-counts` over six full days: 80,289 / 80,758 / 76,040 /
+79,724 / 80,543 / 81,313 REST requests per day. `edge_logs` grouped by path: **50 of 51** sampled
+requests were an exact **25/25** pair of `sweep_expired_leases` and `claim_next_job`; `auth`,
+`realtime` and `storage` were all **0** (the 51st was the probe taking the measurement). Response
+size measured live: **919 B headers + 2 B body**. Org plan read from the API: **`free`** — 5 GB
+egress included, and "all plans include unlimited API requests", so request COUNT was never the
+cost; egress was, at 1.5–2.2 GB/month.
+
+`worker-runner.ts:24` ran `await queue.sweepExpired()` unconditionally, immediately before
+`queue.claim(...)`. The two were coupled by nothing but adjacency. Now gated by
+`RunnerOpts.shouldSweep`, with `makeSweepGate(SWEEP_MS = 60_000)` living in `worker/main.ts` where
+the long-lived loop owns time.
+
+Three things the design is deliberate about, each with a test in
+`tests/lib/lease-sweep-cadence.test.ts`:
+
+- **The default is always-sweep.** Both integration suites — and any caller added later — depend on
+  `runOnce` reclaiming leases on their behalf. A `?? false` would have disabled lease reclamation
+  repo-wide with every existing test still green.
+- **`?? true`, not `|| true`.** `false || true` is `true`; the gate would never close and the change
+  would be inert while the default-path tests stayed green. The closed gate is asserted directly.
+- ⚠ **The cursor advances only when the gate OPENS.** Advancing it per call makes `now - last`
+  perpetually one poll interval, never reaching 60s — the sweep would never run again for the life
+  of the process, lease reclamation silently dead with nothing to report it. A 3-minute simulated
+  run at the real 2s poll rate pins that it re-opens exactly 4 times.
+
+Tests are in `tests/lib/` because `jest.config.ts`'s `testMatch` is what CI's `verify` runs;
+`tests/integration/` is not in CI. The gate is a pure predicate over an injected clock precisely so
+it can be guarded there rather than behind a live Supabase stack.
+
+`tests/integration/worker-main.test.ts` asserted `sweepCalls >= 2`, which encoded the old
+one-sweep-per-poll cadence rather than the loop resilience that test exists for; corrected to the
+new contract, with resilience still carried by `claimCalls`.
+
+**Not attempted here, and why.** Idle backoff on `claim_next_job` itself (2s → 30s) would remove
+most of the remaining traffic, but costs up to 30s of job-start latency — a user-visible regression
+on exactly the first press after a quiet night. That is a genuine trade-off and was left as the
+user's call; this change was taken because it has no downside at all. Fly cost is unaffected by
+either: `auto_stop_machines` sits inside `[http_service]`, scoped to `processes = ["web"]`, so the
+worker machine has no idle-stop path and bills the same at any poll rate.
