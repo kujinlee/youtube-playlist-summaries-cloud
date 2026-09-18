@@ -234,9 +234,64 @@ describe('runOnce honours the sweep policy', () => {
   // union must be uniform so the long-lived loop never sees an unhandled rejection. A sweep that
   // escaped made that comment false. Break this catches: re-introducing the escape.
   test('never rejects out of runOnce, even when the sweep fails — the declared contract', async () => {
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
     await expect(
       runOnce(throwingSweepQueue(), echoHandler, { workerId: 'w1', sweepPolicy: policy(true) }),
     ).resolves.toBe('idle');
+    err.mockRestore();
+  });
+
+  // r2 Medium (Codex) — and this is the FOURTH consecutive finding introduced by the previous
+  // round's fix, which is the pattern worth naming more than the bug.
+  //
+  // Before the r1 High fix, a sweep rejection escaped to runWorkerLoop's catch, `sleep()` returned
+  // at once on the aborted signal, and the loop exited WITHOUT claiming. Swallowing the error
+  // removed that accidental exit, so a SIGTERM landing mid-sweep now falls straight through to
+  // queue.claim — leasing a fresh job during shutdown. claim_next_job increments `attempts` at
+  // claim time (0008:104), and with summary_max_attempts = 1 that consumes the job's only attempt,
+  // so an already-aborting worker can push a perfectly good job to dead_letter.
+  test('does not claim a new job when shutdown arrived while the sweep was failing', async () => {
+    const ac = new AbortController();
+    const q = {
+      sweepExpired: jest.fn(async () => { ac.abort(); throw new Error('transient PostgREST failure'); }),
+      claim: jest.fn(async () => null),
+    } as unknown as JobQueue & { sweepExpired: jest.Mock; claim: jest.Mock };
+
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const outcome = await runOnce(q, echoHandler, {
+      workerId: 'w1', shutdownSignal: ac.signal, sweepPolicy: policy(true),
+    });
+    err.mockRestore();
+
+    expect(q.claim).not.toHaveBeenCalled();
+    expect(outcome).toBe('idle');
+  });
+
+  // ⭐ THE CLASS, not the instance. Codex's scenario needs a throwing sweep, but the race does not:
+  // a SIGTERM landing during a perfectly successful sweep reaches the same claim. That half was
+  // pre-existing rather than introduced here, and a guard written only for the throw path would
+  // have left it — the repeated "instance-not-class" defect this repo keeps paying for.
+  test('does not claim a new job when shutdown arrived during a SUCCESSFUL sweep either', async () => {
+    const ac = new AbortController();
+    const q = {
+      sweepExpired: jest.fn(async () => { ac.abort(); return 0; }),
+      claim: jest.fn(async () => null),
+    } as unknown as JobQueue & { sweepExpired: jest.Mock; claim: jest.Mock };
+
+    const outcome = await runOnce(q, echoHandler, {
+      workerId: 'w1', shutdownSignal: ac.signal, sweepPolicy: policy(true),
+    });
+
+    expect(q.sweepExpired).toHaveBeenCalledTimes(1); // the sweep itself is still worth doing
+    expect(q.claim).not.toHaveBeenCalled();
+    expect(outcome).toBe('idle');
+  });
+
+  // Break this catches: a shutdown guard so eager it stops the worker doing its ordinary job.
+  test('still claims normally when no shutdown signal is supplied at all', async () => {
+    const q = idleQueue();
+    await runOnce(q, echoHandler, { workerId: 'w1', sweepPolicy: policy(true) });
+    expect(q.claim).toHaveBeenCalledTimes(1);
   });
 
   // Break this catches: defaulting the policy to NOT-DUE. Every existing caller — the integration
@@ -302,12 +357,11 @@ describe('runWorkerLoop wires the gate in by default', () => {
     let sweepAttempts = 0;
     let claims = 0;
     const queue = {
-      sweepExpired: async () => {
-        sweepAttempts++;
-        if (sweepAttempts >= 5) ac.abort();
-        throw new Error('transient PostgREST failure');
-      },
-      claim: async () => { claims++; return null; },
+      // ⟳ The abort fires from the CLAIM, not the sweep. Aborting mid-sweep would trip the r2
+      // shutdown guard and legitimately skip that iteration's claim, so the counters would differ
+      // by one for a reason that has nothing to do with what this test is about.
+      sweepExpired: async () => { sweepAttempts++; throw new Error('transient PostgREST failure'); },
+      claim: async () => { claims++; if (claims >= 5) ac.abort(); return null; },
     } as unknown as JobQueue;
     const handler: JobHandler = async () => ({ ok: true });
 

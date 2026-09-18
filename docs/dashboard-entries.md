@@ -10125,3 +10125,50 @@ because nothing observed it — also closed by the default-clock cases.
 Three independent Claude halves plus Codex ran on this branch. All four agreed the claim-starvation
 finding was real; they split on its grade (Medium / High / "Medium-as-branch-finding,
 High-as-latent-bug") and the High reading was the one that measured it.
+
+## 2026-09-18
+Fourth correction, and by now the pattern is the story: **every problem found on this branch was
+created by the fix for the previous one.** Four rounds, four times.
+
+This one: when the worker is shutting down, it could pick up a brand-new job on its way out — and
+because an ordinary summary job is allowed exactly one attempt, picking it up and then immediately
+abandoning it would burn that attempt and mark the job dead. A job you asked for, killed by a
+restart, with nothing to say so.
+
+It was introduced by this morning's fix. Previously, a failed cleanup pass threw an error that
+happened to make the worker exit before reaching the pick-up step. That exit was an accident nobody
+had designed, and when I stopped the error from escaping, the accident went with it.
+
+The worker now checks whether it is shutting down immediately before picking up work. It also covers
+the case where the cleanup pass *succeeds* and the shutdown arrives during it — a version of the
+same race that the accident never protected, and that a fix written only for the error path would
+have missed.
+<!--tech-->
+**r2 Medium (Codex) — shutdown mid-sweep fell through to `queue.claim`.** `claim_next_job` increments
+`attempts` at claim time (`0008:104`); with `summary_max_attempts = 1` that consumes the job's only
+attempt, so a draining worker could lease a fresh job and drive it to `dead_letter`.
+
+Introduced by the r1 High fix: before it, the sweep rejection escaped to `runWorkerLoop`'s catch,
+`sleep()` resolved at once on the aborted signal, and the loop exited without claiming. Swallowing
+the error removed that exit.
+
+Fixed with `if (opts.shutdownSignal?.aborted) return 'idle';` between the sweep block and the claim.
+
+⭐ **Two tests, because Codex's scenario is the instance and not the class.** Its repro needs a
+THROWING sweep; the race does not — a SIGTERM during a perfectly successful sweep reaches the same
+claim, and that half was pre-existing and never protected by the accidental exit. A guard written
+only for the throw path would have left it, which is this repo's recurring instance-not-class
+defect. A third case pins that the guard does not fire when no shutdown signal is supplied at all.
+
+⚠ **The new guard turned an existing test red, and the test was right.** `keeps sweeping AND keeps
+claiming when every sweep throws` aborted from inside the stub's `sweepExpired` on the 5th attempt,
+so the guard correctly skipped that iteration's claim and the counters read 5/4. The abort now fires
+from the `claim` side instead: the entanglement was in the test, not the behaviour.
+
+Codex also verified, rather than took, the corrected recovery arithmetic from the previous fold
+(`0008:104`, `0008:106`, `0009:70-73`, the `~2s` claim-poll term) and confirmed `DEFAULT_LEASE_SECONDS`
+replaced both production literals with no third site missed and the heartbeat still deriving from the
+resolved lease. It named the killed mutation for each of the 7 tests added in that fold, and cleared
+the `Date.now` reassignment as worker-process-local under jest.
+
+Suite: 2,838 → 2,841.

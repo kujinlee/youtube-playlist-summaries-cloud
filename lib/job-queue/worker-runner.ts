@@ -71,6 +71,17 @@ export async function runOnce(
       console.error('[worker] sweepExpired failed (continuing to claim):', e);
     }
   }
+  // ⚠ SHUTDOWN CAN ARRIVE DURING THE SWEEP, and claiming after it is how a good job dies (r2
+  // Medium, Codex). claim_next_job increments `attempts` at claim time (0008:104); with
+  // summary_max_attempts = 1 that consumes the job's ONLY attempt, so a worker that is already
+  // draining can lease a fresh job and push it straight to dead_letter.
+  //
+  // Before the r1 High fix a throwing sweep escaped to runWorkerLoop's catch, `sleep()` returned
+  // immediately on the aborted signal, and the loop exited without claiming — the exit was
+  // ACCIDENTAL, and swallowing the error removed it. This guard makes it deliberate, and covers
+  // the SUCCESSFUL-sweep race too, which was never protected by that accident.
+  if (opts.shutdownSignal?.aborted) return 'idle';
+
   const job = await queue.claim(opts.workerId, opts.leaseSeconds ?? DEFAULT_LEASE_SECONDS, opts.videoFilter ?? null);
   if (!job) return 'idle';
 
