@@ -1,7 +1,7 @@
-import { runOnce, echoHandler, DEFAULT_LEASE_SECONDS } from '@/lib/job-queue/worker-runner';
+import { runOnce, echoHandler, DEFAULT_LEASE_SECONDS, ALWAYS_SWEEP } from '@/lib/job-queue/worker-runner';
 import { runWorkerLoop, makeSweepGate, SWEEP_MS } from '@/worker/main';
 import type { JobQueue } from '@/lib/storage/job-queue';
-import type { JobHandler } from '@/lib/job-queue/worker-runner';
+import type { JobHandler, SweepPolicy } from '@/lib/job-queue/worker-runner';
 
 // MEASURED 2026-09-18 against prod (`uykwcybxqgewmbltroxf`, plan=free): the worker emitted
 // ~79,800 REST requests/day and they were ONE HUNDRED PERCENT of the project's traffic — an
@@ -32,58 +32,71 @@ const throwingSweepQueue = () => ({
   claim: jest.fn(async () => null),
 }) as unknown as JobQueue & { sweepExpired: jest.Mock; claim: jest.Mock };
 
-// A sweep that is due, performed, and acknowledged — the ordinary cycle, written once so the
-// cadence tests below read as cadence rather than as protocol.
-function sweepCycle(policy: { due: () => boolean; onSwept: () => void }): boolean {
-  if (!policy.due()) return false;
-  policy.onSwept();
-  return true;
+// ⭐ #140: the cycle is ONE call now. There is no due()/onSwept() pair for a caller to get wrong,
+// which is the entire point — the commit-on-success rule moved INSIDE the policy.
+//
+// Returns whether the sweep actually ran. `fail` makes the sweep throw, which is the case the old
+// two-method shape could only protect by convention.
+async function cycle(policy: SweepPolicy, fail = false): Promise<boolean> {
+  let ran = false;
+  // The policy logs a failed sweep by design; silence the expected noise so a REAL stack trace in
+  // a green suite stays conspicuous (r1 Low 2 — noise trains a reader to ignore red).
+  const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    await policy.run(async () => {
+      ran = true;
+      if (fail) throw new Error('transient PostgREST failure');
+    });
+  } finally {
+    err.mockRestore();
+  }
+  return ran;
 }
 
 describe('makeSweepGate', () => {
   // Breaks this catches: initialising the cursor to `now()` instead of "never swept". That
   // would make a freshly deployed worker skip its first sweep — exactly the moment the previous
   // machine's SIGTERM drain may have stranded a lease, so it is the worst possible time to wait.
-  test('is due on the very first call, so a just-started worker sweeps immediately', () => {
+  test('sweeps on the very first call, so a just-started worker sweeps immediately', async () => {
     const t = { now: 1_000_000 };
     const gate = makeSweepGate(60_000, () => t.now);
-    expect(gate.due()).toBe(true);
+    expect(await cycle(gate)).toBe(true);
   });
 
   // Breaks this catches: a gate that is always due (the `if` removed, or the comparison
   // inverted) — i.e. the egress regression this whole change exists to remove.
-  test('stops being due for the rest of the interval once a sweep is acknowledged', () => {
+  test('stops sweeping for the rest of the interval once one has landed', async () => {
     const t = { now: 1_000_000 };
     const gate = makeSweepGate(60_000, () => t.now);
-    sweepCycle(gate);
+    await cycle(gate);
     t.now += 2_000;   // one 2s claim poll later
-    expect(gate.due()).toBe(false);
+    expect(await cycle(gate)).toBe(false);
     t.now += 55_000;  // 57s in total — still short of the interval
-    expect(gate.due()).toBe(false);
+    expect(await cycle(gate)).toBe(false);
   });
 
   // ⚠ THE DANGEROUS ONE. If the cursor advanced on every DUE CHECK rather than on an
   // acknowledged sweep, then under a 2s poll `now - last` is forever 2s, never reaches 60s, and
   // the sweep NEVER RUNS AGAIN for the life of the process. Lease reclamation would be silently
   // dead and nothing would report it — a crashed job would simply hang.
-  test('becomes due again once the interval elapses, even when polled rapidly throughout', () => {
+  test('sweeps again once the interval elapses, even when polled rapidly throughout', async () => {
     const t = { now: 1_000_000 };
     const gate = makeSweepGate(60_000, () => t.now);
     let swept = 0;
     for (let elapsed = 0; elapsed <= 180_000; elapsed += 2_000) { // 3 minutes of 2s polls
-      if (sweepCycle(gate)) swept++;
+      if (await cycle(gate)) swept++;
       t.now += 2_000;
     }
     // t=0 (first call) plus t=60s, t=120s, t=180s. Hand-derived, not computed by the gate.
     expect(swept).toBe(4);
   });
 
-  test('a shorter interval comes due proportionally more often', () => {
+  test('a shorter interval sweeps proportionally more often', async () => {
     const t = { now: 0 };
     const gate = makeSweepGate(10_000, () => t.now);
     let swept = 0;
     for (let elapsed = 0; elapsed <= 60_000; elapsed += 2_000) {
-      if (sweepCycle(gate)) swept++;
+      if (await cycle(gate)) swept++;
       t.now += 2_000;
     }
     expect(swept).toBe(7); // 0s, 10s, 20s, 30s, 40s, 50s, 60s
@@ -94,32 +107,59 @@ describe('makeSweepGate', () => {
   // reclaimed anything, so one transient network blip pushes worst-case crash recovery from
   // ~180s to ~240s, and blips landing on window boundaries stretch it further. Asking twice
   // without acknowledging must stay due — the window is spent by a sweep, not by an intention.
-  test('stays due until a sweep is ACKNOWLEDGED, not merely attempted', () => {
+  test('a sweep that THROWS does not spend the window — the next poll retries', async () => {
     const t = { now: 1_000_000 };
     const gate = makeSweepGate(60_000, () => t.now);
 
-    expect(gate.due()).toBe(true);
+    expect(await cycle(gate, true)).toBe(true);   // ran, and threw
     t.now += 2_000;
-    expect(gate.due()).toBe(true);  // the attempt failed; the window must not have been spent
+    expect(await cycle(gate, true)).toBe(true);   // window NOT spent — retried
     t.now += 2_000;
-    expect(gate.due()).toBe(true);
+    expect(await cycle(gate, true)).toBe(true);
 
-    gate.onSwept();                 // now one actually landed
-    expect(gate.due()).toBe(false);
+    expect(await cycle(gate)).toBe(true);         // one finally lands...
+    t.now += 2_000;
+    expect(await cycle(gate)).toBe(false);        // ...and NOW the window is spent
+  });
+
+  // The never-reject clause, on the gate. ⚠ Comment scoped honestly after r1: this does NOT prove
+  // the mistake is impossible. Both rules live in `sweepPolicyFrom` and `makeSweepGate` supplies
+  // only clock arithmetic, so the mistake is writable in exactly ONE function — the minimum, not
+  // zero. `a sweep that THROWS does not spend the window` is what kills it there (measured: that
+  // mutation fails 2 tests).
+  test('never rejects, whatever the sweep does — the contract the call site relies on', async () => {
+    const gate = makeSweepGate(60_000);
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(
+      gate.run(async () => { throw new Error('transient PostgREST failure'); }),
+    ).resolves.toBeUndefined();
+    err.mockRestore();
+  });
+
+  // r1 High 2. ALWAYS_SWEEP is the FAIL-SAFE default every caller that supplies no policy gets.
+  // Its never-reject clause previously had its OWN try/catch, guarded by nothing — deleting that
+  // catch left the suite 25/25 green. It is now built from the shared combinator, so there is no
+  // second copy to leave untested; this pins the DEFAULT's contract directly all the same.
+  test('the DEFAULT policy never rejects either, whatever the sweep does', async () => {
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(
+      ALWAYS_SWEEP.run(async () => { throw new Error('transient PostgREST failure'); }),
+    ).resolves.toBeUndefined();
+    err.mockRestore();
   });
 
   // r1 Low (Codex). Break this catches: `t - lastSweptAt < intervalMs` with no floor. An NTP
   // step backwards makes that delta NEGATIVE, so it compares as "inside the window" and sweeps
   // are suppressed until the wall clock catches up — potentially minutes past the promised
   // bound. A backwards jump must fail SAFE (sweep sooner), never silent (sweep later).
-  test('comes due immediately if an INJECTED clock steps backwards', () => {
+  test('sweeps immediately if an INJECTED clock steps backwards', async () => {
     const t = { now: 1_000_000 };
     const gate = makeSweepGate(60_000, () => t.now);
-    sweepCycle(gate);
-    expect(gate.due()).toBe(false);
+    await cycle(gate);
+    expect(await cycle(gate)).toBe(false);
 
     t.now -= 300_000; // NTP corrects the host five minutes backwards
-    expect(gate.due()).toBe(true);
+    expect(await cycle(gate)).toBe(true);
   });
 
   // r1 Medium (Claude half 1). ⚠ EVERY other case here INJECTS a clock, so the default parameter
@@ -131,15 +171,15 @@ describe('makeSweepGate', () => {
   // A monotonic clock is unaffected and stays not-due; Date.now() would see a negative delta,
   // hit the fail-safe floor above, and flip to due. The floor is good defence AND is precisely
   // why nothing else can tell the two apart.
-  test('the DEFAULT clock is monotonic — a wall-clock step backwards does not move it', () => {
+  test('the DEFAULT clock is monotonic — a wall-clock step backwards does not move it', async () => {
     const gate = makeSweepGate(60_000); // no injected clock: the production path
-    sweepCycle(gate);
-    expect(gate.due()).toBe(false);
+    await cycle(gate);
+    expect(await cycle(gate)).toBe(false);
 
     const realDateNow = Date.now;
     Date.now = () => realDateNow() - 3_600_000; // host wall clock jumps back an hour
     try {
-      expect(gate.due()).toBe(false); // still inside the window — monotonic time did not move
+      expect(await cycle(gate)).toBe(false); // still inside the window — monotonic time did not move
     } finally {
       Date.now = realDateNow;
     }
@@ -147,10 +187,10 @@ describe('makeSweepGate', () => {
 
   test('the DEFAULT clock still advances, so the gate really does re-open in real time', async () => {
     const gate = makeSweepGate(2); // 2ms window
-    sweepCycle(gate);
-    expect(gate.due()).toBe(false);
+    await cycle(gate);
+    expect(await cycle(gate)).toBe(false);
     await new Promise((r) => setTimeout(r, 20));
-    expect(gate.due()).toBe(true);
+    expect(await cycle(gate)).toBe(true);
   });
 });
 
@@ -178,7 +218,17 @@ describe('the sweep interval stays inside the lease it guards', () => {
 });
 
 describe('runOnce honours the sweep policy', () => {
-  const policy = (due: boolean) => ({ due: () => due, onSwept: jest.fn() });
+  // A policy that either runs the sweep or skips it, recording whether it was asked to.
+  const policy = (due: boolean) => {
+    const ran = jest.fn();
+    return {
+      ran,
+      run: async (sweep: () => Promise<unknown>) => {
+        if (!due) return;
+        try { await sweep(); ran(); } catch { /* the real gate logs; silence here */ }
+      },
+    };
+  };
 
   // Break this catches: reverting worker-runner.ts to an unconditional `await queue.sweepExpired()`.
   test('skips the sweep when not due, but still claims', async () => {
@@ -195,14 +245,14 @@ describe('runOnce honours the sweep policy', () => {
     const p = policy(true);
     await runOnce(q, echoHandler, { workerId: 'w1', sweepPolicy: p });
     expect(q.sweepExpired).toHaveBeenCalledTimes(1);
-    expect(p.onSwept).toHaveBeenCalledTimes(1);
+    expect(p.ran).toHaveBeenCalledTimes(1);
   });
 
-  // r1 Medium (Codex), at the runOnce boundary. Break this catches: acknowledging the sweep
-  // before awaiting it, or a `try { … } finally { onSwept() }` that acknowledges anyway. A sweep
-  // that threw reclaimed nothing, so it must not spend the window — the next poll has to retry.
-  //
-  // ⚠ `finally` is the tempting wrong fix and this case is what kills it.
+  // PR #318 r1 Medium (Codex), at the runOnce boundary. ⟳ The break this catches CHANGED with
+  // backlog #140 and the old comment named a mutation that can no longer be written here: there is
+  // no acknowledgement at this boundary any more. What it kills now is a call site that hides the
+  // sweep's rejection FROM the policy (e.g. wrapping the closure in its own try/catch), which would
+  // let the policy commit a window for a sweep that never landed.
   test('does NOT acknowledge a sweep that threw', async () => {
     const q = throwingSweepQueue();
     const p = policy(true);
@@ -210,7 +260,7 @@ describe('runOnce honours the sweep policy', () => {
     const err = jest.spyOn(console, 'error').mockImplementation(() => {});
     await runOnce(q, echoHandler, { workerId: 'w1', sweepPolicy: p });
     err.mockRestore();
-    expect(p.onSwept).not.toHaveBeenCalled();
+    expect(p.ran).not.toHaveBeenCalled(); // the window was not committed
   });
 
   // r1 High (Claude half 2, MEASURED: 40 sweep attempts / 0 claims at HEAD vs 1 / 20 before the
@@ -296,6 +346,35 @@ describe('runOnce honours the sweep policy', () => {
     const q = idleQueue();
     await runOnce(q, echoHandler, { workerId: 'w1', sweepPolicy: policy(true) });
     expect(q.claim).toHaveBeenCalledTimes(1);
+  });
+
+  // ⭐ DEFENCE IN DEPTH (new with #140). `SweepPolicy.run` DECLARES that it never rejects, and
+  // makeSweepGate honours that. But a declared contract is not an enforced one, and the
+  // consequence of breaking it is the r1 High — total, silent claim starvation. A custom or
+  // future policy that rejects must still not stop job intake.
+  test('still claims when the POLICY ITSELF rejects, not just the sweep', async () => {
+    const q = idleQueue();
+    const rejecting = { run: async () => { throw new Error('a policy that broke its contract'); } };
+
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const outcome = await runOnce(q, echoHandler, { workerId: 'w1', sweepPolicy: rejecting });
+    err.mockRestore();
+
+    expect(q.claim).toHaveBeenCalledTimes(1);
+    expect(outcome).toBe('idle');
+  });
+
+  // r1 (Codex) — ALWAYS_SWEEP is a shared module-level SINGLETON. It holds no state today, which
+  // is exactly why it is safe to share; this pins that. Break it catches: someone later giving
+  // ALWAYS_SWEEP a cadence cursor, which would make the SECOND no-policy caller silently skip its
+  // sweep — a cross-caller leak through a shared object, invisible in any single-call test.
+  test('the default policy is STATELESS — two consecutive no-policy calls both sweep', async () => {
+    const a = idleQueue();
+    const b = idleQueue();
+    await runOnce(a, echoHandler, { workerId: 'w1' });
+    await runOnce(b, echoHandler, { workerId: 'w2' });
+    expect(a.sweepExpired).toHaveBeenCalledTimes(1);
+    expect(b.sweepExpired).toHaveBeenCalledTimes(1); // NOT skipped by a window the singleton kept
   });
 
   // Break this catches: defaulting the policy to NOT-DUE. Every existing caller — the integration

@@ -5,20 +5,79 @@ import { classifyGeminiFailure, releaseGateOpen, isNonRetryable } from '@/lib/ge
 
 export type { JobHandler } from './handler-context';
 
-/** Cadence control for the pre-claim lease sweep.
+/** Cadence control for the pre-claim lease sweep — ONE method, so a caller cannot get it wrong.
  *
- *  Deliberately ONE object rather than two independent callbacks: `due` and `onSwept` are halves
- *  of a single protocol, and a caller who supplied only the first would have a cursor that never
- *  advances — permanently due, silently sweeping on every poll again, with every default-path
- *  test still green. Holding it wrong should not be expressible. */
+ *  ⚠ THE HONEST CLAIM, after r1 said the first two versions of this comment were both overstated.
+ *  Codex refuted "unwritable"; the Claude half then measured that scoping it to "unwritable by
+ *  callers" was close to vacuous, because the mistake was reproducible in three lines inside
+ *  `makeSweepGate` — the only policy this repo ships — and because the branch had briefly made
+ *  things WORSE: master wrote each rule once, in `runOnce`, while an interface of two dumb methods
+ *  meant no implementation could hold a rule wrongly. An interface of one smart method obliged every
+ *  future implementer to re-derive two non-obvious rules, and three copies of one of them already
+ *  existed.
+ *
+ *  What is true now: the rules are written EXACTLY ONCE, in `sweepPolicyFrom` below, and no
+ *  implementation holds either. That restores master's single-copy property while giving callers a
+ *  one-method interface and taking cadence logic out of `runOnce` entirely. The `finally` mistake is
+ *  writable in exactly one function — the minimum, not zero. */
 export interface SweepPolicy {
-  /** True when a sweep is due. MUST NOT record the attempt — the window is spent by a sweep that
-   *  landed, not by one that was contemplated. */
-  due(): boolean;
-  /** Called only after `sweepExpired()` RESOLVES. A sweep that threw reclaimed nothing, so it
-   *  must leave the window open for the next poll to retry. */
-  onSwept(): void;
+  /** Runs `sweep` if one is due, commits the cadence window ONLY if it resolves, and NEVER rejects.
+   *
+   *  ⚠ "Never rejects" is load-bearing: the caller reaches `queue.claim` immediately afterwards, and
+   *  a rejection escaping here would starve job intake — measured at 40 sweeps / 0 claims before
+   *  PR #318 fixed it. `runOnce` keeps a defence-in-depth catch anyway, because this is a declared
+   *  contract rather than an enforced one and the consequence of breaking it is silent.
+   *
+   *  ⚠ Do NOT justify this by runOnce's "never sees an unhandled rejection" comment below — r1
+   *  Medium 2 measured that claim as false (`queue.claim` sits outside every `try`, which is why
+   *  `runWorkerLoop` needs its own catch). Pre-existing and not this change's to fix, but it is not
+   *  a premise to lean on. */
+  run(sweep: () => Promise<unknown>): Promise<void>;
 }
+
+/** A bare cadence cursor. Deliberately DUMB: it answers "is one due?" and records "one landed", and
+ *  it holds NEITHER the commit-on-resolve rule NOR the never-reject rule. That is the whole point —
+ *  an implementer supplies clock arithmetic and cannot get the protocol wrong, because it does not
+ *  have the protocol. */
+export interface SweepCursor {
+  /** True when a sweep is due. Must not record anything — the window is spent by a sweep that
+   *  LANDED, not by one that was contemplated. */
+  due(): boolean;
+  /** Record that a sweep resolved. `sweepPolicyFrom` calls this only on the resolve path. */
+  commit(): void;
+}
+
+/** ⭐ THE ONLY PLACE THE TWO RULES ARE WRITTEN (backlog #140, r1 High 1).
+ *
+ *  `commit()` is inside the `try` and after the `await`, so a sweep that THREW does not spend the
+ *  window and the next poll retries it (PR #318 r1 Medium). The `catch` does not rethrow, so a
+ *  broken sweep cannot starve `queue.claim` (PR #318 r1 High — measured 40 sweeps / 0 claims).
+ *
+ *  ⚠ A `finally` here would silently undo the first rule. This is the one function where that edit
+ *  is possible, and `a sweep that THROWS does not spend the window` kills it. Every other route to
+ *  that mistake was deleted by moving the rules here rather than into each implementation. */
+export function sweepPolicyFrom(cursor: SweepCursor): SweepPolicy {
+  return {
+    async run(sweep) {
+      if (!cursor.due()) return;
+      try {
+        await sweep();
+        cursor.commit();
+      } catch (e) {
+        console.error('[worker] sweepExpired failed (continuing to claim):', e);
+      }
+    },
+  };
+}
+
+/** The fail-safe default when no cadence is supplied: always sweep, never record a window.
+ *
+ *  Sweeping too often is cheap; never sweeping strands crashed jobs. ⟳ This used to claim callers
+ *  DEPEND on it; PR #318 r2 enumerated every call site by grep and found none do. Keep the default,
+ *  not the reason. ⟳⟳ It used to carry its OWN try/catch, a second copy of the never-reject rule
+ *  that r1 High 2 measured as guarded by nothing — deleting it left the suite 25/25 green. Built
+ *  from the shared combinator now, so there is no second copy to leave untested. */
+export const ALWAYS_SWEEP: SweepPolicy = sweepPolicyFrom({ due: () => true, commit: () => {} });
 
 export interface RunnerOpts {
   workerId: string;
@@ -60,9 +119,9 @@ export async function runOnce(
   //
   // ⭐ THE SWEEP IS ISOLATED IN BOTH DIRECTIONS, and getting only one of them is what r1 cost:
   //
-  //  1. onSwept() is INSIDE the try and AFTER the await, so a sweep that threw does not spend the
-  //     60s window and the next poll retries it (r1 Medium, Codex). ⚠ `finally` is the tempting
-  //     wrong shape here — it acknowledges on the throw path and silently undoes this.
+  //  1. The policy commits its cadence window ONLY after `sweep()` resolves, so a sweep that threw
+  //     does not spend the 60s window and the next poll retries it (PR #318 r1 Medium, Codex).
+  //     ⚠ That rule now lives inside `makeSweepGate.run`, not here — see backlog #140.
   //  2. The catch does NOT rethrow, so a broken sweep cannot stop the CLAIM below (r1 High).
   //     sweep_expired_leases and claim_next_job are separate functions with separate grants and
   //     separate signatures, so one can break alone — a migration replacing it, a stale PostgREST
@@ -71,13 +130,13 @@ export async function runOnce(
   //
   // Lease reclamation degrades while the sweep is broken; job intake does not. That is the whole
   // point of decoupling them — cadence alone was never enough, the FAILURE DOMAIN had to split too.
-  if (opts.sweepPolicy?.due() ?? true) {
-    try {
-      await queue.sweepExpired();
-      opts.sweepPolicy?.onSwept();
-    } catch (e) {
-      console.error('[worker] sweepExpired failed (continuing to claim):', e);
-    }
+  try {
+    await (opts.sweepPolicy ?? ALWAYS_SWEEP).run(() => queue.sweepExpired());
+  } catch (e) {
+    // DEFENCE IN DEPTH. SweepPolicy.run declares it never rejects and the shipped policies honour
+    // that — but a declared contract is not an enforced one, and the consequence of breaking it is
+    // the r1 High: total, silent claim starvation with a log line saying the loop is fine.
+    console.error('[worker] sweep policy rejected (continuing to claim):', e);
   }
   // ⚠ SHUTDOWN CAN ARRIVE DURING THE SWEEP, and claiming after it is how a good job dies (r2
   // Medium, Codex). claim_next_job increments `attempts` at claim time (0008:104); with

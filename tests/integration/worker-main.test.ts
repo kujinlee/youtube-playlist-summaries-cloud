@@ -52,7 +52,7 @@ test('runWorkerLoop processes exactly one queued job to completed, then exits on
   expect(st?.status).toBe('completed');
 });
 
-// --- loop resilience: a throwing sweepExpired/claim (outside runOnce's try/catch) must NOT
+// --- loop resilience: a throwing CLAIM (the one call outside runOnce's try/catch) must NOT
 //     kill the long-lived worker. Deterministic stub queue via DI; abort after recovery. ---
 test('runWorkerLoop survives a throwing claim and continues until shutdown', async () => {
   const ac = new AbortController();
