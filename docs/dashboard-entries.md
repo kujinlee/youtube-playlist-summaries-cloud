@@ -10467,3 +10467,54 @@ three diagnostics: cadence-check failure, sweep failure, commit failure. Commit 
 ⟳ **The falsifier count changed and is corrected here:** mutating `sweepPolicyFrom` now fails **3**
 tests, not 2 — `a sweep that THROWS does not spend the window`, `does NOT acknowledge a sweep that
 threw`, and `keeps sweeping AND keeps claiming when every sweep throws`. Control restored: 26/26.
+
+## 2026-09-18
+Third round on the same small cleanup, and it found the same mistake for the third time in a row:
+**the fix for the previous round's problem was, itself, protected by nothing.**
+
+Round two added careful error handling in three places. Round three deleted all of it, one piece at
+a time, and the tests stayed green every time. So the care was real and completely unverified — it
+could have been removed by anyone tidying up, with a clean build. That is now covered.
+
+It also caught something worse, and this one is a judgement error rather than an omission. When the
+part that decides *"is it time to clean up yet?"* failed, the code treated that as **"no, not yet"**
+— and would keep treating it that way forever. Measured: a hundred checks in a row, zero cleanups,
+each one logging a line that reads like everything is fine. Meanwhile the same file says, fifteen
+lines further down, that sweeping too often is cheap and never sweeping strands jobs. The right
+answer was the opposite of the one I wrote, and it was already written down next to it.
+
+⟳ Two numbers in earlier entries are corrected here: the suite delta for the previous round was
+2,841 → 2,845 measured against where this work started, not 2,844 → 2,845; and one place in the test
+file still said a key mutation fails 2 tests when it fails 3. The roadmap also still carried the
+original framing of this work — "removes a finding by construction" — which two rounds had refuted
+and which the backlog had already corrected. It now says what is true.
+<!--tech-->
+r2 Claude: **0 Blocking, 1 High, 2 Medium, 4 Low.** All folded.
+
+⭐ **High 1 — the r2 Low 1 fix was guarded by nothing: four mutations, four survivors, 26/26 green
+each time.** Collapsing the `due()` guard, dropping the `commit()` guard, and merging either
+diagnostic back into `sweepExpired failed` were all invisible to the suite — while three documents
+advertised exactly those three stages. ⚠ **The same defect as r1 High 2, in the same function, one
+round later, added by the fix for it.** Four cases added; all four mutations now die, control green.
+
+⭐ **Medium 1 — a throwing `due()` was handled in the fail-DANGEROUS direction.** It `return`ed,
+i.e. "not due", so a persistently broken cadence check meant the sweep never ran again: measured
+**0 sweeps across 100 polls**, each logging *"continuing to claim"*. That is the catastrophe
+`worker/main.ts`'s own docblock names — *"lease reclamation silently dead, with nothing to report
+it"* — reached by a route that comment does not guard, and contradicting the rule stated fifteen
+lines below it on `ALWAYS_SWEEP`. One token: `due = true` instead of `return`, so a broken cursor
+degrades to over-sweeping (costly, loud, correct) rather than to silence. Two tests, including one
+through the shipped `makeSweepGate(..., now)` seam, since `now` is exported and injectable.
+
+**Medium 2** — the roadmap tick still carried *"removes a finding BY CONSTRUCTION"*, the framing r1
+refuted and the backlog had already corrected; the roadmap carried none of it. **Low 1** — the test
+file was the one live site still saying the falsifier count is 2; it is 3. **Low 3** — a comment
+credited the clock re-sample to `run`, which since #140 touches no clock. **Low 4** — *"commit
+failure is fail-safe"* is true for reclamation and **false for cost**: measured, a persistently
+throwing commit produced 30 sweeps in 30 polls, i.e. the per-poll egress this branch exists to
+remove, restored silently. Now says which property it is safe for.
+
+⭐ **The reviewer also reports it could NOT refute the "written exactly once" claim a fourth time**,
+having enumerated every construction site. After three refutations, it holds.
+
+Suite 2,845 → 2,849.

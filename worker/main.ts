@@ -82,8 +82,10 @@ export const SWEEP_MS = 60_000;
  *  the host catches up — r1 Low. The negative delta is ALSO floored below, so the gate fails safe
  *  (sweeps sooner) even if a caller injects a wall clock, which the tests do.
  *
- *  ⚠ The period runs from COMPLETION, not from the due check: `run` re-samples the clock after the
- *  sweep has returned, so the effective cadence is SWEEP_MS + the sweep's own latency (r1 Low).
+ *  ⚠ The period runs from COMPLETION, not from the due check: `commit()` below re-samples the clock
+ *  after the sweep has returned (r2 Low 3 — this used to credit `run`, which since backlog #140 is
+ *  `sweepPolicyFrom` and touches no clock at all), so the effective cadence is SWEEP_MS + the
+ *  sweep's own latency (r1 Low).
  *  That is deliberate — it is the right semantics for a rate limiter, since measuring from the
  *  due-check would let a slow link issue overlapping sweeps — but it means the stated ~180s bound
  *  is really ~180s + one RPC round trip. At a healthy ~50ms that is noise.

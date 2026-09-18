@@ -128,7 +128,7 @@ describe('makeSweepGate', () => {
   // the mistake is impossible. Both rules live in `sweepPolicyFrom` and `makeSweepGate` supplies
   // only clock arithmetic, so the mistake is writable in exactly ONE function — the minimum, not
   // zero. `a sweep that THROWS does not spend the window` is what kills it there (measured: that
-  // mutation fails 2 tests).
+  // mutation fails 3 tests).
   test('never rejects, whatever the sweep does — the contract the call site relies on', async () => {
     const gate = makeSweepGate(60_000);
     const err = jest.spyOn(console, 'error').mockImplementation(() => {});
@@ -147,6 +147,74 @@ describe('makeSweepGate', () => {
     await expect(
       ALWAYS_SWEEP.run(async () => { throw new Error('transient PostgREST failure'); }),
     ).resolves.toBeUndefined();
+    err.mockRestore();
+  });
+
+  // ⭐ r2 High 1. The three-stage error handling added in the r2 fold was guarded by NOTHING —
+  // four mutations, four survivors, 26/26 green each time: collapsing the `due()` guard, dropping
+  // the `commit()` guard, and merging either diagnostic back into 'sweepExpired failed'. That is
+  // the SAME defect as r1 High 2 (an unguarded never-reject clause), in the same function, one
+  // round later, added by the fix for it. These four cases are its falsifier.
+  //
+  // ⚠ The log strings ARE the behaviour here, not an implementation detail: r1 High 2's concrete
+  // cost was a diagnostic naming the wrong subsystem, so "which failure says which" is the thing
+  // under test.
+  const lastErrorFrom = (spy: jest.SpyInstance) => String(spy.mock.calls.at(-1)?.[0] ?? '');
+
+  // ⭐ r2 Medium 1 — THE DIRECTION, not just the handling. A broken cadence check used to be
+  // treated as "not due", measured at ZERO sweeps across 100 polls, each logging "continuing to
+  // claim" like reassurance. That is lease reclamation silently dead — the exact catastrophe
+  // worker/main.ts's docblock names — reached by a route that comment does not guard.
+  //
+  // Break this catches: `return` instead of `due = true`. The rule is stated in this repo already:
+  // sweeping too often is cheap; never sweeping strands crashed jobs.
+  test('a throwing due() SWEEPS ANYWAY — fail safe, never silently stop sweeping', async () => {
+    const sweep = jest.fn(async () => {});
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const policy = sweepPolicyFrom({
+      due: () => { throw new Error('clock exploded'); },
+      commit: () => {},
+    });
+
+    await expect(policy.run(sweep)).resolves.toBeUndefined();
+    expect(sweep).toHaveBeenCalledTimes(1); // degraded to over-sweeping, NOT to never sweeping
+    expect(lastErrorFrom(err)).toContain('cadence check failed');
+    err.mockRestore();
+  });
+
+  // The same property through the shipped seam, because `now` is exported and injectable: this is
+  // how a broken cursor actually reaches production.
+  test('a gate whose CLOCK throws keeps sweeping rather than going quiet', async () => {
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const gate = makeSweepGate(60_000, () => { throw new Error('clock exploded'); });
+    let sweeps = 0;
+    for (let i = 0; i < 5; i++) await gate.run(async () => { sweeps++; });
+    err.mockRestore();
+    expect(sweeps).toBe(5); // every poll swept; 0 would be reclamation silently dead
+  });
+
+  test('a throwing commit() does not reject, and leaves the window UNCOMMITTED', async () => {
+    let committed = 0;
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const policy = sweepPolicyFrom({
+      due: () => true,
+      commit: () => { committed++; throw new Error('cursor exploded'); },
+    });
+
+    await expect(policy.run(async () => {})).resolves.toBeUndefined();
+    expect(committed).toBe(1);
+    expect(lastErrorFrom(err)).toContain('cadence commit failed');
+    err.mockRestore();
+  });
+
+  // Break this catches: merging the diagnostics. A sweep failure and a cadence failure reported
+  // under one name is exactly the false diagnostic r1 High 2 was filed about.
+  test('a failing SWEEP is reported as a sweep failure, not a cadence failure', async () => {
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    await sweepPolicyFrom({ due: () => true, commit: () => {} })
+      .run(async () => { throw new Error('transient PostgREST failure'); });
+    expect(lastErrorFrom(err)).toContain('sweepExpired failed');
+    expect(lastErrorFrom(err)).not.toContain('cadence');
     err.mockRestore();
   });
 

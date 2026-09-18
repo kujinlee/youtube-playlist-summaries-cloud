@@ -74,12 +74,21 @@ export function sweepPolicyFrom(cursor: SweepCursor): SweepPolicy {
       // FALSE diagnostic and precisely the class r1 High 2 was filed about: the one log line that
       // distinguishes "the database call is broken" from "the cadence is broken" naming the wrong
       // one, on the failure this whole branch exists for.
-      let due: boolean;
+      // ⚠ FAIL SAFE, AND THE DIRECTION IS THE WHOLE POINT (r2 Medium 1). The first version
+      // `return`ed here, treating a broken cadence check as "not due" — measured at ZERO sweeps
+      // across 100 polls, each with a log line reading "continuing to claim", which reads like
+      // reassurance. That is the catastrophe worker/main.ts names in its own docblock ("the sweep
+      // would never run again for the life of the process — lease reclamation silently dead"),
+      // reached by a different route. This file already states the rule fifteen lines below, on
+      // ALWAYS_SWEEP: *sweeping too often is cheap; never sweeping strands crashed jobs.*
+      //
+      // So a broken cursor degrades to sweeping on EVERY poll — costly, loud in the logs, and
+      // correct — rather than silently never sweeping again.
+      let due = true;
       try {
         due = cursor.due();
       } catch (e) {
-        console.error('[worker] sweep cadence check failed (continuing to claim):', e);
-        return;
+        console.error('[worker] sweep cadence check failed (sweeping anyway):', e);
       }
       if (!due) return;
 
@@ -93,7 +102,10 @@ export function sweepPolicyFrom(cursor: SweepCursor): SweepPolicy {
       try {
         cursor.commit();
       } catch (e) {
-        // Failing to record a landed sweep is fail-safe: the next poll sweeps again.
+        // Fail-safe FOR RECLAMATION: the next poll sweeps again. ⚠ Not fail-safe for COST, and
+        // r2 Low 4 measured the difference — a persistently throwing commit never advances the
+        // window, so the gate degrades to per-poll sweeping: the ~40,000 requests/day of egress
+        // this whole branch exists to remove, restored silently behind a log line.
         console.error('[worker] sweep cadence commit failed (continuing to claim):', e);
       }
     },
