@@ -10041,3 +10041,87 @@ Suite for this file: 12 → 19. Both review halves are at
 `docs/reviews/claude/decouple-lease-sweep-r1-claude{,-2}.md`; half 2 ran as a replacement after the
 first dispatch stalled, then the original delivered too — both are kept, since two independent
 adversarial reads that agree are evidence, not duplication.
+
+## 2026-09-18
+Third correction, and it retracts something I told you twice: **"recovery goes from about two
+minutes to at most three" was wrong, and for summary jobs there is no recovery to speak of at all.**
+
+A third reviewer checked the claim against the database rather than against the code comment, and
+found the comment had never described what the database does. Checking their correction against the
+live configuration then showed their version was not right either — so here is what the system
+actually does, measured today.
+
+When a worker crashes mid-job, the cleanup pass does not simply hand the job back. It looks at how
+many attempts the job is allowed. Your live setting for summary jobs — the ordinary kind, 13 of the
+15 jobs this project has ever run — is **one attempt**. So a crashed summary job is not retried at
+all. It is marked dead and stays dead, and you would have to ask for it again.
+
+That means the thing my change delays is not a rescue. It is how quickly a doomed job is declared
+dead: about two minutes before, about three minutes now. For "dig" jobs, which are allowed two
+attempts, there is a genuine retry, and a ten-second penalty applies before it can start — so those
+go from about two and a quarter minutes to about three and a quarter.
+
+The part I was right about, and the part worth keeping: **the extra delay this change adds is at
+most one minute, in every case.** That was always the number that mattered. The trouble is I dressed
+it up in an absolute figure I had not checked, and "at most three minutes" reads as a promise.
+
+This is the third number in this piece of work that reached you before it was verified. The first
+was the bandwidth range, the second was this recovery figure, and the pattern in both is the same:
+the measurement was real and the sentence around it was not.
+
+**Separately, and worth your attention more than any of the above:** a crashed summary job being
+dead-lettered also leaves its reserved budget held, because the cleanup pass does not release
+reservations — only the normal failure path does. That is pre-existing, not something this change
+introduced, and it self-clears when the daily ledger rolls over at midnight UTC. I have not filed it;
+say the word if you want it chased.
+<!--tech-->
+**r1 Medium (Claude half 3) — the `~180s` bound omitted the crash-reclaim backoff.** Their evidence:
+`sweep_expired_leases` is 0009's `create or replace`, not 0008's, and 0009 ADDED a backoff 0008
+explicitly did not have (`0009:70-73`):
+
+    run_after = case when j.cancel_requested or j.attempts >= j.max_attempts then j.run_after
+                     else now() + make_interval(secs => (10 * power(4, least(greatest(j.attempts - 1, 0), 15)))::bigint) end
+
+`claim_next_job` (`0008:106`) will not touch the row until `run_after <= now()`, and `attempts` is
+already >= 1 (incremented at claim, `0008:104`). Backoff curve confirmed by running it:
+attempts 1 -> 10s, 2 -> 40s, 3 -> 160s.
+
+⭐ **But their table is itself unreachable, and measuring beat reasoning again.** Live
+`guardrail_config`: `summary_max_attempts = 1`, `dig_max_attempts = 2`. All 15 jobs ever run:
+`max_attempts = 1`, `max(attempts) = 1`. So `attempts >= max_attempts` is TRUE on the first crash
+for a summary job — the sweep takes the `dead_letter` branch and leaves `run_after` untouched. No
+requeue, no backoff, no retry. The 40s and 160s rungs need `max_attempts >= 3` and cannot occur.
+
+Corrected, per kind:
+
+| kind | max_attempts | first crash | before | after |
+|---|---|---|---|---|
+| summary | 1 | `dead_letter`, never retried | ~122s to dead | **~182s to dead** |
+| dig | 2 | requeue + 10s backoff | ~134s | **~192s** |
+
+The delta (<= SWEEP_MS) is correct in every reachable row, which is why this graded Medium and not
+High. The absolute figure was the defect. `worker/main.ts` now derives all of this from the two
+migrations by file:line so a reader can reproduce it without external input — which was the
+reviewer's stated falsifier for the fix.
+
+**r1 Low (half 3) — "Three new tests, all watched failing first" was four.** `8 -> 12` in the same
+paragraph gives it away. The unnamed fourth is `does NOT acknowledge a sweep that threw`, which is
+the `runOnce`-boundary half of the r1 Medium fix and kills both the hoisted-`onSwept` mutation and
+the `try/finally` variant — arguably the most load-bearing new test on the branch, and the one
+nobody claimed to have watched go red. It WAS watched failing; the count in the prose was wrong, not
+the practice. `check-test-counts.py` cannot see a narrative count, only a total.
+
+**r1 Low (half 3) — the monotonic-clock fix was covered in the wrong half.** The `elapsed >= 0`
+floor was tested but can only fire under a backwards-stepping clock, which production's monotonic
+clock cannot produce; the default clock, which production always uses, was untested. So the green
+`steps backwards` test READ as coverage of the NTP fix without being it. Closed by the two default-
+clock cases added in the previous fold.
+
+**r1 Low (half 3) — `performance.now()` in the esbuild bundle**: verified clean (`platform: node`,
+`target: node22`, `format: cjs`; `performance` is a Node global from 16, esbuild does not rewrite
+globals; the `() => performance.now()` wrapper avoids any unbound-receiver hazard). Filed only
+because nothing observed it — also closed by the default-clock cases.
+
+Three independent Claude halves plus Codex ran on this branch. All four agreed the claim-starvation
+finding was real; they split on its grade (Medium / High / "Medium-as-branch-finding,
+High-as-latent-bug") and the High reading was the one that measured it.

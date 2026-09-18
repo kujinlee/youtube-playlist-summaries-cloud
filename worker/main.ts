@@ -31,9 +31,31 @@ const POLL_MS = 2000;
  *  (Month length 30.44 days — the mean. Recomputing with 30 gives 2.10-2.25 and looks like a
  *  discrepancy.)
  *
- *  Kept well under the DEFAULT_LEASE_SECONDS lease so an expiry is still reclaimed promptly. The
- *  cost of the change is bounded and worth stating: a job stranded by a crashed worker is now
- *  picked up up to SWEEP_MS later than before — a 120s lease becomes up to ~180s to recovery.
+ *  Kept well under the DEFAULT_LEASE_SECONDS lease so an expiry is still reclaimed promptly.
+ *
+ *  ⚠ THE COST, DERIVED FROM THE SQL RATHER THAN ASSERTED — r1 Medium (Claude half 3), and the
+ *  earlier "~180s to recovery" in this comment was wrong in a way no `~` covers.
+ *
+ *  What SWEEP_MS delays is the REQUEUE, not the re-run: ~122s -> ~182s. What happens next is
+ *  decided by `sweep_expired_leases` (0009:68-73), which branches on attempts vs max_attempts and,
+ *  on the retry branch, sets `run_after = now() + 10 * 4^(attempts-1)` seconds — and
+ *  `claim_next_job` (0008:106) will not touch the row until `run_after <= now()`. `attempts` is
+ *  already >= 1, incremented at claim time (0008:104).
+ *
+ *  MEASURED against prod 2026-09-18 — `guardrail_config` is `summary_max_attempts = 1`,
+ *  `dig_max_attempts = 2`, and all 15 jobs ever run carry `max_attempts = 1`, `max(attempts) = 1`:
+ *
+ *    summary (max_attempts 1): a first crash has attempts(1) >= max_attempts(1), so the sweep
+ *      sets 'dead_letter' and leaves run_after alone. THE JOB IS NEVER RETRIED — "recovery" does
+ *      not happen at all, and this change only delays the dead-lettering, ~122s -> ~182s.
+ *    dig (max_attempts 2): a first crash requeues with a 10s backoff, so ~134s -> ~192s.
+ *      A second crash dead-letters.
+ *
+ *  So the 40s and 160s rungs of that exponential are UNREACHABLE at the current configuration,
+ *  and would only matter if max_attempts were raised. In every reachable case the DELTA this
+ *  change adds is the same: up to SWEEP_MS. That delta is what the branch claims credit for; the
+ *  absolute "~180s to recovery" was never a thing the code did.
+ *
  *  Nothing on the job-start path is affected; claim_next_job still runs every POLL_MS.
  *
  *  ⚠ "Well under the lease" IS THE INVARIANT EVERY BOUND HERE RESTS ON, and until r1 it was prose
