@@ -2,7 +2,7 @@ import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import type { JobQueue } from '@/lib/storage/job-queue';
-import type { JobHandler } from '@/lib/job-queue/worker-runner';
+import type { JobHandler, SweepPolicy } from '@/lib/job-queue/worker-runner';
 import { runOnce } from '@/lib/job-queue/worker-runner';
 import { SupabaseJobQueue } from '@/lib/storage/supabase/supabase-job-queue';
 import { makeSummaryHandler } from '@/lib/job-queue/summary-handler';
@@ -17,9 +17,16 @@ const POLL_MS = 2000;
  *
  *  MEASURED 2026-09-18 against prod (plan=free): the worker was 100% of the project's Supabase
  *  traffic at ~79,800 requests/day — an exact 25/25 pair of `sweep_expired_leases` and
- *  `claim_next_job` per sampled window, costing 1.5-2.2 GB/month of a 5 GB egress allowance while
- *  the queue sat empty. Half of that was the sweep, and a lease is 120s, so it was looking for
- *  expiries sixty times more often than one could occur.
+ *  `claim_next_job` per sampled window, while the queue sat empty. Half of that was the sweep,
+ *  and a lease is 120s, so it was looking for expiries sixty times more often than one could occur.
+ *
+ *  ⚠ THE EGRESS RANGE, STATED WITH ITS ASSUMPTION, because the first version of this comment gave
+ *  a span that could not be derived from its own evidence (r1 Low, Codex). A response was measured
+ *  at 919 B of headers + a 2 B body = 921 B. Over the six full days sampled (76,040-81,313 req/day)
+ *  that is 2.13-2.28 GB/month decimal, i.e. 43-46% of the Free plan's 5 GB. That measurement came
+ *  from a FRESH TLS connection, which always receives the ~295 B `set-cookie: __cf_bm`; if the
+ *  worker's keep-alive client does not get it per response the figure is ~1.45-1.55 GB (29-31%).
+ *  Which of the two holds is UNMEASURED — 43-46% is what the evidence directly supports.
  *
  *  Kept well under the 120s lease so an expiry is still reclaimed promptly. The cost of the
  *  change is bounded and worth stating: a job stranded by a crashed worker is now picked up up to
@@ -27,23 +34,37 @@ const POLL_MS = 2000;
  *  job-start path is affected; claim_next_job still runs every POLL_MS. */
 const SWEEP_MS = 60_000;
 
-/** Time-gated predicate: returns true at most once per `intervalMs`, whatever the call rate.
+/** Time-gated sweep cadence: due at most once per `intervalMs`, whatever the call rate.
  *
- *  ⚠ The cursor advances ONLY when the gate opens. Advancing it on every call would mean
- *  `now - last` is perpetually one poll interval under a fast caller, never reaching `intervalMs`,
- *  and the sweep would never run again for the life of the process — lease reclamation silently
- *  dead, with nothing to report it. `tests/lib/lease-sweep-cadence.test.ts` pins that property.
+ *  ⚠ The cursor advances ONLY in onSwept(), never in due(). Advancing it on every DUE CHECK
+ *  would mean `now - last` is perpetually one poll interval under a fast caller, never reaching
+ *  `intervalMs`, and the sweep would never run again for the life of the process — lease
+ *  reclamation silently dead, with nothing to report it.
+ *
+ *  ⚠ And onSwept() is called only after the sweep RESOLVES (see runOnce). Spending the window on
+ *  an attempt that threw would push worst-case crash recovery from ~180s to ~240s on a single
+ *  transient failure, and further when blips land on window boundaries — r1 Medium, found by
+ *  Codex. Both properties are pinned in tests/lib/lease-sweep-cadence.test.ts.
+ *
+ *  The clock is MONOTONIC (`performance.now()`), not wall-clock: an NTP step backwards makes a
+ *  `Date.now()` delta negative, which compares as "inside the window" and suppresses sweeps until
+ *  the host catches up — r1 Low. The negative delta is ALSO floored below, so the gate fails safe
+ *  (sweeps sooner) even if a caller injects a wall clock, which the tests do.
  *
  *  `now` is injected so the cadence is testable without waiting out a real minute. The initial
  *  cursor is -Infinity, so a freshly started worker sweeps immediately rather than ignoring
  *  whatever the previous machine's SIGTERM drain may have stranded. */
-export function makeSweepGate(intervalMs: number, now: () => number = Date.now): () => boolean {
+export function makeSweepGate(
+  intervalMs: number,
+  now: () => number = () => performance.now(),
+): SweepPolicy {
   let lastSweptAt = -Infinity;
-  return () => {
-    const t = now();
-    if (t - lastSweptAt < intervalMs) return false;
-    lastSweptAt = t;
-    return true;
+  return {
+    due: () => {
+      const elapsed = now() - lastSweptAt;
+      return !(elapsed >= 0 && elapsed < intervalMs);
+    },
+    onSwept: () => { lastSweptAt = now(); },
   };
 }
 
@@ -68,18 +89,18 @@ export async function runWorkerLoop(deps: {
   /** Idle backoff between polls. Overridable so cadence tests need not run in real time. */
   pollMs?: number;
   /** Sweep cadence. Defaults to one gate per loop — note it is built HERE, once, not per
-   *  iteration: a gate constructed inside the while would reset its cursor every poll and
-   *  open every time, which is the pre-2026-09-18 behaviour wearing a gate's clothes. */
-  sweepGate?: () => boolean;
+   *  iteration: a gate constructed inside the while would reset its cursor every poll and be
+   *  due every time, which is the pre-2026-09-18 behaviour wearing a gate's clothes. */
+  sweepGate?: SweepPolicy;
 }): Promise<void> {
   const pollMs = deps.pollMs ?? POLL_MS;
-  const shouldSweep = deps.sweepGate ?? makeSweepGate(SWEEP_MS);
+  const sweepPolicy = deps.sweepGate ?? makeSweepGate(SWEEP_MS);
   while (!deps.shutdownSignal.aborted) {
     try {
       const r = await runOnce(deps.queue, deps.handler, {
         workerId: deps.workerId,
         shutdownSignal: deps.shutdownSignal,
-        shouldSweep,
+        sweepPolicy,
       });
       if (r === 'idle') await sleep(pollMs, deps.shutdownSignal);
     } catch (e) {

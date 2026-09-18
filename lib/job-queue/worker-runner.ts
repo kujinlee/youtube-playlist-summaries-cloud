@@ -5,17 +5,32 @@ import { classifyGeminiFailure, releaseGateOpen, isNonRetryable } from '@/lib/ge
 
 export type { JobHandler } from './handler-context';
 
+/** Cadence control for the pre-claim lease sweep.
+ *
+ *  Deliberately ONE object rather than two independent callbacks: `due` and `onSwept` are halves
+ *  of a single protocol, and a caller who supplied only the first would have a cursor that never
+ *  advances — permanently due, silently sweeping on every poll again, with every default-path
+ *  test still green. Holding it wrong should not be expressible. */
+export interface SweepPolicy {
+  /** True when a sweep is due. MUST NOT record the attempt — the window is spent by a sweep that
+   *  landed, not by one that was contemplated. */
+  due(): boolean;
+  /** Called only after `sweepExpired()` RESOLVES. A sweep that threw reclaimed nothing, so it
+   *  must leave the window open for the next poll to retry. */
+  onSwept(): void;
+}
+
 export interface RunnerOpts {
   workerId: string;
   leaseSeconds?: number;
   videoFilter?: string | null;
   shutdownSignal?: AbortSignal;
   wallClockMs?: number;
-  /** Gate on the pre-claim lease sweep. DEFAULTS TO ALWAYS-SWEEP, and that default is
+  /** Cadence for the pre-claim lease sweep. DEFAULTS TO ALWAYS-SWEEP, and that default is
    *  load-bearing: every other caller (both integration suites, and anything added later)
    *  depends on runOnce reclaiming expired leases for it. A caller that polls far faster than
    *  a lease can expire — i.e. the worker loop — supplies a cadence here instead. */
-  shouldSweep?: () => boolean;
+  sweepPolicy?: SweepPolicy;
 }
 
 export const echoHandler: JobHandler = async (job) => ({ echoed: job.payload });
@@ -28,7 +43,13 @@ export async function runOnce(
 ): Promise<'idle' | 'done' | 'failed' | 'cancelled' | 'lost'> {
   // The sweep reclaims leases that expired; it is NOT part of claiming, and the two ran at the
   // same rate only because they were written on the same line. See makeSweepGate in worker/main.ts.
-  if (opts.shouldSweep?.() ?? true) await queue.sweepExpired();
+  // ⚠ onSwept() is AFTER the await, deliberately unguarded: a throwing sweepExpired propagates to
+  // runWorkerLoop's catch WITHOUT acknowledging, so the next poll retries instead of losing the
+  // whole window to a transient failure (r1 Medium).
+  if (opts.sweepPolicy?.due() ?? true) {
+    await queue.sweepExpired();
+    opts.sweepPolicy?.onSwept();
+  }
   const job = await queue.claim(opts.workerId, opts.leaseSeconds ?? 120, opts.videoFilter ?? null);
   if (!job) return 'idle';
 

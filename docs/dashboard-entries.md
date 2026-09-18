@@ -9888,3 +9888,63 @@ on exactly the first press after a quiet night. That is a genuine trade-off and 
 user's call; this change was taken because it has no downside at all. Fly cost is unaffected by
 either: `auto_stop_machines` sits inside `[http_service]`, scoped to `processes = ["web"]`, so the
 worker machine has no idle-stop path and bills the same at any poll rate.
+
+## 2026-09-18
+Correction to the entry above, and a defect the review caught in it — appended rather than edited,
+because this file is append-only for exactly this reason.
+
+**The bandwidth figure was wrong, and wrong in the direction that flattered it.** I wrote that idle
+polling was consuming "between a third and a half" of the month's allowance. From the evidence
+actually recorded — 921 bytes per response, 76,040 to 81,313 requests a day — the number is
+**2.13 to 2.28 GB a month, which is 43 to 46%**. The lower end of the range I published came from an
+assumption I never measured and never wrote down, so nobody reading it could have checked it. The
+honest figure is close to half, not a third.
+
+**And the fix had a bug of its own.** The worker now sweeps once a minute instead of every two
+seconds. But if that once-a-minute sweep failed — a brief network problem, nothing unusual — the
+worker counted it as done and waited another full minute before trying again. So the "recovers a
+crashed job within about three minutes" promise was not something the code actually guaranteed; one
+hiccup made it four, and hiccups landing at the wrong moment made it worse. It now only counts a
+sweep that genuinely succeeded, so a failure is retried on the very next poll.
+
+A third, smaller one: the clock it used could be moved backwards by the machine's time
+synchronisation, which would have quietly suppressed sweeps until the clock caught up. It now uses a
+clock that cannot run backwards, and treats a backwards jump as "sweep now" rather than "wait".
+
+None of these were caught by me. All three came from the adversarial review round, which is the
+argument for having one.
+<!--tech-->
+Round 1, Codex half (`docs/reviews/codex/decouple-lease-sweep-r1-codex.md`): 0 Blocking, 0 High,
+1 Medium, 2 Low.
+
+**Medium — the sweep window was spent on intent, not outcome.** `makeSweepGate` advanced its cursor
+inside the due-check, so a `sweepExpired()` that threw propagated to `runWorkerLoop`'s catch with
+the window already consumed. Worst-case crash recovery became ~240s rather than the stated ~180s,
+and worse when failures land on window boundaries.
+
+Fixed by splitting the seam into `SweepPolicy { due(); onSwept() }`, with `onSwept()` called only
+after the await resolves. ⚠ Deliberately ONE object rather than Codex's suggested two callbacks:
+a caller supplying `shouldSweep` but forgetting `markSweepSucceeded` would hold a cursor that never
+advances — permanently due, silently back to sweeping every poll, with every default-path test
+still green. The invalid state is now unrepresentable.
+
+**Low — wall clock.** `Date.now()` under an NTP step-back yields a negative delta, which compares as
+"inside the window". Default is now `performance.now()`, AND the delta is floored
+(`!(elapsed >= 0 && elapsed < intervalMs)`) so the gate fails safe even under an injected wall
+clock — which the tests use.
+
+**Low — the range was not derivable from its own evidence.** Corrected above and in
+`worker/main.ts`, now stated with the assumption attached: 921 B measured on a FRESH TLS connection,
+which always carries the ~295 B `set-cookie: __cf_bm`; a keep-alive client that does not receive it
+per response would give ~1.45-1.55 GB (29-31%). Unmeasured, and labelled as such.
+
+Three new tests, all watched failing first: `stays due until a sweep is ACKNOWLEDGED, not merely
+attempted`; `comes due immediately if the clock steps backwards`; and, through the shipped loop,
+`retries the sweep on the next poll when it throws, rather than spending the window`. Suite for this
+file: 8 → 12.
+
+Codex also confirmed what the change does NOT break, by reading the SQL: `claim_next_job`
+(`0008:105`) claims only `status='queued'`, so `sweep_expired_leases` is the sole reclaim path and
+the up-to-60s window is real but is not a double-claim hole; production `main()` never passes
+`leaseSeconds`, so the 120s default stands against a 60s sweep; and the `pollMs` test seam does not
+reach production.
