@@ -10347,3 +10347,228 @@ this was first sketched as an option.
 ⚠ Recorded against my own earlier claim: #142 **partly retires PR #318's cost argument**, since a
 worker that exits when idle emits no idle traffic at all. #318's failure-domain fixes (a broken sweep
 must not starve claiming; a draining worker must not claim) stand on their own.
+
+## 2026-09-18
+A small cleanup that set out to remove a booby-trap from the worker code, discovered it had only
+**moved** the trap, and was rebuilt so that it actually removes it.
+
+The background: part of the worker follows a rule that is easy to get wrong in a way nothing would
+notice — record "cleanup done" only if the cleanup actually succeeded, never if it failed. Until
+today that rule lived as a comment and one test. The plan was to move it somewhere it could not be
+got wrong.
+
+The first attempt looked right and was not. Two independent reviewers took it apart. The rule had
+not been removed — it had been carried to a different file, where exactly the same three-line mistake
+was still possible. Worse, the change had quietly made things **less** safe: the old arrangement kept
+the rule in one place and anyone writing a new variant could not get it wrong, because they did not
+hold the rule at all. The new one handed the rule to every future variant, and three copies of half
+of it already existed.
+
+So the change was rebuilt. Now there is one small piece of code that owns both rules, and everything
+else supplies only arithmetic. Nobody writing a new variant holds a rule any more, so nobody can hold
+one wrongly.
+
+The honest limit, stated because the first version of this entry would have overstated it: the
+mistake is now possible in **exactly one place** rather than nowhere. One is the minimum, not zero,
+and a test fails if anyone makes it there — checked by actually making it.
+<!--tech-->
+Backlog **#140**. Shipped: `sweepPolicyFrom(cursor: SweepCursor): SweepPolicy` in
+`lib/job-queue/worker-runner.ts` — the commit-on-resolve and never-reject rules written **exactly
+once**. `makeSweepGate` now supplies only `due()`/`commit()` clock arithmetic; `ALWAYS_SWEEP` is
+`sweepPolicyFrom({ due: () => true, commit: () => {} })`; `runOnce`'s sweep is one line plus a
+defence-in-depth catch.
+
+**r1 findings, two halves, both folded.**
+
+⭐ **Codex Blocking → Claude High 1, and the second is the sharper claim.** Codex refuted *"the
+`finally` mistake is unwritable"*: `SweepPolicy` is exported and injectable, so a custom
+implementation could still write it. The scoped rewrite (*"unwritable by callers"*) was then measured
+as close to vacuous — the mistake was reproducible in three lines inside `makeSweepGate`, **the only
+policy this repo ships**, and the reviewer wrote it. And the count had moved the wrong way: `master`
+wrote each rule once in `runOnce` with dumb two-method implementations that *could not* hold a rule
+wrongly; the one-smart-method interface obliged every implementer to re-derive two, with three copies
+of the never-reject `try/catch` already in the tree. That is this repo's own *a second implementation
+of one rule DRIFTS*, created by the change whose purpose was to remove a discipline. Also measured:
+*"a rule at every call site"* described a population of **one**.
+
+Fixed by the reviewer's option (b) rather than its recommended (a) — (a) was "keep the code, correct
+the claim"; (b) makes the claim true and, unlike (a), also dissolves High 2 for free.
+
+**Claude High 2 — `ALWAYS_SWEEP`'s never-reject clause was guarded by nothing.** Deleting its
+`try/catch` left the suite **25/25 green**, the single survivor of twelve mutations, while
+`makeSweepGate` had a dedicated contract case for the same rule. Its concrete cost was a *false
+diagnostic*: the operator's log would flip from `sweepExpired failed` to `sweep policy rejected` on
+exactly the failure this work exists for. Now unwritable — there is no second copy — plus a direct
+contract case on the default.
+
+**Falsifier, run rather than argued:** mutating `sweepPolicyFrom` to `try/catch/finally { commit() }`
+fails **2** tests (`a sweep that THROWS does not spend the window`, `keeps sweeping AND keeps
+claiming when every sweep throws`); control restored → 26/26 green.
+
+Also folded: Medium 1 (two test comments named mutations that can no longer be written), Medium 2
+(new prose leaned on `runOnce`'s *"never sees an unhandled rejection"* comment, which r1 measured as
+false — `queue.claim` sits outside every `try`, which is why `runWorkerLoop` needs its own catch;
+pre-existing, now flagged rather than cited), Low 1 (duplicated log string, gone with the second
+copy), Low 2 (expected stack traces sprayed through a green suite — silenced at the `cycle` helper),
+Low 5 (stale comment in `tests/integration/worker-main.test.ts`).
+
+⚠ **Low 3 was a process finding and it was right:** `check-dashboard-entry.py` was passing on this
+branch only because the work was uncommitted — it diffs `base...HEAD`. This entry is the obligation
+it would have raised the moment anything was committed.
+
+⚠ **The reviewer also recorded that the subject moved while it was reading** — Codex's findings were
+being folded mid-review — and pinned its report to file SHA-256s so its line numbers stay checkable.
+That is the hazard this repo calls *an instrument that edits the repo corrupts its peers*, and it was
+self-inflicted. Suite 2,844 → 2,845.
+
+## 2026-09-18
+Correction to the entry above, from a second review round: **the claim that the rule is "written in
+one place" was still not quite true — because the tests had their own copy of it.**
+
+A reviewer counted the test code as well as the shipped code, and found the stand-in used by the
+tests had reimplemented both rules by hand rather than using the real one. So the tests were checking
+a lookalike, and the claim was false the moment you included them. The stand-in now uses the real
+code, which makes the statement true instead of merely narrower — and as a bonus the tests now
+exercise the actual rule rather than a copy of it.
+
+That is the **third** time a version of this claim has been wrong. First it said the mistake was
+impossible; it was not. Then it said the mistake was impossible for callers; that was technically
+true and nearly meaningless. Now it says the rule lives in one place and nobody else holds it — and
+this time it was checked by searching for every place that could hold it.
+
+The same round also found that two *other* kinds of failure were being reported under the wrong
+name — if the clock check or the bookkeeping failed, the log said the database call had failed. That
+is the exact problem the previous round complained about, in a new spot, so the three are now
+reported separately.
+
+Nothing in what the worker actually does changed in this round. All five behaviours the earlier work
+established were re-checked by deliberately breaking them one at a time and confirming a test caught
+each.
+<!--tech-->
+r2: **0 Blocking, 0 High, 0 Medium, 3 Low** — and all five PR #318 properties (P1–P5) re-verified by
+running the mutations, each naming the test that kills it.
+
+**r2 Low 2 — the claim was false with tests counted.** The test-local `policy()` double implemented
+`SweepPolicy.run` itself, re-deriving commit-after-resolve AND swallow-the-throw. Rebuilt as
+`{ ran, ...sweepPolicyFrom({ due: () => due, commit: ran }) }`, which makes *"written exactly once,
+no implementation holds either"* true repo-wide rather than scoped to production. ⚠ Verified by
+grep, with the one honest exception recorded in the code: the `rejecting` double hand-rolls a `run`
+**in order to break** the never-rejects contract, so `runOnce`'s defence-in-depth catch has something
+to defend against. A deliberate violator is not a second copy of the rule.
+
+**r2 Low 1 — `due()` sat outside the `try`**, so a throwing cursor REJECTED out of `run`, violating
+the interface's own advertised contract (harmless today only because `runOnce` catches it), and a
+throwing `commit()` was logged as `sweepExpired failed`. `sweepPolicyFrom` is now three stages with
+three diagnostics: cadence-check failure, sweep failure, commit failure. Commit failure is fail-safe
+— the window stays uncommitted, so the next poll sweeps again.
+
+**r2 Low 3** — a comment still pointed at `makeSweepGate.run` as the home of the rule.
+
+⟳ **The falsifier count changed and is corrected here:** mutating `sweepPolicyFrom` now fails **3**
+tests, not 2 — `a sweep that THROWS does not spend the window`, `does NOT acknowledge a sweep that
+threw`, and `keeps sweeping AND keeps claiming when every sweep throws`. Control restored: 26/26.
+
+## 2026-09-18
+Third round on the same small cleanup, and it found the same mistake for the third time in a row:
+**the fix for the previous round's problem was, itself, protected by nothing.**
+
+Round two added careful error handling in three places. Round three deleted all of it, one piece at
+a time, and the tests stayed green every time. So the care was real and completely unverified — it
+could have been removed by anyone tidying up, with a clean build. That is now covered.
+
+It also caught something worse, and this one is a judgement error rather than an omission. When the
+part that decides *"is it time to clean up yet?"* failed, the code treated that as **"no, not yet"**
+— and would keep treating it that way forever. Measured: a hundred checks in a row, zero cleanups,
+each one logging a line that reads like everything is fine. Meanwhile the same file says, fifteen
+lines further down, that sweeping too often is cheap and never sweeping strands jobs. The right
+answer was the opposite of the one I wrote, and it was already written down next to it.
+
+⟳ Two numbers in earlier entries are corrected here: the suite delta for the previous round was
+2,841 → 2,845 measured against where this work started, not 2,844 → 2,845; and one place in the test
+file still said a key mutation fails 2 tests when it fails 3. The roadmap also still carried the
+original framing of this work — "removes a finding by construction" — which two rounds had refuted
+and which the backlog had already corrected. It now says what is true.
+<!--tech-->
+r2 Claude: **0 Blocking, 1 High, 2 Medium, 4 Low.** All folded.
+
+⭐ **High 1 — the r2 Low 1 fix was guarded by nothing: four mutations, four survivors, 26/26 green
+each time.** Collapsing the `due()` guard, dropping the `commit()` guard, and merging either
+diagnostic back into `sweepExpired failed` were all invisible to the suite — while three documents
+advertised exactly those three stages. ⚠ **The same defect as r1 High 2, in the same function, one
+round later, added by the fix for it.** Four cases added; all four mutations now die, control green.
+
+⭐ **Medium 1 — a throwing `due()` was handled in the fail-DANGEROUS direction.** It `return`ed,
+i.e. "not due", so a persistently broken cadence check meant the sweep never ran again: measured
+**0 sweeps across 100 polls**, each logging *"continuing to claim"*. That is the catastrophe
+`worker/main.ts`'s own docblock names — *"lease reclamation silently dead, with nothing to report
+it"* — reached by a route that comment does not guard, and contradicting the rule stated fifteen
+lines below it on `ALWAYS_SWEEP`. One token: `due = true` instead of `return`, so a broken cursor
+degrades to over-sweeping (costly, loud, correct) rather than to silence. Two tests, including one
+through the shipped `makeSweepGate(..., now)` seam, since `now` is exported and injectable.
+
+**Medium 2** — the roadmap tick still carried *"removes a finding BY CONSTRUCTION"*, the framing r1
+refuted and the backlog had already corrected; the roadmap carried none of it. **Low 1** — the test
+file was the one live site still saying the falsifier count is 2; it is 3. **Low 3** — a comment
+credited the clock re-sample to `run`, which since #140 touches no clock. **Low 4** — *"commit
+failure is fail-safe"* is true for reclamation and **false for cost**: measured, a persistently
+throwing commit produced 30 sweeps in 30 polls, i.e. the per-poll egress this branch exists to
+remove, restored silently. Now says which property it is safe for.
+
+⭐ **The reviewer also reports it could NOT refute the "written exactly once" claim a fourth time**,
+having enumerated every construction site. After three refutations, it holds.
+
+Suite 2,845 → 2,849.
+
+## 2026-09-18
+Round three, and the streak of serious findings ended: nothing blocking, nothing high, from either
+reviewer. One of them says plainly *"the code is done"* and *"do not open a fourth round"*.
+
+What it did still find was the **fourth** wrong version of the same sentence. I have been claiming,
+in various narrowing forms, that a particular mistake can no longer be made. It went: impossible →
+impossible for callers → written in one place → possible in exactly one function. The fourth is
+false in the way the sentence invites a reader to take it, and it is false for the reason the *first*
+review round already gave and that I never actually fixed: the door that lets someone supply their
+own version is still open, so there is a second place the mistake can be made, and no test watches
+it. The reviewer re-ran the very first round's counterexample against today's code and it still
+works.
+
+I have stopped claiming impossibility. The sentence now says where the mistake can be made *in this
+project's own code*, names the open door, and says what to do instead.
+
+The second finding is about record-keeping, and it matters more than it sounds. The roadmap points at
+the backlog as "the full account" of this work — and the backlog had not been updated since round
+two, so it contained no trace of the single most consequential change on the branch: that a broken
+timing check used to mean *never clean up again*, and now means *clean up every time*. Anyone
+reconciling this work from the place the roadmap sends them would not have learned it happened. Fixed.
+
+⟳ Also corrected from earlier entries: this entry's predecessor called itself "third round" in its
+human half and "r2" in its technical half; and a correction I made attributed a number to the wrong
+entry. The numbers themselves were all independently re-verified and are right.
+<!--tech-->
+r3: **Codex CONVERGED (0 findings at any severity).** **Claude: 0 Blocking, 0 High, 2 Medium, 5 Low**
+— severity across the three rounds ran 2 High → 1 High → **0 High**, which is what converging looks
+like. Both halves re-verified P1–P5 by running mutations rather than reading each other; the Claude
+half applied **21 mutations, 21 killed**, reverted each, and reported `git status --porcelain` clean.
+
+⭐ **r3 Medium 1 — the fourth refutation, and the first refuted by round ONE's evidence.** Six live
+sites said a version of *"writable in exactly one function"*. `SweepPolicy` is exported and both
+`RunnerOpts.sweepPolicy` and `runWorkerLoop`'s `sweepGate` accept an arbitrary one, so a
+caller-supplied policy is a second such function — and **no test observes a caller policy's commit
+discipline**. Codex r1's Blocking offered two fixes: narrow the prose, or privatise the seam.
+**Neither was applied** — a third thing was done (`sweepPolicyFrom`, a real improvement that makes
+the *corpus* claim true) and the modal claim reappeared in new words. Now scoped "in this repository"
+at all six sites, with the open seam named and `SweepCursor` pointed at as the alternative.
+⚠ Privatising the seam was explicitly NOT recommended at round 3 — the `rejecting` test double needs
+it, and it is a design change.
+
+**r3 Medium 2 — the durable layer stopped a round short.** `08ea36be`, the commit carrying the only
+behavioural change on this branch, touched the dashboard and roadmap but **not** `docs/backlog.md` —
+the document the roadmap calls the full account. Row #140 now carries r2 High 1 and, in full, the
+fail-dangerous → fail-open flip with its measured numbers (0 sweeps/100 polls before, 100/100 after)
+and the honest trade: ~43,200 sweep attempts/day while broken.
+
+**Lows folded:** the cost side of the fail-open trade is now quantified rather than asserted (Low 1);
+its reachability is stated — unreachable with either shipped cursor, reachable through the exported
+`now` and `SweepPolicy` seams (Low 2); and the comment now says a cursor that **throws**, because a
+`due()` returning `undefined` fails CLOSED — 0 sweeps in 3 polls — which `tsc` closes for any
+TypeScript implementer but not for a JS caller or an `as unknown as` cast (Low 5).
