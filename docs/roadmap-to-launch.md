@@ -480,6 +480,28 @@ on the round-2 reviewer's own disposition. Filed in `docs/backlog.md` the same t
   **Falsifier:** SIGTERM a worker mid-summary; assert the job is not `dead_letter` and the ledger
   was not charged. Second falsifier for the corrected scope: make ONE heartbeat RPC fail during a
   job and assert the job survives.
+- [ ] **backlog #141 — 🟠 `fly.toml` and production disagree, and the next deploy silently reverts a
+  live cost saving.** `fly.toml:42` says `min_machines_running = 1`; the running web machine says
+  **0**, set via the Machines API on 2026-09-18 — deliberately NOT `fly deploy`, because the running
+  image is from **24 Aug** while master has **177 commits** since, **6 touching shipped code** (M4's
+  `0027` promotion, the #23 corrections feature), so a one-integer "config-only" deploy would have
+  shipped a month of unreleased application code. ⭐ **The failure mode is SILENCE** — nothing breaks,
+  no gate fires, ~$5/mo simply returns with no event to connect it to. One-line fix; it should ride
+  inside #142, which touches the same file. ⚠ If #142 slips, do it alone — the trap is armed meanwhile.
+  **Falsifier:** `fly.toml` says 0 AND the live config still reports 0 after the next deploy.
+- [ ] **backlog #142 — 🟢 wake-on-visit: let the app go dormant and return when someone arrives.**
+  Designed and agreed 2026-09-18, not started; blocked on nothing. Worker gains a private service +
+  **Flycast** (routes through Fly Proxy, so autostart fires — `.internal` explicitly cannot, which is
+  why the worker cannot wake today), the enqueue path pokes it best-effort, and the worker `exit 0`s
+  when drained under `[[restart]] policy = "no"` so the machine returns to `stopped`.
+  ⭐ **The worker stops ITSELF; the proxy is only allowed to START it** — Fly documents `soft_limit`
+  but never promises an in-flight request blocks a stop, so a hold-the-request-open design would rest
+  on unpromised behaviour. ⭐ **The poke is an optimisation, not a correctness requirement** — the job
+  is durably in Postgres first, so a failed poke costs latency, never work.
+  ⚠ Partly retires PR #318's cost argument (a worker that exits emits no idle traffic); #318's
+  failure-domain fixes stand on their own.
+  **Falsifier:** from both machines `stopped`, visit the site and request a summary — the worker must
+  reach `started` with no human action and return to `stopped` after draining.
 - [ ] **backlog #140 — 🟢 collapse `SweepPolicy` to a single `run(fn)`.** The only proposed change
   that removes a finding BY CONSTRUCTION rather than by a guard. ⚠ Not to be confused with the
   redesign that was REFUTED in #318 r2 (hoisting the sweep into `runWorkerLoop` dissolves none of

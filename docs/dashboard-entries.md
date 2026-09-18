@@ -10300,3 +10300,50 @@ handler duration but the few seconds of that sequence, and only when the PROCESS
 
 Severity **held at 🔴** — the defect did not get smaller, only better understood. Exposure is zero
 (0 jobs/30 days), so the disposition is *before real traffic*, not *now*.
+
+## 2026-09-18
+You asked whether the "wake on visit" plan was written down anywhere. **It was not** — it existed
+only in a conversation, which is the one place work reliably disappears from. It is filed now.
+
+Checking that turned up something worse that nobody had asked about. When I made the website cheaper
+this morning, I changed a setting directly on the running server rather than in the project's
+configuration file — on purpose, because deploying the file would also have shipped a month of other
+unreleased work as a side effect. But that leaves the file and the live server disagreeing, and **the
+next time anyone deploys, the file wins and the saving quietly comes back as a cost.**
+
+Nothing would break. No alarm would go off. The bill would simply stop being small, months later,
+with no event to connect it to. That is now written down as its own item, with the one-line fix.
+
+Both are filed: the disagreement (to be fixed inside whichever change next touches that file) and the
+wake-on-visit design itself, with the research behind it — which parts of the hosting platform can
+wake a stopped machine, which cannot, and the two traps found while checking.
+<!--tech-->
+Backlog **#141 🟠** and **#142 🟢**, plus their roadmap twins in the dev-infrastructure debt section.
+
+**#141 — the drift.** `fly.toml:42` `min_machines_running = 1` vs the live web machine's **0**, set
+through the Machines API on 2026-09-18. ⚠ The API was used *instead of* `fly deploy` deliberately:
+the running image is `deployment-01M0V00FCQFX3QV1QA6ZYYVWNY` from **24 Aug** and master carries
+**177 commits** since, **6 touching shipped code** (M4's `0027` promotion, the #23 corrections
+feature). A one-integer "config-only" deploy would have shipped all of it. Graded 🟠 rather than 🟢
+because the failure mode is silence — no gate, no red, just a cost returning.
+
+**#142 — the slice.** Mechanisms verified against Fly's docs, not assumed: **Flycast** routes through
+Fly Proxy so autostart fires, and `.internal` explicitly does not (*"Machines can't be automatically
+stopped or started by Fly Proxy"*) — that is precisely why the worker cannot wake today. Machines in
+`stopped`/`suspended` bill nothing for CPU/RAM. `[[restart]] policy = "no"` + `processes = ["worker"]`
+means a clean `exit 0` leaves the machine stopped.
+
+⭐ **Design decision recorded because it is the non-obvious half:** the worker stops **itself**; the
+proxy is only permitted to **start** it. Fly's autostop reference documents `soft_limit` concurrency
+and says **nothing** about an in-flight request blocking a stop, so the tempting "hold a long request
+open to look busy" design would rest on behaviour Fly never promised — the exact shape that cost this
+branch four review rounds. The worker already knows if its queue is empty; the proxy cannot.
+
+⭐ **And the poke is an optimisation, not a correctness requirement** — the job is durably in Postgres
+before it is sent, so a failed poke costs latency and never work. That is what makes the slice safe to
+land incrementally, and it refutes the "the start call fails and the job hangs" objection raised when
+this was first sketched as an option.
+
+⚠ Recorded against my own earlier claim: #142 **partly retires PR #318's cost argument**, since a
+worker that exits when idle emits no idle traffic at all. #318's failure-domain fixes (a broken sweep
+must not starve claiming; a draining worker must not claim) stand on their own.
