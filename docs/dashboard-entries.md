@@ -10518,3 +10518,57 @@ remove, restored silently. Now says which property it is safe for.
 having enumerated every construction site. After three refutations, it holds.
 
 Suite 2,845 → 2,849.
+
+## 2026-09-18
+Round three, and the streak of serious findings ended: nothing blocking, nothing high, from either
+reviewer. One of them says plainly *"the code is done"* and *"do not open a fourth round"*.
+
+What it did still find was the **fourth** wrong version of the same sentence. I have been claiming,
+in various narrowing forms, that a particular mistake can no longer be made. It went: impossible →
+impossible for callers → written in one place → possible in exactly one function. The fourth is
+false in the way the sentence invites a reader to take it, and it is false for the reason the *first*
+review round already gave and that I never actually fixed: the door that lets someone supply their
+own version is still open, so there is a second place the mistake can be made, and no test watches
+it. The reviewer re-ran the very first round's counterexample against today's code and it still
+works.
+
+I have stopped claiming impossibility. The sentence now says where the mistake can be made *in this
+project's own code*, names the open door, and says what to do instead.
+
+The second finding is about record-keeping, and it matters more than it sounds. The roadmap points at
+the backlog as "the full account" of this work — and the backlog had not been updated since round
+two, so it contained no trace of the single most consequential change on the branch: that a broken
+timing check used to mean *never clean up again*, and now means *clean up every time*. Anyone
+reconciling this work from the place the roadmap sends them would not have learned it happened. Fixed.
+
+⟳ Also corrected from earlier entries: this entry's predecessor called itself "third round" in its
+human half and "r2" in its technical half; and a correction I made attributed a number to the wrong
+entry. The numbers themselves were all independently re-verified and are right.
+<!--tech-->
+r3: **Codex CONVERGED (0 findings at any severity).** **Claude: 0 Blocking, 0 High, 2 Medium, 5 Low**
+— severity across the three rounds ran 2 High → 1 High → **0 High**, which is what converging looks
+like. Both halves re-verified P1–P5 by running mutations rather than reading each other; the Claude
+half applied **21 mutations, 21 killed**, reverted each, and reported `git status --porcelain` clean.
+
+⭐ **r3 Medium 1 — the fourth refutation, and the first refuted by round ONE's evidence.** Six live
+sites said a version of *"writable in exactly one function"*. `SweepPolicy` is exported and both
+`RunnerOpts.sweepPolicy` and `runWorkerLoop`'s `sweepGate` accept an arbitrary one, so a
+caller-supplied policy is a second such function — and **no test observes a caller policy's commit
+discipline**. Codex r1's Blocking offered two fixes: narrow the prose, or privatise the seam.
+**Neither was applied** — a third thing was done (`sweepPolicyFrom`, a real improvement that makes
+the *corpus* claim true) and the modal claim reappeared in new words. Now scoped "in this repository"
+at all six sites, with the open seam named and `SweepCursor` pointed at as the alternative.
+⚠ Privatising the seam was explicitly NOT recommended at round 3 — the `rejecting` test double needs
+it, and it is a design change.
+
+**r3 Medium 2 — the durable layer stopped a round short.** `08ea36be`, the commit carrying the only
+behavioural change on this branch, touched the dashboard and roadmap but **not** `docs/backlog.md` —
+the document the roadmap calls the full account. Row #140 now carries r2 High 1 and, in full, the
+fail-dangerous → fail-open flip with its measured numbers (0 sweeps/100 polls before, 100/100 after)
+and the honest trade: ~43,200 sweep attempts/day while broken.
+
+**Lows folded:** the cost side of the fail-open trade is now quantified rather than asserted (Low 1);
+its reachability is stated — unreachable with either shipped cursor, reachable through the exported
+`now` and `SweepPolicy` seams (Low 2); and the comment now says a cursor that **throws**, because a
+`due()` returning `undefined` fails CLOSED — 0 sweeps in 3 polls — which `tsc` closes for any
+TypeScript implementer but not for a JS caller or an `as unknown as` cast (Low 5).

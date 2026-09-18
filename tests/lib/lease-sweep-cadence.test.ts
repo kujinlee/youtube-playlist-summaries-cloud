@@ -126,8 +126,9 @@ describe('makeSweepGate', () => {
 
   // The never-reject clause, on the gate. ⚠ Comment scoped honestly after r1: this does NOT prove
   // the mistake is impossible. Both rules live in `sweepPolicyFrom` and `makeSweepGate` supplies
-  // only clock arithmetic, so the mistake is writable in exactly ONE function — the minimum, not
-  // zero. `a sweep that THROWS does not spend the window` is what kills it there (measured: that
+  // only clock arithmetic, so the mistake is writable in exactly ONE function IN THIS REPO — the
+  // minimum, not zero. ⚠ A caller-supplied SweepPolicy is a second one and nothing here observes
+  // it (r3 Medium 1); pass a SweepCursor to sweepPolicyFrom instead of writing a policy. `a sweep that THROWS does not spend the window` is what kills it there (measured: that
   // mutation fails 3 tests).
   test('never rejects, whatever the sweep does — the contract the call site relies on', async () => {
     const gate = makeSweepGate(60_000);

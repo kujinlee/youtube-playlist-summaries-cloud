@@ -506,8 +506,8 @@ on the round-2 reviewer's own disposition. Filed in `docs/backlog.md` the same t
   ⚠ **NOT "removes a finding by construction"** — that framing was the filing's, and two review
   rounds refuted it. Shipped as `sweepPolicyFrom(cursor)`: both rules written EXACTLY ONCE, no
   implementation holding either, which restores master's single-copy property rather than achieving
-  impossibility. The honest bound is that the mistake is writable in **exactly one function — the
-  minimum, not zero** — and it is caught **by a guard**, three tests, measured. Full account in
+  impossibility. The honest bound is that the mistake is writable in **exactly one function IN THIS REPO — the
+  minimum, not zero** (a caller-supplied `SweepPolicy` is a second, unobserved one — r3 Medium 1) — and it is caught **by a guard**, three tests, measured. Full account in
   `docs/backlog.md` #140. ⚠ Not to be confused with the
   redesign that was REFUTED in #318 r2 (hoisting the sweep into `runWorkerLoop` dissolves none of
   the three findings). The obstacle is gone: the comment claiming callers depend on `runOnce`

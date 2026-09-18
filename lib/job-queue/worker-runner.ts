@@ -54,7 +54,9 @@ export interface SweepCursor {
  *  broken sweep cannot starve `queue.claim` (PR #318 r1 High — measured 40 sweeps / 0 claims).
  *
  *  ⚠ A `finally` here — or dropping the `return` from the sweep's catch — would silently undo the
- *  first rule. This is the one function where that edit is possible, and it fails THREE tests
+ *  first rule. This is the one function IN THIS REPOSITORY where that edit is possible (see the
+ *  interface docblock: a caller-supplied `SweepPolicy` is a second one, unobserved), and it fails
+ *  THREE tests
  *  (measured 2026-09-18; control green): `a sweep that THROWS does not spend the window`,
  *  `does NOT acknowledge a sweep that threw`, and `keeps sweeping AND keeps claiming when every
  *  sweep throws`. Every other route was deleted by moving the rules here rather than into each
@@ -82,8 +84,17 @@ export function sweepPolicyFrom(cursor: SweepCursor): SweepPolicy {
       // reached by a different route. This file already states the rule fifteen lines below, on
       // ALWAYS_SWEEP: *sweeping too often is cheap; never sweeping strands crashed jobs.*
       //
-      // So a broken cursor degrades to sweeping on EVERY poll — costly, loud in the logs, and
-      // correct — rather than silently never sweeping again.
+      // So a cursor that THROWS degrades to sweeping on EVERY poll — costly, loud in the logs, and
+      // correct — rather than silently never sweeping again. ⚠ Three scopings, all measured (r3):
+      //  - THROWS, not "misbehaves": a `due()` returning `undefined` fails CLOSED, 0 sweeps in 3
+      //    polls. `tsc` closes that for any TypeScript implementer (`due(): boolean`), so it is a
+      //    residual for a JS caller or an `as unknown as` cast, not a defect.
+      //  - The cost is not free: every-poll sweeping is the ~40,000 requests/day this branch exists
+      //    to remove. Loud and costly beats silent and broken; it is the right direction, not a
+      //    win without a price.
+      //  - Unreachable with either shipped cursor (`performance.now()` arithmetic, and `() => true`);
+      //    reachable through the exported, injectable `now` and `SweepPolicy` seams — which is why
+      //    it is guarded rather than left.
       let due = true;
       try {
         due = cursor.due();
