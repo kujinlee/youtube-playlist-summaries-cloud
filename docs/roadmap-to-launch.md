@@ -466,8 +466,20 @@ on the round-2 reviewer's own disposition. Filed in `docs/backlog.md` the same t
   deploy** — with `billableSucceeded: true`, because `classifyGeminiFailure` returns `'keep'` once
   aborted. ⚠ A **design** call (drain vs abort-and-don't-charge-the-attempt), not a patch, and the
   complete fix is SQL — `claim_next_job` increments `attempts` with no un-claim.
+  ⟳ **CORRECTED same day: deploy is ONE OF THREE triggers, and not the one that fires in normal
+  operation.** `AbortSignal.any([wallClock, leaseLost, shutdownSignal])` means the handler also dies
+  on a **10-minute wallClock timeout** and on **`leaseLost` — a SINGLE un-retried heartbeat error**
+  (`heartbeat` throws on any PostgREST error; the caller is `.catch(() => leaseLost.abort())`, firing
+  every 40s for the whole job). One transient network blip during a multi-minute summary kills the
+  job and keeps the charge. ⚠ Fixing only SIGTERM leaves the other two — instance-not-class.
+  ✅ **NO DATA CORRUPTION** (asked and answered): a pre-write abort check guards the irreversible
+  sequence, status is monotonic in SQL (`0009:141`), and every reader gates on `'promoted'`, so a
+  half-written row is invisible rather than broken. Residual is an orphaned staged blob only, and
+  only if the process is SIGKILLed mid-sequence.
+  **Exposure today is ZERO** (0 jobs in 30 days) → fix before real traffic, not immediately.
   **Falsifier:** SIGTERM a worker mid-summary; assert the job is not `dead_letter` and the ledger
-  was not charged.
+  was not charged. Second falsifier for the corrected scope: make ONE heartbeat RPC fail during a
+  job and assert the job survives.
 - [ ] **backlog #140 — 🟢 collapse `SweepPolicy` to a single `run(fn)`.** The only proposed change
   that removes a finding BY CONSTRUCTION rather than by a guard. ⚠ Not to be confused with the
   redesign that was REFUTED in #318 r2 (hoisting the sweep into `runWorkerLoop` dissolves none of

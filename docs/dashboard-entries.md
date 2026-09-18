@@ -10254,3 +10254,49 @@ concurrent protocol, not mechanism defects. **It FIRES TO REDESIGN if round 3 pr
 `runOnce`'s sweep/claim sequence introduced by the r2 shutdown-guard fix** — three fix-induced links
 in a row in one ~18-line component, at which point the shape is the defect whatever the round counter
 says.
+
+## 2026-09-18
+You asked whether the deploy problem could also corrupt data, because that would change how urgent it
+is. **It cannot — but it also does not only happen on deploy, and that second half is the part that
+matters.**
+
+**No corruption.** Three separate things protect it: the code checks for a shutdown *before* it starts
+writing anything, the database refuses to let a half-finished write overwrite a finished one, and
+everything that displays a summary requires the finished state. A job cut off partway leaves nothing
+visible — you would see "no summary", never a damaged one.
+
+**But it is not deploy-only.** A running job is also killed by a ten-minute time limit, and — the one
+that matters — by **a single failed check-in to the database**. The worker pings the database every
+forty seconds to say it is still alive, and if one of those pings fails for any reason at all, the job
+is abandoned and the money is still counted. There is no retry. One brief network hiccup during a
+summary does it.
+
+So the honest answer to your question is: **not a data problem, so it does not jump the queue on those
+grounds — but not safely deferrable to "whenever we next deploy" either.** Nothing is at risk today
+because nothing is running. It needs fixing before the project takes real traffic.
+
+I have corrected the backlog entry, which said "every deploy" and would have led whoever picked it up
+to fix the deploy case and leave the other two open.
+<!--tech-->
+Backlog **#139** and its roadmap row amended in place with `⟳ CORRECTED`, not rewritten.
+
+**The trigger set is three, from `AbortSignal.any([wallClock.signal, leaseLost.signal,
+opts.shutdownSignal])`:** SIGTERM; `wallClock` at `opts.wallClockMs ?? 600_000`; and ⭐ `leaseLost`,
+where `SupabaseJobQueue.heartbeat` does `if (error) throw error` and the caller is
+`.catch(() => leaseLost.abort())` — **no retry, no backoff**, every `leaseSeconds/3` = 40s.
+Cheap partial mitigation for that one: retry once, or require two consecutive failures.
+
+**No-corruption evidence:** (a) the pre-write abort check in `summary-handler.ts`, whose own comment
+says *"don't start the irreversible blob/persist sequence"*; (b) `0009:141` — *"Monotonic status,
+KEY-SCOPED: preserve `'promoted'` against a stale `'committed'` write"*; (c) 5 TS call sites and 4 SQL
+functions all gate on `status === 'promoted'`.
+
+⭐ **The non-obvious load-bearing fact:** an `AbortSignal` does **not** cancel an in-flight `await`.
+Past the pre-write check, `putStaged → 'committed' → promote → 'promoted'` runs to completion despite
+the abort, because nothing downstream re-checks the signal. The torn-write window is therefore not the
+handler duration but the few seconds of that sequence, and only when the PROCESS DIES — SIGKILL at
+`fly.toml`'s 120s `kill_timeout`, or machine loss. Residual: a staged-but-unpromoted blob plus a
+`'committed'` row, invisible to readers, never retried under `max_attempts = 1`.
+
+Severity **held at 🔴** — the defect did not get smaller, only better understood. Exposure is zero
+(0 jobs/30 days), so the disposition is *before real traffic*, not *now*.
