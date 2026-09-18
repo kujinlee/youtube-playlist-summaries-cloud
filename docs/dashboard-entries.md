@@ -10420,3 +10420,50 @@ it would have raised the moment anything was committed.
 being folded mid-review — and pinned its report to file SHA-256s so its line numbers stay checkable.
 That is the hazard this repo calls *an instrument that edits the repo corrupts its peers*, and it was
 self-inflicted. Suite 2,844 → 2,845.
+
+## 2026-09-18
+Correction to the entry above, from a second review round: **the claim that the rule is "written in
+one place" was still not quite true — because the tests had their own copy of it.**
+
+A reviewer counted the test code as well as the shipped code, and found the stand-in used by the
+tests had reimplemented both rules by hand rather than using the real one. So the tests were checking
+a lookalike, and the claim was false the moment you included them. The stand-in now uses the real
+code, which makes the statement true instead of merely narrower — and as a bonus the tests now
+exercise the actual rule rather than a copy of it.
+
+That is the **third** time a version of this claim has been wrong. First it said the mistake was
+impossible; it was not. Then it said the mistake was impossible for callers; that was technically
+true and nearly meaningless. Now it says the rule lives in one place and nobody else holds it — and
+this time it was checked by searching for every place that could hold it.
+
+The same round also found that two *other* kinds of failure were being reported under the wrong
+name — if the clock check or the bookkeeping failed, the log said the database call had failed. That
+is the exact problem the previous round complained about, in a new spot, so the three are now
+reported separately.
+
+Nothing in what the worker actually does changed in this round. All five behaviours the earlier work
+established were re-checked by deliberately breaking them one at a time and confirming a test caught
+each.
+<!--tech-->
+r2: **0 Blocking, 0 High, 0 Medium, 3 Low** — and all five PR #318 properties (P1–P5) re-verified by
+running the mutations, each naming the test that kills it.
+
+**r2 Low 2 — the claim was false with tests counted.** The test-local `policy()` double implemented
+`SweepPolicy.run` itself, re-deriving commit-after-resolve AND swallow-the-throw. Rebuilt as
+`{ ran, ...sweepPolicyFrom({ due: () => due, commit: ran }) }`, which makes *"written exactly once,
+no implementation holds either"* true repo-wide rather than scoped to production. ⚠ Verified by
+grep, with the one honest exception recorded in the code: the `rejecting` double hand-rolls a `run`
+**in order to break** the never-rejects contract, so `runOnce`'s defence-in-depth catch has something
+to defend against. A deliberate violator is not a second copy of the rule.
+
+**r2 Low 1 — `due()` sat outside the `try`**, so a throwing cursor REJECTED out of `run`, violating
+the interface's own advertised contract (harmless today only because `runOnce` catches it), and a
+throwing `commit()` was logged as `sweepExpired failed`. `sweepPolicyFrom` is now three stages with
+three diagnostics: cadence-check failure, sweep failure, commit failure. Commit failure is fail-safe
+— the window stays uncommitted, so the next poll sweeps again.
+
+**r2 Low 3** — a comment still pointed at `makeSweepGate.run` as the home of the rule.
+
+⟳ **The falsifier count changed and is corrected here:** mutating `sweepPolicyFrom` now fails **3**
+tests, not 2 — `a sweep that THROWS does not spend the window`, `does NOT acknowledge a sweep that
+threw`, and `keeps sweeping AND keeps claiming when every sweep throws`. Control restored: 26/26.

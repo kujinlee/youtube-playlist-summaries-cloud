@@ -53,18 +53,48 @@ export interface SweepCursor {
  *  window and the next poll retries it (PR #318 r1 Medium). The `catch` does not rethrow, so a
  *  broken sweep cannot starve `queue.claim` (PR #318 r1 High — measured 40 sweeps / 0 claims).
  *
- *  ⚠ A `finally` here would silently undo the first rule. This is the one function where that edit
- *  is possible, and `a sweep that THROWS does not spend the window` kills it. Every other route to
- *  that mistake was deleted by moving the rules here rather than into each implementation. */
+ *  ⚠ A `finally` here — or dropping the `return` from the sweep's catch — would silently undo the
+ *  first rule. This is the one function where that edit is possible, and it fails THREE tests
+ *  (measured 2026-09-18; control green): `a sweep that THROWS does not spend the window`,
+ *  `does NOT acknowledge a sweep that threw`, and `keeps sweeping AND keeps claiming when every
+ *  sweep throws`. Every other route was deleted by moving the rules here rather than into each
+ *  implementation.
+ *
+ *  Verified by grep: `makeSweepGate`, `ALWAYS_SWEEP` and the test double are all built from this
+ *  combinator and hold neither rule. ⚠ ONE hand-rolled `run` remains, at
+ *  `tests/lib/lease-sweep-cadence.test.ts`'s `rejecting` double — it exists precisely TO break the
+ *  never-rejects contract, so that `runOnce`'s defence-in-depth catch has something to defend
+ *  against. A deliberate violator is not a second copy of the rule. */
 export function sweepPolicyFrom(cursor: SweepCursor): SweepPolicy {
   return {
     async run(sweep) {
-      if (!cursor.due()) return;
+      // ⚠ THREE STAGES, THREE DIAGNOSTICS (r2 Low 1). The first version wrapped only the sweep, so
+      // a throwing `due()` REJECTED out of `run` — breaking the never-rejects clause this interface
+      // advertises — and a throwing `commit()` was reported as `sweepExpired failed`, which is a
+      // FALSE diagnostic and precisely the class r1 High 2 was filed about: the one log line that
+      // distinguishes "the database call is broken" from "the cadence is broken" naming the wrong
+      // one, on the failure this whole branch exists for.
+      let due: boolean;
+      try {
+        due = cursor.due();
+      } catch (e) {
+        console.error('[worker] sweep cadence check failed (continuing to claim):', e);
+        return;
+      }
+      if (!due) return;
+
       try {
         await sweep();
-        cursor.commit();
       } catch (e) {
         console.error('[worker] sweepExpired failed (continuing to claim):', e);
+        return; // ⚠ the window is NOT committed — the next poll retries (PR #318 r1 Medium)
+      }
+
+      try {
+        cursor.commit();
+      } catch (e) {
+        // Failing to record a landed sweep is fail-safe: the next poll sweeps again.
+        console.error('[worker] sweep cadence commit failed (continuing to claim):', e);
       }
     },
   };
@@ -121,7 +151,8 @@ export async function runOnce(
   //
   //  1. The policy commits its cadence window ONLY after `sweep()` resolves, so a sweep that threw
   //     does not spend the 60s window and the next poll retries it (PR #318 r1 Medium, Codex).
-  //     ⚠ That rule now lives inside `makeSweepGate.run`, not here — see backlog #140.
+  //     ⚠ That rule now lives inside `sweepPolicyFrom`, not here and not in `makeSweepGate` —
+  //     see backlog #140.
   //  2. The catch does NOT rethrow, so a broken sweep cannot stop the CLAIM below (r1 High).
   //     sweep_expired_leases and claim_next_job are separate functions with separate grants and
   //     separate signatures, so one can break alone — a migration replacing it, a stale PostgREST

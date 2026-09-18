@@ -1,4 +1,6 @@
-import { runOnce, echoHandler, DEFAULT_LEASE_SECONDS, ALWAYS_SWEEP } from '@/lib/job-queue/worker-runner';
+import {
+  runOnce, echoHandler, DEFAULT_LEASE_SECONDS, ALWAYS_SWEEP, sweepPolicyFrom,
+} from '@/lib/job-queue/worker-runner';
 import { runWorkerLoop, makeSweepGate, SWEEP_MS } from '@/worker/main';
 import type { JobQueue } from '@/lib/storage/job-queue';
 import type { JobHandler, SweepPolicy } from '@/lib/job-queue/worker-runner';
@@ -218,16 +220,14 @@ describe('the sweep interval stays inside the lease it guards', () => {
 });
 
 describe('runOnce honours the sweep policy', () => {
-  // A policy that either runs the sweep or skips it, recording whether it was asked to.
+  // ⭐ Built FROM the combinator, not hand-rolled (r2 Low 2). The previous double re-implemented
+  // both rules itself — commit-after-resolve and swallow-the-throw — which made the branch's claim
+  // that they are "written exactly once, and no implementation holds either" false as soon as you
+  // counted the tests. Supplying only a cursor keeps the claim true repo-wide AND means this double
+  // exercises the real rule code rather than a lookalike.
   const policy = (due: boolean) => {
     const ran = jest.fn();
-    return {
-      ran,
-      run: async (sweep: () => Promise<unknown>) => {
-        if (!due) return;
-        try { await sweep(); ran(); } catch { /* the real gate logs; silence here */ }
-      },
-    };
+    return { ran, ...sweepPolicyFrom({ due: () => due, commit: ran }) };
   };
 
   // Break this catches: reverting worker-runner.ts to an unconditional `await queue.sweepExpired()`.
