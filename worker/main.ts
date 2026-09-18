@@ -28,11 +28,19 @@ const POLL_MS = 2000;
  *  worker's keep-alive client does not get it per response the figure is ~1.45-1.55 GB (29-31%).
  *  Which of the two holds is UNMEASURED — 43-46% is what the evidence directly supports.
  *
- *  Kept well under the 120s lease so an expiry is still reclaimed promptly. The cost of the
- *  change is bounded and worth stating: a job stranded by a crashed worker is now picked up up to
- *  SWEEP_MS later than before — a 120s lease becomes up to ~180s to recovery. Nothing on the
- *  job-start path is affected; claim_next_job still runs every POLL_MS. */
-const SWEEP_MS = 60_000;
+ *  (Month length 30.44 days — the mean. Recomputing with 30 gives 2.10-2.25 and looks like a
+ *  discrepancy.)
+ *
+ *  Kept well under the DEFAULT_LEASE_SECONDS lease so an expiry is still reclaimed promptly. The
+ *  cost of the change is bounded and worth stating: a job stranded by a crashed worker is now
+ *  picked up up to SWEEP_MS later than before — a 120s lease becomes up to ~180s to recovery.
+ *  Nothing on the job-start path is affected; claim_next_job still runs every POLL_MS.
+ *
+ *  ⚠ "Well under the lease" IS THE INVARIANT EVERY BOUND HERE RESTS ON, and until r1 it was prose
+ *  connecting two literals in two modules: raising this to 30 minutes left tsc clean and every
+ *  gate green while ~180s silently became ~32 minutes. It is now asserted against
+ *  DEFAULT_LEASE_SECONDS in tests/lib/lease-sweep-cadence.test.ts — a decision became a gate. */
+export const SWEEP_MS = 60_000;
 
 /** Time-gated sweep cadence: due at most once per `intervalMs`, whatever the call rate.
  *
@@ -51,9 +59,19 @@ const SWEEP_MS = 60_000;
  *  the host catches up — r1 Low. The negative delta is ALSO floored below, so the gate fails safe
  *  (sweeps sooner) even if a caller injects a wall clock, which the tests do.
  *
- *  `now` is injected so the cadence is testable without waiting out a real minute. The initial
- *  cursor is -Infinity, so a freshly started worker sweeps immediately rather than ignoring
- *  whatever the previous machine's SIGTERM drain may have stranded. */
+ *  ⚠ The period runs from COMPLETION, not from the due-check: onSwept() re-samples the clock after
+ *  the sweep has returned, so the effective cadence is SWEEP_MS + the sweep's own latency (r1 Low).
+ *  That is deliberate — it is the right semantics for a rate limiter, since measuring from the
+ *  due-check would let a slow link issue overlapping sweeps — but it means the stated ~180s bound
+ *  is really ~180s + one RPC round trip. At a healthy ~50ms that is noise.
+ *
+ *  `now` is injected so the cadence is testable without waiting out a real minute. ⚠ That makes the
+ *  DEFAULT the only clock production ever uses and the one nothing exercised — `performance.now()
+ *  -> Date.now()` survived the entire suite until r1. It is now pinned by a case that steps the
+ *  WALL clock backwards and asserts this gate does not notice.
+ *
+ *  The initial cursor is -Infinity, so a freshly started worker sweeps immediately rather than
+ *  ignoring whatever the previous machine's SIGTERM drain may have stranded. */
 export function makeSweepGate(
   intervalMs: number,
   now: () => number = () => performance.now(),

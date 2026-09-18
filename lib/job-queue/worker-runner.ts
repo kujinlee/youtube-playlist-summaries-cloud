@@ -33,6 +33,12 @@ export interface RunnerOpts {
   sweepPolicy?: SweepPolicy;
 }
 
+/** The lease a claim takes when the caller does not specify one. Exported and named because the
+ *  sweep cadence in worker/main.ts must stay well inside it, and that relationship was previously
+ *  a fact about two bare literals in two modules that only prose connected — mutation-proven, by
+ *  BOTH r1 Claude halves, to survive being raised to thirty minutes with every gate green. */
+export const DEFAULT_LEASE_SECONDS = 120;
+
 export const echoHandler: JobHandler = async (job) => ({ echoed: job.payload });
 
 // Long-running-safe job runner: heartbeats the lease while the handler runs, composes a
@@ -43,17 +49,32 @@ export async function runOnce(
 ): Promise<'idle' | 'done' | 'failed' | 'cancelled' | 'lost'> {
   // The sweep reclaims leases that expired; it is NOT part of claiming, and the two ran at the
   // same rate only because they were written on the same line. See makeSweepGate in worker/main.ts.
-  // ⚠ onSwept() is AFTER the await, deliberately unguarded: a throwing sweepExpired propagates to
-  // runWorkerLoop's catch WITHOUT acknowledging, so the next poll retries instead of losing the
-  // whole window to a transient failure (r1 Medium).
+  //
+  // ⭐ THE SWEEP IS ISOLATED IN BOTH DIRECTIONS, and getting only one of them is what r1 cost:
+  //
+  //  1. onSwept() is INSIDE the try and AFTER the await, so a sweep that threw does not spend the
+  //     60s window and the next poll retries it (r1 Medium, Codex). ⚠ `finally` is the tempting
+  //     wrong shape here — it acknowledges on the throw path and silently undoes this.
+  //  2. The catch does NOT rethrow, so a broken sweep cannot stop the CLAIM below (r1 High).
+  //     sweep_expired_leases and claim_next_job are separate functions with separate grants and
+  //     separate signatures, so one can break alone — a migration replacing it, a stale PostgREST
+  //     schema cache, a revoked execute. MEASURED at the previous commit: 40 sweep attempts and
+  //     ZERO claims, indefinitely, with the only symptom a log line saying the loop was fine.
+  //
+  // Lease reclamation degrades while the sweep is broken; job intake does not. That is the whole
+  // point of decoupling them — cadence alone was never enough, the FAILURE DOMAIN had to split too.
   if (opts.sweepPolicy?.due() ?? true) {
-    await queue.sweepExpired();
-    opts.sweepPolicy?.onSwept();
+    try {
+      await queue.sweepExpired();
+      opts.sweepPolicy?.onSwept();
+    } catch (e) {
+      console.error('[worker] sweepExpired failed (continuing to claim):', e);
+    }
   }
-  const job = await queue.claim(opts.workerId, opts.leaseSeconds ?? 120, opts.videoFilter ?? null);
+  const job = await queue.claim(opts.workerId, opts.leaseSeconds ?? DEFAULT_LEASE_SECONDS, opts.videoFilter ?? null);
   if (!job) return 'idle';
 
-  const leaseSeconds = opts.leaseSeconds ?? 120;
+  const leaseSeconds = opts.leaseSeconds ?? DEFAULT_LEASE_SECONDS;
   const wallClock = new AbortController();
   const leaseLost = new AbortController();
   const signal = AbortSignal.any(

@@ -1,5 +1,5 @@
-import { runOnce, echoHandler } from '@/lib/job-queue/worker-runner';
-import { runWorkerLoop, makeSweepGate } from '@/worker/main';
+import { runOnce, echoHandler, DEFAULT_LEASE_SECONDS } from '@/lib/job-queue/worker-runner';
+import { runWorkerLoop, makeSweepGate, SWEEP_MS } from '@/worker/main';
 import type { JobQueue } from '@/lib/storage/job-queue';
 import type { JobHandler } from '@/lib/job-queue/worker-runner';
 
@@ -21,6 +21,14 @@ import type { JobHandler } from '@/lib/job-queue/worker-runner';
 
 const idleQueue = () => ({
   sweepExpired: jest.fn(async () => 0),
+  claim: jest.fn(async () => null),
+}) as unknown as JobQueue & { sweepExpired: jest.Mock; claim: jest.Mock };
+
+/** A queue whose SWEEP is broken while CLAIM is perfectly healthy — the asymmetry that makes the
+ *  r1 High bite. sweep_expired_leases and claim_next_job are separate functions with separate
+ *  grants and separate signatures, so one can break alone. */
+const throwingSweepQueue = () => ({
+  sweepExpired: jest.fn(async () => { throw new Error('transient PostgREST failure'); }),
   claim: jest.fn(async () => null),
 }) as unknown as JobQueue & { sweepExpired: jest.Mock; claim: jest.Mock };
 
@@ -104,7 +112,7 @@ describe('makeSweepGate', () => {
   // step backwards makes that delta NEGATIVE, so it compares as "inside the window" and sweeps
   // are suppressed until the wall clock catches up — potentially minutes past the promised
   // bound. A backwards jump must fail SAFE (sweep sooner), never silent (sweep later).
-  test('comes due immediately if the clock steps backwards', () => {
+  test('comes due immediately if an INJECTED clock steps backwards', () => {
     const t = { now: 1_000_000 };
     const gate = makeSweepGate(60_000, () => t.now);
     sweepCycle(gate);
@@ -112,6 +120,60 @@ describe('makeSweepGate', () => {
 
     t.now -= 300_000; // NTP corrects the host five minutes backwards
     expect(gate.due()).toBe(true);
+  });
+
+  // r1 Medium (Claude half 1). ⚠ EVERY other case here INJECTS a clock, so the default parameter
+  // — the only clock production ever uses — was exercised by nothing, and the mutation
+  // `performance.now() -> Date.now()` SURVIVED the whole 2,831-test suite. A fix bought in one
+  // review round could be undone in the next by anyone tidying a default argument, with green CI.
+  //
+  // This case kills it: it moves the WALL clock backwards and asserts the gate does not notice.
+  // A monotonic clock is unaffected and stays not-due; Date.now() would see a negative delta,
+  // hit the fail-safe floor above, and flip to due. The floor is good defence AND is precisely
+  // why nothing else can tell the two apart.
+  test('the DEFAULT clock is monotonic — a wall-clock step backwards does not move it', () => {
+    const gate = makeSweepGate(60_000); // no injected clock: the production path
+    sweepCycle(gate);
+    expect(gate.due()).toBe(false);
+
+    const realDateNow = Date.now;
+    Date.now = () => realDateNow() - 3_600_000; // host wall clock jumps back an hour
+    try {
+      expect(gate.due()).toBe(false); // still inside the window — monotonic time did not move
+    } finally {
+      Date.now = realDateNow;
+    }
+  });
+
+  test('the DEFAULT clock still advances, so the gate really does re-open in real time', async () => {
+    const gate = makeSweepGate(2); // 2ms window
+    sweepCycle(gate);
+    expect(gate.due()).toBe(false);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(gate.due()).toBe(true);
+  });
+});
+
+// r1 Medium (BOTH Claude halves, independently). Every safety claim on this branch rests on one
+// relationship — the sweep interval is shorter than the lease it guards — and that relationship
+// lived only in prose, in two literals in two modules. MEASURED: SWEEP_MS 60s -> 600s survived;
+// 60s -> 30 MINUTES also survived, tsc clean, all gates green, while the documented "~180s to
+// recovery" silently became ~32 minutes.
+//
+// CLAUDE.md: "A decision becomes a gate by asserting the world still matches it." This is that
+// assertion. It fails if someone raises SWEEP_MS to shave the last of the egress — which the
+// dashboard entry's own "Not attempted here" section invites — or shortens the lease to detect
+// heartbeat loss sooner, which needs no new plumbing since leaseSeconds is already a RunnerOpts
+// field.
+describe('the sweep interval stays inside the lease it guards', () => {
+  test('SWEEP_MS is at most half the default lease — the invariant every bound here rests on', () => {
+    expect(SWEEP_MS).toBeLessThanOrEqual((DEFAULT_LEASE_SECONDS * 1000) / 2);
+  });
+
+  test('runOnce actually uses DEFAULT_LEASE_SECONDS, so the constant above is the real one', async () => {
+    const q = idleQueue();
+    await runOnce(q, echoHandler, { workerId: 'w1' });
+    expect(q.claim).toHaveBeenCalledWith('w1', DEFAULT_LEASE_SECONDS, null);
   });
 });
 
@@ -137,19 +199,44 @@ describe('runOnce honours the sweep policy', () => {
   });
 
   // r1 Medium (Codex), at the runOnce boundary. Break this catches: acknowledging the sweep
-  // before awaiting it, or wrapping it in a try/catch that acknowledges anyway. A sweep that
-  // threw reclaimed nothing, so it must not spend the window — the next poll has to retry.
+  // before awaiting it, or a `try { … } finally { onSwept() }` that acknowledges anyway. A sweep
+  // that threw reclaimed nothing, so it must not spend the window — the next poll has to retry.
+  //
+  // ⚠ `finally` is the tempting wrong fix and this case is what kills it.
   test('does NOT acknowledge a sweep that threw', async () => {
-    const q = {
-      sweepExpired: jest.fn(async () => { throw new Error('transient PostgREST failure'); }),
-      claim: jest.fn(async () => null),
-    } as unknown as JobQueue & { sweepExpired: jest.Mock; claim: jest.Mock };
+    const q = throwingSweepQueue();
     const p = policy(true);
 
-    await expect(runOnce(q, echoHandler, { workerId: 'w1', sweepPolicy: p })).rejects.toThrow(
-      'transient PostgREST failure',
-    );
+    await runOnce(q, echoHandler, { workerId: 'w1', sweepPolicy: p });
     expect(p.onSwept).not.toHaveBeenCalled();
+  });
+
+  // r1 High (Claude half 2, MEASURED: 40 sweep attempts / 0 claims at HEAD vs 1 / 20 before the
+  // fold). Break this catches: letting sweepExpired's rejection escape runOnce, which skips
+  // `queue.claim` entirely. `sweep_expired_leases` can break ALONE — a migration replacing its
+  // signature, a stale PostgREST schema cache, a revoked execute grant — while claim_next_job is
+  // perfectly healthy. The worker would then claim NOTHING, indefinitely, and the only symptom is
+  // a log line whose own comment says the loop is fine.
+  //
+  // ⭐ This is the finding the branch is named for: decoupling the CADENCE while leaving the
+  // FAILURE DOMAIN shared is not decoupling.
+  test('still claims when the sweep throws — a broken sweep must not gate job intake', async () => {
+    const q = throwingSweepQueue();
+
+    const outcome = await runOnce(q, echoHandler, { workerId: 'w1', sweepPolicy: policy(true) });
+
+    expect(q.sweepExpired).toHaveBeenCalledTimes(1);
+    expect(q.claim).toHaveBeenCalledTimes(1); // reached DESPITE the sweep failing
+    expect(outcome).toBe('idle');
+  });
+
+  // r1 Low (Claude half 2). runOnce's own contract comment at worker-runner.ts says the outcome
+  // union must be uniform so the long-lived loop never sees an unhandled rejection. A sweep that
+  // escaped made that comment false. Break this catches: re-introducing the escape.
+  test('never rejects out of runOnce, even when the sweep fails — the declared contract', async () => {
+    await expect(
+      runOnce(throwingSweepQueue(), echoHandler, { workerId: 'w1', sweepPolicy: policy(true) }),
+    ).resolves.toBe('idle');
   });
 
   // Break this catches: defaulting the policy to NOT-DUE. Every existing caller — the integration
@@ -200,25 +287,64 @@ describe('runWorkerLoop wires the gate in by default', () => {
   // whose every sweep throws must keep retrying on each poll, not fall silent for 60s at a time
   // — otherwise a transient outage suspends lease reclamation far past the stated bound while
   // the loop looks perfectly healthy in the logs.
-  test('retries the sweep on the next poll when it throws, rather than spending the window', async () => {
+  // r1 Medium (Codex) AND r1 High (Claude half 2) meet here, and the pair of assertions at the
+  // bottom is what keeps them from cancelling each other out:
+  //   - sweepAttempts climbing  => a failed sweep did NOT spend the 60s window (Codex's Medium)
+  //   - claims === sweepAttempts => a failed sweep did NOT block job intake (the High)
+  // Satisfying either alone is easy; the earlier versions of this branch each did exactly that,
+  // in opposite directions.
+  //
+  // ⟳ Bounded by a COUNTER, not a 50ms wall-clock timeout (r1 Low, Claude half 2): every other
+  // cadence assertion in this file runs on an injected clock, which is the stated reason these
+  // tests can live in tests/lib/ at all. Counting makes it deterministic and pins a number.
+  test('keeps sweeping AND keeps claiming when every sweep throws', async () => {
     const ac = new AbortController();
     let sweepAttempts = 0;
     let claims = 0;
     const queue = {
-      sweepExpired: async () => { sweepAttempts++; throw new Error('transient PostgREST failure'); },
+      sweepExpired: async () => {
+        sweepAttempts++;
+        if (sweepAttempts >= 5) ac.abort();
+        throw new Error('transient PostgREST failure');
+      },
       claim: async () => { claims++; return null; },
     } as unknown as JobQueue;
     const handler: JobHandler = async () => ({ ok: true });
 
-    // The throw escapes runOnce into runWorkerLoop's catch, which logs and backs off; silence
-    // the expected noise so the suite output stays pristine.
     const err = jest.spyOn(console, 'error').mockImplementation(() => {});
-    const stop = setTimeout(() => ac.abort(), 50);
     await runWorkerLoop({ queue, handler, shutdownSignal: ac.signal, workerId: 'sweep-retry', pollMs: 1 });
-    clearTimeout(stop);
     err.mockRestore();
 
-    expect(sweepAttempts).toBeGreaterThan(1); // NOT stuck at 1 for the whole 60s window
-    expect(claims).toBe(0); // the throw precedes the claim, so no poll completed
+    expect(sweepAttempts).toBe(5);     // NOT stuck at 1 for a whole 60s window
+    expect(claims).toBe(sweepAttempts); // every poll still reached the claim
   });
+
+  // r1 Low (Claude half 2). Break this catches: `const pollMs = deps.pollMs;` losing its default.
+  // The natural form is caught by tsc (sleep(ms: number) rejects number|undefined), but an
+  // explicit cast survives — and the failure mode is severe in the ironic direction:
+  // setTimeout(fn, undefined) fires at ~1ms, turning the worker into a ~1000 req/s busy-spin
+  // against the database. A 2000x INCREASE in exactly the traffic this branch exists to remove.
+  //
+  // Deliberately spends ~2s of suite time: the only honest way to observe a real poll interval
+  // is to let one elapse.
+  test('defaults to the real POLL_MS when none is injected, rather than busy-spinning', async () => {
+    const ac = new AbortController();
+    let claims = 0;
+    const queue = {
+      sweepExpired: async () => 0,
+      claim: async () => { claims++; if (claims >= 2) ac.abort(); return null; },
+    } as unknown as JobQueue;
+
+    const started = Date.now();
+    await runWorkerLoop({
+      queue,
+      handler: (async () => ({ ok: true })) as JobHandler,
+      shutdownSignal: ac.signal,
+      workerId: 'poll-default',
+    }); // NO pollMs — production's path
+    const elapsed = Date.now() - started;
+
+    expect(claims).toBe(2);
+    expect(elapsed).toBeGreaterThan(1_500); // one real ~2s backoff happened between the two polls
+  }, 15_000);
 });

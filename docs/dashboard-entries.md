@@ -9948,3 +9948,96 @@ Codex also confirmed what the change does NOT break, by reading the SQL: `claim_
 the up-to-60s window is real but is not a double-claim hole; production `main()` never passes
 `leaseSeconds`, so the 120s default stands against a 60s sweep; and the `pollMs` test seam does not
 reach production.
+
+## 2026-09-18
+Second correction, and this one matters more than the first: **the fix I shipped this morning broke
+something the bug it fixed had been accidentally protecting.**
+
+The story in plain terms. The worker does two things each cycle — tidy up jobs abandoned by a
+crashed worker, then pick up new work. This morning's change made the tidy-up happen once a minute
+instead of every two seconds. The first review round found that a *failed* tidy-up was being counted
+as a success, so I fixed that: a failure is now retried immediately.
+
+That fix was correct and it created a worse problem. Previously a broken tidy-up wasted its turn and
+then stayed quiet for a minute — so the worker spent 29 out of every 30 cycles getting on with
+actual work. After the fix it retried constantly, and because picking up work happened *after* the
+tidy-up, a tidy-up that kept failing meant the worker **never picked up any work at all**. Measured
+directly: 40 attempts, 0 jobs claimed, where the previous version managed 20 jobs out of 20.
+
+Nothing would have told you. The site would accept your request, the job would sit there, and the
+only sign would be a log line whose own comment says the loop is healthy.
+
+It is now genuinely separated: if the tidy-up fails, it is logged and the worker carries straight on
+to pick up work. Cleanup degrades; your jobs still run. That is what "decoupling" was supposed to
+mean, and the first version only did half of it.
+
+Two other things the review found, both of the same kind — **a promise with nothing behind it**:
+
+The claim that a crashed job recovers within about three minutes depended on the once-a-minute
+timer staying shorter than the two-minute deadline it guards. Those two numbers live in different
+files and nothing compared them. Setting the timer to thirty minutes left every check green while
+the real answer became half an hour. There is now a test that fails if that relationship breaks.
+
+And the fix for the clock problem — from the *first* round, this morning — turned out to be covered
+by no test at all. It could have been silently reverted by anyone tidying up, with a green build.
+Now covered.
+
+None of this was found by me, twice over. Two independent reviewers looked at the same code; both
+found the big one, and one of them graded it higher than the other. The higher grade was right.
+<!--tech-->
+⚠ **Retraction of a dead symbol in the entry above** (r1 Low, Claude half 2): that entry says
+*"Now gated by `RunnerOpts.shouldSweep`"* and its correction block discusses `shouldSweep` /
+`markSweepSucceeded`. **None of those three names ever shipped.** The field is
+`RunnerOpts.sweepPolicy: SweepPolicy` (`lib/job-queue/worker-runner.ts`); the cursor advances in
+`onSwept()`, not "when the gate opens"; and the gate is a two-method object, not "a pure predicate".
+`grep -rn shouldSweep --include=*.ts` returns zero. `check-docs.py` passes, so no gate saw it.
+
+**r1 High — `runOnce` let a sweep rejection escape, skipping `queue.claim` entirely.** Measured by
+the reviewer across two commits with a persistently-failing sweep and a healthy claim:
+
+    42e0722c (after the r1 Medium fix)  -> {"sweepAttempts":40, "claims":0}
+    2a2df6d6 (before it)                -> {"sweepAttempts":1,  "claims":20}
+
+⭐ The burned-window bug was accidentally load-bearing. Fixing it traded a 60s bound violation for a
+total claim outage, and that trade was stated nowhere. Not a regression from `master` — a regression
+from this branch's own previous commit, introduced by a fix. That is why it graded High.
+
+Fixed by isolating the sweep in BOTH directions: `onSwept()` inside the `try` and after the `await`
+(unacknowledged on throw — the r1 Medium property survives), and a `catch` that logs without
+rethrowing. ⚠ `try { … } finally { onSwept() }` is the tempting wrong shape and is killed by
+`does NOT acknowledge a sweep that threw`.
+
+This also makes `runOnce`'s own long-standing contract comment true again — it says the outcome
+union must be uniform so the loop never sees an unhandled rejection, and the escaping sweep had
+quietly falsified it (r1 Low, half 2). Now pinned by `never rejects out of runOnce`.
+
+**r1 Medium, found INDEPENDENTLY BY BOTH Claude halves — `SWEEP_MS` vs the lease.** Mutation-proven
+survivors: 60s → 600s, and 60s → 30 minutes, tsc clean and all gates green. `DEFAULT_LEASE_SECONDS`
+is now exported from `worker-runner.ts` (replacing two bare `?? 120` literals), `SWEEP_MS` is
+exported, and a test asserts `SWEEP_MS <= DEFAULT_LEASE_SECONDS * 1000 / 2`.
+
+**r1 Medium (half 1) — the monotonic-clock fix from earlier in this same round was covered by
+nothing.** All six gate constructions injected a clock, so the default — the only clock production
+uses — was exercised by zero tests and `performance.now() -> Date.now()` survived all 2,831. Killed
+now by a case that moves `Date.now` backwards an hour and asserts the gate does not notice; the
+fail-safe floor is good defence and is exactly why nothing else could tell the two apart.
+
+**r1 Low (half 2) — `pollMs` default.** Mutating it away survived (an explicit cast is needed; the
+natural form is caught by tsc). Failure mode if it ever opened: `setTimeout(fn, undefined)` fires at
+~1ms — a ~2000× increase in precisely the traffic this branch removes. Now asserted by a
+deliberately slow ~2s case.
+
+**r1 Low (half 2) — the sweep-retry test was bounded by a 50ms wall-clock timeout** while every
+sibling uses an injected clock. Re-bounded on a counter; asserts `toBe(5)` rather than an
+inequality, and now carries BOTH properties at once (`sweepAttempts` climbing AND
+`claims === sweepAttempts`), which is what stops the two findings cancelling each other out.
+
+**r1 Low (half 2) — `onSwept()` re-samples the clock**, so the period runs from completion and the
+real cadence is `SWEEP_MS + latency`. Kept (correct rate-limiter semantics; measuring from the
+due-check would allow overlapping sweeps) and now stated in the docblock rather than left for a
+test to imply.
+
+Suite for this file: 12 → 19. Both review halves are at
+`docs/reviews/claude/decouple-lease-sweep-r1-claude{,-2}.md`; half 2 ran as a replacement after the
+first dispatch stalled, then the original delivered too — both are kept, since two independent
+adversarial reads that agree are evidence, not duplication.
