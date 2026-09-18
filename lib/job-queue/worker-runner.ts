@@ -11,6 +11,11 @@ export interface RunnerOpts {
   videoFilter?: string | null;
   shutdownSignal?: AbortSignal;
   wallClockMs?: number;
+  /** Gate on the pre-claim lease sweep. DEFAULTS TO ALWAYS-SWEEP, and that default is
+   *  load-bearing: every other caller (both integration suites, and anything added later)
+   *  depends on runOnce reclaiming expired leases for it. A caller that polls far faster than
+   *  a lease can expire — i.e. the worker loop — supplies a cadence here instead. */
+  shouldSweep?: () => boolean;
 }
 
 export const echoHandler: JobHandler = async (job) => ({ echoed: job.payload });
@@ -21,7 +26,9 @@ export const echoHandler: JobHandler = async (job) => ({ echoed: job.payload });
 export async function runOnce(
   queue: JobQueue, handler: JobHandler, opts: RunnerOpts,
 ): Promise<'idle' | 'done' | 'failed' | 'cancelled' | 'lost'> {
-  await queue.sweepExpired();
+  // The sweep reclaims leases that expired; it is NOT part of claiming, and the two ran at the
+  // same rate only because they were written on the same line. See makeSweepGate in worker/main.ts.
+  if (opts.shouldSweep?.() ?? true) await queue.sweepExpired();
   const job = await queue.claim(opts.workerId, opts.leaseSeconds ?? 120, opts.videoFilter ?? null);
   if (!job) return 'idle';
 
