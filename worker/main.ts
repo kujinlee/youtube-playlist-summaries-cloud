@@ -1,4 +1,5 @@
 import os from 'node:os';
+import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import type { JobQueue } from '@/lib/storage/job-queue';
@@ -126,6 +127,13 @@ export async function runWorkerLoop(deps: {
   handler: JobHandler;
   shutdownSignal: AbortSignal;
   workerId: string;
+  /** Stop the worker after this long with nothing to do, so the Fly machine can return to
+   *  `stopped` and bill nothing (backlog #142).
+   *
+   *  ⚠ UNSET MEANS NEVER EXIT, and that default is deliberate: a worker that exits before the
+   *  Flycast wake path exists has no way to come back, so enabling this is a fly.toml change and
+   *  not a code default. */
+  idleExitMs?: number;
   /** Idle backoff between polls. Overridable so cadence tests need not run in real time. */
   pollMs?: number;
   /** Sweep cadence. Defaults to one gate per loop — note it is built HERE, once, not per
@@ -135,6 +143,7 @@ export async function runWorkerLoop(deps: {
 }): Promise<void> {
   const pollMs = deps.pollMs ?? POLL_MS;
   const sweepPolicy = deps.sweepGate ?? makeSweepGate(SWEEP_MS);
+  let idleSince: number | null = null;
   while (!deps.shutdownSignal.aborted) {
     try {
       const r = await runOnce(deps.queue, deps.handler, {
@@ -142,6 +151,12 @@ export async function runWorkerLoop(deps: {
         shutdownSignal: deps.shutdownSignal,
         sweepPolicy,
       });
+      if (r !== 'idle') {
+        idleSince = null; // got work — the idle clock restarts, so a busy worker never leaves
+      } else if (deps.idleExitMs !== undefined) {
+        idleSince ??= Date.now();
+        if (Date.now() - idleSince >= deps.idleExitMs && await queueIsDrained(deps.queue)) return;
+      }
       if (r === 'idle') await sleep(pollMs, deps.shutdownSignal);
     } catch (e) {
       // A transient queue/network error (e.g. sweepExpired/claim throwing) must NOT kill the
@@ -149,6 +164,72 @@ export async function runWorkerLoop(deps: {
       console.error('[worker] loop iteration error (continuing):', e);
       await sleep(pollMs, deps.shutdownSignal);
     }
+  }
+}
+
+/** Port the worker's wake listener binds. Must match `internal_port` of the worker service in
+ *  fly.toml, or Fly Proxy has nowhere to route and the machine never autostarts. */
+export const WAKE_PORT = 8081;
+
+/** Env var holding the idle window, in ms. ⚠ ABSENT = NEVER EXIT, and that is the safe default:
+ *  a worker that exits before the Flycast wake path is deployed has no way to come back. Turning
+ *  this on is a fly.toml change, made in the same commit as the service block that can wake it. */
+export const IDLE_EXIT_MS_ENV = 'WORKER_IDLE_EXIT_MS';
+
+/** Parses the idle window, refusing anything that is not a positive number rather than silently
+ *  treating it as 0 — which would make the worker exit on its very first idle poll. */
+export function idleExitMsFromEnv(env: NodeJS.ProcessEnv = process.env): number | undefined {
+  const raw = env[IDLE_EXIT_MS_ENV];
+  if (raw === undefined || raw.trim() === '') return undefined;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    console.error(`[worker] ignoring invalid ${IDLE_EXIT_MS_ENV}=${JSON.stringify(raw)} — staying alive`);
+    return undefined;
+  }
+  return n;
+}
+
+/** A doorbell, not an API.
+ *
+ *  ⭐ This server exists ONLY so the worker process group HAS a service, because that is what lets
+ *  Fly Proxy autostart a stopped machine: *"Requests to apps without services configured … don't
+ *  get routed through Fly Proxy and so Machines can't be automatically stopped or started."* The
+ *  request itself is discarded — the poll loop booting alongside it is what claims the job.
+ *
+ *  ⚠ Deliberately does NO work. A listener that claimed or enqueued would be a second, racier path
+ *  into the same queue, and the queue's concurrency guarantees are the ones PR #318 spent four
+ *  review rounds establishing on ONE path. */
+export function startWakeListener(port: number = WAKE_PORT): Promise<{ port: number; close: () => Promise<void> }> {
+  const server = http.createServer((_req, res) => { res.writeHead(200); res.end('awake\n'); });
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, () => {
+      const addr = server.address();
+      resolve({
+        port: typeof addr === 'object' && addr ? addr.port : port,
+        // Closing matters: the exit path is `process exits 0 -> machine returns to stopped`, and a
+        // live handle would hold the event loop open and bill forever while looking idle.
+        close: () => new Promise<void>((res2, rej2) => server.close((e) => (e ? rej2(e) : res2()))),
+      });
+    });
+  });
+}
+
+/** True only when we are CERTAIN there is nothing left to do.
+ *
+ *  ⚠ THE TWO FAILURE DIRECTIONS ARE NOT SYMMETRIC, which is the whole reason this is a named
+ *  function rather than an inline `await`. A worker that stays up too long costs a few cents. A
+ *  worker that exits with a job still queued strands that job until somebody happens to visit the
+ *  site — silently, with no error anywhere. So an unanswerable question resolves to "not drained".
+ *
+ *  ⚠ And `claim()` returning null is NOT this question: a job whose retry backoff has not elapsed
+ *  is `queued` and unclaimable at the same time. */
+async function queueIsDrained(queue: JobQueue): Promise<boolean> {
+  try {
+    return !(await queue.hasQueuedWork());
+  } catch (e) {
+    console.error('[worker] could not determine whether work is queued (staying alive):', e);
+    return false;
   }
 }
 
@@ -176,7 +257,18 @@ export async function main(): Promise<void> {
   process.on('SIGTERM', () => ac.abort());
   process.on('SIGINT', () => ac.abort());
 
-  await runWorkerLoop({ queue, handler, shutdownSignal: ac.signal, workerId });
+  // The listener is what Fly Proxy routes at to START this machine; the loop is what does the work.
+  // Started BEFORE the loop so a wake arriving during boot is answered rather than refused.
+  const listener = await startWakeListener();
+  try {
+    await runWorkerLoop({
+      queue, handler, shutdownSignal: ac.signal, workerId,
+      idleExitMs: idleExitMsFromEnv(),
+    });
+  } finally {
+    // Must close, or the process cannot exit 0 and the machine never returns to `stopped`.
+    await listener.close();
+  }
 }
 
 if (require.main === module) {

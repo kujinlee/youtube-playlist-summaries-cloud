@@ -1,3 +1,4 @@
+import { workerWakeFromEnv, type WorkerWake } from './worker-wake';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { JobKey, EnqueueResult } from '@/lib/storage/job-queue';
 import type { IngestionPayload } from '@/lib/job-queue/ingestion-payload';
@@ -44,7 +45,12 @@ export interface Enqueuer {
  * the singleton `guardrail_config` row.
  */
 export class SupabaseEnqueuer implements Enqueuer {
-  constructor(private serviceClient: SupabaseClient) {}
+  /** `wake` nudges a stopped worker machine awake (backlog #142). Injected so tests need no
+   *  network and so an unconfigured deploy gets a true no-op. */
+  constructor(
+    private serviceClient: SupabaseClient,
+    private wake: WorkerWake = workerWakeFromEnv(),
+  ) {}
 
   async enqueue(ctx: EnqueueCtx, key: JobKey, payload: IngestionPayload | DigJobPayload): Promise<EnqueueResult> {
     const { data, error } = await this.serviceClient.rpc('enqueue_job', {
@@ -53,6 +59,11 @@ export class SupabaseEnqueuer implements Enqueuer {
     });
     if (error) throw mapEnqueueError(error);
     const row = data[0];
+    // ⭐ AFTER the row is committed, never before — that ordering is what makes the wake an
+    // optimisation rather than a correctness requirement. If this poke fails (machine mid-boot,
+    // Flycast unset, network blip) the job is already durable and simply waits for the next wake.
+    // `wake` never throws and is time-bounded; see lib/job-queue/worker-wake.ts.
+    await this.wake();
     return { jobId: row.job_id, status: row.status, joined: row.joined };
   }
 

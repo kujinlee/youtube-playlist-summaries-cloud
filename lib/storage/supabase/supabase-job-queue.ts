@@ -101,6 +101,14 @@ export class SupabaseJobQueue implements JobQueue {
     return { ok: data !== null, status: data };
   }
 
+  /** Counts `queued` rows REGARDLESS of run_after — see the interface for why that matters. */
+  async hasQueuedWork(): Promise<boolean> {
+    const { count, error } = await this.client
+      .from('jobs').select('id', { count: 'exact', head: true }).eq('status', 'queued');
+    if (error) throw error;   // the caller fails SAFE by staying alive; never guess "empty"
+    return (count ?? 0) > 0;
+  }
+
   async sweepExpired(): Promise<number> {
     const { data, error } = await this.client.rpc('sweep_expired_leases');
     if (error) throw error;

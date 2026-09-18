@@ -39,7 +39,12 @@ primary_region = "iad"
   force_https = true
   auto_stop_machines = "suspend"
   auto_start_machines = true
-  min_machines_running = 1
+  # ⚠ ZERO, NOT ONE (backlog #141). With a floor of 1 the proxy keeps this machine up forever and
+  # `auto_stop_machines = "suspend"` above never fires — the setting reads as enabled and does
+  # nothing. Set to 0 live via the Machines API on 2026-09-18; this line is what stops the next
+  # `fly deploy` silently reverting it. Suspend/resume is faster than a cold boot, so the cost is a
+  # slightly slower first request after an idle spell.
+  min_machines_running = 0
   processes = ["web"]
 
 # Graceful drain: worker traps SIGTERM (worker/main.ts) → stops claiming, finishes the in-flight
@@ -47,6 +52,37 @@ primary_region = "iad"
 # (the §2.4b crash-residual mitigation).
 kill_signal = "SIGTERM"
 kill_timeout = "120s"
+
+# ⭐ THE WORKER'S SERVICE — this block is what makes the machine wakeable, and it is the whole
+# reason the worker could not stop itself before now.
+#
+# Fly's docs: *"Requests to apps without services configured on your private network don't get
+# routed through Fly Proxy and so Machines can't be automatically stopped or started by Fly Proxy."*
+# A queue worker only ever polls OUTBOUND, so nothing ever routes to it and the proxy has no signal.
+# Declaring a service gives it one. Reach it over **Flycast** (`http://<app>.flycast`), NOT
+# `.internal` — `.internal` is direct 6PN and bypasses the proxy, so it cannot autostart anything.
+#
+# ⚠ Requires a private IPv6 once per app, and this is NOT done by `fly deploy`:
+#     fly ips allocate-v6 --private --app youtube-playlist-summaries
+#
+# ⚠ NO `auto_stop_machines` HERE, deliberately. The worker stops ITSELF by exiting when its queue
+# drains. Fly's autostop reference documents `soft_limit` concurrency and says NOTHING about an
+# in-flight request blocking a stop, so letting the proxy decide could kill a machine mid-job. The
+# proxy is allowed to START this machine and never to stop it.
+[[services]]
+  protocol = "tcp"
+  internal_port = 8081          # must match WAKE_PORT in worker/main.ts
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["worker"]
+
+# The worker EXITS 0 when idle, and `policy = "no"` is what turns that into a `stopped` machine
+# rather than an instant restart loop. Without this the idle-exit would burn boots forever.
+# (`fly deploy`'s default is `on-fail`, which would also allow a clean exit — stated explicitly so
+# it cannot drift silently.)
+[[restart]]
+  policy = "no"
+  processes = ["worker"]
 
 # web machine — light.
 [[vm]]

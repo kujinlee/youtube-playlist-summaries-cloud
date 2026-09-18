@@ -35,6 +35,13 @@ export interface JobQueue {
   fail(jobId: string, workerId: string, leaseToken: string, error: string, opts: { retryable: boolean; billableSucceeded?: boolean; metered?: boolean }):
     Promise<{ ok: boolean; status: JobStatus | null }>;
   sweepExpired(): Promise<number>;
+  /** Is ANY job waiting, including one whose retry backoff has not elapsed yet?
+   *
+   *  ⚠ Deliberately NOT the same question as `claim()` returning null. A job that is `queued` with
+   *  `run_after` in the future is real pending work that `claim` cannot see, and a worker that
+   *  treats the two as equivalent will exit and strand it (backlog #142). This is asked only when
+   *  the worker is deciding whether to shut itself down, so its cost is once per idle window. */
+  hasQueuedWork(): Promise<boolean>;
   setProgressPhase(jobId: string, workerId: string, leaseToken: string, phase: ProgressPhase): Promise<{ ok: boolean }>;
 }
 
