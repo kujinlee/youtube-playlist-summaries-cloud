@@ -76,6 +76,18 @@ kill_timeout = "120s"
   min_machines_running = 0
   processes = ["worker"]
 
+  # ⛔ WITHOUT THIS SUB-TABLE THE SERVICE ACCEPTS NOTHING AND THE ENTIRE SLICE IS INERT — the first
+  # version of this file omitted it. `internal_port` says where the process listens INSIDE the
+  # machine; it does not open a door. Fly's configuration reference: *"At least one `services.ports`
+  # entry is required for each `services` section, to set a port and handler for incoming requests."*
+  # With no door, the Flycast poke is never routed, the proxy never autostarts the machine, and a
+  # deploy that also sets WORKER_IDLE_EXIT_MS produces a worker that exits and CANNOT COME BACK.
+  # Port 80 + the `http` handler because Flycast is HTTP-only, and because WORKER_WAKE_URL is
+  # `http://<app>.flycast/wake` — i.e. port 80 implicitly. These two must agree.
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+
 # The worker EXITS 0 when idle, and `policy = "no"` is what turns that into a `stopped` machine
 # rather than an instant restart loop. Without this the idle-exit would burn boots forever.
 # (`fly deploy`'s default is `on-fail`, which would also allow a clean exit — stated explicitly so
