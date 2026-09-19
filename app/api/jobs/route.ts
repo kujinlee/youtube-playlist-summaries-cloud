@@ -83,8 +83,21 @@ export async function GET(req: Request) {
     // recovers it — there is no cron and no second poker — so the job would wait for the next
     // unrelated enqueue by anyone, while the user watches a `queued` spinner with nothing red.
     //
-    // Poking here fixes that generally rather than narrowly: it also covers a crashed worker, and
-    // any future code path that creates work without going through `enqueue()`.
+    // ⚠ AND ITS SCOPE IS NARROWER THAN IT LOOKS — both halves of what this comment used to claim
+    // ("covers a crashed worker … and any future code path") were measurably false, and the route's
+    // own test file said so ten lines away (review r3 Medium 1). What it actually recovers:
+    //
+    //   ✅ a `queued` SUMMARY job in this playlist — the F4 exit window, which is what it is for;
+    //   ⛔ NOT a crashed worker. That leaves the row `active`, which this predicate excludes on
+    //      purpose (see tests/api/jobs-route-wake.test.ts) — the worker's own drain check counts
+    //      `active` rows instead, because only a worker can sweep;
+    //   ⛔ NOT a `dig` job, and this one is a real gap rather than a division of labour:
+    //      `listByPlaylist` hard-filters `job_kind = 'summary'`
+    //      (lib/storage/supabase/supabase-job-queue.ts), so a dig job enqueued through the SAME
+    //      enqueuer inherits the same exit-window race and no recoverer can see it. Not urgent —
+    //      the cloud dig route is generation-only with no frontend yet — but not covered either.
+    //      ⚠ Do NOT widen `listByPlaylist`; its filter is load-bearing for the playlist UI. The
+    //      cheap shape is a poke on the dig read path. Recorded here rather than left implied.
     //
     // ⚠ NOT AWAITED, so this cannot slow the poll down — a status poll must stay fast, and we need
     // no part of the reply. Suppression inside the shared wake (see `workerWakeFromEnv`) is what

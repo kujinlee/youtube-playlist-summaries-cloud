@@ -169,9 +169,21 @@ not this UI gate; see the #13 spec §9/§11.)
 ## Step 5 — Waking the worker (backlog #142). ⚠ ORDER MATTERS; READ BEFORE RUNNING ANYTHING
 
 The worker exits when its queue drains so its Fly Machine returns to `stopped` and bills nothing,
-and Fly Proxy starts it again when a job is enqueued. **Everything here ships INERT** — the code is
+and Fly Proxy starts it again when a job is enqueued. **The wake path ships INERT** — the code is
 deployed but does nothing until the steps below are done, which is deliberate: a worker that can
 exit before it can be woken has no way back.
+
+⚠ **ONE PART OF THIS SLICE IS NOT INERT, and an earlier version of this sentence said "everything"
+(review r3 Low 3).** The `kill_signal` / `kill_timeout` relocation takes effect on the **next
+`fly deploy` of the web app** — no command below, no secret. On `master` those keys parse into
+`[http_service]` and are not app settings at all, so the app currently runs on Fly's defaults
+(`SIGINT`, `kill_timeout = 5s`); at top level they apply to **every** process group in
+`youtube-playlist-summaries`, moving both the `web` group and the still-declared `worker` group to
+`SIGTERM` / `120s`. Checked and benign in both consumers — Next's standalone server installs its own
+SIGTERM handler and exits 143, so web deploys are not slowed, and the worker traps SIGTERM — but it is
+a behaviour change that arrives with an ordinary deploy, and this is the SECOND thing on this branch
+that armed itself that way (r1 F2's `[[services]]` block was the first). Said out loud rather than
+left to read as "nothing is on".
 
 **The worker lives in its OWN Fly app (`yps-worker`, config `fly.worker.toml`), with NO public IP.**
 That is not tidiness. Fly Proxy routes by external port and does not know about process groups —

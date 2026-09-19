@@ -89,7 +89,24 @@ export function makeWorkerWake(url: string | undefined, opts: WakeOpts = {}): Wo
     lastSentAt = now();
     const p = send();
     inFlight = p;
-    void p.finally(() => { if (inFlight === p) inFlight = null; });
+    // ⚠ `.catch()` on the FINALLY chain, not just on `p` (review r3 Low 4). `.finally()` returns a
+    // NEW promise that adopts the rejection, and voiding it means the caller's own `.catch()` — which
+    // guards the promise IT holds — does not cover this one.
+    //
+    // ⚠ NO UNIT TEST CAN KILL THE REMOVAL OF THIS `.catch()`, and that is stated rather than hidden:
+    // the rejection source is unreachable while `send()` swallows everything, so a single-line
+    // mutation cannot express the hazard. Demonstrated with a TWO-factor probe instead, run in the
+    // real image base (`node:22-bookworm-slim`, v22.23.2), with the caller's own `.catch()` attached
+    // exactly as in enqueuer.ts — which is the point, since it is present in BOTH runs:
+    //
+    //     send() rejects + this .catch() present  -> "clean — no unhandled rejection"
+    //     send() rejects + this .catch() removed  -> "UNHANDLED REJECTION: send() rejected", exit 3
+    //
+    // So it is load-bearing exactly when `send()` stops swallowing — i.e. it defends a future edit,
+    // which is why it ships despite being latent. Leaning on "send() cannot reject" is the dependency
+    // r2 Medium 4 decided this codebase should stop having; applying that decision to the two call
+    // sites and not to the module itself is half a fix (review r3 Low 4).
+    void p.finally(() => { if (inFlight === p) inFlight = null; }).catch(() => {});
     return p;
   };
 }

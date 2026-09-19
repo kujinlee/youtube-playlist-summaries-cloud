@@ -10418,3 +10418,39 @@ claim cut; the r1 `server.listen` host finding recorded as a measured DECLINATIO
 silently; and the runbook's unenforceable "keep the old Machine stopped" instruction replaced with an
 ordering that has no unstable intermediate state. 2882 tests / 278 suites. 15 mutations, all killed,
 two of which initially survived and exposed tests passing for ambient reasons.
+
+## 2026-09-18
+Second correction, appended. Two things in the entries above are now more precise.
+
+I wrote that "nothing about this is switched on yet". That is true of the wake — the part that lets a
+visitor start the worker — but not of one smaller change riding along with it. The setting that decides
+how long a machine is given to shut down cleanly was in the wrong place in the config file and has
+never actually applied; putting it in the right place means it starts applying the next time the
+website is deployed, without any of the six commands. I checked what that affects and it is harmless
+in both cases, but it is a change that arrives on an ordinary deploy rather than when you choose to
+switch the feature on, and the earlier entry read as though nothing would change until then.
+
+Also: the recovery step that un-sticks a job whose worker went to sleep at the wrong moment covers
+summaries only. The "dig deeper" jobs go through the same path and can get stuck the same way, and
+nothing currently rescues them. It is not urgent — that feature has no interface yet — but it is a real
+gap rather than a deliberate exclusion, and the code now says so where someone would look.
+
+**Waiting on you:** unchanged — whether to turn the feature on, and whether to record the fourth cause
+against the existing in-flight-summary item.
+<!--tech-->
+Review round 3, both halves. Codex: 1 Medium / 1 Low. Claude: 1 Medium / 3 Low, verdict "fold and ship;
+a round 4 is not warranted", with a measured argument that the falling finding count was partly an
+artefact of five rounds reading the same five files — it tested that by reviewing
+`supabase-job-queue.ts:24-29`, cited by no prior round, and found the `job_kind = 'summary'` filter
+that makes the dig gap real.
+
+Folded: the read-path comment now states what it recovers and what it does not; `void p.finally(...)`
+in worker-wake.ts gained the `.catch()` its call sites already had; the enqueue-side guard now asserts
+that a handler was ATTACHED (`jest.spyOn(rejected, 'catch')`) rather than that no rejection surfaced
+within 50ms — the previous version survived a 100ms-delayed rejection, which is the realistic shape.
+The `server.listen` declination is now measured in the real image base (`node:22-bookworm-slim`,
+v22.23.2 binds `::`) instead of on local Node 20.
+
+⚠ Process note against myself: I edited `worker/main.ts` in the worktree while the round-3 reviewer was
+running. It caught this, reported it, and reviewed the committed tree instead — the same mistake the
+previous session's handoff warned about.

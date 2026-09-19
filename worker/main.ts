@@ -246,11 +246,17 @@ export function startWakeListener(onFatal: () => void, port: number = WAKE_PORT)
     server.once('error', reject);
     // ⚠ NO HOST ARGUMENT, AND THIS IS A DECLINED FINDING, NOT AN OVERSIGHT (review r1, Codex
     // Medium 3; r2 Medium 2 caught that it had been dropped silently). Codex read Fly's "bind to
-    // 0.0.0.0" guidance and filed the omitted host as a risk. The Claude half then MEASURED it:
-    // `listen(port)` with no host binds `::` dual-stack (`node -e` reported
-    // `{ address: '::', family: 'IPv6' }`), and Flycast traffic is IPv6, so it arrives. Passing
-    // '0.0.0.0' would bind IPv4 ONLY and is the change that would actually break this path.
-    // Left as-is deliberately; reversing it needs a measurement, not the doc sentence.
+    // 0.0.0.0" guidance and filed the omitted host as a risk. It was then MEASURED, and Flycast
+    // traffic is IPv6 (6PN), so `::` is exactly what receives it. Passing '0.0.0.0' would bind IPv4
+    // ONLY and is the change that would actually break this path.
+    //
+    // ⚠ The first measurement was taken on the WRONG POPULATION and r3 caught it: local Node
+    // v20.18.2, while the image is `node:22-bookworm-slim`. Re-measured in the real image base:
+    //
+    //     $ docker run --rm node:22-bookworm-slim node -e '…s.listen(0,…)'
+    //     node v22.23.2 -> listen(port) binds {"address":"::","family":"IPv6","port":35769}
+    //
+    // Left as-is deliberately. Reversing it needs a measurement, not a doc sentence.
     server.listen(port, () => {
       // ⚠ RE-ARM THE ERROR HANDLER AFTER LISTENING (review r1 F10). The `once('error', reject)`
       // above only covers failure to bind: past this point the promise is settled, so a later

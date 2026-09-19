@@ -179,14 +179,23 @@ describe('SupabaseEnqueuer wakes the worker', () => {
   // sibling did.
   test('a rejecting wake does not surface on the enqueue path', async () => {
     const { SupabaseEnqueuer } = await import('@/lib/job-queue/enqueuer');
-    const wake = jest.fn(() => Promise.reject(new Error('flycast unreachable')));
+
+    // ⭐ ASSERT THE PROPERTY, NOT THE SYMPTOM (review r3 Low 2). The first version of this case used
+    // a 50ms settle and a synchronously-rejecting wake, and the mutant SURVIVED when the rejection
+    // was delayed by 100ms — which is the realistic shape, since a real rejection follows a `fetch`
+    // bounded at 1500ms. So it was a timing accident, the second in this file. Spying on `.catch`
+    // asks the question directly: did the CALL SITE attach a handler? That is timing-free.
+    const rejected = Promise.reject(new Error('flycast unreachable'));
+    const catchSpy = jest.spyOn(rejected, 'catch');
+    const wake = jest.fn(() => rejected);
     const client = rpcOk();
 
     const r = await new SupabaseEnqueuer(client as never, wake).enqueue(ctx, key, {} as never);
-    expect(r.jobId).toBe('j1');          // the enqueue still succeeded...
+    expect(r.jobId).toBe('j1');                  // the enqueue still succeeded...
     expect(wake).toHaveBeenCalledTimes(1);
+    expect(catchSpy).toHaveBeenCalledTimes(1);   // ...and the call site handled the rejection
 
-    await new Promise((res) => setTimeout(res, 50));   // ...and the rejection lands here, harmlessly
+    rejected.catch(() => {});   // soak it HERE, so the assertion above cannot be doing the soaking
   });
 
   // Break this catches: a failing enqueue that still pokes. Nothing was queued, so waking a machine
