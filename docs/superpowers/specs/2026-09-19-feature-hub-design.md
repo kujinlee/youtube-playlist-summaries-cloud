@@ -91,8 +91,8 @@ so under that rule it could never appear, and its absence stayed invisible.
 ```markdown
 ### rate-limiting-per-account
 state: absent
-expected-because: standard for a hosted multi-tenant service; one account can
-  currently exhaust the shared spend cap.
+for: Stops one account exhausting the shared spend cap.
+expected-because: standard for a hosted multi-tenant service.
 ```
 
 **The justification line is the only barrier to entry, and it is deliberately the only one.**

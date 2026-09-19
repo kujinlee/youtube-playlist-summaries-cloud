@@ -25,7 +25,7 @@ Copied verbatim from the spec and this repo's enforced conventions. Every task's
 - **Node states:** `built` (≥1 fragment, no `expected-because:`) or `absent` (an `expected-because:` line, zero fragments). Both directions enforced.
 - **Python only from the stdlib.** `yaml` and `tomllib`-for-writing are unavailable; `tomllib` (read-only) exists but is not needed here.
 - **A self-test prints failures as `  [FAIL] <case name>: got … want …`.** `check-plan-code.py`'s
-  attribution parser accepts ONLY lines starting with `[FAIL] `, and 39 suites already print it.
+  attribution parser accepts ONLY lines starting with `[FAIL] `, and it is the convention across this repo's suites.
   Review r1 measured an emoji form making every mutation kill the suite UNATTRIBUTABLY — the third
   recorded instance in this repo. **Fix the print contract BEFORE registering a manifest.**
 - **Never write a second splitter for a markdown table.** `check-docs.py:319` owns
@@ -68,7 +68,7 @@ Create `scripts/check-features.py` with only the self-test harness and the cases
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 15 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 16 cases against synthetic trees
 """
 import re, sys
 from dataclasses import dataclass, field
@@ -141,6 +141,10 @@ expected-because: standard for a hosted multi-tenant service.
     statusy = TREE.replace("for: Turns one", "for: Currently turns one")
     check("a status token in prose fails",
           any("status token" in p for p in check_nodes(parse_features(statusy)[0])), True)
+    built_reason = TREE.replace("for: Turns one video's transcript into a summary a person reads.\n",
+                                "for: Turns one video's transcript into a summary a person reads.\nexpected-because: leftover from when this was absent.\n")
+    check("a built node carrying expected-because fails",
+          any("that line is" in p for p in check_nodes(parse_features(built_reason)[0])), True)
     dupe = TREE + "\n### summarise-a-video\nstate: built\nfor: A second one.\nanchors: cloud-sync\n"
     check("a duplicate slug fails",
           any("duplicate" in p for p in check_nodes(parse_features(dupe)[0])), True)
@@ -252,6 +256,9 @@ def check_nodes(nodes: list[Node]) -> list[str]:
         if n.state == "built" and fragments == 0:
             problems.append(f"{where} is `built` but names no fragment — add an `anchors:` or "
                             f"`areas:` line, or set `state: absent` with an `expected-because:`")
+        if n.state == "built" and n.expected_because:
+            problems.append(f"{where} is `built` but carries an `expected-because:` — that line is "
+                            f"the argument for an ABSENCE. Remove it, or set `state: absent`")
         if n.state == "absent":
             if not n.expected_because:
                 problems.append(f"{where} is `absent` but has no `expected-because:` line")
@@ -265,7 +272,7 @@ def check_nodes(nodes: list[Node]) -> list[str]:
 - [ ] **Step 4: Run the self-test to verify it passes**
 
 Run: `python3 scripts/check-features.py --self-test`
-Expected: `15/15 self-test cases passed`, exit 0. ⚠ **This was MEASURED, not asserted** — the first version of this plan claimed 12/12 and actually ran 11/12, because its `absent` fixture had no `for:` line while the rule requires one on every node.
+Expected: `16/16 self-test cases passed`, exit 0. ⚠ **This was MEASURED, not asserted** — the first version of this plan claimed 12/12 and actually ran 11/12, because its `absent` fixture had no `for:` line while the rule requires one on every node.
 
 - [ ] **Step 5: Create the minimal tree so the script has real input**
 
@@ -321,7 +328,7 @@ row and no code, so its absence stayed invisible. A node is now `built` (names >
 `absent` (carries an `expected-because:` and names none), and BOTH directions fail -- so a feature
 cannot quietly get implemented while the tree still says it does not exist.
 
-12/12 self-test cases pass.
+16/16 self-test cases pass.
 ```
 
 ---
@@ -337,7 +344,7 @@ cannot quietly get implemented while the tree still says it does not exist.
 
 - [ ] **Step 1: Write the failing tests**
 
-Add to `_self_test`, and raise the docstring count from 15 to **23**:
+Add to `_self_test`, and raise the docstring count from 16 to **24**:
 
 ```python
     ANCHORS = {"cloud-publishing", "cloud-sync"}
@@ -471,12 +478,12 @@ Change the entry point to:
 - [ ] **Step 4: Run the self-test and the real check**
 
 Run: `python3 scripts/check-features.py --self-test && python3 scripts/check-features.py`
-Expected: `23/23 self-test cases passed`, then a FAILED list of unclaimed anchors and areas.
+Expected: `24/24 self-test cases passed`, then a FAILED list of unclaimed anchors and areas.
 
 ⚠ **The real run is expected to FAIL first — MEASURED, not predicted.** Run against today's repo with a one-node tree it printed:
 
 ```
-FAILED — 33 feature-map problem(s):
+FAILED — N feature-map problem(s):
   ✗ backlog area `(cloud / money)` is claimed by no node — its rows cannot appear
   ✗ backlog area `(cloud)` is claimed by no node — its rows cannot appear
 ```
@@ -520,13 +527,14 @@ Include at least one `absent` node, so the state is exercised by real data. A tr
 ```markdown
 ### dig-job-recovery
 state: absent
-expected-because: a dig job inherits the same worker exit-window race a summary does, but `listByPlaylist` filters `job_kind = 'summary'`, so the read-path recoverer cannot see it.
+for: Un-sticks a dig job whose worker went to sleep at the wrong moment.
+expected-because: dig inherits the same worker exit-window race a summary does, but listByPlaylist filters job_kind = summary, so the read-path recoverer cannot see it.
 ```
 
 - [ ] **Step 4: Run both checks**
 
 Run: `python3 scripts/check-features.py --self-test && python3 scripts/check-features.py`
-Expected: `23/23 self-test cases passed`, then `feature map: N nodes (…); 13 anchors and 21 backlog areas all claimed exactly once`.
+Expected: `24/24 self-test cases passed`, then `feature map: N nodes (…); 13 anchors and 21 backlog areas all claimed exactly once`.
 
 ⚠ Keep going until the second command exits 0. A remaining `claimed by no node` line is not cosmetic — that anchor's specs and ADRs, or that area's backlog rows, cannot appear on the page at all.
 
@@ -704,6 +712,12 @@ Create `scripts/mutations/check-features.json`. Each entry names a case that mus
     "expect": ["a status token in prose fails"]
   },
   {
+    "name": "a built node may carry an absence argument again",
+    "file": "scripts/check-features.py",
+    "edits": [["        if n.state == \"built\" and n.expected_because:\n", "        if False:\n"]],
+    "expect": ["a built node carrying expected-because fails"]
+  },
+  {
     "name": "an unclaimed backlog area stops being reported",
     "file": "scripts/check-features.py",
     "edits": [["    for area in sorted(areas_in_use - set(area_claims)):\n", "    for area in []:\n"]],
@@ -716,7 +730,7 @@ Create `scripts/mutations/check-features.json`. Each entry names a case that mus
 
 Neither is optional; review r1 measured both as red-on-arrival.
 
-1. `scripts/check-plan-code.py` — `EXPECTED_MUTATIONS` (near line 522) pins how many entries each manifest has. Add `"scripts/check-features.py": 4` — ⚠ **a full path, not a bare name.** The runner compares these keys to each manifest's `"file"` value (`check-plan-code.py:1145`), and every existing key is a path (`"scripts/check-anchors.py": 5`). A bare name matches nothing and the run fails before measuring coverage. `POPULATION` is the opposite — **bare names** — so the two registrations do NOT take the same string.
+1. `scripts/check-plan-code.py` — `EXPECTED_MUTATIONS` (near line 522) pins how many entries each manifest has. Add `"scripts/check-features.py": 5` — ⚠ **a full path, not a bare name.** The runner compares these keys to each manifest's `"file"` value (`check-plan-code.py:1145`), and every existing key is a path (`"scripts/check-anchors.py": 5`). A bare name matches nothing and the run fails before measuring coverage. `POPULATION` is the opposite — **bare names** — so the two registrations do NOT take the same string.
 2. `scripts/check-selftest-counts.py` — `POPULATION` (near line 83) lists the scripts whose declared count is verified by running it. Add **both** `check-features.py` and `gen-features-page.py`.
 
 ⚠ `gen-features-page.py` is a script under `scripts/` and therefore also owes R4 — a mutation manifest **or a written `NO-MUTATIONS:` reason in its docstring**. Write the reason, and say why:
@@ -733,7 +747,7 @@ in check-features.py, which has one.
 python3 scripts/check-features.py --self-test        # CONTROL — must be green BEFORE mutating
 python3 scripts/check-plan-code.py --mutate .        # applies the manifest; each must go red
 ```
-Expected: 4/4 killed. ⚠ **A surviving mutation means the case passes for a reason other than the one it names** — this happened four times in PR #322. Fix the case, not the manifest.
+Expected: 5/5 killed. ⚠ **A surviving mutation means the case passes for a reason other than the one it names** — this happened four times in PR #322. Fix the case, not the manifest.
 
 - [ ] **Step 5: Confirm the ratchet contract is satisfied**
 
@@ -743,7 +757,7 @@ Expected: exit 0 — `check-features.py` has a `--self-test` (R1), a CI caller (
 - [ ] **Step 6: Confirm the declared self-test count is verified**
 
 Run: `python3 scripts/check-selftest-counts.py`
-Expected: the docstring's `# 23 cases` matches what the suite prints. If it drifts, fix the docstring — the count has one home.
+Expected: the docstring's `# 24 cases` matches what the suite prints. If it drifts, fix the docstring — the count has one home.
 
 - [ ] **Step 7: Commit and open the PR**
 
@@ -757,15 +771,15 @@ Per `docs/dev-process.md` Phase 5: branch + PR, and **merging stays a human gate
 
 | Spec requirement | Task |
 |---|---|
-| Feature tree, three trunks | 2 |
-| Anchors attach rather than form the spine | 2 (`anchors:` on the node, every registry anchor claimed exactly once) |
+| Feature tree, three trunks | 3 |
+| Anchors attach rather than form the spine | 3 declares them; 2 enforces one-claim-each |
 | `built` / `absent` node states, both directions enforced | 1 |
 | `expected-because:` required on absences | 1 |
 | Prose bounded, status tokens rejected | 1 |
-| `areas:` alias map, no per-row backlog edits | 3 |
-| Every in-use area claimed exactly once | 3 |
-| Anchors resolve to the registry | 3 |
-| `backlog.md` unparseable → exit 2 | 3 |
+| `areas:` alias map, no per-row backlog edits | 2 |
+| Every in-use area claimed exactly once | 2 |
+| Anchors resolve to the registry | 2 |
+| `backlog.md` unparseable → exit 2 | 2 |
 | Page at `/features`, derived | 4 |
 | Rebuild hook | 5 |
 | CI-wired check with `--self-test` and mutations | 6 |
@@ -775,6 +789,6 @@ Per `docs/dev-process.md` Phase 5: branch + PR, and **merging stays a human gate
 
 **Placeholder scan:** none — every code step carries runnable code; the one open-ended step (Task 2's tree contents) names its source (`find app/api -name route.ts`) and a concrete measured example.
 
-**Type consistency:** `parse_features` returns `(list[Node], list[str])` in Tasks 1, 3 and 4. `check_nodes(nodes)` and `check_cross(nodes, anchor_slugs, areas_in_use)` take the same `Node` dataclass throughout. `backlog_areas(text) -> set[str]` feeds `check_cross`'s third parameter in both the self-test and `main()`. The self-test count rises 12 → 18 in Task 3 and is verified by `check-selftest-counts.py` in Task 6.
+**Type consistency:** `parse_features` returns `(list[Node], list[str])` in Tasks 1, 2 and 4. `check_nodes(nodes)` and `check_cross(nodes, anchor_slugs, areas_in_use)` take the same `Node` dataclass throughout. `backlog_areas(text) -> set[str]` feeds `check_cross`'s third parameter in both the self-test and `main()`. The self-test count rises 16 → 24 in Task 2 and is verified by `check-selftest-counts.py` in Task 6.
 
-**What review round 1 changed, so a reader can see which claims are now measured rather than asserted.** Both halves ran this plan's code; it did not pass. The corrections: the self-test fixture gained the `for:` line it was missing (11/12 → 23/23, run from the plan itself); `check()` now prints the canonical `[FAIL] ` line the mutation harness can attribute, which 39 suites already use; the table read uses `check-docs.py`'s escaped-pipe `CELL_SPLIT`, measured to recover backlog rows #90 and #110 that the naive split dropped; wrapped `for:` lines are refused rather than silently truncated, which had disabled the status-token rule entirely; `now` left the banned-word list after it was measured rejecting 1 in 13 of this repo's own purpose-shaped sentences; the `Feature` column is gone as a duplicate edge; `REGENERABLE`/`PAGE_SOURCES` replace two dict names that do not exist; and Task 6 now registers both scripts in `EXPECTED_MUTATIONS` and `POPULATION`, without which three of its gates were red on arrival.
+**What review round 1 changed, so a reader can see which claims are now measured rather than asserted.** Both halves ran this plan's code; it did not pass. The corrections: the self-test fixture gained the `for:` line it was missing (11/12 → 23/23, run from the plan itself); `check()` now prints the canonical `[FAIL] ` line the mutation harness can attribute, which this repo's suites already use; the table read uses `check-docs.py`'s escaped-pipe `CELL_SPLIT`, measured to recover backlog rows #90 and #110 that the naive split dropped; wrapped `for:` lines are refused rather than silently truncated, which had disabled the status-token rule entirely; `now` left the banned-word list after it was measured rejecting 1 in 13 of this repo's own purpose-shaped sentences; the `Feature` column is gone as a duplicate edge; `REGENERABLE`/`PAGE_SOURCES` replace two dict names that do not exist; and Task 6 now registers both scripts in `EXPECTED_MUTATIONS` and `POPULATION`, without which three of its gates were red on arrival.
