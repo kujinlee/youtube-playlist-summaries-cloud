@@ -159,8 +159,12 @@ export async function runWorkerLoop(deps: {
           if (await queueIsDrained(deps.queue)) return;
           // ⭐ NOT DRAINED → RESTART THE IDLE CLOCK, and this one line is the whole of review r1 F6.
           // Without it `now - idleSince >= idleExitMs` stays true forever once it first holds, so
-          // the drain COUNT query above re-runs on every poll — every 2s, ~43,200/day, on a
-          // predicate no index serves — for as long as anything is queued-but-unclaimable. PR #318
+          // the drain COUNT query above re-runs on every poll — every 2s, ~43,200/day — for as
+          // long as anything is queued-but-unclaimable. (An earlier version of this comment added
+          // "on a predicate no index serves". Review r2 found `jobs_claim` and `jobs_sweep` are
+          // partial indexes that between them cover `status in ('queued','active')`, so a BitmapOr
+          // is available; neither of us ran EXPLAIN, so the clause is cut rather than reversed. The
+          // round-trip count carries the argument without it.) PR #318
           // landed three weeks ago precisely because idle polling was 100% of this project's
           // Supabase traffic; this would have quietly rebuilt a slice of it. Resetting makes the
           // interface's own "cost is once per idle window" docstring TRUE rather than wishful.
@@ -183,7 +187,10 @@ export async function runWorkerLoop(deps: {
 }
 
 /** Port the worker's wake listener binds. Must match `internal_port` of the worker service in
- *  fly.toml, or Fly Proxy has nowhere to route and the machine never autostarts. */
+ *  **fly.worker.toml** — the `yps-worker` app. NOT fly.toml, which now deliberately declares no
+ *  worker service at all (review r1 F2). If they disagree, Fly Proxy has nowhere to route and the
+ *  machine never autostarts. Asserted by a test, because two literals in two files joined by a
+ *  comment is the shape that let SWEEP_MS drift on this branch's predecessor. */
 export const WAKE_PORT = 8081;
 
 /** Env var holding the idle window, in ms. ⚠ ABSENT = NEVER EXIT, and that is the safe default:
@@ -237,6 +244,13 @@ export function startWakeListener(onFatal: () => void, port: number = WAKE_PORT)
   const server = http.createServer((_req, res) => { res.writeHead(200); res.end('awake\n'); });
   return new Promise((resolve, reject) => {
     server.once('error', reject);
+    // ⚠ NO HOST ARGUMENT, AND THIS IS A DECLINED FINDING, NOT AN OVERSIGHT (review r1, Codex
+    // Medium 3; r2 Medium 2 caught that it had been dropped silently). Codex read Fly's "bind to
+    // 0.0.0.0" guidance and filed the omitted host as a risk. The Claude half then MEASURED it:
+    // `listen(port)` with no host binds `::` dual-stack (`node -e` reported
+    // `{ address: '::', family: 'IPv6' }`), and Flycast traffic is IPv6, so it arrives. Passing
+    // '0.0.0.0' would bind IPv4 ONLY and is the change that would actually break this path.
+    // Left as-is deliberately; reversing it needs a measurement, not the doc sentence.
     server.listen(port, () => {
       // ⚠ RE-ARM THE ERROR HANDLER AFTER LISTENING (review r1 F10). The `once('error', reject)`
       // above only covers failure to bind: past this point the promise is settled, so a later
@@ -250,12 +264,26 @@ export function startWakeListener(onFatal: () => void, port: number = WAKE_PORT)
       // did NOT exit: it kept polling with the doorbell shut, unwakeable, and with no idle window
       // configured it would never have restarted at all. Setting an exit code only decides what
       // the code will be IF the process exits; it cannot cause the exit. `onFatal` aborts the
-      // shutdown signal, so the loop finishes its in-flight job and returns through the normal
-      // drain path, and the non-zero exit then brings the machine back under `on-failure`.
+      // shutdown signal, so the loop stops and the non-zero exit brings the machine back under
+      // `on-failure`.
+      //
+      // ⛔ AND IT DOES NOT LET THE IN-FLIGHT JOB FINISH. The first version of this comment said it
+      // did; review r2 drove the real path and measured otherwise — `ac.signal` IS the handler's
+      // signal (`worker-runner.ts` folds `shutdownSignal` in via `AbortSignal.any`), so the handler
+      // is ABORTED: `handlerSawAbort=true, handlerFinished=false`, then
+      // `fail_job(..., billableSucceeded: true)`, and with the live `summary_max_attempts = 1` that
+      // is `dead_letter` on the first occurrence WITH THE SPEND KEPT. That is open backlog #139,
+      // which had three known triggers; this is a FOURTH, and it needs no deploy.
+      //
+      // Accepted deliberately, because every alternative available today loses the same job: a bare
+      // `process.exit(1)` abandons the `active` row, and `sweep_expired_leases` dead-letters it at
+      // `attempts >= max_attempts` too. The better behaviour — stop claiming, let the current job
+      // finish, then exit non-zero — needs a second controller, which is exactly the design call
+      // #139 is holding open. An unwakeable Machine is worse than a lost job, so this ships.
       server.on('error', (e) => {
         console.error('[worker] wake listener failed after binding — shutting down so Fly restarts us:', e);
         process.exitCode = 1;
-        onFatal?.();
+        onFatal();
       });
       const addr = server.address();
       resolve({
@@ -263,8 +291,10 @@ export function startWakeListener(onFatal: () => void, port: number = WAKE_PORT)
         port: typeof addr === 'object' && addr ? addr.port : port,
         // Closing matters: the exit path is `process exits 0 -> machine returns to stopped`, and a
         // live handle would hold the event loop open and bill forever while looking idle.
-        // ⚠ IDEMPOTENT. `main()` closes this in a `finally`, and the fatal path above can already
-        // have brought the server down; Node answers a second `close()` with
+        // ⚠ IDEMPOTENT, and NOT because the fatal path closes the server — it no longer does; it
+        // only aborts. The real second caller is an ordinary one: `main()` closes this in a
+        // `finally`, and any other close (a test's, a future caller's) makes that the second. Node
+        // answers a second `close()` with
         // `ERR_SERVER_NOT_RUNNING`, which would have turned a recovery into a rejection out of the
         // `finally` block — losing the original error.
         close: () => new Promise<void>((res2, rej2) => {

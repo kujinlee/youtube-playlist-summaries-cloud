@@ -66,10 +66,16 @@ export class SupabaseEnqueuer implements Enqueuer {
     // ⭐ AND NOT AWAITED. `enqueuePlaylist` calls this in a sequential loop over up to 50 videos;
     // awaiting a 1500ms-bounded POST each time added up to ~75s to one user request (review r1 F3),
     // and bought nothing — all the poke has to do is reach the proxy, which starts the Machine
-    // without anyone waiting for the reply. `wake` cannot reject (see worker-wake.ts), so this
-    // cannot become an unhandled rejection, and the web process is a long-lived `node server.js`,
-    // so the request is not discarded after the response is sent.
-    void this.wake();
+    // without anyone waiting for the reply. The web process is a long-lived `node server.js`, so the
+    // work is not discarded after the response is sent.
+    //
+    // ⚠ `.catch()` even though `wake` cannot reject today (worker-wake.ts swallows everything).
+    // An earlier version of this comment leaned on that invariant and stopped there. Review r2
+    // measured that the test guarding this passed only because it returned before the microtask
+    // queue drained — add a 50ms settle and it went red on the real rejection. The invariant was
+    // enforced one module away and the guard for it was vacuous. An un-awaited rejection kills the
+    // process under Node's default `--unhandled-rejections=throw`; this makes the call site not care.
+    void this.wake().catch(() => {});
     return { jobId: row.job_id, status: row.status, joined: row.joined };
   }
 

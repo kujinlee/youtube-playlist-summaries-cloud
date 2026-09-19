@@ -95,5 +95,10 @@ describe('the job-status read path wakes a stopped worker', () => {
     mockWake = jest.fn(() => Promise.reject(new Error('flycast unreachable')));
 
     expect((await get()).status).toBe(200);
+
+    // ⭐ THE LINE THAT MAKES THIS TEST REAL (review r2 Medium 4). Without it the case returned
+    // before the microtask queue drained, so the rejection landed after jest had moved on and the
+    // test passed for an ambient reason. With it, a call site missing `.catch()` fails here.
+    await new Promise((r) => setTimeout(r, 50));
   });
 });

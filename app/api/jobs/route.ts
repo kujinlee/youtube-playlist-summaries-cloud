@@ -89,7 +89,9 @@ export async function GET(req: Request) {
     // ⚠ NOT AWAITED, so this cannot slow the poll down — a status poll must stay fast, and we need
     // no part of the reply. Suppression inside the shared wake (see `workerWakeFromEnv`) is what
     // stops a 2s poll loop from emitting a poke every 2s; it sends at most one per window.
-    if (jobs.some((j) => j.status === 'queued')) void workerWakeFromEnv()();
+    // `.catch()` for the same reason as the enqueue path: the call site must not depend on a
+    // never-rejects invariant living in another module (review r2 Medium 4).
+    if (jobs.some((j) => j.status === 'queued')) void workerWakeFromEnv()().catch(() => {});
 
     return NextResponse.json({ jobs, rollup: rollup(jobs) }, { status: 200 });
   } catch (err) {

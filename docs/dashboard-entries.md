@@ -10382,3 +10382,39 @@ passing for an ambient reason.
 
 ⚠ `fly.toml` still declares the old `worker` process group. Transitional and deliberate — removing
 it makes the next web deploy destroy the running worker Machine. Exit condition is in `docs/deploy.md`.
+
+## 2026-09-18
+Correction and addition to the entry above, which was a review round out of date when it was written.
+Appended rather than edited, because this file is append-only.
+
+Two things the earlier entry did not say. First, the fix that was supposed to make the worker recover
+from a broken doorbell did not actually work: it set an exit code, which only decides what the exit
+code *will be* if the process ever exits — it cannot cause the process to exit. The worker would have
+carried on polling with its doorbell shut, unable to be woken, and with the idle setting switched off
+it would never have restarted at all. That is fixed, and the way it is fixed means the same mistake
+now fails to compile rather than passing quietly.
+
+Second, and this one is worth your attention because it touches something already on your plate: the
+new shutdown path **aborts the summary that is in progress**, rather than letting it finish. With the
+current retry setting that means the summary is discarded and the money already spent on it is kept.
+That is the same problem as the open item about deploys losing an in-flight summary — which was
+recorded as having three causes. This makes a fourth, and unlike the others it does not need a deploy
+to happen. Nothing here makes that problem worse than it already is, but the count has changed and
+the note describing it has not.
+
+**Waiting on you:** the same decision as before (whether to turn the feature on), plus whether to
+record that fourth cause against the existing item.
+<!--tech-->
+Review round 2, both halves, on branch `wake-on-visit`. Codex: 2 Mediums, both introduced by round
+1's fixes. Claude: 1 High / 5 Medium / 6 Low, and it refuted one of Codex's two proposed fixes using
+Fly's scale-count docs. The High was measured, not argued — the reviewer drove the real abort path and
+recorded `handlerSawAbort=true, handlerFinished=false` plus `fail_job(billableSucceeded: true)`.
+
+Folded: `onFatal` is now a required parameter (an optional one let the single call site regress with
+all 35 cases green); `close()` is idempotent; `.catch()` on both `void wake()` sites, and the test
+that claimed to cover that now has the 50ms settle that makes it real; `auto_start_machines`,
+`kill_signal` and `kill_timeout` VALUES pinned, not just positions; the unmeasured "no index serves"
+claim cut; the r1 `server.listen` host finding recorded as a measured DECLINATION rather than dropped
+silently; and the runbook's unenforceable "keep the old Machine stopped" instruction replaced with an
+ordering that has no unstable intermediate state. 2882 tests / 278 suites. 15 mutations, all killed,
+two of which initially survived and exposed tests passing for ambient reasons.

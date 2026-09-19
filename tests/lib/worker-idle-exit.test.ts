@@ -277,6 +277,14 @@ describe('the Fly config the wake path depends on', () => {
         expect(at).toBeGreaterThan(-1);        // present at all
         expect(at).toBeLessThan(firstTable);   // and NOT swallowed by a table
       }
+
+      // ⚠ AND THE VALUES, not only the position (review r2 Medium 3). Pinning where the keys live
+      // left `SIGTERM -> SIGKILL` free to pass the suite AND `fly config validate` — removing the
+      // graceful drain entirely while the test that exists for the drain stayed green. A signal the
+      // worker does not trap is not a drain; it is a kill with extra steps.
+      const whole = lines.join('\n');
+      expect(/^\s*kill_signal\s*=\s*"SIGTERM"/m.test(whole)).toBe(true);
+      expect(/^\s*kill_timeout\s*=\s*"120s"/m.test(whole)).toBe(true);
     });
   }
 

@@ -209,23 +209,75 @@ fly secrets set --app yps-worker WORKER_IDLE_EXIT_MS=300000
 wake path works and the worker will stop itself and stay stopped, with jobs queueing behind it and
 nothing red anywhere.
 
-**Falsifier — the whole feature, in one pass.** With both Machines stopped: visit the site (the web
-machine resumes), request a summary, and confirm `fly status --app yps-worker` reaches `started`
-with no human action, the summary completes, and the Machine returns to `stopped` afterwards.
+**Falsifier — the whole feature, in one pass.** ⚠ It must prove the NEW worker did the work. Review
+round 2 found the first version of this check could be satisfied entirely by the OLD worker in the
+web app, which would have read as a pass while `yps-worker` sat untouched.
 
-### ⚠ The old `worker` process group in `fly.toml` is still there, and that is deliberate
+```bash
+fly machine stop <old-worker-id> -a youtube-playlist-summaries   # so it cannot be the one that answers
+fly status -a yps-worker                                         # record the state BEFORE: stopped
+```
 
-`fly.toml` still declares a `worker` process group and its `[[vm]]`. It is **transitional**, and it
-is duplication — two definitions of a worker in one repo — kept only because removing it is the one
-destructive step here. Fly's docs: *"`fly deploy` ... destroys all the Machines that belong to any
-process group that isn't defined in your app's `fly.toml` file."* So deleting it makes the next
-**web** deploy tear down the existing worker Machine, and the config would be asserting the worker
-lives elsewhere before `yps-worker` exists.
+Then visit the site (the web machine resumes), request a summary, and confirm all four:
 
-**Exit condition, so this does not become permanent by accident:** once the falsifier above has
-passed on `yps-worker`, delete the `worker` entry from `[processes]` and the `processes = ["worker"]`
-`[[vm]]` block from `fly.toml`, then deploy the web app. Until that is done, keep the old worker
-Machine `stopped` so two workers never poll the same queue.
+1. `fly status -a yps-worker` reaches `started` **with no human action**;
+2. the summary completes;
+3. `fly logs -a yps-worker` shows the claim for that job — this is the step that proves *which*
+   worker did it, and it is the one the original falsifier was missing;
+4. the `yps-worker` Machine returns to `stopped` afterwards.
+
+### ⚠ The old `worker` process group in `fly.toml`, and the ONE unstable state to avoid
+
+`fly.toml` still declares a `worker` process group and its `[[vm]]`. Removing it is the one
+destructive step in this migration, so it is not done in the same change that adds `yps-worker`.
+
+⛔ **An earlier version of this runbook said "keep the old worker Machine `stopped`". That
+instruction is deleted, because it is unenforceable and it was aimed at the wrong hazard.** Review
+round 2 established the real property: *"no worker in the web app"* has **no stable representation**.
+
+- Destroy the Machine, or `fly scale count worker=0` → the next `fly deploy` **seeds it back and
+  starts it**. Fly's scale-count page: *"If there are no existing Machines, then `fly deploy` seeds
+  the app with new Machines in the `primary_region` and according to the `[processes]` configured in
+  your `fly.toml`."* So a "scale it to zero after every deploy" step would have to be repeated
+  forever, and forgetting it leaves a **started** worker, not a stopped one.
+- Leave it stopped → it is one `fly machine start`, one host migration, or one dashboard click from
+  running, and nothing observes that.
+- Either way, if it does come up it comes up **with `WORKER_IDLE_EXIT_MS` unset** (step 6 sets that
+  secret on `yps-worker` only), so the duplicate never idles out. It is a permanently-running second
+  consumer — the ~$10.60/mo and the idle Supabase traffic this slice exists to remove — while every
+  user-visible symptom stays green, because jobs *do* get done.
+- ⚠ Whether a plain `fly deploy` restarts an **existing stopped** Machine is **NOT VERIFIED in
+  either direction**. Fly's docs do not address it and the closest live report points the other way.
+  Do not rely on either answer.
+
+**So the transition has no "keep something stopped" phase. The ordering below has no unstable
+intermediate state:**
+
+1. Do steps 1–5 above and run the falsifier. Two workers on this queue is safe by construction —
+   `claim_next_job` fences by lease token and `fail_job`/`complete_job` are fenced writes — so it
+   does not matter what the old Machine is doing while you verify the new one.
+2. **In one change:** delete `worker` from `fly.toml`'s `[processes]` and the
+   `processes = ["worker"]` `[[vm]]` block, then deploy the web app. That deploy destroys the old
+   Machine — *"destroys all the Machines that belong to any process group that isn't defined"* — so
+   the transition ends atomically. **The teardown is the goal here, not the risk.**
+3. **Only then** set `WORKER_IDLE_EXIT_MS` on `yps-worker` (step 6).
+
+⚠ **If step 2 must be deferred, the interim rule is a deploy flag, not a cleanup step.** While the
+web app still declares a `worker` group, the only supported web-deploy command is:
+
+```bash
+fly deploy --process-groups web        # --update-only also exists: "Do not create Machines for new process groups"
+```
+
+### ⚠ Verify `yps-worker` really has no public address — the security argument depends on it
+
+The entire reason the worker moved to its own app is that it must not be reachable from the internet.
+Nothing in the repo can assert that, because it is platform state rather than config. Check it by
+hand, and re-check it after any `fly ips` command:
+
+```bash
+fly ips list -a yps-worker      # MUST show a private v6 only. Any "public ingress" row is a defect.
+```
 
 ### Before editing either Fly config
 
