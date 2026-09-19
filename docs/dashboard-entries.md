@@ -10572,3 +10572,109 @@ its reachability is stated — unreachable with either shipped cursor, reachable
 `now` and `SweepPolicy` seams (Low 2); and the comment now says a cursor that **throws**, because a
 `due()` returning `undefined` fails CLOSED — 0 sweeps in 3 polls — which `tsc` closes for any
 TypeScript implementer but not for a JS caller or an `as unknown as` cast (Low 5).
+## 2026-09-18 [needs-you]
+The worker can now put itself to sleep and be woken by a visitor, so the whole site can sit idle
+costing almost nothing. Nothing about this is switched on yet — turning it on is six commands on
+Fly, in a specific order, written down in `docs/deploy.md`.
+
+Worth knowing what the review found, because two of the problems would have been invisible until
+production. The Fly config could not actually have been deployed at all: it named a restart setting
+that does not exist, and a test had been written that asserted the wrong value, so the whole test
+suite was quietly defending the mistake. Separately, the worker's new "doorbell" was originally put
+in the same Fly app as the website, on the same port — which would have sent roughly half the
+public traffic for the site to the worker instead, and let anyone on the internet start your worker
+by visiting a URL. The worker now lives in its own Fly app with no public address, which makes that
+impossible rather than merely unlikely.
+
+One older problem surfaced along the way and is **not** fixed here: the setting that gives the
+worker 120 seconds to finish a job before it is killed has never actually been in effect, because
+it was written in the wrong part of the config file. That is corrected now, but it has been true in
+production for as long as the file has existed, and it may be part of why a deploy can lose a
+summary that was mid-flight.
+
+**Waiting on you:** this needs a decision that is not an engineering one. Turning the feature on
+means running six Fly commands, and the last one is irreversible in the sense that a mistake in the
+first five leaves the worker asleep with jobs piling up behind it and nothing showing red.
+<!--tech-->
+Branch `wake-on-visit`, backlog #141 + #142. Adds `fly.worker.toml` (new `yps-worker` app,
+Flycast-only, `[[services.ports]]` + `policy = "on-failure"`), `lib/job-queue/worker-wake.ts` with
+in-flight + window coalescing, a read-path poke in `GET /api/jobs`, `hasUnfinishedWork()` counting
+`queued`+`active`, and an idle-clock reset so the drain query runs once per window instead of once
+per 2s poll. 2879 tests / 278 suites. Review round 1: 2 Blocking, 3 High, 4 Medium, 3 Low; 10
+mutations applied, all killed, one of which (`if (inFlight)`) initially SURVIVED and exposed a test
+passing for an ambient reason.
+
+⚠ `fly.toml` still declares the old `worker` process group. Transitional and deliberate — removing
+it makes the next web deploy destroy the running worker Machine. Exit condition is in `docs/deploy.md`.
+
+## 2026-09-18
+Correction and addition to the entry above, which was a review round out of date when it was written.
+Appended rather than edited, because this file is append-only.
+
+Two things the earlier entry did not say. First, the fix that was supposed to make the worker recover
+from a broken doorbell did not actually work: it set an exit code, which only decides what the exit
+code *will be* if the process ever exits — it cannot cause the process to exit. The worker would have
+carried on polling with its doorbell shut, unable to be woken, and with the idle setting switched off
+it would never have restarted at all. That is fixed, and the way it is fixed means the same mistake
+now fails to compile rather than passing quietly.
+
+Second, and this one is worth your attention because it touches something already on your plate: the
+new shutdown path **aborts the summary that is in progress**, rather than letting it finish. With the
+current retry setting that means the summary is discarded and the money already spent on it is kept.
+That is the same problem as the open item about deploys losing an in-flight summary — which was
+recorded as having three causes. This makes a fourth, and unlike the others it does not need a deploy
+to happen. Nothing here makes that problem worse than it already is, but the count has changed and
+the note describing it has not.
+
+**Waiting on you:** the same decision as before (whether to turn the feature on), plus whether to
+record that fourth cause against the existing item.
+<!--tech-->
+Review round 2, both halves, on branch `wake-on-visit`. Codex: 2 Mediums, both introduced by round
+1's fixes. Claude: 1 High / 5 Medium / 6 Low, and it refuted one of Codex's two proposed fixes using
+Fly's scale-count docs. The High was measured, not argued — the reviewer drove the real abort path and
+recorded `handlerSawAbort=true, handlerFinished=false` plus `fail_job(billableSucceeded: true)`.
+
+Folded: `onFatal` is now a required parameter (an optional one let the single call site regress with
+all 35 cases green); `close()` is idempotent; `.catch()` on both `void wake()` sites, and the test
+that claimed to cover that now has the 50ms settle that makes it real; `auto_start_machines`,
+`kill_signal` and `kill_timeout` VALUES pinned, not just positions; the unmeasured "no index serves"
+claim cut; the r1 `server.listen` host finding recorded as a measured DECLINATION rather than dropped
+silently; and the runbook's unenforceable "keep the old Machine stopped" instruction replaced with an
+ordering that has no unstable intermediate state. 2882 tests / 278 suites. 15 mutations, all killed,
+two of which initially survived and exposed tests passing for ambient reasons.
+
+## 2026-09-18
+Second correction, appended. Two things in the entries above are now more precise.
+
+I wrote that "nothing about this is switched on yet". That is true of the wake — the part that lets a
+visitor start the worker — but not of one smaller change riding along with it. The setting that decides
+how long a machine is given to shut down cleanly was in the wrong place in the config file and has
+never actually applied; putting it in the right place means it starts applying the next time the
+website is deployed, without any of the six commands. I checked what that affects and it is harmless
+in both cases, but it is a change that arrives on an ordinary deploy rather than when you choose to
+switch the feature on, and the earlier entry read as though nothing would change until then.
+
+Also: the recovery step that un-sticks a job whose worker went to sleep at the wrong moment covers
+summaries only. The "dig deeper" jobs go through the same path and can get stuck the same way, and
+nothing currently rescues them. It is not urgent — that feature has no interface yet — but it is a real
+gap rather than a deliberate exclusion, and the code now says so where someone would look.
+
+**Waiting on you:** unchanged — whether to turn the feature on, and whether to record the fourth cause
+against the existing in-flight-summary item.
+<!--tech-->
+Review round 3, both halves. Codex: 1 Medium / 1 Low. Claude: 1 Medium / 3 Low, verdict "fold and ship;
+a round 4 is not warranted", with a measured argument that the falling finding count was partly an
+artefact of five rounds reading the same five files — it tested that by reviewing
+`supabase-job-queue.ts:24-29`, cited by no prior round, and found the `job_kind = 'summary'` filter
+that makes the dig gap real.
+
+Folded: the read-path comment now states what it recovers and what it does not; `void p.finally(...)`
+in worker-wake.ts gained the `.catch()` its call sites already had; the enqueue-side guard now asserts
+that a handler was ATTACHED (`jest.spyOn(rejected, 'catch')`) rather than that no rejection surfaced
+within 50ms — the previous version survived a 100ms-delayed rejection, which is the realistic shape.
+The `server.listen` declination is now measured in the real image base (`node:22-bookworm-slim`,
+v22.23.2 binds `::`) instead of on local Node 20.
+
+⚠ Process note against myself: I edited `worker/main.ts` in the worktree while the round-3 reviewer was
+running. It caught this, reported it, and reviewed the committed tree instead — the same mistake the
+previous session's handoff warned about.

@@ -416,6 +416,13 @@ jobs:
       # or short-circuiting that step would turn into a stale or missing read (r1 finding R8).
       # Same `printf '%s' "$BODY"` for the same reason stated there: a PR body is attacker-
       # controlled text full of backticks and quotes.
+      # ⛔ EDITING THE PR BODY DOES NOT RE-ARM THIS STEP, AND `gh run rerun` DOES NOT EITHER.
+      # `github.event.pull_request.body` is read from the EVENT PAYLOAD, which is frozen when the
+      # event fires. A rerun replays that same payload, so a `NO-REVIEW:` declaration added after a
+      # red run is invisible to the rerun and the step fails again with an identical message —
+      # measured 2026-09-18 on PR #322, where it cost two rerun cycles before the cause was found.
+      # Only a NEW `pull_request` event picks up an edited body, i.e. a push (`synchronize`) or a
+      # reopen. If you have just edited the body to answer this gate, push something.
       - name: check-review-recorded (PR only)
         if: github.event_name == 'pull_request'
         env:
