@@ -53,7 +53,7 @@ Copied verbatim from the spec and this repo's enforced conventions. Every task's
 
 **Files:**
 - Create: `scripts/check-features.py`
-- Create: `docs/features.md` (a minimal 3-node tree, expanded in Task 2)
+- Create: `docs/features.md` (a minimal tree, expanded in Task 3)
 
 **Interfaces:**
 - Consumes: nothing.
@@ -103,7 +103,7 @@ def _self_test() -> int:
         if got != want:
             failures += 1
             # ⭐ THE CANONICAL FORM. `check-plan-code.py`'s attribution parser accepts ONLY lines
-            # starting with `[FAIL] `; 39 suites already print it. Review r1 Blocking 2 measured
+            # starting with `[FAIL] `, the convention across this repo's suites. Review r1 measured
             # that an emoji form makes every mutation kill the suite UNATTRIBUTABLY.
             print(f"  [FAIL] {name}: got {got!r} want {want!r}")
 
@@ -305,7 +305,7 @@ anchors: cloud-publishing
 - [ ] **Step 6: Run the checker against the real tree**
 
 Run: `python3 scripts/check-features.py --self-test`
-Expected: `15/15`. ⚠ **Do NOT run the bare `check-features.py` yet and do not read its exit 0 as a pass** — the entry point returns 0 for any non-`--self-test` invocation until Task 2 gives it a real `main()`. An exit 0 from a script that checked nothing is the "cannot run reported as a pass" shape this repo treats as a failure.
+Expected: `16/16`. ⚠ **Do NOT run the bare `check-features.py` yet and do not read its exit 0 as a pass** — the entry point returns 0 for any non-`--self-test` invocation until Task 2 gives it a real `main()`. An exit 0 from a script that checked nothing is the "cannot run reported as a pass" shape this repo treats as a failure.
 
 - [ ] **Step 7: Commit**
 
@@ -531,17 +531,17 @@ for: Un-sticks a dig job whose worker went to sleep at the wrong moment.
 expected-because: dig inherits the same worker exit-window race a summary does, but listByPlaylist filters job_kind = summary, so the read-path recoverer cannot see it.
 ```
 
-- [ ] **Step 4: Run both checks**
+- [ ] **Step 3: Run both checks**
 
 Run: `python3 scripts/check-features.py --self-test && python3 scripts/check-features.py`
 Expected: `24/24 self-test cases passed`, then `feature map: N nodes (…); 13 anchors and 21 backlog areas all claimed exactly once`.
 
 ⚠ Keep going until the second command exits 0. A remaining `claimed by no node` line is not cosmetic — that anchor's specs and ADRs, or that area's backlog rows, cannot appear on the page at all.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add docs/features.md docs/anchors.md
+git add docs/features.md
 git commit -F /tmp/t2.txt
 ```
 
@@ -621,8 +621,22 @@ Expected: `6/6 self-test cases passed`
     "features": "gen-features-page.py",
 ```
 ```python
-    "features": ["docs/features.md", "docs/anchors.md", "docs/backlog.md"],
+    "features": [
+        "docs/features.md", "docs/anchors.md", "docs/backlog.md",
+        "docs/adr", "docs/superpowers/specs", "docs/superpowers/plans", "docs/reviews",
+    ],
 ```
+
+⛔ **THE WATCHED SET MUST EQUAL THE DERIVED SET, and review r3 caught it not being.** Task 4 Step 3
+derives from backlog rows, ADRs, specs, plans and reviews; an earlier draft registered only the first
+three files. A spec, ADR or review could change while `/features` still reported itself fresh and the
+hook stayed silent — which defeats the one thing Task 5's title promises. If you add a source to the
+renderer, add it here and to the hook in the same commit.
+
+⚠ **`git log` is the one source no file watcher can see**, and that bound is stated rather than
+hidden: the "recent changes" section refreshes when any watched FILE changes, or on a manual
+`python3 scripts/gen-features-page.py`, and it can lag commits made without touching those files. The
+page therefore prints its own build time, so a reader can tell how old that section is.
 
 ⚠ The two dicts are keyed identically and `_stale_sources_covered` in that file's self-test **checks that they are**. Add to both, then run `python3 scripts/explainer-serve.py --self-test`.
 
@@ -646,7 +660,22 @@ Open `http://127.0.0.1:7391/features`. Confirm the trunks, at least one absent n
 
 - [ ] **Step 1: Write the hook**
 
-Copy `.claude/hooks/regen-goals-page.sh` and change three things: the source `case` list to `docs/features.md`, `docs/anchors.md`, `docs/backlog.md`; the script it runs; and the URL it prints. **Keep `exit 0` on every path** — the hook must never block a turn.
+Copy `.claude/hooks/regen-goals-page.sh` and change three things: the source `case` list, the script it runs, and the URL it prints.
+
+⛔ **The `case` list must match `PAGE_SOURCES["features"]` exactly** (review r3 High 1) — the same set the renderer derives from, not a subset:
+
+```bash
+case "$FILE_PATH" in
+  */docs/features.md|docs/features.md) ;;
+  */docs/anchors.md|docs/anchors.md) ;;
+  */docs/backlog.md|docs/backlog.md) ;;
+  */docs/adr/*.md|docs/adr/*.md) ;;
+  */docs/superpowers/specs/*.md|docs/superpowers/specs/*.md) ;;
+  */docs/superpowers/plans/*.md|docs/superpowers/plans/*.md) ;;
+  */docs/reviews/*|docs/reviews/*) ;;
+  *) exit 0 ;;
+esac
+``` **Keep `exit 0` on every path** — the hook must never block a turn.
 
 - [ ] **Step 2: Make it executable and test both paths**
 
@@ -787,7 +816,7 @@ Per `docs/dev-process.md` Phase 5: branch + PR, and **merging stays a human gate
 | Tests/code modules excluded as fragments | — by omission; no task adds them |
 | `/goals` not retired | — by omission; no task touches it |
 
-**Placeholder scan:** none — every code step carries runnable code; the one open-ended step (Task 2's tree contents) names its source (`find app/api -name route.ts`) and a concrete measured example.
+**Placeholder scan:** none — every code step carries runnable code; the one open-ended step (Task 3's tree contents) names its source (`find app/api -name route.ts`) and a concrete measured example.
 
 **Type consistency:** `parse_features` returns `(list[Node], list[str])` in Tasks 1, 2 and 4. `check_nodes(nodes)` and `check_cross(nodes, anchor_slugs, areas_in_use)` take the same `Node` dataclass throughout. `backlog_areas(text) -> set[str]` feeds `check_cross`'s third parameter in both the self-test and `main()`. The self-test count rises 16 → 24 in Task 2 and is verified by `check-selftest-counts.py` in Task 6.
 

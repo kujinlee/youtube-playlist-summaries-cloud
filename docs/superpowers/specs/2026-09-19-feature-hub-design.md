@@ -114,7 +114,7 @@ people to not declare, which is the failure being fixed.
 |---|---|---|
 | specs, plans | the node names its anchors; specs/plans already declare theirs | none — see the amendment below |
 | ADRs | the anchor registry's existing ADR column | none |
-| **backlog rows (known gaps)** | an `areas:` alias line on the node | ~21 aliases, declared once — **not 140 row edits** |
+| **backlog rows (known gaps)** | an `areas:` alias line on the node | ~21 aliases, declared once — **not one edit per backlog row** |
 | review documents | filename stem plus anchor | none |
 | recent changes | `git log` subjects carrying `(#N)` | none |
 | prose | `features.md`, hand-written | the only rot surface |
