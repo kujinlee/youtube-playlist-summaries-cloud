@@ -275,6 +275,31 @@ describe('makeWorkerWake coalesces', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  // ⭐ WHITE-BOX, AND THE ONLY KIND OF TEST THAT CAN REACH THIS (review r4 Low 1). The module
+  // attaches `.catch()` to its own `.finally()` chain, because `.finally()` returns a NEW promise
+  // that adopts the rejection and the caller's handler does not cover it. No BEHAVIOURAL test can
+  // kill removing that guard — `send()` swallows every rejection, so the hazard has no observable
+  // effect today, and the mutation left the suite 22/22 green.
+  //
+  // I wrote "no unit test can kill it" in the source and round 4 refuted the absolute: spying on
+  // `Promise.prototype.catch` counts the attachment directly. Verified both ways — guard present: 1
+  // call; guard removed: 0. That is worth a test rather than a softer sentence, because the guard
+  // exists to protect a FUTURE edit to `send()`, and a guard whose only evidence is a comment is the
+  // shape this branch has now been caught by three times.
+  test('the internal finally chain has its own rejection handler attached', async () => {
+    const fetchImpl = jest.fn(async () => new Response(null, { status: 200 }));
+    const wake = makeWorkerWake('http://w.flycast/wake', { fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    const spy = jest.spyOn(Promise.prototype, 'catch');
+    try {
+      spy.mockClear();   // count ONLY what this wake() attaches
+      await wake();
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();   // global prototype spy — restoring is not optional
+    }
+  });
+
   // ⚠ And the other direction, which is the one that matters for correctness: suppression must
   // EXPIRE. A window that never reopens would mean the worker can be woken once per process and
   // never again — every later job stranded, silently, with the wake looking configured and healthy.

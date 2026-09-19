@@ -93,9 +93,13 @@ export function makeWorkerWake(url: string | undefined, opts: WakeOpts = {}): Wo
     // NEW promise that adopts the rejection, and voiding it means the caller's own `.catch()` — which
     // guards the promise IT holds — does not cover this one.
     //
-    // ⚠ NO UNIT TEST CAN KILL THE REMOVAL OF THIS `.catch()`, and that is stated rather than hidden:
-    // the rejection source is unreachable while `send()` swallows everything, so a single-line
-    // mutation cannot express the hazard. Demonstrated with a TWO-factor probe instead, run in the
+    // ⚠ NO *BEHAVIOURAL* TEST CAN KILL THE REMOVAL OF THIS `.catch()` — the rejection source is
+    // unreachable while `send()` swallows everything, so the mutation leaves the suite green. An
+    // earlier version of this comment said "no unit test", full stop, and review r4 refuted the
+    // absolute: a WHITE-BOX test that spies on `Promise.prototype.catch` counts the attachment
+    // directly and kills it (guard present: 1 call; removed: 0). That test now exists — see
+    // `the internal finally chain has its own rejection handler attached`. Also demonstrated with a
+    // TWO-factor probe, run in the
     // real image base (`node:22-bookworm-slim`, v22.23.2), with the caller's own `.catch()` attached
     // exactly as in enqueuer.ts — which is the point, since it is present in BOTH runs:
     //
