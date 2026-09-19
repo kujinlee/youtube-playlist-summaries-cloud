@@ -183,8 +183,13 @@ no new registry idea — every one of these mirrors something `/goals` or `/back
 - **Tests and code modules never appear as fragments.** They are the only non-drifting record of
   behaviour, and rendering 2,743 test names was the first design considered — it was rejected as
   too granular to read. Node prose plus linked design fragments carry the meaning instead.
-- **`/goals` is not retired.** It answers a different question and stays as-is. Whether it should
-  eventually fold into this page is worth revisiting once the tree carries real fragments, and is
-  explicitly not decided here.
+- **`/goals` is not retired, and the re-evaluation is SEQUENCED rather than merely deferred**
+  (decided 2026-09-19). It stays as-is until the tree's nodes exist, and is then re-examined against
+  them — because the question *"does a goal fold into a feature node?"* cannot be answered before
+  there are nodes to fold into. The expectation going in, recorded so a later reader can see whether
+  it held: **most goals will align naturally with a feature node, and some will not** — the ones that
+  will not are likely the anchors already identified as platform properties or tooling rather than
+  features. Absorbing a goal into the taxonomy is expected to be cheap; the sequencing exists because
+  the *answer* is unknowable now, not because the work is hard.
 - **No new backlog rows are required by this design.** Known gaps attach through the alias map if
   they are filed; undeclared gaps stay invisible, which is why `absent` nodes exist.
