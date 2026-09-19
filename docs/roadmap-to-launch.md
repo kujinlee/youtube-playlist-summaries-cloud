@@ -502,8 +502,13 @@ on the round-2 reviewer's own disposition. Filed in `docs/backlog.md` the same t
   failure-domain fixes stand on their own.
   **Falsifier:** from both machines `stopped`, visit the site and request a summary — the worker must
   reach `started` with no human action and return to `stopped` after draining.
-- [ ] **backlog #140 — 🟢 collapse `SweepPolicy` to a single `run(fn)`.** The only proposed change
-  that removes a finding BY CONSTRUCTION rather than by a guard. ⚠ Not to be confused with the
+- [x] **backlog #140 — 🟢 collapse `SweepPolicy` to a single `run(fn)`.** ✅ **DONE 2026-09-18.**
+  ⚠ **NOT "removes a finding by construction"** — that framing was the filing's, and two review
+  rounds refuted it. Shipped as `sweepPolicyFrom(cursor)`: both rules written EXACTLY ONCE, no
+  implementation holding either, which restores master's single-copy property rather than achieving
+  impossibility. The honest bound is that the mistake is writable in **exactly one function IN THIS REPO — the
+  minimum, not zero** (a caller-supplied `SweepPolicy` is a second, unobserved one — r3 Medium 1) — and it is caught **by a guard**, three tests, measured. Full account in
+  `docs/backlog.md` #140. ⚠ Not to be confused with the
   redesign that was REFUTED in #318 r2 (hoisting the sweep into `runWorkerLoop` dissolves none of
   the three findings). The obstacle is gone: the comment claiming callers depend on `runOnce`
   sweeping was measured false and corrected.
@@ -2037,7 +2042,7 @@ unapplied for eight days while every document read "merged, done".
   anyone wrote a clause. Any new unfalsifiable gate now fails immediately, with no slack.
 
 **Current state (2026-08-12, still accurate except where the block above supersedes it):**
-- **`master` is clean** — tsc clean, **2883 unit / 278 suites** green, plus **522 integration**
+- **`master` is clean** — tsc clean, **2891 unit / 278 suites** green, plus **522 integration**
   (519 passed + 3 skipped, measured 2026-08-17 against a live local stack; integration does not run
   in CI and is therefore NOT verified by the check below — treat it as a dated note, not a live
   number). **The unit counts above are verified on every CI run** by `scripts/check-test-counts.py`,

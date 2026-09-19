@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import type { JobQueue } from '@/lib/storage/job-queue';
 import type { JobHandler, SweepPolicy } from '@/lib/job-queue/worker-runner';
+import { sweepPolicyFrom } from '@/lib/job-queue/worker-runner';
 import { runOnce } from '@/lib/job-queue/worker-runner';
 import { SupabaseJobQueue } from '@/lib/storage/supabase/supabase-job-queue';
 import { makeSummaryHandler } from '@/lib/job-queue/summary-handler';
@@ -67,12 +68,12 @@ export const SWEEP_MS = 60_000;
 
 /** Time-gated sweep cadence: due at most once per `intervalMs`, whatever the call rate.
  *
- *  ⚠ The cursor advances ONLY in onSwept(), never in due(). Advancing it on every DUE CHECK
- *  would mean `now - last` is perpetually one poll interval under a fast caller, never reaching
- *  `intervalMs`, and the sweep would never run again for the life of the process — lease
+ *  ⚠ The cursor advances ONLY after a sweep RESOLVES, never on the due check. Advancing it on
+ *  every call would mean `now - last` is perpetually one poll interval under a fast caller, never
+ *  reaching `intervalMs`, and the sweep would never run again for the life of the process — lease
  *  reclamation silently dead, with nothing to report it.
  *
- *  ⚠ And onSwept() is called only after the sweep RESOLVES (see runOnce). Spending the window on
+ *  ⚠ And the commit is inside `run`, after `await sweep()` (backlog #140). Spending the window on
  *  an attempt that threw would push worst-case crash recovery from ~180s to ~240s on a single
  *  transient failure, and further when blips land on window boundaries — r1 Medium, found by
  *  Codex. Both properties are pinned in tests/lib/lease-sweep-cadence.test.ts.
@@ -82,8 +83,10 @@ export const SWEEP_MS = 60_000;
  *  the host catches up — r1 Low. The negative delta is ALSO floored below, so the gate fails safe
  *  (sweeps sooner) even if a caller injects a wall clock, which the tests do.
  *
- *  ⚠ The period runs from COMPLETION, not from the due-check: onSwept() re-samples the clock after
- *  the sweep has returned, so the effective cadence is SWEEP_MS + the sweep's own latency (r1 Low).
+ *  ⚠ The period runs from COMPLETION, not from the due check: `commit()` below re-samples the clock
+ *  after the sweep has returned (r2 Low 3 — this used to credit `run`, which since backlog #140 is
+ *  `sweepPolicyFrom` and touches no clock at all), so the effective cadence is SWEEP_MS + the
+ *  sweep's own latency (r1 Low).
  *  That is deliberate — it is the right semantics for a rate limiter, since measuring from the
  *  due-check would let a slow link issue overlapping sweeps — but it means the stated ~180s bound
  *  is really ~180s + one RPC round trip. At a healthy ~50ms that is noise.
@@ -100,13 +103,15 @@ export function makeSweepGate(
   now: () => number = () => performance.now(),
 ): SweepPolicy {
   let lastSweptAt = -Infinity;
-  return {
+  // ⭐ CLOCK ARITHMETIC ONLY. The commit-on-resolve and never-reject rules live in sweepPolicyFrom,
+  // written once — this function cannot hold them wrongly because it does not hold them (r1 High 1).
+  return sweepPolicyFrom({
     due: () => {
       const elapsed = now() - lastSweptAt;
       return !(elapsed >= 0 && elapsed < intervalMs);
     },
-    onSwept: () => { lastSweptAt = now(); },
-  };
+    commit: () => { lastSweptAt = now(); },
+  });
 }
 
 /** Abort-aware sleep: resolves early if `signal` fires mid-wait, so a SIGTERM during
