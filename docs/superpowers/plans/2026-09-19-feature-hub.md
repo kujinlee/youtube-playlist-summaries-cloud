@@ -621,17 +621,26 @@ Expected: `6/6 self-test cases passed`
     "features": "gen-features-page.py",
 ```
 ```python
-    "features": [
-        "docs/features.md", "docs/anchors.md", "docs/backlog.md",
-        "docs/adr", "docs/superpowers/specs", "docs/superpowers/plans", "docs/reviews",
-    ],
+    "features": ["docs/features.md", "docs/anchors.md", "docs/backlog.md"],
 ```
 
-⛔ **THE WATCHED SET MUST EQUAL THE DERIVED SET, and review r3 caught it not being.** Task 4 Step 3
-derives from backlog rows, ADRs, specs, plans and reviews; an earlier draft registered only the first
-three files. A spec, ADR or review could change while `/features` still reported itself fresh and the
-hook stayed silent — which defeats the one thing Task 5's title promises. If you add a source to the
-renderer, add it here and to the hook in the same commit.
+⛔ **THREE WHOLE FILES, NOT DIRECTORIES, AND THIS IS THE SECOND TIME THIS LINE HAS BEEN WRONG.**
+Round 3 first widened it to `docs/adr`, `docs/superpowers/specs`, `docs/superpowers/plans` and
+`docs/reviews` so the watched set would match what Task 4 Step 3 derives from. Measured, that turns a
+green guard red: `explainer-serve.py:1481` asserts *"every declared source is a real file in the
+repo"*, and a directory is not a file — its self-test went **202/202 → 201/202**.
+
+**The two mechanisms are separate on purpose, and the residual is stated rather than hidden:**
+
+| Mechanism | Covers | Consequence |
+|---|---|---|
+| `PAGE_SOURCES` → the `/_stale` banner | the three whole-file sources | a banner, not a rebuild |
+| the regen hook (Task 5) | all seven path families | the actual rebuild |
+
+So an edit to a spec, ADR or review **does rebuild the page** through the hook — the half that
+matters — but will not raise the `/_stale` banner. `/goals` has the same shape. Teaching `/_stale`
+about directories is a real change to `explainer-serve.py` (expand each entry with `rglob`, take the
+max mtime) and is deliberately **not** in this plan's scope.
 
 ⚠ **`git log` is the one source no file watcher can see**, and that bound is stated rather than
 hidden: the "recent changes" section refreshes when any watched FILE changes, or on a manual
@@ -755,12 +764,29 @@ Create `scripts/mutations/check-features.json`. Each entry names a case that mus
 ]
 ```
 
-- [ ] **Step 3: Register both new scripts in the two ratchets that pin them**
+- [ ] **Step 3: Register the new scripts in FIVE places across THREE ratchets**
 
-Neither is optional; review r1 measured both as red-on-arrival.
+⛔ **An earlier draft said "the two ratchets" and named two of these five.** Review r3 measured the
+omission: adding only the first turns `check-plan-code.py --self-test` from **128/128 → 126/128**,
+because `EXPECTED_MUTATIONS` is pinned in three separate places, not one. The claim that draft made —
+*"neither is optional; measured red-on-arrival"* — was right about the instances it named and wrong
+about the enumeration, which is the same shape as the finding it was written to fix.
 
-1. `scripts/check-plan-code.py` — `EXPECTED_MUTATIONS` (near line 522) pins how many entries each manifest has. Add `"scripts/check-features.py": 5` — ⚠ **a full path, not a bare name.** The runner compares these keys to each manifest's `"file"` value (`check-plan-code.py:1145`), and every existing key is a path (`"scripts/check-anchors.py": 5`). A bare name matches nothing and the run fails before measuring coverage. `POPULATION` is the opposite — **bare names** — so the two registrations do NOT take the same string.
-2. `scripts/check-selftest-counts.py` — `POPULATION` (near line 83) lists the scripts whose declared count is verified by running it. Add **both** `check-features.py` and `gen-features-page.py`.
+1. `check-plan-code.py` — `EXPECTED_MUTATIONS` (near line 522): add `"scripts/check-features.py": 5`.
+   ⚠ **A full path.** The runner compares these keys to each manifest's `"file"` value (`:1145`) and
+   every existing key is a path.
+2. `check-plan-code.py:2623` — `sorted(EXPECTED_MUTATIONS)` is pinned against a **literal key list**.
+   Add `"scripts/check-features.py"` in sorted position.
+3. `check-plan-code.py:3262` — a case asserts the **sum** of all declared counts. Raise it by 5.
+4. `check-fixture-variation.py` — `EXAMINED_KEYS` (near line 280): add key sets for **both**
+   `check-features.py` and `gen-features-page.py`. Run
+   `python3 scripts/check-fixture-variation.py check-features.py` to see what it examines.
+5. `check-selftest-counts.py` — `POPULATION` (near line 83): add **bare names** for both.
+   ⚠ Note 1 and 5 take DIFFERENT string shapes for the same script — a full path and a bare name.
+
+⚠ **Do not trust this list either.** Before committing, run all three self-tests and read the
+failures: `check-plan-code.py --self-test`, `check-fixture-variation.py --self-test`,
+`check-selftest-counts.py --self-test`. Each names exactly what it wants.
 
 ⚠ `gen-features-page.py` is a script under `scripts/` and therefore also owes R4 — a mutation manifest **or a written `NO-MUTATIONS:` reason in its docstring**. Write the reason, and say why:
 
