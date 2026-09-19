@@ -1,3 +1,4 @@
+import { workerWakeFromEnv, type WorkerWake } from './worker-wake';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { JobKey, EnqueueResult } from '@/lib/storage/job-queue';
 import type { IngestionPayload } from '@/lib/job-queue/ingestion-payload';
@@ -44,7 +45,12 @@ export interface Enqueuer {
  * the singleton `guardrail_config` row.
  */
 export class SupabaseEnqueuer implements Enqueuer {
-  constructor(private serviceClient: SupabaseClient) {}
+  /** `wake` nudges a stopped worker machine awake (backlog #142). Injected so tests need no
+   *  network and so an unconfigured deploy gets a true no-op. */
+  constructor(
+    private serviceClient: SupabaseClient,
+    private wake: WorkerWake = workerWakeFromEnv(),
+  ) {}
 
   async enqueue(ctx: EnqueueCtx, key: JobKey, payload: IngestionPayload | DigJobPayload): Promise<EnqueueResult> {
     const { data, error } = await this.serviceClient.rpc('enqueue_job', {
@@ -53,6 +59,23 @@ export class SupabaseEnqueuer implements Enqueuer {
     });
     if (error) throw mapEnqueueError(error);
     const row = data[0];
+    // ⭐ AFTER the row is committed, never before — that ordering is what makes the wake an
+    // optimisation rather than a correctness requirement. If this poke fails (machine mid-boot,
+    // Flycast unset, network blip) the job is already durable and simply waits for the next wake.
+    //
+    // ⭐ AND NOT AWAITED. `enqueuePlaylist` calls this in a sequential loop over up to 50 videos;
+    // awaiting a 1500ms-bounded POST each time added up to ~75s to one user request (review r1 F3),
+    // and bought nothing — all the poke has to do is reach the proxy, which starts the Machine
+    // without anyone waiting for the reply. The web process is a long-lived `node server.js`, so the
+    // work is not discarded after the response is sent.
+    //
+    // ⚠ `.catch()` even though `wake` cannot reject today (worker-wake.ts swallows everything).
+    // An earlier version of this comment leaned on that invariant and stopped there. Review r2
+    // measured that the test guarding this passed only because it returned before the microtask
+    // queue drained — add a 50ms settle and it went red on the real rejection. The invariant was
+    // enforced one module away and the guard for it was vacuous. An un-awaited rejection kills the
+    // process under Node's default `--unhandled-rejections=throw`; this makes the call site not care.
+    void this.wake().catch(() => {});
     return { jobId: row.job_id, status: row.status, joined: row.joined };
   }
 

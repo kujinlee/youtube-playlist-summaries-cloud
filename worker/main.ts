@@ -1,4 +1,5 @@
 import os from 'node:os';
+import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import type { JobQueue } from '@/lib/storage/job-queue';
@@ -131,6 +132,13 @@ export async function runWorkerLoop(deps: {
   handler: JobHandler;
   shutdownSignal: AbortSignal;
   workerId: string;
+  /** Stop the worker after this long with nothing to do, so the Fly machine can return to
+   *  `stopped` and bill nothing (backlog #142).
+   *
+   *  ⚠ UNSET MEANS NEVER EXIT, and that default is deliberate: a worker that exits before the
+   *  Flycast wake path exists has no way to come back, so enabling this is a fly.toml change and
+   *  not a code default. */
+  idleExitMs?: number;
   /** Idle backoff between polls. Overridable so cadence tests need not run in real time. */
   pollMs?: number;
   /** Sweep cadence. Defaults to one gate per loop — note it is built HERE, once, not per
@@ -140,6 +148,7 @@ export async function runWorkerLoop(deps: {
 }): Promise<void> {
   const pollMs = deps.pollMs ?? POLL_MS;
   const sweepPolicy = deps.sweepGate ?? makeSweepGate(SWEEP_MS);
+  let idleSince: number | null = null;
   while (!deps.shutdownSignal.aborted) {
     try {
       const r = await runOnce(deps.queue, deps.handler, {
@@ -147,6 +156,31 @@ export async function runWorkerLoop(deps: {
         shutdownSignal: deps.shutdownSignal,
         sweepPolicy,
       });
+      if (r !== 'idle') {
+        idleSince = null; // got work — the idle clock restarts, so a busy worker never leaves
+      } else if (deps.idleExitMs !== undefined) {
+        idleSince ??= Date.now();
+        if (Date.now() - idleSince >= deps.idleExitMs) {
+          if (await queueIsDrained(deps.queue)) return;
+          // ⭐ NOT DRAINED → RESTART THE IDLE CLOCK, and this one line is the whole of review r1 F6.
+          // Without it `now - idleSince >= idleExitMs` stays true forever once it first holds, so
+          // the drain COUNT query above re-runs on every poll — every 2s, ~43,200/day — for as
+          // long as anything is queued-but-unclaimable. (An earlier version of this comment added
+          // "on a predicate no index serves". Review r2 found `jobs_claim` and `jobs_sweep` are
+          // partial indexes that between them cover `status in ('queued','active')`, so a BitmapOr
+          // is available; neither of us ran EXPLAIN, so the clause is cut rather than reversed. The
+          // round-trip count carries the argument without it.) PR #318
+          // landed three weeks ago precisely because idle polling was 100% of this project's
+          // Supabase traffic; this would have quietly rebuilt a slice of it. Resetting makes the
+          // interface's own "cost is once per idle window" docstring TRUE rather than wishful.
+          idleSince = Date.now();
+          // ⭐ AND SAY SO. Staying alive while work is genuinely pending is CORRECT — exiting would
+          // leave a backed-off job asleep until a visitor happened by. The defect r1 F7 named is
+          // that it was SILENT: a machine that never stops, for a good reason nobody can see. One
+          // line per idle window is cheap and makes "why is this still running?" answerable.
+          console.log(`[worker] staying alive: unfinished work in the queue; next check in ${deps.idleExitMs}ms`);
+        }
+      }
       if (r === 'idle') await sleep(pollMs, deps.shutdownSignal);
     } catch (e) {
       // A transient queue/network error (e.g. sweepExpired/claim throwing) must NOT kill the
@@ -154,6 +188,150 @@ export async function runWorkerLoop(deps: {
       console.error('[worker] loop iteration error (continuing):', e);
       await sleep(pollMs, deps.shutdownSignal);
     }
+  }
+}
+
+/** Port the worker's wake listener binds. Must match `internal_port` of the worker service in
+ *  **fly.worker.toml** — the `yps-worker` app. NOT fly.toml, which now deliberately declares no
+ *  worker service at all (review r1 F2). If they disagree, Fly Proxy has nowhere to route and the
+ *  machine never autostarts. Asserted by a test, because two literals in two files joined by a
+ *  comment is the shape that let SWEEP_MS drift on this branch's predecessor. */
+export const WAKE_PORT = 8081;
+
+/** Env var holding the idle window, in ms. ⚠ ABSENT = NEVER EXIT, and that is the safe default:
+ *  a worker that exits before the Flycast wake path is deployed has no way to come back. Turning
+ *  this on is a fly.toml change, made in the same commit as the service block that can wake it. */
+export const IDLE_EXIT_MS_ENV = 'WORKER_IDLE_EXIT_MS';
+
+/** Parses the idle window, refusing anything that is not a positive number rather than silently
+ *  treating it as 0 — which would make the worker exit on its very first idle poll. */
+export function idleExitMsFromEnv(env: NodeJS.ProcessEnv = process.env): number | undefined {
+  const raw = env[IDLE_EXIT_MS_ENV];
+  if (raw === undefined || raw.trim() === '') return undefined;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    console.error(`[worker] ignoring invalid ${IDLE_EXIT_MS_ENV}=${JSON.stringify(raw)} — staying alive`);
+    return undefined;
+  }
+  return n;
+}
+
+/** A doorbell, not an API.
+ *
+ *  ⭐ This server exists ONLY so the worker process group HAS a service, because that is what lets
+ *  Fly Proxy autostart a stopped machine: *"Requests to apps without services configured … don't
+ *  get routed through Fly Proxy and so Machines can't be automatically stopped or started."* The
+ *  request itself is discarded — the poll loop booting alongside it is what claims the job.
+ *
+ *  ⚠ Deliberately does NO work. A listener that claimed or enqueued would be a second, racier path
+ *  into the same queue, and the queue's concurrency guarantees are the ones PR #318 spent four
+ *  review rounds establishing on ONE path. */
+export interface WakeListener {
+  port: number;
+  close: () => Promise<void>;
+  /** ⚠ Exposed ONLY so tests can emit a post-bind `error`, which is otherwise unreachable from
+   *  outside — and an unreachable failure path is one nobody can prove works. Production code must
+   *  not touch this. */
+  server: http.Server;
+}
+
+/** ⭐ `onFatal` IS REQUIRED, AND THE ORDER OF THESE PARAMETERS IS WHY (review r2).
+ *
+ *  It was optional, with `main()` passing `() => ac.abort()`. Reverting that one call site to
+ *  `startWakeListener()` compiled cleanly and left all 35 cases green — a mutation that silently
+ *  restored the exact defect Codex had just filed, because the tests inject `onFatal` themselves and
+ *  therefore prove the MECHANISM while saying nothing about the CALL SITE. That is the same shape as
+ *  the original bug: the handler existed and nothing used it.
+ *
+ *  Making it required moves the failure from "a test might catch it" to "it does not compile", and
+ *  `port` follows it so the common caller can still omit the port. */
+export function startWakeListener(onFatal: () => void, port: number = WAKE_PORT): Promise<WakeListener> {
+  const server = http.createServer((_req, res) => { res.writeHead(200); res.end('awake\n'); });
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    // ⚠ NO HOST ARGUMENT, AND THIS IS A DECLINED FINDING, NOT AN OVERSIGHT (review r1, Codex
+    // Medium 3; r2 Medium 2 caught that it had been dropped silently). Codex read Fly's "bind to
+    // 0.0.0.0" guidance and filed the omitted host as a risk. It was then MEASURED, and Flycast
+    // traffic is IPv6 (6PN), so `::` is exactly what receives it. Passing '0.0.0.0' would bind IPv4
+    // ONLY and is the change that would actually break this path.
+    //
+    // ⚠ The first measurement was taken on the WRONG POPULATION and r3 caught it: local Node
+    // v20.18.2, while the image is `node:22-bookworm-slim`. Re-measured in the real image base:
+    //
+    //     $ docker run --rm node:22-bookworm-slim node -e '…s.listen(0,…)'
+    //     node v22.23.2 -> listen(port) binds {"address":"::","family":"IPv6","port":35769}
+    //
+    // Left as-is deliberately. Reversing it needs a measurement, not a doc sentence.
+    server.listen(port, () => {
+      // ⚠ RE-ARM THE ERROR HANDLER AFTER LISTENING (review r1 F10). The `once('error', reject)`
+      // above only covers failure to bind: past this point the promise is settled, so a later
+      // server error would have rejected an already-resolved promise — i.e. vanished. The doorbell
+      // could then die while the machine still looked healthy, leaving it permanently unwakeable
+      // with nothing logged.
+      //
+      // ⭐ AND `onFatal` IS WHAT MAKES THAT MORE THAN A LOG LINE (review r2, Codex Medium 1). The
+      // first version of this handler set `process.exitCode = 1` and closed the server — but
+      // `main()` is awaiting `runWorkerLoop()`, and nothing told the loop to stop. So the process
+      // did NOT exit: it kept polling with the doorbell shut, unwakeable, and with no idle window
+      // configured it would never have restarted at all. Setting an exit code only decides what
+      // the code will be IF the process exits; it cannot cause the exit. `onFatal` aborts the
+      // shutdown signal, so the loop stops and the non-zero exit brings the machine back under
+      // `on-failure`.
+      //
+      // ⛔ AND IT DOES NOT LET THE IN-FLIGHT JOB FINISH. The first version of this comment said it
+      // did; review r2 drove the real path and measured otherwise — `ac.signal` IS the handler's
+      // signal (`worker-runner.ts` folds `shutdownSignal` in via `AbortSignal.any`), so the handler
+      // is ABORTED: `handlerSawAbort=true, handlerFinished=false`, then
+      // `fail_job(..., billableSucceeded: true)`, and with the live `summary_max_attempts = 1` that
+      // is `dead_letter` on the first occurrence WITH THE SPEND KEPT. That is open backlog #139,
+      // which had three known triggers; this is a FOURTH, and it needs no deploy.
+      //
+      // Accepted deliberately, because every alternative available today loses the same job: a bare
+      // `process.exit(1)` abandons the `active` row, and `sweep_expired_leases` dead-letters it at
+      // `attempts >= max_attempts` too. The better behaviour — stop claiming, let the current job
+      // finish, then exit non-zero — needs a second controller, which is exactly the design call
+      // #139 is holding open. An unwakeable Machine is worse than a lost job, so this ships.
+      server.on('error', (e) => {
+        console.error('[worker] wake listener failed after binding — shutting down so Fly restarts us:', e);
+        process.exitCode = 1;
+        onFatal();
+      });
+      const addr = server.address();
+      resolve({
+        server,
+        port: typeof addr === 'object' && addr ? addr.port : port,
+        // Closing matters: the exit path is `process exits 0 -> machine returns to stopped`, and a
+        // live handle would hold the event loop open and bill forever while looking idle.
+        // ⚠ IDEMPOTENT, and NOT because the fatal path closes the server — it no longer does; it
+        // only aborts. The real second caller is an ordinary one: `main()` closes this in a
+        // `finally`, and any other close (a test's, a future caller's) makes that the second. Node
+        // answers a second `close()` with
+        // `ERR_SERVER_NOT_RUNNING`, which would have turned a recovery into a rejection out of the
+        // `finally` block — losing the original error.
+        close: () => new Promise<void>((res2, rej2) => {
+          if (!server.listening) return res2();
+          server.close((e) => (e ? rej2(e) : res2()));
+        }),
+      });
+    });
+  });
+}
+
+/** True only when we are CERTAIN there is nothing left to do.
+ *
+ *  ⚠ THE TWO FAILURE DIRECTIONS ARE NOT SYMMETRIC, which is the whole reason this is a named
+ *  function rather than an inline `await`. A worker that stays up too long costs a few cents. A
+ *  worker that exits with a job still queued strands that job until somebody happens to visit the
+ *  site — silently, with no error anywhere. So an unanswerable question resolves to "not drained".
+ *
+ *  ⚠ And `claim()` returning null is NOT this question: a job whose retry backoff has not elapsed
+ *  is `queued` and unclaimable at the same time. */
+async function queueIsDrained(queue: JobQueue): Promise<boolean> {
+  try {
+    return !(await queue.hasUnfinishedWork());
+  } catch (e) {
+    console.error('[worker] could not determine whether work is queued (staying alive):', e);
+    return false;
   }
 }
 
@@ -181,7 +359,18 @@ export async function main(): Promise<void> {
   process.on('SIGTERM', () => ac.abort());
   process.on('SIGINT', () => ac.abort());
 
-  await runWorkerLoop({ queue, handler, shutdownSignal: ac.signal, workerId });
+  // The listener is what Fly Proxy routes at to START this machine; the loop is what does the work.
+  // Started BEFORE the loop so a wake arriving during boot is answered rather than refused.
+  const listener = await startWakeListener(() => ac.abort());
+  try {
+    await runWorkerLoop({
+      queue, handler, shutdownSignal: ac.signal, workerId,
+      idleExitMs: idleExitMsFromEnv(),
+    });
+  } finally {
+    // Must close, or the process cannot exit 0 and the machine never returns to `stopped`.
+    await listener.close();
+  }
 }
 
 if (require.main === module) {

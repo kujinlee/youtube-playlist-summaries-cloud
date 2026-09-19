@@ -6,6 +6,7 @@ import { getStorageBundle, getPrincipalFromSession } from '@/lib/storage/resolve
 import { extractPlaylistId } from '@/lib/youtube';
 import { enqueuePlaylist, PlaylistTooLargeError, AllEnqueueFailedError, PlaylistFetchError } from '@/lib/job-queue/producer';
 import { SupabaseEnqueuer } from '@/lib/job-queue/enqueuer';
+import { workerWakeFromEnv } from '@/lib/job-queue/worker-wake';
 import { rollup } from '@/lib/job-queue/poll-client';
 import { parseClientIp } from '@/lib/http/client-ip';
 import { logError } from '@/lib/dev-logger';
@@ -74,6 +75,37 @@ export async function GET(req: Request) {
   try {
     const bundle = getStorageBundle({ supabaseClient: supabase });
     const jobs = await bundle.jobQueue!.listByPlaylist(playlistId);
+
+    // ⭐ THE READ PATH IS ALSO A WAKE PATH, and it is what closes the one hole the enqueue-time poke
+    // cannot (backlog #142; review r1 F4). A job can commit in the window after the worker has
+    // decided its queue is drained and before the process has exited: the poke lands on a Machine
+    // that is still running, so Fly Proxy starts nothing, and then the worker exits. Nothing else
+    // recovers it — there is no cron and no second poker — so the job would wait for the next
+    // unrelated enqueue by anyone, while the user watches a `queued` spinner with nothing red.
+    //
+    // ⚠ AND ITS SCOPE IS NARROWER THAN IT LOOKS — both halves of what this comment used to claim
+    // ("covers a crashed worker … and any future code path") were measurably false, and the route's
+    // own test file said so ten lines away (review r3 Medium 1). What it actually recovers:
+    //
+    //   ✅ a `queued` SUMMARY job in this playlist — the F4 exit window, which is what it is for;
+    //   ⛔ NOT a crashed worker. That leaves the row `active`, which this predicate excludes on
+    //      purpose (see tests/api/jobs-route-wake.test.ts) — the worker's own drain check counts
+    //      `active` rows instead, because only a worker can sweep;
+    //   ⛔ NOT a `dig` job, and this one is a real gap rather than a division of labour:
+    //      `listByPlaylist` hard-filters `job_kind = 'summary'`
+    //      (lib/storage/supabase/supabase-job-queue.ts), so a dig job enqueued through the SAME
+    //      enqueuer inherits the same exit-window race and no recoverer can see it. Not urgent —
+    //      the cloud dig route is generation-only with no frontend yet — but not covered either.
+    //      ⚠ Do NOT widen `listByPlaylist`; its filter is load-bearing for the playlist UI. The
+    //      cheap shape is a poke on the dig read path. Recorded here rather than left implied.
+    //
+    // ⚠ NOT AWAITED, so this cannot slow the poll down — a status poll must stay fast, and we need
+    // no part of the reply. Suppression inside the shared wake (see `workerWakeFromEnv`) is what
+    // stops a 2s poll loop from emitting a poke every 2s; it sends at most one per window.
+    // `.catch()` for the same reason as the enqueue path: the call site must not depend on a
+    // never-rejects invariant living in another module (review r2 Medium 4).
+    if (jobs.some((j) => j.status === 'queued')) void workerWakeFromEnv()().catch(() => {});
+
     return NextResponse.json({ jobs, rollup: rollup(jobs) }, { status: 200 });
   } catch (err) {
     logError(`jobs:poll:${playlistId}`, err);   // never swallow: surface the real cause to console + dev-errors.log
