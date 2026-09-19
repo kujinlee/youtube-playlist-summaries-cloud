@@ -21,7 +21,7 @@ Copied verbatim from the spec and this repo's enforced conventions. Every task's
 - **Declare the self-test count in the docstring, in the canonical form** `--self-test  # N cases`. `check-selftest-counts.py` runs each suite as a subprocess and compares. A number in prose has no owner.
 - **"Cannot run" is a FAILURE, never a pass.** Unreadable or missing input → print `CANNOT RUN — … Treat this as NOT RUN.` to stderr and `return 2`.
 - **Derived pages are never hand-edited.** Everything on `/features` except each node's `for:` sentence is derived.
-- **Node prose may contain no status token.** A status token is: a status marker (`✅ 🔴 🟠 🟢 ⏳ ◀`), a PR/issue reference (`#` followed by digits), or one of the words *currently, now, already, still, yet, planned, done, TODO*, or the phrase *in progress*. Matching is case-insensitive on word boundaries.
+- **Node prose may contain no status token.** A status token is: a status marker (`✅ 🔴 🟠 🟢 ⏳ ◀`), a PR/issue reference (`#` followed by digits), or one of the words *currently, already, still, yet, planned, done, TODO*, or the phrase *in progress*. Matching is case-insensitive on word boundaries.
 - **Node states:** `built` (≥1 fragment, no `expected-because:`) or `absent` (an `expected-because:` line, zero fragments). Both directions enforced.
 - **Python only from the stdlib.** `yaml` and `tomllib`-for-writing are unavailable; `tomllib` (read-only) exists but is not needed here.
 - **A self-test prints failures as `  [FAIL] <case name>: got … want …`.** `check-plan-code.py`'s
@@ -43,7 +43,6 @@ Copied verbatim from the spec and this repo's enforced conventions. Every task's
 | `scripts/check-features.py` | **Owns the grammar.** Parses `features.md`, validates it against `anchors.md` and `backlog.md`. `--self-test`. |
 | `scripts/gen-features-page.py` | **Renders.** Imports the parser from `check-features.py`, resolves fragments, writes `~/explainers/features.html`. `--self-test`. |
 | `.claude/hooks/regen-features-page.sh` | Rebuild the page when any source changes. Never blocks. |
-| `docs/anchors.md` | Gains a `Feature` column so each anchor names its node. |
 | `scripts/explainer-serve.py` | Register `features` in `REGENERABLE` and `PAGE_SOURCES`. |
 | `.github/workflows/ci.yml` | Two steps: the check, and its self-test. |
 | `scripts/mutations/check-features.json` | Mutation manifest for the guard. |
@@ -58,7 +57,7 @@ Copied verbatim from the spec and this repo's enforced conventions. Every task's
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `parse_features(text: str) -> tuple[list[Node], list[str]]` returning nodes and problems; `Node` is a dataclass with fields `slug: str`, `level: int`, `trunk: str`, `state: str`, `purpose: str`, `areas: list[str]`, `anchors: list[str]`, `expected_because: str | None`, `line: int`. Also `STATUS_TOKENS: re.Pattern` and `check_nodes(nodes) -> list[str]`. Task 3 adds cross-file rules; Task 4 imports `parse_features` and `Node`.
+- Produces: `parse_features(text: str) -> tuple[list[Node], list[str]]` returning nodes and problems; `Node` is a dataclass with fields `slug: str`, `level: int`, `trunk: str`, `state: str`, `purpose: str`, `areas: list[str]`, `anchors: list[str]`, `expected_because: str | None`, `line: int`. Also `STATUS_TOKENS: re.Pattern` and `check_nodes(nodes) -> list[str]`. Task 2 adds the cross-file rules; Task 4 imports `parse_features` and `Node`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -299,7 +298,7 @@ anchors: cloud-publishing
 - [ ] **Step 6: Run the checker against the real tree**
 
 Run: `python3 scripts/check-features.py --self-test`
-Expected: `15/15`. ⚠ **Do NOT run the bare `check-features.py` yet and do not read its exit 0 as a pass** — the entry point returns 0 for any non-`--self-test` invocation until Task 3 gives it a real `main()`. An exit 0 from a script that checked nothing is the "cannot run reported as a pass" shape this repo treats as a failure.
+Expected: `15/15`. ⚠ **Do NOT run the bare `check-features.py` yet and do not read its exit 0 as a pass** — the entry point returns 0 for any non-`--self-test` invocation until Task 2 gives it a real `main()`. An exit 0 from a script that checked nothing is the "cannot run reported as a pass" shape this repo treats as a failure.
 
 - [ ] **Step 7: Commit**
 
@@ -327,57 +326,7 @@ cannot quietly get implemented while the tree still says it does not exist.
 
 ---
 
-## Task 2: The real tree
-
-⚠ **The `Feature` column an earlier draft added to `anchors.md` is GONE.** Review r1 (both halves) found it was written by Task 2 and read by nothing, and that it pointed the opposite way to the `anchors:` line the parser actually uses — two directions for one edge. The spec is amended; the node names its anchors, and `check_cross` requires **every anchor to be claimed by exactly one node**, which is what makes an index that lists its members safe.
-
-**Files:**
-- Modify: `docs/features.md` (expand to the full tree)
-
-**Interfaces:**
-- Consumes: `parse_features`, `check_nodes` from Task 1.
-- Produces: a `docs/features.md` with all three trunks, every one of the 13 anchors claimed by exactly one node, and every one of the 21 backlog areas claimed by exactly one node.
-
-- [ ] **Step 1: List everything that must be claimed**
-
-```bash
-python3 -c "import re,pathlib;print(sorted(re.findall(r'^\|\s*\`([a-z0-9-]+)\`\s*\|',pathlib.Path('docs/anchors.md').read_text(),re.M)))"
-python3 scripts/check-features.py 2>&1 | grep 'claimed by no node'
-```
-
-The first prints the 13 anchors; the second every unclaimed backlog area. **Every name in both lists needs a home in Step 2**, or the check stays red.
-
-- [ ] **Step 2: Write the full tree**
-
-Expand `docs/features.md` to all three trunks. Every node needs `state:` and `for:`; `built` nodes need at least one `anchors:` or `areas:` entry. Use the API surface as the source for PRODUCT nodes:
-
-Run: `find app/api -name route.ts | sort` — each route family is a candidate node (`playlists`, `videos`, `share`, `pdf`, `html-doc`, `quick-view`, `jobs`, `ingest`, folder routes).
-
-Include at least one `absent` node, so the state is exercised by real data. A true one, measured this session:
-
-```markdown
-### dig-job-recovery
-state: absent
-expected-because: a dig job inherits the same worker exit-window race a summary does, but `listByPlaylist` filters `job_kind = 'summary'`, so the read-path recoverer cannot see it.
-```
-
-- [ ] **Step 4: Run both checks**
-
-Run: `python3 scripts/check-features.py --self-test && python3 scripts/check-features.py`
-Expected: `23/23 self-test cases passed`, then `feature map: N nodes (…); 13 anchors and 21 backlog areas all claimed exactly once`.
-
-⚠ Keep going until the second command exits 0. A remaining `claimed by no node` line is not cosmetic — that anchor's specs and ADRs, or that area's backlog rows, cannot appear on the page at all.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add docs/features.md docs/anchors.md
-git commit -F /tmp/t2.txt
-```
-
----
-
-## Task 3: Cross-file rules — anchors resolve, and every backlog area is claimed exactly once
+## Task 2: Cross-file rules — anchors resolve, and every backlog area is claimed exactly once
 
 **Files:**
 - Modify: `scripts/check-features.py`
@@ -537,6 +486,56 @@ That is the tool doing its job. Add `areas:` and `anchors:` lines to `docs/featu
 ⚠ Also verify the four CANNOT-RUN paths, all measured to return **rc=2**: `features.md` missing; `features.md` with no nodes; `anchors.md` yielding no anchors; `backlog.md` yielding no `(area)` tags.
 
 - [ ] **Step 5: Commit**
+
+---
+
+## Task 3: The real tree
+
+⚠ **The `Feature` column an earlier draft added to `anchors.md` is GONE.** Review r1 (both halves) found it was written by Task 2 and read by nothing, and that it pointed the opposite way to the `anchors:` line the parser actually uses — two directions for one edge. The spec is amended; the node names its anchors, and `check_cross` requires **every anchor to be claimed by exactly one node**, which is what makes an index that lists its members safe.
+
+**Files:**
+- Modify: `docs/features.md` (expand to the full tree)
+
+**Interfaces:**
+- Consumes: the COMPLETE checker from Tasks 1 and 2 — `parse_features`, `check_nodes`, `check_cross`, `anchor_slugs`, `backlog_areas` and `main()`. ⚠ This task deliberately comes AFTER them: review r2 Blocking 1 caught an ordering where the tree was written against a checker that did not exist yet, so its Step 1 could not run.
+- Produces: a `docs/features.md` with all three trunks, every one of the 13 anchors claimed by exactly one node, and every one of the 21 backlog areas claimed by exactly one node.
+
+- [ ] **Step 1: List everything that must be claimed**
+
+```bash
+python3 -c "import re,pathlib;print(sorted(re.findall(r'^\|\s*\`([a-z0-9-]+)\`\s*\|',pathlib.Path('docs/anchors.md').read_text(),re.M)))"
+python3 scripts/check-features.py 2>&1 | grep 'claimed by no node'
+```
+
+The first prints the 13 anchors; the second every unclaimed backlog area. **Every name in both lists needs a home in Step 2**, or the check stays red.
+
+- [ ] **Step 2: Write the full tree**
+
+Expand `docs/features.md` to all three trunks. Every node needs `state:` and `for:`; `built` nodes need at least one `anchors:` or `areas:` entry. Use the API surface as the source for PRODUCT nodes:
+
+Run: `find app/api -name route.ts | sort` — each route family is a candidate node (`playlists`, `videos`, `share`, `pdf`, `html-doc`, `quick-view`, `jobs`, `ingest`, folder routes).
+
+Include at least one `absent` node, so the state is exercised by real data. A true one, measured this session:
+
+```markdown
+### dig-job-recovery
+state: absent
+expected-because: a dig job inherits the same worker exit-window race a summary does, but `listByPlaylist` filters `job_kind = 'summary'`, so the read-path recoverer cannot see it.
+```
+
+- [ ] **Step 4: Run both checks**
+
+Run: `python3 scripts/check-features.py --self-test && python3 scripts/check-features.py`
+Expected: `23/23 self-test cases passed`, then `feature map: N nodes (…); 13 anchors and 21 backlog areas all claimed exactly once`.
+
+⚠ Keep going until the second command exits 0. A remaining `claimed by no node` line is not cosmetic — that anchor's specs and ADRs, or that area's backlog rows, cannot appear on the page at all.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add docs/features.md docs/anchors.md
+git commit -F /tmp/t2.txt
+```
 
 ---
 
@@ -707,7 +706,7 @@ Create `scripts/mutations/check-features.json`. Each entry names a case that mus
   {
     "name": "an unclaimed backlog area stops being reported",
     "file": "scripts/check-features.py",
-    "edits": [["    for area in sorted(areas_in_use - set(claims)):\n", "    for area in []:\n"]],
+    "edits": [["    for area in sorted(areas_in_use - set(area_claims)):\n", "    for area in []:\n"]],
     "expect": ["an in-use area claimed by nobody fails"]
   }
 ]
@@ -717,7 +716,7 @@ Create `scripts/mutations/check-features.json`. Each entry names a case that mus
 
 Neither is optional; review r1 measured both as red-on-arrival.
 
-1. `scripts/check-plan-code.py` — `EXPECTED_MUTATIONS` (near line 522) pins how many entries each manifest has. Add `"check-features.py": 4`. Without it, the next step fails before a single mutation runs.
+1. `scripts/check-plan-code.py` — `EXPECTED_MUTATIONS` (near line 522) pins how many entries each manifest has. Add `"scripts/check-features.py": 4` — ⚠ **a full path, not a bare name.** The runner compares these keys to each manifest's `"file"` value (`check-plan-code.py:1145`), and every existing key is a path (`"scripts/check-anchors.py": 5`). A bare name matches nothing and the run fails before measuring coverage. `POPULATION` is the opposite — **bare names** — so the two registrations do NOT take the same string.
 2. `scripts/check-selftest-counts.py` — `POPULATION` (near line 83) lists the scripts whose declared count is verified by running it. Add **both** `check-features.py` and `gen-features-page.py`.
 
 ⚠ `gen-features-page.py` is a script under `scripts/` and therefore also owes R4 — a mutation manifest **or a written `NO-MUTATIONS:` reason in its docstring**. Write the reason, and say why:
@@ -759,7 +758,7 @@ Per `docs/dev-process.md` Phase 5: branch + PR, and **merging stays a human gate
 | Spec requirement | Task |
 |---|---|
 | Feature tree, three trunks | 2 |
-| Anchors attach rather than form the spine | 2 (`Feature` column) |
+| Anchors attach rather than form the spine | 2 (`anchors:` on the node, every registry anchor claimed exactly once) |
 | `built` / `absent` node states, both directions enforced | 1 |
 | `expected-because:` required on absences | 1 |
 | Prose bounded, status tokens rejected | 1 |

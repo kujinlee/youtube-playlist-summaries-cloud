@@ -154,8 +154,10 @@ under it.
 
 **"Says only what it is for" has to be decidable, or the check cannot exist.** A status token is any
 of: a status marker (`✅ 🔴 🟠 🟢 ⏳ ◀`), a PR or issue reference (`#` followed by digits), or one of
-the words *currently, now, already, still, yet, planned, in progress, done, TODO*. Prose containing
-one fails. The list is deliberately short and literal — a fuzzier rule would be argued with rather
+the words *currently, already, still, yet, planned, in progress, done, TODO*. Prose containing
+one fails. ⟳ **`now` was in this list and was removed 2026-09-19**: review round 1 measured it
+rejecting 1 in 13 of this repo's own purpose-shaped sentences, and a rule that blocks legitimate
+prose is deleted by the first person it blocks. The list is deliberately short and literal — a fuzzier rule would be argued with rather
 than obeyed.
 
 ## Components
@@ -177,7 +179,7 @@ no new registry idea — every one of these mirrors something `/goals` or `/back
 
 | Rule | Catches |
 |---|---|
-| every `Feature:` in `anchors.md` resolves to a node | a renamed or deleted node |
+| every registry anchor is claimed by **exactly one** node | an anchor renamed, removed, or silently dropped from the page |
 | every in-use backlog `(area)` is claimed by **exactly one** node | the measured `cloud/money` duplicate, and future drift |
 | a `built` leaf has ≥1 fragment | nodes that claim implementation they cannot evidence |
 | an `absent` node has `expected-because:` and no fragments | silent emptiness; and implemented-but-still-declared-absent |
