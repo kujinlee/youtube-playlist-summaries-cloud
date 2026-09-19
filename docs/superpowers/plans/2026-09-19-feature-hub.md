@@ -22,7 +22,8 @@ Copied verbatim from the spec and this repo's enforced conventions. Every task's
 - **"Cannot run" is a FAILURE, never a pass.** Unreadable or missing input → print `CANNOT RUN — … Treat this as NOT RUN.` to stderr and `return 2`.
 - **Derived pages are never hand-edited.** Everything on `/features` except each node's `for:` sentence is derived.
 - **Node prose may contain no status token.** A status token is: a status marker (`✅ 🔴 🟠 🟢 ⏳ ◀`), a PR/issue reference (`#` followed by digits), or one of the words *currently, already, still, yet, planned, done, TODO*, or the phrase *in progress*. Matching is case-insensitive on word boundaries.
-- **Node states:** `built` (≥1 fragment, no `expected-because:`) or `absent` (an `expected-because:` line, zero fragments). Both directions enforced.
+- **Node states:** `built` (a `for:` line, ≥1 fragment, no `expected-because:`) or `absent` (a `for:` line, an `expected-because:`, zero fragments). All of it enforced, in both directions.
+- **Every field is ONE line.** A wrapped continuation is refused, not merged — text that never reaches the field cannot be searched for status tokens, which would silently disable the rule above.
 - **Python only from the stdlib.** `yaml` and `tomllib`-for-writing are unavailable; `tomllib` (read-only) exists but is not needed here.
 - **A self-test prints failures as `  [FAIL] <case name>: got … want …`.** `check-plan-code.py`'s
   attribution parser accepts ONLY lines starting with `[FAIL] `, and it is the convention across this repo's suites.
@@ -169,19 +170,9 @@ Expected: `NameError: name 'parse_features' is not defined`
 
 - [ ] **Step 3: Write the parser and the rules**
 
-Insert above `_self_test`:
+⚠ **Insert these ABOVE `_self_test`, and do NOT re-paste the imports, `STATUS_TOKENS`, or the `Node` dataclass — Step 1's block already declares them.** Review r3 Low 6 measured that pasting both blocks verbatim ships two copies of each, and a duplicated declaration is a live hazard for the mutation manifest, whose anchors must match exactly once.
 
 ```python
-import re, sys
-from dataclasses import dataclass, field
-
-# ⚠ `now` was in this list and was REMOVED: review r1 measured it rejecting 1 in 13 of this repo's
-# own purpose-shaped sentences. A rule that blocks legitimate prose gets deleted by the first person
-# it blocks, so the list keeps only words that cannot appear in a statement of purpose.
-STATUS_TOKENS = re.compile(
-    r"(?:[✅🔴🟠🟢⏳◀]|#\d+|\b(?:currently|already|still|yet|planned|done|todo)\b|\bin progress\b)",
-    re.IGNORECASE,
-)
 FIELD = re.compile(r"^(state|for|areas|anchors|expected-because):\s*(.*)$")
 
 @dataclass
@@ -559,7 +550,7 @@ git commit -F /tmp/t2.txt
 
 - [ ] **Step 1: Write the failing test**
 
-Create `scripts/gen-features-page.py` with a docstring declaring `--self-test  # 6 cases`, the same `[FAIL]`-printing `check()` helper as Task 1, and these cases. ⚠ **Build `nodes` inside the test** — an earlier draft referenced an undefined `nodes` (review r1 Medium 11):
+Create `scripts/gen-features-page.py` with a docstring declaring `--self-test  # 7 cases`, the same `[FAIL]`-printing `check()` helper as Task 1, and these cases. ⚠ **Build `nodes` inside the test** — an earlier draft referenced an undefined `nodes` (review r1 Medium 11):
 
 ```python
     nodes, _ = parse_features(
@@ -579,6 +570,7 @@ then:
     check("the absent reason is shown", "expected because" in html.lower(), True)
     check("a linked gap appears", "#139" in html, True)
     check("the absence count is shown", "1 declared absence" in html, True)
+    check("the build time is rendered", str(__import__("datetime").date.today().year) in html, True)
     check("no node is rendered twice", html.count("id=\"wake-on-visit\""), 1)
 ```
 
@@ -603,7 +595,7 @@ Expected: `NameError: name 'render' is not defined`
 Resolve per node, all derived:
 - **backlog rows** — rows whose area cell is in `node.areas`; render id, severity marker and the first sentence, each linking to `/backlog-table#<id>`.
 - **ADRs and specs** — via the anchors named on the node: read `docs/anchors.md` for the ADR numbers, and `docs/superpowers/specs/*.md` + `plans/*.md` for files whose `Anchor:` header matches.
-- **recent changes** — `git log --oneline -n 400` subjects matching `\(#\d+\)` whose subject mentions the node slug's words; cap at 5 per node.
+- **recent changes** — `git log --oneline -n 400` subjects matching `\(#\d+\)` whose subject mentions the node slug's words; cap at 5 per node. ⚠ **Render the page's own build time next to this section** (`datetime.now().isoformat(timespec="minutes")` at generation). `git log` is the one source no file-watcher can see, so this section can lag commits; the timestamp is what lets a reader tell. Assert it in a case: the rendered HTML contains the build year.
 - **reviews** — files under `docs/reviews/**` whose stem contains the node slug.
 
 Follow the existing page chrome: read `scripts/gen-goals-page.py` and reuse its theme/header approach rather than inventing a second look.
@@ -611,7 +603,7 @@ Follow the existing page chrome: read `scripts/gen-goals-page.py` and reuse its 
 - [ ] **Step 4: Run the self-test**
 
 Run: `python3 scripts/gen-features-page.py --self-test`
-Expected: `6/6 self-test cases passed`
+Expected: `7/7 self-test cases passed`
 
 - [ ] **Step 5: Register the page with the server**
 

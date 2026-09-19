@@ -85,8 +85,14 @@ so under that rule it could never appear, and its absence stayed invisible.
 
 | State | Must have | Must NOT have | Renders as |
 |---|---|---|---|
-| `built` | ≥1 fragment | — | a normal node |
-| `absent` | a one-line `expected-because:` | any fragment | *"not built — expected because …"* |
+| `built` | a `for:` line, ≥1 fragment | an `expected-because:` | a normal node |
+| `absent` | a `for:` line **and** a one-line `expected-because:` | any fragment | *"not built — expected because …"* |
+
+⚠ **Every node carries `for:`, including an absent one** — `expected-because:` says why the feature is
+*expected*, which is a different question from what it is *for*. And **every field is ONE line**: a
+wrapped continuation is refused, because text that never reaches the field cannot be searched for the
+status tokens the rule above exists to catch. Both of this spec's own examples were once wrong in
+exactly these two ways, and were rejected by the grammar this document defines.
 
 ```markdown
 ### rate-limiting-per-account
