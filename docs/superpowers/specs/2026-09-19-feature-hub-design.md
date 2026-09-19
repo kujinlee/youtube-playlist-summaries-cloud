@@ -112,7 +112,7 @@ people to not declare, which is the failure being fixed.
 
 | Fragment | Attaches via | New work |
 |---|---|---|
-| specs, plans | existing `Anchor:` header → anchor's `Feature:` | a `Feature:` column in `anchors.md` (13 rows, once) |
+| specs, plans | the node names its anchors; specs/plans already declare theirs | none — see the amendment below |
 | ADRs | the anchor registry's existing ADR column | none |
 | **backlog rows (known gaps)** | an `areas:` alias line on the node | ~21 aliases, declared once — **not 140 row edits** |
 | review documents | filename stem plus anchor | none |
@@ -127,6 +127,21 @@ reads that column, so nothing caught it.
 
 Putting the aliases **inside the node** forces both spellings onto the same line, where the
 duplication is obvious, and makes an unclaimed area a failed check rather than a silent orphan.
+
+### ⟳ AMENDED 2026-09-19 — the anchor edge points ONE way, and the `Feature:` column is dropped
+
+This spec first said `anchors.md` would gain a `Feature:` column, so each anchor named its node. The
+implementation plan instead had each node name its anchors. **Both directions for one edge is a
+duplicate edge**, and review round 1 caught it from both halves — the column was added by the plan
+and then read by nothing.
+
+Resolved in favour of **the node naming its anchors**, and the column is not added. The reason the
+usual ADR-0010 argument ("the edge lives in the document, so the index is derived") does not apply:
+`features.md` IS the index, and an index that lists its own members is the maintained index ADR-0010
+rejects — *unless the listing is validated*, which here it is. `check-features.py` requires **every
+anchor in the registry to be claimed by exactly one node**, so an anchor added, renamed or removed
+turns the check red rather than silently disappearing from the page. That guard is what makes the
+cheaper direction safe, and it is the same shape as the `areas:` rule beside it.
 
 ### The prose rule
 
@@ -151,7 +166,7 @@ than obeyed.
 | `scripts/gen-features-page.py` | renders `/features`; `--self-test` |
 | `scripts/check-features.py` | validation; `--self-test`; CI-wired |
 | `.claude/hooks/regen-features-page.sh` | rebuild when any source changes |
-| `docs/anchors.md` | gains a `Feature:` column |
+
 
 Served by the existing explainer server on port 7391. No new serving mechanism, no new hook pattern,
 no new registry idea — every one of these mirrors something `/goals` or `/backlog` already does.
