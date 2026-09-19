@@ -35,8 +35,21 @@ primary_region = "iad"
 # in fly.toml, where they parsed into `[http_service]` and the worker's advertised 120s drain had
 # never been in effect. Verify with `tomllib`, never by eye.
 #
-# Graceful drain: the worker traps SIGTERM (worker/main.ts) → stops claiming, finishes the in-flight
-# job, exits. Give it room before SIGKILL so a rollout does not strand a reservation.
+# ⛔ WHAT SIGTERM ACTUALLY DOES, because the sentence that stood here was false and had been copied
+# three times (review r2 High 1, r3 Medium 1 — I corrected the code comment and claimed the class
+# while leaving both config copies standing, which is the instance-not-class mistake the very commit
+# claiming the fix warned about).
+#
+# It said: "stops claiming, finishes the in-flight job, exits." It does NOT finish the job. The
+# abort signal IS the handler's signal — `worker-runner.ts` folds `shutdownSignal` in via
+# `AbortSignal.any` — so on SIGTERM the handler is ABORTED. Measured on the real path:
+# `handlerSawAbort=true, handlerFinished=false`, then `fail_job(..., billableSucceeded: true)`, and
+# at the live `summary_max_attempts = 1` that is `dead_letter` WITH THE SPEND KEPT. That is open
+# backlog #139, and it is the design call #139 is holding: drain the job, or abort it without
+# consuming the attempt.
+#
+# So `kill_timeout` buys time for the PROCESS to shut down cleanly — release the lease row, close the
+# wake listener, exit — and NOT for the summary to complete. Do not read it as a drain guarantee.
 kill_signal = "SIGTERM"
 kill_timeout = "120s"
 

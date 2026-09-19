@@ -171,6 +171,24 @@ describe('SupabaseEnqueuer wakes the worker', () => {
     expect(order).toEqual(['enqueue', 'wake']);
   });
 
+  // ⭐ THE ENQUEUE SIDE OF review r2 Medium 4, added in r3 because the fix shipped UNGUARDED (r3
+  // Low 2). Codex mutated `void this.wake().catch(() => {})` back to `void this.wake();` and both
+  // focused suites stayed green — so the read path had a falsifier and this one did not, which is
+  // precisely the asymmetry `.catch()` was added to remove. Without the settle below the rejection
+  // lands after jest has moved on and this case passes for an ambient reason, the same way its
+  // sibling did.
+  test('a rejecting wake does not surface on the enqueue path', async () => {
+    const { SupabaseEnqueuer } = await import('@/lib/job-queue/enqueuer');
+    const wake = jest.fn(() => Promise.reject(new Error('flycast unreachable')));
+    const client = rpcOk();
+
+    const r = await new SupabaseEnqueuer(client as never, wake).enqueue(ctx, key, {} as never);
+    expect(r.jobId).toBe('j1');          // the enqueue still succeeded...
+    expect(wake).toHaveBeenCalledTimes(1);
+
+    await new Promise((res) => setTimeout(res, 50));   // ...and the rejection lands here, harmlessly
+  });
+
   // Break this catches: a failing enqueue that still pokes. Nothing was queued, so waking a machine
   // to find an empty queue burns a boot for nothing.
   test('does not poke when the enqueue itself failed', async () => {
