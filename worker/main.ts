@@ -214,7 +214,26 @@ export function idleExitMsFromEnv(env: NodeJS.ProcessEnv = process.env): number 
  *  ⚠ Deliberately does NO work. A listener that claimed or enqueued would be a second, racier path
  *  into the same queue, and the queue's concurrency guarantees are the ones PR #318 spent four
  *  review rounds establishing on ONE path. */
-export function startWakeListener(port: number = WAKE_PORT): Promise<{ port: number; close: () => Promise<void> }> {
+export interface WakeListener {
+  port: number;
+  close: () => Promise<void>;
+  /** ⚠ Exposed ONLY so tests can emit a post-bind `error`, which is otherwise unreachable from
+   *  outside — and an unreachable failure path is one nobody can prove works. Production code must
+   *  not touch this. */
+  server: http.Server;
+}
+
+/** ⭐ `onFatal` IS REQUIRED, AND THE ORDER OF THESE PARAMETERS IS WHY (review r2).
+ *
+ *  It was optional, with `main()` passing `() => ac.abort()`. Reverting that one call site to
+ *  `startWakeListener()` compiled cleanly and left all 35 cases green — a mutation that silently
+ *  restored the exact defect Codex had just filed, because the tests inject `onFatal` themselves and
+ *  therefore prove the MECHANISM while saying nothing about the CALL SITE. That is the same shape as
+ *  the original bug: the handler existed and nothing used it.
+ *
+ *  Making it required moves the failure from "a test might catch it" to "it does not compile", and
+ *  `port` follows it so the common caller can still omit the port. */
+export function startWakeListener(onFatal: () => void, port: number = WAKE_PORT): Promise<WakeListener> {
   const server = http.createServer((_req, res) => { res.writeHead(200); res.end('awake\n'); });
   return new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -223,20 +242,35 @@ export function startWakeListener(port: number = WAKE_PORT): Promise<{ port: num
       // above only covers failure to bind: past this point the promise is settled, so a later
       // server error would have rejected an already-resolved promise — i.e. vanished. The doorbell
       // could then die while the machine still looked healthy, leaving it permanently unwakeable
-      // with nothing logged. Exiting non-zero is the right response and is SAFE because the restart
-      // policy is `on-failure` (fly.worker.toml), so Fly brings the machine back; under `never`,
-      // which this config briefly used, the same event would have bricked it.
+      // with nothing logged.
+      //
+      // ⭐ AND `onFatal` IS WHAT MAKES THAT MORE THAN A LOG LINE (review r2, Codex Medium 1). The
+      // first version of this handler set `process.exitCode = 1` and closed the server — but
+      // `main()` is awaiting `runWorkerLoop()`, and nothing told the loop to stop. So the process
+      // did NOT exit: it kept polling with the doorbell shut, unwakeable, and with no idle window
+      // configured it would never have restarted at all. Setting an exit code only decides what
+      // the code will be IF the process exits; it cannot cause the exit. `onFatal` aborts the
+      // shutdown signal, so the loop finishes its in-flight job and returns through the normal
+      // drain path, and the non-zero exit then brings the machine back under `on-failure`.
       server.on('error', (e) => {
-        console.error('[worker] wake listener failed after binding — exiting so Fly restarts us:', e);
+        console.error('[worker] wake listener failed after binding — shutting down so Fly restarts us:', e);
         process.exitCode = 1;
-        server.close();
+        onFatal?.();
       });
       const addr = server.address();
       resolve({
+        server,
         port: typeof addr === 'object' && addr ? addr.port : port,
         // Closing matters: the exit path is `process exits 0 -> machine returns to stopped`, and a
         // live handle would hold the event loop open and bill forever while looking idle.
-        close: () => new Promise<void>((res2, rej2) => server.close((e) => (e ? rej2(e) : res2()))),
+        // ⚠ IDEMPOTENT. `main()` closes this in a `finally`, and the fatal path above can already
+        // have brought the server down; Node answers a second `close()` with
+        // `ERR_SERVER_NOT_RUNNING`, which would have turned a recovery into a rejection out of the
+        // `finally` block — losing the original error.
+        close: () => new Promise<void>((res2, rej2) => {
+          if (!server.listening) return res2();
+          server.close((e) => (e ? rej2(e) : res2()));
+        }),
       });
     });
   });
@@ -286,7 +320,7 @@ export async function main(): Promise<void> {
 
   // The listener is what Fly Proxy routes at to START this machine; the loop is what does the work.
   // Started BEFORE the loop so a wake arriving during boot is answered rather than refused.
-  const listener = await startWakeListener();
+  const listener = await startWakeListener(() => ac.abort());
   try {
     await runWorkerLoop({
       queue, handler, shutdownSignal: ac.signal, workerId,

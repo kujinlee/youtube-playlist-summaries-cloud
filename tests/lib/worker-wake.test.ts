@@ -84,7 +84,7 @@ describe('makeWorkerWake', () => {
 describe('startWakeListener', () => {
   test('answers a wake request, and closes so the process can still exit', async () => {
     const { startWakeListener } = await import('@/worker/main');
-    const server = await startWakeListener(0); // port 0 = let the OS pick, so tests never collide
+    const server = await startWakeListener(() => {}, 0); // port 0 = let the OS pick, so tests never collide
 
     const res = await fetch(`http://127.0.0.1:${server.port}/wake`, { method: 'POST' });
     expect(res.status).toBe(200);
@@ -95,9 +95,45 @@ describe('startWakeListener', () => {
     await expect(server.close()).resolves.toBeUndefined();
   }, 15_000);
 
+  // ⭐ Review r2 (Codex Medium 1): the first version of this handler set `process.exitCode = 1` and
+  // closed the server, and the process DID NOT EXIT — `main()` was awaiting the worker loop and
+  // nothing told the loop to stop. An exit code only decides what the code will be IF the process
+  // exits; it cannot cause one. So the worker kept polling with its doorbell shut: unwakeable, and
+  // with no idle window configured, never restarting. `onFatal` is what turns the log line into a
+  // shutdown.
+  test('a post-bind error asks the worker to shut down, not just sets an exit code', async () => {
+    const { startWakeListener } = await import('@/worker/main');
+    const onFatal = jest.fn();
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+
+    const listener = await startWakeListener(onFatal, 0);
+    try {
+      listener.server.emit('error', new Error('EADDRNOTAVAIL after bind'));
+
+      expect(onFatal).toHaveBeenCalledTimes(1);   // the loop is told to stop...
+      expect(process.exitCode).toBe(1);           // ...and the eventual exit is non-zero
+    } finally {
+      process.exitCode = previousExitCode;
+      err.mockRestore();
+      await listener.close();
+    }
+  }, 15_000);
+
+  // ⚠ The other half of that finding: `main()` closes the listener in a `finally`, and the fatal
+  // path can already have brought it down. Node answers a second close with ERR_SERVER_NOT_RUNNING,
+  // so a non-idempotent close would reject OUT of the finally block and bury the original error.
+  test('close() is idempotent — the finally path must not reject on an already-closed server', async () => {
+    const { startWakeListener } = await import('@/worker/main');
+    const listener = await startWakeListener(() => {}, 0);
+
+    await expect(listener.close()).resolves.toBeUndefined();
+    await expect(listener.close()).resolves.toBeUndefined();
+  }, 15_000);
+
   test('answers any path and method — it is a doorbell, not an API', async () => {
     const { startWakeListener } = await import('@/worker/main');
-    const server = await startWakeListener(0);
+    const server = await startWakeListener(() => {}, 0);
     try {
       expect((await fetch(`http://127.0.0.1:${server.port}/`)).status).toBe(200);
       expect((await fetch(`http://127.0.0.1:${server.port}/anything`, { method: 'PUT' })).status).toBe(200);

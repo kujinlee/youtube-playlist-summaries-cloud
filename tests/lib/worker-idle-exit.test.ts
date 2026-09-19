@@ -225,6 +225,27 @@ describe('the Fly config the wake path depends on', () => {
     expect(/handlers\s*=\s*\[\s*"http"\s*\]/.test(ports)).toBe(true);
   });
 
+  // ⭐ Review r2 (Codex): flipping `auto_start_machines` to false left all 13 cases green AND passed
+  // `fly config validate` — a silent, total disabling of wake-on-visit with no symptom anywhere.
+  // Autostart is the entire mechanism: without it the poke reaches a proxy that will not start the
+  // Machine, and jobs queue behind a worker that never wakes.
+  //
+  // `min_machines_running = 0` is the matching half. At 1 the Machine is pinned up and the
+  // idle-exit is pointless — the same defect backlog #141 filed against the web app.
+  test('the worker service can be auto-STARTED and is not pinned up', async () => {
+    const toml = await read('fly.worker.toml');
+    const workerBlock = toml.split('[[services]]').slice(1)
+      .find((b) => /processes\s*=\s*\[\s*"worker"\s*\]/.test(b));
+    expect(workerBlock).toBeDefined();
+
+    expect(/auto_start_machines\s*=\s*true/.test(workerBlock as string)).toBe(true);
+    expect(/min_machines_running\s*=\s*0/.test(workerBlock as string)).toBe(true);
+
+    // ⚠ And NOT auto_stop: the worker stops itself by exiting. Fly's autostop reference says
+    // nothing about an in-flight request blocking a stop, so the proxy must never make that call.
+    expect(/auto_stop_machines/.test(workerBlock as string)).toBe(false);
+  });
+
   // Break this catches: an invalid policy (what shipped), and `never`, which would silently throw
   // away crash recovery. Under `on-failure` a clean exit 0 still leaves the machine `stopped` —
   // identical to `never` for the idle-exit — while a crash is still restarted.
