@@ -1,0 +1,115 @@
+# yps-worker — the queue worker, in an app of its OWN. (backlog #142; review round 1, finding F2)
+#
+# ⭐ WHY A SECOND APP AND NOT A SECOND SERVICE IN THE FIRST ONE. The worker needs a service block so
+# that Fly Proxy has something to route at — that routing is the only thing that can start a stopped
+# Machine. But Fly's docs are explicit about what happens when two process groups share an app:
+#
+#   "Make sure processes handle connections on different external ports. Fly Proxy doesn't know
+#    about process groups; it load-balances requests among all Machines with a service configured
+#    on the requested port."
+#
+# and
+#
+#   "If your configuration includes any services for Fly Proxy to route to, and the app has a
+#    public IP, that service is exposed to the whole internet."
+#
+# `youtube-playlist-summaries` has a dedicated public v6 and a shared public v4 (measured
+# 2026-09-18 via `fly ips list`). A worker service in that app is therefore reachable from the
+# internet no matter which port it picks, and `auto_start_machines = true` means any stranger can
+# boot the worker — which cannot be defended in application code, because the proxy starts the
+# Machine BEFORE our process sees the request. A distinct port fixes the collision with the website
+# but not the exposure. A separate app with NO public IP fixes both, structurally.
+#
+# ⚠ THIS APP MUST NEVER BE GIVEN A PUBLIC IP. Its only address is a private Flycast IPv6:
+#     fly apps create yps-worker
+#     fly ips allocate-v6 --private --app yps-worker     # private. NOT `fly ips allocate-v6`.
+# The runbook, in order, is docs/deploy.md § "Waking the worker".
+app = "yps-worker"
+
+# Same region as the web app and the prod Supabase project (AWS us-east-1) — the worker issues many
+# small round trips per job, so locality compounds. See the note in fly.toml.
+primary_region = "iad"
+
+# ⚠ TOP LEVEL, and that is load-bearing (review r1 F9). Written under a `[table]` header these
+# become that table's keys and silently stop being app settings — which is exactly what had happened
+# in fly.toml, where they parsed into `[http_service]` and the worker's advertised 120s drain had
+# never been in effect. Verify with `tomllib`, never by eye.
+#
+# Graceful drain: the worker traps SIGTERM (worker/main.ts) → stops claiming, finishes the in-flight
+# job, exits. Give it room before SIGKILL so a rollout does not strand a reservation.
+kill_signal = "SIGTERM"
+kill_timeout = "120s"
+
+# ⚠ NO `[build]` SECTION, DELIBERATELY. This app runs the SAME IMAGE as the web app, and the two
+# share a queue protocol — so they must not be able to drift to different builds. Deploy by digest:
+#
+#     fly deploy -c fly.worker.toml --image registry.fly.io/youtube-playlist-summaries:<tag>
+#
+# A bare `fly deploy -c fly.worker.toml` is NOT a supported path: it would build a second, separate
+# image, and the NEXT_PUBLIC_* build args that `next build` needs live in fly.toml's [build.args].
+# Keeping them in exactly one file is the point — two copies of a build config is two things that
+# can disagree about what is deployed.
+
+# The image's default CMD is the web server, so the command has to be overridden. One group, named
+# to match the `processes` filters below.
+[processes]
+  worker = "node worker.js"
+
+# ⭐ THE SERVICE IS THE WAKE MECHANISM. Without it nothing routes to this app and the Machine can
+# never be auto-started:
+#
+#   "Requests to apps without services configured on your private network don't get routed through
+#    Fly Proxy and so Machines can't be automatically stopped or started by Fly Proxy."
+#
+# A queue worker only ever polls OUTBOUND, so absent this block the proxy has no signal at all.
+# Reached over Flycast (`http://yps-worker.flycast/wake`), never `.internal` — `.internal` is direct
+# 6PN and bypasses the proxy, so it cannot start anything.
+#
+# ⚠ NO `auto_stop_machines` HERE, and that is a decision. The worker stops ITSELF by exiting when
+# its queue drains. Fly's autostop reference documents `soft_limit` concurrency and says NOTHING
+# about an in-flight request blocking a stop, so letting the proxy decide could kill a Machine
+# mid-job. The proxy is allowed to START this Machine and never to stop it. (Fly's default for an
+# unset `auto_stop_machines` is "off", so omitting it is sufficient — it need not be set to false.)
+[[services]]
+  protocol = "tcp"
+  internal_port = 8081          # must equal WAKE_PORT in worker/main.ts — asserted by a unit test
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["worker"]
+
+  # ⛔ WITHOUT THIS SUB-TABLE THE SERVICE ACCEPTS NOTHING AND THE WHOLE SLICE IS INERT. The first
+  # version of this config omitted it. Fly's configuration reference: "At least one `services.ports`
+  # entry is required for each `services` section, to set a port and handler for incoming requests."
+  # `internal_port` says where the process listens INSIDE the Machine; it does not open a door.
+  # ⚠ `fly config validate` only WARNS about this ("Service must expose at least one port"), so its
+  # green says nothing here — the unit test is the real guard.
+  # Port 80 + `http`: Flycast is HTTP-only, and WORKER_WAKE_URL is `http://yps-worker.flycast/wake`,
+  # i.e. port 80 implicitly. These two must agree. Port 80 is safe in THIS app precisely because it
+  # has no public IP and no other service.
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+
+# ⭐ `on-failure`, NOT `never` — and the first version of this config said `"no"`, which is not a
+# valid Fly policy at all (`fly config validate` → "invalid restart policy: no", so it could never
+# have deployed). Fly's three values are `always`, `never`, `on-failure`.
+#
+# `on-failure` is exactly what this design wants, and `never` would have been strictly worse:
+#
+#   clean exit 0 (the idle-exit)  → NOT restarted → Machine returns to `stopped`   ← both policies
+#   crash (non-zero exit)         → restarted under `on-failure`; NOT under `never`
+#
+# So `never` buys nothing and silently throws away the crash recovery the worker has today. It also
+# turns a failure to bind the wake port at boot into a permanently unwakeable Machine (review r1
+# F10). `on-failure` is also Fly's default; it is stated explicitly so a default change cannot move
+# this app's behaviour without the change showing up in a diff.
+[[restart]]
+  policy = "on-failure"
+  processes = ["worker"]
+
+# Headroom for Chromium (PDF rendering) plus concurrent Gemini jobs. Billed only while the Machine
+# is running — the whole point of the slice is that it usually is not.
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"
+  processes = ["worker"]

@@ -6,6 +6,7 @@ import { getStorageBundle, getPrincipalFromSession } from '@/lib/storage/resolve
 import { extractPlaylistId } from '@/lib/youtube';
 import { enqueuePlaylist, PlaylistTooLargeError, AllEnqueueFailedError, PlaylistFetchError } from '@/lib/job-queue/producer';
 import { SupabaseEnqueuer } from '@/lib/job-queue/enqueuer';
+import { workerWakeFromEnv } from '@/lib/job-queue/worker-wake';
 import { rollup } from '@/lib/job-queue/poll-client';
 import { parseClientIp } from '@/lib/http/client-ip';
 import { logError } from '@/lib/dev-logger';
@@ -74,6 +75,22 @@ export async function GET(req: Request) {
   try {
     const bundle = getStorageBundle({ supabaseClient: supabase });
     const jobs = await bundle.jobQueue!.listByPlaylist(playlistId);
+
+    // ⭐ THE READ PATH IS ALSO A WAKE PATH, and it is what closes the one hole the enqueue-time poke
+    // cannot (backlog #142; review r1 F4). A job can commit in the window after the worker has
+    // decided its queue is drained and before the process has exited: the poke lands on a Machine
+    // that is still running, so Fly Proxy starts nothing, and then the worker exits. Nothing else
+    // recovers it — there is no cron and no second poker — so the job would wait for the next
+    // unrelated enqueue by anyone, while the user watches a `queued` spinner with nothing red.
+    //
+    // Poking here fixes that generally rather than narrowly: it also covers a crashed worker, and
+    // any future code path that creates work without going through `enqueue()`.
+    //
+    // ⚠ NOT AWAITED, so this cannot slow the poll down — a status poll must stay fast, and we need
+    // no part of the reply. Suppression inside the shared wake (see `workerWakeFromEnv`) is what
+    // stops a 2s poll loop from emitting a poke every 2s; it sends at most one per window.
+    if (jobs.some((j) => j.status === 'queued')) void workerWakeFromEnv()();
+
     return NextResponse.json({ jobs, rollup: rollup(jobs) }, { status: 200 });
   } catch (err) {
     logError(`jobs:poll:${playlistId}`, err);   // never swallow: surface the real cause to console + dev-errors.log

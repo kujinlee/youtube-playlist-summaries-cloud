@@ -62,8 +62,14 @@ export class SupabaseEnqueuer implements Enqueuer {
     // ⭐ AFTER the row is committed, never before — that ordering is what makes the wake an
     // optimisation rather than a correctness requirement. If this poke fails (machine mid-boot,
     // Flycast unset, network blip) the job is already durable and simply waits for the next wake.
-    // `wake` never throws and is time-bounded; see lib/job-queue/worker-wake.ts.
-    await this.wake();
+    //
+    // ⭐ AND NOT AWAITED. `enqueuePlaylist` calls this in a sequential loop over up to 50 videos;
+    // awaiting a 1500ms-bounded POST each time added up to ~75s to one user request (review r1 F3),
+    // and bought nothing — all the poke has to do is reach the proxy, which starts the Machine
+    // without anyone waiting for the reply. `wake` cannot reject (see worker-wake.ts), so this
+    // cannot become an unhandled rejection, and the web process is a long-lived `node server.js`,
+    // so the request is not discarded after the response is sent.
+    void this.wake();
     return { jobId: row.job_id, status: row.status, joined: row.joined };
   }
 

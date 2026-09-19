@@ -1,4 +1,4 @@
-import { makeWorkerWake } from '@/lib/job-queue/worker-wake';
+import { makeWorkerWake, workerWakeFromEnv, WORKER_WAKE_URL_ENV } from '@/lib/job-queue/worker-wake';
 
 // Backlog #142. The worker machine is STOPPED when nobody is using the site. Fly Proxy starts a
 // stopped machine when a request is routed to it — but only via Flycast, because `.internal` does
@@ -144,5 +144,138 @@ describe('SupabaseEnqueuer wakes the worker', () => {
 
     await expect(new SupabaseEnqueuer(client as never, wake).enqueue(ctx, key, {} as never)).rejects.toBeDefined();
     expect(wake).not.toHaveBeenCalled();
+  });
+});
+
+// --- coalescing: one poke starts a machine; the rest are waste ---
+//
+// ⭐ Review round 1 measured the shape this exists for: `enqueuePlaylist` loops sequentially over up
+// to 50 videos (MAX_VIDEOS_PER_ENQUEUE), and the original code awaited a 1500ms-bounded POST on each
+// one — up to ~75s added to a single user-facing request. Not awaiting removed the LATENCY; these
+// cases remove the REQUESTS. The job-status poll is the second caller, firing every ~2s while
+// anything is queued, so without suppression "wake the worker" would mean a poke every 2s forever.
+describe('makeWorkerWake coalesces', () => {
+  const clock = (start = 1_000) => { let t = start; return { now: () => t, advance: (ms: number) => { t += ms; } }; };
+
+  // ⭐ ISOLATES THE IN-FLIGHT JOIN, and it has to work this hard for a reason worth writing down.
+  //
+  // The obvious version of this test — fire two calls back to back and assert one request — PASSES
+  // WITH THE IN-FLIGHT CHECK DELETED. Measured: that mutation survived a 38-case run. `lastSentAt`
+  // is set BEFORE the request begins and the default window (10s) outlasts the request timeout
+  // (1.5s), so while a poke is on the wire the SUPPRESSION check always returns first. The naive
+  // test proves suppression and merely takes credit for coalescing.
+  //
+  // So the window is made shorter than the request and then advanced past: suppression has expired,
+  // the first request is still open, and only the in-flight join can prevent a second one. That is
+  // also the configuration in which the branch genuinely earns its place — tune `suppressMs` below
+  // the request duration and without it a slow Flycast would get one request per call again.
+  test('joins an in-flight poke even after the suppression window has expired', async () => {
+    const c = clock();
+    let release: () => void = () => {};
+    const gate = new Promise<Response>((res) => { release = () => res(new Response(null, { status: 200 })); });
+    const fetchImpl = jest.fn(() => gate);
+    const wake = makeWorkerWake('http://w.flycast/wake', {
+      fetchImpl: fetchImpl as unknown as typeof fetch, suppressMs: 10, now: c.now,
+    });
+
+    const a = wake();
+    c.advance(11);      // suppression is no longer protecting us...
+    const b = wake();   // ...and the first request has NOT come back yet
+    release();
+    await Promise.all([a, b]);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  // ⭐ THE 50-VIDEO PLAYLIST, which is the case the finding was about.
+  test('50 sequential calls — the playlist fan-out — send exactly ONE request', async () => {
+    const fetchImpl = jest.fn(async () => new Response(null, { status: 200 }));
+    const wake = makeWorkerWake('http://w.flycast/wake', { fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    for (let i = 0; i < 50; i++) await wake();
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  // Break this catches: dropping the suppression window, which would restore a poke per poll.
+  test('a call after the first completes but inside the window is dropped', async () => {
+    const c = clock();
+    const fetchImpl = jest.fn(async () => new Response(null, { status: 200 }));
+    const wake = makeWorkerWake('http://w.flycast/wake', {
+      fetchImpl: fetchImpl as unknown as typeof fetch, suppressMs: 10_000, now: c.now,
+    });
+
+    await wake();
+    c.advance(9_999);
+    await wake();
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  // ⚠ And the other direction, which is the one that matters for correctness: suppression must
+  // EXPIRE. A window that never reopens would mean the worker can be woken once per process and
+  // never again — every later job stranded, silently, with the wake looking configured and healthy.
+  test('once the window has passed, it pokes again', async () => {
+    const c = clock();
+    const fetchImpl = jest.fn(async () => new Response(null, { status: 200 }));
+    const wake = makeWorkerWake('http://w.flycast/wake', {
+      fetchImpl: fetchImpl as unknown as typeof fetch, suppressMs: 10_000, now: c.now,
+    });
+
+    await wake();
+    c.advance(10_001);
+    await wake();
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  // A failed poke must not poison the window either — but it must still count as "sent", because the
+  // machine may well be booting; that is the most likely reason the request failed.
+  test('a rejected poke still resolves and still opens a suppression window', async () => {
+    const c = clock();
+    const fetchImpl = jest.fn(async () => { throw new Error('ECONNREFUSED: still booting'); });
+    const wake = makeWorkerWake('http://w.flycast/wake', {
+      fetchImpl: fetchImpl as unknown as typeof fetch, suppressMs: 10_000, now: c.now,
+    });
+
+    await expect(wake()).resolves.toBeUndefined();
+    c.advance(5_000);
+    await wake();
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
+// --- the shared instance, which is what makes suppression reach across requests ---
+describe('workerWakeFromEnv', () => {
+  const ORIGINAL = process.env[WORKER_WAKE_URL_ENV];
+  afterEach(() => {
+    if (ORIGINAL === undefined) delete process.env[WORKER_WAKE_URL_ENV];
+    else process.env[WORKER_WAKE_URL_ENV] = ORIGINAL;
+  });
+
+  // ⭐ Break this catches building a fresh wake per call. Both call sites construct per request — a
+  // route handler makes a new SupabaseEnqueuer, and the status GET calls this directly — so a new
+  // instance each time would carry an empty suppression window every time and coalesce NOTHING.
+  // The sharing is not an optimisation; it is the mechanism.
+  test('returns the SAME instance for the same URL, so the window is shared across requests', () => {
+    process.env[WORKER_WAKE_URL_ENV] = 'http://w.flycast/wake';
+    expect(workerWakeFromEnv()).toBe(workerWakeFromEnv());
+  });
+
+  // ...and the cache must not outlive the value it was keyed on. This is also why no test-only reset
+  // hook is needed: changing the env var is enough to invalidate it.
+  test('returns a NEW instance when the URL changes', () => {
+    process.env[WORKER_WAKE_URL_ENV] = 'http://a.flycast/wake';
+    const first = workerWakeFromEnv();
+    process.env[WORKER_WAKE_URL_ENV] = 'http://b.flycast/wake';
+    expect(workerWakeFromEnv()).not.toBe(first);
+  });
+
+  test('unset URL yields a wake that reaches no network', async () => {
+    delete process.env[WORKER_WAKE_URL_ENV];
+    const fetchImpl = jest.fn();
+    await workerWakeFromEnv({ fetchImpl: fetchImpl as unknown as typeof fetch })();
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

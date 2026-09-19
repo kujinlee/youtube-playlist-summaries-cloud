@@ -101,10 +101,12 @@ export class SupabaseJobQueue implements JobQueue {
     return { ok: data !== null, status: data };
   }
 
-  /** Counts `queued` rows REGARDLESS of run_after — see the interface for why that matters. */
-  async hasQueuedWork(): Promise<boolean> {
+  /** Counts `queued` rows REGARDLESS of run_after, AND `active` rows regardless of lease expiry —
+   *  see the interface for why each matters. `head: true` so no rows cross the wire; we need the
+   *  existence of work, never the work itself. */
+  async hasUnfinishedWork(): Promise<boolean> {
     const { count, error } = await this.client
-      .from('jobs').select('id', { count: 'exact', head: true }).eq('status', 'queued');
+      .from('jobs').select('id', { count: 'exact', head: true }).in('status', ['queued', 'active']);
     if (error) throw error;   // the caller fails SAFE by staying alive; never guess "empty"
     return (count ?? 0) > 0;
   }

@@ -10347,3 +10347,38 @@ this was first sketched as an option.
 ⚠ Recorded against my own earlier claim: #142 **partly retires PR #318's cost argument**, since a
 worker that exits when idle emits no idle traffic at all. #318's failure-domain fixes (a broken sweep
 must not starve claiming; a draining worker must not claim) stand on their own.
+
+## 2026-09-18 [needs-you]
+The worker can now put itself to sleep and be woken by a visitor, so the whole site can sit idle
+costing almost nothing. Nothing about this is switched on yet — turning it on is six commands on
+Fly, in a specific order, written down in `docs/deploy.md`.
+
+Worth knowing what the review found, because two of the problems would have been invisible until
+production. The Fly config could not actually have been deployed at all: it named a restart setting
+that does not exist, and a test had been written that asserted the wrong value, so the whole test
+suite was quietly defending the mistake. Separately, the worker's new "doorbell" was originally put
+in the same Fly app as the website, on the same port — which would have sent roughly half the
+public traffic for the site to the worker instead, and let anyone on the internet start your worker
+by visiting a URL. The worker now lives in its own Fly app with no public address, which makes that
+impossible rather than merely unlikely.
+
+One older problem surfaced along the way and is **not** fixed here: the setting that gives the
+worker 120 seconds to finish a job before it is killed has never actually been in effect, because
+it was written in the wrong part of the config file. That is corrected now, but it has been true in
+production for as long as the file has existed, and it may be part of why a deploy can lose a
+summary that was mid-flight.
+
+**Waiting on you:** this needs a decision that is not an engineering one. Turning the feature on
+means running six Fly commands, and the last one is irreversible in the sense that a mistake in the
+first five leaves the worker asleep with jobs piling up behind it and nothing showing red.
+<!--tech-->
+Branch `wake-on-visit`, backlog #141 + #142. Adds `fly.worker.toml` (new `yps-worker` app,
+Flycast-only, `[[services.ports]]` + `policy = "on-failure"`), `lib/job-queue/worker-wake.ts` with
+in-flight + window coalescing, a read-path poke in `GET /api/jobs`, `hasUnfinishedWork()` counting
+`queued`+`active`, and an idle-clock reset so the drain query runs once per window instead of once
+per 2s poll. 2879 tests / 278 suites. Review round 1: 2 Blocking, 3 High, 4 Medium, 3 Low; 10
+mutations applied, all killed, one of which (`if (inFlight)`) initially SURVIVED and exposed a test
+passing for an ambient reason.
+
+⚠ `fly.toml` still declares the old `worker` process group. Transitional and deliberate — removing
+it makes the next web deploy destroy the running worker Machine. Exit condition is in `docs/deploy.md`.

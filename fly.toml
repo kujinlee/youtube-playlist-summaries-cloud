@@ -12,6 +12,18 @@ app = "youtube-playlist-summaries"
 # the Supabase project; if that project ever moves, move this with it.
 primary_region = "iad"
 
+# ⚠ TOP LEVEL, AND THAT PLACEMENT IS THE WHOLE POINT (review r1 F9). These two keys were previously
+# written BELOW `[http_service]`, where TOML makes them `http_service.kill_signal` and
+# `http_service.kill_timeout` — i.e. not app settings at all. Measured with `tomllib`: they parsed
+# into the `http_service` table on master, so the worker's advertised 120s graceful drain has NEVER
+# been in effect. Nothing was red; the file simply described a setting it did not have.
+#
+# Graceful drain: worker traps SIGTERM (worker/main.ts) → stops claiming, finishes the in-flight
+# job, exits. Give it time before SIGKILL so a deploy/rollout doesn't strand a reservation
+# (the §2.4b crash-residual mitigation).
+kill_signal = "SIGTERM"
+kill_timeout = "120s"
+
 [build]
   dockerfile = "Dockerfile"
 
@@ -33,6 +45,7 @@ primary_region = "iad"
   web = "node server.js"
   worker = "node worker.js"
 
+
 # HTTP only for the web group; the worker is a headless job loop (no ports).
 [http_service]
   internal_port = 3000
@@ -47,54 +60,15 @@ primary_region = "iad"
   min_machines_running = 0
   processes = ["web"]
 
-# Graceful drain: worker traps SIGTERM (worker/main.ts) → stops claiming, finishes the in-flight
-# job, exits. Give it time before SIGKILL so a deploy/rollout doesn't strand a reservation
-# (the §2.4b crash-residual mitigation).
-kill_signal = "SIGTERM"
-kill_timeout = "120s"
-
-# ⭐ THE WORKER'S SERVICE — this block is what makes the machine wakeable, and it is the whole
-# reason the worker could not stop itself before now.
-#
-# Fly's docs: *"Requests to apps without services configured on your private network don't get
-# routed through Fly Proxy and so Machines can't be automatically stopped or started by Fly Proxy."*
-# A queue worker only ever polls OUTBOUND, so nothing ever routes to it and the proxy has no signal.
-# Declaring a service gives it one. Reach it over **Flycast** (`http://<app>.flycast`), NOT
-# `.internal` — `.internal` is direct 6PN and bypasses the proxy, so it cannot autostart anything.
-#
-# ⚠ Requires a private IPv6 once per app, and this is NOT done by `fly deploy`:
-#     fly ips allocate-v6 --private --app youtube-playlist-summaries
-#
-# ⚠ NO `auto_stop_machines` HERE, deliberately. The worker stops ITSELF by exiting when its queue
-# drains. Fly's autostop reference documents `soft_limit` concurrency and says NOTHING about an
-# in-flight request blocking a stop, so letting the proxy decide could kill a machine mid-job. The
-# proxy is allowed to START this machine and never to stop it.
-[[services]]
-  protocol = "tcp"
-  internal_port = 8081          # must match WAKE_PORT in worker/main.ts
-  auto_start_machines = true
-  min_machines_running = 0
-  processes = ["worker"]
-
-  # ⛔ WITHOUT THIS SUB-TABLE THE SERVICE ACCEPTS NOTHING AND THE ENTIRE SLICE IS INERT — the first
-  # version of this file omitted it. `internal_port` says where the process listens INSIDE the
-  # machine; it does not open a door. Fly's configuration reference: *"At least one `services.ports`
-  # entry is required for each `services` section, to set a port and handler for incoming requests."*
-  # With no door, the Flycast poke is never routed, the proxy never autostarts the machine, and a
-  # deploy that also sets WORKER_IDLE_EXIT_MS produces a worker that exits and CANNOT COME BACK.
-  # Port 80 + the `http` handler because Flycast is HTTP-only, and because WORKER_WAKE_URL is
-  # `http://<app>.flycast/wake` — i.e. port 80 implicitly. These two must agree.
-  [[services.ports]]
-    port = 80
-    handlers = ["http"]
-
-# The worker EXITS 0 when idle, and `policy = "no"` is what turns that into a `stopped` machine
-# rather than an instant restart loop. Without this the idle-exit would burn boots forever.
-# (`fly deploy`'s default is `on-fail`, which would also allow a clean exit — stated explicitly so
-# it cannot drift silently.)
-[[restart]]
-  policy = "no"
-  processes = ["worker"]
+# ⚠ NO WORKER SERVICE HERE, AND THAT IS THE DECISION, NOT AN OMISSION (review r1 F2).
+# The worker's wake doorbell lives in its OWN Fly app — see `fly.worker.toml`. It was briefly put
+# here, in this app, with an external port of 80. Fly's docs: *"Make sure processes handle
+# connections on different external ports. Fly Proxy doesn't know about process groups; it
+# load-balances requests among all Machines with a service configured on the requested port."*
+# This app has a dedicated public v6 and a shared v4, so a second port-80 service would have sent
+# public website traffic to the worker's doorbell, bypassed `force_https`, and let any anonymous
+# request on the internet autostart the worker. A separate app with no public IP makes that
+# impossible rather than merely avoided.
 
 # web machine — light.
 [[vm]]

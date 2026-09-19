@@ -35,13 +35,26 @@ export interface JobQueue {
   fail(jobId: string, workerId: string, leaseToken: string, error: string, opts: { retryable: boolean; billableSucceeded?: boolean; metered?: boolean }):
     Promise<{ ok: boolean; status: JobStatus | null }>;
   sweepExpired(): Promise<number>;
-  /** Is ANY job waiting, including one whose retry backoff has not elapsed yet?
+  /** Is ANY job unfinished — `queued` (including one whose retry backoff has not elapsed) or
+   *  `active` (including one abandoned by a worker that died)?
    *
-   *  ⚠ Deliberately NOT the same question as `claim()` returning null. A job that is `queued` with
-   *  `run_after` in the future is real pending work that `claim` cannot see, and a worker that
-   *  treats the two as equivalent will exit and strand it (backlog #142). This is asked only when
-   *  the worker is deciding whether to shut itself down, so its cost is once per idle window. */
-  hasQueuedWork(): Promise<boolean>;
+   *  ⚠ Deliberately NOT the same question as `claim()` returning null, in TWO ways, and each was a
+   *  separate review finding (backlog #142):
+   *
+   *  - a job that is `queued` with `run_after` in the future is real pending work that `claim`
+   *    cannot see, so treating "claim returned null" as "nothing to do" strands it;
+   *  - a job left `active` by a crashed worker is not claimable until its lease expires and
+   *    `sweep_expired_leases` requeues it. A worker blind to those rows can finish other work and
+   *    exit while one sits there — and nothing sweeps while the machine is stopped, so it is
+   *    re-stranded by the very worker that was woken to deal with it (review r1 F8).
+   *
+   *  Terminal statuses (`completed`, `failed`, `dead_letter`, `cancelled`) are NOT counted: they are
+   *  finished, and a dead-lettered job must not pin a machine up forever.
+   *
+   *  Asked only when the worker is deciding whether to shut itself down — once per idle window, and
+   *  that claim is now true rather than aspirational: the caller resets its idle clock whenever this
+   *  returns true, so it is not re-asked on every poll (review r1 F6). */
+  hasUnfinishedWork(): Promise<boolean>;
   setProgressPhase(jobId: string, workerId: string, leaseToken: string, phase: ProgressPhase): Promise<{ ok: boolean }>;
 }
 

@@ -155,7 +155,22 @@ export async function runWorkerLoop(deps: {
         idleSince = null; // got work — the idle clock restarts, so a busy worker never leaves
       } else if (deps.idleExitMs !== undefined) {
         idleSince ??= Date.now();
-        if (Date.now() - idleSince >= deps.idleExitMs && await queueIsDrained(deps.queue)) return;
+        if (Date.now() - idleSince >= deps.idleExitMs) {
+          if (await queueIsDrained(deps.queue)) return;
+          // ⭐ NOT DRAINED → RESTART THE IDLE CLOCK, and this one line is the whole of review r1 F6.
+          // Without it `now - idleSince >= idleExitMs` stays true forever once it first holds, so
+          // the drain COUNT query above re-runs on every poll — every 2s, ~43,200/day, on a
+          // predicate no index serves — for as long as anything is queued-but-unclaimable. PR #318
+          // landed three weeks ago precisely because idle polling was 100% of this project's
+          // Supabase traffic; this would have quietly rebuilt a slice of it. Resetting makes the
+          // interface's own "cost is once per idle window" docstring TRUE rather than wishful.
+          idleSince = Date.now();
+          // ⭐ AND SAY SO. Staying alive while work is genuinely pending is CORRECT — exiting would
+          // leave a backed-off job asleep until a visitor happened by. The defect r1 F7 named is
+          // that it was SILENT: a machine that never stops, for a good reason nobody can see. One
+          // line per idle window is cheap and makes "why is this still running?" answerable.
+          console.log(`[worker] staying alive: unfinished work in the queue; next check in ${deps.idleExitMs}ms`);
+        }
       }
       if (r === 'idle') await sleep(pollMs, deps.shutdownSignal);
     } catch (e) {
@@ -204,6 +219,18 @@ export function startWakeListener(port: number = WAKE_PORT): Promise<{ port: num
   return new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(port, () => {
+      // ⚠ RE-ARM THE ERROR HANDLER AFTER LISTENING (review r1 F10). The `once('error', reject)`
+      // above only covers failure to bind: past this point the promise is settled, so a later
+      // server error would have rejected an already-resolved promise — i.e. vanished. The doorbell
+      // could then die while the machine still looked healthy, leaving it permanently unwakeable
+      // with nothing logged. Exiting non-zero is the right response and is SAFE because the restart
+      // policy is `on-failure` (fly.worker.toml), so Fly brings the machine back; under `never`,
+      // which this config briefly used, the same event would have bricked it.
+      server.on('error', (e) => {
+        console.error('[worker] wake listener failed after binding — exiting so Fly restarts us:', e);
+        process.exitCode = 1;
+        server.close();
+      });
       const addr = server.address();
       resolve({
         port: typeof addr === 'object' && addr ? addr.port : port,
@@ -226,7 +253,7 @@ export function startWakeListener(port: number = WAKE_PORT): Promise<{ port: num
  *  is `queued` and unclaimable at the same time. */
 async function queueIsDrained(queue: JobQueue): Promise<boolean> {
   try {
-    return !(await queue.hasQueuedWork());
+    return !(await queue.hasUnfinishedWork());
   } catch (e) {
     console.error('[worker] could not determine whether work is queued (staying alive):', e);
     return false;
