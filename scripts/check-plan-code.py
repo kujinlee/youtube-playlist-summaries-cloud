@@ -3296,8 +3296,12 @@ def _self_test() -> int:
     # finding — the regen hook swallowing an unreadable payload — is NOT in this rise and cannot
     # be: `load_manifests` pins every entry's `file` to `scripts/<manifest stem>.py`, and
     # `run_suite` runs the mutated file AS a Python suite, so a `.sh` target would red its own
-    # control. Its coverage is three cases in `gen-features-page.py` that RUN the hook, the shape
-    # `regen-backlog-page.sh` already set. A rise with an unmutatable member is worth saying out
+    # control. Its coverage is three cases in `gen-features-page.py` that RUN the hook. ⚠ ONLY THE
+    # PLACEMENT follows `regen-backlog-page.sh` — coverage for a hook lives in the suite of the
+    # generator it calls — and code review r2 (Claude) narrowed the claim to that: the backlog
+    # cases do NOT run their hook, they read the awk program out of the shell file and run `awk`
+    # (`gen-backlog-page.py:2818`). Executing the shell script is new here, and strictly stronger.
+    # A rise with an unmutatable member is worth saying out
     # loud, because a reader sizing this number against the round's findings would otherwise be
     # one short and look for the entry that was never written.
     case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 767)

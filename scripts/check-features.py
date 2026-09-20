@@ -14,7 +14,10 @@ STATUS_TOKENS = re.compile(
     r"(?:[✅🔴🟠🟢⏳◀]|#\d+|\b(?:currently|already|still|yet|planned|done|todo)\b|\bin progress\b)",
     re.IGNORECASE,
 )
-FIELD = re.compile(r"^(state|for|areas|anchors|expected-because):\s*(.*)$")
+# ONE owner for the field names: the matcher and the error message that teaches the grammar are
+# both derived from this tuple, so a sixth field cannot be added to one and missing from the other.
+FIELD_NAMES = ("state", "for", "areas", "anchors", "expected-because")
+FIELD = re.compile(rf"^({'|'.join(FIELD_NAMES)}):\s*(.*)$")
 
 @dataclass
 class Node:
@@ -66,9 +69,12 @@ def parse_features(text: str) -> tuple[list[Node], list[str]]:
             if nodes and line.strip():
                 problems.append(
                     f"features.md:{i}: `{nodes[-1].slug}` has a line that is neither a field nor a "
-                    f"heading: {line.strip()[:40]!r}. Keep each field on ONE line — a wrapped `for:` "
-                    f"would hide its own status tokens from the check. No prefix is exempt: a "
-                    f"blockquote, an HTML comment and a stray `#` are text inside a node too")
+                    f"heading: {line.strip()[:40]!r}. A field starts at COLUMN 0 — no leading "
+                    f"space or tab — lowercase, written `name:` with no space before the colon, "
+                    f"and `name` is one of: {', '.join(FIELD_NAMES)}. Keep it on ONE line — a "
+                    f"wrapped `for:` would hide its own status tokens from the check — and no "
+                    f"prefix is exempt: a blockquote, an HTML comment and a stray `#` are text "
+                    f"inside a node too")
             continue
         if not nodes:
             problems.append(f"features.md:{i}: field `{m.group(1)}` before any node"); continue
@@ -83,8 +89,9 @@ def parse_features(text: str) -> tuple[list[Node], list[str]]:
         # checks instead of being replaced by the clean-looking line that followed it.
         if key in seen_fields:
             problems.append(f"features.md:{i}: `{n.slug}` repeats the field `{key}` — a duplicate "
-                            f"is refused, not merged. Under last-write-wins a later line silently "
-                            f"replaces an earlier one, and what it replaces is never searched")
+                            f"is refused, not merged. Put every value on ONE comma-separated line. "
+                            f"Under last-write-wins a later line silently replaces an earlier one, "
+                            f"and what it replaces is never searched")
             continue
         seen_fields.add(key)
         if key == "state": n.state = value
@@ -273,9 +280,15 @@ expected-because: standard for a hosted multi-tenant service.
           any("neither a field nor a heading" in p for p in wproblems), True)
     # ⛔ THE THREE FIXTURES BELOW ARE CODEX'S, VERBATIM WHERE IT GAVE ONE. Each is a line that the
     # old exemption tuple waved through, and each carries the two status tokens (`currently` and
-    # `#322`) the rule above exists to find — so a case going green here means a status line has
-    # been read, not that a parser was tidy. They are three cases and not one because the prefixes
-    # fail independently: a repair that remembers `>` and forgets `<!--` must still go red.
+    # `#322`) that made the bypass worth closing — ⚠ ILLUSTRATIVE OF THE ORIGINAL HOLE, NOT
+    # LOAD-BEARING FOR THESE ASSERTIONS. Code review r2 (Claude) measured it: each case asserts
+    # only that the line was REFUSED, and a refused line hits `continue` above and never reaches
+    # `purpose`, so `STATUS_TOKENS` never runs on it — with the tokens deleted, and with a bare
+    # `>`, all three stay green. So green here means the line was refused BEFORE any rule could be
+    # asked about it, and THAT is the coverage: a line that never reaches `purpose` can never be
+    # searched, which is precisely why the exemption was the Blocking. They are three cases and not
+    # one because the prefixes fail independently: a repair that remembers `>` and forgets `<!--`
+    # must still go red.
     FIRST_FOR = "for: Turns one video's transcript into a summary a person reads.\n"
     quoted = TREE.replace(FIRST_FOR, FIRST_FOR + "> currently broken, see #322.\n")
     check("a `>` blockquote line inside a node is REFUSED, not exempted",

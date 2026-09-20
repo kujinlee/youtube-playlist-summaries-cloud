@@ -601,7 +601,11 @@ def self_test() -> int:
     # be given a mutation either — `check-plan-code.load_manifests` requires every entry's `file`
     # to equal `scripts/<manifest stem>.py`, and `run_suite` runs the mutated file AS a Python
     # suite, so a `.sh` target would red its own control. The same is true of
-    # `.claude/hooks/regen-backlog-page.sh`, whose four cases in `gen-backlog-page.py` set this
+    # `.claude/hooks/regen-backlog-page.sh`, whose four cases in `gen-backlog-page.py` set the
+    # PLACEMENT precedent: coverage for a hook lives in the suite of the generator it calls.
+    # ⚠ THAT IS ALL THEY SET — code review r2 (Claude). Those cases do not RUN their hook; they
+    # read the awk program out of the shell file and run `awk` (`gen-backlog-page.py:2818`).
+    # Running the shell script itself, below, is new here and is strictly stronger than the
     # precedent. So the coverage is here, in the suite of the generator the hook exists to call.
     # ⛔ THE PAYLOADS BELOW ALL STOP SHORT OF THE GENERATOR — an unwatched path and two unreadable
     # payloads — because a case that reached it would rewrite the reader's live ~/explainers page.

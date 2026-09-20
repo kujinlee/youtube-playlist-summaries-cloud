@@ -48,8 +48,8 @@
   "file": "scripts/check-features.py",
   "edits": [
    [
-    "                            f\"replaces an earlier one, and what it replaces is never searched\")\n            continue",
-    "                            f\"replaces an earlier one, and what it replaces is never searched\")\n            pass"
+    "                            f\"and what it replaces is never searched\")\n            continue",
+    "                            f\"and what it replaces is never searched\")\n            pass"
    ]
   ],
   "expect": "the FIRST value stands, so a blanking duplicate cannot hide the fragment it contradicts"
