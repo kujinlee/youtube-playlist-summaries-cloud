@@ -2,9 +2,9 @@
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 16 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 24 cases against synthetic trees
 """
-import re, sys
+import re, sys, pathlib
 from dataclasses import dataclass, field
 
 # ⚠ `now` was in this list and was REMOVED: review r1 measured it rejecting 1 in 13 of this repo's
@@ -99,6 +99,92 @@ def check_nodes(nodes: list[Node]) -> list[str]:
     return problems
 
 
+CELL_SPLIT = re.compile(r"(?<!\\)\|")
+
+
+def backlog_areas(text: str) -> set[str]:
+    out: set[str] = set()
+    for line in text.split("\n"):
+        if not line.startswith("| "):
+            continue
+        cells = CELL_SPLIT.split(line)
+        if len(cells) < 7:
+            continue
+        cell = cells[-3].strip()
+        if cell.startswith("(") and cell.endswith(")"):
+            out.add(cell)
+    return out
+
+
+def anchor_slugs(text: str) -> set[str]:
+    return set(re.findall(r"^\|\s*`([a-z0-9-]+)`\s*\|", text, re.MULTILINE))
+
+
+def check_cross(nodes, anchors_declared: set[str], areas_in_use: set[str]) -> list[str]:
+    problems: list[str] = []
+    area_claims: dict[str, list[str]] = {}
+    anchor_claims: dict[str, list[str]] = {}
+    for n in nodes:
+        for a in n.anchors:
+            anchor_claims.setdefault(a, []).append(n.slug)
+            if a not in anchors_declared:
+                problems.append(f"features.md:{n.line}: `{n.slug}` names anchor `{a}`, which is not "
+                                f"in docs/anchors.md")
+        for area in n.areas:
+            area_claims.setdefault(area, []).append(n.slug)
+            if area not in areas_in_use:
+                problems.append(f"features.md:{n.line}: `{n.slug}` claims area `{area}`, which no "
+                                f"backlog row uses — a stale alias looks like coverage")
+    for area, owners in area_claims.items():
+        if len(owners) > 1:
+            problems.append(f"area `{area}` is claimed by {len(owners)} nodes: {', '.join(owners)}")
+    for anchor, owners in anchor_claims.items():
+        if len(owners) > 1:
+            problems.append(f"anchor `{anchor}` is claimed by {len(owners)} nodes: {', '.join(owners)}")
+    for area in sorted(areas_in_use - set(area_claims)):
+        problems.append(f"backlog area `{area}` is claimed by no node — its rows cannot appear")
+    for anchor in sorted(anchors_declared - set(anchor_claims)):
+        problems.append(f"anchor `{anchor}` is claimed by no node — its specs, plans and ADRs "
+                        f"cannot appear on the page")
+    return problems
+
+
+REPO = pathlib.Path(__file__).resolve().parent.parent
+FEATURES = REPO / "docs" / "features.md"
+ANCHORS_MD = REPO / "docs" / "anchors.md"
+BACKLOG = REPO / "docs" / "backlog.md"
+
+
+def main() -> int:
+    for path in (FEATURES, ANCHORS_MD, BACKLOG):
+        if not path.exists():
+            print(f"CANNOT RUN — {path} is missing. Treat this as NOT RUN.", file=sys.stderr)
+            return 2
+    nodes, problems = parse_features(FEATURES.read_text())
+    if not nodes:
+        print("CANNOT RUN — docs/features.md declares no nodes. Treat this as NOT RUN.", file=sys.stderr)
+        return 2
+    declared = anchor_slugs(ANCHORS_MD.read_text())
+    if not declared:
+        print("CANNOT RUN — no anchors parsed from docs/anchors.md. Treat this as NOT RUN.", file=sys.stderr)
+        return 2
+    areas = backlog_areas(BACKLOG.read_text())
+    if not areas:
+        print("CANNOT RUN — no `(area)` tags parsed from docs/backlog.md. Treat this as NOT RUN.", file=sys.stderr)
+        return 2
+    problems += check_nodes(nodes)
+    problems += check_cross(nodes, declared, areas)
+    if problems:
+        print(f"FAILED — {len(problems)} feature-map problem(s):", file=sys.stderr)
+        for p in problems:
+            print(f"  ✗ {p}", file=sys.stderr)
+        return 1
+    built = sum(1 for n in nodes if n.state == "built")
+    print(f"feature map: {len(nodes)} nodes ({built} built, {len(nodes) - built} declared absent); "
+          f"{len(declared)} anchors and {len(areas)} backlog areas all claimed exactly once")
+    return 0
+
+
 def _self_test() -> int:
     cases, failures = 0, 0
     def check(name, got, want):
@@ -158,9 +244,32 @@ expected-because: standard for a hosted multi-tenant service.
     check("a wrapped for: line is REFUSED, not silently dropped",
           any("neither a field nor a heading" in p for p in wproblems), True)
     check("`now` is no longer a banned word", STATUS_TOKENS.search("Shows what runs now") is None, True)
+    ANCHORS = {"cloud-publishing", "cloud-sync"}
+    check("clean cross-check is silent", check_cross(nodes, {"cloud-publishing"}, set()), [])
+    bad, _ = parse_features(TREE.replace("cloud-publishing", "no-such-anchor"))
+    check("an unknown anchor fails",
+          any("no-such-anchor" in p for p in check_cross(bad, ANCHORS, set())), True)
+    check("an anchor claimed by NO node fails",
+          any("claimed by no node" in p and "cloud-sync" in p
+              for p in check_cross(nodes, ANCHORS, set())), True)
+    twice_a = TREE + "\n### another\nstate: built\nfor: A second claimant.\nanchors: cloud-publishing\n"
+    check("an anchor claimed by TWO nodes fails",
+          any("anchor `cloud-publishing` is claimed by 2 nodes" in p
+              for p in check_cross(parse_features(twice_a)[0], {"cloud-publishing"}, set())), True)
+    areas_tree, _ = parse_features(TREE.replace("anchors: cloud-publishing", "areas: (product)"))
+    check("an area no backlog row uses fails",
+          any("no backlog row uses" in p
+              for p in check_cross(areas_tree, set(), {"(cloud)"})), True)
+    check("an in-use area claimed by nobody fails",
+          any("claimed by no node" in p and "(cloud)" in p
+              for p in check_cross(areas_tree, set(), {"(product)", "(cloud)"})), True)
+    check("backlog areas are read from the area cell",
+          backlog_areas("| 1 | x | f | S | (worker) | open |"), {"(worker)"})
+    ESCAPED = r"| 90 | a \| b | f | S | (comprehensibility) | open \| still |"
+    check("a row with an ESCAPED PIPE is not dropped", backlog_areas(ESCAPED), {"(comprehensibility)"})
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
 
 
 if __name__ == "__main__":
-    sys.exit(_self_test() if "--self-test" in sys.argv else 0)
+    sys.exit(_self_test() if "--self-test" in sys.argv else main())
