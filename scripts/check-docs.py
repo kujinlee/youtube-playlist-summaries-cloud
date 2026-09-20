@@ -29,7 +29,7 @@ WHAT IS ONLY REPORTED (never fails the build)
 SCOPE NOTE: `docs/reviews/` and `docs/superpowers/` are point-in-time artifacts —
 a review records what was true on its date, and rewriting it later would be
 falsifying the record. They are excluded from link checking on purpose.
-    --self-test  # 19 cases
+    --self-test  # 21 cases
 """
 
 from __future__ import annotations
@@ -216,7 +216,12 @@ def budget_warn_slack(budget: int) -> int:
     A FRACTION rather than a constant so it stays meaningful if a budget changes: 7% of 220 is 15
     lines, of 260 is 18. The floor stops a small budget warning only after it is already too late.
     """
-    return max(BUDGET_WARN_FLOOR, round(budget * BUDGET_WARN_FRACTION))
+    # ⛔ THE FLOOR NEEDED A CEILING — Claude r1, Low. Measured: for any budget <= the floor,
+    # `budget - n <= slack` held for EVERY n, so "ok" was unreachable and a file warned from its
+    # first line; at budget 20 the warning began at 50% utilisation. A warning that is always on
+    # is one nobody reads — this feature's own failure mode, reached from the other side. The cap
+    # keeps "ok" reachable at every budget and changes nothing where 7% dominates (220 -> 15).
+    return min(max(BUDGET_WARN_FLOOR, round(budget * BUDGET_WARN_FRACTION)), max(1, budget // 3))
 
 
 def budget_verdict(n: int, budget: int) -> str:
@@ -260,9 +265,13 @@ def check_line_budgets(errors: list[str]) -> None:
                   f"BLOCKS the next rule. Act now, not when it refuses:")
             print("      (a) RAISE the budget — legitimate, but it must land in a PR diff where "
                   "someone can ask whether the content belongs in a read-on-demand file; or")
-            print("      (b) PRIORITISE and RETIRE — evict what no longer earns its line. "
-                  "dev-process.md keeps its own eviction queue under "
-                  "'Rules flagged for review, not retired'.")
+            # ⛔ THIS LINE NAMED A SECTION THE SAME BRANCH DELETED — Claude r1, Medium, and it
+            # was LIVE output: both budgeted files are inside the band, so it printed twice on
+            # every run and sent the reader to a heading that no longer exists. The remedy that
+            # is the POINT of this feature had no destination. `process-rationale.md` is where
+            # the retirements actually went, and it records the queue as drained.
+            print("      (b) PRIORITISE and RETIRE — evict what no longer earns its line, and "
+                  "record WHY in docs/process-rationale.md, beside the previous retirements.")
             print("      Which one is a HUMAN decision. This is a warning, not a failure: it must "
                   "not block a PR whose author did not cause it.")
 
@@ -644,6 +653,11 @@ def self_test() -> int:
     case("a file one line clear of the warn band is 'ok'",
          budget_verdict(260 - budget_warn_slack(260) - 1, 260) == "ok")
     case("a comfortably short file is 'ok'", budget_verdict(10, 220) == "ok")
+    # ⛔ Claude r1, Low: with no ceiling, "ok" was unreachable for any budget <= the floor.
+    case("a small budget can still reach 'ok' — the floor does not swallow it",
+         (budget_verdict(0, 10), budget_verdict(10, 10)) == ("ok", "tight"))
+    case("...and the slack never exceeds a third of the budget, at any budget",
+         all(budget_warn_slack(b) <= max(1, b // 3) for b in (0, 5, 10, 20, 50, 220, 260)))
     case("the warn slack scales with the budget and never drops below its floor",
          (budget_warn_slack(220), budget_warn_slack(260), budget_warn_slack(50))
          == (15, 18, BUDGET_WARN_FLOOR))

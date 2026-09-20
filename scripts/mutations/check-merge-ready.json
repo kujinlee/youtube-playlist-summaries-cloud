@@ -44,15 +44,15 @@
     "expect": "a pending check is not a pass"
   },
   {
-    "name": "a step's pull-request-only condition leaks onto the following step",
+    "name": "the condition is matched anywhere in the step block, not in its `if:` field",
     "file": "scripts/check-merge-ready.py",
     "edits": [
       [
-        "            names.append(current)\n            current = None\n",
-        "            names.append(current)\n"
+        "        if name and cond and PR_ONLY_COND.search(cond):\n",
+        "        if name and PR_ONLY_COND.search(\"\".join(block)):\n"
       ]
     ],
-    "expect": "a step with two condition lines is counted ONCE"
+    "expect": "the same condition inside a COMMENT is not a step condition"
   },
   {
     "name": "a draft pull request reads as mergeable",
@@ -77,14 +77,14 @@
     "expect": "a PR whose head is not the local HEAD is refused"
   },
   {
-    "name": "the condition is matched anywhere on the line again, not in the `if:` field",
+    "name": "a new `- ` at the same indent stops closing the previous step block",
     "file": "scripts/check-merge-ready.py",
     "edits": [
       [
-        "        f = IF_FIELD.match(line)\n        if current and f and PR_ONLY_COND.search(f.group(\"cond\")):\n",
-        "        f = IF_FIELD.match(line)\n        if current and PR_ONLY_COND.search(line):\n"
+        "            if step_indent is None or indent <= step_indent:\n",
+        "            if step_indent is None or indent < step_indent:\n"
       ]
     ],
-    "expect": "the same condition inside a COMMENT is not a step condition"
+    "expect": "both pull-request-only steps are found, in order"
   }
 ]

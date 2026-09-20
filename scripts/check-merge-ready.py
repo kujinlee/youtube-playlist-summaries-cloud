@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 33 cases
+    python3 scripts/check-merge-ready.py --self-test # 40 cases
 
 ⛔ WHY THIS EXISTS, MEASURED 2026-09-20. Twice in one day a branch was declared "ready to merge"
 on the strength of a local gate sweep, and twice CI refused it. Both times the refusal was
@@ -47,7 +47,12 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+WORKFLOW_DIR = ROOT / ".github" / "workflows"
+# ⛔ EVERY WORKFLOW, NOT `ci.yml` ALONE — Claude r1, Medium. The first version parsed one file and
+# claimed the pull-request-only list was "derived, never hand-written"; the FILE SCOPE was the
+# hand-written part. `schema-gates` is the other required context on every PR, so a gate added
+# there was invisible to a derivation that congratulated itself on being immune to exactly that.
+WORKFLOW = WORKFLOW_DIR / "ci.yml"   # kept: the steps this script can actually invoke live here
 
 # ⛔ MATCH THE `if:` FIELD, NOT ANY LINE CONTAINING THE STRING — code review r1 (Codex), Medium.
 # The first version substring-scanned every line after a `name:`, which was wrong in BOTH
@@ -72,24 +77,77 @@ BASE_REF = "origin/master"
 # run is an ABSENT check, and showing it as a failure sends the reader to fix the wrong thing.
 MARK = {0: "ok ", 1: "NO ", 2: "?? "}
 
+# The MergeStateStatus values for which GitHub will merge. ⚠ UNSTABLE is allowed HERE because this
+# function answers "would GitHub merge it"; the CI check below is deliberately STRICTER and refuses
+# any non-passing check, required or not. Claude r1, Low: the old comment claimed UNSTABLE "must
+# not be refused", which the overall verdict then refused one line later — an intent the tool did
+# not have. Saying which layer is strict, and why, is the honest version.
+MERGEABLE_STATES = ("CLEAN", "UNSTABLE", "HAS_HOOKS")
+
 
 # ── THE RULES, pure ───────────────────────────────────────────────────────────────────────────
 def pr_only_steps(workflow: str) -> list[str]:
     """Names of the workflow steps gated on a pull_request event. PURE.
 
-    Derived so it cannot drift: a new PR-only step in CI appears here with no edit to this file.
+    ⛔ THIS IS A STEP-BLOCK PARSER, NOT A LINE SCANNER, AND IT IS THE THIRD SHAPE — the first two
+    were both wrong in the SILENT direction, which for this script means reporting READY while a
+    gate refuses. Recorded because the pattern is the finding:
+      * v1 substring-scanned every line after a `name:`. A double-quoted condition returned
+        NOTHING (Codex r1, Medium), and a commented-out one returned a false positive.
+      * v2 matched the `if:` FIELD, which fixed both — and still bound an `if:` to the nearest
+        PRECEDING `- name:` regardless of nesting. A JOB-level `if:` therefore attached to the
+        last step of the PREVIOUS job: wrong in both directions at once, naming a step that is
+        not gated and missing the job that is (Claude r1, Medium). `schema-gates.yml` gates at
+        job level, so that is the form this repo actually writes.
+      * `- if:` as a step's first key, before `name:`, escaped both.
+
+    A step is a `- `-introduced block; everything indented deeper belongs to it. Both keys are
+    read from the block, in either order, so ordering and the `- ` prefix stop mattering. A
+    JOB-level condition is at shallower indentation than any step and simply never enters a block.
+
+    ⚠ JOB-LEVEL GATING IS STILL NOT REPORTED, and that is a KNOWN GAP rather than a fixed one:
+    this returns step names, and a gated job has no step name to return. `check_workflows()`
+    reports it separately so it cannot be silent.
     """
+    # ⚠ TWO LINES BELOW HAVE NO FALSIFIER, stated because assuming coverage is the defect this
+    # repository files most. Mutating `indent > step_indent` to `>=`, and `if m and name is None`
+    # to `if m:`, each leaves every case green — the first because the `- ` branch above already
+    # claims those lines, the second because no fixture has two `name:` keys in one block (which
+    # is invalid YAML anyway). Both are near-redundant rather than untested-and-load-bearing, and
+    # a contrived case asserting an unreachable shape would be worse than this sentence.
     names: list[str] = []
-    current: str | None = None
+    step_indent: int | None = None
+    block: list[str] = []
+
+    def flush() -> None:
+        name = cond = None
+        for b in block:
+            m = re.match(r"\s*-?\s*name:\s*(.+?)\s*$", b)
+            if m and name is None:
+                name = m.group(1)
+            m = re.match(r"\s*-?\s*if:\s*(.+?)\s*$", b)
+            if m and cond is None:
+                cond = m.group(1)
+        if name and cond and PR_ONLY_COND.search(cond):
+            names.append(name)
+        block.clear()
+
     for line in workflow.split("\n"):
-        m = re.match(r"\s*-\s+name:\s*(.+?)\s*$", line)
-        if m:
-            current = m.group(1)
+        if not line.strip():
             continue
-        f = IF_FIELD.match(line)
-        if current and f and PR_ONLY_COND.search(f.group("cond")):
-            names.append(current)
-            current = None
+        indent = len(line) - len(line.lstrip())
+        if re.match(r"\s*-\s", line):
+            if step_indent is None or indent <= step_indent:
+                flush()
+                step_indent = indent
+                block.append(line)
+                continue
+        if step_indent is not None and indent > step_indent:
+            block.append(line)
+        else:
+            flush()
+            step_indent = None
+    flush()
     return names
 
 
@@ -111,6 +169,26 @@ def verdict(results: dict[str, int]) -> tuple[int, str]:
         failed = sorted(k for k, v in results.items() if v != 0)
         return 1, "NOT READY — " + ", ".join(failed)
     return 0, "READY — every gate CI will run has been run here, including the PR-only ones"
+
+
+def job_level_gates(workflow: str) -> list[str]:
+    """Job names gated on a pull_request event. PURE.
+
+    A gated JOB has no step name, so `pr_only_steps` cannot report it and must not pretend to.
+    This repository gates at job level in `schema-gates.yml`, so the case is real, and a gate
+    this script cannot invoke must be NAMED rather than omitted.
+    """
+    jobs: list[str] = []
+    current: str | None = None
+    for line in workflow.split("\n"):
+        m = re.match(r"  (\w[\w-]*):\s*$", line)
+        if m:
+            current = m.group(1)
+            continue
+        if current and re.match(r"    if:\s*", line) and PR_ONLY_COND.search(line):
+            jobs.append(current)
+            current = None
+    return jobs
 
 
 def mergeability(info: dict, local_head: str | None) -> tuple[int, str]:
@@ -137,9 +215,22 @@ def mergeability(info: dict, local_head: str | None) -> tuple[int, str]:
         problems.append("it is a DRAFT")
     if info["baseRefName"] != "master":
         problems.append(f"base is {info['baseRefName']}, not master")
-    # ⚠ Only CLEAN and UNSTABLE are mergeable; BLOCKED/DIRTY/BEHIND/UNKNOWN are not. UNSTABLE means
-    # a non-required check is failing — GitHub permits the merge, so this must not refuse it.
-    if info["mergeStateStatus"] not in ("CLEAN", "UNSTABLE"):
+    # ⛔ `UNKNOWN` IS NOT A STATE OF THE BRANCH — IT IS "NOT COMPUTED YET", AND IT IS WHAT GITHUB
+    # RETURNS FIRST. Claude r1, High, measured live on PR #317: one query returned UNKNOWN and the
+    # next returned DIRTY, in the same second. Mergeability is computed lazily and the first read
+    # kicks the job off. So a CLEAN pull request and a CONFLICTED one look identical on first read,
+    # and the ordinary invocation — a human running this right after pushing, which is the moment
+    # the script is FOR — got a false NOT READY. Worse, it was an absent measurement reported as a
+    # failure, which `verdict()` has a comment forbidding three functions up.
+    if info["mergeStateStatus"] == "UNKNOWN":
+        return 2, ("GitHub has not computed mergeability yet (UNKNOWN) — it is calculated lazily "
+                   "and the first read only starts the job. Re-run in a moment.")
+    # ⚠ THE ENUM, ENUMERATED. GitHub's MergeStateStatus is BEHIND, BLOCKED, CLEAN, DIRTY, DRAFT,
+    # HAS_HOOKS, UNKNOWN, UNSTABLE. Three mean GitHub will merge: CLEAN, UNSTABLE (a non-required
+    # check is failing) and HAS_HOOKS (passing, with pre-receive hooks — GHE only, latent here).
+    # The previous comment said "BLOCKED/DIRTY/BEHIND/UNKNOWN are not", which was an enumeration
+    # that did not enumerate: it omitted HAS_HOOKS and DRAFT — Claude r1, Low.
+    if info["mergeStateStatus"] not in MERGEABLE_STATES:
         problems.append(f"mergeStateStatus is {info['mergeStateStatus']}")
     if local_head is None:
         return 2, "could not read the local HEAD to compare against the PR head"
@@ -208,6 +299,15 @@ def main(argv: list[str]) -> int:
     print(f"pull request           : #{pr}")
     print(f"base                   : {BASE_REF}")
     print(f"pull-request-only steps: {len(gated)} derived from ci.yml — {', '.join(gated)}")
+    # ⚠ NAMED, NOT INVOKED. A job gated on a pull_request event has no step this script can run,
+    # and every OTHER workflow's gates are outside what it drives. Saying so is the difference
+    # between a known gap and a silent one — Claude r1, Medium.
+    for wf in sorted(WORKFLOW_DIR.glob("*.yml")):
+        jobs = job_level_gates(wf.read_text())
+        extra = pr_only_steps(wf.read_text()) if wf != WORKFLOW else []
+        if jobs or extra:
+            print(f"  ⚠ {wf.name}: pull-request-only {'job(s) ' + ', '.join(jobs) if jobs else ''}"
+                  f"{' step(s) ' + ', '.join(extra) if extra else ''} — NOT invoked here; CI runs them")
     print()
 
     results: dict[str, int] = {}
@@ -238,8 +338,15 @@ def main(argv: list[str]) -> int:
         tail = (r.stdout or r.stderr).strip().split("\n")
         print(f"  {mark} {name:18s} rc={r.returncode}  {tail[0][:88] if tail else ''}")
 
-    ri = _run(["gh", "pr", "view", str(pr), "--json",
-               "state,isDraft,baseRefName,headRefOid,mergeStateStatus"])
+    # ⚠ TWICE, deliberately. The first read STARTS GitHub's lazy mergeability computation and
+    # returns UNKNOWN; the second usually has the answer. Measured on PR #317: UNKNOWN then DIRTY,
+    # same second. One retry, not a loop — if it is still UNKNOWN the rule says CANNOT RUN, which
+    # is true and actionable, rather than spinning.
+    for _attempt in (1, 2):
+        ri = _run(["gh", "pr", "view", str(pr), "--json",
+                   "state,isDraft,baseRefName,headRefOid,mergeStateStatus"])
+        if "UNKNOWN" not in ri.stdout:
+            break
     head = _run(["git", "rev-parse", "HEAD"]).stdout.strip() or None
     try:
         info = json.loads(ri.stdout) if ri.stdout.strip() else {}
@@ -341,6 +448,33 @@ def _self_test() -> int:
     check("...and says NOT RUN rather than naming a failure count",
           "NOT RUN" in verdict({"a": 1, "b": 2})[1], True)
     check("nothing checked is CANNOT RUN, not READY", verdict({})[0], 2)
+
+    # ── CLAUDE r1: the parser shapes that escaped BOTH earlier versions ────────────────────
+    JOBS = ("jobs:\n  a:\n    steps:\n      - name: last of a\n        run: x\n"
+            "  b:\n    if: github.event_name == 'pull_request'\n"
+            "    steps:\n      - name: real\n        run: y\n")
+    # ⛔ v2 returned ['last of a'] here — wrong in BOTH directions at once: it named a step that is
+    # not gated and missed the job that is. A job-level `if:` is the form schema-gates.yml writes.
+    check("a JOB-level condition does not attach to the previous job's last step",
+          pr_only_steps(JOBS), [])
+    check("...and the gated JOB is reported by its own rule, so the gap is named not silent",
+          job_level_gates(JOBS), ["b"])
+    check("a job gated on a DIFFERENT event is not collected",
+          job_level_gates("jobs:\n  a:\n    if: github.event_name == 'schedule'\n"), [])
+    check("`- if:` as a step's FIRST key, before name:, is still found",
+          pr_only_steps("      - if: github.event_name == 'pull_request'\n"
+                        "        name: x\n        run: y\n"), ["x"])
+
+    # ── CLAUDE r1, High: UNKNOWN is "not computed yet", and it is what GitHub returns FIRST ──
+    UNK = {"state": "OPEN", "isDraft": False, "baseRefName": "master",
+           "headRefOid": "abc123", "mergeStateStatus": "UNKNOWN"}
+    check("UNKNOWN is CANNOT RUN, not a refusal — GitHub has not computed it yet",
+          mergeability(UNK, "abc123")[0], 2)
+    check("...and it says so, rather than naming a state the branch is not in",
+          "not computed" in mergeability(UNK, "abc123")[1], True)
+    # ⚠ Claude r1, Low: the old comment enumerated the refusal set and omitted this one.
+    check("HAS_HOOKS is mergeable — GitHub merges it",
+          mergeability({**UNK, "mergeStateStatus": "HAS_HOOKS"}, "abc123")[0], 0)
 
     # ── MERGEABILITY — code review r1 (Codex), High: the catastrophic false READY ───────────
     OK = {"state": "OPEN", "isDraft": False, "baseRefName": "master",

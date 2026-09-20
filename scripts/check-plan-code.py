@@ -3311,6 +3311,13 @@ def _self_test() -> int:
     # first version of that mutation named the zero-runway case and killed through a different
     # one, because `0 < slack` is true either way. An unattributed kill, caught by reading which
     # case actually reddened rather than that the suite went red.
+    # ⟳ 2026-09-20: 770 -> 775 -> 778, `check-merge-ready.py`, in two steps because its own review
+    # moved it. FIVE on arrival for the pure rules; THREE more after code review r1 (Codex) filed
+    # a High — the checker could report READY for a draft, conflicted or wrong-base pull request,
+    # or for `--pr` aimed at an unrelated green one — so the mergeability rule it grew needed
+    # pinning too. ⚠ THIS COMMENT ITSELF WENT STALE AT 770 WHILE THE SUM WAS 778 (Claude r1,
+    # Medium): the transitions are the audit trail for a ratchet that may only rise, so a gap in
+    # them is the one thing a reader cannot reconstruct from the number.
     case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 778)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
