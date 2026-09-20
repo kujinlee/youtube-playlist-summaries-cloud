@@ -2,7 +2,7 @@
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 30 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 33 cases against synthetic trees
 """
 import re, sys, pathlib
 from dataclasses import dataclass, field
@@ -106,7 +106,18 @@ def parse_features(text: str) -> tuple[list[Node], list[str]]:
         elif key == "for": n.purpose = value
         elif key == "expected-because": n.expected_because = value
         elif key in LIST_FIELDS:
+            # ⚠ `setattr` TAKES A NAME `Node` DOES NOT HAVE, SILENTLY — code review r3 (Claude), Low.
+            # A dataclass without `__slots__` accepts `setattr(n, "expected-because", …)`, writes a
+            # dead attribute, and leaves `n.expected_because` None. Four of the five field names ARE
+            # their attribute names; `expected-because` is not, so adding it to LIST_FIELDS would
+            # drop the value with no error at all. This assertion is what makes that loud.
+            assert hasattr(n, key), f"LIST_FIELDS name {key!r} is not an attribute of Node"
             setattr(n, key, [a.strip() for a in value.split(",") if a.strip()])
+        else:
+            # ⛔ UNREACHABLE TODAY, AND THAT IS WHY IT IS HERE. `FIELD_NAMES` owns the matcher and the
+            # grammar message but NOT this chain, so a sixth name added there alone would match, be
+            # dedup-tracked, then be discarded here with no attribute and no problem reported.
+            raise AssertionError(f"field {key!r} matched but has no assignment — add one here")
     return nodes, problems
 
 
@@ -347,6 +358,25 @@ expected-because: standard for a hosted multi-tenant service.
           backlog_areas("| 1 | x | f | S | (worker) | open |"), {"(worker)"})
     ESCAPED = r"| 90 | a \| b | f | S | (comprehensibility) | open \| still |"
     check("a row with an ESCAPED PIPE is not dropped", backlog_areas(ESCAPED), {"(comprehensibility)"})
+    # ── THE MESSAGES THEMSELVES — code review r3 (Claude), Medium ───────────────────────────────
+    # ⛔ MEASURED BY THE REVIEWER: it put the pre-fix remedy string BACK — the exact defect round 3
+    # reported — and this suite stayed 30/30 GREEN. Nothing read the text. The message is on its
+    # fourth iteration, every one driven by a review rather than a gate, and the thing each
+    # iteration changed was the one thing nothing measured. `check-ratchet-contract` cannot see it:
+    # it knows the SCRIPT has a --self-test, not that a branch of it is unfalsifiable.
+    def _dup(field: str, a: str, b: str) -> str:
+        src = f"# Feature map\n## PRODUCT\n### x\n{field}: {a}\n{field}: {b}\nfor: A thing.\n"
+        return " ".join(parse_features(src)[1])
+
+    check("a duplicate SCALAR field is told to delete one, and NOT to use a comma list",
+          ("holds a single value" in _dup("state", "built", "absent"),
+           "comma-separated" in _dup("state", "built", "absent")), (True, False))
+    check("a duplicate LIST field IS told to put the values on one comma-separated line",
+          "ONE comma-separated line" in _dup("anchors", "a", "b"), True)
+    check("a refused line states the GRAMMAR an author needs, not only the rationale",
+          all(s in parse_features("# Feature map\n## PRODUCT\n### x\n state: built\n")[1][0]
+              for s in ("COLUMN 0", "no space before the colon", "expected-because")), True)
+
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
 

@@ -1008,7 +1008,7 @@ EXPECTED_MUTATIONS = {
     # so a repair that reports a duplicate and overwrites anyway would have been indistinguishable
     # from a correct one. ⚠ The wrapped-continuation entry was RETARGETED in the same commit (its
     # anchor was the line the fix rewrote) — a retarget, not an addition, so it is not in the +3.
-    "scripts/check-features.py": 20,
+    "scripts/check-features.py": 22,
     # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
     # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
     # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed
@@ -3304,7 +3304,7 @@ def _self_test() -> int:
     # A rise with an unmutatable member is worth saying out
     # loud, because a reader sizing this number against the round's findings would otherwise be
     # one short and look for the entry that was never written.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 767)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 769)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
