@@ -52,6 +52,39 @@
         "            names.append(current)\n"
       ]
     ],
-    "expect": "a step naming the condition twice is counted ONCE"
+    "expect": "a step with two condition lines is counted ONCE"
+  },
+  {
+    "name": "a draft pull request reads as mergeable",
+    "file": "scripts/check-merge-ready.py",
+    "edits": [
+      [
+        "    if info[\"isDraft\"]:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "a DRAFT is not mergeable"
+  },
+  {
+    "name": "the PR head stops being compared to the local HEAD, so --pr can point anywhere",
+    "file": "scripts/check-merge-ready.py",
+    "edits": [
+      [
+        "    if info[\"headRefOid\"] != local_head:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "a PR whose head is not the local HEAD is refused"
+  },
+  {
+    "name": "the condition is matched anywhere on the line again, not in the `if:` field",
+    "file": "scripts/check-merge-ready.py",
+    "edits": [
+      [
+        "        f = IF_FIELD.match(line)\n        if current and f and PR_ONLY_COND.search(f.group(\"cond\")):\n",
+        "        f = IF_FIELD.match(line)\n        if current and PR_ONLY_COND.search(line):\n"
+      ]
+    ],
+    "expect": "the same condition inside a COMMENT is not a step condition"
   }
 ]
