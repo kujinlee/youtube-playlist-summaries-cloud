@@ -103,8 +103,8 @@
     "file": "scripts/check-merge-ready.py",
     "edits": [
       [
-        "        if (\"pull_request\" not in s and \"github.event_name\" not in s) or s.startswith(\"#\"):\n",
-        "        if \"pull_request\" not in s and \"github.event_name\" not in s:\n"
+        "        if s.startswith(\"#\"):\n            continue\n",
+        "        if False:\n            continue\n"
       ]
     ],
     "expect": "a commented-out mention is not a gate and is not flagged"
@@ -114,8 +114,8 @@
     "file": "scripts/check-merge-ready.py",
     "edits": [
       [
-        "        if (\"pull_request\" not in s and \"github.event_name\" not in s) or s.startswith(\"#\"):\n",
-        "        if \"pull_request\" not in s or s.startswith(\"#\"):\n"
+        "        if \"pull_request\" not in s and \"github.event_name\" not in s:\n",
+        "        if \"pull_request\" not in s:\n"
       ]
     ],
     "expect": "a gate expressed by EXCLUSION is caught even with no `pull_request` in it"

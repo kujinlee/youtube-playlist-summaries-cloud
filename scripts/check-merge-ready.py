@@ -293,7 +293,9 @@ def unaccounted_mentions(workflow: str, filename: str) -> list[str]:
     stray: list[str] = []
     for line in workflow.split("\n"):
         s = line.strip()
-        if ("pull_request" not in s and "github.event_name" not in s) or s.startswith("#"):
+        if s.startswith("#"):
+            continue
+        if "pull_request" not in s and "github.event_name" not in s:
             continue
         key = (filename, s)
         seen[key] = seen.get(key, 0) + 1
