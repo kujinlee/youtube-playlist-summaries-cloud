@@ -1023,6 +1023,7 @@ EXPECTED_MUTATIONS = {
     # said so: disabling the dollar-quote branch SURVIVED (that case is actually killed by the
     # STRING branch — its fixture puts the create inside quotes), and dropping "scripts" from
     # PRODUCTION_DIRS CRASHED, because the fixture mkdirs from that same tuple.
+    "scripts/check-merge-ready.py": 5,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
@@ -2670,6 +2671,7 @@ def _self_test() -> int:
                                       "scripts/check-guard-coverage.py",
                                       "scripts/check-handoff-path.py",
                                       "scripts/check-live-schema.py",
+                                      "scripts/check-merge-ready.py",
                                       "scripts/check-paid-caller-arrival.py",
                                       "scripts/check-plan-code.py",
                                       # ⟳ 2026-09-08: the plan-mode retirement's replacement
@@ -3309,7 +3311,7 @@ def _self_test() -> int:
     # first version of that mutation named the zero-runway case and killed through a different
     # one, because `0 < slack` is true either way. An unattributed kill, caught by reading which
     # case actually reddened rather than that the suite went red.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 770)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 775)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

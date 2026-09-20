@@ -181,6 +181,7 @@ POPULATION: frozenset[str] = frozenset({
     "check-live-schema.py",          # ⟳ its summary moved to LAST in the same commit: it sat
                                      # before a multi-line epilogue, and `printed_total` reads the
                                      # LAST ratio line
+    "check-merge-ready.py",
     "check-paid-caller-arrival.py",  # ~12s, the slowest member; still well inside the timeout
     "check-producer-enumeration.py",  # ⟳ printed `PASS`, so it failed control_is_green outright
     "check-roadmap-consistency.py",

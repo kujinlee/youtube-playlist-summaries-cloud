@@ -1,0 +1,57 @@
+[
+  {
+    "name": "a CANNOT RUN is downgraded to an ordinary failure, so an ABSENT check reads as a failing one",
+    "file": "scripts/check-merge-ready.py",
+    "edits": [
+      [
+        "    if any(v == 2 for v in results.values()):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "a CANNOT RUN alongside a failure still reports CANNOT RUN"
+  },
+  {
+    "name": "checking nothing reports READY, which is the vacuous pass this script exists to refuse",
+    "file": "scripts/check-merge-ready.py",
+    "edits": [
+      [
+        "    if not results:\n        return 2,",
+        "    if not results:\n        return 0,"
+      ]
+    ],
+    "expect": "nothing checked is CANNOT RUN, not READY"
+  },
+  {
+    "name": "a pull request whose CI never started reads as green",
+    "file": "scripts/check-merge-ready.py",
+    "edits": [
+      [
+        "    if not checks:\n        return 2,",
+        "    if not checks:\n        return 0,"
+      ]
+    ],
+    "expect": "no checks reported is CANNOT RUN, not a vacuous pass"
+  },
+  {
+    "name": "a still-running CI run is read as settled",
+    "file": "scripts/check-merge-ready.py",
+    "edits": [
+      [
+        "    if any(b == \"pending\" for b in buckets):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "a pending check is not a pass"
+  },
+  {
+    "name": "a step's pull-request-only condition leaks onto the following step",
+    "file": "scripts/check-merge-ready.py",
+    "edits": [
+      [
+        "            names.append(current)\n            current = None\n",
+        "            names.append(current)\n"
+      ]
+    ],
+    "expect": "a step naming the condition twice is counted ONCE"
+  }
+]
