@@ -776,9 +776,23 @@ about the enumeration, which is the same shape as the finding it was written to 
 5. `check-selftest-counts.py` — `POPULATION` (near line 83): add **bare names** for both.
    ⚠ Note 1 and 5 take DIFFERENT string shapes for the same script — a full path and a bare name.
 
-⚠ **Do not trust this list either.** Before committing, run all three self-tests and read the
-failures: `check-plan-code.py --self-test`, `check-fixture-variation.py --self-test`,
-`check-selftest-counts.py --self-test`. Each names exactly what it wants.
+⚠ **Do not trust this list either — and run the GUARDS, not their self-tests.**
+⛔ **CORRECTED 2026-09-20, because the first version of this paragraph was measured FALSE and it is the
+falsifier at the end of this document firing.** It said *"run all three self-tests … each names exactly
+what it wants"*. Only **one of the five** registrations is named by its own self-test: with all three
+`check-plan-code.py` pin sites reverted its `--self-test` stays **128/128, rc=0, silent**, and with
+`POPULATION` reverted `check-selftest-counts.py --self-test` stays **18/18, rc=0, silent**. This is
+structural, not three weak suites: **a registration is a fact about the repository, and a pure-rules
+self-test never reads the repository.** Run these instead:
+
+```bash
+python3 scripts/check-plan-code.py --mutate .        # names registrations 1-3 (reverse check at :1167)
+python3 scripts/check-fixture-variation.py           # names registration 4 (its --self-test does too)
+python3 scripts/check-selftest-counts.py             # names registration 5 — the BARE run, not --self-test
+```
+
+Read the failures: each of these names exactly what it wants. The general rule is
+[`portable-practices.md`](../../portable-practices.md) §25.
 
 ⚠ `gen-features-page.py` is a script under `scripts/` and therefore also owes R4 — a mutation manifest **or a written `NO-MUTATIONS:` reason in its docstring**. Write the reason, and say why:
 
@@ -852,6 +866,16 @@ across the two documents). Both are in
 
 ⚠ **The falsifier for this decision:** if Task 6 turns up registration gaps that the three self-tests
 do NOT name, the delegation argument above was wrong and the enumeration needed a human after all.
+
+⟳ **IT FIRED — 2026-09-20, measured in Task 6.** Only 1 of 5 registrations is named by its own
+`--self-test` (evidence and method in Step 3 above). **The argument survives at the level it was making
+and fails at the level it was written.** It was making *the guards know more than this document*, and
+that held: `--mutate .` and the bare `check-selftest-counts.py` named the other four, both run in CI,
+and both were red before the task started — nothing could have shipped silently broken. What was wrong
+was delegating to a **self-test**, which tests the rule over a synthetic population and can never
+observe whether a script is registered. Generalised as `portable-practices.md` §25 rather than patched
+one word here, at the user's decision. ⭐ **Recorded rather than quietly fixed because the whole value
+of writing a falsifier is spent if nobody marks the day it goes off.**
 
 ---
 
