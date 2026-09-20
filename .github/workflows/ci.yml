@@ -187,13 +187,13 @@ jobs:
 
       # The feature tree behind /features, which answers "what does this system do, and what does
       # it deliberately not do". The page is DERIVED from docs/features.md, so the tree is the only
-      # hand-written surface and the only place it can rot. Two rules carry the weight, and both
-      # are cross-file — the half no reader checks: every node marked `built` must name a fragment
-      # that exists, and every backlog area and registry anchor must be claimed by exactly ONE
-      # node. Unclaimed is the dangerous direction: a backlog area no node claims has rows that
-      # can never appear on the page, which reads as "no known gaps" rather than as a gap in the
-      # map. The tree's own prose is bounded too — a `for:` line says what a node is FOR, and a
-      # status token in it is a second copy of what the links already say.
+      # hand-written surface and the only place it can rot. Two rules carry the weight: every node
+      # marked `built` must name a fragment that exists — named locally, but existence is checked
+      # cross-file — and every backlog area and registry anchor must be claimed by exactly ONE
+      # node, cross-file throughout. Unclaimed is the dangerous direction: a backlog area no node
+      # claims has rows that can never appear on the page, which reads as "no known gaps" rather
+      # than as a gap in the map. The tree's own prose is bounded too — a `for:` line says what a
+      # node is FOR, and a status token in it is a second copy of what the links already say.
       - name: Feature map
         run: python3 scripts/check-features.py
 

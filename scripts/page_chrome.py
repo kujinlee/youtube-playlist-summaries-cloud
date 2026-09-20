@@ -15,7 +15,7 @@ decoration"*, and checked four palettes on that basis. The CSS was written in
 anticipation; the control was never built; a guard was told otherwise.
 
 MECHANISM SHARED, PALETTE LOCAL — the one design decision here. Emitting one palette
-from this module would flatten five pages that deliberately look different (the goals
+from this module would flatten six pages that deliberately look different (the goals
 page is warm-paper, the dashboard is near-black). So this module owns the *attribute*,
 the button, the persistence and the OS fallback; each page keeps its own colours and
 merely has to define both `data-theme` blocks.
@@ -114,12 +114,12 @@ def stamp(when: str) -> str:
 def chrome_css() -> str:
     """Styling for the bar only. It reads the page's OWN variables, never its own colours.
 
-    That is what keeps five deliberately different-looking pages looking like themselves:
+    That is what keeps six deliberately different-looking pages looking like themselves:
     if this module named a colour, every page would acquire it.
     """
     return (
         # Every fallback is `currentColor` or `transparent`, never a hex. A literal here
-        # would leak this module's taste into five pages that deliberately differ — and
+        # would leak this module's taste into six pages that deliberately differ — and
         # the case below fails on any hex, which is how the first draft's `#777` was
         # caught before it shipped.
         ".chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;"

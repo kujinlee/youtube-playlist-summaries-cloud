@@ -10678,3 +10678,28 @@ v22.23.2 binds `::`) instead of on local Node 20.
 ⚠ Process note against myself: I edited `worker/main.ts` in the worktree while the round-3 reviewer was
 running. It caught this, reported it, and reviewed the committed tree instead — the same mistake the
 previous session's handoff warned about.
+
+## 2026-09-19
+New page: /features, a tree of what this system does and what it deliberately does not do.
+
+It groups the product into named nodes — each one either built (with a link to the code or spec that
+proves it) or absent (with a stated reason). It is generated, not hand-maintained: a script builds the
+page from a single markdown file, and a machine check runs in CI on every change so the tree cannot
+silently drift from the two things it draws from — the project's anchor registry and its backlog.
+
+**What that check does NOT cover, so a reader doesn't take the page as a complete inventory:** it only
+checks that every anchor and every active backlog item is claimed by exactly one node on the page —
+never the other direction. Nothing checks whether every real part of the system has a node at all. So
+the page can honestly omit something nobody remembered to add, and nothing today would catch that.
+Three real omissions were found and flagged by review during this work — a follow-up decision, not
+part of this change.
+
+**Waiting on you:** nothing new from this entry.
+<!--tech-->
+`docs/features.md` (the hand-written tree), `scripts/gen-features-page.py` (renders it, served at
+`/features`), `scripts/check-features.py` (the CI gate — validates edges INTO the tree only: every
+`docs/anchors.md` anchor and every in-use `docs/backlog.md` area claimed by exactly one node),
+`.claude/hooks/regen-features-page.sh` (rebuild hook), plus mutation manifests for both scripts and
+two new CI steps. Final whole-branch review: `.superpowers/sdd/2026-09-19-feature-hub/final-review.md`
+— coverage gap tracked there as finding I3, filed separately per this repo's convention (findings
+become backlog rows only when the user agrees to file them).

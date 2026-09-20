@@ -97,21 +97,22 @@ A summary section that has been elaborated into the dig-deeper doc is **dug**; o
 
 ## Page Generation (Repo Tooling)
 
-The repo generates four local HTML pages from its own markdown — the dashboard, the backlog table,
-the goals view, and the explainer viewer. These terms are about that tooling, not the product.
+The repo generates five local HTML pages from its own markdown — the dashboard, the backlog table,
+the goals view, the explainer viewer, and the features tree. These terms are about that tooling, not
+the product.
 
 - **Inline markup** — the small subset of markdown that appears *within* a line: `**bold**`,
   `` `code` ``, `*em*`, `~~del~~`, `[text](url)`, and a bare URL. Distinguished from **block
   markup** (headings, tables, lists, fences), which each generator still handles for itself. Only
   the inline layer is shared.
 - **The renderer** — `scripts/page_markup.py`, the single implementation of inline markup for all
-  four generators. Underscored because it is a **library** meant to be imported by name; the
+  five generators. Underscored because it is a **library** meant to be imported by name; the
   hyphenated `scripts/*.py` files are executables and are not importable. It is a **peer** of the
   generators, never a gate: the documented generator → gate arrow governs a page importing the guard
   that checks it, and a renderer checks nothing.
-- **One behaviour** — the decision (2026-08-30) that all four pages render inline markup
-  identically, rather than each declaring its own feature subset. The behaviour is the *union* of
-  what the four supported, carried by the *single left-to-right scan* that only one of them had.
+- **One behaviour** — the decision (2026-08-30) that every page renders inline markup identically,
+  rather than each declaring its own feature subset. The behaviour is the *union* of what the four
+  supported at the time, carried by the *single left-to-right scan* that only one of them had.
 
 ## Verification Stack (Repo Tooling)
 

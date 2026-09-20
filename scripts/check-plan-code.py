@@ -995,9 +995,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-09-19, the feature hub. SEVENTEEN, one per rule `check_nodes`/`check_cross`/
     # `backlog_areas` decide — the plan's own draft said five, which left both cross-file anchor
     # directions, the claimed-twice rules, the wrapped-line refusal, the `now` exclusion, the area
-    # CELL INDEX and the escaped-pipe lookbehind with no falsifier at all. The cell index is the
-    # one worth naming: `cells[-3]` -> `cells[-4]` reds TWO cases, and it is allowed because
-    # `expect` is matched by EQUALITY against one of them, not by the size of the red set.
+    # CELL INDEX and the escaped-pipe lookbehind with no falsifier at all. Two of the seventeen red
+    # TWO cases apiece — the cell index (`cells[-3]` -> `cells[-4]`) and the trunk carry-down — and
+    # both are allowed because `expect` is matched by EQUALITY against one of them, not by the size
+    # of the red set.
     "scripts/check-features.py": 17,
     # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
     # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero

@@ -12,9 +12,9 @@ the documents that make it reproducible somewhere else. This file is the second 
 >
 > **The suite is 9 files / 3,599 lines** — the four page-producing skills (`explain-diff`, `brief`,
 > `explain-findings`, `explain-topic`), the shared delivery contract, `brief-compose.py`,
-> `explainer-serve.py`, `page_chrome.py`, `page_markup.py` — plus the three hook-regenerated pages
-> (`regen-backlog-page.sh`, `regen-dashboard.sh`, `regen-goals-page.sh`). Enumerated in
-> `docs/backlog.md` row 89, not recalled.
+> `explainer-serve.py`, `page_chrome.py`, `page_markup.py` — plus the four hook-regenerated pages
+> (`regen-backlog-page.sh`, `regen-dashboard.sh`, `regen-goals-page.sh`, `regen-features-page.sh`).
+> Enumerated in `docs/backlog.md` row 89, not recalled.
 >
 > ⚠ **WHY THIS SENTENCE CHANGES WHAT THE FILE IS FOR.** *Project-independent* is filter 2 below,
 > where it reads as a quality bar for entries. For the suite it is now a **release blocker**: a
