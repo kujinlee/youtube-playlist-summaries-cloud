@@ -86,5 +86,27 @@
       ]
     ],
     "expect": "a FOLDED condition (`if: >`) is read from its continuation lines"
+  },
+  {
+    "name": "the allowance stops being a count, so a second copy rides in on the first's ticket",
+    "file": "scripts/check-merge-ready.py",
+    "edits": [
+      [
+        "        if seen[key] > allowed:\n",
+        "        if key not in ACCOUNTED_MENTIONS:\n"
+      ]
+    ],
+    "expect": "a SECOND copy of an approved line is unaccounted \u2014 the allowance is a count"
+  },
+  {
+    "name": "commented-out mentions stop being skipped, so prose about a gate reads as one",
+    "file": "scripts/check-merge-ready.py",
+    "edits": [
+      [
+        "        if \"pull_request\" not in s or s.startswith(\"#\"):\n",
+        "        if \"pull_request\" not in s:\n"
+      ]
+    ],
+    "expect": "a commented-out mention is not a gate and is not flagged"
   }
 ]

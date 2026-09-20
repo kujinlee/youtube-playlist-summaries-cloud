@@ -1023,7 +1023,7 @@ EXPECTED_MUTATIONS = {
     # said so: disabling the dollar-quote branch SURVIVED (that case is actually killed by the
     # STRING branch — its fixture puts the create inside quotes), and dropping "scripts" from
     # PRODUCTION_DIRS CRASHED, because the fixture mkdirs from that same tuple.
-    "scripts/check-merge-ready.py": 8,
+    "scripts/check-merge-ready.py": 10,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
@@ -3318,7 +3318,7 @@ def _self_test() -> int:
     # pinning too. ⚠ THIS COMMENT ITSELF WENT STALE AT 770 WHILE THE SUM WAS 778 (Claude r1,
     # Medium): the transitions are the audit trail for a ratchet that may only rise, so a gap in
     # them is the one thing a reader cannot reconstruct from the number.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 778)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 780)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

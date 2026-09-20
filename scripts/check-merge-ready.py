@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 46 cases
+    python3 scripts/check-merge-ready.py --self-test # 49 cases
 
 ⛔ WHY THIS EXISTS, MEASURED 2026-09-20. Twice in one day a branch was declared "ready to merge"
 on the strength of a local gate sweep, and twice CI refused it. Both times the refusal was
@@ -196,27 +196,55 @@ def job_level_gates(workflow: str) -> list[str]:
     return jobs
 
 
-def unattributed_conditions(workflow: str) -> list[str]:
-    """Lines naming a pull_request condition that neither rule claimed. PURE.
+# ⭐ EVERY `pull_request` MENTION IN EVERY WORKFLOW, ACCOUNTED FOR BY HAND, WITH A REASON.
+# This is a RATCHET, the same shape as EXPECTED_MUTATIONS and EXAMINED_KEYS: a newly appearing
+# mention is REFUSED until a human classifies it. Keyed by (file, stripped line) -> (count, why).
+#
+# ⛔ IT DOES NO PARSING, AND THAT IS THE ENTIRE POINT — Claude r2, High, which broke the previous
+# design two ways. That version audited the parser by re-detecting condition LINES, and its
+# detector was WEAKER than the parser it audited: `_cond_at()` joins a folded scalar's
+# continuation lines before matching, the auditor matched single lines, so a condition split
+# across a line break was invisible to BOTH — the parser did not claim it and the auditor saw
+# nothing left over. A real gate vanished with the soundness check reporting clean. It also
+# compared a COUNT against a COUNT, so a claim with no matching line created a surplus that
+# absorbed a genuine miss. An auditor that re-implements its subject's hardest job, more weakly,
+# certifies a parse it could not perform.
+#
+# A crude substring scan cannot be weaker than the parser because it is not attempting the same
+# problem. It over-approximates on purpose: the cost of a new mention is a REFUSAL TO ANSWER that
+# a human clears in one line, and the cost of the alternative was a confident READY over a gate
+# nobody knew about. Over-approximation is the only safe direction here.
+ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
+    ("ci.yml", "pull_request:"):
+        (1, "the workflow TRIGGER — says when CI runs, gates nothing"),
+    ("ci.yml", "if: github.event_name == 'pull_request'"):
+        (2, "the two pull-request-only steps this script invokes itself"),
+    ("ci.yml", "BODY: ${{ github.event.pull_request.body }}"):
+        (2, "the env those two steps read their waiver from"),
+    ("schema-gates.yml", "pull_request:"):
+        (1, "the workflow TRIGGER — schema-gates has no pull-request-only step or job"),
+}
 
-    ⭐ THIS IS THE ACTUAL FIX FOR THE PARSER, AND THE OTHER TWO FUNCTIONS ARE BEST-EFFORT. Three
-    rounds produced three parsers and each one MISSED a gate silently; a fourth regex would be the
-    same bet again. A hand-rolled YAML parser cannot be made correct — the project is stdlib-only,
-    so there is no `yaml` to import — but it can be made unable to fail QUIETLY.
 
-    Every line carrying the condition must be accounted for by a step or a job. Anything left over
-    is a gate this script does not understand, and `main()` turns that into CANNOT RUN naming the
-    line, rather than a confident READY computed from an incomplete list. A parser bug then costs
-    a refusal to answer, which is recoverable, instead of a wrong answer, which is not.
+def unaccounted_mentions(workflow: str, filename: str) -> list[str]:
+    """Non-comment lines mentioning `pull_request` that ACCOUNTED_MENTIONS does not cover. PURE.
+
+    ⚠ A line appearing MORE often than its allowance is unaccounted too — otherwise adding a
+    second copy of an approved gate would pass on the first one's ticket, which is how a ratchet
+    keyed on presence rather than count leaks.
     """
-    claimed = len(pr_only_steps(workflow)) + len(job_level_gates(workflow))
-    present = [l.strip() for l in workflow.split("\n")
-               if PR_ONLY_COND.search(l) and re.match(r"\s*-?\s*if:", l)]
-    # Folded conditions live on a CONTINUATION line, whose own text has no `if:` — count those too.
-    present += [l.strip() for l in workflow.split("\n")
-                if PR_ONLY_COND.search(l) and not re.match(r"\s*-?\s*if:", l)
-                and not l.lstrip().startswith("#")]
-    return present[claimed:] if len(present) > claimed else []
+    seen: dict[tuple[str, str], int] = {}
+    stray: list[str] = []
+    for line in workflow.split("\n"):
+        s = line.strip()
+        if "pull_request" not in s or s.startswith("#"):
+            continue
+        key = (filename, s)
+        seen[key] = seen.get(key, 0) + 1
+        allowed = ACCOUNTED_MENTIONS.get(key, (0, ""))[0]
+        if seen[key] > allowed:
+            stray.append(f"{filename}: {s}")
+    return stray
 
 
 def verdict(results: dict[str, int]) -> tuple[int, str]:
@@ -352,11 +380,12 @@ def main(argv: list[str]) -> int:
     # gate silently. A fourth regex is the same bet; refusing to answer when the parse is
     # incomplete is not. A parser bug now costs a refusal, which is recoverable.
     for wf in sorted(WORKFLOW_DIR.glob("*.yml")):
-        stray = unattributed_conditions(wf.read_text())
+        stray = unaccounted_mentions(wf.read_text(), wf.name)
         if stray:
-            print(f"CANNOT RUN — {wf.name} carries {len(stray)} pull-request condition(s) this "
-                  f"script could not attribute to a step or a job, so its list of gates is "
-                  f"INCOMPLETE and a READY verdict would be computed from it:", file=sys.stderr)
+            print(f"CANNOT RUN — {wf.name} carries {len(stray)} mention(s) of `pull_request` "
+                  f"that ACCOUNTED_MENTIONS does not cover. One of them may be a gate this script "
+                  f"does not invoke, and a READY verdict would be computed without it. Classify "
+                  f"each and add it there with a reason:", file=sys.stderr)
             for s in stray[:4]:
                 print(f"    {s}", file=sys.stderr)
             print("  Treat this as NOT RUN.", file=sys.stderr)
@@ -542,13 +571,28 @@ def _self_test() -> int:
           job_level_gates("jobs:\n  b:\n    if: >\n"
                           "      github.event_name == 'pull_request'\n    steps:\n      - name: x\n"), ["b"])
 
-    # ── THE SOUNDNESS CHECK — the actual remedy for a parser that cannot be made correct ─────
-    check("a condition the parser cannot attribute is REPORTED, not silently dropped",
-          unattributed_conditions("      - name: a\n        run: x\n"
-                                  "        weird-if: github.event_name == 'pull_request'\n") != [], True)
-    check("the real workflows leave nothing unattributed",
+    # ── THE ALLOW-LIST RATCHET — Claude r2, High, replacing an auditor that was WEAKER than
+    # the parser it audited and so certified a parse it could not perform. ──────────────────
+    # ⛔ THE ESCAPE THAT BROKE THE PREVIOUS DESIGN. A condition split across a line break was
+    # invisible to the parser AND to the auditor, so a real gate vanished with the soundness
+    # check reporting clean. A substring scan cannot miss it, because it is not parsing.
+    SPLIT = ("      - name: x\n        if: github.event_name ==\n"
+             "          'pull_request'\n        run: y\n")
+    check("a condition split across a line break is CAUGHT even though no rule claims it",
+          (pr_only_steps(SPLIT), unaccounted_mentions(SPLIT, "ci.yml") != []), ([], True))
+    check("an unknown mention is reported with its file and line text",
+          unaccounted_mentions("      on-pull_request-magic: true\n", "ci.yml"),
+          ["ci.yml: on-pull_request-magic: true"])
+    # ⚠ A ratchet keyed on PRESENCE rather than COUNT leaks: a second copy of an approved line
+    # would ride in on the first one's ticket.
+    check("a SECOND copy of an approved line is unaccounted — the allowance is a count",
+          len(unaccounted_mentions("  pull_request:\n  pull_request:\n", "schema-gates.yml")), 1)
+    check("a commented-out mention is not a gate and is not flagged",
+          unaccounted_mentions("      # if: github.event_name == 'pull_request'\n", "ci.yml"), [])
+    # ⚠ THE OTHER DIRECTION. A checker that refuses to answer on a normal repository is useless.
+    check("the real workflows are fully accounted for — no false CANNOT RUN",
           [w.name for w in sorted(WORKFLOW_DIR.glob("*.yml"))
-           if unattributed_conditions(w.read_text())] if WORKFLOW_DIR.is_dir() else [], [])
+           if unaccounted_mentions(w.read_text(), w.name)] if WORKFLOW_DIR.is_dir() else [], [])
 
     # ── CLAUDE r1, High: UNKNOWN is "not computed yet", and it is what GitHub returns FIRST ──
     UNK = {"state": "OPEN", "isDraft": False, "baseRefName": "master",
