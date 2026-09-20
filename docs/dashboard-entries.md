@@ -10691,7 +10691,7 @@ silently drift from the two things it draws from — the project's anchor regist
 checks that every anchor and every active backlog item is claimed by exactly one node on the page —
 never the other direction. Nothing checks whether every real part of the system has a node at all. So
 the page can honestly omit something nobody remembered to add, and nothing today would catch that.
-Three real omissions were found and flagged by review during this work — a follow-up decision, not
+Six real omissions were found and flagged by review during this work — a follow-up decision, not
 part of this change.
 
 **Waiting on you:** nothing new from this entry.

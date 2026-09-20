@@ -2003,7 +2003,7 @@ unapplied for eight days while every document read "merged, done".
 > (squash `65cd509e`, verified 2026-09-06). Two things make it startable only now: that merge, and
 > the Agent tool being available again — **every open question in the row is about forking agents**,
 > so a spec written without it would rest on argument rather than measurement. ⚠ **The thesis holds
-> for the four agent-authored pages only.** The three hook-regenerated ones already cost zero context;
+> for the four agent-authored pages only.** The four hook-regenerated ones already cost zero context;
 > proposing to fork them is a category error. ⚠ **Two items in that row are the user's call and are
 > deliberately NOT part of this goal:** declaring the comprehensibility suite a project deliverable
 > (a goal change, whose home is `docs/anchors.md`), and marketplace publication (outward-facing and

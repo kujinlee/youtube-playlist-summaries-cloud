@@ -26,7 +26,7 @@ the documents that make it reproducible somewhere else. This file is the second 
 >
 > ⛔ **WHAT IS STILL NOT DECLARED, stated so the gap is not read as closed.** `docs/anchors.md`
 > registers 10 anchors and exactly one touches comprehension — `status-visibility`, scoped to *"a
-> person who was AWAY"*. That covers `brief` and the three hook-regenerated pages. It does **not**
+> person who was AWAY"*. That covers `brief` and the four hook-regenerated pages. It does **not**
 > cover `explain-diff`, `explain-topic` or `explain-findings`, which serve a human who is PRESENT
 > and trying to understand a change, a concept, or a triage decision. **A second anchor is owed and
 > is deliberately NOT allocated here:** `check-anchors.py` R4 fails an anchor that no document
