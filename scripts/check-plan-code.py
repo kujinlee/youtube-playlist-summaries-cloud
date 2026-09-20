@@ -999,7 +999,16 @@ EXPECTED_MUTATIONS = {
     # TWO cases apiece — the cell index (`cells[-3]` -> `cells[-4]`) and the trunk carry-down — and
     # both are allowed because `expect` is matched by EQUALITY against one of them, not by the size
     # of the red set.
-    "scripts/check-features.py": 17,
+    # ⟳ 2026-09-20, code review r1 (Codex) — 17 -> 20. The first review to read the CODE rather than
+    # the plan found the parser passing input it should refuse, and all three entries restore a way
+    # a line could reach no rule at all: the exemption tuple that let `>`, `<!--` and a bare `#322`
+    # sit unread inside a node (its Blocking), and the two halves of the duplicate-field refusal —
+    # dropping the refusal, and reporting it while still applying last-write-wins. The second half
+    # needed its own entry because the first cannot reach it: with the refusal gone BOTH cases red,
+    # so a repair that reports a duplicate and overwrites anyway would have been indistinguishable
+    # from a correct one. ⚠ The wrapped-continuation entry was RETARGETED in the same commit (its
+    # anchor was the line the fix rewrote) — a retarget, not an addition, so it is not in the +3.
+    "scripts/check-features.py": 20,
     # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
     # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
     # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed
@@ -3282,7 +3291,16 @@ def _self_test() -> int:
     # them into CI. A RISE, so this is not the sanctioned-fall case; every anchor was verified
     # present EXACTLY ONCE in the delivered file before being written, and every entry was proved
     # to go red VIA THE CASE IT NAMES over a control proved green first.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 764)
+    # ⟳ 2026-09-20: 764 -> 767, code review r1 (Codex) on the feature hub. THREE on
+    # `check-features.py`, reasoned about beside its per-file count above. ⚠ The round's third
+    # finding — the regen hook swallowing an unreadable payload — is NOT in this rise and cannot
+    # be: `load_manifests` pins every entry's `file` to `scripts/<manifest stem>.py`, and
+    # `run_suite` runs the mutated file AS a Python suite, so a `.sh` target would red its own
+    # control. Its coverage is three cases in `gen-features-page.py` that RUN the hook, the shape
+    # `regen-backlog-page.sh` already set. A rise with an unmutatable member is worth saying out
+    # loud, because a reader sizing this number against the round's findings would otherwise be
+    # one short and look for the entry that was never written.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 767)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

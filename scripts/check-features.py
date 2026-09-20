@@ -2,7 +2,7 @@
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 25 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 30 cases against synthetic trees
 """
 import re, sys, pathlib
 from dataclasses import dataclass, field
@@ -33,6 +33,7 @@ def parse_features(text: str) -> tuple[list[Node], list[str]]:
     nodes: list[Node] = []
     problems: list[str] = []
     trunk = ""
+    seen_fields: set[str] = set()
     for i, raw in enumerate(text.split("\n"), 1):
         line = raw.rstrip()
         if line.startswith("## ") and not line.startswith("###"):
@@ -42,23 +43,50 @@ def parse_features(text: str) -> tuple[list[Node], list[str]]:
             slug = line.lstrip("#").strip()
             if not trunk:
                 problems.append(f"features.md:{i}: node `{slug}` sits outside any trunk")
-            nodes.append(Node(slug=slug, level=level, trunk=trunk, line=i)); continue
+            nodes.append(Node(slug=slug, level=level, trunk=trunk, line=i))
+            seen_fields = set(); continue
         m = FIELD.match(line)
         if not m:
             # ⭐ A WRAPPED `for:` LINE MUST NOT BE SILENTLY DROPPED (review r1 High 8). Continuation
             # text used to fail FIELD and get skipped, so `for: …\n  Currently broken, see #322.`
             # left the banned words out of `purpose` entirely and the status-token rule reported
             # nothing. Refusing the line is the "cannot run is a failure" posture.
-            if nodes and line.strip() and not line.startswith(("#", "<!--", ">")):
+            #
+            # ⛔ AND NO PREFIX IS EXEMPT — code review r1 (Codex), Blocking. This test used to read
+            # `not line.startswith(("#", "<!--", ">"))`, which refused ordinary wrapped prose and
+            # then waved through exactly the three prefixes that make a line LOOK inert. Measured:
+            # `> currently broken, see #322.` inside a node parsed clean, carrying two status
+            # tokens past a rule whose whole job is to find them; `<!-- … -->` and a bare `#322 …`
+            # are the same hole wearing different hats. There is no legitimate blockquote, comment
+            # or stray heading inside a node — every field is one line and headings open nodes —
+            # so the exemption bought nothing and cost the rule above. ⚠ DO NOT RE-ADD ONE: any
+            # prefix exempted here is a prefix a status line can be written behind. Measured
+            # 2026-09-19 against the living tree: 0 lines start with `>`, `<!--` or a non-heading
+            # `#` inside any node, so refusing all three breaks nothing that exists.
+            if nodes and line.strip():
                 problems.append(
                     f"features.md:{i}: `{nodes[-1].slug}` has a line that is neither a field nor a "
                     f"heading: {line.strip()[:40]!r}. Keep each field on ONE line — a wrapped `for:` "
-                    f"would hide its own status tokens from the check")
+                    f"would hide its own status tokens from the check. No prefix is exempt: a "
+                    f"blockquote, an HTML comment and a stray `#` are text inside a node too")
             continue
         if not nodes:
             problems.append(f"features.md:{i}: field `{m.group(1)}` before any node"); continue
         key, value = m.group(1), m.group(2).strip()
         n = nodes[-1]
+        # ⛔ A DUPLICATE FIELD IS REFUSED, NOT LAST-WRITE-WINS — code review r1 (Codex), High. The
+        # five assignments below used to be unconditional, so a second `anchors:` blanked the first
+        # and a second `for:` discarded the first. Both are bypasses, not typos: an `absent` node
+        # shed the fragment that contradicts it, and a `for:` shed its own status tokens, in each
+        # case BEFORE any rule ran. A gate that owns its grammar rejects a duplicate; and when it
+        # does, the FIRST value stands, so the content the duplicate was hiding still reaches the
+        # checks instead of being replaced by the clean-looking line that followed it.
+        if key in seen_fields:
+            problems.append(f"features.md:{i}: `{n.slug}` repeats the field `{key}` — a duplicate "
+                            f"is refused, not merged. Under last-write-wins a later line silently "
+                            f"replaces an earlier one, and what it replaces is never searched")
+            continue
+        seen_fields.add(key)
         if key == "state": n.state = value
         elif key == "for": n.purpose = value
         elif key == "expected-because": n.expected_because = value
@@ -243,6 +271,32 @@ expected-because: standard for a hosted multi-tenant service.
     wnodes, wproblems = parse_features(wrapped)
     check("a wrapped for: line is REFUSED, not silently dropped",
           any("neither a field nor a heading" in p for p in wproblems), True)
+    # ⛔ THE THREE FIXTURES BELOW ARE CODEX'S, VERBATIM WHERE IT GAVE ONE. Each is a line that the
+    # old exemption tuple waved through, and each carries the two status tokens (`currently` and
+    # `#322`) the rule above exists to find — so a case going green here means a status line has
+    # been read, not that a parser was tidy. They are three cases and not one because the prefixes
+    # fail independently: a repair that remembers `>` and forgets `<!--` must still go red.
+    FIRST_FOR = "for: Turns one video's transcript into a summary a person reads.\n"
+    quoted = TREE.replace(FIRST_FOR, FIRST_FOR + "> currently broken, see #322.\n")
+    check("a `>` blockquote line inside a node is REFUSED, not exempted",
+          any("neither a field nor a heading" in p for p in parse_features(quoted)[1]), True)
+    commented = TREE.replace(FIRST_FOR, FIRST_FOR + "<!-- currently broken, see #322. -->\n")
+    check("an HTML comment line inside a node is REFUSED — a status token cannot ride in on it",
+          any("neither a field nor a heading" in p for p in parse_features(commented)[1]), True)
+    # Not a heading: `###` and `## ` are handled above, so what is left starting with `#` is prose.
+    hashed = TREE.replace(FIRST_FOR, FIRST_FOR + "#322 has it currently broken.\n")
+    check("a `#` line that is not a heading is REFUSED",
+          any("neither a field nor a heading" in p for p in parse_features(hashed)[1]), True)
+    # ⛔ CODEX'S OWN BYPASS: an `absent` node that carries a fragment passes if a later empty
+    # `anchors:` blanks it. The second case is the half that matters — refusing the duplicate is
+    # worth nothing if the value that survives is still the empty one.
+    ABSENT_WHY = "expected-because: standard for a hosted multi-tenant service.\n"
+    dup_anchors = TREE.replace(ABSENT_WHY, ABSENT_WHY + "anchors: cloud-publishing\nanchors:\n")
+    dnodes, dproblems = parse_features(dup_anchors)
+    check("a duplicate field is REFUSED, not applied last-write-wins",
+          any("repeats the field `anchors`" in p for p in dproblems), True)
+    check("the FIRST value stands, so a blanking duplicate cannot hide the fragment it contradicts",
+          any("flip it to `built`" in p for p in check_nodes(dnodes)), True)
     check("`now` is no longer a banned word", STATUS_TOKENS.search("Shows what runs now") is None, True)
     ANCHORS = {"cloud-publishing", "cloud-sync"}
     check("clean cross-check is silent", check_cross(nodes, {"cloud-publishing"}, set()), [])

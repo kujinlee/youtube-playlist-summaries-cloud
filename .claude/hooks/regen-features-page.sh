@@ -28,14 +28,31 @@ set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-FILE_PATH=$(cat | python3 -c "
+# ⚠ A MALFORMED PAYLOAD MUST NOT LOOK LIKE AN UNWATCHED FILE — code review r1 (Codex), Low.
+# `printf 'not json' | bash …` exited 0 and printed nothing, byte-identical to the overwhelmingly
+# common case of a Write to a file this hook does not care about. Exit 0 is CORRECT on every path
+# — a hook that fails the turn over a page rebuild is worse than a stale page — but silence there
+# means that if the hook-input shape ever changes, this hook stops working and NOTHING says so.
+# So the parser answers with a SENTINEL rather than "", and the two cases are separated below.
+# ⚠ EMPTY STDIN STAYS SILENT, deliberately: invoked by hand with no payload there is nothing to
+# have failed to parse, and a warning there would train the reader to ignore this line.
+PAYLOAD=$(cat)
+FILE_PATH=$(printf '%s' "$PAYLOAD" | python3 -c "
 import json, sys
 try:
     d = json.load(sys.stdin)
 except Exception:
-    print(''); raise SystemExit
+    print('<<unparseable>>'); raise SystemExit
 print(d.get('tool_input', {}).get('file_path', '') or '')
-" 2>/dev/null) || exit 0
+" 2>/dev/null) || FILE_PATH='<<unparseable>>'
+
+if [ "$FILE_PATH" = '<<unparseable>>' ]; then
+  if [ -n "${PAYLOAD//[[:space:]]/}" ]; then
+    echo "⚠  regen-features-page.sh could not read its hook payload as JSON — if the hook input" \
+         "shape has changed, this hook has silently stopped rebuilding /features."
+  fi
+  exit 0
+fi
 
 # Every input the page derives from. A source added to gen-features-page.py and forgotten here is
 # the failure mode; the page's own docstring derivation list is the checklist.

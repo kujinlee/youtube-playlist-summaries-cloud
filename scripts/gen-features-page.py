@@ -3,7 +3,7 @@
 
     python3 scripts/gen-features-page.py              # -> ~/explainers/features.html, served at /features
     python3 scripts/gen-features-page.py --fragment-only <path>
-    python3 scripts/gen-features-page.py --self-test  # 8 cases
+    python3 scripts/gen-features-page.py --self-test  # 12 cases
 
 WHY THIS EXISTS
 ---------------
@@ -594,6 +594,39 @@ def self_test() -> int:
     check("the severity glyphs are derived from the backlog page's map, not a second copy",
           (sev_glyphs({"🟣": "epic"}), sev_glyphs({})),
           ({"none": "·", "epic": "🟣"}, {"none": "·"}))
+
+    # ── THE REGEN HOOK ──────────────────────────────────────────────────────────────────────────
+    # ⭐ Code review r1 (Codex), Low. `.claude/hooks/regen-features-page.sh` is the ONLY thing that
+    # keeps this page from going stale, and it is shell: no `--self-test` of its own, and it cannot
+    # be given a mutation either — `check-plan-code.load_manifests` requires every entry's `file`
+    # to equal `scripts/<manifest stem>.py`, and `run_suite` runs the mutated file AS a Python
+    # suite, so a `.sh` target would red its own control. The same is true of
+    # `.claude/hooks/regen-backlog-page.sh`, whose four cases in `gen-backlog-page.py` set this
+    # precedent. So the coverage is here, in the suite of the generator the hook exists to call.
+    # ⛔ THE PAYLOADS BELOW ALL STOP SHORT OF THE GENERATOR — an unwatched path and two unreadable
+    # payloads — because a case that reached it would rewrite the reader's live ~/explainers page.
+    _HOOK = ROOT / ".claude" / "hooks" / "regen-features-page.sh"
+    check("the hook this suite runs is present — a missing one is CANNOT RUN, not a pass",
+          _HOOK.is_file(), True)
+
+    def _run_hook(payload: str) -> str:
+        if not _HOOK.is_file():
+            return ("CANNOT RUN: .claude/hooks/regen-features-page.sh is absent from this tree. "
+                    "Three cases RUN it, so a tree staged without .claude/hooks is a RED CONTROL "
+                    "— stage scripts, docs AND .claude/hooks.")
+        r = subprocess.run(["bash", str(_HOOK)], input=payload, capture_output=True, text=True)
+        # rc is part of the assertion, not a detail: every path through the hook must exit 0.
+        return f"rc={r.returncode} {r.stdout}{r.stderr}".strip()
+
+    # The defect verbatim: this used to be indistinguishable from the line below it.
+    check("an unreadable payload is WARNED about, and still exits 0",
+          _run_hook("not json").startswith("rc=0 ⚠"), True)
+    check("a well-formed payload naming an unwatched file stays silent",
+          _run_hook('{"tool_input":{"file_path":"/tmp/not-a-features-source.txt"}}'), "rc=0")
+    # ⚠ THE OTHER DIRECTION. A warning on empty stdin would fire on every hand-run of the hook,
+    # and a warning nobody can avoid is one nobody reads.
+    check("empty stdin stays silent — there is nothing to have failed to parse",
+          _run_hook(""), "rc=0")
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0

@@ -15,11 +15,44 @@
   "file": "scripts/check-features.py",
   "edits": [
    [
-    "            if nodes and line.strip() and not line.startswith((\"#\", \"<!--\", \">\")):",
+    "            if nodes and line.strip():",
     "            if False:"
    ]
   ],
   "expect": "a wrapped for: line is REFUSED, not silently dropped"
+ },
+ {
+  "name": "the three inert-LOOKING prefixes are exempted again, so a status line hides behind one",
+  "file": "scripts/check-features.py",
+  "edits": [
+   [
+    "            if nodes and line.strip():\n                problems.append(",
+    "            if nodes and line.strip() and not line.startswith((\"#\", \"<!--\", \">\")):\n                problems.append("
+   ]
+  ],
+  "expect": "a `>` blockquote line inside a node is REFUSED, not exempted"
+ },
+ {
+  "name": "a duplicate field stops being refused, so last-write-wins returns",
+  "file": "scripts/check-features.py",
+  "edits": [
+   [
+    "        if key in seen_fields:",
+    "        if False:"
+   ]
+  ],
+  "expect": "a duplicate field is REFUSED, not applied last-write-wins"
+ },
+ {
+  "name": "the duplicate is reported and then applied anyway, so the later line still overwrites",
+  "file": "scripts/check-features.py",
+  "edits": [
+   [
+    "                            f\"replaces an earlier one, and what it replaces is never searched\")\n            continue",
+    "                            f\"replaces an earlier one, and what it replaces is never searched\")\n            pass"
+   ]
+  ],
+  "expect": "the FIRST value stands, so a blanking duplicate cannot hide the fragment it contradicts"
  },
  {
   "name": "`currently` leaves the banned-word list, so the status-token rule stops seeing it",
