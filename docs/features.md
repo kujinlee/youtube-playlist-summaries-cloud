@@ -71,17 +71,17 @@ anchors: cloud-sync
 
 ### job-queue-and-worker-lifecycle
 state: built
-for: Runs summarisation work in the background, one job at a time, without losing it or paying for it twice.
+for: Lets a person ask for a whole playlist and walk away, without losing work they have paid for.
 areas: (worker)
 
 #### wake-on-visit
 state: built
-for: Lets the service sleep when there is nothing to do and come back when a visitor causes work.
+for: Keeps an idle service cheap to leave running, without a visitor paying for that in waiting.
 areas: (ops)
 
 ### bounded-serve-path
 state: built
-for: Keeps the work one request performs bounded, and its lease alive for as long as that work runs.
+for: Keeps a reader's wait for a summary short and predictable, however much work it takes to produce.
 anchors: serve-path-bounding
 
 ### spend-control
