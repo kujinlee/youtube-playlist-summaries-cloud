@@ -42,5 +42,16 @@
       ]
     ],
     "expect": "a blank line between rows is caught"
+  },
+  {
+    "name": "the warn band loses its upper edge, so the last line of runway reads as ok",
+    "file": "scripts/check-docs.py",
+    "edits": [
+      [
+        "    if budget - n <= budget_warn_slack(budget):\n",
+        "    if budget - n < budget_warn_slack(budget):\n"
+      ]
+    ],
+    "expect": "a file one line inside the warn band is 'tight'"
   }
 ]

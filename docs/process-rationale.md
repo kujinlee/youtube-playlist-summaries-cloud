@@ -513,3 +513,63 @@ and I traded one away for a number I could have changed.
 **What changed so it cannot recur by memory alone:** the wrapper detects an all-timeouts failure and
 prints *"that is probably this caller's budget, not Codex — re-run once at `<2x>`s before falling
 back"*, with the doubled number computed. The rule lives where the failure happens.
+
+---
+
+## The eviction queue that was never drained, and the budget that reported `ok` at 100%
+
+**Resolved 2026-09-20, at the user's decision.** `docs/dev-process.md` carried a table called
+*"Rules flagged for review, not retired"* holding three entries, each with the note *"retiring a
+rule is the user's call."* Nobody ever made that call, and the file sat at **exactly 220/220** —
+its budget — for long enough that the next legitimate spine rule could not have landed.
+
+**The two halves failed together, which is why neither was noticed.** The budget is the pressure and
+the queue is the relief valve; `check-docs.py` printed `ok` at 100% utilisation, so the pressure was
+invisible, and nothing ever asked anyone to open the valve. A budget with no eviction policy has
+only two stable states: permanently blocking, or bumped whenever it is inconvenient — which is a
+ratchet wearing a limit's clothing. Measured: the number had been set **once** and never raised.
+
+⭐ **The sharper defect was the smaller one.** Every other gate in this repo is built to fail
+*before* the damage. This one reported green right up to the edge, so the limit could only be
+discovered by writing a rule and being refused — the worst possible moment, because the work is
+already done. `check-docs.py` now warns inside the last 7% of a budget and **names both remedies**,
+because they are different decisions and only a human picks between them: raise the number, or
+prioritise and retire. The rule is `budget_verdict()`, pure and mutation-covered.
+
+⚠ **And the first version of that rule shipped a false comment, caught by running its own mutation
+rather than by reading — recorded because it is this project's most-filed defect class landing on
+the fix for it.** The docstring claimed `<=` protected the ZERO-RUNWAY case (a file exactly at its
+budget). It does not: `0 < slack` is true, so that file reads tight either way. `<` actually breaks
+the file whose runway is EXACTLY the threshold. The mutation therefore killed **through a different
+case than the manifest named** — a green suite and an unattributable kill, which is why coverage
+here is counted in *attributed* kills and never in kills.
+
+### The three rules, and what each was resolved to
+
+**1. "Sub-project 2 does not begin until 1 is fully verified and merged" — RETIRED.** Superseded by
+events: the frontend shipped and both sub-projects have been proceeding in parallel for months. The
+rule was describing a sequencing constraint that reality had already dissolved. Kept as a sentence
+saying they run in parallel, so a reader does not re-derive the old ordering from silence.
+
+**2. `subagent-driven-development` as the Phase 3 execution default — CONFIRMED, not retired.** The
+flag read *"set 2026-06-09, never re-examined."* It has now been re-examined twice over: the user
+holds a standing answer to always choose subagent-driven, and the 2026-09-19/20 feature-hub session
+ran it end to end. ⚠ **What that session measured is worth more than the confirmation:** six
+subagents, **three finished and three stalled**, and the split was **dispatch size, not model** —
+every stalled brief carried a verification section longer than its work section, and every
+successful one was one or two edits plus about four commands. The default stands; the operational
+lesson is that a dispatch whose verification outweighs its work spends the agent's budget before it
+reaches the commit.
+
+**3. "Currently known-red: none" — flag RETIRED; the line stays where it is.** The flag argued this
+is state rather than policy and belongs in the roadmap. Correct about the *state* cell and wrong
+about the *rule*: `process-checklists.md:137` says the full-suite step is satisfiable only while the
+known-red set is **explicitly named**, and that is a genuine gate whose home is the checklist. Only
+the current value of the list is state, it sits beside the rule it qualifies, and
+`process-checklists.md` carries no line budget — so moving it buys nothing and costs a reader the
+context. ⚠ Resolved by deciding, not by deleting: the flag is gone because it was answered.
+
+**Falsifier for all of this:** `python3 scripts/check-docs.py` prints `TIGHT` with a runway count and
+both remedies whenever a budgeted file is inside the band; `budget_verdict(220, 220) == "tight"`
+pins the zero-runway case; and the band's upper edge is pinned by a mutation (`<=` → `<`) that must
+kill **through** `"a file one line inside the warn band is 'tight'"`.
