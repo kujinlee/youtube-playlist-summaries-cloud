@@ -123,6 +123,7 @@ REGENERABLE = {
     "dashboard": "gen-dashboard.py",
     "backlog-table": "gen-backlog-page.py",
     "goals": "gen-goals-page.py",
+    "features": "gen-features-page.py",
 }
 # ⟳ 2026-09-02. Which repo file each derived page is BUILT FROM, for `/_stale`.
 #
@@ -140,6 +141,17 @@ PAGE_SOURCES = {
     "dashboard": ["docs/dashboard-entries.md"],
     "backlog-table": ["docs/backlog.md"],
     "goals": ["docs/roadmap-to-launch.md"],
+    # ⛔ THREE WHOLE FILES, NOT DIRECTORIES, AND THIS LINE HAS BEEN WRONG TWICE ALREADY. Widening it
+    # to `docs/adr`, `docs/superpowers/specs` and `docs/reviews` — so the watched set would match
+    # what the generator derives from — turns the case below RED: it asserts every declared source
+    # is a real FILE, and a directory is not one (measured: 202/202 -> 201/202).
+    #
+    # The residual is stated rather than hidden. `/_stale` raises a BANNER over these three; the
+    # regen hook rebuilds on the wider set, which is the half that matters. So editing a spec, ADR
+    # or review does rebuild the page and does not light the banner. `/goals` has the same shape.
+    # Teaching `/_stale` about directories (rglob each entry, take the max mtime) is a real change
+    # to this file and is deliberately out of that plan's scope.
+    "features": ["docs/features.md", "docs/anchors.md", "docs/backlog.md"],
 }
 
 
