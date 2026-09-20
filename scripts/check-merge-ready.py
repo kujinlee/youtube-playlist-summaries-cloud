@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 40 cases
+    python3 scripts/check-merge-ready.py --self-test # 46 cases
 
 ⛔ WHY THIS EXISTS, MEASURED 2026-09-20. Twice in one day a branch was declared "ready to merge"
 on the strength of a local gate sweep, and twice CI refused it. Both times the refusal was
@@ -77,6 +77,11 @@ BASE_REF = "origin/master"
 # run is an ABSENT check, and showing it as a failure sends the reader to fix the wrong thing.
 MARK = {0: "ok ", 1: "NO ", 2: "?? "}
 
+# GitHub's MergeStateStatus, verified by live introspection rather than recalled — Codex r2, Low,
+# which checked with `gh api graphql`: the enum is BEHIND, BLOCKED, CLEAN, DIRTY, HAS_HOOKS,
+# UNKNOWN, UNSTABLE. An earlier comment here added DRAFT, which is not a member; draftness is its
+# own `isDraft` field and is checked separately above. An enumeration that invents a member is the
+# same defect as one that omits it.
 # The MergeStateStatus values for which GitHub will merge. ⚠ UNSTABLE is allowed HERE because this
 # function answers "would GitHub merge it"; the CI check below is deliberately STRICTER and refuses
 # any non-passing check, required or not. Claude r1, Low: the old comment claimed UNSTABLE "must
@@ -86,69 +91,132 @@ MERGEABLE_STATES = ("CLEAN", "UNSTABLE", "HAS_HOOKS")
 
 
 # ── THE RULES, pure ───────────────────────────────────────────────────────────────────────────
-def pr_only_steps(workflow: str) -> list[str]:
-    """Names of the workflow steps gated on a pull_request event. PURE.
+def _cond_at(lines: list[str], idx: int) -> str | None:
+    """The condition value of the `if:` at `lines[idx]`, following a folded/literal scalar. PURE.
 
-    ⛔ THIS IS A STEP-BLOCK PARSER, NOT A LINE SCANNER, AND IT IS THE THIRD SHAPE — the first two
-    were both wrong in the SILENT direction, which for this script means reporting READY while a
-    gate refuses. Recorded because the pattern is the finding:
-      * v1 substring-scanned every line after a `name:`. A double-quoted condition returned
-        NOTHING (Codex r1, Medium), and a commented-out one returned a false positive.
-      * v2 matched the `if:` FIELD, which fixed both — and still bound an `if:` to the nearest
-        PRECEDING `- name:` regardless of nesting. A JOB-level `if:` therefore attached to the
-        last step of the PREVIOUS job: wrong in both directions at once, naming a step that is
-        not gated and missing the job that is (Claude r1, Medium). `schema-gates.yml` gates at
-        job level, so that is the form this repo actually writes.
-      * `- if:` as a step's first key, before `name:`, escaped both.
-
-    A step is a `- `-introduced block; everything indented deeper belongs to it. Both keys are
-    read from the block, in either order, so ordering and the `- ` prefix stop mattering. A
-    JOB-level condition is at shallower indentation than any step and simply never enters a block.
-
-    ⚠ JOB-LEVEL GATING IS STILL NOT REPORTED, and that is a KNOWN GAP rather than a fixed one:
-    this returns step names, and a gated job has no step name to return. `check_workflows()`
-    reports it separately so it cannot be silent.
+    ⛔ `if: >` and `if: |` put the condition on the FOLLOWING lines — Codex r2, High. Reading only
+    the physical `if:` line returned an empty condition and the step was silently dropped.
     """
-    # ⚠ TWO LINES BELOW HAVE NO FALSIFIER, stated because assuming coverage is the defect this
-    # repository files most. Mutating `indent > step_indent` to `>=`, and `if m and name is None`
-    # to `if m:`, each leaves every case green — the first because the `- ` branch above already
-    # claims those lines, the second because no fixture has two `name:` keys in one block (which
-    # is invalid YAML anyway). Both are near-redundant rather than untested-and-load-bearing, and
-    # a contrived case asserting an unreachable shape would be worse than this sentence.
+    m = re.match(r"(\s*)-?\s*if:\s*(.*)$", lines[idx])
+    if not m:
+        return None
+    indent, first = len(m.group(1)), m.group(2).strip()
+    if first not in (">", "|", ">-", "|-", ">+", "|+"):
+        return first
+    out = []
+    for line in lines[idx + 1:]:
+        if not line.strip():
+            continue
+        if len(line) - len(line.lstrip()) <= indent:
+            break
+        out.append(line.strip())
+    return " ".join(out)
+
+
+def pr_only_steps(workflow: str) -> list[str]:
+    """Names of the workflow STEPS gated on a pull_request event. PURE.
+
+    ⛔ FOURTH SHAPE IN THREE ROUNDS, AND EVERY EARLIER ONE FAILED IN THE SILENT DIRECTION — which
+    for this script means reporting READY while a gate refuses. The history is the argument for
+    `unattributed_conditions()` below, not a series of near-misses:
+      * v1 substring-scanned after a `name:`: a DOUBLE-QUOTED condition returned nothing.
+      * v2 matched the `if:` field but bound it to the nearest preceding `- name:`, so a JOB-level
+        condition attached to the last step of the PREVIOUS job.
+      * v3 was a block parser that took the FIRST `if:`-looking line ANYWHERE in the block — so an
+        `if:` inside a `run: |` body or a `with:` map shadowed the real step-level one, and the
+        step vanished. Folded scalars (`if: >`) vanished too.
+
+    ⭐ THE REAL LESSON, and why the fix is not a fifth regex: this is a hand-rolled YAML parser and
+    the project is stdlib-only, so `yaml` is unavailable. A hand-rolled parser CANNOT be made
+    correct. It CAN be made unable to be silently wrong — which is what the soundness check does.
+
+    An `if:` counts only at the step's own KEY INDENT: deeper is inside `with:`/`run:`, shallower
+    belongs to the job.
+    """
+    lines = workflow.split("\n")
     names: list[str] = []
     step_indent: int | None = None
-    block: list[str] = []
+    key_indent: int | None = None
+    name = cond = None
 
     def flush() -> None:
-        name = cond = None
-        for b in block:
-            m = re.match(r"\s*-?\s*name:\s*(.+?)\s*$", b)
-            if m and name is None:
-                name = m.group(1)
-            m = re.match(r"\s*-?\s*if:\s*(.+?)\s*$", b)
-            if m and cond is None:
-                cond = m.group(1)
+        nonlocal name, cond
         if name and cond and PR_ONLY_COND.search(cond):
             names.append(name)
-        block.clear()
+        name = cond = None
 
-    for line in workflow.split("\n"):
+    for n, line in enumerate(lines):
         if not line.strip():
             continue
         indent = len(line) - len(line.lstrip())
-        if re.match(r"\s*-\s", line):
-            if step_indent is None or indent <= step_indent:
-                flush()
-                step_indent = indent
-                block.append(line)
-                continue
-        if step_indent is not None and indent > step_indent:
-            block.append(line)
-        else:
+        if re.match(r"\s*-\s", line) and (step_indent is None or indent <= step_indent):
             flush()
-            step_indent = None
+            step_indent, key_indent = indent, indent + 2
+        elif step_indent is not None and indent <= step_indent:
+            flush()
+            step_indent = key_indent = None
+        if step_indent is None:
+            continue
+        # ⚠ AT THE KEY INDENT ONLY. `- name: x` puts its key at `indent + 2`; a `with:` entry or a
+        # `run: |` body line is deeper and must not be read as the step's condition.
+        at_key = indent == key_indent or (re.match(r"\s*-\s", line) and indent == step_indent)
+        if not at_key:
+            continue
+        m = re.match(r"\s*-?\s*name:\s*(.+?)\s*$", line)
+        if m and name is None:
+            name = m.group(1)
+        if re.match(r"\s*-?\s*if:\s*", line):
+            c = _cond_at(lines, n)
+            if c and cond is None:
+                cond = c
     flush()
     return names
+
+
+def job_level_gates(workflow: str) -> list[str]:
+    """Job names gated on a pull_request event. PURE.
+
+    A gated JOB has no step name, so `pr_only_steps` cannot report it and must not pretend to.
+    Folded scalars are followed here too — Codex r2, High: a job with `if: >` was dropped, which
+    violated this function's whole contract of naming what the other one cannot.
+    """
+    lines = workflow.split("\n")
+    jobs: list[str] = []
+    current: str | None = None
+    for n, line in enumerate(lines):
+        m = re.match(r"  (\w[\w-]*):\s*$", line)
+        if m:
+            current = m.group(1)
+            continue
+        if current and re.match(r"    if:\s*", line):
+            c = _cond_at(lines, n)
+            if c and PR_ONLY_COND.search(c):
+                jobs.append(current)
+            current = None
+    return jobs
+
+
+def unattributed_conditions(workflow: str) -> list[str]:
+    """Lines naming a pull_request condition that neither rule claimed. PURE.
+
+    ⭐ THIS IS THE ACTUAL FIX FOR THE PARSER, AND THE OTHER TWO FUNCTIONS ARE BEST-EFFORT. Three
+    rounds produced three parsers and each one MISSED a gate silently; a fourth regex would be the
+    same bet again. A hand-rolled YAML parser cannot be made correct — the project is stdlib-only,
+    so there is no `yaml` to import — but it can be made unable to fail QUIETLY.
+
+    Every line carrying the condition must be accounted for by a step or a job. Anything left over
+    is a gate this script does not understand, and `main()` turns that into CANNOT RUN naming the
+    line, rather than a confident READY computed from an incomplete list. A parser bug then costs
+    a refusal to answer, which is recoverable, instead of a wrong answer, which is not.
+    """
+    claimed = len(pr_only_steps(workflow)) + len(job_level_gates(workflow))
+    present = [l.strip() for l in workflow.split("\n")
+               if PR_ONLY_COND.search(l) and re.match(r"\s*-?\s*if:", l)]
+    # Folded conditions live on a CONTINUATION line, whose own text has no `if:` — count those too.
+    present += [l.strip() for l in workflow.split("\n")
+                if PR_ONLY_COND.search(l) and not re.match(r"\s*-?\s*if:", l)
+                and not l.lstrip().startswith("#")]
+    return present[claimed:] if len(present) > claimed else []
 
 
 def verdict(results: dict[str, int]) -> tuple[int, str]:
@@ -169,26 +237,6 @@ def verdict(results: dict[str, int]) -> tuple[int, str]:
         failed = sorted(k for k, v in results.items() if v != 0)
         return 1, "NOT READY — " + ", ".join(failed)
     return 0, "READY — every gate CI will run has been run here, including the PR-only ones"
-
-
-def job_level_gates(workflow: str) -> list[str]:
-    """Job names gated on a pull_request event. PURE.
-
-    A gated JOB has no step name, so `pr_only_steps` cannot report it and must not pretend to.
-    This repository gates at job level in `schema-gates.yml`, so the case is real, and a gate
-    this script cannot invoke must be NAMED rather than omitted.
-    """
-    jobs: list[str] = []
-    current: str | None = None
-    for line in workflow.split("\n"):
-        m = re.match(r"  (\w[\w-]*):\s*$", line)
-        if m:
-            current = m.group(1)
-            continue
-        if current and re.match(r"    if:\s*", line) and PR_ONLY_COND.search(line):
-            jobs.append(current)
-            current = None
-    return jobs
 
 
 def mergeability(info: dict, local_head: str | None) -> tuple[int, str]:
@@ -225,11 +273,9 @@ def mergeability(info: dict, local_head: str | None) -> tuple[int, str]:
     if info["mergeStateStatus"] == "UNKNOWN":
         return 2, ("GitHub has not computed mergeability yet (UNKNOWN) — it is calculated lazily "
                    "and the first read only starts the job. Re-run in a moment.")
-    # ⚠ THE ENUM, ENUMERATED. GitHub's MergeStateStatus is BEHIND, BLOCKED, CLEAN, DIRTY, DRAFT,
-    # HAS_HOOKS, UNKNOWN, UNSTABLE. Three mean GitHub will merge: CLEAN, UNSTABLE (a non-required
-    # check is failing) and HAS_HOOKS (passing, with pre-receive hooks — GHE only, latent here).
-    # The previous comment said "BLOCKED/DIRTY/BEHIND/UNKNOWN are not", which was an enumeration
-    # that did not enumerate: it omitted HAS_HOOKS and DRAFT — Claude r1, Low.
+    # ⚠ Three of the seven mean GitHub will merge: CLEAN, UNSTABLE (a non-required check is
+    # failing) and HAS_HOOKS (passing, with pre-receive hooks — GHE only, latent here). The set
+    # itself is at MERGEABLE_STATES, with the enum verified by introspection rather than memory.
     if info["mergeStateStatus"] not in MERGEABLE_STATES:
         problems.append(f"mergeStateStatus is {info['mergeStateStatus']}")
     if local_head is None:
@@ -302,6 +348,20 @@ def main(argv: list[str]) -> int:
     # ⚠ NAMED, NOT INVOKED. A job gated on a pull_request event has no step this script can run,
     # and every OTHER workflow's gates are outside what it drives. Saying so is the difference
     # between a known gap and a silent one — Claude r1, Medium.
+    # ⭐ SOUNDNESS BEFORE ANYTHING ELSE. Three rounds produced three parsers and each MISSED a
+    # gate silently. A fourth regex is the same bet; refusing to answer when the parse is
+    # incomplete is not. A parser bug now costs a refusal, which is recoverable.
+    for wf in sorted(WORKFLOW_DIR.glob("*.yml")):
+        stray = unattributed_conditions(wf.read_text())
+        if stray:
+            print(f"CANNOT RUN — {wf.name} carries {len(stray)} pull-request condition(s) this "
+                  f"script could not attribute to a step or a job, so its list of gates is "
+                  f"INCOMPLETE and a READY verdict would be computed from it:", file=sys.stderr)
+            for s in stray[:4]:
+                print(f"    {s}", file=sys.stderr)
+            print("  Treat this as NOT RUN.", file=sys.stderr)
+            return 2
+
     for wf in sorted(WORKFLOW_DIR.glob("*.yml")):
         jobs = job_level_gates(wf.read_text())
         extra = pr_only_steps(wf.read_text()) if wf != WORKFLOW else []
@@ -464,6 +524,31 @@ def _self_test() -> int:
     check("`- if:` as a step's FIRST key, before name:, is still found",
           pr_only_steps("      - if: github.event_name == 'pull_request'\n"
                         "        name: x\n        run: y\n"), ["x"])
+
+    # ── CODEX r2, two Highs — both SILENT MISSES of a real gate ────────────────────────────
+    # An `if:` inside a `run: |` body or a `with:` map used to SHADOW the step's own condition.
+    check("an `if:` inside a run: body does not shadow the step's own condition",
+          pr_only_steps("      - name: shell\n        run: |\n"
+                        "          if: github.event_name == 'push'\n"
+                        "        if: github.event_name == 'pull_request'\n"), ["shell"])
+    check("an `if:` inside a with: map does not shadow it either",
+          pr_only_steps("      - name: upload\n        with:\n"
+                        "          if: github.event_name == 'push'\n"
+                        "        if: github.event_name == 'pull_request'\n"), ["upload"])
+    check("a FOLDED condition (`if: >`) is read from its continuation lines",
+          pr_only_steps("      - name: folded\n        if: >\n"
+                        "          github.event_name == 'pull_request'\n        run: echo ok\n"), ["folded"])
+    check("a folded condition on a JOB is reported too, not dropped",
+          job_level_gates("jobs:\n  b:\n    if: >\n"
+                          "      github.event_name == 'pull_request'\n    steps:\n      - name: x\n"), ["b"])
+
+    # ── THE SOUNDNESS CHECK — the actual remedy for a parser that cannot be made correct ─────
+    check("a condition the parser cannot attribute is REPORTED, not silently dropped",
+          unattributed_conditions("      - name: a\n        run: x\n"
+                                  "        weird-if: github.event_name == 'pull_request'\n") != [], True)
+    check("the real workflows leave nothing unattributed",
+          [w.name for w in sorted(WORKFLOW_DIR.glob("*.yml"))
+           if unattributed_conditions(w.read_text())] if WORKFLOW_DIR.is_dir() else [], [])
 
     # ── CLAUDE r1, High: UNKNOWN is "not computed yet", and it is what GitHub returns FIRST ──
     UNK = {"state": "OPEN", "isDraft": False, "baseRefName": "master",

@@ -44,15 +44,15 @@
     "expect": "a pending check is not a pass"
   },
   {
-    "name": "the condition is matched anywhere in the step block, not in its `if:` field",
+    "name": "the key-indent restriction is dropped, so a nested `if:` shadows the step's own",
     "file": "scripts/check-merge-ready.py",
     "edits": [
       [
-        "        if name and cond and PR_ONLY_COND.search(cond):\n",
-        "        if name and PR_ONLY_COND.search(\"\".join(block)):\n"
+        "        if not at_key:\n            continue\n",
+        "        if False:\n            continue\n"
       ]
     ],
-    "expect": "the same condition inside a COMMENT is not a step condition"
+    "expect": "an `if:` inside a run: body does not shadow the step's own condition"
   },
   {
     "name": "a draft pull request reads as mergeable",
@@ -77,14 +77,14 @@
     "expect": "a PR whose head is not the local HEAD is refused"
   },
   {
-    "name": "a new `- ` at the same indent stops closing the previous step block",
+    "name": "a folded scalar stops being followed, so `if: >` yields an empty condition",
     "file": "scripts/check-merge-ready.py",
     "edits": [
       [
-        "            if step_indent is None or indent <= step_indent:\n",
-        "            if step_indent is None or indent < step_indent:\n"
+        "    if first not in (\">\", \"|\", \">-\", \"|-\", \">+\", \"|+\"):\n        return first\n",
+        "    if True:\n        return first\n"
       ]
     ],
-    "expect": "both pull-request-only steps are found, in order"
+    "expect": "a FOLDED condition (`if: >`) is read from its continuation lines"
   }
 ]

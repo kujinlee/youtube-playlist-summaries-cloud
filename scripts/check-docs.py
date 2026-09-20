@@ -29,7 +29,7 @@ WHAT IS ONLY REPORTED (never fails the build)
 SCOPE NOTE: `docs/reviews/` and `docs/superpowers/` are point-in-time artifacts —
 a review records what was true on its date, and rewriting it later would be
 falsifying the record. They are excluded from link checking on purpose.
-    --self-test  # 21 cases
+    --self-test  # 22 cases
 """
 
 from __future__ import annotations
@@ -220,7 +220,12 @@ def budget_warn_slack(budget: int) -> int:
     # `budget - n <= slack` held for EVERY n, so "ok" was unreachable and a file warned from its
     # first line; at budget 20 the warning began at 50% utilisation. A warning that is always on
     # is one nobody reads — this feature's own failure mode, reached from the other side. The cap
-    # keeps "ok" reachable at every budget and changes nothing where 7% dominates (220 -> 15).
+    # changes nothing where 7% dominates (220 -> 15, 260 -> 18).
+    # ⚠ "ok" IS REACHABLE FOR EVERY BUDGET OF 2 OR MORE, not every budget — Codex r2, Low, which
+    # measured `budget_verdict(0, 0) == "tight"` and both states tight at budget 1. That is
+    # correct behaviour (a budget of 0 or 1 has no room to be comfortable in) and the previous
+    # sentence overclaimed it. A comment that rounds its own bound up is the defect this file
+    # spent the round fixing elsewhere.
     return min(max(BUDGET_WARN_FLOOR, round(budget * BUDGET_WARN_FRACTION)), max(1, budget // 3))
 
 
@@ -656,6 +661,9 @@ def self_test() -> int:
     # ⛔ Claude r1, Low: with no ceiling, "ok" was unreachable for any budget <= the floor.
     case("a small budget can still reach 'ok' — the floor does not swallow it",
          (budget_verdict(0, 10), budget_verdict(10, 10)) == ("ok", "tight"))
+    # ⚠ The bound, asserted rather than described: 2 is the smallest budget with an "ok".
+    case("...and 2 is where that starts — 0 and 1 have no room to be comfortable in",
+         (budget_verdict(0, 1), budget_verdict(0, 2)) == ("tight", "ok"))
     case("...and the slack never exceeds a third of the budget, at any budget",
          all(budget_warn_slack(b) <= max(1, b // 3) for b in (0, 5, 10, 20, 50, 220, 260)))
     case("the warn slack scales with the budget and never drops below its floor",
