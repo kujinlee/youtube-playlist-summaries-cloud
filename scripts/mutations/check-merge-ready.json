@@ -119,5 +119,16 @@
       ]
     ],
     "expect": "a gate expressed by EXCLUSION is caught even with no `pull_request` in it"
+  },
+  {
+    "name": "the workflow glob narrows back to `.yml`, so a `.yaml` workflow is invisible",
+    "file": "scripts/check-merge-ready.py",
+    "edits": [
+      [
+        "    return sorted(set(directory.glob(\"*.yml\")) | set(directory.glob(\"*.yaml\")))\n",
+        "    return sorted(directory.glob(\"*.yml\"))\n"
+      ]
+    ],
+    "expect": "both workflow extensions are found, and nothing else is"
   }
 ]

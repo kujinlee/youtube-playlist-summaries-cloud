@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 51 cases
+    python3 scripts/check-merge-ready.py --self-test # 52 cases
 
 ⛔ WHY THIS EXISTS, MEASURED 2026-09-20. Twice in one day a branch was declared "ready to merge"
 on the strength of a local gate sweep, and twice CI refused it. Both times the refusal was
@@ -43,6 +43,7 @@ import argparse
 import json
 import re
 import subprocess
+import tempfile
 import sys
 from pathlib import Path
 
@@ -229,8 +230,17 @@ def job_level_gates(workflow: str) -> list[str]:
 #
 # ⚠ STILL NOT AIRTIGHT, and saying so is the point of the sentence that replaced the overclaim: a
 # gate keyed on something other than `github.event_name` — `startsWith(github.ref, 'refs/pull/')`,
-# a composite action's own workflow — would escape both. Measured 2026-09-20: neither workflow
-# contains any such form. The bound is stated rather than implied.
+# `github.head_ref` (unset on a push), `github.base_ref`, `github.event.number`, or a composite
+# action's own workflow — would escape both. Measured 2026-09-20: neither workflow contains any
+# such form. The bound is stated rather than implied.
+#
+# ⚠ AND A SECOND BOUND — Claude r3, Low. An entry's REASON can be true today and false tomorrow
+# without its key changing, because PR-only-ness by exclusion is a property of (line × TRIGGER
+# SET) and only the line is keyed. `if: github.event_name != 'schedule'` is not a pull-request
+# gate only because `schema-gates.yml` also runs on `push`; delete that trigger and the same line
+# becomes one, with the key, the allowance and every rule here unchanged. Rare and conspicuous,
+# so it is recorded rather than mechanised — but an allow-list reason is a claim with an
+# expiry date, and the expiry is not in the key.
 ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
     ("ci.yml", "pull_request:"):
         (1, "the workflow TRIGGER — says when CI runs, gates nothing"),
@@ -253,6 +263,23 @@ ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
      "if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"):
         (1, "the prod-drift job — the opposite of pull-request-only; never runs on a PR"),
 }
+
+
+def workflow_files(directory: Path) -> list[Path]:
+    """Every GitHub Actions workflow in `directory`. PURE apart from the listing.
+
+    ⛔ `.yaml` IS A WORKFLOW TOO — Claude r3, Medium, and it is r1's Medium one level down. That
+    round found the FILE SCOPE was the hand-written part of a derivation congratulating itself on
+    being derived; the fix parsed every file instead of `ci.yml` — and left the PATTERN hand-written.
+    GitHub: a workflow "must have either a `.yml` or a `.yaml` file extension." A `release.yaml`
+    carrying a pull-request gate was invisible to the parser, to the job rule AND to the ratchet, so
+    nothing stray appeared and the script printed READY. Not live (no `.yaml` today) — but a NEW
+    workflow is exactly where the extension is a coin flip, and a new workflow is the case the
+    ratchet exists for.
+
+    One home for the pattern, so the next reader cannot fix two of the three call sites.
+    """
+    return sorted(set(directory.glob("*.yml")) | set(directory.glob("*.yaml")))
 
 
 def unaccounted_mentions(workflow: str, filename: str) -> list[str]:
@@ -408,7 +435,7 @@ def main(argv: list[str]) -> int:
     # ⭐ SOUNDNESS BEFORE ANYTHING ELSE. Three rounds produced three parsers and each MISSED a
     # gate silently. A fourth regex is the same bet; refusing to answer when the parse is
     # incomplete is not. A parser bug now costs a refusal, which is recoverable.
-    for wf in sorted(WORKFLOW_DIR.glob("*.yml")):
+    for wf in workflow_files(WORKFLOW_DIR):
         stray = unaccounted_mentions(wf.read_text(), wf.name)
         if stray:
             print(f"CANNOT RUN — {wf.name} carries {len(stray)} mention(s) of `pull_request` "
@@ -420,7 +447,7 @@ def main(argv: list[str]) -> int:
             print("  Treat this as NOT RUN.", file=sys.stderr)
             return 2
 
-    for wf in sorted(WORKFLOW_DIR.glob("*.yml")):
+    for wf in workflow_files(WORKFLOW_DIR):
         jobs = job_level_gates(wf.read_text())
         extra = pr_only_steps(wf.read_text()) if wf != WORKFLOW else []
         if jobs or extra:
@@ -616,6 +643,16 @@ def _self_test() -> int:
     # would ride in on the first one's ticket.
     check("a SECOND copy of an approved line is unaccounted — the allowance is a count",
           len(unaccounted_mentions("  pull_request:\n  pull_request:\n", "schema-gates.yml")), 1)
+    # ⛔ CLAUDE r3, Medium: `.yaml` is a workflow too, and a `release.yaml` carrying a gate was
+    # invisible to all three mechanisms — no stray, no CANNOT RUN, a printed READY.
+    with tempfile.TemporaryDirectory() as _d:
+        _p = Path(_d)
+        (_p / "ci.yml").write_text("x")
+        (_p / "release.yaml").write_text("y")
+        (_p / "notes.md").write_text("z")
+        check("both workflow extensions are found, and nothing else is",
+              [f.name for f in workflow_files(_p)], ["ci.yml", "release.yaml"])
+
     # ⛔ CODEX r3, High: PR-ONLY-NESS CAN BE EXPRESSED WITHOUT THE WORD. `ci.yml` runs on exactly
     # `pull_request` and `push`, so `!= 'push'` gates a step on pull requests only — and it
     # escaped both the parser and a scan keyed on `pull_request`. The detector keys on
@@ -632,7 +669,7 @@ def _self_test() -> int:
           unaccounted_mentions("      # if: github.event_name == 'pull_request'\n", "ci.yml"), [])
     # ⚠ THE OTHER DIRECTION. A checker that refuses to answer on a normal repository is useless.
     check("the real workflows are fully accounted for — no false CANNOT RUN",
-          [w.name for w in sorted(WORKFLOW_DIR.glob("*.yml"))
+          [w.name for w in workflow_files(WORKFLOW_DIR)
            if unaccounted_mentions(w.read_text(), w.name)] if WORKFLOW_DIR.is_dir() else [], [])
 
     # ── CLAUDE r1, High: UNKNOWN is "not computed yet", and it is what GitHub returns FIRST ──
