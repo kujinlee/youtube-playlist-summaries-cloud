@@ -17,6 +17,12 @@ STATUS_TOKENS = re.compile(
 # ONE owner for the field names: the matcher and the error message that teaches the grammar are
 # both derived from this tuple, so a sixth field cannot be added to one and missing from the other.
 FIELD_NAMES = ("state", "for", "areas", "anchors", "expected-because")
+# ⚠ ONE OWNER, because this fact is read in two places that must not disagree: the comma-split in
+# `parse_features` and the duplicate-field REMEDY. Code review r3 (Codex) caught the message
+# telling an author to write `state: built, absent` — advice that is right for a list field and
+# produces a second, different error for a scalar one. An instruction that does not work costs
+# the author a round to discover.
+LIST_FIELDS = ("areas", "anchors")
 FIELD = re.compile(rf"^({'|'.join(FIELD_NAMES)}):\s*(.*)$")
 
 @dataclass
@@ -88,8 +94,10 @@ def parse_features(text: str) -> tuple[list[Node], list[str]]:
         # does, the FIRST value stands, so the content the duplicate was hiding still reaches the
         # checks instead of being replaced by the clean-looking line that followed it.
         if key in seen_fields:
+            remedy = ("Put every value on ONE comma-separated line. " if key in LIST_FIELDS
+                      else f"`{key}` holds a single value — keep the one you mean and delete the other. ")
             problems.append(f"features.md:{i}: `{n.slug}` repeats the field `{key}` — a duplicate "
-                            f"is refused, not merged. Put every value on ONE comma-separated line. "
+                            f"is refused, not merged. {remedy}"
                             f"Under last-write-wins a later line silently replaces an earlier one, "
                             f"and what it replaces is never searched")
             continue
@@ -97,8 +105,8 @@ def parse_features(text: str) -> tuple[list[Node], list[str]]:
         if key == "state": n.state = value
         elif key == "for": n.purpose = value
         elif key == "expected-because": n.expected_because = value
-        elif key == "areas": n.areas = [a.strip() for a in value.split(",") if a.strip()]
-        elif key == "anchors": n.anchors = [a.strip() for a in value.split(",") if a.strip()]
+        elif key in LIST_FIELDS:
+            setattr(n, key, [a.strip() for a in value.split(",") if a.strip()])
     return nodes, problems
 
 
