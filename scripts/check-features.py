@@ -2,7 +2,7 @@
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 24 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 25 cases against synthetic trees
 """
 import re, sys, pathlib
 from dataclasses import dataclass, field
@@ -263,6 +263,11 @@ expected-because: standard for a hosted multi-tenant service.
     check("an in-use area claimed by nobody fails",
           any("claimed by no node" in p and "(cloud)" in p
               for p in check_cross(areas_tree, set(), {"(product)", "(cloud)"})), True)
+    twice_area = (TREE.replace("anchors: cloud-publishing", "areas: (product)")
+                  + "\n### another\nstate: built\nfor: A second claimant.\nareas: (product)\n")
+    check("an area claimed by TWO nodes fails",
+          any("area `(product)` is claimed by 2 nodes" in p
+              for p in check_cross(parse_features(twice_area)[0], set(), {"(product)"})), True)
     check("backlog areas are read from the area cell",
           backlog_areas("| 1 | x | f | S | (worker) | open |"), {"(worker)"})
     ESCAPED = r"| 90 | a \| b | f | S | (comprehensibility) | open \| still |"
