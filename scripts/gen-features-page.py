@@ -3,7 +3,7 @@
 
     python3 scripts/gen-features-page.py              # -> ~/explainers/features.html, served at /features
     python3 scripts/gen-features-page.py --fragment-only <path>
-    python3 scripts/gen-features-page.py --self-test  # 7 cases
+    python3 scripts/gen-features-page.py --self-test  # 8 cases
 
 WHY THIS EXISTS
 ---------------
@@ -84,9 +84,23 @@ ANCHOR_ROW = re.compile(r"^\|\s*`([a-z0-9-]+)`\s*\|\s*([^|]*?)\s*\|")
 DOC_ANCHOR = re.compile(r"^>\s*\*\*Anchor:\*\*\s*`([a-z0-9-]+)`")
 PR_TAIL = re.compile(r"\(#\d+\)\s*$")
 
-# The severity glyph a row led with, recovered from the name `gen-backlog-page` parsed it into.
-# Inverted from its dict rather than written again — see the docstring's note on second copies.
-SEV_GLYPH = {"crit": "🔴", "high": "🟠", "med": "🟡", "low": "🟢", "done": "✅", "none": "·"}
+def sev_glyphs(severity: dict[str, str]) -> dict[str, str]:
+    """`gen-backlog-page`'s glyph->name map, INVERTED, plus the one name it has no glyph for. PURE.
+
+    ⛔ THIS WAS A LITERAL, AND THE COMMENT ABOVE IT SAID IT WAS DERIVED. Review round 1, and the
+    finding is sharper than the defect: the two maps were identical, so there was nothing to fix —
+    what the sentence did was tell the next reader asking *"is this a second copy?"* that it was
+    not, and stop them looking. The drift it invited was silent, because the caller reads through
+    `.get(sev, "·")` and an unknown severity degrades to a bare dot with no error.
+
+    `parse` reports a severity by NAME (`crit`), and only the glyph belongs on this page, so the
+    map has to be turned round. Inverting it in code is the difference between a claim and a fact.
+
+    ⚠ `none` is NOT in the upstream map and cannot be: it is what `parse` returns for a row with no
+    marker at all. It is therefore a default here, placed FIRST so that an upstream entry for the
+    same name would win rather than be silently overridden by this file's guess.
+    """
+    return {"none": "·"} | {name: glyph for glyph, name in severity.items()}
 
 # Words that carry no identity, so a subject sharing one with a slug says nothing. `job-queue-and-
 # worker-lifecycle` shares "and" with half the log.
@@ -219,10 +233,25 @@ def git_subjects(n: int = 400) -> list[str] | None:
     return r.stdout.splitlines() if r.returncode == 0 else None
 
 
+_BACKLOG_PAGE = None
+
+
+def backlog_page():
+    """`gen-backlog-page` as a module — the shipped backlog parser AND its severity map.
+
+    Loaded lazily and once. Lazily so `--self-test` stays pure and a broken sibling cannot take
+    this suite down with it; once because `collect` needs two things out of it. MEASURED before
+    relying on it: importing it takes 0.06s and writes nothing, under a redirected `HOME`.
+    """
+    global _BACKLOG_PAGE
+    if _BACKLOG_PAGE is None:
+        _BACKLOG_PAGE = _load("gen-backlog-page")
+    return _BACKLOG_PAGE
+
+
 def backlog_rows() -> list[dict]:
     """Every backlog row, parsed by the SHIPPED backlog parser. Raises on an unparseable table."""
-    gbp = _load("gen-backlog-page")
-    return gbp.parse((DOCS / "backlog.md").read_text().split("\n"))
+    return backlog_page().parse((DOCS / "backlog.md").read_text().split("\n"))
 
 
 def collect(nodes: list[Node]) -> tuple[dict[str, dict], dict]:
@@ -233,6 +262,7 @@ def collect(nodes: list[Node]) -> tuple[dict[str, dict], dict]:
 
     adr_files = {p.name[:4]: p.name for p in sorted((DOCS / "adr").glob("[0-9][0-9][0-9][0-9]-*.md"))}
     rows = backlog_rows()
+    glyphs = sev_glyphs(backlog_page().SEVERITY)
     reviews = sorted(p for p in (DOCS / "reviews").rglob("*.md")) if (DOCS / "reviews").is_dir() else []
     subjects = git_subjects()
     notes["git"] = subjects is not None
@@ -246,7 +276,7 @@ def collect(nodes: list[Node]) -> tuple[dict[str, dict], dict]:
         mine = [r for r in rows if r["bundle"] in n.areas]
         mine.sort(key=lambda r: (r["closed"], r["num"]))
         f["backlog"] = [{
-            "label": f"#{r['num']} {SEV_GLYPH.get(r['sev'], '·')}"
+            "label": f"#{r['num']} {glyphs.get(r['sev'], '·')}"
                      + (f" (was {r['was']})" if r["was"] else "")
                      + f" {r['title']}",
             "href": f"/backlog-table#i{r['num']}",
@@ -551,6 +581,19 @@ def self_test() -> int:
                   problems=["features.md:1: a problem"], generated_at="2001-01-01 00:00 · abc1234")
     check("no node is rendered twice",
           (html.count("id=\"wake-on-visit\""), deep.count("id=\"wake-on-visit\"")), (1, 1))
+
+    # ⛔ THE CASE THE REVIEW ASKED FOR COULD NOT BE WRITTEN, AND THAT IS THE PROOF THE FIX WORKED.
+    # Round 1 asked for a case asserting every value of `gen-backlog-page.SEVERITY` appears as a
+    # key here, going RED when a severity is added upstream and not mirrored. Under a DERIVED map
+    # that case cannot ever fail — MEASURED: adding `"🟣": "epic"` upstream leaves this suite green,
+    # because the new severity simply arrives. An unfalsifiable assertion is what this repo files
+    # findings about, so the case asserts the DERIVATION instead, on a synthetic map. It dies on
+    # all three ways the derivation can be lost: replaced by a literal, inverted the wrong way
+    # round (`{glyph: name}` — the direction the old constant already had backwards), and the
+    # `none` default dropped, which the caller's `.get(sev, "·")` would otherwise hide.
+    check("the severity glyphs are derived from the backlog page's map, not a second copy",
+          (sev_glyphs({"🟣": "epic"}), sev_glyphs({})),
+          ({"none": "·", "epic": "🟣"}, {"none": "·"}))
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
