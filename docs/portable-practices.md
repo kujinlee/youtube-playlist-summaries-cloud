@@ -12,9 +12,9 @@ the documents that make it reproducible somewhere else. This file is the second 
 >
 > **The suite is 9 files / 3,599 lines** — the four page-producing skills (`explain-diff`, `brief`,
 > `explain-findings`, `explain-topic`), the shared delivery contract, `brief-compose.py`,
-> `explainer-serve.py`, `page_chrome.py`, `page_markup.py` — plus the three hook-regenerated pages
-> (`regen-backlog-page.sh`, `regen-dashboard.sh`, `regen-goals-page.sh`). Enumerated in
-> `docs/backlog.md` row 89, not recalled.
+> `explainer-serve.py`, `page_chrome.py`, `page_markup.py` — plus the four hook-regenerated pages
+> (`regen-backlog-page.sh`, `regen-dashboard.sh`, `regen-goals-page.sh`, `regen-features-page.sh`).
+> Enumerated in `docs/backlog.md` row 89, not recalled.
 >
 > ⚠ **WHY THIS SENTENCE CHANGES WHAT THE FILE IS FOR.** *Project-independent* is filter 2 below,
 > where it reads as a quality bar for entries. For the suite it is now a **release blocker**: a
@@ -26,7 +26,7 @@ the documents that make it reproducible somewhere else. This file is the second 
 >
 > ⛔ **WHAT IS STILL NOT DECLARED, stated so the gap is not read as closed.** `docs/anchors.md`
 > registers 10 anchors and exactly one touches comprehension — `status-visibility`, scoped to *"a
-> person who was AWAY"*. That covers `brief` and the three hook-regenerated pages. It does **not**
+> person who was AWAY"*. That covers `brief` and the four hook-regenerated pages. It does **not**
 > cover `explain-diff`, `explain-topic` or `explain-findings`, which serve a human who is PRESENT
 > and trying to understand a change, a concept, or a triage decision. **A second anchor is owed and
 > is deliberately NOT allocated here:** `check-anchors.py` R4 fails an anchor that no document
@@ -38,7 +38,7 @@ the documents that make it reproducible somewhere else. This file is the second 
 **Status: STARTED 2026-08-11, deliberately incomplete.** §1–§7 measured 2026-08-11, §8 on 2026-08-12,
 §9 and §10 on 2026-08-13, §11 and §12 on 2026-08-15, §13 on 2026-08-17, §14 and §15 on 2026-08-22,
 §16 on 2026-08-26, §17 and §18 on 2026-08-28, §19 and §20 on 2026-09-09, §21 and §22 on 2026-09-10,
-§23 on 2026-09-13, §24 on 2026-09-14. *(⟳ 2026-08-26: this line had gone stale in the way it warns
+§23 on 2026-09-13, §24 on 2026-09-14, §25 on 2026-09-20. *(⟳ 2026-08-26: this line had gone stale in the way it warns
 about everywhere else — it omitted §9, §13, §14 and §15. ⟳⟳ 2026-09-14: stale AGAIN, and by more —
 it stopped at §16 while §17–§23 existed, so it had been wrong for seventeen days. Both times the
 dates were recovered with `git log --reverse -S'## N. '`, not recalled; the recurrence is the
@@ -1197,3 +1197,65 @@ named, it is decoration, which is §3 applied to a loop.
 
 **Test for the GOOD state positively.** `grep -q done` and `! grep -q pending` are not complements;
 they differ on exactly the inputs that matter — empty output, an error, an unreachable service.
+
+---
+
+## 25. Delegating verification to "the guard will tell you" must name the GUARD, not its `--self-test` — a pure-rules suite cannot observe a registration
+
+> §21 is the diagnosis: a check has two things that can be wrong, the RULE and the POPULATION it runs
+> over. **This is the operational corollary, and it bites at the moment you hand verification to
+> someone else.** A `--self-test` exercises the rule over a *synthetic* population. The bare run
+> exercises the same rule over the *real* one. Tell an executor to "run the self-test" and you have
+> delegated half a check while sounding like you delegated all of it.
+
+**Measured 2026-09-19/20, and found by a falsifier the plan had written against itself.**
+
+A plan's final task required registering two new scripts in five places across three ratchets. An
+earlier draft named only two of the five and was measured wrong. The fix was deliberately *not* a
+longer list — it was ending the step with:
+
+> *"⚠ Do not trust this list either. Before committing, run all three self-tests and read the
+> failures: `check-plan-code.py --self-test`, `check-fixture-variation.py --self-test`,
+> `check-selftest-counts.py --self-test`. Each names exactly what it wants."*
+
+That reasoning was right and is worth keeping: it converts an unbounded enumeration problem into a
+bounded procedure delegated to something authoritative in a way a document can never be. **The
+sentence it produced was still false**, and the plan said how to find out:
+
+> *"⚠ The falsifier for this decision: if the task turns up registration gaps that the three
+> self-tests do NOT name, the delegation argument was wrong."*
+
+**It fired. Only 1 of the 5 was named by its own self-test** — measured by removing each
+registration, running the guard both ways, and restoring from a byte-compared backup:
+
+| Registration | its `--self-test` | the BARE guard |
+|---|---|---|
+| the three `EXPECTED_MUTATIONS` pin sites | **128/128, rc=0 — SILENT** | named by `--mutate .` |
+| `EXAMINED_KEYS` | 66/67, rc=1 — names it | names it |
+| `POPULATION` | **18/18, rc=0 — SILENT** | names both scripts |
+
+### Why this is structural, not three guards being weak
+
+**A registration is a fact about the repository. A pure-rules suite never reads the repository.** It
+cannot be short a case for this, because the observation is outside the world it runs in. Adding
+cases would not help; the two silent suites are *correct* and *complete* and still cannot answer the
+question. That is a category error in the delegation, not a coverage gap in the suite.
+
+Note what did catch them, because it is the repair: a **reverse check inside the guard's real run**
+(`for target in sorted(set(counts) - set(EXPECTED_MUTATIONS)) → "N mutation(s) but no declared
+count"`) and the **bare invocation** of the other guard. Both already ran in CI, so nothing could
+have shipped broken — the delegation *worked*, and only its written form was wrong.
+
+### The rule
+
+When you write "the guards will tell you", **name the invocation that reads the world**: the bare
+run, or the full mutation pass. If you name a `--self-test`, you have asked for the rule to be
+checked and the population to be assumed.
+
+Ask of any delegated verification: **which half does this command exercise?** If the answer is "the
+rule", the thing you actually care about — is it wired up, is it registered, is it reachable — is
+still unverified, and the green you get back will say otherwise.
+
+⚠ **And write the falsifier next to the delegation.** The only reason this was caught at all is that
+the plan named, in advance, the observation that would prove its own argument wrong. It cost one
+sentence and it was the sentence that worked.

@@ -278,6 +278,32 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # ⟳ 2026-09-19: the feature hub's two scripts, pinned in the commit that wires them into CI —
+    # this guard REFUSED both files until they were, which is the population half of the rule
+    # doing its job on files added the same day. `analyse()` reports NO findings for either: every
+    # parameter below is genuinely varied by the suite, not merely present in a signature.
+    # ⚠ `sev_glyphs.severity` is the reason this set was DERIVED rather than copied from the
+    # handover that measured it. That handover recorded six keys for `gen-features-page.py`,
+    # correctly, and then a review fix added a seventh function an hour later — so the written set
+    # was already stale when it was handed over, and pinning it would have red-ed this guard with
+    # a key set that disagreed with the file by exactly the parameter the fix existed to cover.
+    'check-features.py': (
+        'backlog_areas.text',
+        'check_cross.anchors_declared',
+        'check_cross.areas_in_use',
+        'check_cross.nodes',
+        'check_nodes.nodes',
+        'parse_features.text',
+    ),
+    'gen-features-page.py': (
+        'render.built_at',
+        'render.fragments',
+        'render.generated_at',
+        'render.nodes',
+        'render.notes',
+        'render.problems',
+        'sev_glyphs.severity',
+    ),
     # ⟳ 2026-09-14: the review decision procedure's rules. Pinned in the commit that
     # creates them — this guard REFUSED the file until it was, which is the population
     # half of the rule doing its job. `analyse()` reports NO findings: every parameter

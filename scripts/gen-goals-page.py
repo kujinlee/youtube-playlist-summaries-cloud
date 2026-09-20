@@ -1222,7 +1222,7 @@ def main() -> int:
         print(f"wrote fragment {args.fragment_only}")
         return 0
 
-    # The Ask tray is LIFTED by brief-compose.py, never re-implemented here — one tray, three
+    # The Ask tray is LIFTED by brief-compose.py, never re-implemented here — one tray, four
     # page-producing callers. Restating it would be the third copy the delivery-loop extraction
     # (2026-08-24) exists to prevent.
     with tempfile.TemporaryDirectory() as td:

@@ -1,0 +1,112 @@
+[
+ {
+  "name": "the purpose paragraph renders empty, so a node loses the one sentence it owns",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "             f'<p class=\"purpose\">{inline_md(n.purpose)}</p>']",
+    "             f'<p class=\"purpose\"></p>']"
+   ]
+  ],
+  "expect": "a node's purpose is rendered"
+ },
+ {
+  "name": "the state chip stops saying `not built`, so an absence renders as jargon",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "             f'{\"not built\" if absent else \"built\"}</span>',",
+    "             f'{\"absent\" if absent else \"built\"}</span>',"
+   ]
+  ],
+  "expect": "an absent node is marked"
+ },
+ {
+  "name": "the absence reason loses its label, so `expected because` never reaches the page",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "        parts.append(f'<p class=\"why\"><b>expected because</b> '",
+    "        parts.append(f'<p class=\"why\"><b>the reason</b> '"
+   ]
+  ],
+  "expect": "the absent reason is shown"
+ },
+ {
+  "name": "a fragment band renders its label and drops every row under it",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "        for e in shown:\n            text, href = fragment_parts(e)",
+    "        for e in []:\n            text, href = fragment_parts(e)"
+   ]
+  ],
+  "expect": "a linked gap appears"
+ },
+ {
+  "name": "the declared-absence count is emptied, so accumulating absences become invisible",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "    return f\"{n} declared absence\" + (\"\" if n == 1 else \"s\")",
+    "    return \"\""
+   ]
+  ],
+  "expect": "the absence count is shown"
+ },
+ {
+  "name": "the build time stops reading the clock and renders a constant",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "    built_at = built_at or _dt.datetime.now().isoformat(timespec=\"minutes\")",
+    "    built_at = built_at or \"unknown\""
+   ]
+  ],
+  "expect": "the build time is rendered"
+ },
+ {
+  "name": "the timestamp loses its `Built` label, so it is no longer identifiable as the build time",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "  <p class=\"built\"><strong>Built {esc(built_at)}.</strong>",
+    "  <p class=\"built\"><strong>{esc(built_at)}.</strong>"
+   ]
+  ],
+  "expect": "the build time is rendered"
+ },
+ {
+  "name": "a `####` node is nested under its parent AND left at top level, so it renders twice",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "            here[-1][1].append(n)",
+    "            here[-1][1].append(n)\n            here.append((n, []))"
+   ]
+  ],
+  "expect": "no node is rendered twice"
+ },
+ {
+  "name": "a `####` node is dropped instead of nested, so a feature vanishes from the page",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "        if n.level >= 4 and here:\n            here[-1][1].append(n)",
+    "        if n.level >= 4 and here:\n            pass"
+   ]
+  ],
+  "expect": "no node is rendered twice"
+ },
+ {
+  "name": "the severity glyphs go back to being a hand-written second copy of the backlog map",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "    return {\"none\": \"·\"} | {name: glyph for glyph, name in severity.items()}",
+    "    return {\"none\": \"·\", \"crit\": \"🔴\", \"high\": \"🟠\", \"med\": \"🟡\", \"low\": \"🟢\", \"done\": \"✅\"}"
+   ]
+  ],
+  "expect": "the severity glyphs are derived from the backlog page's map, not a second copy"
+ }
+]

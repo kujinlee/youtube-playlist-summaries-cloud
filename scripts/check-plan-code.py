@@ -603,6 +603,14 @@ EXPECTED_MUTATIONS = {
     # The other two close unfalsifiable fixtures: a `tag` class the case matched but never
     # captured, and a fan-out threshold whose boundary value was absent from the fixture.
     "scripts/gen-goals-page.py": 25,
+    # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
+    # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
+    # its own terms: seven of the ten revert a DECISION the renderer makes (which band a fragment
+    # lands in, whether a `####` node is nested or duplicated, whether the build time is read from
+    # the clock), and the tenth guards `sev_glyphs`, which earned a mutation only after review
+    # round 1 found its "derived" comment sitting above a hand-written literal. A renderer that
+    # decides nothing is a claim worth testing before it is used to skip coverage.
+    "scripts/gen-features-page.py": 10,
     # ⟳ 2026-09-10, backlog #110 review round 4. A SEED, not a full manifest, and the reason is
     # measured: `gen-backlog-page.py` is 3,000 lines with 160 cases and had ZERO mutations, so
     # `--mutate .` never touched it and no machine had ever asked whether any of those cases could
@@ -984,6 +992,23 @@ EXPECTED_MUTATIONS = {
     # the prev_was_row flag a split table depends on.
     "scripts/check-docs.py": 4,
     "scripts/check-explainer-delivery.py": 5,
+    # ⟳ 2026-09-19, the feature hub. SEVENTEEN, one per rule `check_nodes`/`check_cross`/
+    # `backlog_areas` decide — the plan's own draft said five, which left both cross-file anchor
+    # directions, the claimed-twice rules, the wrapped-line refusal, the `now` exclusion, the area
+    # CELL INDEX and the escaped-pipe lookbehind with no falsifier at all. Two of the seventeen red
+    # TWO cases apiece — the cell index (`cells[-3]` -> `cells[-4]`) and the trunk carry-down — and
+    # both are allowed because `expect` is matched by EQUALITY against one of them, not by the size
+    # of the red set.
+    # ⟳ 2026-09-20, code review r1 (Codex) — 17 -> 20. The first review to read the CODE rather than
+    # the plan found the parser passing input it should refuse, and all three entries restore a way
+    # a line could reach no rule at all: the exemption tuple that let `>`, `<!--` and a bare `#322`
+    # sit unread inside a node (its Blocking), and the two halves of the duplicate-field refusal —
+    # dropping the refusal, and reporting it while still applying last-write-wins. The second half
+    # needed its own entry because the first cannot reach it: with the refusal gone BOTH cases red,
+    # so a repair that reports a duplicate and overwrites anyway would have been indistinguishable
+    # from a correct one. ⚠ The wrapped-continuation entry was RETARGETED in the same commit (its
+    # anchor was the line the fix rewrote) — a retarget, not an addition, so it is not in the +3.
+    "scripts/check-features.py": 22,
     # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
     # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
     # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed
@@ -2637,6 +2662,7 @@ def _self_test() -> int:
                                       # the pinned-to-a-past-event counts elsewhere in this file,
                                       # which must NOT be "corrected" to today's number.
                                       "scripts/check-explainer-delivery.py",
+                                      "scripts/check-features.py",
                                       "scripts/check-fixture-variation.py",
                                       "scripts/check-function-revokes.py",
                                       "scripts/check-gate-falsifiability.py",
@@ -2676,6 +2702,7 @@ def _self_test() -> int:
                                       "scripts/explainer-serve.py",
                                       "scripts/gen-backlog-page.py",
                                       "scripts/gen-dashboard.py",
+                                      "scripts/gen-features-page.py",
                                       "scripts/gen-goals-page.py",
                                       "scripts/page_chrome.py",
                                       "scripts/page_markup.py",
@@ -3259,7 +3286,25 @@ def _self_test() -> int:
     # `schema-gates` check unrequireable) and SIX added for the derivation that replaced it. A RISE,
     # so this is not the sanctioned-fall case; the two retirements are recorded beside the per-file
     # count above with the reason, and both orphans were found by RUNNING the anchor check.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 737)
+    # ⟳ 2026-09-19: 737 -> 764, the feature hub. TWENTY-SEVEN entries across the two new scripts
+    # (`check-features.py` 17, `gen-features-page.py` 10), both seeded in the commit that wires
+    # them into CI. A RISE, so this is not the sanctioned-fall case; every anchor was verified
+    # present EXACTLY ONCE in the delivered file before being written, and every entry was proved
+    # to go red VIA THE CASE IT NAMES over a control proved green first.
+    # ⟳ 2026-09-20: 764 -> 767, code review r1 (Codex) on the feature hub. THREE on
+    # `check-features.py`, reasoned about beside its per-file count above. ⚠ The round's third
+    # finding — the regen hook swallowing an unreadable payload — is NOT in this rise and cannot
+    # be: `load_manifests` pins every entry's `file` to `scripts/<manifest stem>.py`, and
+    # `run_suite` runs the mutated file AS a Python suite, so a `.sh` target would red its own
+    # control. Its coverage is three cases in `gen-features-page.py` that RUN the hook. ⚠ ONLY THE
+    # PLACEMENT follows `regen-backlog-page.sh` — coverage for a hook lives in the suite of the
+    # generator it calls — and code review r2 (Claude) narrowed the claim to that: the backlog
+    # cases do NOT run their hook, they read the awk program out of the shell file and run `awk`
+    # (`gen-backlog-page.py:2818`). Executing the shell script is new here, and strictly stronger.
+    # A rise with an unmutatable member is worth saying out
+    # loud, because a reader sizing this number against the round's findings would otherwise be
+    # one short and look for the entry that was never written.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 769)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
