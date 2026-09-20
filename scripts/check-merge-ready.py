@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 49 cases
+    python3 scripts/check-merge-ready.py --self-test # 51 cases
 
 ⛔ WHY THIS EXISTS, MEASURED 2026-09-20. Twice in one day a branch was declared "ready to merge"
 on the strength of a local gate sweep, and twice CI refused it. Both times the refusal was
@@ -210,10 +210,27 @@ def job_level_gates(workflow: str) -> list[str]:
 # absorbed a genuine miss. An auditor that re-implements its subject's hardest job, more weakly,
 # certifies a parse it could not perform.
 #
-# A crude substring scan cannot be weaker than the parser because it is not attempting the same
-# problem. It over-approximates on purpose: the cost of a new mention is a REFUSAL TO ANSWER that
-# a human clears in one line, and the cost of the alternative was a confident READY over a gate
-# nobody knew about. Over-approximation is the only safe direction here.
+# ⛔ AND THE FIRST VERSION OF THIS PARAGRAPH OVERCLAIMED — Codex r3, High. It said a substring scan
+# "cannot be weaker than the parser". False: PR-ONLY-NESS CAN BE EXPRESSED WITHOUT THE WORD.
+# `ci.yml` runs on exactly `pull_request` and `push`, so `if: github.event_name != 'push'` gates a
+# step on pull requests only — the parser does not claim it (PR_ONLY_COND matches equality to
+# 'pull_request') and a scan for `pull_request` sees nothing to leave over. Verified by probe:
+# both returned empty. Not present in either workflow today, but the CLAIM was wrong, and a claim
+# that a hole is closed is worse than a known hole.
+#
+# So the scan keys on `github.event_name` TOO, which is the class rather than the instance: any
+# event-name gating, in any spelling — `!=`, `||`, `contains()` — must be accounted for. That is a
+# wider over-approximation and costs four more allow-list entries, all in schema-gates.yml, each
+# of which has to say why it is not a pull-request gate this script must run.
+#
+# It over-approximates on purpose: the cost of a new mention is a REFUSAL TO ANSWER that a human
+# clears in one line, and the cost of the alternative was a confident READY over a gate nobody
+# knew about. Over-approximation is the only safe direction here.
+#
+# ⚠ STILL NOT AIRTIGHT, and saying so is the point of the sentence that replaced the overclaim: a
+# gate keyed on something other than `github.event_name` — `startsWith(github.ref, 'refs/pull/')`,
+# a composite action's own workflow — would escape both. Measured 2026-09-20: neither workflow
+# contains any such form. The bound is stated rather than implied.
 ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
     ("ci.yml", "pull_request:"):
         (1, "the workflow TRIGGER — says when CI runs, gates nothing"),
@@ -223,6 +240,18 @@ ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
         (2, "the env those two steps read their waiver from"),
     ("schema-gates.yml", "pull_request:"):
         (1, "the workflow TRIGGER — schema-gates has no pull-request-only step or job"),
+    # ⟳ Codex r3, High: the detector now keys on `github.event_name` as well, because PR-only-ness
+    # can be expressed by EXCLUSION. These four are every event-name mention in schema-gates.yml,
+    # and none gates on pull requests.
+    ("schema-gates.yml",
+     "group: schema-gates-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}"):
+        (1, "a concurrency KEY, not a condition — it groups runs, it does not gate them"),
+    ("schema-gates.yml", "if: github.event_name != 'schedule'"):
+        (1, "gates the PR/push job away from the SCHEDULED run; true on a pull request AND on a "
+            "push, so it is not pull-request-only and this script has no step to invoke for it"),
+    ("schema-gates.yml",
+     "if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"):
+        (1, "the prod-drift job — the opposite of pull-request-only; never runs on a PR"),
 }
 
 
@@ -237,7 +266,7 @@ def unaccounted_mentions(workflow: str, filename: str) -> list[str]:
     stray: list[str] = []
     for line in workflow.split("\n"):
         s = line.strip()
-        if "pull_request" not in s or s.startswith("#"):
+        if ("pull_request" not in s and "github.event_name" not in s) or s.startswith("#"):
             continue
         key = (filename, s)
         seen[key] = seen.get(key, 0) + 1
@@ -587,6 +616,18 @@ def _self_test() -> int:
     # would ride in on the first one's ticket.
     check("a SECOND copy of an approved line is unaccounted — the allowance is a count",
           len(unaccounted_mentions("  pull_request:\n  pull_request:\n", "schema-gates.yml")), 1)
+    # ⛔ CODEX r3, High: PR-ONLY-NESS CAN BE EXPRESSED WITHOUT THE WORD. `ci.yml` runs on exactly
+    # `pull_request` and `push`, so `!= 'push'` gates a step on pull requests only — and it
+    # escaped both the parser and a scan keyed on `pull_request`. The detector keys on
+    # `github.event_name` too, which is the class rather than this instance.
+    check("a gate expressed by EXCLUSION is caught even with no `pull_request` in it",
+          unaccounted_mentions("      - name: x\n        if: github.event_name != 'push'\n", "ci.yml"),
+          ["ci.yml: if: github.event_name != 'push'"])
+    # ⚠ The other direction, and it is why the four schema-gates entries exist: widening the
+    # detector must not make the checker refuse to answer on a normal repository.
+    check("schema-gates' own event-name lines are accounted for, not a false CANNOT RUN",
+          unaccounted_mentions("    if: github.event_name != 'schedule'\n", "schema-gates.yml"), [])
+
     check("a commented-out mention is not a gate and is not flagged",
           unaccounted_mentions("      # if: github.event_name == 'pull_request'\n", "ci.yml"), [])
     # ⚠ THE OTHER DIRECTION. A checker that refuses to answer on a normal repository is useless.
