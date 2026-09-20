@@ -812,6 +812,49 @@ Per `docs/dev-process.md` Phase 5: branch + PR, and **merging stays a human gate
 
 ---
 
+## ⚠ Why implementation began before the Phase 2 gate was met
+
+**Decided by the human on 2026-09-19, and recorded because the gate was cleared on judgement rather
+than on its documented condition.** `docs/dev-process.md` Phase 2 requires a review round that adds
+no new Blocking or High. Round 3 added two Blocking. Implementation started anyway.
+
+The question `dev-process.md` obliges at four rounds — *thrashing, or the prose floor?* — answered
+with per-round evidence:
+
+| Round | Found | Caused by the previous round's fix? |
+|---|---|---|
+| r1, both halves | 3 Blocking, 5 High | no — original defects |
+| r2 Codex | 2 Blocking, 1 High, 1 Medium | **all of them** |
+| r2 Claude | 0 Blocking, 1 High, 3 Medium, 5 Low | the High, yes |
+| r3 Codex | 0 Blocking, 1 High | **no** — Tasks 4/5 were under-reviewed, not broken by a fix |
+| r3 Claude | 2 Blocking, 1 Medium, 4 Low | B1 yes (by r3's own fix); **B2 no** — pre-existing since r1 |
+
+**Not clean thrashing:** every round surfaced at least one genuinely pre-existing defect that earlier
+rounds had missed. But not converging either.
+
+**The argument for building instead.** The executable content stopped being the problem after round
+1: three consecutive rounds at 23/23 → 24/24 with 5/5 mutations killed *and attributed*. Every
+finding since has been about the document — its prose, its enumerations, its registration
+instructions — and this process's own rule says *"on a document rounds can be right forever, which is
+a signal to go build."*
+
+⭐ **And the last fold changed the shape of the remaining class rather than paying it down.** Round
+3's Blocking 2 was *"this step under-enumerates the ratchets."* The fix was not a longer list; it was
+ending the step with *"do not trust this list either — run all three self-tests and read the
+failures."* That turns an unbounded enumeration problem into a bounded procedure delegated to the
+guards, which are authoritative in a way this document can never be. A fourth round would hunt for
+more missing list entries; the executor will be told by the guards themselves.
+
+**What ships unfixed, so it is not discovered as a surprise:** round 3's Low 5 (two watched path
+families whose justification Task 4 Step 3 does not state) and Low 7 (three stale or unowned items
+across the two documents). Both are in
+`docs/reviews/claude/plan-feature-hub-r3-claude.md`.
+
+⚠ **The falsifier for this decision:** if Task 6 turns up registration gaps that the three self-tests
+do NOT name, the delegation argument above was wrong and the enumeration needed a human after all.
+
+---
+
 ## Self-Review
 
 **Spec coverage:**
