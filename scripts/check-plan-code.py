@@ -603,6 +603,14 @@ EXPECTED_MUTATIONS = {
     # The other two close unfalsifiable fixtures: a `tag` class the case matched but never
     # captured, and a fan-out threshold whose boundary value was absent from the fixture.
     "scripts/gen-goals-page.py": 25,
+    # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
+    # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
+    # its own terms: seven of the ten revert a DECISION the renderer makes (which band a fragment
+    # lands in, whether a `####` node is nested or duplicated, whether the build time is read from
+    # the clock), and the tenth guards `sev_glyphs`, which earned a mutation only after review
+    # round 1 found its "derived" comment sitting above a hand-written literal. A renderer that
+    # decides nothing is a claim worth testing before it is used to skip coverage.
+    "scripts/gen-features-page.py": 10,
     # ⟳ 2026-09-10, backlog #110 review round 4. A SEED, not a full manifest, and the reason is
     # measured: `gen-backlog-page.py` is 3,000 lines with 160 cases and had ZERO mutations, so
     # `--mutate .` never touched it and no machine had ever asked whether any of those cases could
@@ -984,6 +992,13 @@ EXPECTED_MUTATIONS = {
     # the prev_was_row flag a split table depends on.
     "scripts/check-docs.py": 4,
     "scripts/check-explainer-delivery.py": 5,
+    # ⟳ 2026-09-19, the feature hub. SEVENTEEN, one per rule `check_nodes`/`check_cross`/
+    # `backlog_areas` decide — the plan's own draft said five, which left both cross-file anchor
+    # directions, the claimed-twice rules, the wrapped-line refusal, the `now` exclusion, the area
+    # CELL INDEX and the escaped-pipe lookbehind with no falsifier at all. The cell index is the
+    # one worth naming: `cells[-3]` -> `cells[-4]` reds TWO cases, and it is allowed because
+    # `expect` is matched by EQUALITY against one of them, not by the size of the red set.
+    "scripts/check-features.py": 17,
     # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
     # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
     # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed
@@ -2637,6 +2652,7 @@ def _self_test() -> int:
                                       # the pinned-to-a-past-event counts elsewhere in this file,
                                       # which must NOT be "corrected" to today's number.
                                       "scripts/check-explainer-delivery.py",
+                                      "scripts/check-features.py",
                                       "scripts/check-fixture-variation.py",
                                       "scripts/check-function-revokes.py",
                                       "scripts/check-gate-falsifiability.py",
@@ -2676,6 +2692,7 @@ def _self_test() -> int:
                                       "scripts/explainer-serve.py",
                                       "scripts/gen-backlog-page.py",
                                       "scripts/gen-dashboard.py",
+                                      "scripts/gen-features-page.py",
                                       "scripts/gen-goals-page.py",
                                       "scripts/page_chrome.py",
                                       "scripts/page_markup.py",
@@ -3259,7 +3276,12 @@ def _self_test() -> int:
     # `schema-gates` check unrequireable) and SIX added for the derivation that replaced it. A RISE,
     # so this is not the sanctioned-fall case; the two retirements are recorded beside the per-file
     # count above with the reason, and both orphans were found by RUNNING the anchor check.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 737)
+    # ⟳ 2026-09-19: 737 -> 764, the feature hub. TWENTY-SEVEN entries across the two new scripts
+    # (`check-features.py` 17, `gen-features-page.py` 10), both seeded in the commit that wires
+    # them into CI. A RISE, so this is not the sanctioned-fall case; every anchor was verified
+    # present EXACTLY ONCE in the delivered file before being written, and every entry was proved
+    # to go red VIA THE CASE IT NAMES over a control proved green first.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 764)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

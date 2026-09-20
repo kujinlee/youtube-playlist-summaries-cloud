@@ -86,6 +86,14 @@ POPULATION: frozenset[str] = frozenset({
                                      # ratchet contract's population never sees it — this is the
                                      # only outside observer of its declared count.
     "check-anchors.py",
+    # ⟳ 2026-09-19, the feature hub. Both pinned in the commit that wires them into CI — a script
+    # that declares a count nothing verifies is the drift this file exists to refuse, and doing it
+    # on a NEW file would be that shape at one remove. ⚠ BARE NAMES here and FULL PATHS in
+    # `check-plan-code.EXPECTED_MUTATIONS`: the same two scripts are registered under two
+    # different string shapes, which is a trap worth naming rather than rediscovering.
+    "check-features.py",
+    "gen-features-page.py",          # not a `check-*` guard, so the ratchet contract's population
+                                     # never sees it — this is its only outside observer.
     # ⟳ 2026-09-12: gained a declared count when it gained its own manifest — the guard that
     # enforces R4 had exempted itself from it, because the escape regex matched its own docstring.
     "check-ratchet-contract.py",
