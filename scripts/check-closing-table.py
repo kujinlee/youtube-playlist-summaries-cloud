@@ -814,8 +814,22 @@ def turn_id_of(window) -> str:
     ⚠ AND IT IS A CONJUNCTION, which is the tell `check-sentinel-meanings.py` enforces elsewhere in
     this repo: `-` encodes FIVE conditions (no `opener` attribute / `opener is None` / a non-dict
     opener / no `uuid` key / an empty `uuid`), plus `log_line`'s own `turn or '-'`. Not split today
-    — but note that the justification for not splitting them is now WEAKER than r9 claimed, because
-    one of the five is reachable rather than none.
+    — but the justification for not splitting is WEAKER than r9 claimed, because **TWO of the five
+    are reachable** (a missing `uuid` AND an empty one), not none and not one.
+
+    ⟳ r11 R11-1, Low — THIS SAID "ONE OF THE FIVE", AND THAT IS THE SAME DEFECT A THIRD TIME IN
+    THIS PARAGRAPH. Condition 5 is reachable by EXACTLY the argument that makes 4 reachable:
+    `_is_turn_boundary` never inspects `uuid`, so it does not care whether the key is absent or
+    empty (`{"uuid": ""}` -> rc=1, field 4 `-`). Nothing behavioural turns on it — both render `-`
+    and the pinned case exercises the same branch — but the failure mode here has now been, three
+    times running, **a count or a quantifier asserted one step beyond what was checked**: r7
+    generalised from `windows()`, r9 from a corpus of 1,790, this from having verified ONE
+    condition. Per-condition, so the next reader need not re-derive it: (1) no `opener` attr —
+    unreachable, `judged` is always a TurnWindow, defensive for other callers. (2) `opener is
+    None` — unreachable, structural, above. (3) non-dict opener — unreachable, but NOT for the
+    reason implied: such a record RAISES in `_is_turn_boundary` long before reaching here, which
+    is its own defect (backlog #152). (4) missing `uuid` — REACHABLE. (5) empty `uuid` —
+    REACHABLE.
     """
     # ⟳ r9 R9-3: `or {}` deleted — the isinstance below already turns None into `-`, so no test
     # could detect its removal. An unfalsifiable guard is the class #151 exists for.
@@ -1535,6 +1549,15 @@ def _self_test() -> int:
                 bash("git push"), say("done, in prose"),
                 user("next", "LIVE"),
             ])
+            # ⟳ r11 item 2 — WHAT THIS CASE PINS, AND WHAT IT DOES NOT. It IS a falsifier for the
+            # reachability claim: mutating `_is_turn_boundary` to require a non-empty uuid — making
+            # the path unreachable — reddens it. ⚠ But the `-` itself is AMBIENT: `log_line` ends
+            # with `{turn or '-'}`, so ANY falsy return from `turn_id_of` renders as `-`. Measured
+            # by r11: `else "-"` -> `else ""`, `else None`, and dropping the empty-uuid test all
+            # leave THIS case green (the unit cases catch them). So the label's "logs '-'" reads
+            # stronger than what is pinned — the claim under test is *this transcript still warns*,
+            # which is what r10's finding needed. Recorded rather than strengthened: a second
+            # assertion here would only duplicate the unit cases.
             check("run: a judged opener with NO uuid still warns and logs '-' (it is REACHABLE)",
                   _safe(lambda: (run_decide(json.dumps({"transcript_path": str(no_uuid),
                                                         "session_id": "s"})),
