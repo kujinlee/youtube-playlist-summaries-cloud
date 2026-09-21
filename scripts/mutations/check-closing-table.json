@@ -460,5 +460,27 @@
       ]
     ],
     "expect": "coalesce: the injected opener itself joins the body"
+  },
+  {
+    "name": "the turn id is dropped from the log line, so wc -l counts emissions and not turns again (#149 Tier 1)",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    return f\"{when}\\t{session or '-'}\\t{'+'.join(acts) or '-'}\\t{turn or '-'}\\n\"",
+        "    return f\"{when}\\t{session or '-'}\\t{'+'.join(acts) or '-'}\\n\""
+      ]
+    ],
+    "expect": "log: the line carries FOUR tab-separated fields"
+  },
+  {
+    "name": "turn_id_of stops tolerating an opener-less window, turning a Stop hook into a traceback",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    opener = getattr(window, \"opener\", None) or {}",
+        "    opener = window.opener"
+      ]
+    ],
+    "expect": "log: a window object with no opener attribute at all yields '-'"
   }
 ]

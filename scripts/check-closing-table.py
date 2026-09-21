@@ -117,7 +117,7 @@ Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CAN
 
 Usage:
     python3 scripts/check-closing-table.py --decide      # reads the Stop-hook payload on stdin
-    python3 scripts/check-closing-table.py --self-test   # 138 cases
+    python3 scripts/check-closing-table.py --self-test   # 148 cases
 """
 from __future__ import annotations
 
@@ -775,9 +775,46 @@ def decide(final_text: str | None, acts: list[str]) -> tuple[int, str]:
         f"separates a real table from a decorated assertion.")
 
 
-def log_line(acts: list[str], when: str, session: str) -> str:
-    """One appended record. Tab-separated so the log stays greppable and countable."""
-    return f"{when}\t{session or '-'}\t{'+'.join(acts) or '-'}\n"
+def turn_id_of(window) -> str:
+    """PURE. A stable id for the turn a verdict is about, or `-` when there is none.
+
+    The judged window's opener uuid. Measured over 60 real transcripts: present on 1,790 of 1,790
+    non-meta `user` records, so this is an identity the transcript actually carries rather than one
+    we hope for. `-` is returned for the DEGENERATE window — `windows()` returns a single
+    `opener=None` window when a transcript has no real-user boundary at all, which is reachable and
+    load-bearing (see its docstring), and must not become a crash inside a Stop hook.
+    """
+    opener = getattr(window, "opener", None) or {}
+    uuid = opener.get("uuid") if isinstance(opener, dict) else None
+    return uuid if isinstance(uuid, str) and uuid else "-"
+
+
+def log_line(acts: list[str], when: str, session: str, turn: str = "-") -> str:
+    """One appended record. Tab-separated so the log stays greppable and countable.
+
+    ⟳ r7 F7 + #149 Tier 1 — THE `turn` COLUMN IS WHY THIS LOG CAN BE READ AT ALL.
+
+    `docs/dev-process.md` tells the reader to "read the log in a few weeks" to answer *does this
+    guard cry wolf?* That question needs a TURN count; `wc -l` gives an EMISSION count, and the two
+    are not close. Measured over 767 transcripts on the post-r7 code:
+
+        warned turns                                  315
+        emissions                                     630      (mean 2.00 per turn)
+        turns warned EXACTLY once                     221      (70%)
+        emissions from turns warned more than 3x      259      (41%)
+        emissions from the single WORST turn           71      (11.3% of the whole log)
+
+    So one pathological turn contributes a ninth of the file. Without an id per line there is no way
+    to collapse that, and every rate computed from the log is inflated by an unknown factor.
+    With it: `cut -f4 <log> | sort -u | wc -l`.
+
+    ⚠ THIS DOES NOT STOP THE REPEAT WARNING REACHING THE READER — it only makes the record
+    countable. Suppressing the duplicate stderr print needs a journal (backlog #149 Tier 2), which
+    is deliberately NOT done here: every repeat figure above comes from REPLAYING history, and the
+    live log has recorded zero firings since the guard merged. Spending a design change on a nag
+    nobody has experienced is the wrong order.
+    """
+    return f"{when}\t{session or '-'}\t{'+'.join(acts) or '-'}\t{turn or '-'}\n"
 
 
 def _append_log(line: str) -> bool:
@@ -841,7 +878,7 @@ def run_decide(payload: str) -> int:
         # ⟳ r1 Codex, Low: the message used to PROMISE the warning had been logged while
         # `_append_log` could return False on OSError and nobody looked. A guard that misreports
         # its own evidence trail is the shape this repo keeps paying for, one level in.
-        if _append_log(log_line(acts, when, session_id)):
+        if _append_log(log_line(acts, when, session_id, turn_id_of(judged))):
             message += f"\n  Logged to {_log_display()}."
         else:
             message += (f"\n  ⚠ AND THIS WARNING COULD NOT BE LOGGED — {_log_display()} is not "
@@ -1241,6 +1278,43 @@ def _self_test() -> int:
               _safe(lambda: _log_display().startswith("/tmp/elsewhere")), True)
     finally:
         globals()["WARN_LOG"] = _real
+
+    # ---- log_line + turn_id_of (#149 Tier 1) -------------------------------------------------
+    # ⚠ `log_line` HAD NO CASES AT ALL before this — the function that writes the evidence trail
+    # was the untested one. The column count is the load-bearing property: a reader deriving a
+    # firing rate does `cut -f4 | sort -u | wc -l`, so a dropped or reordered field silently
+    # changes what every later count means.
+    class _O:
+        def __init__(self, opener): self.opener = opener
+
+    check("log: the turn id is the judged window's opener uuid",
+          turn_id_of(_O({"uuid": "abc-123"})), "abc-123")
+    # ⛔ THE DEGENERATE WINDOW IS REACHABLE AND MUST NOT RAISE. `windows()` returns a single
+    # `opener=None` window for a transcript with no real-user boundary; a traceback out of a Stop
+    # hook is indistinguishable from the hook being broken, which this file has already paid for.
+    check("log: an opener-less window yields '-' and does not raise",
+          _safe(lambda: turn_id_of(_O(None))), "-")
+    check("log: a malformed opener yields '-'", _safe(lambda: turn_id_of(_O("not-a-dict"))), "-")
+    check("log: an opener with no uuid yields '-'", turn_id_of(_O({"type": "user"})), "-")
+    check("log: an empty-string uuid is not an id", turn_id_of(_O({"uuid": ""})), "-")
+    check("log: a window object with no opener attribute at all yields '-'",
+          _safe(lambda: turn_id_of(object())), "-")
+    check("log: the line carries FOUR tab-separated fields",
+          len(log_line(["a commit"], "T", "s", "u").rstrip("\n").split("\t")), 4)
+    # ⛔ EVERY POSITIONAL FIELD READ GOES THROUGH `_safe`, and this is the THIRD time this file has
+    # paid for forgetting it. `_safe`'s own docstring: a raise inside the suite kills it with a
+    # traceback and prints NO `[FAIL] ` line, so check-plan-code scores the mutation
+    # RED-BUT-UNATTRIBUTABLE — noticed, uncreditable. Measured here: the mutation that drops the
+    # turn column makes `split("\t")[3]` an IndexError, the suite died on a traceback, and the
+    # harness reported `labels=[]`. A bare index is a raise waiting for the mutation that proves
+    # the case matters.
+    check("log: the turn id is the FOURTH field",
+          _safe(lambda: log_line(["a commit"], "T", "s", "u-9").rstrip("\n").split("\t")[3]), "u-9")
+    check("log: acts are joined with + in the third field",
+          _safe(lambda: log_line(["a commit", "a push"], "T", "s", "u").split("\t")[2]),
+          "a commit+a push")
+    check("log: a missing turn id degrades to '-' rather than an empty field",
+          _safe(lambda: log_line(["a commit"], "T", "s", "").rstrip("\n").split("\t")[3]), "-")
 
     # ---- final_text_of -----------------------------------------------------------------------
     check("final: last non-empty wins", final_text_of(["a", "b"]), "b")

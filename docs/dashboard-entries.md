@@ -10944,3 +10944,34 @@ R8-5 mitigated by reciprocal cross-references in both guards — the literal is 
 observes it; named as a decision, not fixed. R8-2 split: emissions half SUPERSEDED (measured at
 04461e1e, pre-F1; re-measured master→HEAD = 1,183→630, −47%), concentration half CONFIRMED (repeats
 37%→50%, worst turn 36→71) and folded into #149 with the numbers.
+
+## 2026-09-21
+The guard's log can now be counted. Before this, it could not — and nobody would have noticed until
+they tried to use it.
+
+The plan of record says to read that log in a few weeks and decide whether the guard cries wolf.
+Answering that needs a count of *turns*. What the log gave you was a count of *lines*, and those are
+not the same thing: the same turn can be logged over and over, and no line said which turn it was
+about. Measured across every transcript this project has, one single turn accounted for 71 lines —
+about a ninth of the entire file on its own.
+
+Each line now ends with an id for the turn it is about, so the repeats collapse and the count means
+something. I checked end-to-end that the id names the turn being judged and not the one in progress.
+
+Two things I deliberately did not do. The repeated warning still reaches you — silencing it needs the
+guard to remember what it already said, which is a design change, and the honest reason to wait is
+that **the live log has recorded nothing at all yet.** The guard has been running for two days and
+has not fired once, which I verified is correct behaviour rather than a broken hook: it watched six
+of this session's commits and stayed quiet because each one closed with a table. Every repeat number
+above comes from replaying history, not from anything you have experienced. Doing the counting fix
+first means that when it does start firing, the entries are usable from the first one instead of
+being thrown away.
+<!--tech-->
+#149 Tier 1 (r7 F7). `log_line` gains a 4th field from `turn_id_of(judged)` — opener uuid, measured
+present on 1,790/1,790 non-meta user records; `-` for the degenerate `opener=None` window, which is
+reachable and must not raise inside a Stop hook. `log_line` had ZERO cases before; now 10, plus 2
+mutations (148 cases, 44 mutations, sum 826). Tier 2 (F3, anti-nag journal) deferred with its shape
+recorded on #149. ⚠ Two self-inflicted catches: positional `split("\t")[3]` reads raised IndexError
+under the drop-the-column mutation and scored RED-BUT-UNATTRIBUTABLE — the third time this file has
+paid for an unwrapped index, now all through `_safe`; and my e2e probe wrote a synthetic first line
+into the real (gitignored) log, removed so the evidence trail starts empty.
