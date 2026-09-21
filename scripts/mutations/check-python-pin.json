@@ -290,8 +290,8 @@
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
-        "            out.append(Step(len(m.group(1)), [\" \" + m.group(2)]))",
-        "            out.append(Step(len(m.group(1)), []))"
+        "            cur = Step(len(m.group(1)), [\" \" + m.group(2)])",
+        "            cur = Step(len(m.group(1)), [])"
       ]
     ],
     "expect": "...and `name:` AFTER `uses:` still works, the shape that always did"
@@ -317,5 +317,38 @@
       ]
     ],
     "expect": "...nor does one in a FOLDED scalar"
+  },
+  {
+    "name": "a sibling dash stops starting a new step, so the second of two steps is silently discarded (r3 F4)",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        if m and (cur is None or len(m.group(1)) <= cur.indent):",
+        "        if m and (cur is None or len(m.group(1)) < cur.indent):"
+      ]
+    ],
+    "expect": "a SIBLING step is a new step — a pin in the SECOND of two is still found"
+  },
+  {
+    "name": "a blank line ends a step, so a pin written after one vanishes (r3 F4)",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        if line.strip() and indent <= cur.indent:",
+        "        if indent <= cur.indent:"
+      ]
+    ],
+    "expect": "a BLANK LINE inside a step does not end it"
+  },
+  {
+    "name": "comments are read as structure again, so one at the dash indent ends the step and the pin vanishes (r3 F4 follow-through)",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        if line.lstrip().startswith(\"#\"):",
+        "        if False:"
+      ]
+    ],
+    "expect": "a COMMENT at the dash indent does not end a step"
   }
 ]

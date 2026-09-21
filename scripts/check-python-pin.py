@@ -2,7 +2,7 @@
 """Every CI job pins the Python interpreter, the pins agree, and the pin actually took effect.
 
     python3 scripts/check-python-pin.py              # in CI: asserts. locally: advises.
-    python3 scripts/check-python-pin.py --self-test  # 68 cases
+    python3 scripts/check-python-pin.py --self-test  # 72 cases
 
     exit 0 = pinned, agreeing, and (in CI) in effect   exit 1 = a real disagreement
     exit 2 = CANNOT RUN — no workflow or no pin found, which is never a pass
@@ -84,11 +84,19 @@ EXEMPT_JOBS: dict[str, str] = {}
 
 
 class Step(NamedTuple):
-    """One step of a workflow job: the indent of its `- `, and every line BELONGING to it.
+    r"""One step of a workflow job: the indent of its `- `, and every line BELONGING to it.
 
     `body` INCLUDES the dash line with the dash blanked to a space, so a key written on the dash
-    line (`- uses: x`) and the same key written under a `name:` (`- name: y` / `  uses: x`) are
-    the SAME SHAPE to every caller. That equivalence is the whole point of this type.
+    line (`- uses: x`) and the same key written under a `name:` are both plain `key:` lines to a
+    caller scanning for one.
+
+    ⚠ r3 (claude) F4 — THE FIRST DRAFT CALLED THAT EQUIVALENCE "the whole point of this type", AND
+    THE CODE DOES NOT EARN THE CLAIM. Blanking the dash is cosmetic: dropping it leaves every
+    caller's `^\s*key:` match working, and the mutation SURVIVED. What the blanking does NOT do is
+    restore the dash line's true indent — `body[0]` reports the column of the text after the dash,
+    not of the dash — so an indent-sensitive scan (`with:` detection) cannot use it. No caller does
+    today. Written down rather than repaired, because the honest statement is cheaper than a
+    guarantee nothing needs.
     """
 
     indent: int
@@ -140,21 +148,51 @@ def _steps(text: str) -> list[Step]:
     # OWNS a line", so the mask belongs to the splitter. Filtering after the split asks the second
     # question before the first, which is the same ordering error in a new costume — the previous
     # four all asked "where do I look?" before "what am I looking at?".
+    # ⟳ r3 (claude) F3, Medium — A DASH IS A STEP BOUNDARY ONLY WHEN IT IS A **SIBLING**, and the
+    # first version of this got that wrong in a way that DROPPED LINES. It treated every `- ` as a
+    # new step, so a nested list inside a step —
+    #
+    #       - name: Set up Python
+    #         env:
+    #           LIST:
+    #             - a                 <- opened a phantom step at indent 12
+    #         uses: actions/setup-python@v5
+    #         with:
+    #           python-version: '3.12'
+    #
+    # — opened a step at indent 12, and the next line (indent 8) was SHALLOWER, so the close branch
+    # fired and pushed a `Step(-1, [])` sentinel. Every later line was then discarded until the next
+    # dash: `uses:` and the pin belonged to NO step, and `declared_pins` returned []. A real pin
+    # vanished. Fail-closed, so not a false green — but the consequence is r2's H1 exactly: the
+    # author sees a pinned step, the guard says UNPINNED, and the message routes them to EXEMPT_JOBS.
+    #
+    # ⛔ THE SENTINEL ENDED THE FILE, NOT THE STEP. There is no sentinel now, and no discard branch:
+    # a line is either a sibling dash (new step), a dedent out of the list (close), or body.
     out: list[Step] = []
+    cur: Step | None = None
     for line in _structural(text.split("\n")):
         m = re.match(r"^(\s*)-(\s.*)$", line)
-        if m:
-            out.append(Step(len(m.group(1)), [" " + m.group(2)]))
+        indent = len(line) - len(line.lstrip())
+        if m and (cur is None or len(m.group(1)) <= cur.indent):
+            cur = Step(len(m.group(1)), [" " + m.group(2)])
+            out.append(cur)
             continue
-        if not out:
+        if cur is None:
             continue
-        if line.strip() and len(line) - len(line.lstrip()) <= out[-1].indent:
-            out[-1] = Step(out[-1].indent, out[-1].body + [])   # closed; later lines are not ours
-            out.append(Step(-1, []))                            # a sentinel nobody matches
+        # ⚠ TWO CLAUSES HERE ARE UNFALSIFIABLE BY VALID YAML, AND THAT IS STATED RATHER THAN LEFT
+        # AS AN ABSENCE (r3 F4). Measured on a copy after every other clause was given a case:
+        #   * `<=` vs `<` below — a NON-dash, NON-comment, NON-blank line at exactly the dash's
+        #     indent is not valid YAML (it would be a mapping key sibling to a list item). Comments
+        #     and blanks, which CAN sit there, are handled before this line — the comment case was
+        #     the sixth defect, so this boundary is now the only unobservable part.
+        #   * the dash blanking in `Step` — cosmetic, reasoned about in that class's docstring.
+        # Both survive mutation because no legal input distinguishes them, not because nothing
+        # looked. Backlog #151 is the standing row for this class on the sibling guard.
+        if line.strip() and indent <= cur.indent:
+            cur = None                       # dedented out of this list entirely
             continue
-        if out[-1].indent >= 0:
-            out[-1].body.append(line)
-    return [s for s in out if s.indent >= 0]
+        cur.body.append(line)                # deeper than the dash: it is this step's, dash or not
+    return out
 
 
 _BLOCK_SCALAR = re.compile(r"^(\s*)[\w.\-]+:\s*[|>][-+0-9]*\s*(#.*)?$")
@@ -200,6 +238,16 @@ def _structural(body: list[str]) -> list[str]:
                 scalar_indent = None               # dedented out of the block scalar
             else:
                 continue                            # its CONTENT: data, never structure
+        # ⟳ r3 F4 follow-through — A COMMENT IS NOT STRUCTURE, and treating it as structure was a
+        # SIXTH defect, found by chasing an "unfalsifiable" clause rather than exempting it. A
+        # comment sits at ANY indent in valid YAML, so one written at the step's own dash indent
+        # satisfied the close test and ENDED THE STEP: `uses:` and the pin after it belonged to
+        # nothing and `declared_pins` returned []. A real pin vanished — the MISS direction, and
+        # r2's H1 experience again. ⭐ It is fixed HERE, not in the close test, for the same reason
+        # the block-scalar mask moved into the splitter: "which lines are structure" is one
+        # question with one owner, and a comment is the other way text can impersonate it.
+        if line.lstrip().startswith("#"):
+            continue
         m = _BLOCK_SCALAR.match(line)
         if m:
             scalar_indent = len(m.group(1))
@@ -604,10 +652,41 @@ def self_test() -> int:
          declared_pins("      - name: Set up Python\n        uses: actions/setup-python@v5\n"
                        "        with:\n          python-version: '3.12'\n"
                        "      - name: after\n        run: |\n          echo hi\n"), ["3.12"])
+    # ⟳ r3 (claude) F5, Medium — THIS CASE USED TO PASS FOR AN AMBIENT REASON, and that is exactly
+    # why the fourth defect got through it. The old fixture had NO `uses:` and NO `with:`, so it was
+    # rejected by the contents test before any heredoc question arose: measured, widening the
+    # contents regex to `actions/` or removing the contents test entirely left it GREEN. Nothing
+    # touching heredoc handling could fail a case whose label is about heredoc handling. r2 named
+    # this exact pair as the thing to watch and the rewrite re-acquired the same defect.
+    # The fixture now carries a real `uses:` inside the heredoc AND a real `with:` outside it, so
+    # the only thing that makes it pass is the block-scalar mask.
     case("a named step whose heredoc CONTAINS a pin line is still not a pin",
          declared_pins("      - name: write a file\n        run: |\n"
-                       "          cat > x <<'EOF'\n          python-version: '9.9'\n"
-                       "          EOF\n"), [])
+                       "          cat > x <<'EOF'\n"
+                       "          uses: actions/setup-python@v5\n"
+                       "          python-version: '9.9'\n          EOF\n"
+                       "        with:\n          python-version: '9.9'\n"), [])
+    # ⟳ r3 (claude) F4, Medium — SEVEN OF TEN CLAUSES OF `_steps` WERE HELD BY NOTHING, including
+    # every clause of the sentinel apparatus F3 proved wrong. You could delete the whole thing and
+    # the suite stayed green, which is why F3 was never going to be caught here. The sentinel is
+    # gone; these two cases hold the clauses that replaced it.
+    case("a SIBLING step is a new step — a pin in the SECOND of two is still found",
+         declared_pins("      - uses: actions/cache@v4\n        with:\n          key: x\n"
+                       "      - uses: actions/setup-python@v5\n"
+                       "        with:\n          python-version: '3.12'\n"), ["3.12"])
+    # ⟳ r3 F4 follow-through, the SIXTH defect — a comment at the step's own dash indent satisfied
+    # the close test and ENDED THE STEP, so the pin after it vanished. Legal YAML, MISS direction.
+    case("a COMMENT at the dash indent does not end a step",
+         declared_pins("      - name: Set up Python\n      # a comment, legal at any indent\n"
+                       "        uses: actions/setup-python@v5\n"
+                       "        with:\n          python-version: '3.12'\n"), ["3.12"])
+    case("...but a comment INSIDE a block scalar is still its CONTENT, not structure",
+         declared_pins("      - name: x\n        run: |\n"
+                       "          # uses: actions/setup-python@v5\n"
+                       "        with:\n          python-version: '9.9'\n"), [])
+    case("a BLANK LINE inside a step does not end it",
+         declared_pins("      - name: Set up Python\n        uses: actions/setup-python@v5\n\n"
+                       "        with:\n          python-version: '3.12'\n"), ["3.12"])
     # ⛔ AND THE STEP BOUNDARY, DRIVEN. The two cases above never reach it — neither fixture has a
     # `setup-python` step, so the scan loop never starts and the clause that ENDS a step was
     # unexercised (it survived mutation). Here a real pin is followed by a DIFFERENT action
