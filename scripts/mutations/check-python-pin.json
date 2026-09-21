@@ -295,5 +295,27 @@
       ]
     ],
     "expect": "...and `name:` AFTER `uses:` still works, the shape that always did"
+  },
+  {
+    "name": "block-scalar content is scanned as structure again, so a heredoc line declares a step (the 4th declared_pins defect)",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        step = Step(raw.indent, _structural(raw.body))",
+        "        step = Step(raw.indent, raw.body)"
+      ]
+    ],
+    "expect": "setup-python INSIDE a run-block heredoc does not make a step a setup-python step"
+  },
+  {
+    "name": "the block-scalar opener stops recognising FOLDED scalars, so `>` content is read as structure",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "_BLOCK_SCALAR = re.compile(r\"^(\\s*)[\\w.\\-]+:\\s*[|>][-+0-9]*\\s*(#.*)?$\")",
+        "_BLOCK_SCALAR = re.compile(r\"^(\\s*)[\\w.\\-]+:\\s*[|][-+0-9]*\\s*(#.*)?$\")"
+      ]
+    ],
+    "expect": "...nor does one in a FOLDED scalar"
   }
 ]

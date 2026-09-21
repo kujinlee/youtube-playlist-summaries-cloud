@@ -2,7 +2,7 @@
 """Every CI job pins the Python interpreter, the pins agree, and the pin actually took effect.
 
     python3 scripts/check-python-pin.py              # in CI: asserts. locally: advises.
-    python3 scripts/check-python-pin.py --self-test  # 62 cases
+    python3 scripts/check-python-pin.py --self-test  # 66 cases
 
     exit 0 = pinned, agreeing, and (in CI) in effect   exit 1 = a real disagreement
     exit 2 = CANNOT RUN — no workflow or no pin found, which is never a pass
@@ -139,6 +139,58 @@ def _steps(text: str) -> list[Step]:
     return [s for s in out if s.indent >= 0]
 
 
+_BLOCK_SCALAR = re.compile(r"^(\s*)[\w.\-]+:\s*[|>][-+0-9]*\s*(#.*)?$")
+
+
+def _structural(body: list[str]) -> list[str]:
+    r"""PURE. The lines of a step that are YAML STRUCTURE, with block-scalar CONTENT removed.
+
+    ⛔⛔ THE FOURTH `declared_pins` DEFECT, AND I FOUND IT IN MY OWN REDESIGN — 2026-09-21, before
+    round 3 returned. Recognising a step by what it CONTAINS fixed r2's H1 and opened a false green
+    in the other direction:
+
+        - name: docs
+          run: |
+            cat <<'EOF'
+            uses: actions/setup-python@v5     <- TEXT, inside a shell heredoc, inside a YAML
+            EOF                                  block scalar. Not a step declaration.
+          with:
+            python-version: '9.9'             <- read as a PIN. The job is not pinned at all.
+
+    A false green is the direction this guard must never fail in, and it is the same family as r1's
+    High. ⭐ THE ROOT CAUSE OF ALL FOUR IS ONE THING: this guard reads YAML by scanning lines, so
+    text that LOOKS like structure is indistinguishable from structure. Each earlier repair moved
+    the boundary — "any line" -> "inside the step" -> "inside the `with:`" -> "inside the step,
+    identified by contents" — and none of them ever asked which lines are structure AT ALL.
+
+    So this is not a fifth narrowing. It removes block-scalar CONTENT once, for every consumer, and
+    both scans in `declared_pins` run over the result. A `run: |`, `script: >`, or any `key: |-`
+    owns every line indented past it; those lines are data and are dropped.
+
+    ⚠ WHAT THIS STILL CANNOT DO, stated rather than implied: it is not a YAML parser. A flow
+    mapping (`with: {python-version: '9.9'}`) or a quoted string containing a newline escape is
+    still read as text. Those shapes do not occur in this repository's workflows today — which is
+    exactly the kind of sentence that has been wrong twice on this branch, so it is written as a
+    KNOWN BOUND, not as a guarantee.
+    """
+    out: list[str] = []
+    scalar_indent: int | None = None
+    for line in body:
+        here = len(line) - len(line.lstrip())
+        if scalar_indent is not None:
+            if line.strip() and here <= scalar_indent:
+                scalar_indent = None               # dedented out of the block scalar
+            else:
+                continue                            # its CONTENT: data, never structure
+        m = _BLOCK_SCALAR.match(line)
+        if m:
+            scalar_indent = len(m.group(1))
+            out.append(line)                        # the KEY is structure; its body is not
+            continue
+        out.append(line)
+    return out
+
+
 def declared_pins(text: str) -> list[str]:
     """PURE. Every `python-version:` that BELONGS TO an `actions/setup-python` step, in file order.
 
@@ -158,7 +210,8 @@ def declared_pins(text: str) -> list[str]:
     next step at the same or shallower indent.
     """
     pins: list[str] = []
-    for step in _steps(text):
+    for raw in _steps(text):
+        step = Step(raw.indent, _structural(raw.body))
         # ⛔ A STEP IS RECOGNISED BY WHAT IT CONTAINS, NOT BY HOW IT OPENS. See the REDESIGN note
         # in this function's docstring: the previous three versions all asked "does the line that
         # STARTS the step name setup-python?", which is only true when nothing is written before
@@ -493,6 +546,32 @@ def self_test() -> int:
     case("a named step around an UNRELATED action is still not a pin",
          declared_pins("      - name: Cache things\n        uses: actions/cache@v4\n"
                        "        with:\n          python-version: '9.9'\n"), [])
+    # ⛔⛔ THE FOURTH `declared_pins` DEFECT — found by the coordinator in the coordinator's OWN
+    # redesign, 2026-09-21, before round 3 returned. Recognising a step by its CONTENTS fixed r2's
+    # H1 and opened a FALSE GREEN in the other direction: a `uses: actions/setup-python` line
+    # sitting in a shell heredoc made the step count, so an unrelated `python-version` in its
+    # `with:` read as the pin and an UNPINNED job reported as pinned. The suite could not see it —
+    # every existing heredoc case used a step with no `setup-python` anywhere, so none of them
+    # reached the identification.
+    case("setup-python INSIDE a run-block heredoc does not make a step a setup-python step",
+         declared_pins("      - name: docs\n        run: |\n          cat <<'EOF'\n"
+                       "          uses: actions/setup-python@v5\n          EOF\n"
+                       "        with:\n          python-version: '9.9'\n"), [])
+    case("...nor does one in a FOLDED scalar",
+         declared_pins("      - name: docs\n        script: >\n"
+                       "          uses: actions/setup-python@v5\n"
+                       "        with:\n          python-version: '9.9'\n"), [])
+    case("...nor one under a chomping indicator (`|-`)",
+         declared_pins("      - name: docs\n        run: |-\n"
+                       "          uses: actions/setup-python@v5\n"
+                       "        with:\n          python-version: '9.9'\n"), [])
+    # ⚠ AND THE POSITIVE DIRECTION OF THE SAME MASK: dropping block-scalar CONTENT must not drop
+    # the step around it. A real setup-python step followed by a step with a `run:` block still
+    # yields its pin.
+    case("a real pin survives a neighbouring step that owns a run block",
+         declared_pins("      - name: Set up Python\n        uses: actions/setup-python@v5\n"
+                       "        with:\n          python-version: '3.12'\n"
+                       "      - name: after\n        run: |\n          echo hi\n"), ["3.12"])
     case("a named step whose heredoc CONTAINS a pin line is still not a pin",
          declared_pins("      - name: write a file\n        run: |\n"
                        "          cat > x <<'EOF'\n          python-version: '9.9'\n"
