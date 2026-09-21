@@ -60,8 +60,10 @@ and reads as covering all of it is a hazard this repo has paid for more than onc
     `subprocess.run(["git","push"])` are invisible — the trigger reads shell text, not process
     trees. ⟳ The heredoc half is NARROWED, not closed — `mask_heredocs` blanks bodies, handles a
     QUEUE of terminators and matches them strictly (POSIX: exact line; `<<-` strips TABS only).
-    ⚠ The first version of this sentence said CLOSED and r4 refuted it with two leaks. It does not
-    understand `$(...)`, backslash-continued `<<`, or a delimiter built by expansion.
+    ⚠ The first version of this sentence said CLOSED and r4 refuted it with two leaks; an opener
+    whose delimiter never appears now opens nothing, so a left-shift (`x << y`) and a quoted
+    `<<EOF` are inert. It still does not understand `$(...)`, a backslash-continued `<<`, or a
+    delimiter built by expansion.
   * **AN HTML TABLE.** `<table><tr><th>Check</th>…` is a perfectly readable closing table and is
     not recognised; only the markdown form is. Deliberate — `process-checklists.md` shows markdown.
   * **A PARTIALLY-SUCCESSFUL ACT.** `is_error` on the paired result means "no close happened", but
@@ -93,7 +95,7 @@ Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CAN
 
 Usage:
     python3 scripts/check-closing-table.py --decide      # reads the Stop-hook payload on stdin
-    python3 scripts/check-closing-table.py --self-test   # 116 cases
+    python3 scripts/check-closing-table.py --self-test   # 119 cases
 """
 from __future__ import annotations
 
@@ -239,13 +241,35 @@ def mask_heredocs(command: str) -> str:
     written as "the common case", not "closed" — see below; the first version overclaimed.
     """
     lines = command.split("\n")
+
+    def _terminated(terminator: str, dashed: bool, after: int) -> bool:
+        """Does this opener's delimiter actually appear on a later line?
+
+        ⛔ AN OPENER THAT NEVER CLOSES OPENS NOTHING — the same rule this file already applies to
+        markdown fences, and it is the only fix that does not require a shell parser. Found by
+        probing before r5 reported, and both instances were MISSES, the dangerous direction:
+
+            python3 -c "print(x << y)"   -> `<< y` read as a heredoc named `y`
+            echo "use <<EOF here"        -> a QUOTED `<<EOF` read as an opener
+
+        Each swallowed every real command after it. Requiring the delimiter to exist makes a
+        left-shift and a quoted mention inert, because neither is followed by a line that is just
+        `y` or `EOF`. A genuinely malformed heredoc leaks — but that command would not run either.
+        """
+        for later in lines[after + 1:]:
+            if (later.lstrip("\t") if dashed else later) == terminator:
+                return True
+        return False
+
     out: list[str] = []
     pending: list[tuple[str, bool]] = []          # (terminator, strip-leading-tabs)
-    for line in lines:
+    for index, line in enumerate(lines):
         if not pending:
             out.append(line)
             for found in _HEREDOC_START.finditer(line):
-                pending.append((found.group(3), found.group(1) == "-"))
+                terminator, dashed = found.group(3), found.group(1) == "-"
+                if _terminated(terminator, dashed, index):
+                    pending.append((terminator, dashed))
             continue
         out.append("")                            # every body line, and the terminator itself
         terminator, dashed = pending[0]
@@ -928,6 +952,14 @@ def _self_test() -> int:
           closing_acts_of([bash("cat <<EOF\n EOF\ngit push\nEOF")]), [])
     check("heredoc: `<<-` strips leading TABS, so a tabbed terminator DOES end it",
           closing_acts_of([bash("cat <<-EOF\n\tEOF\ngit push")]), ["a push"])
+    # ⛔ AN OPENER THAT NEVER CLOSES OPENS NOTHING — both of these were MISSES, found by probing
+    # before r5 reported. A fake opener swallowed every real command after it.
+    check("heredoc: a left-shift by a NAME is not an opener",
+          closing_acts_of([bash('python3 -c "print(x << y)"\ngit push')]), ["a push"])
+    check("heredoc: a QUOTED <<EOF mentioned in text is not an opener",
+          closing_acts_of([bash('echo "use <<EOF here"\ngit push')]), ["a push"])
+    check("heredoc: an unterminated REAL heredoc leaks rather than swallowing",
+          closing_acts_of([bash("cat <<EOF\ngit push")]), ["a push"])
     check("heredoc mask: a different heredoc, so the parameter is not a constant",
           mask_heredocs("cat <<X\nsecret\nX").split("\n")[1], "")
     # Assert the PROPERTY, not a transcribed literal — the first version of this case hand-counted
@@ -1143,7 +1175,7 @@ def _self_test() -> int:
             globals()["WARN_LOG"] = real_log
 
     declared = re.search(r"--self-test\s+#\s*(\d+)\s+cases", __doc__ or "")
-    total = 116
+    total = 119
     if not declared or int(declared.group(1)) != total:
         failures.append(
             f"declared self-test count {declared.group(1) if declared else 'MISSING'} != {total} "

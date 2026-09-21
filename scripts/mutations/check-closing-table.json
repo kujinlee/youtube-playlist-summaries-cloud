@@ -290,8 +290,8 @@
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "    lines = command.split(\"\\n\")\n    out: list[str] = []\n    pending: list[tuple[str, bool]] = []",
-        "    return command\n    lines = command.split(\"\\n\")\n    out: list[str] = []\n    pending: list[tuple[str, bool]] = []"
+        "        out.append(\"\")                            # every body line, and the terminator itself",
+        "        out.append(line)                          # every body line, and the terminator itself"
       ]
     ],
     "expect": "acts: a heredoc BODY is data, not a command"
@@ -334,8 +334,8 @@
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "            for found in _HEREDOC_START.finditer(line):\n                pending.append((found.group(3), found.group(1) == \"-\"))",
-        "            found = _HEREDOC_START.search(line)\n            if found:\n                pending.append((found.group(3), found.group(1) == \"-\"))"
+        "            for found in _HEREDOC_START.finditer(line):",
+        "            for found in list(_HEREDOC_START.finditer(line))[:1]:"
       ]
     ],
     "expect": "heredoc: TWO heredocs in one command both stay blanked"
@@ -350,5 +350,16 @@
       ]
     ],
     "expect": "heredoc: a space-indented terminator does NOT end the body"
+  },
+  {
+    "name": "an opener with no delimiter opens a heredoc again, swallowing real commands",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "                if _terminated(terminator, dashed, index):\n                    pending.append((terminator, dashed))",
+        "                if True:\n                    pending.append((terminator, dashed))"
+      ]
+    ],
+    "expect": "heredoc: a left-shift by a NAME is not an opener"
   }
 ]
