@@ -90,7 +90,7 @@ Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CAN
 
 Usage:
     python3 scripts/check-closing-table.py --decide      # reads the Stop-hook payload on stdin
-    python3 scripts/check-closing-table.py --self-test   # 73 cases
+    python3 scripts/check-closing-table.py --self-test   # 84 cases
 """
 from __future__ import annotations
 
@@ -149,21 +149,57 @@ _ENV_PREFIX = re.compile(r"^(?:[A-Za-z_][A-Za-z_0-9]*=(?:\"[^\"]*\"|'[^']*'|\S*)
 _SEGMENT_SPLIT = re.compile(r"\n|;|&&|\|\||\||&")
 
 
+def mask_quotes(command: str) -> str:
+    """PURE. `command` with every quoted span blanked, LENGTH PRESERVED.
+
+    ⛔ TWO DEFECTS, ONE ROOT — found by probing round 1's own fixes before round 2 returned. The
+    shell operators and the rehearsal flags were both matched against raw text, so quotes were
+    invisible:
+      * `echo "a; git push"` SPLIT on the quoted `;` and the tail `git push"` read as a real push;
+      * `git commit -m "document --dry-run"` was SKIPPED as a rehearsal because the flag appeared
+        in the COMMIT MESSAGE.
+    One fires falsely and one misses a real close — opposite directions, same cause. Blanking
+    quoted spans (rather than removing them) keeps every offset, so the masked string can be split
+    and matched directly.
+
+    ⚠ It does NOT understand heredocs, backslash escapes or nested shells; those stay stated bounds.
+    """
+    out: list[str] = []
+    quote: str | None = None
+    for ch in command:
+        if quote is not None:
+            out.append(" ")
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+            out.append(" ")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
 def command_segments(command: str) -> list[str]:
     """PURE. `command` split into individually-runnable segments, env prefixes stripped.
 
     A segment is what a `^`-anchored pattern is allowed to match, so that "the command mentions
-    git push" and "the command runs git push" stop being the same question.
+    git push" and "the command runs git push" stop being the same question. Operates on the
+    QUOTE-MASKED form — see `mask_quotes`.
     """
     out: list[str] = []
-    for raw in _SEGMENT_SPLIT.split(command):
+    for raw in _SEGMENT_SPLIT.split(mask_quotes(command)):
         seg = raw.strip()
+        # ⟳ r2 Codex, Medium — ORDER MATTERS, and it was backwards. Env prefixes were stripped
+        # BEFORE the subshell paren, so `(GIT_SSH=x git push)` left `GIT_SSH=x git push` with the
+        # prefix intact — `^git` never matched and a real push was missed. Brackets first, then
+        # assignments, then trailing brackets.
+        seg = seg.lstrip("({").lstrip()
         while True:
             stripped = _ENV_PREFIX.sub("", seg, count=1)
             if stripped == seg:
                 break
             seg = stripped.strip()
-        seg = seg.lstrip("(").lstrip()
+        seg = seg.rstrip(")}").rstrip()
         if seg:
             out.append(seg)
     return out
@@ -201,15 +237,20 @@ def has_closing_table(text: str) -> bool:
     visually checks for.
     """
     lines = text.split("\n")
-    fenced = False
+    # ⟳ r1 Codex, Medium: a table INSIDE A CODE FENCE satisfied the marker. A closing message that
+    # merely SHOWS an example table — this file's own docstring does — is not a report.
+    #
+    # ⛔ A FENCE ONLY HIDES THINGS IF IT CLOSES, and the first version of this got that wrong: it
+    # toggled on every marker, so a SINGLE stray ``` earlier in the message suppressed every table
+    # after it, turning a correct report into a false warning. Probed before round 2 returned.
+    # Fence regions are therefore paired up first, and an unterminated marker fences nothing.
+    markers = [i for i, ln in enumerate(lines)
+               if ln.lstrip().startswith("```") or ln.lstrip().startswith("~~~")]
+    fenced_lines: set[int] = set()
+    for a, b in zip(markers[::2], markers[1::2]):
+        fenced_lines.update(range(a, b + 1))
     for i, line in enumerate(lines):
-        # ⟳ r1 Codex, Medium: a table INSIDE A CODE FENCE satisfied the marker. A closing message
-        # that merely SHOWS an example table — this file's own docstring does — is not a report.
-        # Any fence marker toggles; the info string after it is irrelevant to that.
-        if line.lstrip().startswith("```") or line.lstrip().startswith("~~~"):
-            fenced = not fenced
-            continue
-        if fenced:
+        if i in fenced_lines:
             continue
         cells = _cells(line)
         if not cells or len(cells) < 2:
@@ -370,7 +411,11 @@ def decide(final_text: str | None, acts: list[str]) -> tuple[int, str]:
         f"table, one row per claim, evidence IN the row.\n"
         f"  Why not prose: a paragraph asserting the work is indistinguishable from a paragraph "
         f"asserting it wrongly (measured 2026-09-04).\n"
-        f"  This is a WARNING, not a block, and it is appended to {_log_display()}.\n"
+        # ⟳ r2 Codex, Low: this used to ASSERT "it is appended to <path>", and `run_decide` then
+        # appended a contradicting sentence when the write failed. The emitted warning still
+        # carried the false claim. `decide` is pure and cannot know whether the write succeeded,
+        # so it no longer claims — the caller, which does know, states the outcome.
+        f"  This is a WARNING, not a block.\n"
         f"  ⛔ SHAPE ONLY: this guard sees THAT a table is present. It cannot see whether every "
         f"row was a check that could have come back ❌ — which is rule 3, and the rule that "
         f"separates a real table from a decorated assertion.")
@@ -441,7 +486,9 @@ def run_decide(payload: str) -> int:
         # ⟳ r1 Codex, Low: the message used to PROMISE the warning had been logged while
         # `_append_log` could return False on OSError and nobody looked. A guard that misreports
         # its own evidence trail is the shape this repo keeps paying for, one level in.
-        if not _append_log(log_line(acts, when, session_id)):
+        if _append_log(log_line(acts, when, session_id)):
+            message += f"\n  Logged to {_log_display()}."
+        else:
             message += (f"\n  ⚠ AND THIS WARNING COULD NOT BE LOGGED — {_log_display()} is not "
                         f"writable, so it is NOT in the record and cannot be counted later.")
         print(message, file=sys.stderr)
@@ -534,6 +581,14 @@ def _self_test() -> int:
           has_closing_table("| check | result |\n|---|---|"), False)
     check("table: a real table AFTER a closed fence still counts",
           has_closing_table("```\ncode\n```\n\n| check | result |\n|---|---|\n| a | b |"), True)
+    # ⛔ An UNTERMINATED fence must hide nothing — otherwise one stray ``` earlier in the message
+    # silences a correct report. This is the fence fix's own falsifier.
+    check("table: an unclosed fence before the table hides nothing",
+          has_closing_table("```\nsnippet\n\n| check | result |\n|---|---|\n| a | b |"), True)
+    # A blank line ENDS a markdown table, so a header+separator followed by a blank and then a row
+    # is two tables, the first of which has no claims. Rejecting it is correct, not a miss.
+    check("table: a blank line ends the table, so the header has no claim rows",
+          has_closing_table("| check | result |\n|---|---|\n\n| a | b |"), False)
 
     # ---- closing_acts_of: the trigger -------------------------------------------------------
     def bash(cmd, tid="t1"):
@@ -559,6 +614,15 @@ def _self_test() -> int:
           closing_acts_of([bash("git push --help")]), [])
     check("acts: gh pr merge --help closes nothing",
           closing_acts_of([bash("gh pr merge --help")]), [])
+    # ⛔ Quote-blindness, both directions, probed before r2 returned.
+    check("acts: a quoted operator does not split the command",
+          closing_acts_of([bash('echo "a; git push"')]), [])
+    check("acts: a rehearsal flag inside a commit MESSAGE is not a rehearsal",
+          closing_acts_of([bash('git commit -m "document --dry-run"')]), ["a commit"])
+    check("acts: a real pipe still splits",
+          closing_acts_of([bash("git push 2>&1 | tee log")]), ["a push"])
+    check("mask: quoted spans are blanked, length preserved",
+          (mask_quotes('a "bc" d'), len(mask_quotes('a "bc" d'))), ("a      d", 8))
     check("acts: git status is not an act", closing_acts_of([bash("git status --short")]), [])
     check("acts: none", closing_acts_of([bash("ls -la")]), [])
     check("acts: deduped",
@@ -591,6 +655,19 @@ def _self_test() -> int:
           closing_acts_of([bash("GIT_SSH=x git push")]), ["a push"])
     check("acts: a git global option before the subcommand",
           closing_acts_of([bash("git -C /repo push")]), ["a push"])
+    check("acts: a git global option before commit too",
+          closing_acts_of([bash("git -C /repo commit -m x")]), ["a commit"])
+    # ⟳ r2 Codex, Medium: brackets had to be stripped BEFORE env assignments.
+    check("acts: a subshell with an env prefix is still a push",
+          closing_acts_of([bash("(GIT_SSH=x git push)")]), ["a push"])
+    check("acts: a plain subshell is still a push",
+          closing_acts_of([bash("(git push)")]), ["a push"])
+    # Assert the PROPERTY, not a transcribed literal — the first version of this case hand-counted
+    # the spaces and was off by one, which is the same class of error the guard exists to catch.
+    check("mask: a different string keeps length and drops every quote",
+          (lambda s, r: (len(r) == len(s), "'" in r or '"' in r, r.startswith("git commit -m")))(
+              "git commit -m 'hi there'", mask_quotes("git commit -m 'hi there'")),
+          (True, False, True))
     check("segments: splits on newline, ; and &&",
           command_segments("a\nb; c && d"), ["a", "b", "c", "d"])
     check("segments: strips an env prefix", command_segments("A=1 B=2 git push"), ["git push"])
@@ -603,6 +680,9 @@ def _self_test() -> int:
     check("decide: no acts -> quiet", decide("anything", [])[0], QUIET)
     check("decide: acts + table -> quiet", decide(good, ["a push"])[0], QUIET)
     check("decide: acts + prose -> warn", decide("All done!", ["a push"])[0], WARN)
+    check("decide: the pure verdict makes NO claim about logging",
+          "appended" in decide("All done!", ["a push"])[1] or
+          "Logged to" in decide("All done!", ["a push"])[1], False)
     # ⟳ r1 Codex, High: this asserted QUIET and the deferral to the banner guard was wrong.
     check("decide: acts + NO text at all -> warn (a close with no report at all)",
           decide(None, ["a push"])[0], WARN)
@@ -627,8 +707,11 @@ def _self_test() -> int:
         # the exception into a value keeps the report parseable, which is the whole contract.
         check("log display: outside the repo does not raise", _safe(_log_display),
               "/tmp/elsewhere/x.log")
-        check("decide: renders a redirected log without raising",
-              _safe(lambda: "/tmp/elsewhere/x.log" in decide("All done!", ["a push"])[1]), True)
+        # ⟳ r2 Codex, Low: decide() no longer renders the log path at all — the CALLER states the
+        # outcome, because only it knows whether the write succeeded. What must still never raise
+        # is _log_display itself, asserted directly above.
+        check("log display: a repo-relative path is unchanged by the redirect guard",
+              _safe(lambda: _log_display().startswith("/tmp/elsewhere")), True)
     finally:
         globals()["WARN_LOG"] = _real
 
@@ -701,7 +784,7 @@ def _self_test() -> int:
             globals()["WARN_LOG"] = real_log
 
     declared = re.search(r"--self-test\s+#\s*(\d+)\s+cases", __doc__ or "")
-    total = 73
+    total = 84
     if not declared or int(declared.group(1)) != total:
         failures.append(
             f"declared self-test count {declared.group(1) if declared else 'MISSING'} != {total} "

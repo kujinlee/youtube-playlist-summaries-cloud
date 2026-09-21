@@ -37,7 +37,7 @@
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "        if fenced:\n            continue",
+        "        if i in fenced_lines:\n            continue",
         "        if False:\n            continue"
       ]
     ],
@@ -55,7 +55,7 @@
     "expect": "table: header + separator but NO claim rows reports nothing"
   },
   {
-    "name": "the trigger matches anywhere again, so a grep for the string reads as a push",
+    "name": "the trigger matches anywhere again, so `git pushover` reads as a push",
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
@@ -63,18 +63,18 @@
         "    (\"a push\",        re.compile(r\"git\\s+push\")),"
       ]
     ],
-    "expect": "acts: grep for the command is not the command"
+    "expect": "acts: substring is not a match"
   },
   {
-    "name": "git global options are no longer skipped, so `git -C dir push` is missed",
+    "name": "git global options are no longer skipped, so `git -C dir commit` is missed",
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "    (\"a push\",        re.compile(r\"^git\\s+(?:-[A-Za-z]\\s+\\S+\\s+)*push(?![\\w-])\")),",
-        "    (\"a push\",        re.compile(r\"^git\\s+push(?![\\w-])\")),"
+        "    (\"a commit\",      re.compile(r\"^git\\s+(?:-[A-Za-z]\\s+\\S+\\s+)*commit(?![\\w-])\")),",
+        "    (\"a commit\",      re.compile(r\"^git\\s+commit(?![\\w-])\")),"
       ]
     ],
-    "expect": "acts: a git global option before the subcommand"
+    "expect": "acts: a git global option before commit too"
   },
   {
     "name": "a rehearsal counts as an act, so --dry-run closes a job",
@@ -86,17 +86,6 @@
       ]
     ],
     "expect": "acts: --dry-run rehearses and performs nothing"
-  },
-  {
-    "name": "--help stops being a rehearsal, so a manual page closes a job",
-    "file": "scripts/check-closing-table.py",
-    "edits": [
-      [
-        "_REHEARSAL = re.compile(r\"(?<![\\w-])--(?:dry-run|help)(?![\\w-])\")",
-        "_REHEARSAL = re.compile(r\"(?<![\\w-])--(?:dry-run)(?![\\w-])\")"
-      ]
-    ],
-    "expect": "acts: git push --help closes nothing"
   },
   {
     "name": "the command is no longer split into segments, so a chain hides the real act",
@@ -207,5 +196,38 @@
       ]
     ],
     "expect": "run: only one turn -> QUIET (no subject yet)"
+  },
+  {
+    "name": "quotes stop being masked, so a quoted operator splits the command",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    for raw in _SEGMENT_SPLIT.split(mask_quotes(command)):",
+        "    for raw in _SEGMENT_SPLIT.split(command):"
+      ]
+    ],
+    "expect": "acts: a quoted operator does not split the command"
+  },
+  {
+    "name": "fences toggle again, so one unterminated marker silences every table after it",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    for a, b in zip(markers[::2], markers[1::2]):\n        fenced_lines.update(range(a, b + 1))",
+        "    for a in markers:\n        fenced_lines.update(range(a, len(lines)))"
+      ]
+    ],
+    "expect": "table: an unclosed fence before the table hides nothing"
+  },
+  {
+    "name": "brackets are stripped after env prefixes again, so a subshell hides a real close",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        seg = seg.lstrip(\"({\").lstrip()",
+        "        seg = seg"
+      ]
+    ],
+    "expect": "acts: a subshell with an env prefix is still a push"
   }
 ]
