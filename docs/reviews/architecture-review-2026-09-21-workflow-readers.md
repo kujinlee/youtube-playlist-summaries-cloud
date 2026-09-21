@@ -249,6 +249,7 @@ pinned, and given the same reason for.
 | **Self-test cases** | The 12 killing cases move too; `check-python-pin.py`'s declared count falls from **84** | ⚠ **Missing from the first draft entirely (Claude H2).** `check-plan-code.py:500` runs **only the mutated file's own suite**, and `expect` is matched by exact equality — so a mutation whose file becomes the library is unattributable unless the library has its own `--self-test` carrying the named case |
 | Declared-count bookkeeping | Re-declare in `check-python-pin.py`'s docstring; add the library to `check-selftest-counts.py`'s `POPULATION` | `check-python-pin.py` is already pinned there, so a stale count fails. ⚠ **Bare names in `POPULATION`, full paths in `EXPECTED_MUTATIONS`** — a trap that file records at `:95-97` |
 | Discovery | Add to the `EXPECTED_MUTATIONS` self-test case at `check-plan-code.py:2687` | ⚠ **The first draft named the wrong mechanism (Claude M2).** That list is not a "self-tested-non-guard list" — it asserts `sorted(EXPECTED_MUTATIONS)`, and the reason to join it is that the library **ships a manifest**. The self-tested-non-guard population is *computed*, not listed (`check-ratchet-contract.py:402-409`), so the library joins it automatically the moment it has a `--self-test`, and with a manifest it correctly stays out of `WIDENED_MANIFEST_DEBT` |
+| **Consumer coverage** | `check-ratchet-contract.py` needs its **own** new self-test cases **and** mutation entries for the wiring — *"`ci.yml` prose no longer satisfies R3"* and the pre-join masking path | ⚠ **Round 2 High, and it is this project's most-repeated lesson.** Its manifest holds **10** entries, none about reading `ci.yml`, and its suite has no case for a comment or block scalar there — so **an implementation could forget the mask entirely and keep every suite green.** Library tests prove the library works; they prove nothing about whether the caller called it. *Unit coverage does not compose — mutate the CALL SITE* |
 | Implementation trap | Mask `ci_path.read_text()` **before** the join, never the joined blob | `blob_for` (`check-ratchet-contract.py:881-885`) joins `ci.yml` with 81 shell, hook and Python files. `_structural` drops every line whose first non-space character is `#`, so masking the blob would strip comments from all 81 and silently change R3 across the whole non-workflow corpus |
 
 ### What this does NOT do — stated, not implied
@@ -263,11 +264,31 @@ pinned, and given the same reason for.
   control                      SATISFIED -> SATISFIED     <-- correct
   ```
 
-  `if: false` **is** structure, so a masking primitive is definitionally unable to see it. Closing it
-  needs `_steps()` used for real — find the step owning the invocation, reject it if it carries a
-  falsy `if:` — which is a larger change, filed as **#156**. Checked: walking all 57 steps of the
-  real `ci.yml`, no guard invocation lives inside a conditional step and there is no job-level `if:`,
-  so this is no more live than the other two.
+  `if: false` **is** structure, so a masking primitive is definitionally unable to see it. Filed as
+  **#156**.
+
+  ⛔ **AND THE FIRST VERSION OF THIS PARAGRAPH ASSERTED SOMETHING FALSE, which is worth recording
+  because of HOW.** It said *"no guard invocation lives inside a conditional step"* — taken from
+  round 1's Claude half and **propagated into this document and into #156 without being re-run**,
+  which is the one thing `docs/dev-process.md` says a Phase 6 must not do: *agent output is a lead,
+  not a finding.* Round 2 refuted it in one command, and the coordinator then re-derived it:
+
+  ```
+  steps with BOTH an if: and a guard invocation: 2
+    line 447: if=["if: github.event_name == 'pull_request'"]  guards=['check-dashboard-entry.py']
+    line 472: if=["if: github.event_name == 'pull_request'"]  guards=['check-review-recorded.py']
+  ```
+
+  ⭐ **The refutation improves #156 rather than merely correcting it.** *"Reject an invocation inside
+  a conditional step"* would **red-line two guards that genuinely run** — and both are PR-only
+  gates, the kind whose absence is hardest to notice. The real distinction is between a condition
+  that is **statically false** (`if: false` — never executes) and one that is **event-scoped**
+  (`if: github.event_name == 'pull_request'` — executes, on some events). Only the first is "not a
+  caller"; treating the second the same way trades a fail-open for a fail-closed on live gates.
+
+  ⚠ **The sharper statement of the limit, from round 2:** promoting a structure reader into R3 does
+  not answer *"does this guard execute?"* — it answers *"does this text survive workflow-content
+  masking?"* Those are different questions, and R3's name claims the first.
 
 * **It does not make the reader correct.** The flow-mapping bound survives and is measured — a
   genuinely pinned job written `with: {python-version: '3.12'}` gives `declared_pins []`,
