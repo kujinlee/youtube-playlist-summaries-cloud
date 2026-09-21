@@ -572,6 +572,13 @@ EXPECTED_MUTATIONS = {
     #     two agree. The case that looked like it did — `any("relacl" in pat …)` — is a SUBSTRING
     #     test on the pattern text, so either copy could narrow while it stayed green.
     "scripts/check-catalog-coverage.py": 7,
+    # ⟳ 2026-09-20, the closing-table guard. Ten entries, and the one that earned the file is
+    # "an unreadable transcript passes quietly" — the fail-open direction, which is the failure
+    # this repo has now paid for more than four times. Two others exist only because writing the
+    # suite found the defects: `relative_to` raising on a redirected log (a warn-only observer
+    # turning into a traceback), and judging the LIVE turn instead of the previous one, which
+    # would have made the guard silently unable to see any closing message at all.
+    "scripts/check-closing-table.py": 37,
     "scripts/gen-dashboard.py": 68,
     # ⟳ 2026-09-12. gen-goals-page.py was the last PAGE-PRODUCING generator with no
     # manifest — gen-dashboard, gen-backlog-page, brief-compose, page_chrome and page_markup
@@ -2655,6 +2662,7 @@ def _self_test() -> int:
                                       "scripts/check-banner-armed.py",
                                       "scripts/check-catalog-coverage.py",
                                       "scripts/check-ci-watched.py",
+                                      "scripts/check-closing-table.py",
                                       "scripts/check-dashboard-entry.py",
                                       "scripts/check-docs.py",
                                       # ⟳ 2026-09-06: the FIRST payment against the R4 manifest
@@ -3318,7 +3326,7 @@ def _self_test() -> int:
     # pinning too. ⚠ THIS COMMENT ITSELF WENT STALE AT 770 WHILE THE SUM WAS 778 (Claude r1,
     # Medium): the transitions are the audit trail for a ratchet that may only rise, so a gap in
     # them is the one thing a reader cannot reconstruct from the number.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 782)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 819)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

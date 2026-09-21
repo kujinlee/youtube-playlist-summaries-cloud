@@ -10738,3 +10738,70 @@ pull-request-only steps from `ci.yml` via `pr_only_steps()`, runs `check-dashboa
 reads `gh pr checks`, so a CI job running it would wait on a verdict including itself. Registered in
 all five places across the three ratchets; `EXPECTED_MUTATIONS` 770 → 775, both manifests proved to
 kill through the case each names.
+
+## 2026-09-20
+There is a house rule for reporting finished work, and today it turned out nobody was following it.
+
+The rule says: when a job is done, do not describe it in a paragraph. List it — one line per claim,
+with the evidence on the line. It was written in early September after a perfectly accurate
+paragraph about three completed items drew the reply "have you done this too?", because a paragraph
+claiming work looks exactly like a paragraph claiming it wrongly. The same content as a list ended
+the question.
+
+Asked this evening whether such a rule existed, I went looking, found it where it was supposed to
+be — and realised I had spent the day closing with paragraphs anyway. The first instinct was to
+write the rule down somewhere I would see it more often. That instinct is the one thing already
+known not to work here: an almost identical rule about how to present choices was written in three
+separate places and still got followed one time in three, because it was being remembered rather
+than read. What finally fixed that one was not another copy of the rule. It was the system refusing
+to accept a badly-formed choice at the moment the choice was offered.
+
+So this does the same thing for finished work. When a turn ends, the session now looks back at
+whether real work was completed — something committed, pushed, merged — and whether the report that
+followed was a list or a paragraph. If it was a paragraph, it says so. It does not block anything
+and it never will; the point is to notice, not to nag, and every time it fires it is written to a
+file so the question "is it crying wolf?" can be answered by counting rather than by opinion.
+
+Two honest limits, both written into the warning itself so they cannot quietly be forgotten. It can
+see whether a list is there; it cannot see whether the lines in it were real checks or just a row
+of ticks, and a row of ticks is arguably worse than the paragraph because the format implies
+someone verified something. And it only notices work that touched the repository, so a job done
+entirely outside it — as one was today — passes unseen.
+
+Building it found a bug in itself on the first run of its own tests: the code that writes the
+warning would have crashed if the log file were ever moved, which for a thing whose only job is to
+mention something quietly is the worst possible failure. Fixed, and given tests that fail if it
+ever comes back.
+
+Then six rounds of adversarial review happened, and every single one found its problem inside the
+previous round's repair. That is worth saying plainly because it is unusual: not one round found a
+fresh problem in the original work. The thing being repaired each time was the part that reads
+shell commands to decide whether real work happened — a surface with no natural end, since people
+can write the same command in endlessly many ways. Two changes stopped the bleeding. It now
+disbelieves itself when the output says the work did not happen (a plan that refused to advance, a
+push the server rejected, a commit with nothing to commit), and it ignores text that only looks
+like a command — quoted, commented, or sitting inside a block of text being written to a file.
+
+The last check was the one that mattered most: running it over six OTHER work sessions it had never
+seen, 5,287 commands in total. It flagged 456 and got two apparently wrong. Both were examined by
+hand and in both cases the tool was right and the yardstick was wrong.
+
+**Waiting on you:** nothing new from this entry.
+<!--tech-->
+New `scripts/check-closing-table.py`, wired as a fourth observer in
+`.claude/hooks/block-idle-stop.sh` after the blocking check (a blocked stop is an unfinished turn,
+so no table is owed). Rule: `warn <=> judged turn CLOSED A JOB and its FINAL assistant text block
+has no CHECK/RESULT table`. The trigger reads the turn's own `Bash` tool_use blocks
+(`git commit|git push|gh pr merge|begin-plan.py --tick`), skipping any whose paired `tool_result`
+is_error — an attempt is not work. Marker requires a real markdown table: a `check` header cell, a
+`result` header cell, AND the separator row, so a sentence containing two pipes cannot pass.
+Turn segmentation is BORROWED from `check-banner-armed.py` via `spec_from_file_location` plus a
+`hasattr` sweep over `_parse_records/windows/judged_window/texts_of`; copying it would be a second
+implementation of one rule. No journal is needed because the trigger is intrinsic to the turn,
+unlike the banner guard's sentinel. Judges the PREVIOUS completed turn (backlog #96: the in-flight
+final message is unflushed at Stop), so one turn of latency is structural. Deliberately NOT a
+sentence-reader — backlog #48 built one and discarded it as satisfiable by rewording.
+`_log_display()` exists because the first self-test run caught `WARN_LOG.relative_to(ROOT)` raising
+on a redirected path. Self-test 37 cases; 10 mutations in `scripts/mutations/check-closing-table.json`;
+pinned in `check-selftest-counts.POPULATION`, `check-plan-code.EXPECTED_MUTATIONS` (782 → 792) and
+`check-fixture-variation.EXAMINED_KEYS` (6 keys, derived by running `analyse()`).

@@ -105,6 +105,10 @@ playwright/.auth/
 # warnings — which is that log's whole job. The glob above deliberately does not match this name.
 .claude/banner-flush-observations.log
 
+# Warn-only log from .claude/hooks/block-idle-stop.sh -> scripts/check-closing-table.py.
+# Session-local evidence for whether that observer false-alarms; nothing parses it.
+.claude/closing-table-warnings.log
+
 # Which commit a CI watcher is armed for (scripts/check-ci-watched.py). SHA-scoped on purpose:
 # a new push moves HEAD, the sentinel stops matching, and the check warns again. "Armed once,
 # covered forever" is the bug it exists to catch, not the behaviour it should have.

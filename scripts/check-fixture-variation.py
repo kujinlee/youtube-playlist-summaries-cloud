@@ -278,6 +278,23 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # ⟳ 2026-09-20: the closing-table guard, pinned in the commit that adds it — this guard
+    # refused it until it was, which is the third time in two days it has caught a new file
+    # arriving unmeasured. DERIVED by running `analyse()`, not transcribed. It reports NO
+    # findings: all six parameters are genuinely varied by the suite.
+    'check-closing-table.py': (
+        'closing_acts_of.records',
+        'coalesce_injected.make',
+        'coalesce_injected.windows_in',
+        'command_segments.command',
+        'decide.acts',
+        'decide.final_text',
+        'final_text_of.texts',
+        'has_closing_table.text',
+        'mask_heredocs.command',
+        'mask_quotes.command',
+        'run_decide.payload',
+    ),
     # ⟳ 2026-09-20: the merge-readiness checker, pinned in the commit that adds it —
     # this guard refused it until it was, one day after doing the same to the feature
     # hub's two scripts. DERIVED by running `analyse()`, not transcribed: the lesson
