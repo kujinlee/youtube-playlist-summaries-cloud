@@ -189,8 +189,8 @@ substitution, and it has silently skipped a review gate. *(Physical, not a prefe
 ## Project-Specific
 
 **Sub-projects.** 1 — Backend (types, lib, API routes, pipelines). 2 — Frontend (React, SSE, Obsidian
-URI, PDF viewer). *(⚠ flagged: the original "2 does not begin until 1 is fully verified and merged"
-now looks obsolete — see Rules flagged for review.)*
+URI, PDF viewer). They proceed **in parallel** — the original "2 does not begin until 1 is fully
+verified and merged" was retired 2026-09-20, superseded by events (the frontend shipped).
 
 **Mocking boundaries.** `lib/gemini.ts` — all Gemini calls. `lib/youtube.ts` — YouTube Data API +
 transcript fetching. E2E mocks at the **API route** level, not the lib boundary.
@@ -208,13 +208,5 @@ no rule, because it creates a belief that something is covered.
 > pointer row above. If it cannot, it belongs in the checklists, method, or rationale doc — not the
 > spine. **`scripts/check-docs.py` enforces the line budget.**
 
-### Rules flagged for review, not retired
-
-Surfaced by running this project's own **P / I / H** classification (see `review-method.md`) on the
-process itself. Flagged rather than removed — retiring a rule is the user's call.
-
-| Rule | Why flagged |
-|---|---|
-| Sub-project 2 waits for 1 to be "fully verified and merged" | The frontend shipped; both now proceed in parallel. Looks superseded by events |
-| `subagent-driven-development` as the execution default | Set 2026-06-09, never re-examined; this session ran largely inline |
-| "Currently known-red: none" | That is **state**, not policy. Belongs in the roadmap's dev-infrastructure debt section |
+**The eviction queue was drained 2026-09-20** — all three flagged rules resolved, reasons in
+[`process-rationale.md`](process-rationale.md). `check-docs.py` now WARNS before a budget blocks.

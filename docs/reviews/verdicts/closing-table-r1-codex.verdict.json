@@ -1,0 +1,16 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 6036 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "964c391a2698a217c23280ffd2c7b5fb86c2cec6",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "prompt": "/tmp/ct-review-prompt.md",
+  "reason": "6036 chars",
+  "review": "ct-r1-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}

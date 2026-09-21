@@ -454,6 +454,65 @@ Not a feature slice — this is the machinery that stops hard-won lessons from d
 
 ## Dev-infrastructure debt (NOT tied to any feature slice — survives every merge)
 
+**⭐ 2026-09-18 — TWO NEW ITEMS FROM PR #318's REVIEW, and the first is LIVE IN PRODUCTION.**
+Both are PRE-EXISTING, neither was introduced by #318, and both are deliberately NOT folded into it
+on the round-2 reviewer's own disposition. Filed in `docs/backlog.md` the same turn.
+
+- [ ] **backlog #139 — 🔴 a deploy kills the summary it interrupts AND keeps the money.**
+  `fly.toml:45-46` promises the worker *"finishes the in-flight job"* on SIGTERM and `:49` buys 120s
+  of grace for it. It does not: `shutdownSignal` is folded into the handler's signal, so the handler
+  **aborts**, `fail_job` (`0008:152-156`) takes the `attempts >= max_attempts` branch, and with the
+  MEASURED live `summary_max_attempts = 1` that is **`dead_letter` on the first interruption, every
+  deploy** — with `billableSucceeded: true`, because `classifyGeminiFailure` returns `'keep'` once
+  aborted. ⚠ A **design** call (drain vs abort-and-don't-charge-the-attempt), not a patch, and the
+  complete fix is SQL — `claim_next_job` increments `attempts` with no un-claim.
+  ⟳ **CORRECTED same day: deploy is ONE OF THREE triggers, and not the one that fires in normal
+  operation.** `AbortSignal.any([wallClock, leaseLost, shutdownSignal])` means the handler also dies
+  on a **10-minute wallClock timeout** and on **`leaseLost` — a SINGLE un-retried heartbeat error**
+  (`heartbeat` throws on any PostgREST error; the caller is `.catch(() => leaseLost.abort())`, firing
+  every 40s for the whole job). One transient network blip during a multi-minute summary kills the
+  job and keeps the charge. ⚠ Fixing only SIGTERM leaves the other two — instance-not-class.
+  ✅ **NO DATA CORRUPTION** (asked and answered): a pre-write abort check guards the irreversible
+  sequence, status is monotonic in SQL (`0009:141`), and every reader gates on `'promoted'`, so a
+  half-written row is invisible rather than broken. Residual is an orphaned staged blob only, and
+  only if the process is SIGKILLed mid-sequence.
+  **Exposure today is ZERO** (0 jobs in 30 days) → fix before real traffic, not immediately.
+  **Falsifier:** SIGTERM a worker mid-summary; assert the job is not `dead_letter` and the ledger
+  was not charged. Second falsifier for the corrected scope: make ONE heartbeat RPC fail during a
+  job and assert the job survives.
+- [ ] **backlog #141 — 🟠 `fly.toml` and production disagree, and the next deploy silently reverts a
+  live cost saving.** `fly.toml:42` says `min_machines_running = 1`; the running web machine says
+  **0**, set via the Machines API on 2026-09-18 — deliberately NOT `fly deploy`, because the running
+  image is from **24 Aug** while master has **177 commits** since, **6 touching shipped code** (M4's
+  `0027` promotion, the #23 corrections feature), so a one-integer "config-only" deploy would have
+  shipped a month of unreleased application code. ⭐ **The failure mode is SILENCE** — nothing breaks,
+  no gate fires, ~$5/mo simply returns with no event to connect it to. One-line fix; it should ride
+  inside #142, which touches the same file. ⚠ If #142 slips, do it alone — the trap is armed meanwhile.
+  **Falsifier:** `fly.toml` says 0 AND the live config still reports 0 after the next deploy.
+- [ ] **backlog #142 — 🟢 wake-on-visit: let the app go dormant and return when someone arrives.**
+  Designed and agreed 2026-09-18, not started; blocked on nothing. Worker gains a private service +
+  **Flycast** (routes through Fly Proxy, so autostart fires — `.internal` explicitly cannot, which is
+  why the worker cannot wake today), the enqueue path pokes it best-effort, and the worker `exit 0`s
+  when drained under `[[restart]] policy = "no"` so the machine returns to `stopped`.
+  ⭐ **The worker stops ITSELF; the proxy is only allowed to START it** — Fly documents `soft_limit`
+  but never promises an in-flight request blocks a stop, so a hold-the-request-open design would rest
+  on unpromised behaviour. ⭐ **The poke is an optimisation, not a correctness requirement** — the job
+  is durably in Postgres first, so a failed poke costs latency, never work.
+  ⚠ Partly retires PR #318's cost argument (a worker that exits emits no idle traffic); #318's
+  failure-domain fixes stand on their own.
+  **Falsifier:** from both machines `stopped`, visit the site and request a summary — the worker must
+  reach `started` with no human action and return to `stopped` after draining.
+- [x] **backlog #140 — 🟢 collapse `SweepPolicy` to a single `run(fn)`.** ✅ **DONE 2026-09-18.**
+  ⚠ **NOT "removes a finding by construction"** — that framing was the filing's, and two review
+  rounds refuted it. Shipped as `sweepPolicyFrom(cursor)`: both rules written EXACTLY ONCE, no
+  implementation holding either, which restores master's single-copy property rather than achieving
+  impossibility. The honest bound is that the mistake is writable in **exactly one function IN THIS REPO — the
+  minimum, not zero** (a caller-supplied `SweepPolicy` is a second, unobserved one — r3 Medium 1) — and it is caught **by a guard**, three tests, measured. Full account in
+  `docs/backlog.md` #140. ⚠ Not to be confused with the
+  redesign that was REFUTED in #318 r2 (hoisting the sweep into `runWorkerLoop` dissolves none of
+  the three findings). The obstacle is gone: the comment claiming callers depend on `runOnce`
+  sweeping was measured false and corrected.
+
 **STATUS: two open items (`exec_sql` 2026-07-20; an UNIDENTIFIED unit-suite flake 2026-07-30).**
 `middleware-2a` red suite FIXED 2026-07-23 · integration-vs-migrations FIXED 2026-08-04 (PR #46) ·
 the two 2026-07-19 items are CLOSED.
@@ -1944,7 +2003,7 @@ unapplied for eight days while every document read "merged, done".
 > (squash `65cd509e`, verified 2026-09-06). Two things make it startable only now: that merge, and
 > the Agent tool being available again — **every open question in the row is about forking agents**,
 > so a spec written without it would rest on argument rather than measurement. ⚠ **The thesis holds
-> for the four agent-authored pages only.** The three hook-regenerated ones already cost zero context;
+> for the four agent-authored pages only.** The four hook-regenerated ones already cost zero context;
 > proposing to fork them is a category error. ⚠ **Two items in that row are the user's call and are
 > deliberately NOT part of this goal:** declaring the comprehensibility suite a project deliverable
 > (a goal change, whose home is `docs/anchors.md`), and marketplace publication (outward-facing and
@@ -1983,7 +2042,7 @@ unapplied for eight days while every document read "merged, done".
   anyone wrote a clause. Any new unfalsifiable gate now fails immediately, with no slack.
 
 **Current state (2026-08-12, still accurate except where the block above supersedes it):**
-- **`master` is clean** — tsc clean, **2819 unit / 274 suites** green, plus **522 integration**
+- **`master` is clean** — tsc clean, **2892 unit / 278 suites** green, plus **522 integration**
   (519 passed + 3 skipped, measured 2026-08-17 against a live local stack; integration does not run
   in CI and is therefore NOT verified by the check below — treat it as a dated note, not a live
   number). **The unit counts above are verified on every CI run** by `scripts/check-test-counts.py`,

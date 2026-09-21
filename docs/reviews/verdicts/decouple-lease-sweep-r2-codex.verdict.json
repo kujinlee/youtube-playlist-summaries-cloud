@@ -1,0 +1,16 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 3480 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "120e5b1b7853aab97c2ced2017a5d529b30e9cf6",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/5cbc47e9-0d41-4233-8828-361c8830d6bb/scratchpad/r2-prompt.md",
+  "reason": "3480 chars",
+  "review": "decouple-lease-sweep-r2-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}

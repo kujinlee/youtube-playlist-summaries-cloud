@@ -87,6 +87,17 @@ POPULATION: frozenset[str] = frozenset({
                                      # ratchet contract's population never sees it — this is the
                                      # only outside observer of its declared count.
     "check-anchors.py",
+    # ⟳ 2026-09-20, the closing-table guard. Pinned in the SAME commit that creates it —
+    # a script that declares a count nothing verifies is exactly the drift this file refuses.
+    "check-closing-table.py",
+    # ⟳ 2026-09-19, the feature hub. Both pinned in the commit that wires them into CI — a script
+    # that declares a count nothing verifies is the drift this file exists to refuse, and doing it
+    # on a NEW file would be that shape at one remove. ⚠ BARE NAMES here and FULL PATHS in
+    # `check-plan-code.EXPECTED_MUTATIONS`: the same two scripts are registered under two
+    # different string shapes, which is a trap worth naming rather than rediscovering.
+    "check-features.py",
+    "gen-features-page.py",          # not a `check-*` guard, so the ratchet contract's population
+                                     # never sees it — this is its only outside observer.
     # ⟳ 2026-09-12: gained a declared count when it gained its own manifest — the guard that
     # enforces R4 had exempted itself from it, because the escape regex matched its own docstring.
     "check-ratchet-contract.py",
@@ -174,6 +185,7 @@ POPULATION: frozenset[str] = frozenset({
     "check-live-schema.py",          # ⟳ its summary moved to LAST in the same commit: it sat
                                      # before a multi-line epilogue, and `printed_total` reads the
                                      # LAST ratio line
+    "check-merge-ready.py",
     "check-paid-caller-arrival.py",  # ~12s, the slowest member; still well inside the timeout
     "check-producer-enumeration.py",  # ⟳ printed `PASS`, so it failed control_is_green outright
     "check-roadmap-consistency.py",

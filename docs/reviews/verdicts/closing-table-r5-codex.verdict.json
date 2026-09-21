@@ -1,0 +1,16 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 2833 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "998b19996b00c24caae43578050490240be8cdd0",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "prompt": "/tmp/ct-r5-prompt.md",
+  "reason": "2833 chars",
+  "review": "closing-table-r5-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}

@@ -77,6 +77,11 @@
           },
           {
             "type": "command",
+            "command": "bash .claude/hooks/regen-features-page.sh",
+            "statusMessage": "Refreshing the features view..."
+          },
+          {
+            "type": "command",
             "command": "bash .claude/hooks/regen-dashboard.sh",
             "statusMessage": "Refreshing the dashboard..."
           }

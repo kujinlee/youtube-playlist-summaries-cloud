@@ -8,8 +8,8 @@
 # ⟳ CORRECTED 2026-09-05 (code review r2, Low). This header used to say the wrapper "only
 # translates Claude Code's stdin JSON into that script's flags", and that all of the reasoning
 # lived in the blocking script. Both were false, and had been since the observers were added:
-#   * it invokes THREE scripts — check-banner-armed.py, check-plan-progress.py and
-#     check-ci-watched.py — not one. (⟳ r2 M1: this line used to give their invocation LINE
+#   * it invokes FOUR scripts — check-banner-armed.py, check-plan-progress.py, check-ci-watched.py
+#     and, since 2026-09-20, check-closing-table.py — not one. (⟳ r2 M1: this line used to give their invocation LINE
 #     NUMBERS. They were already wrong on `origin/master`, and backlog #99 moved them a further
 #     three lines, leaving three counter-examples 74 lines above the paragraph that declares line
 #     numbers expire. The r1 cleanup was instance-not-class; this finishes the sweep.);
@@ -67,6 +67,26 @@ ARGS=(--decide)
 #     sees a message addressed to the assistant. The message hedges for exactly that reason.
 printf '%s' "$INPUT" | python3 "$REPO_ROOT/scripts/check-banner-armed.py" --decide
 BANNER_RC=$?
+
+# ── Fourth question, added 2026-09-20 (user decision) ───────────────────────────────────────
+# Did the previous turn CLOSE A JOB — commit, push, merge, tick — and then report it in prose
+# instead of the CHECK / RESULT table `docs/process-checklists.md` requires?
+#
+# ⟳ MOVED AHEAD OF THE BLOCKING CHECK, r1 Codex (Medium), and the first placement was wrong for a
+# reason worth keeping. It sat after the blocking check, justified as "a blocked stop is an
+# unfinished turn, so no closing table is owed". That argument describes the LIVE turn — and this
+# guard judges the PREVIOUS completed one. Because it holds no journal, a verdict it does not emit
+# is not deferred, it is LOST: the next unblocked stop judges a different turn. So a blocked stop
+# silently swallowed exactly the warnings a mid-plan session most needs.
+#
+# Ordering is free here — unlike the banner observer it reads only the transcript and samples no
+# sentinel — so it runs where it can always be heard.
+#
+# The rule it enforces was written on 2026-09-04 and then went unfollowed for sixteen days,
+# including by the assistant that had just read it. That is the selection-card shape exactly:
+# a rule recalled rather than read. Warn-only, logged, one turn of latency.
+printf '%s' "$INPUT" | python3 "$REPO_ROOT/scripts/check-closing-table.py" --decide
+TABLE_RC=$?
 
 # ⚠ THIS COMMENT DESCRIBES THE BLOCKING CHECK BELOW, not the observer above. The 2026-09-05
 # reorder moved the observer in between and orphaned it; re-attached deliberately.
@@ -130,7 +150,7 @@ CI_RC=$?
 # What this arithmetic guarantees is that the HOOK never surfaces a 2 on their behalf: a detector
 # that only observes must not be able to wedge a turn it has no stake in. An earlier version of
 # this comment said "neither may return 2", which was false about both scripts (code review r2).
-if [[ "$BANNER_RC" != "0" || "$CI_RC" != "0" || "$PROGRESS_RC" == "3" ]]; then
+if [[ "$BANNER_RC" != "0" || "$CI_RC" != "0" || "$TABLE_RC" != "0" || "$PROGRESS_RC" == "3" ]]; then
     exit 1
 fi
 exit 0

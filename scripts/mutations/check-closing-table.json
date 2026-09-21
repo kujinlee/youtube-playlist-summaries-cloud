@@ -1,0 +1,519 @@
+[
+  {
+    "name": "the separator row stops being required, so a sentence containing two pipes is a table",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        if i + 1 >= len(lines) or not _SEPARATOR.match(lines[i + 1]):\n            continue",
+        "        if False:\n            continue"
+      ]
+    ],
+    "expect": "table: rows with no separator between them are not a table"
+  },
+  {
+    "name": "a separator needs two dashes again, so valid GFM `|-|-|` is rejected",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "_SEPARATOR = re.compile(r\"^\\s*\\|(?:\\s*:?-+:?\\s*\\|)+\\s*$\")",
+        "_SEPARATOR = re.compile(r\"^\\s*\\|(?:\\s*:?-{2,}:?\\s*\\|)+\\s*$\")"
+      ]
+    ],
+    "expect": "table: single-dash separator is valid markdown"
+  },
+  {
+    "name": "a table row no longer has to close with a pipe",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    if not s.startswith(\"|\") or not s.endswith(\"|\") or len(s) < 3:",
+        "    if not s.startswith(\"|\") or len(s) < 3:"
+      ]
+    ],
+    "expect": "table: trailing text after the closing pipe is not a row"
+  },
+  {
+    "name": "code fences stop being skipped, so an EXAMPLE table counts as a report",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        if i in fenced_lines:\n            continue",
+        "        if False:\n            continue"
+      ]
+    ],
+    "expect": "table: inside a code fence is an EXAMPLE, not a report"
+  },
+  {
+    "name": "a header and separator with zero claim rows is accepted again",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        if i + 2 < len(lines) and _cells(lines[i + 2]):",
+        "        if True:"
+      ]
+    ],
+    "expect": "table: header + separator but NO claim rows reports nothing"
+  },
+  {
+    "name": "the trigger matches anywhere again, so `git pushover` reads as a push",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    (\"a push\",        re.compile(r\"^git\\s+(?:-[A-Za-z]\\s+\\S+\\s+)*push(?![\\w-])\")),",
+        "    (\"a push\",        re.compile(r\"git\\s+push\")),"
+      ]
+    ],
+    "expect": "acts: substring is not a match"
+  },
+  {
+    "name": "git global options are no longer skipped, so `git -C dir commit` is missed",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    (\"a commit\",      re.compile(r\"^git\\s+(?:-[A-Za-z]\\s+\\S+\\s+)*commit(?![\\w-])\")),",
+        "    (\"a commit\",      re.compile(r\"^git\\s+commit(?![\\w-])\")),"
+      ]
+    ],
+    "expect": "acts: a git global option before commit too"
+  },
+  {
+    "name": "a rehearsal counts as an act, so --dry-run closes a job",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "_REHEARSAL = re.compile(r\"(?<![\\w-])--(?:dry-run|help)(?![\\w-])\")",
+        "_REHEARSAL = re.compile(r\"(?!x)x\")"
+      ]
+    ],
+    "expect": "acts: --dry-run rehearses and performs nothing"
+  },
+  {
+    "name": "the command is no longer split into segments, so a chain hides the real act",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "_SEGMENT_SPLIT = re.compile(r\"\\n|;|&&|\\|\\||\\||&\")",
+        "_SEGMENT_SPLIT = re.compile(r\"\\n\")"
+      ]
+    ],
+    "expect": "acts: && chain still counts the real act"
+  },
+  {
+    "name": "an env assignment prefix is no longer stripped, so the invocation is missed",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "            stripped = _ENV_PREFIX.sub(\"\", seg, count=1)",
+        "            stripped = seg"
+      ]
+    ],
+    "expect": "acts: an env prefix is part of the invocation"
+  },
+  {
+    "name": "the interpreter prefix is dropped, so the real begin-plan invocation is missed",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "     re.compile(r\"^(?:\\S*python[\\d.]*\\s+)?\\S*begin-plan\\.py(?![\\w-]).*(?<![\\w-])--tick(?![\\w-])\")),",
+        "     re.compile(r\"^\\S*begin-plan\\.py(?![\\w-]).*(?<![\\w-])--tick(?![\\w-])\")),"
+      ]
+    ],
+    "expect": "acts: plan tick"
+  },
+  {
+    "name": "a refused push counts as work, so a blocked act closes a job",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "            if tid in errored:\n                continue",
+        "            if False:\n                continue"
+      ]
+    ],
+    "expect": "acts: errored tool_use ignored"
+  },
+  {
+    "name": "a present table no longer silences the warning, so every close warns",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    if has_closing_table(final_text):",
+        "    if False:"
+      ]
+    ],
+    "expect": "decide: acts + table -> quiet"
+  },
+  {
+    "name": "a close with NO report at all goes quiet again — the r1 High, restored",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        return WARN, (\n            f\"CLOSING TABLE MISSING — the previous turn completed {', '.join(acts)} and reported \"",
+        "        return QUIET, (\n            f\"CLOSING TABLE MISSING — the previous turn completed {', '.join(acts)} and reported \""
+      ]
+    ],
+    "expect": "decide: acts + NO text at all -> warn (a close with no report at all)"
+  },
+  {
+    "name": "the log path is rendered with relative_to again, so a redirected log raises",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    try:\n        return str(WARN_LOG.relative_to(ROOT))\n    except ValueError:\n        return str(WARN_LOG)",
+        "    return str(WARN_LOG.relative_to(ROOT))"
+      ]
+    ],
+    "expect": "log display: outside the repo does not raise"
+  },
+  {
+    "name": "the closing message becomes the FIRST text block instead of the last",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    for text in reversed(texts):",
+        "    for text in texts:"
+      ]
+    ],
+    "expect": "final: last non-empty wins"
+  },
+  {
+    "name": "an unreadable transcript passes quietly — the fail-open direction",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "              \"warning as 'no table was owed'.\", file=sys.stderr)\n        return CANNOT_RUN",
+        "              \"warning as 'no table was owed'.\", file=sys.stderr)\n        return QUIET"
+      ]
+    ],
+    "expect": "run: empty payload -> CANNOT RUN"
+  },
+  {
+    "name": "the LIVE turn is judged, so the unflushed final message reads as absent",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    judged = banner.judged_window(\n        coalesce_injected(banner.windows(records), banner.TurnWindow))",
+        "    judged = coalesce_injected(banner.windows(records), banner.TurnWindow)[-1]"
+      ]
+    ],
+    "expect": "run: only one turn -> QUIET (no subject yet)"
+  },
+  {
+    "name": "quotes stop being masked, so a quoted operator splits the command",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    for raw in _SEGMENT_SPLIT.split(mask_quotes(mask_heredocs(command))):",
+        "    for raw in _SEGMENT_SPLIT.split(mask_heredocs(command)):"
+      ]
+    ],
+    "expect": "acts: a quoted operator does not split the command"
+  },
+  {
+    "name": "a fence never finishes opening, so no fence hides anything",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        if open_at is None:\n            open_at, open_mark = i, mark",
+        "        if True:\n            open_at, open_mark = i, mark"
+      ]
+    ],
+    "expect": "table: a matched backtick fence still hides its table"
+  },
+  {
+    "name": "brackets are stripped after env prefixes again, so a subshell hides a real close",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        seg = seg.lstrip(\"({\").lstrip()",
+        "        seg = seg"
+      ]
+    ],
+    "expect": "acts: a subshell with an env prefix is still a push"
+  },
+  {
+    "name": "a notification starts a turn again, so a split turn warns falsely",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        if out and isinstance(content, str) and _INJECTED.match(content):",
+        "        if False:"
+      ]
+    ],
+    "expect": "run: a notification splitting a turn does NOT warn falsely"
+  },
+  {
+    "name": "coalescing swallows REAL user turns too, so the subject silently widens",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    r\"^\\s*(?:<(?:task-notification|system-reminder)\\b\"\n    r\"|Another Claude session sent a message)\")",
+        "    r\"\")"
+      ]
+    ],
+    "expect": "coalesce: a REAL user message still starts a turn"
+  },
+  {
+    "name": "escapes are ignored inside a quoted span again, so a false act appears",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        if quote == '\"' and ch == \"\\\\\" and i + 1 < len(command):\n            out.append(\"  \")\n            i += 2\n            continue",
+        "        if False:\n            out.append(\"  \")\n            i += 2\n            continue"
+      ]
+    ],
+    "expect": "acts: an ESCAPED quote does not end the quoted span"
+  },
+  {
+    "name": "fences pair by position again, so a stray ``` is closed by a ~~~",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        elif open_mark is not None and mark[0] == open_mark[0] and mark[1] >= open_mark[1]:",
+        "        elif open_mark is not None:"
+      ]
+    ],
+    "expect": "table: a stray ``` is not closed by a later ~~~"
+  },
+  {
+    "name": "the borrowed-rule semantic probe stops failing closed",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    if len(wins) != 2 or texts != [\"a\"] or lone is not None:",
+        "    if False:"
+      ]
+    ],
+    "expect": "guard: a drifted borrowed turn rule is CANNOT RUN"
+  },
+  {
+    "name": "heredoc bodies stop being blanked, so prompt text counts as a command",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        out.append(\"\")                            # every body line, and the terminator itself",
+        "        out.append(line)                          # every body line, and the terminator itself"
+      ]
+    ],
+    "expect": "acts: a heredoc BODY is data, not a command"
+  },
+  {
+    "name": "the effect veto stops running, so a REFUSED tick counts as a tick",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "                            and not vetoed(label, own_output)):",
+        "                            and not False):"
+      ]
+    ],
+    "expect": "veto: a REFUSED tick is not a tick"
+  },
+  {
+    "name": "the veto ignores which act it names, so any failure vetoes everything",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    if not any(label == act and pattern.search(outputs) for label, pattern in _VETO):",
+        "    if not any(pattern.search(outputs) for label, pattern in _VETO):"
+      ]
+    ],
+    "expect": "veto: another act's failure phrase does not veto this one"
+  },
+  {
+    "name": "the veto reads the whole window again, so one failure cancels a later success",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "            own_output = outputs.get(tid, \"\") if isinstance(tid, str) else \"\"",
+        "            own_output = \"\\n\".join(outputs.values())"
+      ]
+    ],
+    "expect": "veto: a truncated success is saved by PAIRING, not by adjudication"
+  },
+  {
+    "name": "heredoc terminators stop being a queue, so a second heredoc leaks",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "            for found in _HEREDOC_START.finditer(line):",
+        "            for found in list(_HEREDOC_START.finditer(line))[:1]:"
+      ]
+    ],
+    "expect": "heredoc: TWO heredocs in one command both stay blanked"
+  },
+  {
+    "name": "heredoc termination goes lenient again, so indented data ends the body",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        candidate = line.lstrip(\"\\t\") if dashed else line",
+        "        candidate = line.strip()"
+      ]
+    ],
+    "expect": "heredoc: a space-indented terminator does NOT end the body"
+  },
+  {
+    "name": "an opener with no delimiter opens a heredoc again, swallowing real commands",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "                if _terminated(terminator, dashed, index):\n                    pending.append((terminator, dashed))",
+        "                if True:\n                    pending.append((terminator, dashed))"
+      ]
+    ],
+    "expect": "heredoc: a left-shift by a NAME is not an opener"
+  },
+  {
+    "name": "the veto stops checking for a success signature, so a stale error wins",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    return not any(label == act and pattern.search(outputs) for label, pattern in _SUCCESS)",
+        "    return True"
+      ]
+    ],
+    "expect": "veto: a stale failure in the same call cannot beat a success signature"
+  },
+  {
+    "name": "pairing stops rejecting duplicate ids, so a second result overwrites a success",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "            if tid in out:\n                ambiguous.add(tid)                # two results for one call\n                continue",
+        "            if False:\n                ambiguous.add(tid)                # two results for one call\n                continue"
+      ]
+    ],
+    "expect": "pairing: a DUPLICATE id is ambiguous, so it vetoes nothing"
+  },
+  {
+    "name": "pairing stops requiring the tool_use to come first",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "            if not isinstance(tid, str) or tid not in seen_uses:",
+        "            if not isinstance(tid, str):"
+      ]
+    ],
+    "expect": "pairing: a result BEFORE its tool_use pairs with nothing"
+  },
+  {
+    "name": "`To <url>` counts as push success again, so a rejected push reads as a close",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    (\"a push\",      re.compile(r\"^\\s*\\* \\[new branch\\]\\s\"",
+        "    (\"a push\",      re.compile(r\"^To \\S+$|^\\s*\\* \\[new branch\\]\\s\""
+      ]
+    ],
+    "expect": "veto: a REJECTED push is still vetoed despite its `To <url>` line"
+  },
+  {
+    "name": "the teammate-message fold is reverted, so a SendMessage splits a turn again (r7 F2, 332 openers / 125 warnings)",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    r\"|Another Claude session sent a message)\")",
+        "    r\"|ZZ_NEVER_MATCHES_ZZ)\")"
+      ]
+    ],
+    "expect": "coalesce: a TEAMMATE message does not start a turn"
+  },
+  {
+    "name": "the fold stops being anchored at the START, so a person QUOTING the phrase has their turn swallowed",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    r\"^\\s*(?:<(?:task-notification|system-reminder)\\b\"",
+        "    r\"^\\s*.*?(?:<(?:task-notification|system-reminder)\\b\""
+      ]
+    ],
+    "expect": "coalesce: the phrase QUOTED mid-message is still a real turn"
+  },
+  {
+    "name": "the self-test count stops being derived, so adding or deleting cases becomes invisible again",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        nonlocal cases\n        cases += 1\n",
+        "        nonlocal cases\n"
+      ]
+    ],
+    "expect": "declared self-test count (pinned declaration read by check-selftest-counts.py)"
+  },
+  {
+    "name": "the check/result HEADER requirement comes back, so the headerless table this project writes is rejected again (r7 F1)",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        if i + 1 >= len(lines) or not _SEPARATOR.match(lines[i + 1]):",
+        "        if (not any(re.match(r\"(?i)^\\s*\\**\\s*check\", c) for c in cells)\n                or i + 1 >= len(lines) or not _SEPARATOR.match(lines[i + 1])):"
+      ]
+    ],
+    "expect": "table: the headerless | | | key/value shape, the commonest real one"
+  },
+  {
+    "name": "the injected opener is dropped from the merged body, and the case naming it cannot see it (r8 R8-4)",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "            out[-1] = make(prev.opener, list(prev.body) + [opener] + list(window.body))",
+        "            out[-1] = make(prev.opener, list(prev.body) + list(window.body))"
+      ]
+    ],
+    "expect": "coalesce: the injected opener itself joins the body"
+  },
+  {
+    "name": "the turn id is dropped from the log line, so wc -l counts emissions and not turns again (#149 Tier 1)",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    return f\"{when}\\t{session or '-'}\\t{'+'.join(acts) or '-'}\\t{turn or '-'}\\n\"",
+        "    return f\"{when}\\t{session or '-'}\\t{'+'.join(acts) or '-'}\\n\""
+      ]
+    ],
+    "expect": "log: the line carries FOUR tab-separated fields"
+  },
+  {
+    "name": "turn_id_of stops tolerating an opener-less window, turning a Stop hook into a traceback",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    opener = getattr(window, \"opener\", None)\n    uuid = opener.get(\"uuid\") if isinstance(opener, dict) else None",
+        "    opener = window.opener\n    uuid = opener.get(\"uuid\") if isinstance(opener, dict) else None"
+      ]
+    ],
+    "expect": "log: a window object with no opener attribute at all yields '-'"
+  },
+  {
+    "name": "the empty-session fallback is removed, so a session-less stop logs a blank field",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    \"\"\"\n    return f\"{when}\\t{session or '-'}\\t{'+'.join(acts) or '-'}\\t{turn or '-'}\\n\"",
+        "    \"\"\"\n    return f\"{when}\\t{session}\\t{'+'.join(acts) or '-'}\\t{turn or '-'}\\n\""
+      ]
+    ],
+    "expect": "log: an empty session degrades to '-' rather than an empty field"
+  },
+  {
+    "name": "the wiring is severed: run_decide logs a constant '-' instead of the judged turn, which is this change reverted where it takes effect (r9 R9-1)",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        if _append_log(log_line(acts, when, session_id, turn_id_of(judged))):",
+        "        if _append_log(log_line(acts, when, session_id, \"-\")):"
+      ]
+    ],
+    "expect": "run: the logged line carries the JUDGED turn's opener id, not the live one"
+  },
+  {
+    "name": "the wiring logs the SESSION where the turn belongs, so the count stays plausible and is wrong per warned turn (r9 R9-1)",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        if _append_log(log_line(acts, when, session_id, turn_id_of(judged))):\n",
+        "        if _append_log(log_line(acts, when, session_id, session_id)):\n"
+      ]
+    ],
+    "expect": "run: the logged line carries the JUDGED turn's opener id, not the live one"
+  }
+]

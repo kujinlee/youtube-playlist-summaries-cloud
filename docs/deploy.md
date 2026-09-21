@@ -163,3 +163,138 @@ not this UI gate; see the #13 spec §9/§11.)
   Node 20 with the native-WebSocket error, so the Node 22 pin remains load-bearing.
 - Local dev parity: running the worker locally needs env injected explicitly (e.g. `dotenv -e .env.local --
   npm run worker`) — the container gets env from Fly secrets, so this only affects local runs.
+
+---
+
+## Step 5 — Waking the worker (backlog #142). ⚠ ORDER MATTERS; READ BEFORE RUNNING ANYTHING
+
+The worker exits when its queue drains so its Fly Machine returns to `stopped` and bills nothing,
+and Fly Proxy starts it again when a job is enqueued. **The wake path ships INERT** — the code is
+deployed but does nothing until the steps below are done, which is deliberate: a worker that can
+exit before it can be woken has no way back.
+
+⚠ **ONE PART OF THIS SLICE IS NOT INERT, and an earlier version of this sentence said "everything"
+(review r3 Low 3).** The `kill_signal` / `kill_timeout` relocation takes effect on the **next
+`fly deploy` of the web app** — no command below, no secret. On `master` those keys parse into
+`[http_service]` and are not app settings at all, so the app currently runs on Fly's defaults
+(`SIGINT`, `kill_timeout = 5s`); at top level they apply to **every** process group in
+`youtube-playlist-summaries`, moving both the `web` group and the still-declared `worker` group to
+`SIGTERM` / `120s`. Checked and benign in both consumers — Next's standalone server installs its own
+SIGTERM handler and exits 143, so web deploys are not slowed, and the worker traps SIGTERM — but it is
+a behaviour change that arrives with an ordinary deploy, and this is the SECOND thing on this branch
+that armed itself that way (r1 F2's `[[services]]` block was the first). Said out loud rather than
+left to read as "nothing is on".
+
+**The worker lives in its OWN Fly app (`yps-worker`, config `fly.worker.toml`), with NO public IP.**
+That is not tidiness. Fly Proxy routes by external port and does not know about process groups —
+*"it load-balances requests among all Machines with a service configured on the requested port"* —
+and any service in an app that has a public IP *"is exposed to the whole internet"*.
+`youtube-playlist-summaries` has a dedicated public v6 and a shared v4, so a worker service there
+would have shared port 80 with the website and let any stranger autostart the worker. That cannot be
+defended in application code, because the proxy boots the Machine **before** our process sees the
+request. A separate app with no public IP removes the possibility rather than managing it.
+
+```bash
+# 1. Create the app. Do NOT run `fly ips allocate-v4/-v6` on it — it must have no public address.
+fly apps create yps-worker
+
+# 2. Private Flycast address. `--private` is the whole point; without it this app becomes public.
+fly ips allocate-v6 --private --app yps-worker
+
+# 3. Secrets. The worker needs the same runtime secrets as the web app.
+fly secrets set --app yps-worker \
+  SUPABASE_SERVICE_ROLE_KEY=... GEMINI_API_KEY=... YOUTUBE_API_KEY=... \
+  NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+
+# 4. Deploy the SAME IMAGE the web app runs. fly.worker.toml has no [build] section on purpose:
+#    the two apps share a queue protocol and must not be able to drift to different builds.
+fly deploy -c fly.worker.toml --image registry.fly.io/youtube-playlist-summaries:<tag>
+
+# 5. Point the web app at it. Until this is set, the poke is a no-op and nothing changes.
+fly secrets set --app youtube-playlist-summaries WORKER_WAKE_URL=http://yps-worker.flycast/wake
+
+# 6. LAST, and only once 1-5 are proven: let the worker exit when idle.
+fly secrets set --app yps-worker WORKER_IDLE_EXIT_MS=300000
+```
+
+⚠ **Step 6 is last for a reason.** `WORKER_IDLE_EXIT_MS` unset means *never exit*. Set it before the
+wake path works and the worker will stop itself and stay stopped, with jobs queueing behind it and
+nothing red anywhere.
+
+**Falsifier — the whole feature, in one pass.** ⚠ It must prove the NEW worker did the work. Review
+round 2 found the first version of this check could be satisfied entirely by the OLD worker in the
+web app, which would have read as a pass while `yps-worker` sat untouched.
+
+```bash
+fly machine stop <old-worker-id> -a youtube-playlist-summaries   # so it cannot be the one that answers
+fly status -a yps-worker                                         # record the state BEFORE: stopped
+```
+
+Then visit the site (the web machine resumes), request a summary, and confirm all four:
+
+1. `fly status -a yps-worker` reaches `started` **with no human action**;
+2. the summary completes;
+3. `fly logs -a yps-worker` shows the claim for that job — this is the step that proves *which*
+   worker did it, and it is the one the original falsifier was missing;
+4. the `yps-worker` Machine returns to `stopped` afterwards.
+
+### ⚠ The old `worker` process group in `fly.toml`, and the ONE unstable state to avoid
+
+`fly.toml` still declares a `worker` process group and its `[[vm]]`. Removing it is the one
+destructive step in this migration, so it is not done in the same change that adds `yps-worker`.
+
+⛔ **An earlier version of this runbook said "keep the old worker Machine `stopped`". That
+instruction is deleted, because it is unenforceable and it was aimed at the wrong hazard.** Review
+round 2 established the real property: *"no worker in the web app"* has **no stable representation**.
+
+- Destroy the Machine, or `fly scale count worker=0` → the next `fly deploy` **seeds it back and
+  starts it**. Fly's scale-count page: *"If there are no existing Machines, then `fly deploy` seeds
+  the app with new Machines in the `primary_region` and according to the `[processes]` configured in
+  your `fly.toml`."* So a "scale it to zero after every deploy" step would have to be repeated
+  forever, and forgetting it leaves a **started** worker, not a stopped one.
+- Leave it stopped → it is one `fly machine start`, one host migration, or one dashboard click from
+  running, and nothing observes that.
+- Either way, if it does come up it comes up **with `WORKER_IDLE_EXIT_MS` unset** (step 6 sets that
+  secret on `yps-worker` only), so the duplicate never idles out. It is a permanently-running second
+  consumer — the ~$10.60/mo and the idle Supabase traffic this slice exists to remove — while every
+  user-visible symptom stays green, because jobs *do* get done.
+- ⚠ Whether a plain `fly deploy` restarts an **existing stopped** Machine is **NOT VERIFIED in
+  either direction**. Fly's docs do not address it and the closest live report points the other way.
+  Do not rely on either answer.
+
+**So the transition has no "keep something stopped" phase. The ordering below has no unstable
+intermediate state:**
+
+1. Do steps 1–5 above and run the falsifier. Two workers on this queue is safe by construction —
+   `claim_next_job` fences by lease token and `fail_job`/`complete_job` are fenced writes — so it
+   does not matter what the old Machine is doing while you verify the new one.
+2. **In one change:** delete `worker` from `fly.toml`'s `[processes]` and the
+   `processes = ["worker"]` `[[vm]]` block, then deploy the web app. That deploy destroys the old
+   Machine — *"destroys all the Machines that belong to any process group that isn't defined"* — so
+   the transition ends atomically. **The teardown is the goal here, not the risk.**
+3. **Only then** set `WORKER_IDLE_EXIT_MS` on `yps-worker` (step 6).
+
+⚠ **If step 2 must be deferred, the interim rule is a deploy flag, not a cleanup step.** While the
+web app still declares a `worker` group, the only supported web-deploy command is:
+
+```bash
+fly deploy --process-groups web        # --update-only also exists: "Do not create Machines for new process groups"
+```
+
+### ⚠ Verify `yps-worker` really has no public address — the security argument depends on it
+
+The entire reason the worker moved to its own app is that it must not be reachable from the internet.
+Nothing in the repo can assert that, because it is platform state rather than config. Check it by
+hand, and re-check it after any `fly ips` command:
+
+```bash
+fly ips list -a yps-worker      # MUST show a private v6 only. Any "public ingress" row is a defect.
+```
+
+### Before editing either Fly config
+
+Run `fly config validate` (and `fly config validate -c fly.worker.toml`). It is a real gate over
+the exact artifact and it caught a config on this branch that could never have deployed
+(`invalid restart policy: no`). ⚠ **It is not sufficient**: a `[[services]]` section with no
+`[[services.ports]]` accepts no connections at all, and `fly config validate` only *warns* about
+that — the unit tests in `tests/lib/worker-idle-exit.test.ts` are the guard for it.

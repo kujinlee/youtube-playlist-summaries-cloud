@@ -1,0 +1,22 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 4960 chars"
+  ],
+  "dirty": {
+    "docs/backlog.md": "100644 da6a866251698dc1113053c3eb4cdcb16d118d99",
+    "docs/roadmap-to-launch.md": "100644 6defcf1383d93f4cd4de084fce4f6a0df4f8d733",
+    "lib/job-queue/worker-runner.ts": "100644 6f90ff526d7901e43df7faf4e23222b06bef25c8",
+    "tests/lib/lease-sweep-cadence.test.ts": "100644 50c4e64b7876f6da2cff93e17cff3be52ccacc63",
+    "worker/main.ts": "100644 f5f7c02ed3a5e9fcf072e84cb0e721884172b886"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "9e51d3785468b9c283cd3605b4db0d1012bedc20",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/5cbc47e9-0d41-4233-8828-361c8830d6bb/scratchpad/r140-prompt.md",
+  "reason": "4960 chars",
+  "review": "sweep-policy-run-fn-r1-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}

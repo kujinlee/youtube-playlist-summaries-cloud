@@ -1,0 +1,244 @@
+[
+  {
+    "name": "the trunk stops being carried down, so every node looks like it sits outside a trunk",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            trunk = line[3:].strip(); continue",
+        "            trunk = \"\"; continue"
+      ]
+    ],
+    "expect": "trunk is carried down"
+  },
+  {
+    "name": "a wrapped continuation line is silently dropped again instead of refused",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            if nodes and line.strip():",
+        "            if False:"
+      ]
+    ],
+    "expect": "a wrapped for: line is REFUSED, not silently dropped"
+  },
+  {
+    "name": "the three inert-LOOKING prefixes are exempted again, so a status line hides behind one",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            if nodes and line.strip():\n                problems.append(",
+        "            if nodes and line.strip() and not line.startswith((\"#\", \"<!--\", \">\")):\n                problems.append("
+      ]
+    ],
+    "expect": "a `>` blockquote line inside a node is REFUSED, not exempted"
+  },
+  {
+    "name": "a duplicate field stops being refused, so last-write-wins returns",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if key in seen_fields:",
+        "        if False:"
+      ]
+    ],
+    "expect": "a duplicate field is REFUSED, not applied last-write-wins"
+  },
+  {
+    "name": "the duplicate is reported and then applied anyway, so the later line still overwrites",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "                            f\"and what it replaces is never searched\")\n            continue",
+        "                            f\"and what it replaces is never searched\")\n            pass"
+      ]
+    ],
+    "expect": "the FIRST value stands, so a blanking duplicate cannot hide the fragment it contradicts"
+  },
+  {
+    "name": "`currently` leaves the banned-word list, so the status-token rule stops seeing it",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "\\b(?:currently|already|still|yet|planned|done|todo)\\b",
+        "\\b(?:already|still|yet|planned|done|todo)\\b"
+      ]
+    ],
+    "expect": "a status token in prose fails"
+  },
+  {
+    "name": "`now` returns to the banned list, rejecting legitimate statements of purpose",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "r\"(?:[\u2705\ud83d\udd34\ud83d\udfe0\ud83d\udfe2\u23f3\u25c0]|#\\d+|\\b(?:currently|",
+        "r\"(?:[\u2705\ud83d\udd34\ud83d\udfe0\ud83d\udfe2\u23f3\u25c0]|#\\d+|\\b(?:now|currently|"
+      ]
+    ],
+    "expect": "`now` is no longer a banned word"
+  },
+  {
+    "name": "a repeated node slug stops being reported as a duplicate",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if n.slug in seen:",
+        "        if False:"
+      ]
+    ],
+    "expect": "a duplicate slug fails"
+  },
+  {
+    "name": "a built node with no fragment stops failing",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if n.state == \"built\" and fragments == 0:",
+        "        if False:"
+      ]
+    ],
+    "expect": "a built node with no fragment fails"
+  },
+  {
+    "name": "a built node may carry an absence argument again",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if n.state == \"built\" and n.expected_because:",
+        "        if False:"
+      ]
+    ],
+    "expect": "a built node carrying expected-because fails"
+  },
+  {
+    "name": "an absent node no longer has to say why it is expected",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            if not n.expected_because:\n                problems.append(f\"{where} is `absent` but has no `expected-because:` line\")",
+        "            if False:\n                problems.append(f\"{where} is `absent` but has no `expected-because:` line\")"
+      ]
+    ],
+    "expect": "an absent node with no reason fails"
+  },
+  {
+    "name": "an absent node may name fragments again",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            if fragments:\n                problems.append(f\"{where} is `absent` but names {fragments} fragment(s) \u2014 flip it to `built`\")",
+        "            if False:\n                problems.append(f\"{where} is `absent` but names {fragments} fragment(s) \u2014 flip it to `built`\")"
+      ]
+    ],
+    "expect": "an absent node WITH a fragment fails"
+  },
+  {
+    "name": "an anchor outside the registry stops being reported",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            if a not in anchors_declared:",
+        "            if False:"
+      ]
+    ],
+    "expect": "an unknown anchor fails"
+  },
+  {
+    "name": "an anchor no node claims stops being reported, so a spec silently cannot appear",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "    for anchor in sorted(anchors_declared - set(anchor_claims)):",
+        "    for anchor in sorted(set()):"
+      ]
+    ],
+    "expect": "an anchor claimed by NO node fails"
+  },
+  {
+    "name": "an anchor claimed by two nodes stops being reported",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "    for anchor, owners in anchor_claims.items():\n        if len(owners) > 1:",
+        "    for anchor, owners in anchor_claims.items():\n        if False:"
+      ]
+    ],
+    "expect": "an anchor claimed by TWO nodes fails"
+  },
+  {
+    "name": "an area no backlog row uses stops being reported, so a stale alias looks like coverage",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            if area not in areas_in_use:",
+        "            if False:"
+      ]
+    ],
+    "expect": "an area no backlog row uses fails"
+  },
+  {
+    "name": "an in-use backlog area claimed by nobody stops being reported",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "    for area in sorted(areas_in_use - set(area_claims)):",
+        "    for area in sorted(set()):"
+      ]
+    ],
+    "expect": "an in-use area claimed by nobody fails"
+  },
+  {
+    "name": "an area claimed by two nodes stops being reported",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "    for area, owners in area_claims.items():\n        if len(owners) > 1:",
+        "    for area, owners in area_claims.items():\n        if False:"
+      ]
+    ],
+    "expect": "an area claimed by TWO nodes fails"
+  },
+  {
+    "name": "the backlog area is read from the wrong cell of the row",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        cell = cells[-3].strip()",
+        "        cell = cells[-4].strip()"
+      ]
+    ],
+    "expect": "backlog areas are read from the area cell"
+  },
+  {
+    "name": "CELL_SPLIT loses its escaped-pipe lookbehind, so a row with an escaped pipe is dropped",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "CELL_SPLIT = re.compile(r\"(?<!\\\\)\\|\")",
+        "CELL_SPLIT = re.compile(r\"\\|\")"
+      ]
+    ],
+    "expect": "a row with an ESCAPED PIPE is not dropped"
+  },
+  {
+    "name": "the duplicate remedy stops depending on the field kind, so a scalar is told to use a comma list",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            remedy = (\"Put every value on ONE comma-separated line. \" if key in LIST_FIELDS\n",
+        "            remedy = (\"Put every value on ONE comma-separated line. \" if True\n"
+      ]
+    ],
+    "expect": "a duplicate SCALAR field is told to delete one, and NOT to use a comma list"
+  },
+  {
+    "name": "the refusal drops the grammar and goes back to rationale only",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "A field starts at COLUMN 0 \u2014 no leading ",
+        "Fix the line. "
+      ]
+    ],
+    "expect": "a refused line states the GRAMMAR an author needs, not only the rationale"
+  }
+]

@@ -1,0 +1,134 @@
+[
+  {
+    "name": "a CANNOT RUN is downgraded to an ordinary failure, so an ABSENT check reads as a failing one",
+    "file": "scripts/check-merge-ready.py",
+    "edits": [
+      [
+        "    if any(v == 2 for v in results.values()):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "a CANNOT RUN alongside a failure still reports CANNOT RUN"
+  },
+  {
+    "name": "checking nothing reports READY, which is the vacuous pass this script exists to refuse",
+    "file": "scripts/check-merge-ready.py",
+    "edits": [
+      [
+        "    if not results:\n        return 2,",
+        "    if not results:\n        return 0,"
+      ]
+    ],
+    "expect": "nothing checked is CANNOT RUN, not READY"
+  },
+  {
+    "name": "a pull request whose CI never started reads as green",
+    "file": "scripts/check-merge-ready.py",
+    "edits": [
+      [
+        "    if not checks:\n        return 2,",
+        "    if not checks:\n        return 0,"
+      ]
+    ],
+    "expect": "no checks reported is CANNOT RUN, not a vacuous pass"
+  },
+  {
+    "name": "a still-running CI run is read as settled",
+    "file": "scripts/check-merge-ready.py",
+    "edits": [
+      [
+        "    if any(b == \"pending\" for b in buckets):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "a pending check is not a pass"
+  },
+  {
+    "name": "the key-indent restriction is dropped, so a nested `if:` shadows the step's own",
+    "file": "scripts/check-merge-ready.py",
+    "edits": [
+      [
+        "        if not at_key:\n            continue\n",
+        "        if False:\n            continue\n"
+      ]
+    ],
+    "expect": "an `if:` inside a run: body does not shadow the step's own condition"
+  },
+  {
+    "name": "a draft pull request reads as mergeable",
+    "file": "scripts/check-merge-ready.py",
+    "edits": [
+      [
+        "    if info[\"isDraft\"]:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "a DRAFT is not mergeable"
+  },
+  {
+    "name": "the PR head stops being compared to the local HEAD, so --pr can point anywhere",
+    "file": "scripts/check-merge-ready.py",
+    "edits": [
+      [
+        "    if info[\"headRefOid\"] != local_head:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "a PR whose head is not the local HEAD is refused"
+  },
+  {
+    "name": "a folded scalar stops being followed, so `if: >` yields an empty condition",
+    "file": "scripts/check-merge-ready.py",
+    "edits": [
+      [
+        "    if first not in (\">\", \"|\", \">-\", \"|-\", \">+\", \"|+\"):\n        return first\n",
+        "    if True:\n        return first\n"
+      ]
+    ],
+    "expect": "a FOLDED condition (`if: >`) is read from its continuation lines"
+  },
+  {
+    "name": "the allowance stops being a count, so a second copy rides in on the first's ticket",
+    "file": "scripts/check-merge-ready.py",
+    "edits": [
+      [
+        "        if seen[key] > allowed:\n",
+        "        if key not in ACCOUNTED_MENTIONS:\n"
+      ]
+    ],
+    "expect": "a SECOND copy of an approved line is unaccounted \u2014 the allowance is a count"
+  },
+  {
+    "name": "commented-out mentions stop being skipped, so prose about a gate reads as one",
+    "file": "scripts/check-merge-ready.py",
+    "edits": [
+      [
+        "        if s.startswith(\"#\"):\n            continue\n",
+        "        if False:\n            continue\n"
+      ]
+    ],
+    "expect": "a commented-out mention is not a gate and is not flagged"
+  },
+  {
+    "name": "the detector narrows back to `pull_request`, so gating by EXCLUSION escapes it",
+    "file": "scripts/check-merge-ready.py",
+    "edits": [
+      [
+        "        if \"pull_request\" not in s and \"github.event_name\" not in s:\n",
+        "        if \"pull_request\" not in s:\n"
+      ]
+    ],
+    "expect": "a gate expressed by EXCLUSION is caught even with no `pull_request` in it"
+  },
+  {
+    "name": "the workflow glob narrows back to `.yml`, so a `.yaml` workflow is invisible",
+    "file": "scripts/check-merge-ready.py",
+    "edits": [
+      [
+        "    return sorted(set(directory.glob(\"*.yml\")) | set(directory.glob(\"*.yaml\")))\n",
+        "    return sorted(directory.glob(\"*.yml\"))\n"
+      ]
+    ],
+    "expect": "both workflow extensions are found, and nothing else is"
+  }
+]

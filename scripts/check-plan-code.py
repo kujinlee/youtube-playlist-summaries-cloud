@@ -572,6 +572,13 @@ EXPECTED_MUTATIONS = {
     #     two agree. The case that looked like it did — `any("relacl" in pat …)` — is a SUBSTRING
     #     test on the pattern text, so either copy could narrow while it stayed green.
     "scripts/check-catalog-coverage.py": 7,
+    # ⟳ 2026-09-20, the closing-table guard. Ten entries, and the one that earned the file is
+    # "an unreadable transcript passes quietly" — the fail-open direction, which is the failure
+    # this repo has now paid for more than four times. Two others exist only because writing the
+    # suite found the defects: `relative_to` raising on a redirected log (a warn-only observer
+    # turning into a traceback), and judging the LIVE turn instead of the previous one, which
+    # would have made the guard silently unable to see any closing message at all.
+    "scripts/check-closing-table.py": 47,
     "scripts/gen-dashboard.py": 68,
     # ⟳ 2026-09-12. gen-goals-page.py was the last PAGE-PRODUCING generator with no
     # manifest — gen-dashboard, gen-backlog-page, brief-compose, page_chrome and page_markup
@@ -603,6 +610,14 @@ EXPECTED_MUTATIONS = {
     # The other two close unfalsifiable fixtures: a `tag` class the case matched but never
     # captured, and a fan-out threshold whose boundary value was absent from the fixture.
     "scripts/gen-goals-page.py": 25,
+    # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
+    # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
+    # its own terms: seven of the ten revert a DECISION the renderer makes (which band a fragment
+    # lands in, whether a `####` node is nested or duplicated, whether the build time is read from
+    # the clock), and the tenth guards `sev_glyphs`, which earned a mutation only after review
+    # round 1 found its "derived" comment sitting above a hand-written literal. A renderer that
+    # decides nothing is a claim worth testing before it is used to skip coverage.
+    "scripts/gen-features-page.py": 10,
     # ⟳ 2026-09-10, backlog #110 review round 4. A SEED, not a full manifest, and the reason is
     # measured: `gen-backlog-page.py` is 3,000 lines with 160 cases and had ZERO mutations, so
     # `--mutate .` never touched it and no machine had ever asked whether any of those cases could
@@ -1016,8 +1031,25 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-09-07. Four targets in `backlog_shape_errors`, the PURE half: CELL_SPLIT's
     # escaped-pipe lookbehind, the column-count comparison, the delimiter-row threshold, and
     # the prev_was_row flag a split table depends on.
-    "scripts/check-docs.py": 4,
+    "scripts/check-docs.py": 5,
     "scripts/check-explainer-delivery.py": 5,
+    # ⟳ 2026-09-19, the feature hub. SEVENTEEN, one per rule `check_nodes`/`check_cross`/
+    # `backlog_areas` decide — the plan's own draft said five, which left both cross-file anchor
+    # directions, the claimed-twice rules, the wrapped-line refusal, the `now` exclusion, the area
+    # CELL INDEX and the escaped-pipe lookbehind with no falsifier at all. Two of the seventeen red
+    # TWO cases apiece — the cell index (`cells[-3]` -> `cells[-4]`) and the trunk carry-down — and
+    # both are allowed because `expect` is matched by EQUALITY against one of them, not by the size
+    # of the red set.
+    # ⟳ 2026-09-20, code review r1 (Codex) — 17 -> 20. The first review to read the CODE rather than
+    # the plan found the parser passing input it should refuse, and all three entries restore a way
+    # a line could reach no rule at all: the exemption tuple that let `>`, `<!--` and a bare `#322`
+    # sit unread inside a node (its Blocking), and the two halves of the duplicate-field refusal —
+    # dropping the refusal, and reporting it while still applying last-write-wins. The second half
+    # needed its own entry because the first cannot reach it: with the refusal gone BOTH cases red,
+    # so a repair that reports a duplicate and overwrites anyway would have been indistinguishable
+    # from a correct one. ⚠ The wrapped-continuation entry was RETARGETED in the same commit (its
+    # anchor was the line the fix rewrote) — a retarget, not an addition, so it is not in the +3.
+    "scripts/check-features.py": 22,
     # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
     # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
     # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed
@@ -1032,6 +1064,7 @@ EXPECTED_MUTATIONS = {
     # said so: disabling the dollar-quote branch SURVIVED (that case is actually killed by the
     # STRING branch — its fixture puts the create inside quotes), and dropping "scripts" from
     # PRODUCTION_DIRS CRASHED, because the fixture mkdirs from that same tuple.
+    "scripts/check-merge-ready.py": 12,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
@@ -2663,6 +2696,7 @@ def _self_test() -> int:
                                       "scripts/check-banner-armed.py",
                                       "scripts/check-catalog-coverage.py",
                                       "scripts/check-ci-watched.py",
+                                      "scripts/check-closing-table.py",
                                       "scripts/check-dashboard-entry.py",
                                       "scripts/check-docs.py",
                                       # ⟳ 2026-09-06: the FIRST payment against the R4 manifest
@@ -2671,6 +2705,7 @@ def _self_test() -> int:
                                       # the pinned-to-a-past-event counts elsewhere in this file,
                                       # which must NOT be "corrected" to today's number.
                                       "scripts/check-explainer-delivery.py",
+                                      "scripts/check-features.py",
                                       "scripts/check-fixture-variation.py",
                                       "scripts/check-function-revokes.py",
                                       "scripts/check-gate-falsifiability.py",
@@ -2678,6 +2713,7 @@ def _self_test() -> int:
                                       "scripts/check-guard-coverage.py",
                                       "scripts/check-handoff-path.py",
                                       "scripts/check-live-schema.py",
+                                      "scripts/check-merge-ready.py",
                                       "scripts/check-paid-caller-arrival.py",
                                       "scripts/check-plan-code.py",
                                       # ⟳ 2026-09-08: the plan-mode retirement's replacement
@@ -2711,6 +2747,7 @@ def _self_test() -> int:
                                       "scripts/explainer-serve.py",
                                       "scripts/gen-backlog-page.py",
                                       "scripts/gen-dashboard.py",
+                                      "scripts/gen-features-page.py",
                                       "scripts/gen-goals-page.py",
                                       "scripts/page_chrome.py",
                                       "scripts/page_markup.py",
@@ -3294,7 +3331,44 @@ def _self_test() -> int:
     # `schema-gates` check unrequireable) and SIX added for the derivation that replaced it. A RISE,
     # so this is not the sanctioned-fall case; the two retirements are recorded beside the per-file
     # count above with the reason, and both orphans were found by RUNNING the anchor check.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 762)
+    # ⟳ 2026-09-19: 737 -> 764, the feature hub. TWENTY-SEVEN entries across the two new scripts
+    # (`check-features.py` 17, `gen-features-page.py` 10), both seeded in the commit that wires
+    # them into CI. A RISE, so this is not the sanctioned-fall case; every anchor was verified
+    # present EXACTLY ONCE in the delivered file before being written, and every entry was proved
+    # to go red VIA THE CASE IT NAMES over a control proved green first.
+    # ⟳ 2026-09-20: 764 -> 767, code review r1 (Codex) on the feature hub. THREE on
+    # `check-features.py`, reasoned about beside its per-file count above. ⚠ The round's third
+    # finding — the regen hook swallowing an unreadable payload — is NOT in this rise and cannot
+    # be: `load_manifests` pins every entry's `file` to `scripts/<manifest stem>.py`, and
+    # `run_suite` runs the mutated file AS a Python suite, so a `.sh` target would red its own
+    # control. Its coverage is three cases in `gen-features-page.py` that RUN the hook. ⚠ ONLY THE
+    # PLACEMENT follows `regen-backlog-page.sh` — coverage for a hook lives in the suite of the
+    # generator it calls — and code review r2 (Claude) narrowed the claim to that: the backlog
+    # cases do NOT run their hook, they read the awk program out of the shell file and run `awk`
+    # (`gen-backlog-page.py:2818`). Executing the shell script is new here, and strictly stronger.
+    # A rise with an unmutatable member is worth saying out
+    # loud, because a reader sizing this number against the round's findings would otherwise be
+    # one short and look for the entry that was never written.
+    # ⟳ 2026-09-20: 769 -> 770, the line-budget slack warning. ONE entry on `check-docs.py`, for
+    # the band's UPPER EDGE (`<=` -> `<`). ⚠ It pins the edge, NOT the zero-runway case: the
+    # first version of that mutation named the zero-runway case and killed through a different
+    # one, because `0 < slack` is true either way. An unattributed kill, caught by reading which
+    # case actually reddened rather than that the suite went red.
+    # ⟳ 2026-09-20: 770 -> 775 -> 778, `check-merge-ready.py`, in two steps because its own review
+    # moved it. FIVE on arrival for the pure rules; THREE more after code review r1 (Codex) filed
+    # a High — the checker could report READY for a draft, conflicted or wrong-base pull request,
+    # or for `--pr` aimed at an unrelated green one — so the mergeability rule it grew needed
+    # pinning too. ⚠ THIS COMMENT ITSELF WENT STALE AT 770 WHILE THE SUM WAS 778 (Claude r1,
+    # Medium): the transitions are the audit trail for a ratchet that may only rise, so a gap in
+    # them is the one thing a reader cannot reconstruct from the number.
+        # ⟳ 2026-09-21: 829 -> 854, MERGING master INTO THIS BRANCH. Twenty-five entries, all
+    # `check-python-pin.py`'s own, which this branch creates. A RISE, and not a new claim:
+    # the entries were already on the branch and already proved to kill via the case each
+    # names; what changed is the BASE they are added to, because #327 and #328 merged
+    # while this branch sat open (762 was the sum against the OLD base). Derived rather
+    # than typed — `sum(EXPECTED_MUTATIONS.values())` over the merged dict is 854 across
+    # 52 entries, and `scripts/mutations/check-python-pin.json` holds exactly 25.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 854)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
