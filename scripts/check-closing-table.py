@@ -37,7 +37,22 @@ WHY THE TRIGGER LIVES IN THE TURN AND NOT IN A SENTINEL
 `check-banner-armed.py` needs a journal because its trigger (*was a plan armed when that turn
 ended?*) is external state that has already changed by the time the turn is judged. Ours is not:
 whether a turn ran `git push` is a permanent property of that turn's own records. So there is no
-journal, no sample, no late-flush, and no way for the two to disagree about a turn.
+journal, no sample and no late-flush.
+
+⟳ r7 (independent Claude half), Medium — THIS PARAGRAPH USED TO END *"and no way for the two to
+disagree about a turn"*, AND THAT WAS FALSE WHEN IT WAS WRITTEN. `coalesce_injected` below
+re-segments the borrowed windows for THIS guard only, so at one Stop `check-banner-armed.py` can
+judge window *k* while this file judges a merged *k-1..k*. They disagree about the subject by
+construction. That is a deliberate composition, argued in `coalesce_injected`'s own docstring — it
+answers a narrower question (*was that boundary a PERSON?*) on top of the borrowed one — but a
+correct design described by a false sentence is still a false sentence, and this one sat at the top
+of the file through six review rounds.
+
+⚠ THE OPEN HALF, NAMED RATHER THAN QUIETLY DROPPED: if a notification-split turn is the wrong
+subject here, it is plausibly the wrong subject for the banner guard too — its *announced N steps,
+stopped at i<N* class has the same false-alarm shape on a fragment cut between a banner and its
+work. That delta has NOT been measured, in either direction. Backlog #148. Do not apply this fold
+there on suspicion: changing the borrowed rule is precisely what `coalesce_injected` refuses to do.
 
 WHAT THIS CANNOT SEE — stated here and in the warning text, because a guard that covers half a rule
 and reads as covering all of it is a hazard this repo has paid for more than once:
@@ -95,7 +110,7 @@ Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CAN
 
 Usage:
     python3 scripts/check-closing-table.py --decide      # reads the Stop-hook payload on stdin
-    python3 scripts/check-closing-table.py --self-test   # 128 cases
+    python3 scripts/check-closing-table.py --self-test   # 132 cases
 """
 from __future__ import annotations
 
@@ -155,7 +170,31 @@ _SEGMENT_SPLIT = re.compile(r"\n|;|&&|\|\||\||&")
 
 
 # A record the SYSTEM injected into the user channel. Not a person taking a turn.
-_INJECTED = re.compile(r"^\s*<(?:task-notification|system-reminder)\b")
+# ⟳ r7 (independent Claude half), High — A TEAMMATE MESSAGE SPLITS A TURN EXACTLY LIKE A
+# NOTIFICATION, and it was the highest-volume real case while being the one absent from this list.
+# Measured over 766 real transcripts by replaying the shipped functions at every turn boundary:
+#
+#     window opener                             occurrences   isMeta   folded before r7
+#     <task-notification                            650         None        yes
+#     Another Claude session sent a message         332         None        NO
+#     <system-reminder  (AS AN OPENER)                0          —          yes
+#
+# Folding the teammate case removes 125 of 744 warnings — 16.8% of everything this guard has ever
+# emitted was a fragment manufactured by a boundary no person made. Note the third row: half of
+# this list was unexercised by reality while the real case went unlisted, which is why the number
+# above is the justification and the enumeration is not.
+#
+# ⛔ DO NOT "DERIVE" THIS FROM check-banner-armed._META_IS_REALLY_A_MESSAGE, and the r7 review's own
+# first draft made that mistake. That tuple names records which ARE a real new instruction —
+# `_meta_carries_a_message` returning True KEEPS the boundary — so consulting it argues the exact
+# opposite of this fold. It is also unreachable for these records: `_is_turn_boundary` only
+# consults it when `isMeta is True`, and all 332 teammate records carry `isMeta: None`.
+# The warrant is this function's OWN predicate, one line down: *was that boundary a PERSON?*
+# A teammate Claude session is not a person. That is the whole test, and it is why the two guards
+# are allowed to answer differently here (see the docstring at the top of this file).
+_INJECTED = re.compile(
+    r"^\s*(?:<(?:task-notification|system-reminder)\b"
+    r"|Another Claude session sent a message)")
 
 
 def coalesce_injected(windows_in: list, make) -> list:
@@ -774,6 +813,7 @@ def _self_test() -> int:
     import tempfile
 
     failures: list[str] = []
+    cases = 0
 
     def _safe(fn):
         """Run `fn`, turning any exception into a VALUE.
@@ -796,6 +836,8 @@ def _self_test() -> int:
         # not tell which case noticed. That is this project's recorded *a report format is a
         # CONTRACT* defect, where 12 mutations reported "0 red cases" over a line shape nothing
         # could parse. Keep this format byte-identical to check-merge-ready.py's.
+        nonlocal cases
+        cases += 1
         if got != want:
             failures.append(f"{label}: got {got!r} want {want!r}")
 
@@ -1161,6 +1203,21 @@ def _self_test() -> int:
           len(coalesce_injected([_a, _win("<system-reminder>hi", ["B"])], _W)), 1)
     check("coalesce: a leading injected window has nothing to join",
           len(coalesce_injected([_win("<task-notification> x", ["A"])], _W)), 1)
+    # ⟳ r7 High, the 332-opener case. The exact opener text as it appears on the real transcript.
+    _tm = coalesce_injected(
+        [_a, _win("Another Claude session sent a message: <teammate-msg>do X</teammate-msg>",
+                  ["B"])], _W)
+    check("coalesce: a TEAMMATE message does not start a turn", len(_tm), 1)
+    check("coalesce: the teammate fragment's records join the interrupted turn",
+          [x for x in _tm[0].body if isinstance(x, str)], ["A", "B"])
+    # ⛔ THE NEAR-MISS IS THE POINT. The fold keys on the phrase at the START of the content; a
+    # person QUOTING it mid-sentence is still a person taking a turn, and swallowing their turn
+    # would be a MISS — the direction this guard must never fail in.
+    check("coalesce: the phrase QUOTED mid-message is still a real turn",
+          len(coalesce_injected(
+              [_a, _win("why did Another Claude session sent a message appear?", ["B"])], _W)), 2)
+    check("coalesce: a near-miss spelling is NOT folded",
+          len(coalesce_injected([_a, _win("Another Claude session said something", ["B"])], _W)), 2)
     # Vary `make` with the REAL type the caller passes, so the parameter is not a constant AND the
     # composition is exercised against the actual namedtuple rather than only a stand-in.
     def _real_turnwindow_case():
@@ -1294,8 +1351,17 @@ def _self_test() -> int:
         finally:
             globals()["WARN_LOG"] = real_log
 
+    # ⛔ DERIVED, NOT DECLARED TWICE — found 2026-09-21 while fixing r7's F2, by the fix itself.
+    # This was `total = 128`, a hardcoded literal, and the line below compared it to the docstring's
+    # hardcoded 128. `check-selftest-counts.py` then compared the docstring to what this suite
+    # PRINTED — which was that same literal. Three numbers, one source, nothing counting anything:
+    # adding the five teammate-fold cases left it reporting "128/128 passed", and DELETING fifty
+    # would have done the same. The sibling guards this pattern was copied from do it correctly
+    # (`check-merge-ready.py:529`, `check-review-rounds.py:280` both `cases += 1` inside `check`),
+    # so this file was the outlier — and it is the one that shipped on a `NO-REVIEW:` waiver.
+    # The external observer only ever verifies a number the suite MEASURES about itself.
+    total = cases
     declared = re.search(r"--self-test\s+#\s*(\d+)\s+cases", __doc__ or "")
-    total = 128
     if not declared or int(declared.group(1)) != total:
         failures.append(
             f"declared self-test count {declared.group(1) if declared else 'MISSING'} != {total} "

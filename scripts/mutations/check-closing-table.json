@@ -405,5 +405,38 @@
       ]
     ],
     "expect": "veto: a REJECTED push is still vetoed despite its `To <url>` line"
+  },
+  {
+    "name": "the teammate-message fold is reverted, so a SendMessage splits a turn again (r7 F2, 332 openers / 125 warnings)",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    r\"^\\s*(?:<(?:task-notification|system-reminder)\\b\"\n    r\"|Another Claude session sent a message)\")",
+        "    r\"^\\s*(?:<(?:task-notification|system-reminder)\\b\"\n    r\"|ZZ_NEVER_MATCHES_ZZ)\")"
+      ]
+    ],
+    "expect": "coalesce: a TEAMMATE message does not start a turn"
+  },
+  {
+    "name": "the fold widens to a SUBSTRING match, so a person quoting the phrase has their turn swallowed",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "_INJECTED.match(content)",
+        "_INJECTED.search(content)"
+      ]
+    ],
+    "expect": "coalesce: the phrase QUOTED mid-message is still a real turn"
+  },
+  {
+    "name": "the self-test count stops being derived, so adding or deleting cases becomes invisible again",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        nonlocal cases\n        cases += 1\n",
+        "        nonlocal cases\n"
+      ]
+    ],
+    "expect": "declared self-test count"
   }
 ]
