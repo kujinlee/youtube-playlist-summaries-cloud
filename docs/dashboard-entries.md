@@ -10703,3 +10703,38 @@ part of this change.
 two new CI steps. Final whole-branch review: `.superpowers/sdd/2026-09-19-feature-hub/final-review.md`
 — coverage gap tracked there as finding I3, filed separately per this repo's convention (findings
 become backlog rows only when the user agrees to file them).
+
+## 2026-09-20
+Two gates now tell you they are about to block, instead of blocking.
+
+The first is the documentation line budget. Two files are capped so they stay short enough to be
+read every session, and both had been sitting at exactly their cap for some time — while the check
+reported "ok" for each. Nothing was wrong yet and nothing could say so, so the cap could only be
+discovered by writing a rule and being refused, which is the worst moment to learn it because the
+work is already done. It now warns inside the last 7% and names both ways out: raise the number, or
+retire something. Which one is a person's decision, so it warns rather than fails.
+
+Alongside it, the list of rules that had been flagged for review and never revisited is now cleared.
+One was retired as overtaken by events, one confirmed rather than retired, and one was answered
+where it stood. That freed eight lines — and the new warning still fires, which is it being honest
+that clearing the list was not enough.
+
+The second is new: a single command that answers "can this pull request actually merge?" Twice in
+one day a branch was declared ready on the strength of a local check sweep and twice the build
+refused it, correctly, because two of the checks ask about the *pull request* rather than the code
+and a working copy cannot answer them. Of the 52 steps the build runs, exactly 2 are of that kind —
+a small enough gap to be invisible and a reliable enough one to be certain. The new command runs
+them all and gives one verdict, and it reads the list of which-ones-are-special out of the build
+configuration rather than keeping its own copy, so a new one added there appears here with no edit.
+
+**Waiting on you:** nothing new from this entry.
+<!--tech-->
+`scripts/check-docs.py` gains `budget_verdict()`/`budget_warn_slack()` (pure, 7% of budget, floor 10)
+and a WARN arm naming both remedies; `docs/dev-process.md` 220 → 212 with the flagged-rules table
+drained, reasons in `docs/process-rationale.md`. New `scripts/check-merge-ready.py` derives the
+pull-request-only steps from `ci.yml` via `pr_only_steps()`, runs `check-dashboard-entry`,
+`check-review-recorded` (with the fetched PR body) and `check-review-rounds`, folds in
+`gh pr checks`, and returns 2 for CANNOT RUN ahead of 1 for NOT READY. `NO-CALLER:` recorded — it
+reads `gh pr checks`, so a CI job running it would wait on a verdict including itself. Registered in
+all five places across the three ratchets; `EXPECTED_MUTATIONS` 770 → 775, both manifests proved to
+kill through the case each names.

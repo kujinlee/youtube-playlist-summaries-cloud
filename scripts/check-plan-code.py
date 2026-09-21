@@ -990,7 +990,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-09-07. Four targets in `backlog_shape_errors`, the PURE half: CELL_SPLIT's
     # escaped-pipe lookbehind, the column-count comparison, the delimiter-row threshold, and
     # the prev_was_row flag a split table depends on.
-    "scripts/check-docs.py": 4,
+    "scripts/check-docs.py": 5,
     "scripts/check-explainer-delivery.py": 5,
     # ⟳ 2026-09-19, the feature hub. SEVENTEEN, one per rule `check_nodes`/`check_cross`/
     # `backlog_areas` decide — the plan's own draft said five, which left both cross-file anchor
@@ -1023,6 +1023,7 @@ EXPECTED_MUTATIONS = {
     # said so: disabling the dollar-quote branch SURVIVED (that case is actually killed by the
     # STRING branch — its fixture puts the create inside quotes), and dropping "scripts" from
     # PRODUCTION_DIRS CRASHED, because the fixture mkdirs from that same tuple.
+    "scripts/check-merge-ready.py": 12,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
@@ -2670,6 +2671,7 @@ def _self_test() -> int:
                                       "scripts/check-guard-coverage.py",
                                       "scripts/check-handoff-path.py",
                                       "scripts/check-live-schema.py",
+                                      "scripts/check-merge-ready.py",
                                       "scripts/check-paid-caller-arrival.py",
                                       "scripts/check-plan-code.py",
                                       # ⟳ 2026-09-08: the plan-mode retirement's replacement
@@ -3304,7 +3306,19 @@ def _self_test() -> int:
     # A rise with an unmutatable member is worth saying out
     # loud, because a reader sizing this number against the round's findings would otherwise be
     # one short and look for the entry that was never written.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 769)
+    # ⟳ 2026-09-20: 769 -> 770, the line-budget slack warning. ONE entry on `check-docs.py`, for
+    # the band's UPPER EDGE (`<=` -> `<`). ⚠ It pins the edge, NOT the zero-runway case: the
+    # first version of that mutation named the zero-runway case and killed through a different
+    # one, because `0 < slack` is true either way. An unattributed kill, caught by reading which
+    # case actually reddened rather than that the suite went red.
+    # ⟳ 2026-09-20: 770 -> 775 -> 778, `check-merge-ready.py`, in two steps because its own review
+    # moved it. FIVE on arrival for the pure rules; THREE more after code review r1 (Codex) filed
+    # a High — the checker could report READY for a draft, conflicted or wrong-base pull request,
+    # or for `--pr` aimed at an unrelated green one — so the mergeability rule it grew needed
+    # pinning too. ⚠ THIS COMMENT ITSELF WENT STALE AT 770 WHILE THE SUM WAS 778 (Claude r1,
+    # Medium): the transitions are the audit trail for a ratchet that may only rise, so a gap in
+    # them is the one thing a reader cannot reconstruct from the number.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 782)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

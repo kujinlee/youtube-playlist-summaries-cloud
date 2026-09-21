@@ -278,6 +278,17 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # ⟳ 2026-09-20: the merge-readiness checker, pinned in the commit that adds it —
+    # this guard refused it until it was, one day after doing the same to the feature
+    # hub's two scripts. DERIVED by running `analyse()`, not transcribed: the lesson
+    # recorded just above is that a written key set goes stale between measuring and
+    # pinning. `analyse()` reports NO findings here — every parameter is genuinely
+    # varied by the suite.
+    'check-merge-ready.py': (
+        'ci_conclusion.checks',
+        'pr_only_steps.workflow',
+        'verdict.results',
+    ),
     # ⟳ 2026-09-19: the feature hub's two scripts, pinned in the commit that wires them into CI —
     # this guard REFUSED both files until they were, which is the population half of the rule
     # doing its job on files added the same day. `analyse()` reports NO findings for either: every

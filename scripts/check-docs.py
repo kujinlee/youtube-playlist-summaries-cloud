@@ -29,7 +29,7 @@ WHAT IS ONLY REPORTED (never fails the build)
 SCOPE NOTE: `docs/reviews/` and `docs/superpowers/` are point-in-time artifacts —
 a review records what was true on its date, and rewriting it later would be
 falsifying the record. They are excluded from link checking on purpose.
-    --self-test  # 13 cases
+    --self-test  # 22 cases
 """
 
 from __future__ import annotations
@@ -194,6 +194,60 @@ LINE_BUDGETS = {
 }
 
 
+# ⛔ A BUDGET THAT REPORTS "ok" AT 100% UTILISATION GIVES NO WARNING BEFORE IT BECOMES A WALL.
+# Added 2026-09-20 at the user's request, after both budgeted files sat at EXACTLY their limit
+# (220/220 and 260/260) while this check printed `ok` for each. Nothing had gone wrong yet and
+# nothing could say so; the limit is discovered by trying to add a rule and being refused, which is
+# the worst moment to learn it — the rule is already written and the author is mid-PR.
+#
+# Every other gate here is built to fail BEFORE the damage. This one reported green up to the edge.
+#
+# ⚠ THE WARNING MUST NAME BOTH REMEDIES, because they are not the same decision and only a human
+# picks between them: RAISE the budget (the number is a judgement, not a law — see the note above
+# LINE_BUDGETS) or PRIORITISE and RETIRE (evict content that no longer earns its line). Emitting
+# "nearly full" without them leaves the reader to rediscover the options every time.
+BUDGET_WARN_FRACTION = 0.07   # warn inside the last 7% of a budget…
+BUDGET_WARN_FLOOR = 10        # …but never less than this many lines of runway
+
+
+def budget_warn_slack(budget: int) -> int:
+    """Lines of remaining runway below which a budget is "tight". PURE.
+
+    A FRACTION rather than a constant so it stays meaningful if a budget changes: 7% of 220 is 15
+    lines, of 260 is 18. The floor stops a small budget warning only after it is already too late.
+    """
+    # ⛔ THE FLOOR NEEDED A CEILING — Claude r1, Low. Measured: for any budget <= the floor,
+    # `budget - n <= slack` held for EVERY n, so "ok" was unreachable and a file warned from its
+    # first line; at budget 20 the warning began at 50% utilisation. A warning that is always on
+    # is one nobody reads — this feature's own failure mode, reached from the other side. The cap
+    # changes nothing where 7% dominates (220 -> 15, 260 -> 18).
+    # ⚠ "ok" IS REACHABLE FOR EVERY BUDGET OF 2 OR MORE, not every budget — Codex r2, Low, which
+    # measured `budget_verdict(0, 0) == "tight"` and both states tight at budget 1. That is
+    # correct behaviour (a budget of 0 or 1 has no room to be comfortable in) and the previous
+    # sentence overclaimed it. A comment that rounds its own bound up is the defect this file
+    # spent the round fixing elsewhere.
+    return min(max(BUDGET_WARN_FLOOR, round(budget * BUDGET_WARN_FRACTION)), max(1, budget // 3))
+
+
+def budget_verdict(n: int, budget: int) -> str:
+    """"over" | "tight" | "ok" — PURE, so every branch is reachable without touching a file.
+
+    ⚠ `<=` IS LOAD-BEARING AT THE BAND EDGE — and the first version of this docstring got that
+    wrong in a way worth keeping, because it is the defect this repo keeps filing. It claimed `<=`
+    protected the ZERO-RUNWAY case (a file exactly at its budget). It does not: `0 < slack` is true,
+    so that file reads "tight" either way. What `<` actually breaks is the file whose runway is
+    EXACTLY the threshold — the outermost line of the band — which then reads "ok" and gets no
+    warning at all. Measured by mutating `<=` to `<` over a green control: the zero-runway case
+    stayed green and "a file one line inside the warn band" went red. The manifest entry named the
+    wrong case until that run corrected it.
+    """
+    if n > budget:
+        return "over"
+    if budget - n <= budget_warn_slack(budget):
+        return "tight"
+    return "ok"
+
+
 def check_line_budgets(errors: list[str]) -> None:
     for rel, budget in LINE_BUDGETS.items():
         path = ROOT / rel
@@ -201,13 +255,30 @@ def check_line_budgets(errors: list[str]) -> None:
             errors.append(f"{rel} is missing but has a line budget")
             continue
         n = len(path.read_text().splitlines())
-        status = "ok" if n <= budget else "OVER"
-        print(f"budget {rel:28s}: {n:4d} / {budget}  {status}")
-        if n > budget:
+        verdict = budget_verdict(n, budget)
+        label = {"over": "OVER", "tight": "TIGHT", "ok": "ok"}[verdict]
+        slack = budget - n
+        print(f"budget {rel:28s}: {n:4d} / {budget}  {label}"
+              + (f"  ({slack} line(s) of runway)" if verdict == "tight" else ""))
+        if verdict == "over":
             errors.append(
                 f"{rel} is {n} lines, over its {budget}-line budget by {n - budget}. "
                 f"Move detail to process-checklists.md / review-method.md / process-rationale.md, "
                 f"or make the rule a script — do not raise the budget as a reflex.")
+        elif verdict == "tight":
+            print(f"  ⚠ WARN — {rel} has {slack} line(s) of runway before its {budget}-line budget "
+                  f"BLOCKS the next rule. Act now, not when it refuses:")
+            print("      (a) RAISE the budget — legitimate, but it must land in a PR diff where "
+                  "someone can ask whether the content belongs in a read-on-demand file; or")
+            # ⛔ THIS LINE NAMED A SECTION THE SAME BRANCH DELETED — Claude r1, Medium, and it
+            # was LIVE output: both budgeted files are inside the band, so it printed twice on
+            # every run and sent the reader to a heading that no longer exists. The remedy that
+            # is the POINT of this feature had no destination. `process-rationale.md` is where
+            # the retirements actually went, and it records the queue as drained.
+            print("      (b) PRIORITISE and RETIRE — evict what no longer earns its line, and "
+                  "record WHY in docs/process-rationale.md, beside the previous retirements.")
+            print("      Which one is a HUMAN decision. This is a warning, not a failure: it must "
+                  "not block a PR whose author did not cause it.")
 
 
 def check_skill_symlinks(errors: list[str]) -> int:
@@ -576,6 +647,28 @@ def self_test() -> int:
          not _markers(HDR6 + [two_col]))
     case("regression #46/#50 — that same row IS reported as a shape error",
          any("columns" in e for e in _shape(HDR6 + [two_col])))
+
+    # ── line budgets: the WARNING BAND, added 2026-09-20 ─────────────────────────────────────
+    # ⭐ The second case is the whole reason this exists: before it, a file at EXACTLY its budget
+    # printed `ok`, so the wall was discovered only by hitting it.
+    case("a file over its budget is 'over'", budget_verdict(230, 220) == "over")
+    case("a file at EXACTLY its budget is 'tight', not 'ok'", budget_verdict(260, 260) == "tight")
+    case("a file one line inside the warn band is 'tight'",
+         budget_verdict(220 - budget_warn_slack(220), 220) == "tight")
+    case("a file one line clear of the warn band is 'ok'",
+         budget_verdict(260 - budget_warn_slack(260) - 1, 260) == "ok")
+    case("a comfortably short file is 'ok'", budget_verdict(10, 220) == "ok")
+    # ⛔ Claude r1, Low: with no ceiling, "ok" was unreachable for any budget <= the floor.
+    case("a small budget can still reach 'ok' — the floor does not swallow it",
+         (budget_verdict(0, 10), budget_verdict(10, 10)) == ("ok", "tight"))
+    # ⚠ The bound, asserted rather than described: 2 is the smallest budget with an "ok".
+    case("...and 2 is where that starts — 0 and 1 have no room to be comfortable in",
+         (budget_verdict(0, 1), budget_verdict(0, 2)) == ("tight", "ok"))
+    case("...and the slack never exceeds a third of the budget, at any budget",
+         all(budget_warn_slack(b) <= max(1, b // 3) for b in (0, 5, 10, 20, 50, 220, 260)))
+    case("the warn slack scales with the budget and never drops below its floor",
+         (budget_warn_slack(220), budget_warn_slack(260), budget_warn_slack(50))
+         == (15, 18, BUDGET_WARN_FLOOR))
 
     failed = [n for n, ok in cases if not ok]
     for name, ok in cases:
