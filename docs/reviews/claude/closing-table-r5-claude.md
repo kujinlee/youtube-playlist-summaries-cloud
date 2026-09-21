@@ -62,3 +62,41 @@ Both numbers are true of different things; only one was labelled. That is this p
 | r4's fix not regressed (failed call then separate success) | ✅ `['a push']` |
 | All repo gates | ✅ rc=0 |
 | An independent Claude reviewer ran | ❌ **NO** — five rounds, never available |
+
+---
+
+## ⭐ ADDENDUM — generalisation against SIX UNSEEN transcripts (measured after r5 was filed)
+
+Every measurement up to this point used **the session that built the guard**, which is the corpus
+most likely to flatter it. Re-run against six other sessions from this project — none of which were
+looked at while writing any of the code:
+
+| transcript | Bash calls | fires | apparent false + | apparent misses |
+|---|---|---|---|---|
+| `a00a513a` | 1,646 | 169 | 1 | 0 |
+| `92595a72` | 1,602 | 107 | 0 | 0 |
+| `9a5869f4` | 585 | 38 | 0 | 0 |
+| `d573bf68` | 660 | 72 | 0 | 0 |
+| `dca6fb13` | 509 | 56 | 0 | 1 |
+| `d5a719c9` | 285 | 14 | 0 | 0 |
+| **total** | **5,287** | **456** | **1** | **1** |
+
+**Both discrepancies were adjudicated by hand, and BOTH were defects in the ground-truth rule, not
+in the guard:**
+
+* the "false positive" was `gh pr merge $p --squash --delete-branch` inside a `for` loop. The merges
+  **really ran** — the ground-truth regex required the command at line start, and a loop body is
+  indented. The guard was right.
+* the "miss" was `git commit -F /tmp/t-script-msg.txt`, whose output ends
+  `no changes added to commit (use "git add" and/or "git commit -a")`. The commit **genuinely did
+  not happen**; the veto caught it correctly. The guard was right, and this is the veto doing
+  exactly the job it was added for, on data it had never seen.
+
+So: **0 confirmed guard errors over 5,287 unseen calls.**
+
+⚠ **This is the THIRD time on this branch that the thing that was wrong was the MEASUREMENT.** The
+sha fixtures that only passed because a bad pattern carried them; the corpus claim labelled as
+end-to-end when it measured per-call agreement; and now two "errors" that were ground-truth bugs.
+When a measurement disagrees with the code, the measurement is about as likely to be the defect —
+and adjudicating each disagreement by hand is the only thing that separates them. A number nobody
+interrogates is the same hazard as a green check over the wrong subject.
