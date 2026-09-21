@@ -477,8 +477,8 @@
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "    opener = getattr(window, \"opener\", None) or {}",
-        "    opener = window.opener"
+        "    opener = getattr(window, \"opener\", None)\n    uuid = opener.get(\"uuid\") if isinstance(opener, dict) else None",
+        "    opener = window.opener\n    uuid = opener.get(\"uuid\") if isinstance(opener, dict) else None"
       ]
     ],
     "expect": "log: a window object with no opener attribute at all yields '-'"
@@ -493,5 +493,27 @@
       ]
     ],
     "expect": "log: an empty session degrades to '-' rather than an empty field"
+  },
+  {
+    "name": "the wiring is severed: run_decide logs a constant '-' instead of the judged turn, which is this change reverted where it takes effect (r9 R9-1)",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        if _append_log(log_line(acts, when, session_id, turn_id_of(judged))):",
+        "        if _append_log(log_line(acts, when, session_id, \"-\")):"
+      ]
+    ],
+    "expect": "run: the logged line carries the JUDGED turn's opener id, not the live one"
+  },
+  {
+    "name": "the wiring logs the SESSION where the turn belongs, so the count stays plausible and is wrong per warned turn (r9 R9-1)",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        if _append_log(log_line(acts, when, session_id, turn_id_of(judged))):\n",
+        "        if _append_log(log_line(acts, when, session_id, session_id)):\n"
+      ]
+    ],
+    "expect": "run: the logged line carries the JUDGED turn's opener id, not the live one"
   }
 ]

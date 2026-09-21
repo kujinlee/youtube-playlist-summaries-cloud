@@ -117,7 +117,7 @@ Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CAN
 
 Usage:
     python3 scripts/check-closing-table.py --decide      # reads the Stop-hook payload on stdin
-    python3 scripts/check-closing-table.py --self-test   # 151 cases
+    python3 scripts/check-closing-table.py --self-test   # 152 cases
 """
 from __future__ import annotations
 
@@ -780,16 +780,32 @@ def turn_id_of(window) -> str:
 
     The judged window's opener uuid. Measured over 60 real transcripts: present on 1,790 of 1,790
     non-meta `user` records, so this is an identity the transcript actually carries rather than one
-    we hope for. `-` is returned for the DEGENERATE window — `windows()` returns a single
-    `opener=None` window when a transcript has no real-user boundary at all, which is reachable and
-    load-bearing (see its docstring), and must not become a crash inside a Stop hook.
+    we hope for.
+
+    ⟳ r9 R9-2, Medium — ⛔ A `-` IN COLUMN 4 IS AN ANOMALY TO INVESTIGATE, NOT "no id available",
+    and the first draft of this docstring said the opposite. It claimed `-` covers the DEGENERATE
+    window, inheriting "reachable and load-bearing" from `windows()`. True of `windows()`, FALSE at
+    this call site: the degenerate case yields exactly ONE window, so `judged_window`'s `wins[:-1]`
+    is empty, it returns None, and `run_decide` is QUIET before ever reaching `log_line`. Measured:
+    **0 of 2,290** judged windows had `opener=None`, and **0 of 2,290** lacked a usable uuid.
+
+    The defensive branch STAYS — a Stop hook that raises is indistinguishable from a broken hook —
+    but it is unreachable in practice, so if a `-` ever appears, something upstream is wrong.
+
+    ⚠ AND IT IS A CONJUNCTION, which is the tell `check-sentinel-meanings.py` enforces elsewhere in
+    this repo: `-` encodes FIVE conditions (no `opener` attribute / `opener is None` / a non-dict
+    opener / no `uuid` key / an empty `uuid`), plus `log_line`'s own `turn or '-'`. `sort -u`
+    collapses all six into one line, so a broken assumption undercounts SILENTLY. Not split today
+    because every one of them is unreachable; if any becomes reachable, split them first.
     """
-    opener = getattr(window, "opener", None) or {}
+    # ⟳ r9 R9-3: `or {}` deleted — the isinstance below already turns None into `-`, so no test
+    # could detect its removal. An unfalsifiable guard is the class #151 exists for.
+    opener = getattr(window, "opener", None)
     uuid = opener.get("uuid") if isinstance(opener, dict) else None
     return uuid if isinstance(uuid, str) and uuid else "-"
 
 
-def log_line(acts: list[str], when: str, session: str, turn: str = "-") -> str:
+def log_line(acts: list[str], when: str, session: str, turn: str) -> str:
     """One appended record. Tab-separated so the log stays greppable and countable.
 
     ⟳ r7 F7 + #149 Tier 1 — THE `turn` COLUMN IS WHY THIS LOG CAN BE READ AT ALL.
@@ -1443,8 +1459,11 @@ def _self_test() -> int:
               run_decide(json.dumps({"transcript_path": str(empty)})), CANNOT_RUN)
 
         # A real two-turn transcript: turn 1 pushes and closes with prose, turn 2 is live.
-        def user(text):
-            return {"type": "user", "message": {"role": "user", "content": text}}
+        def user(text, uuid=None):
+            rec = {"type": "user", "message": {"role": "user", "content": text}}
+            if uuid:
+                rec["uuid"] = uuid          # ⟳ r9 R9-1: the wiring needs a KNOWN opener id
+            return rec
 
         def say(text):
             return {"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}
@@ -1455,8 +1474,9 @@ def _self_test() -> int:
             return p
 
         prose = write("prose.jsonl", [
-            user("do it"), bash("git push"), say("All done, pushed it."),
-            user("next"), say("working"),
+            user("do it", "OPENER-OF-THE-JUDGED-TURN"), bash("git push"),
+            say("All done, pushed it."),
+            user("next", "OPENER-OF-THE-LIVE-TURN"), say("working"),
         ])
         # WARN_LOG is repo-relative; redirect it so the self-test cannot write to the real log.
         real_log = globals()["WARN_LOG"]
@@ -1468,6 +1488,18 @@ def _self_test() -> int:
             check("run: the warning was logged",
                   (tmp / "warnings.log").exists() and "a push" in (tmp / "warnings.log").read_text(),
                   True)
+            # ⟳ r9 R9-1, High — THE WIRING HAD NO FALSIFIER, AND THE WIRING IS THE WHOLE CLAIM.
+            # Every case above exercises `turn_id_of` and `log_line` IN ISOLATION. Measured on a
+            # copy: `log_line(..., turn_id_of(judged))` → `log_line(..., "-")` left the suite GREEN
+            # at 151/151 — and that mutation is this change REVERTED at the only place it takes
+            # effect, making `cut -f4 | sort -u | wc -l` return 1 for any log, forever. A second
+            # mutation to `session_id` also survived, which is worse for a reader: the count stays
+            # plausible and is wrong by the number of warned turns per session.
+            # ⚠ NOTE THE SHAPE — r7 F6, r8 R8-4 and now this are all the same class: the gap was
+            # BETWEEN two well-tested pieces, not inside either. Unit coverage does not compose.
+            check("run: the logged line carries the JUDGED turn's opener id, not the live one",
+                  _safe(lambda: (tmp / "warnings.log").read_text().strip()
+                        .split("\n")[-1].split("\t")[3]), "OPENER-OF-THE-JUDGED-TURN")
 
             tabled = write("tabled.jsonl", [
                 user("do it"), bash("git push"), say("Done.\n\n" + good),

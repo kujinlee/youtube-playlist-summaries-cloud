@@ -10968,10 +10968,18 @@ first means that when it does start firing, the entries are usable from the firs
 being thrown away.
 <!--tech-->
 #149 Tier 1 (r7 F7). `log_line` gains a 4th field from `turn_id_of(judged)` — opener uuid, measured
-present on 1,790/1,790 non-meta user records; `-` for the degenerate `opener=None` window, which is
-reachable and must not raise inside a Stop hook. `log_line` had ZERO cases before; now 10, plus 2
-mutations (148 cases, 44 mutations, sum 826). Tier 2 (F3, anti-nag journal) deferred with its shape
-recorded on #149. ⚠ Two self-inflicted catches: positional `split("\t")[3]` reads raised IndexError
+present on 1,790/1,790 non-meta user records. `log_line` had ZERO cases before.
+⟳ r9 Codex, Low — THE COUNTS THAT WERE HERE ARE DELETED, NOT CORRECTED. This entry restated
+"10 new cases, 2 mutations, 148 cases, 44 mutations, sum 826"; by the time Codex read it the branch
+was at 151/45/827, and by the time I fixed it, 152/47/829 — drifted TWICE inside one hour, which is
+the argument against restating rather than for updating. `docs/plugins.md` records the same verdict
+after a declared count sat wrong for an unknown span: *"The number is now gone rather than
+corrected: a count with no owner drifts again, and the only durable fix is to have one copy, in the
+place a gate can run."* The owners are `check-closing-table.py`'s own docstring declaration (verified
+by `check-selftest-counts.py`) and `EXPECTED_MUTATIONS` (verified by `check-plan-code.py --mutate .`).
+⟳ r9 R9-2 — the `-` branch is UNREACHABLE from `run_decide` (0 of 2,290 judged windows), so a `-`
+in column 4 is an anomaly to investigate, not "no id available". Tier 2 (F3, anti-nag journal)
+deferred with its shape recorded on #149. ⚠ Two self-inflicted catches: positional `split("\t")[3]` reads raised IndexError
 under the drop-the-column mutation and scored RED-BUT-UNATTRIBUTABLE — the third time this file has
 paid for an unwrapped index, now all through `_safe`; and my e2e probe wrote a synthetic first line
 into the real (gitignored) log, removed so the evidence trail starts empty.
