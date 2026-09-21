@@ -10805,3 +10805,42 @@ sentence-reader — backlog #48 built one and discarded it as satisfiable by rew
 on a redirected path. Self-test 37 cases; 10 mutations in `scripts/mutations/check-closing-table.json`;
 pinned in `check-selftest-counts.POPULATION`, `check-plan-code.EXPECTED_MUTATIONS` (782 → 792) and
 `check-fixture-variation.EXAMINED_KEYS` (6 keys, derived by running `analyse()`).
+
+## 2026-09-20
+A rule that was never written down quietly halved the review of everything shipped today.
+
+Work here is normally checked by two independent reviewers, deliberately different from each other,
+because they fail in different directions — there is a case on record where one of them waved
+through a bug about money that the other caught immediately. Today's session was operating under an
+instruction not to start the second reviewer without being asked first. The instruction was not in
+the project's own rules; it arrived with the session and had no stated reason.
+
+So the guard that shipped today was reviewed six times by one reviewer instead of twice by two. The
+second "reviewer" in each round was the author checking their own work, which is better than nothing
+and cannot find what the author did not think to look for. Three of the problems fixed today were
+found that way — by the author poking at it — which is encouraging about the poking and says nothing
+about what nobody poked at.
+
+The part worth recording is not the instruction. It is that this was mentioned six times and asked
+about zero times. It was written into all six review documents and appeared as a red mark in every
+status summary, while eight other questions were put to a person and answered. A note that something
+is missing is not the same as asking for it, and only the asking would have changed anything.
+
+The project already had the answer, measured and written down months ago: running both reviewers at
+the same time was tested and found safe, and the handful of genuinely risky operations are listed
+separately with instructions. Nothing needed inventing. It needed reading.
+
+The rule is now written where it survives a session: starting a second reviewer is the normal thing
+to do, and the short list of risky operations is the only exception.
+
+**Waiting on you:** nothing new from this entry.
+<!--tech-->
+`docs/review-method.md` → *Running agents concurrently* gains a leading rule box: spawning a
+subagent is the DEFAULT and the ⛔-serialise table is the only restriction. Cites the measured
+safety evidence already in that section (three overlapping processes, byte-identical red-set data
+for all 23 manifest entries), `docs/plugins.md` on the cost of a skipped half, and the
+*an escalation has no closer* rule — a reviewer that CANNOT run is a DECISION and belongs in a
+selection card, not a caveat. Reliability failures (wrong subject, fork never reports) are
+explicitly NOT grounds to decline: they are governed by *agent output is a LEAD, not a finding*,
+and the asymmetry is that a failed fork costs a retry while not spawning costs the reviewer
+permanently. Prompted by PR #325, which merged after six Codex-only rounds.
