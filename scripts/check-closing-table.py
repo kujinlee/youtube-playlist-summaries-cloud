@@ -95,7 +95,7 @@ Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CAN
 
 Usage:
     python3 scripts/check-closing-table.py --decide      # reads the Stop-hook payload on stdin
-    python3 scripts/check-closing-table.py --self-test   # 127 cases
+    python3 scripts/check-closing-table.py --self-test   # 128 cases
 """
 from __future__ import annotations
 
@@ -1028,6 +1028,12 @@ def _self_test() -> int:
     check("veto: a real ref update IS a success signature",
           closing_acts_of(_with_output("git push",
               "To https://github.com/o/r.git\n   b85f697c..3b5e4a18  br -> br")), ["a push"])
+    # ⛔ r6 Codex's own probe shape: a WRAPPER that masks the exit status, so `is_error` is False
+    # and only the veto can catch the failure. `git push; echo done` always exits 0.
+    check("veto: a rejected push inside a status-masking wrapper is still vetoed",
+          closing_acts_of(_with_output("git push; echo done",
+              "To github.com:o/r.git\n ! [rejected]        main -> main (fetch first)\n"
+              "error: failed to push some refs\ndone")), [])
     check("veto: a new branch IS a success signature",
           closing_acts_of(_with_output("git push",
               "To https://github.com/o/r.git\n * [new branch]        br -> br")), ["a push"])
@@ -1289,7 +1295,7 @@ def _self_test() -> int:
             globals()["WARN_LOG"] = real_log
 
     declared = re.search(r"--self-test\s+#\s*(\d+)\s+cases", __doc__ or "")
-    total = 127
+    total = 128
     if not declared or int(declared.group(1)) != total:
         failures.append(
             f"declared self-test count {declared.group(1) if declared else 'MISSING'} != {total} "
