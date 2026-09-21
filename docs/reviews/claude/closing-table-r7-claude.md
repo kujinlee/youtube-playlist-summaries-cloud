@@ -336,3 +336,100 @@ on or noise they will turn off.
 
 **REVIEW GAP: none for this half.** This is the first independent Claude half the subject has had;
 the Codex half for r7 is the coordinator's to dispatch.
+
+---
+
+# Coordinator addendum — verification, one correction, and a collision worth recording
+
+## ⚠ First, a process incident this document is itself the evidence for
+
+At 23:16 the coordinator read this file at **145 lines**, believed it complete-but-unverdicted
+(the handoff had described it as an abandoned 27-line skeleton), appended a verification section,
+and committed. **The agent was still writing.** Its final `Write` replaced the whole file with the
+338-line version above, silently discarding the appended section — which is why that work is being
+restored here rather than sitting where it was put.
+
+Nothing was lost permanently and the *review* is intact; the coordinator's append is what died.
+But the shape is this repo's recorded [[an-instrument-that-edits-the-repo-corrupts-its-peers]], and
+it was walked into by the person who knows that rule. Two things made it possible:
+
+1. **A handoff asserted a file's contents, and the assertion was stale the moment it was written.**
+   "27-line skeleton with no findings" described a snapshot of a file under active construction.
+   `wc -l` was the check; it was run once and believed for the rest of the session.
+2. **There is no liveness signal for a subagent that outlives the session that spawned it.** The
+   agent's mtime was 23:15:40 when checked — *seconds* old — and that was read as "it stopped just
+   before the boundary" rather than "it is writing right now." A fresh mtime is ambiguous between
+   those two readings, and the coordinator picked the one matching the handoff.
+
+**The rule the file-path contract actually bought, stated properly:** the deliverable-is-a-FILE
+brief did its job — the work survived an agent that never reported. What it does not buy is
+knowing *when the file is finished*. Treat an untracked review file from a dead-or-dying agent as
+**append-only by its author until proven otherwise**: `git add` it first and diff, rather than
+appending to it.
+
+## Independent re-derivation of the load-bearing numbers
+
+Per *agent output is a lead, not a finding*, the measured claims were re-derived by a replay written
+from scratch against the shipped functions, over **766** transcripts (one more than the review saw —
+this session's own). Probes: `verify_r7.py`, `teammate.py`, `headers.py`.
+
+| claim | review | coordinator | verdict |
+|---|---|---|---|
+| judged turns containing a closing act | 846 | 769 | ✅ same population, different repeat-counting |
+| of those, turns that WARN | 821 | 744 | ✅ **CONFIRMED** — 97.0% vs 96.7% |
+| warnings whose text already held a rendered table | 54/262 recent | **372/744 (50.0%)** | ✅ **CONFIRMED, and larger over the full corpus** |
+| `Another Claude session sent a message` as a window OPENER | 332 | **332** | ✅ **CONFIRMED exactly** |
+| …`isMeta` on those records | None | **None on all 332** | ✅ **CONFIRMED** |
+| warnings removed by folding them | 125 | **125** | ✅ **CONFIRMED exactly** |
+| `<system-reminder>` as an opener | 0 | **0** | ✅ **CONFIRMED** |
+| headerless `\| \| \|` tables among warned-on tables | (shape named) | **147** of 372 | ✅ dominant shape confirmed |
+| declared self-test count is a literal | F4 | **CONFIRMED by fixing it** — 4 cases added, still printed `128/128` | ✅ |
+
+The two replays disagree on absolute totals because F3 is true: the same turn is judged at many
+consecutive Stops, and the two probes dedupe differently. **No finding rests on the absolute total,
+and the delta that carries F2 is identical in both.**
+
+**⚠ One measurement error, the coordinator's, recorded because it is this repo's recurring class.**
+The first opener tally returned **0** teammate openers against the review's 332, and the finding was
+nearly written off as refuted. The bug was in the probe: openers were truncated to `c.strip()[:30]`
+and then tested with `startswith` against a **37-character** string, which can never match. That is
+[[measure-the-population-the-code-actually-sees]] committed *while auditing someone else's
+measurement*. The corpus caught it; the reasoning did not.
+
+## Correction to F2's rationale — the measurement stands, one argument is struck
+
+F2 cites `check-banner-armed._META_IS_REALLY_A_MESSAGE` as a defining expression that "already names
+`Another Claude session sent a message` as a category of record that is **not the human typing**",
+and faults this guard for not consulting it.
+
+**Inverted.** That tuple feeds `_meta_carries_a_message`, whose docstring reads *"True when an
+`isMeta` record is a real new instruction, not an injection"* — and in `_is_turn_boundary` a True
+result **keeps the record as a boundary**. Consulting it argues for *preserving* the split F2 wants
+folded. It is also unreachable here: that branch is only entered when `isMeta is True`, and all
+**332** teammate records carry `isMeta: None`.
+
+F2's *direction* survives on `coalesce_injected`'s own predicate — *was that boundary a PERSON?*, and
+a teammate Claude is not — which is the argument the finding should have made. Severity unchanged
+(the 125 emissions carry it alone); the appeal to an existing defining expression is withdrawn, and
+with it the implication that the fix was mechanical rather than a judgement. The struck reasoning is
+recorded in the code at `_INJECTED` so the next reader does not re-derive it wrongly.
+
+## Disposition — what was fixed tonight and what was filed
+
+| finding | disposition | backlog |
+|---|---|---|
+| F1 High — marker enforces one rendering | **OPEN — user's decision**, the review's single most important change | #145 |
+| F2 High — teammate messages unfolded | ✅ **FIXED** — folded, 4 cases incl. both MISS-direction near-misses, 2 mutations | #146 |
+| F3 Medium — repeats, 1,183 emissions / 744 turns | OPEN, filed with F7 as one mechanism (the unused opener) | #149 |
+| F4 Medium — self-test count is a literal | ✅ **FIXED** — derived; 132/132; a mutation removing the increment is killed | #150 |
+| F5 Medium — docstring "cannot disagree" is false | ✅ **FIXED** — corrected, with the unmeasured half named | #147 |
+| F6 Low — 5 vacuous cases, 1 mislabelled | OPEN — (b) has a real MISS behind it and goes first | #151 |
+| F7 Low — log line has no turn identity | OPEN, filed with F3 | #149 |
+| — open half of F5: the banner guard's own exposure | OPEN — measurement only, no change | #148 |
+
+Net backlog: **+4 open rows, not +7** — three findings close in the same PR that files them.
+
+REVIEW GAP: codex — not run for round 7. Rounds 1–6 were Codex-only on this subject and every
+"claude half" among them was a coordinator self-review; round 7 exists specifically to supply the
+independent Claude read that was owed, post-merge, on a warn-only guard already live on `master`.
+A Codex half on r7 remains available and is offered as follow-up rather than skipped silently.

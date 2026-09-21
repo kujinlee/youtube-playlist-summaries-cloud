@@ -10844,3 +10844,42 @@ selection card, not a caveat. Reliability failures (wrong subject, fork never re
 explicitly NOT grounds to decline: they are governed by *agent output is a LEAD, not a finding*,
 and the asymmetry is that a failed fork costs a retry while not spawning costs the reviewer
 permanently. Prompted by PR #325, which merged after six Codex-only rounds.
+
+## 2026-09-21 [needs-you]
+The guard that nags about missing CHECK/RESULT tables was finally read by someone other than its
+author — and it turns out it rejects the way you actually write those tables about half the time.
+
+Some background. That guard shipped two nights ago after six rounds of review, but every one of
+those rounds was Codex; the Claude half never ran, and it merged on a written waiver saying so.
+Last night an independent reviewer was sent in to do the reading that was owed. It found seven
+things. Three are now fixed, three are filed, and one is a question only you can answer.
+
+**The question.** The guard looks for a table whose headers literally say "check" and "result".
+The written rule is not about headers at all — it says one row per claim, evidence in the row, and
+every row could have come back with a cross. Measured across every transcript this project has:
+half the time the guard fires, your closing message already had a table in it. Usually the
+headerless two-column kind, which it cannot see at all. So it prints "you closed with prose" over
+a message that closed with a table. Either the guard should recognise the shapes you actually
+write, or it should stop claiming "prose" and say "no table headed check/result" instead. That
+trade is yours — widening it means giving up the literal word you scan for.
+
+**Fixed straight away.** A message from another Claude session was splitting a turn in half, so the
+guard judged the fragment before the work and warned about it: 125 false warnings, about one in six
+of everything it has ever emitted. Its docstring claimed two guards could never disagree about
+which turn they were looking at, which stopped being true the moment a function was added to make
+them disagree on purpose. And its self-test was printing "128/128 passed" from a hardcoded 128 —
+four cases were added and the number did not move, which is how that one got noticed.
+
+**Still open, and worth knowing about.** The log this guard writes is meant to answer "does it cry
+wolf?" in a few weeks. It cannot yet: the same turn gets logged up to 36 times, and no line says
+which turn it was about. So the count in that file is not a count of anything until that is fixed.
+<!--tech-->
+Round 7 of `closing-table`, the first independent half: `docs/reviews/claude/closing-table-r7-claude.md`
+(338 lines, 7 findings). Every load-bearing number re-derived by the coordinator over 766
+transcripts before being acted on — 332 teammate openers and the 125-warning fold delta both
+confirmed exactly; F2's appeal to `_META_IS_REALLY_A_MESSAGE` struck as inverted and the correction
+recorded at `_INJECTED`. Fixed: F2 (`_INJECTED` widened, 4 cases, 2 mutations), F4 (`total` derived,
+132/132, 1 mutation), F5 (docstring). Filed: #145 (F1, decision), #148 (banner guard unmeasured),
+#149 (F3+F7, one mechanism), #151 (F6, 5 vacuous cases). Net +4 open backlog rows, 3 closed.
+Also recorded: the coordinator's first append to this review was clobbered by the still-live agent's
+final Write — the file-path contract saves the work, not the timing.
