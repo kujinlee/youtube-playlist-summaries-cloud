@@ -394,5 +394,16 @@
       ]
     ],
     "expect": "a list after the steps block is not read as steps"
+  },
+  {
+    "name": "the steps: opener stops accepting YAML node properties, so an anchored step list is invisible (r5 codex Medium)",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "_STEPS_KEY = re.compile(r\"^(\\s*)steps:\\s*(?:[&!]\\S+\\s*)*(#.*)?$\")",
+        "_STEPS_KEY = re.compile(r\"^(\\s*)steps:\\s*(#.*)?$\")"
+      ]
+    ],
+    "expect": "`steps:` with a YAML anchor still opens the step list"
   }
 ]

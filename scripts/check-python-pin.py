@@ -2,7 +2,7 @@
 """Every CI job pins the Python interpreter, the pins agree, and the pin actually took effect.
 
     python3 scripts/check-python-pin.py              # in CI: asserts. locally: advises.
-    python3 scripts/check-python-pin.py --self-test  # 78 cases
+    python3 scripts/check-python-pin.py --self-test  # 81 cases
 
     exit 0 = pinned, agreeing, and (in CI) in effect   exit 1 = a real disagreement
     exit 2 = CANNOT RUN — no workflow or no pin found, which is never a pass
@@ -215,7 +215,7 @@ def _steps(text: str) -> list[Step]:
     # because its `steps:` is the only one in the file. The general answer is backlog #153.
     structural = _structural(text.split("\n"))
     depths = [len(ln) - len(ln.lstrip()) for ln in structural
-              if re.match(r"^\s*steps:\s*(#.*)?$", ln)]
+              if _STEPS_KEY.match(ln)]
     job_steps_indent = min(depths) if depths else None
 
     out: list[Step] = []
@@ -224,7 +224,7 @@ def _steps(text: str) -> list[Step]:
     for line in structural:
         m = re.match(r"^(\s*)-(\s.*)$", line)
         indent = len(line) - len(line.lstrip())
-        opens_steps = re.match(r"^(\s*)steps:\s*(#.*)?$", line)
+        opens_steps = _STEPS_KEY.match(line)
         if opens_steps and len(opens_steps.group(1)) == job_steps_indent:
             steps_indent, cur = len(opens_steps.group(1)), None
             continue
@@ -253,6 +253,19 @@ def _steps(text: str) -> list[Step]:
             continue
         cur.body.append(line)                # deeper than the dash: it is this step's, dash or not
     return out
+
+
+# ⟳ r5 (codex) Medium — `steps:` MAY CARRY YAML NODE PROPERTIES, and the first version of this
+# opener accepted only a bare key plus an optional comment. Measured against `020b04ad`:
+#
+#     steps: &py          -> declared_pins []   unpinned_jobs ['w.yml:verify']
+#     steps: !!seq        -> same
+#
+# A PINNED job read as UNPINNED — fail-closed, but r2 H1's failure mode again, and a regression
+# introduced by the scoping rule itself. An anchor (`&name`) or a tag (`!tag` / `!!tag`) is node
+# METADATA, not a value; a real scalar value (`steps: '3'`) still correctly fails to match, which
+# is what keeps an unrelated key named `steps` from opening a scope.
+_STEPS_KEY = re.compile(r"^(\s*)steps:\s*(?:[&!]\S+\s*)*(#.*)?$")
 
 
 _BLOCK_SCALAR = re.compile(r"^(\s*)[\w.\-]+:\s*[|>][-+0-9]*\s*(#.*)?$")
@@ -781,6 +794,20 @@ def self_test() -> int:
                        "    outputs:\n      o: v\n  b:\n    strategy:\n      matrix:\n"
                        "        include:\n          - uses: actions/setup-python@v5\n"
                        "            with:\n              python-version: '9.9'\n"), ["3.12"])
+    # ⟳ r5 (codex) Medium — a `steps:` key may carry YAML NODE PROPERTIES. Accepting only a bare
+    # key made a PINNED job read as UNPINNED: a regression introduced by the scoping rule itself.
+    case("`steps:` with a YAML anchor still opens the step list",
+         declared_pins("jobs:\n  a:\n    steps: &py\n      - uses: actions/setup-python@v5\n"
+                       "        with:\n          python-version: '3.12'\n"), ["3.12"])
+    case("...and with a TAG",
+         declared_pins("jobs:\n  a:\n    steps: !!seq\n      - uses: actions/setup-python@v5\n"
+                       "        with:\n          python-version: '3.12'\n"), ["3.12"])
+    # ⚠ THE NEGATIVE THAT KEEPS THE WIDENING HONEST: a real SCALAR value is not a step list, so an
+    # unrelated key named `steps` must still not open a scope.
+    case("a scalar `steps: '3'` is not a step list",
+         declared_pins("jobs:\n  a:\n    env:\n      steps: '3'\n    steps:\n"
+                       "      - uses: actions/setup-python@v5\n"
+                       "        with:\n          python-version: '3.12'\n"), ["3.12"])
     case("a COMMENT at the dash indent does not end a step",
          declared_pins("    steps:\n      - name: Set up Python\n      # a comment, legal at any indent\n"
                        "        uses: actions/setup-python@v5\n"
