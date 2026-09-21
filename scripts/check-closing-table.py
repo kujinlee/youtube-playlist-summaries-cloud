@@ -117,7 +117,7 @@ Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CAN
 
 Usage:
     python3 scripts/check-closing-table.py --decide      # reads the Stop-hook payload on stdin
-    python3 scripts/check-closing-table.py --self-test   # 152 cases
+    python3 scripts/check-closing-table.py --self-test   # 153 cases
 """
 from __future__ import annotations
 
@@ -782,21 +782,40 @@ def turn_id_of(window) -> str:
     non-meta `user` records, so this is an identity the transcript actually carries rather than one
     we hope for.
 
-    ⟳ r9 R9-2, Medium — ⛔ A `-` IN COLUMN 4 IS AN ANOMALY TO INVESTIGATE, NOT "no id available",
-    and the first draft of this docstring said the opposite. It claimed `-` covers the DEGENERATE
-    window, inheriting "reachable and load-bearing" from `windows()`. True of `windows()`, FALSE at
-    this call site: the degenerate case yields exactly ONE window, so `judged_window`'s `wins[:-1]`
-    is empty, it returns None, and `run_decide` is QUIET before ever reaching `log_line`. Measured:
-    **0 of 2,290** judged windows had `opener=None`, and **0 of 2,290** lacked a usable uuid.
+    ⛔ WHEN A `-` CAN ACTUALLY APPEAR — and this paragraph has now been WRONG IN BOTH DIRECTIONS,
+    which is why it enumerates rather than generalises.
 
-    The defensive branch STAYS — a Stop hook that raises is indistinguishable from a broken hook —
-    but it is unreachable in practice, so if a `-` ever appears, something upstream is wrong.
+      v1 (r7) said `-` covers the DEGENERATE `opener=None` window, "reachable and load-bearing".
+              Inherited from `windows()`; FALSE at this call site.
+      v2 (r9) said `-` is therefore UNREACHABLE from `run_decide` and means something is wrong.
+              ⟳ r10 Codex, Medium: ALSO FALSE, in the opposite direction, and worse for being
+              stronger. I promoted *0 in the measured corpus* to *cannot happen*.
+
+    The two routes, separately, because they are not the same claim:
+
+      * `opener is None` (the degenerate window) — GENUINELY UNREACHABLE HERE, for a structural
+        reason rather than a measured one: that case yields exactly ONE window, so
+        `judged_window`'s `wins[:-1]` is empty, it returns None, and `run_decide` is QUIET before
+        reaching `log_line`.
+      * **an opener with NO `uuid` key — REACHABLE.** `_is_turn_boundary` never inspects `uuid`, so
+        such a record is an ordinary boundary, `judged_window` can return it, and a warning is
+        logged with `-`. Codex ran exactly this transcript and got rc=1 with a `-` in field 4.
+        Measured present on 1,790 of 1,790 real records TO DATE — which is a property of the
+        harness's current output, NOT an invariant anything enforces.
+
+    So a `-` means *this turn had no id available*, not *something is broken*. The defensive branch
+    stays regardless — a Stop hook that raises is indistinguishable from a broken hook.
+
+    ⚠ THE COST IS SILENT UNDERCOUNTING, and that is the part to act on: every `-` line collapses
+    under `sort -u` into ONE apparent turn. If the harness ever stops emitting uuids, the log keeps
+    working and its turn count silently approaches 1. A reader computing a rate should check
+    `grep -c '\t-$'` FIRST.
 
     ⚠ AND IT IS A CONJUNCTION, which is the tell `check-sentinel-meanings.py` enforces elsewhere in
     this repo: `-` encodes FIVE conditions (no `opener` attribute / `opener is None` / a non-dict
-    opener / no `uuid` key / an empty `uuid`), plus `log_line`'s own `turn or '-'`. `sort -u`
-    collapses all six into one line, so a broken assumption undercounts SILENTLY. Not split today
-    because every one of them is unreachable; if any becomes reachable, split them first.
+    opener / no `uuid` key / an empty `uuid`), plus `log_line`'s own `turn or '-'`. Not split today
+    — but note that the justification for not splitting them is now WEAKER than r9 claimed, because
+    one of the five is reachable rather than none.
     """
     # ⟳ r9 R9-3: `or {}` deleted — the isinstance below already turns None into `-`, so no test
     # could detect its removal. An unfalsifiable guard is the class #151 exists for.
@@ -1500,6 +1519,27 @@ def _self_test() -> int:
             check("run: the logged line carries the JUDGED turn's opener id, not the live one",
                   _safe(lambda: (tmp / "warnings.log").read_text().strip()
                         .split("\n")[-1].split("\t")[3]), "OPENER-OF-THE-JUDGED-TURN")
+            # ⟳ r10 Codex, Medium — A `-` IS REACHABLE, AND r9 CLAIMED IT WAS NOT. This is Codex's
+            # own transcript: a perfectly ordinary judged turn whose opener record simply carries no
+            # `uuid` key. `_is_turn_boundary` never inspects `uuid`, so it is an ordinary boundary.
+            # The claim "unreachable" was `0 of 2,290 in the corpus` promoted to `cannot happen` —
+            # a property of the harness's current output, not an invariant. Pinned as a CASE rather
+            # than repaired in prose a third time: this paragraph has now been wrong in BOTH
+            # directions, and a sentence cannot fail.
+            # ⚠ NO NEW MUTATION ACCOMPANIES THIS, deliberately: any mutation of the `else "-"`
+            # branch also reddens `log: an opener with no uuid yields '-'`, so an `expect` could
+            # not name EXACTLY ONE case and the kill would be unattributable. A reasoned gap,
+            # stated rather than left as an absence.
+            no_uuid = write("no_uuid.jsonl", [
+                {"type": "user", "message": {"role": "user", "content": "do it"}},   # NO uuid key
+                bash("git push"), say("done, in prose"),
+                user("next", "LIVE"),
+            ])
+            check("run: a judged opener with NO uuid still warns and logs '-' (it is REACHABLE)",
+                  _safe(lambda: (run_decide(json.dumps({"transcript_path": str(no_uuid),
+                                                        "session_id": "s"})),
+                                 (tmp / "warnings.log").read_text().strip()
+                                 .split("\n")[-1].split("\t")[3])), (WARN, "-"))
 
             tabled = write("tabled.jsonl", [
                 user("do it"), bash("git push"), say("Done.\n\n" + good),

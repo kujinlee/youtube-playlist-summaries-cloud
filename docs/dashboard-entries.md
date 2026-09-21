@@ -10977,8 +10977,14 @@ after a declared count sat wrong for an unknown span: *"The number is now gone r
 corrected: a count with no owner drifts again, and the only durable fix is to have one copy, in the
 place a gate can run."* The owners are `check-closing-table.py`'s own docstring declaration (verified
 by `check-selftest-counts.py`) and `EXPECTED_MUTATIONS` (verified by `check-plan-code.py --mutate .`).
-⟳ r9 R9-2 — the `-` branch is UNREACHABLE from `run_decide` (0 of 2,290 judged windows), so a `-`
-in column 4 is an anomaly to investigate, not "no id available". Tier 2 (F3, anti-nag journal)
+⟳ r9 R9-2 → ⟳⟳ r10 Codex, Medium — THAT PARAGRAPH HAS NOW BEEN WRONG IN BOTH DIRECTIONS. r7 said
+`-` covers a reachable degenerate window (false); r9 "fixed" it by saying `-` is UNREACHABLE and
+signals a bug (also false, and worse for being stronger — `0 of 2,290 in the corpus` promoted to
+`cannot happen`). Codex ran a transcript whose judged opener simply has no `uuid` key: ordinary
+boundary, rc=1, `-` in field 4. The two routes are now enumerated separately — `opener is None` is
+structurally unreachable, a missing `uuid` is REACHABLE — and the reachable one is pinned by a case
+rather than by a third sentence. Cost to a reader: `-` lines collapse under `sort -u`, so check
+`grep -c` for them before computing any rate. Tier 2 (F3, anti-nag journal)
 deferred with its shape recorded on #149. ⚠ Two self-inflicted catches: positional `split("\t")[3]` reads raised IndexError
 under the drop-the-column mutation and scored RED-BUT-UNATTRIBUTABLE — the third time this file has
 paid for an unwrapped index, now all through `_safe`; and my e2e probe wrote a synthetic first line
