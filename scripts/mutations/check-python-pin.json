@@ -301,8 +301,8 @@
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
-        "    for line in _structural(text.split(\"\\n\")):",
-        "    for line in text.split(\"\\n\"):"
+        "    structural = _structural(text.split(\"\\n\"))",
+        "    structural = text.split(\"\\n\")"
       ]
     ],
     "expect": "setup-python INSIDE a run-block heredoc does not make a step a setup-python step"
@@ -361,5 +361,38 @@
       ]
     ],
     "expect": "a matrix.include entry is NOT a step, so its pin does not count"
+  },
+  {
+    "name": "the job's steps: is taken as the DEEPEST rather than the shallowest, so a matrix dimension named steps wins (r5 F1)",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    job_steps_indent = min(depths) if depths else None",
+        "    job_steps_indent = max(depths) if depths else None"
+      ]
+    ],
+    "expect": "a matrix DIMENSION named `steps` is not the job's step list"
+  },
+  {
+    "name": "any steps: key re-scopes, so a nested one named steps eats the real step's body (r5 F2 regression)",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        if opens_steps and len(opens_steps.group(1)) == job_steps_indent:",
+        "        if opens_steps:"
+      ]
+    ],
+    "expect": "an action INPUT named `steps` does not hide the real pin (r5 F2 regression)"
+  },
+  {
+    "name": "the steps block never closes on dedent, so a later list is read as steps (r5 F3)",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        if line.strip() and indent <= steps_indent and not m:",
+        "        if False:"
+      ]
+    ],
+    "expect": "a list after the steps block is not read as steps"
   }
 ]

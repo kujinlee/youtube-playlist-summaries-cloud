@@ -2,7 +2,7 @@
 """Every CI job pins the Python interpreter, the pins agree, and the pin actually took effect.
 
     python3 scripts/check-python-pin.py              # in CI: asserts. locally: advises.
-    python3 scripts/check-python-pin.py --self-test  # 75 cases
+    python3 scripts/check-python-pin.py --self-test  # 78 cases
 
     exit 0 = pinned, agreeing, and (in CI) in effect   exit 1 = a real disagreement
     exit 2 = CANNOT RUN — no workflow or no pin found, which is never a pass
@@ -191,14 +191,41 @@ def _steps(text: str) -> list[Step]:
     # are CONTENT, which dashes are SIBLINGS, and now which list it is IN. That accumulation is the
     # subject of backlog #153 (the architecture review), which asks whether this should parse or
     # refuse rather than keep learning YAML one defect at a time.
+    # ⟳ r5 (claude) F1 + F2 — ONE RULE, TWO DEFECTS, BOTH CAUSED BY ASKING THE WRONG QUESTION.
+    # The r4 repair asked *is this line the text `steps:`?* and had no notion of WHERE it sits:
+    #
+    #   F1, an EIGHTH defect (false green): a matrix DIMENSION named `steps` —
+    #       strategy: {matrix: {steps: [ {uses: actions/setup-python, with: {python-version: 9.9}} ]}}
+    #       ...declared a pin for a job whose only real step is `run: echo hi`.
+    #   F2, a REGRESSION I introduced (MISS): an action INPUT named `steps` —
+    #       - uses: someone/thing@v1
+    #         with: {steps: [a]}
+    #       ...silently re-scoped `steps_indent` to the inner key, and the real setup-python step's
+    #       body lines were then eaten by the dedent check. A pin visible at 5206e020 vanished.
+    #
+    # ⭐ A JOB'S STEP LIST IS THE SHALLOWEST `steps:` IN THE FILE. A matrix dimension and an action
+    # input are both necessarily NESTED DEEPER than the job key that owns them, so one invariant —
+    # computed once, before any splitting — closes both. That is why this is not a ninth patch:
+    # it replaces "which line says steps" with "which steps is the job's", which is the question
+    # the previous version could not ask.
+    #
+    # ⚠ ITS BOUND, because this file has been burned by unstated ones: if a workflow ever nests a
+    # job's `steps:` DEEPER than some other `steps:` key, this picks the wrong one. Measured: no
+    # such shape exists in this repository, and a composite action (`runs:` -> `steps:`) is fine
+    # because its `steps:` is the only one in the file. The general answer is backlog #153.
+    structural = _structural(text.split("\n"))
+    depths = [len(ln) - len(ln.lstrip()) for ln in structural
+              if re.match(r"^\s*steps:\s*(#.*)?$", ln)]
+    job_steps_indent = min(depths) if depths else None
+
     out: list[Step] = []
     cur: Step | None = None
     steps_indent: int | None = None          # the indent of the `steps:` KEY we are inside
-    for line in _structural(text.split("\n")):
+    for line in structural:
         m = re.match(r"^(\s*)-(\s.*)$", line)
         indent = len(line) - len(line.lstrip())
         opens_steps = re.match(r"^(\s*)steps:\s*(#.*)?$", line)
-        if opens_steps:
+        if opens_steps and len(opens_steps.group(1)) == job_steps_indent:
             steps_indent, cur = len(opens_steps.group(1)), None
             continue
         if steps_indent is None:
@@ -732,6 +759,28 @@ def self_test() -> int:
                        "              python-version: '9.9'\n"
                        "    steps:\n      - uses: actions/setup-python@v5\n"
                        "        with:\n          python-version: '3.12'\n"), ["3.12"])
+    # ⟳ r5 (claude) F1 — an EIGHTH defect, and F2 a REGRESSION I introduced one commit earlier.
+    # Both died to one invariant: a job's step list is the SHALLOWEST `steps:` in the file, so a
+    # matrix dimension or an action input that happens to be NAMED `steps` is necessarily deeper.
+    case("a matrix DIMENSION named `steps` is not the job's step list",
+         declared_pins("jobs:\n  verify:\n    strategy:\n      matrix:\n        steps:\n"
+                       "          - uses: actions/setup-python@v5\n            with:\n"
+                       "              python-version: '9.9'\n"
+                       "    steps:\n      - run: echo hi\n"), [])
+    case("an action INPUT named `steps` does not hide the real pin (r5 F2 regression)",
+         declared_pins("jobs:\n  verify:\n    steps:\n      - name: odd\n"
+                       "        uses: someone/thing@v1\n        with:\n          steps:\n"
+                       "            - a\n      - name: Set up Python\n"
+                       "        uses: actions/setup-python@v5\n"
+                       "        with:\n          python-version: '3.12'\n"), ["3.12"])
+    # ⟳ r5 F3 — the CLOSING half of the steps: rule had no falsifier, and both defects above lived
+    # there. A list AFTER the steps block must not be read as steps.
+    case("a list after the steps block is not read as steps",
+         declared_pins("jobs:\n  a:\n    steps:\n      - uses: actions/setup-python@v5\n"
+                       "        with:\n          python-version: '3.12'\n"
+                       "    outputs:\n      o: v\n  b:\n    strategy:\n      matrix:\n"
+                       "        include:\n          - uses: actions/setup-python@v5\n"
+                       "            with:\n              python-version: '9.9'\n"), ["3.12"])
     case("a COMMENT at the dash indent does not end a step",
          declared_pins("    steps:\n      - name: Set up Python\n      # a comment, legal at any indent\n"
                        "        uses: actions/setup-python@v5\n"
