@@ -291,6 +291,7 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'decide.final_text',
         'final_text_of.texts',
         'has_closing_table.text',
+        'mask_heredocs.command',
         'mask_quotes.command',
         'run_decide.payload',
     ),

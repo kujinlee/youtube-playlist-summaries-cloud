@@ -202,8 +202,8 @@
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "    for raw in _SEGMENT_SPLIT.split(mask_quotes(command)):",
-        "    for raw in _SEGMENT_SPLIT.split(command):"
+        "    for raw in _SEGMENT_SPLIT.split(mask_quotes(mask_heredocs(command))):",
+        "    for raw in _SEGMENT_SPLIT.split(mask_heredocs(command)):"
       ]
     ],
     "expect": "acts: a quoted operator does not split the command"
@@ -284,5 +284,38 @@
       ]
     ],
     "expect": "guard: a drifted borrowed turn rule is CANNOT RUN"
+  },
+  {
+    "name": "heredoc bodies stop being blanked, so prompt text counts as a command",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "def mask_heredocs(command: str) -> str:\n    \"\"\"PURE. `command` with every heredoc BODY blanked, line count preserved.\"\"\"",
+        "def mask_heredocs(command: str) -> str:\n    \"\"\"PURE. `command` with every heredoc BODY blanked, line count preserved.\"\"\"\n    return command"
+      ]
+    ],
+    "expect": "acts: a heredoc BODY is data, not a command"
+  },
+  {
+    "name": "the effect veto stops running, so a REFUSED tick counts as a tick",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    return [a for a in found if not vetoed(a, outputs)]",
+        "    return found"
+      ]
+    ],
+    "expect": "veto: a REFUSED tick is not a tick"
+  },
+  {
+    "name": "the veto ignores which act it names, so any failure vetoes everything",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    return any(label == act and pattern.search(outputs) for label, pattern in _VETO)",
+        "    return any(pattern.search(outputs) for label, pattern in _VETO)"
+      ]
+    ],
+    "expect": "veto: another act's failure phrase does not veto this one"
   }
 ]

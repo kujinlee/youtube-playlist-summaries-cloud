@@ -57,8 +57,9 @@ and reads as covering all of it is a hazard this repo has paid for more than onc
   * **THE LAST TURN OF A SESSION IS NEVER JUDGED.** One turn of latency means the final close of a
     session has no following Stop to judge it. Structural, and the direction is under-firing.
   * **A CLOSE REACHED BY ANOTHER SPELLING.** `alias g=git; g push`, a wrapper script, or
-    `subprocess.run(["git","push"])` inside a heredoc are all invisible — the trigger reads shell
-    text, not process trees. Likewise a heredoc BODY line beginning `git push` fires falsely.
+    `subprocess.run(["git","push"])` are invisible — the trigger reads shell text, not process
+    trees. ⟳ The heredoc half of this bound is CLOSED: a heredoc BODY is blanked by
+    `mask_heredocs`, measured against two real false positives in this session.
   * **AN HTML TABLE.** `<table><tr><th>Check</th>…` is a perfectly readable closing table and is
     not recognised; only the markdown form is. Deliberate — `process-checklists.md` shows markdown.
   * **A PARTIALLY-SUCCESSFUL ACT.** `is_error` on the paired result means "no close happened", but
@@ -90,7 +91,7 @@ Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CAN
 
 Usage:
     python3 scripts/check-closing-table.py --decide      # reads the Stop-hook payload on stdin
-    python3 scripts/check-closing-table.py --self-test   # 99 cases
+    python3 scripts/check-closing-table.py --self-test   # 111 cases
 """
 from __future__ import annotations
 
@@ -181,6 +182,62 @@ def coalesce_injected(windows_in: list, make) -> list:
     return out
 
 
+# ── The EFFECT veto ────────────────────────────────────────────────────────────────────────────
+# ⛔ EFFECTS VETO AN ACT; THEY DO NOT DETECT ONE — and that asymmetry is the whole design, measured
+# rather than assumed. Over 209 real Bash calls in one session:
+#
+#     trigger                 fires   false+   MISSES
+#     command text (shipped)    13       3        0
+#     effect signature only      7       2        3      <- 3 real commits whose `[branch sha]`
+#     union (text OR effect)     -       3        0         line was cut off by `| tail -3`
+#
+# So replacing text with effects trades false alarms for MISSES, and a guard that exists to catch
+# something must not under-fire. But a VETO is safe in exactly the way detection is not: output
+# truncation yields NO veto, so a truncated result leaves the act standing. The veto only fires on
+# POSITIVE evidence that the act did not happen — git's own refusal phrasing, or our own tool's.
+#
+# Measured example: `begin-plan.py --tick` printing `refusing: this plan is PAUSED`. The command
+# text says a step was ticked; the output says nothing was.
+_VETO: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("a plan tick", re.compile(r"^refusing:", re.M)),
+    ("a commit",    re.compile(r"^nothing to commit|^no changes added to commit", re.M)),
+    ("a push",      re.compile(r"^Everything up-to-date$|^\s*! \[rejected\]|^error: failed to push",
+                               re.M)),
+    ("a merge",     re.compile(r"is not mergeable|^X Pull request", re.M)),
+)
+
+
+def vetoed(act: str, outputs: str) -> bool:
+    """PURE. True iff `outputs` carries POSITIVE evidence that `act` did not happen."""
+    return any(label == act and pattern.search(outputs) for label, pattern in _VETO)
+
+
+# ── Heredoc bodies ─────────────────────────────────────────────────────────────────────────────
+# ⛔ MEASURED FALSE POSITIVES, in this very session: two review-prompt heredocs containing the text
+# `gh pr merge` and `begin-plan.py … --tick` were counted as acts. A heredoc BODY is data being
+# written to a file, never a command being run. This is the same closed-form treatment that fixed
+# quoting — blank the region, preserve the lines — and NOT another open-ended lexer rule.
+_HEREDOC_START = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z_0-9]*)\1")
+
+
+def mask_heredocs(command: str) -> str:
+    """PURE. `command` with every heredoc BODY blanked, line count preserved."""
+    lines = command.split("\n")
+    out: list[str] = []
+    terminator: str | None = None
+    for line in lines:
+        if terminator is None:
+            out.append(line)
+            found = _HEREDOC_START.search(line)
+            if found:
+                terminator = found.group(2)
+        else:
+            out.append("")
+            if line.strip() == terminator:
+                terminator = None
+    return "\n".join(out)
+
+
 def mask_quotes(command: str) -> str:
     """PURE. `command` with every quoted span blanked, LENGTH PRESERVED.
 
@@ -235,7 +292,7 @@ def command_segments(command: str) -> list[str]:
     QUOTE-MASKED form — see `mask_quotes`.
     """
     out: list[str] = []
-    for raw in _SEGMENT_SPLIT.split(mask_quotes(command)):
+    for raw in _SEGMENT_SPLIT.split(mask_quotes(mask_heredocs(command))):
         seg = raw.strip()
         # ⟳ r2 Codex, Medium — ORDER MATTERS, and it was backwards. Env prefixes were stripped
         # BEFORE the subshell paren, so `(GIT_SSH=x git push)` left `GIT_SSH=x git push` with the
@@ -409,6 +466,27 @@ def _errored_tool_ids(records: list[dict]) -> set[str]:
     return bad
 
 
+def tool_outputs_of(records: list[dict]) -> str:
+    """PURE. Every Bash `tool_result` payload in this window, concatenated.
+
+    This is what the EFFECT VETO reads. It is deliberately the whole window rather than the paired
+    result of one call: a turn that pushes in one call and reports the failure in the next should
+    still be vetoed, and pairing would miss that.
+    """
+    chunks: list[str] = []
+    for rec in records:
+        for block in _content_blocks(rec):
+            if block.get("type") != "tool_result":
+                continue
+            content = block.get("content")
+            if isinstance(content, str):
+                chunks.append(content)
+            elif isinstance(content, list):
+                chunks.extend(x.get("text", "") for x in content
+                              if isinstance(x, dict) and isinstance(x.get("text"), str))
+    return "\n".join(chunks)
+
+
 def closing_acts_of(records: list[dict]) -> list[str]:
     """PURE. Labels of the job-closing acts this turn actually completed. Deduped, ordered.
 
@@ -433,7 +511,10 @@ def closing_acts_of(records: list[dict]) -> list[str]:
                 for label, pattern in CLOSING_ACTS:
                     if pattern.search(segment) and label not in found:
                         found.append(label)
-    return found
+    # ⛔ The veto runs LAST and only removes. It can never add an act, so a truncated or missing
+    # result leaves every detected act standing — which is why this cannot introduce a MISS.
+    outputs = tool_outputs_of(records)
+    return [a for a in found if not vetoed(a, outputs)]
 
 
 def _log_display() -> str:
@@ -745,6 +826,47 @@ def _self_test() -> int:
           closing_acts_of([bash(r'git commit -m "a \" --dry-run"')]), ["a commit"])
     check("acts: a single-quoted span has no escapes",
           closing_acts_of([bash("echo 'a; git push'")]), [])
+    # ⛔ MEASURED FALSE POSITIVES in this session: two review-prompt heredocs whose BODY named
+    # `gh pr merge` and `begin-plan.py --tick` were counted as acts. A heredoc body is data.
+    check("acts: a heredoc BODY is data, not a command",
+          closing_acts_of([bash("cat > /tmp/p.md <<'EOF'\ngh pr merge 1\nEOF")]), [])
+    check("acts: an unquoted heredoc body is blanked too",
+          closing_acts_of([bash("cat > /tmp/p.md <<EOF\ngit push\nEOF")]), [])
+    check("acts: a real command AFTER a heredoc still counts",
+          closing_acts_of([bash("cat > /tmp/p.md <<'EOF'\ngit push\nEOF\ngit commit -m x")]),
+          ["a commit"])
+    check("heredoc mask: line count is preserved",
+          len(mask_heredocs("a <<'E'\nb\nE\nc").split("\n")), 4)
+
+    # ---- the EFFECT VETO: effects remove an act, they never add one -------------------------
+    def _with_output(cmd, out):
+        return [bash(cmd, "v1"),
+                {"type": "user", "message": {"content": [
+                    {"type": "tool_result", "tool_use_id": "v1", "content": out}]}}]
+
+    check("veto: a REFUSED tick is not a tick",
+          closing_acts_of(_with_output("python3 scripts/begin-plan.py --tick",
+                                       "refusing: this plan is PAUSED")), [])
+    check("veto: a successful tick survives",
+          closing_acts_of(_with_output("python3 scripts/begin-plan.py --tick",
+                                       "ticked step 4 of 4 in .claude/plans/x.md")), ["a plan tick"])
+    check("veto: nothing to commit is not a commit",
+          closing_acts_of(_with_output("git commit -m x", "nothing to commit, working tree clean")),
+          [])
+    check("veto: Everything up-to-date is not a push",
+          closing_acts_of(_with_output("git push", "Everything up-to-date")), [])
+    # ⛔ THE PROPERTY THAT MAKES THE VETO SAFE: no output means no veto, so a truncated result
+    # leaves the act standing. This is why effects veto and do not detect.
+    check("veto: an EMPTY result vetoes nothing (truncation must not cause a miss)",
+          closing_acts_of(_with_output("git push", "")), ["a push"])
+    check("veto: unrelated output vetoes nothing",
+          closing_acts_of(_with_output("git push", "some unrelated chatter")), ["a push"])
+    # ⛔ A VETO IS PER-ACT. Without the `label == act` test, ANY failure phrase would veto EVERY
+    # act — a plan refusing to tick would cancel a real push in the same turn.
+    check("veto: another act's failure phrase does not veto this one",
+          closing_acts_of(_with_output("git push", "refusing: this plan is PAUSED")), ["a push"])
+    check("heredoc mask: a different heredoc, so the parameter is not a constant",
+          mask_heredocs("cat <<X\nsecret\nX").split("\n")[1], "")
     # Assert the PROPERTY, not a transcribed literal — the first version of this case hand-counted
     # the spaces and was off by one, which is the same class of error the guard exists to catch.
     check("mask: a different string keeps length and drops every quote",
@@ -958,7 +1080,7 @@ def _self_test() -> int:
             globals()["WARN_LOG"] = real_log
 
     declared = re.search(r"--self-test\s+#\s*(\d+)\s+cases", __doc__ or "")
-    total = 99
+    total = 111
     if not declared or int(declared.group(1)) != total:
         failures.append(
             f"declared self-test count {declared.group(1) if declared else 'MISSING'} != {total} "
