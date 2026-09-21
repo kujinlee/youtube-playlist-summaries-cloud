@@ -1938,6 +1938,35 @@ coordinator's uncommitted work. Both are hand-discipline today.
 
 ---
 
+## Workflow-reading guards — backlog #153 — anchor `review-decides-itself` — ✅ REVIEW DONE 2026-09-21; #154–#158 OPEN
+
+**The Phase 6 review is the deliverable and it is complete.** `docs/reviews/architecture-review-2026-09-21-workflow-readers.md`,
+dual-reviewed r1 (2 Blocking, 2 High, 6 Medium, 7 Low — all folded). It fired from a **falsifier the
+coordinator pre-committed in code** rather than from a schedule or a round count, which is this
+anchor's whole subject: the loop decided its own next step from recorded evidence.
+
+- [x] **#153 — the architecture review itself.** Verdict: extract `_structural()` into a shared
+      library. Not *parse* (no third-party dependency exists here, and adding one puts it inside the
+      interpreter this guard pins) and not *refuse* (that is #157, worth doing but not instead).
+      ⚠ The row's own scope was wrong in both directions — `check-ci-watched.py` is not a member,
+      `check-ratchet-contract.py:835` is — which is why the population was swept rather than recalled.
+- [ ] **#154 — the false green the review FOUND.** ⚠ **First.** A block scalar opened on a `- ` dash
+      line is never masked, so a job with no `setup-python` reports `rc 0, "every job pins 3.12"`.
+      Latent today; **#155 would promote the reader that carries it into two more guards.**
+- [ ] **#155 — the extraction.** `scripts/workflow_structure.py`; R3 wired to it; 12 anchors **and
+      their killing cases** transferred; `EXPECTED_MUTATIONS` 39 → 27 + 12 (a transfer, not a fall).
+- [ ] **#156 — the residue #155 leaves.** `if: false` is structure, so masking cannot see it; and R3
+      reads `ci.yml` alone while both siblings read `*.yml` ∪ `*.yaml`.
+- [ ] **#157 — a soundness check for pins and steps.** The mechanism exists in `check-merge-ready.py`.
+- [ ] **#158 — the flow-mapping bound.** Read `{k: v}` or refuse on it — a decision, not a regex.
+
+**What the review changed outside its own document:** two terms into `CONTEXT.md` → Verification
+Stack (**structural line**, **soundness check**) — the absence of a shared word is why three guards
+built the same primitive without any round being able to say so, which is the same gap that created
+that section. A stale count in its preamble was **removed rather than corrected**: it had no owner,
+and the file sits inside the corpus it describes.
+
+
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all
 three. **M2 Sync is COMPLETE (PR #23 + #24, 2026-07-19).** **M1.1 is now DONE (2026-07-19).**

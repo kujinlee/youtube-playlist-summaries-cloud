@@ -11105,3 +11105,42 @@ deferred with its shape recorded on #149. ⚠ Two self-inflicted catches: positi
 under the drop-the-column mutation and scored RED-BUT-UNATTRIBUTABLE — the third time this file has
 paid for an unwrapped index, now all through `_safe`; and my e2e probe wrote a synthetic first line
 into the real (gitignored) log, removed so the evidence trail starts empty.
+
+## 2026-09-21
+An architecture review that was owed came due, and reviewing it found a bug in shipped code that
+the review itself had been about to make worse.
+
+The background: one small function had been fixed ten times in seven review rounds, always the same
+way. It reads GitHub's workflow files by scanning lines, so anything *shaped* like a step is treated
+as a step — and every repair taught it one more thing that shape alone cannot tell it. Rather than
+keep patching, a rule was set in advance: if a fourth defect of that kind showed up, stop patching
+and hold a design review. A fourth showed up. So did six more.
+
+The review's question was which mechanism should own this: parse the files properly, refuse what
+cannot be read, or share one reader between the guards that need it. Sharing won, and the reason
+"parse it properly" lost is worth knowing — there is no YAML parser available here. Not one of the
+forty guards uses a third-party library, and adding one would mean installing it into the very
+Python interpreter that this particular guard exists to pin down. The circle closes on itself.
+
+Two things fell out that were not in the original plan. The first is that the backlog row asking for
+this review named the wrong guard: the one it accused reads no workflow file at all, and the one it
+missed turned out to be the only one of the group that fails in the dangerous direction — it decides
+whether a guard is *being run* by looking for its name in the CI file, and a name inside a comment
+describing a **removed** step counts just as well as a real one. Fifty-nine percent of that file is
+comments.
+
+The second is the one that matters. Both reviewers, working separately, found that the well-tested
+reader has a hole of its own, and between them they escalated it three times: a missed shape, then
+an understated limitation, then an outright false pass. Tracking it down: if a workflow writes a
+step in the shorthand form, text inside it is read as real configuration, and a job with no Python
+setup at all can be reported as correctly configured. Every safety layer passes, including the one
+built specifically to catch this, because that layer only speaks for the job the guard itself runs
+in. Nothing in the project uses the shorthand form today, so nothing is broken right now — but the
+review's recommendation was to copy this reader into two more guards, which would have spread it.
+That work is now sequenced so the hole is closed first.
+
+Nothing shipped to production. Five follow-up items are filed, and the review document records the
+one question every architecture review here has to answer out loud: what did we decide that nobody
+wrote down? In this case, that the project had no word for the distinction all three guards had
+independently invented — so two terms went into the glossary, which is the same gap that created
+that section of the glossary in the first place.

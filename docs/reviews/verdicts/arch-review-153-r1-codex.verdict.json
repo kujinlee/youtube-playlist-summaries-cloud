@@ -1,0 +1,18 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 9551 chars"
+  ],
+  "dirty": {
+    "docs/reviews/architecture-review-2026-09-21-workflow-readers.md": "100644 a03dc8b418e6a0eb0aa28ba1ac2d09744ed21c12"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "e7ed8c1abfb61b49c5867bd42c8503e65ec404b0",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/0cfd7079-9c4f-4f89-9a59-337f426f6311/scratchpad/arch153-r1-prompt.md",
+  "reason": "9551 chars",
+  "review": "arch-review-153-r1-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}
