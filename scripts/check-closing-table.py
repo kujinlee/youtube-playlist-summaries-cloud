@@ -117,7 +117,7 @@ Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CAN
 
 Usage:
     python3 scripts/check-closing-table.py --decide      # reads the Stop-hook payload on stdin
-    python3 scripts/check-closing-table.py --self-test   # 148 cases
+    python3 scripts/check-closing-table.py --self-test   # 151 cases
 """
 from __future__ import annotations
 
@@ -1300,7 +1300,22 @@ def _self_test() -> int:
     check("log: a window object with no opener attribute at all yields '-'",
           _safe(lambda: turn_id_of(object())), "-")
     check("log: the line carries FOUR tab-separated fields",
-          len(log_line(["a commit"], "T", "s", "u").rstrip("\n").split("\t")), 4)
+          len(log_line(["a commit"], "2026-09-21T07:00:00-0700", "sess-a", "u")
+              .rstrip("\n").split("\t")), 4)
+    # ⟳ check-fixture-variation, CI: the first draft of these cases passed `when="T"` and
+    # `session="s"` at EVERY call site, so no case could tell either parameter from a constant and
+    # every clause reading them was unguarded. The guard could not see it while `log_line` had ZERO
+    # cases — ADDING the tests is what made the gap visible. Both are now varied, and the `or '-'`
+    # fallback each carries has its own case rather than being inferred from the other's.
+    check("log: the timestamp is the FIRST field, verbatim",
+          _safe(lambda: log_line(["a push"], "2026-01-02T03:04:05+0000", "sess-b", "u")
+                .split("\t")[0]), "2026-01-02T03:04:05+0000")
+    check("log: the session is the SECOND field, verbatim",
+          _safe(lambda: log_line(["a push"], "2026-06-06T06:06:06-0700", "sess-ZZZ", "u")
+                .split("\t")[1]), "sess-ZZZ")
+    check("log: an empty session degrades to '-' rather than an empty field",
+          _safe(lambda: log_line(["a push"], "2026-03-03T03:03:03-0700", "", "u")
+                .split("\t")[1]), "-")
     # ⛔ EVERY POSITIONAL FIELD READ GOES THROUGH `_safe`, and this is the THIRD time this file has
     # paid for forgetting it. `_safe`'s own docstring: a raise inside the suite kills it with a
     # traceback and prints NO `[FAIL] ` line, so check-plan-code scores the mutation
@@ -1309,12 +1324,14 @@ def _self_test() -> int:
     # harness reported `labels=[]`. A bare index is a raise waiting for the mutation that proves
     # the case matters.
     check("log: the turn id is the FOURTH field",
-          _safe(lambda: log_line(["a commit"], "T", "s", "u-9").rstrip("\n").split("\t")[3]), "u-9")
+          _safe(lambda: log_line(["a commit"], "2026-04-04T04:04:04-0700", "sess-c", "u-9")
+                .rstrip("\n").split("\t")[3]), "u-9")
     check("log: acts are joined with + in the third field",
-          _safe(lambda: log_line(["a commit", "a push"], "T", "s", "u").split("\t")[2]),
-          "a commit+a push")
+          _safe(lambda: log_line(["a commit", "a push"], "2026-05-05T05:05:05-0700", "sess-d",
+                                 "u").split("\t")[2]), "a commit+a push")
     check("log: a missing turn id degrades to '-' rather than an empty field",
-          _safe(lambda: log_line(["a commit"], "T", "s", "").rstrip("\n").split("\t")[3]), "-")
+          _safe(lambda: log_line(["a commit"], "2026-07-07T07:07:07-0700", "sess-e", "")
+                .rstrip("\n").split("\t")[3]), "-")
 
     # ---- final_text_of -----------------------------------------------------------------------
     check("final: last non-empty wins", final_text_of(["a", "b"]), "b")

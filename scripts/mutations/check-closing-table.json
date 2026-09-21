@@ -482,5 +482,16 @@
       ]
     ],
     "expect": "log: a window object with no opener attribute at all yields '-'"
+  },
+  {
+    "name": "the empty-session fallback is removed, so a session-less stop logs a blank field",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    return f\"{when}\\t{session or '-'}\\t{'+'.join(acts) or '-'}\\t{turn or '-'}\\n\"",
+        "    return f\"{when}\\t{session}\\t{'+'.join(acts) or '-'}\\t{turn or '-'}\\n\""
+      ]
+    ],
+    "expect": "log: an empty session degrades to '-' rather than an empty field"
   }
 ]
