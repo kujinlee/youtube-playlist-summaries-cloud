@@ -66,12 +66,12 @@
     "expect": "no workflows at all is CANNOT RUN, never a pass"
   },
   {
-    "name": "the no-pin-anywhere refusal goes \u2014 the precise state this guard exists to end",
+    "name": "the no-pin-anywhere refusal goes — the precise state this guard exists to end",
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
-        "        return 2, (\"CANNOT RUN \u2014 no `python-version:` was found in any workflow",
-        "        return 0, (\"CANNOT RUN \u2014 no `python-version:` was found in any workflow"
+        "        return 2, (\"CANNOT RUN — no `python-version:` was found in any workflow",
+        "        return 0, (\"CANNOT RUN — no `python-version:` was found in any workflow"
       ]
     ],
     "expect": "...and so is a corpus with no pin anywhere"
@@ -103,8 +103,8 @@
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
-        "        if running != pin:\n            return 1, (f\"FAILED \u2014 workflows pin {pin}, this interpreter is {running}.\")",
-        "        if False:\n            return 1, (f\"FAILED \u2014 workflows pin {pin}, this interpreter is {running}.\")"
+        "        if running != pin:\n            return 1, (f\"FAILED — workflows pin {pin}, this interpreter is {running}.\")",
+        "        if False:\n            return 1, (f\"FAILED — workflows pin {pin}, this interpreter is {running}.\")"
       ]
     ],
     "expect": "...and it still FAILS when provenance is fine but the VERSION is wrong"
@@ -114,8 +114,8 @@
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
-        "    if running != pin:\n        return 0, (f\"\u26a0 ADVISORY",
-        "    if running != pin:\n        return 1, (f\"\u26a0 ADVISORY"
+        "    if running != pin:\n        return 0, (f\"⚠ ADVISORY",
+        "    if running != pin:\n        return 1, (f\"⚠ ADVISORY"
       ]
     ],
     "expect": "...but LOCALLY the same mismatch is ADVISORY and exits 0"
@@ -162,7 +162,7 @@
         "        if False:"
       ]
     ],
-    "expect": "IN CI, a matching VERSION with no provenance FAILS \u2014 the ambient python matches too"
+    "expect": "IN CI, a matching VERSION with no provenance FAILS — the ambient python matches too"
   },
   {
     "name": "the wrong-interpreter refusal goes, which is update-environment: false reporting green",
@@ -231,7 +231,7 @@
     "expect": "an inline comment on the pin line is stripped from the VALUE"
   },
   {
-    "name": "an EMPTY exported location is treated as provenance \u2014 fail-open for every absolute path",
+    "name": "an EMPTY exported location is treated as provenance — fail-open for every absolute path",
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
@@ -273,5 +273,27 @@
       ]
     ],
     "expect": "the corpus reads both workflow extensions"
+  },
+  {
+    "name": "the step is identified by its OPENING LINE again, so a `- name:` step hides its pin (r2 H1, the redesign reverted)",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        if not any(re.match(r\"^\\s*uses:\\s*actions/setup-python\", ln) for ln in step.body):",
+        "        if not re.match(r\"^\\s*uses:\\s*actions/setup-python\", step.body[0]):"
+      ]
+    ],
+    "expect": "a step whose `- name:` comes BEFORE `uses:` is still a setup-python step"
+  },
+  {
+    "name": "the dash line is dropped from the step body, so a pin written ON the dash becomes invisible",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "            out.append(Step(len(m.group(1)), [\" \" + m.group(2)]))",
+        "            out.append(Step(len(m.group(1)), []))"
+      ]
+    ],
+    "expect": "...and `name:` AFTER `uses:` still works, the shape that always did"
   }
 ]

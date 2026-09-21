@@ -2,7 +2,7 @@
 """Every CI job pins the Python interpreter, the pins agree, and the pin actually took effect.
 
     python3 scripts/check-python-pin.py              # in CI: asserts. locally: advises.
-    python3 scripts/check-python-pin.py --self-test  # 57 cases
+    python3 scripts/check-python-pin.py --self-test  # 62 cases
 
     exit 0 = pinned, agreeing, and (in CI) in effect   exit 1 = a real disagreement
     exit 2 = CANNOT RUN — no workflow or no pin found, which is never a pass
@@ -63,6 +63,7 @@ import argparse
 import os
 import pathlib
 import re
+from typing import NamedTuple
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -80,6 +81,62 @@ WORKFLOW_GLOBS = ("*.yml", "*.yaml")
 # shell script — and that is itself worth stating, because an empty allow-list is the strongest
 # form and someone will be tempted to add to it rather than add two lines of YAML.
 EXEMPT_JOBS: dict[str, str] = {}
+
+
+class Step(NamedTuple):
+    """One step of a workflow job: the indent of its `- `, and every line BELONGING to it.
+
+    `body` INCLUDES the dash line with the dash blanked to a space, so a key written on the dash
+    line (`- uses: x`) and the same key written under a `name:` (`- name: y` / `  uses: x`) are
+    the SAME SHAPE to every caller. That equivalence is the whole point of this type.
+    """
+
+    indent: int
+    body: list[str]
+
+
+def _steps(text: str) -> list[Step]:
+    r"""PURE. Split a workflow into steps, each owning the lines indented under its `- `.
+
+    ⛔ THIS EXISTS BECAUSE `declared_pins` WAS WRONG THREE TIMES IN THREE ROUNDS, always the same
+    way. Each repair narrowed the SPAN it searched — "any line in the file" -> "inside the step" ->
+    "inside the step's `with:`" — and never named the THING. The step itself stayed identified by
+    `^(\s*)-\s+uses:\s*actions/setup-python`, a pattern that only matches when nothing is
+    written before `uses:`. r2's first probe found the fourth shape immediately: give the step a
+    `name:` — the ordinary idiom, and how 62 of this repository's 70 steps are written — and the
+    pin became invisible while the job read as UNPINNED. The error message then told the author to
+    add the step they could already see, or to add the job to `EXEMPT_JOBS`.
+
+    ⭐ COORDINATOR'S CALL, 2026-09-21, recorded because a stopping decision looks arbitrary later.
+    r2 (claude) read `docs/dev-process.md`'s THRASHING arming condition as met for `declared_pins`
+    specifically — three consecutive rounds, each finding caused by the previous round's fix — and
+    left the call to the coordinator. `docs/review-method.md` gives ONE test: *can a redesign
+    remove it?* Here it can, and does: identifying a step by what it CONTAINS dissolves H1 and the
+    three shapes before it, because none of them was about `with:` or indentation — all four were
+    about the opening line. So the answer to thrashing is this redesign, NOT a Phase 6 review:
+    Phase 6 exists to FIND a structural defect, and this one was already found and named.
+    ⚠ ITS FALSIFIER, PRE-COMMITTED: if a FOURTH `declared_pins` finding arrives in round 3, the
+    redesign did not dissolve the class and Phase 6 fires. That is the observation that makes this
+    a call rather than a preference.
+
+    A line scan, not a YAML parse — PyYAML is not installed here and every sibling guard reads
+    workflows as text.
+    """
+    out: list[Step] = []
+    for line in text.split("\n"):
+        m = re.match(r"^(\s*)-(\s.*)$", line)
+        if m:
+            out.append(Step(len(m.group(1)), [" " + m.group(2)]))
+            continue
+        if not out:
+            continue
+        if line.strip() and len(line) - len(line.lstrip()) <= out[-1].indent:
+            out[-1] = Step(out[-1].indent, out[-1].body + [])   # closed; later lines are not ours
+            out.append(Step(-1, []))                            # a sentinel nobody matches
+            continue
+        if out[-1].indent >= 0:
+            out[-1].body.append(line)
+    return [s for s in out if s.indent >= 0]
 
 
 def declared_pins(text: str) -> list[str]:
@@ -101,19 +158,18 @@ def declared_pins(text: str) -> list[str]:
     next step at the same or shallower indent.
     """
     pins: list[str] = []
-    lines = text.split("\n")
-    for i, line in enumerate(lines):
-        m = re.match(r"^(\s*)-\s+uses:\s*actions/setup-python", line)
-        if not m:
+    for step in _steps(text):
+        # ⛔ A STEP IS RECOGNISED BY WHAT IT CONTAINS, NOT BY HOW IT OPENS. See the REDESIGN note
+        # in this function's docstring: the previous three versions all asked "does the line that
+        # STARTS the step name setup-python?", which is only true when nothing is written before
+        # `uses:` — and 62 of this repository's 70 steps write `- name:` first.
+        if not any(re.match(r"^\s*uses:\s*actions/setup-python", ln) for ln in step.body):
             continue
-        step_indent = len(m.group(1))
         in_with, with_indent = False, 0
-        for later in lines[i + 1:]:
-            if later.strip() and not later.startswith(" " * (step_indent + 1)):
-                break                      # dedented out of this step
+        for later in step.body:
             here = len(later) - len(later.lstrip())
             opens = re.match(r"^\s*with:\s*(#.*)?$", later)
-            if opens and here > step_indent:
+            if opens and here > step.indent:
                 in_with, with_indent = True, here
                 continue
             if in_with and later.strip() and here <= with_indent:
@@ -411,6 +467,36 @@ def self_test() -> int:
     case("...nor is one in an UNRELATED action's with: block",
          declared_pins("      - uses: someone/not-setup-python@v1\n"
                        "        with:\n          python-version: '3.12'\n"), [])
+    # ⛔⛔ THE SHAPE THE WHOLE REDESIGN EXISTS FOR — r2 (claude) H1, and the reason `_steps` was
+    # written. `declared_pins` was wrong three rounds running, and every previous version asked
+    # "does the line that OPENS the step name setup-python?". That is only true when nothing is
+    # written before `uses:` — and 62 of this repository's 70 steps open with `- name:`. The pin
+    # became invisible, the job read as UNPINNED, and the error told the author to add the step
+    # they were looking at or to exempt the job. ⚠ THE SUITE HAD NO CASE FOR THE ORDINARY IDIOM,
+    # which is why three rounds of narrowing the SPAN never found it.
+    case("a step whose `- name:` comes BEFORE `uses:` is still a setup-python step",
+         declared_pins("      - name: Set up Python\n"
+                       "        uses: actions/setup-python@v5\n"
+                       "        with:\n          python-version: '3.12'\n"), ["3.12"])
+    case("...and `id:`/`if:` before `uses:` do not hide it either",
+         declared_pins("      - id: py\n        if: always()\n"
+                       "        name: Set up Python\n"
+                       "        uses: actions/setup-python@v5\n"
+                       "        with:\n          python-version: '3.12'\n"), ["3.12"])
+    case("...and `name:` AFTER `uses:` still works, the shape that always did",
+         declared_pins("      - uses: actions/setup-python@v5\n"
+                       "        name: Set up Python\n"
+                       "        with:\n          python-version: '3.12'\n"), ["3.12"])
+    # ⚠ THE NEGATIVE DIRECTION OF THE REDESIGN, asserted rather than assumed. Recognising a step
+    # by what it CONTAINS is a wider net than matching its opening line, so the two false-green
+    # shapes r1 found must be re-proved under the new rule, not inherited from the old one.
+    case("a named step around an UNRELATED action is still not a pin",
+         declared_pins("      - name: Cache things\n        uses: actions/cache@v4\n"
+                       "        with:\n          python-version: '9.9'\n"), [])
+    case("a named step whose heredoc CONTAINS a pin line is still not a pin",
+         declared_pins("      - name: write a file\n        run: |\n"
+                       "          cat > x <<'EOF'\n          python-version: '9.9'\n"
+                       "          EOF\n"), [])
     # ⛔ AND THE STEP BOUNDARY, DRIVEN. The two cases above never reach it — neither fixture has a
     # `setup-python` step, so the scan loop never starts and the clause that ENDS a step was
     # unexercised (it survived mutation). Here a real pin is followed by a DIFFERENT action

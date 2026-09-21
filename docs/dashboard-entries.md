@@ -9892,8 +9892,15 @@ still reading the same files. It noticed, re-ran every probe against the changed
 its own document — its findings survived — but that was luck, not method. A reviewer's subject should
 stop moving while it reads.
 
-Current: 45 self-test cases, 18 mutation entries, manifest total 755, every entry proved to go red
-through the case it names.
+⟳ 2026-09-21 — THE THREE COUNTS THAT WERE HERE ARE DELETED, NOT CORRECTED FOR A SECOND TIME.
+They read *"45 self-test cases, 18 mutation entries, manifest total 755"*; r2's M2 measured them
+as 48/19/756 and they were corrected; today they are **62/27/856**. Wrong twice in four days is
+the argument against restating a number, not for updating it — the same verdict `docs/plugins.md`
+already records: *"a count with no owner drifts again, and the only durable fix is to have one
+copy, in the place a gate can run."* The owners are `check-python-pin.py`'s own docstring
+declaration (verified by `check-selftest-counts.py`) and `EXPECTED_MUTATIONS` (verified by
+`check-plan-code.py --mutate .`). Every entry is still proved to go red through the case it names —
+that claim is checked by a gate, so it stays.
 
 ## 2026-09-17
 
