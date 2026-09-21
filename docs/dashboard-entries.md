@@ -10844,3 +10844,103 @@ selection card, not a caveat. Reliability failures (wrong subject, fork never re
 explicitly NOT grounds to decline: they are governed by *agent output is a LEAD, not a finding*,
 and the asymmetry is that a failed fork costs a retry while not spawning costs the reviewer
 permanently. Prompted by PR #325, which merged after six Codex-only rounds.
+
+## 2026-09-21 [needs-you]
+The guard that nags about missing CHECK/RESULT tables was finally read by someone other than its
+author — and it turns out it rejects the way you actually write those tables about half the time.
+
+Some background. That guard shipped two nights ago after six rounds of review, but every one of
+those rounds was Codex; the Claude half never ran, and it merged on a written waiver saying so.
+Last night an independent reviewer was sent in to do the reading that was owed. It found seven
+things. Three are now fixed, three are filed, and one is a question only you can answer.
+
+**The question.** The guard looks for a table whose headers literally say "check" and "result".
+The written rule is not about headers at all — it says one row per claim, evidence in the row, and
+every row could have come back with a cross. Measured across every transcript this project has:
+half the time the guard fires, your closing message already had a table in it. Usually the
+headerless two-column kind, which it cannot see at all. So it prints "you closed with prose" over
+a message that closed with a table. Either the guard should recognise the shapes you actually
+write, or it should stop claiming "prose" and say "no table headed check/result" instead. That
+trade is yours — widening it means giving up the literal word you scan for.
+
+**Fixed straight away.** A message from another Claude session was splitting a turn in half, so the
+guard judged the fragment before the work and warned about it: 125 false warnings, about one in six
+of everything it has ever emitted. Its docstring claimed two guards could never disagree about
+which turn they were looking at, which stopped being true the moment a function was added to make
+them disagree on purpose. And its self-test was printing "128/128 passed" from a hardcoded 128 —
+four cases were added and the number did not move, which is how that one got noticed.
+
+**Still open, and worth knowing about.** The log this guard writes is meant to answer "does it cry
+wolf?" in a few weeks. It cannot yet: the same turn gets logged up to 36 times, and no line says
+which turn it was about. So the count in that file is not a count of anything until that is fixed.
+<!--tech-->
+Round 7 of `closing-table`, the first independent half: `docs/reviews/claude/closing-table-r7-claude.md`
+(338 lines, 7 findings). Every load-bearing number re-derived by the coordinator over 766
+transcripts before being acted on — 332 teammate openers and the 125-warning fold delta both
+confirmed exactly; F2's appeal to `_META_IS_REALLY_A_MESSAGE` struck as inverted and the correction
+recorded at `_INJECTED`. Fixed: F2 (`_INJECTED` widened, 4 cases, 2 mutations), F4 (`total` derived,
+132/132, 1 mutation), F5 (docstring). Filed: #145 (F1, decision), #148 (banner guard unmeasured),
+#149 (F3+F7, one mechanism), #151 (F6, 5 vacuous cases). Net +4 open backlog rows, 3 closed.
+Also recorded: the coordinator's first append to this review was clobbered by the still-live agent's
+final Write — the file-path contract saves the work, not the timing.
+
+## 2026-09-21
+Correction to this morning's entry, which ended by asking you a question — you answered it, so
+here is what happened.
+
+You chose to widen the marker: any real table counts now, not only one headed "check" and "result".
+The result, measured over every transcript this project has rather than argued about: the guard used
+to fire on 96.7% of the turns that close a job, and now fires on 49.1%. The number of times it says
+"you closed with prose" over a message that actually contained a table went from 372 to **zero**.
+Every warning it emits from here is literally true.
+
+One thing worth knowing, because it is the cost you agreed to. A message that happens to contain
+any table — an example of some API output, a comparison — now satisfies the guard even if it never
+really reported. That is the guard staying quiet when it should have spoken, which is the safer
+direction for something that only warns, and there is now a test asserting that behaviour on purpose
+so nobody later files it as a bug and quietly tightens it back.
+
+I also tried a narrower version first and measured it dead before shipping anything: "only count a
+table if it ends the message". Not one of your 304 tabled closing messages ends with the table —
+every single one is followed by a caveat or a next step. That rule would have fired on all of them.
+<!--tech-->
+r7 F1 closed as backlog #145. `_CHECK_CELL`/`_RESULT_CELL` deleted; marker is now separator + ≥2
+cells + ≥1 claim row, outside a fence. 744/769 → 315/642 firing; 372 → 0 false-sentence firings.
+3 cases inverted rather than deleted, 5 added (incl. the verbatim headerless `| | |` shape, 147
+occurrences), 1 mutation — killed via its named case over a green control. Declared count 132 → 137,
+`EXPECTED_MUTATIONS` 40 → 41, sum 823. Also fixed 3 mutation defects CI caught: one anchor orphaned
+by the F2 edit, one no-op mutation of mine (`.match`→`.search` cannot differ under a `^`-anchored
+pattern), and an unattributable `[FAIL]` line that bypassed the contract format.
+
+## 2026-09-21
+Round 8 came back — the reviewer checked my repairs rather than the original code, and found
+something in a test I had just written.
+
+The short version: the three fixes hold. But one of the new test cases I added was fake. It was
+named "the teammate fragment's records join the interrupted turn", and it filtered out the exact
+record whose joining it was named for — so you could delete that behaviour entirely and the test
+still passed. I had explicitly asked the reviewer to hunt for that, because its earlier round found
+five such cases, and it found a sixth in my own work. Fixed, with a mutation that now fails if the
+behaviour is removed.
+
+The more interesting finding is about how much any of this helps you. The reviewer measured that my
+teammate fix cut the number of *turns* that get warned about by 17%, but barely changed the number
+of warnings you actually see — because the same turn gets warned about over and over. It was right
+about the mechanism and wrong about the size, and the reason is that it measured before your
+"widen the marker" decision had landed. Measured again on what is on the branch now: warnings you
+would actually receive fell from 1,183 to 630, a 47% drop.
+
+But its real point survives and I have raised the priority of the open item accordingly: **half of
+all remaining warnings are repeats of a turn already warned about, and one turn can now warn 71
+times in a row** — up from 36 before. Until that is fixed, counting lines in that log tells you
+nothing, which is the whole reason the log exists.
+<!--tech-->
+r8 (`docs/reviews/claude/closing-table-r8-claude.md`, 233 lines, 5 findings + verdict). R8-1
+(Blocking) was the two mutation defects CI had already caught and I had already fixed — equivalent
+mutant, unattributable `expect`. R8-4 fixed (vacuous case + mutation, 137→138 cases, 42 mutations,
+sum 824). R8-3 recorded as a stated bound in *WHAT THIS CANNOT SEE* (2 turns in 767 flip QUIET→WARN
+when a fold joins two fragments that each closed something; `final_text_of` takes the later one).
+R8-5 mitigated by reciprocal cross-references in both guards — the literal is duplicated and nothing
+observes it; named as a decision, not fixed. R8-2 split: emissions half SUPERSEDED (measured at
+04461e1e, pre-F1; re-measured master→HEAD = 1,183→630, −47%), concentration half CONFIRMED (repeats
+37%→50%, worst turn 36→71) and folded into #149 with the numbers.

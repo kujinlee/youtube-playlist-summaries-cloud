@@ -246,8 +246,8 @@
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "_INJECTED = re.compile(r\"^\\s*<(?:task-notification|system-reminder)\\b\")",
-        "_INJECTED = re.compile(r\"\")"
+        "    r\"^\\s*(?:<(?:task-notification|system-reminder)\\b\"\n    r\"|Another Claude session sent a message)\")",
+        "    r\"\")"
       ]
     ],
     "expect": "coalesce: a REAL user message still starts a turn"
@@ -405,5 +405,60 @@
       ]
     ],
     "expect": "veto: a REJECTED push is still vetoed despite its `To <url>` line"
+  },
+  {
+    "name": "the teammate-message fold is reverted, so a SendMessage splits a turn again (r7 F2, 332 openers / 125 warnings)",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    r\"|Another Claude session sent a message)\")",
+        "    r\"|ZZ_NEVER_MATCHES_ZZ)\")"
+      ]
+    ],
+    "expect": "coalesce: a TEAMMATE message does not start a turn"
+  },
+  {
+    "name": "the fold stops being anchored at the START, so a person QUOTING the phrase has their turn swallowed",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    r\"^\\s*(?:<(?:task-notification|system-reminder)\\b\"",
+        "    r\"^\\s*.*?(?:<(?:task-notification|system-reminder)\\b\""
+      ]
+    ],
+    "expect": "coalesce: the phrase QUOTED mid-message is still a real turn"
+  },
+  {
+    "name": "the self-test count stops being derived, so adding or deleting cases becomes invisible again",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        nonlocal cases\n        cases += 1\n",
+        "        nonlocal cases\n"
+      ]
+    ],
+    "expect": "declared self-test count (pinned declaration read by check-selftest-counts.py)"
+  },
+  {
+    "name": "the check/result HEADER requirement comes back, so the headerless table this project writes is rejected again (r7 F1)",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        if i + 1 >= len(lines) or not _SEPARATOR.match(lines[i + 1]):",
+        "        if (not any(re.match(r\"(?i)^\\s*\\**\\s*check\", c) for c in cells)\n                or i + 1 >= len(lines) or not _SEPARATOR.match(lines[i + 1])):"
+      ]
+    ],
+    "expect": "table: the headerless | | | key/value shape, the commonest real one"
+  },
+  {
+    "name": "the injected opener is dropped from the merged body, and the case naming it cannot see it (r8 R8-4)",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "            out[-1] = make(prev.opener, list(prev.body) + [opener] + list(window.body))",
+        "            out[-1] = make(prev.opener, list(prev.body) + list(window.body))"
+      ]
+    ],
+    "expect": "coalesce: the injected opener itself joins the body"
   }
 ]

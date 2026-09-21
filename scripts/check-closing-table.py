@@ -37,11 +37,33 @@ WHY THE TRIGGER LIVES IN THE TURN AND NOT IN A SENTINEL
 `check-banner-armed.py` needs a journal because its trigger (*was a plan armed when that turn
 ended?*) is external state that has already changed by the time the turn is judged. Ours is not:
 whether a turn ran `git push` is a permanent property of that turn's own records. So there is no
-journal, no sample, no late-flush, and no way for the two to disagree about a turn.
+journal, no sample and no late-flush.
+
+⟳ r7 (independent Claude half), Medium — THIS PARAGRAPH USED TO END *"and no way for the two to
+disagree about a turn"*, AND THAT WAS FALSE WHEN IT WAS WRITTEN. `coalesce_injected` below
+re-segments the borrowed windows for THIS guard only, so at one Stop `check-banner-armed.py` can
+judge window *k* while this file judges a merged *k-1..k*. They disagree about the subject by
+construction. That is a deliberate composition, argued in `coalesce_injected`'s own docstring — it
+answers a narrower question (*was that boundary a PERSON?*) on top of the borrowed one — but a
+correct design described by a false sentence is still a false sentence, and this one sat at the top
+of the file through six review rounds.
+
+⚠ THE OPEN HALF, NAMED RATHER THAN QUIETLY DROPPED: if a notification-split turn is the wrong
+subject here, it is plausibly the wrong subject for the banner guard too — its *announced N steps,
+stopped at i<N* class has the same false-alarm shape on a fragment cut between a banner and its
+work. That delta has NOT been measured, in either direction. Backlog #148. Do not apply this fold
+there on suspicion: changing the borrowed rule is precisely what `coalesce_injected` refuses to do.
 
 WHAT THIS CANNOT SEE — stated here and in the warning text, because a guard that covers half a rule
 and reads as covering all of it is a hazard this repo has paid for more than once:
 
+  * ⟳ r8 R8-3 — **WHICH FRAGMENT'S REPORT IS JUDGED, when a fold joins two that each closed
+    something.** `final_text_of` takes the LAST text block of the merged window, so the later
+    fragment's message is judged against the UNION of both fragments' acts. Measured over 767
+    transcripts: 2 turns are QUIET on master and WARN after the fold — the earlier fragment closed
+    with a table, the later one did not. The hazard is inherent to coalescing and predates the r7
+    fix; what the fix changed is that the opener population it applies to grew by 332. 2 in 767,
+    and deliberately NOT repaired — stated here so it is a known bound rather than a surprise.
   * ⛔ **WHETHER THE ROWS COULD HAVE COME BACK ❌.** That is rule 3 of the format, and it is the
     rule that separates a real table from a decorated assertion. A shape check sees a table. It
     cannot see whether the checks were falsifiable. Same stated bound as the selection-card guard's
@@ -95,7 +117,7 @@ Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CAN
 
 Usage:
     python3 scripts/check-closing-table.py --decide      # reads the Stop-hook payload on stdin
-    python3 scripts/check-closing-table.py --self-test   # 128 cases
+    python3 scripts/check-closing-table.py --self-test   # 138 cases
 """
 from __future__ import annotations
 
@@ -155,7 +177,36 @@ _SEGMENT_SPLIT = re.compile(r"\n|;|&&|\|\||\||&")
 
 
 # A record the SYSTEM injected into the user channel. Not a person taking a turn.
-_INJECTED = re.compile(r"^\s*<(?:task-notification|system-reminder)\b")
+# ⟳ r7 (independent Claude half), High — A TEAMMATE MESSAGE SPLITS A TURN EXACTLY LIKE A
+# NOTIFICATION, and it was the highest-volume real case while being the one absent from this list.
+# Measured over 766 real transcripts by replaying the shipped functions at every turn boundary:
+#
+#     window opener                             occurrences   isMeta   folded before r7
+#     <task-notification                            650         None        yes
+#     Another Claude session sent a message         332         None        NO
+#     <system-reminder  (AS AN OPENER)                0          —          yes
+#
+# Folding the teammate case removes 125 of 744 warnings — 16.8% of everything this guard has ever
+# emitted was a fragment manufactured by a boundary no person made. Note the third row: half of
+# this list was unexercised by reality while the real case went unlisted, which is why the number
+# above is the justification and the enumeration is not.
+#
+# ⛔ DO NOT "DERIVE" THIS FROM check-banner-armed._META_IS_REALLY_A_MESSAGE, and the r7 review's own
+# first draft made that mistake. That tuple names records which ARE a real new instruction —
+# `_meta_carries_a_message` returning True KEEPS the boundary — so consulting it argues the exact
+# opposite of this fold. It is also unreachable for these records: `_is_turn_boundary` only
+# consults it when `isMeta is True`, and all 332 teammate records carry `isMeta: None`.
+# ⚠ r8 R8-5, Low — THIS LITERAL NOW LIVES IN TWO GUARDS AND NOTHING WATCHES IT. It is also in
+# `check-banner-armed._META_IS_REALLY_A_MESSAGE` (for the opposite purpose — see below). If the
+# harness ever rewords the injection, BOTH stop matching, every self-test stays green, and the 332
+# openers silently revert to splitting turns. No standing check reads the string off a real
+# transcript, so this cross-reference is the falsifier's honest substitute, not the falsifier.
+# The warrant is this function's OWN predicate, one line down: *was that boundary a PERSON?*
+# A teammate Claude session is not a person. That is the whole test, and it is why the two guards
+# are allowed to answer differently here (see the docstring at the top of this file).
+_INJECTED = re.compile(
+    r"^\s*(?:<(?:task-notification|system-reminder)\b"
+    r"|Another Claude session sent a message)")
 
 
 def coalesce_injected(windows_in: list, make) -> list:
@@ -389,15 +440,44 @@ def command_segments(command: str) -> list[str]:
     return out
 
 # ── The marker ─────────────────────────────────────────────────────────────────────────────────
-# A markdown table whose header names a check column and a result column, followed by the
-# separator row that makes it a table rather than a line of prose containing two pipes.
+# A RENDERED MARKDOWN TABLE: a row of two or more cells, the separator row that makes it a table
+# rather than a line of prose containing pipes, and at least one claim row under it.
+#
+# ⟳ r7 (independent Claude half), High — THE HEADER NO LONGER HAS TO SAY `check` / `result`, and
+# requiring it was enforcing ONE EXAMPLE OF THE RULE INSTEAD OF THE RULE. User decision 2026-09-21,
+# taken on measurement, not taste.
+#
+# `docs/process-checklists.md` states the format as three PROPERTIES — one row per claim, evidence
+# in the row, every row could have come back ❌ — and then shows one example that happens to be
+# headed `check`/`result`. This regex pair enforced the example. Measured by replaying the shipped
+# code over 766 real transcripts:
+#
+#     warnings emitted                                              744
+#     …whose closing message ALREADY CONTAINED a rendered table      372  (50.0%)
+#     …of those, the headerless `| | |` key/value shape              147  (the single commonest)
+#
+# So `decide` printed "completed a commit and closed with prose" over a message that closed with a
+# table, in HALF of everything this guard has ever emitted. A warn-only observer whose sentence is
+# false half the time is the shape backlog #56 was measured for — it gets switched off.
+#
+# ⛔ A NARROWER REPAIR WAS PROPOSED AND MEASURED DEAD: "accept a table only when it ENDS the
+# message". Of the 304 warned-on messages containing a table, **0** end with it — every single one
+# is followed by a caveat, a next step, or a closing sentence. That rule would have fired on 100%
+# of them: exactly as wrong as the one it replaced, in a new direction. Recorded so it is not
+# re-proposed.
+#
+# WHAT IS GIVEN UP, STATED RATHER THAN GLOSSED: `check`/`result` was a token a reader could scan
+# for, and a chatty message containing an incidental comparison table now passes silently. That is
+# an UNDER-fire, and on a warn-only observer under-firing is the safe direction — the same argument
+# the effect-veto below is built on. It costs little that was real: this guard already declares
+# itself SHAPE ONLY and cannot see rule 3 (could the row have come back ❌?), so the strict header
+# was never evidence of quality — only of a rendering.
+#
 # ⛔ ONE DASH IS ENOUGH, and requiring two was a measured false negative. GitHub-flavoured markdown
 # needs a single `-` per cell, so `|-|-|` renders as a perfectly good table — and the first version
 # of this regex said `-{2,}`, which would have nagged the user for a table they had written
 # correctly. A warn-only observer's false alarms are the thing that gets it switched off.
 _SEPARATOR = re.compile(r"^\s*\|(?:\s*:?-+:?\s*\|)+\s*$")
-_CHECK_CELL = re.compile(r"^\s*\**\s*check(?:s)?\s*\**\s*$", re.I)
-_RESULT_CELL = re.compile(r"^\s*\**\s*result(?:s)?\s*\**\s*$", re.I)
 
 
 def _cells(line: str) -> list[str] | None:
@@ -413,12 +493,17 @@ def _cells(line: str) -> list[str] | None:
 
 
 def has_closing_table(text: str) -> bool:
-    """PURE. True iff `text` contains a CHECK / RESULT table.
+    """PURE. True iff `text` contains a RENDERED MARKDOWN TABLE with at least one claim row.
+
+    ⟳ r7: this used to require a `check`/`result` HEADER and rejected half the tables this project
+    actually writes — see the measurement above `_SEPARATOR`. The header requirement is gone; the
+    three structural defences are not, and they are now carrying the whole marker:
 
     ⛔ THE SEPARATOR ROW IS REQUIRED, and that is the whole defence against a false pass. Without
-    it, a single line `| check | result |` typed inside a sentence — or inside THIS docstring —
-    satisfies the guard. With it, the marker is a real rendered table, which is the thing the user
-    visually checks for.
+    it, a single line `| a | b |` typed inside a sentence — or inside THIS docstring — satisfies the
+    guard. With it, the marker is a real rendered table. ⚠ This matters MORE now, not less: with
+    the header gone, the separator and the claim row are the only things standing between "a report"
+    and "a line with two pipes in it".
     """
     lines = text.split("\n")
     # ⟳ r1 Codex, Medium: a table INSIDE A CODE FENCE satisfied the marker. A closing message that
@@ -458,10 +543,6 @@ def has_closing_table(text: str) -> bool:
             continue
         cells = _cells(line)
         if not cells or len(cells) < 2:
-            continue
-        if not any(_CHECK_CELL.match(c) for c in cells):
-            continue
-        if not any(_RESULT_CELL.match(c) for c in cells):
             continue
         if i + 1 >= len(lines) or not _SEPARATOR.match(lines[i + 1]):
             continue
@@ -774,6 +855,7 @@ def _self_test() -> int:
     import tempfile
 
     failures: list[str] = []
+    cases = 0
 
     def _safe(fn):
         """Run `fn`, turning any exception into a VALUE.
@@ -796,6 +878,8 @@ def _self_test() -> int:
         # not tell which case noticed. That is this project's recorded *a report format is a
         # CONTRACT* defect, where 12 mutations reported "0 red cases" over a line shape nothing
         # could parse. Keep this format byte-identical to check-merge-ready.py's.
+        nonlocal cases
+        cases += 1
         if got != want:
             failures.append(f"{label}: got {got!r} want {want!r}")
 
@@ -830,12 +914,35 @@ def _self_test() -> int:
           has_closing_table("| check | result |\n| a | b |\n| c | d |"), False)
     check("table: words in prose only",
           has_closing_table("I ran every check and the result was green."), False)
-    check("table: wrong headers",
-          has_closing_table("| step | status |\n|---|---|\n| a | ✅ |"), False)
-    check("table: check column but no result column",
-          has_closing_table("| check | note |\n|---|---|\n| a | b |"), False)
-    check("table: result column but no check column",
-          has_closing_table("| item | result |\n|---|---|\n| a | b |"), False)
+    # ⟳ r7 F1 / user decision 2026-09-21 — THESE THREE USED TO EXPECT False, and that was the
+    # defect: each is a real report by the written rule (one row per claim, evidence in the row),
+    # and each was told it "closed with prose". They are kept, INVERTED, rather than deleted —
+    # a case that changes its expected value records the decision; a deleted one records nothing.
+    check("table: a header that does not say check/result is still a table",
+          has_closing_table("| step | status |\n|---|---|\n| a | ✅ |"), True)
+    check("table: a check column alone is enough",
+          has_closing_table("| check | note |\n|---|---|\n| a | b |"), True)
+    check("table: a result column alone is enough",
+          has_closing_table("| item | result |\n|---|---|\n| a | b |"), True)
+    # ⛔ THE SHAPE THE WHOLE CHANGE IS FOR: the headerless key/value table, 147 occurrences in the
+    # corpus and the single commonest closing table this project writes. Verbatim from a real
+    # transcript whose turn committed, and which the guard called "prose".
+    check("table: the headerless | | | key/value shape, the commonest real one",
+          has_closing_table("| | |\n|---|---|\n| `page_markup` | 78/78 |"), True)
+    check("table: a before/after comparison header is a table",
+          has_closing_table("| `gen-backlog` | before | after |\n|---|---|---|\n| spans | 7 | 0 |"),
+          True)
+    # ⚠ THE UNDER-FIRE THIS DECISION BUYS, asserted rather than left implicit: an incidental table
+    # in a chatty message now satisfies the marker. Stated in the comment above `_SEPARATOR`; a
+    # case is what stops it being quietly re-tightened by someone who reads it as a bug.
+    check("table: an incidental table in prose now passes — the accepted cost",
+          has_closing_table("Here is what the API returns:\n\n| field | type |\n|---|---|\n"
+                            "| id | int |\n\nAnyway, pushed."), True)
+    # The structural defences now carry the marker alone, so each keeps its own falsifier.
+    check("table: two pipes in a sentence are still not a table",
+          has_closing_table("I ran a | b and got c | d"), False)
+    check("table: a separator with no claim row is still nothing",
+          has_closing_table("| a | b |\n|---|---|"), False)
     check("table: unterminated row", has_closing_table("| check | result\n|---|---|"), False)
     # ⟳ r1 Codex, Blocking: the mutation for the closing-pipe rule SURVIVED, because the case above
     # still passes once `endswith` is dropped — `_cells` then chops the final `t` from `result` and
@@ -1161,6 +1268,29 @@ def _self_test() -> int:
           len(coalesce_injected([_a, _win("<system-reminder>hi", ["B"])], _W)), 1)
     check("coalesce: a leading injected window has nothing to join",
           len(coalesce_injected([_win("<task-notification> x", ["A"])], _W)), 1)
+    # ⟳ r7 High, the 332-opener case. The exact opener text as it appears on the real transcript.
+    _tm = coalesce_injected(
+        [_a, _win("Another Claude session sent a message: <teammate-msg>do X</teammate-msg>",
+                  ["B"])], _W)
+    check("coalesce: a TEAMMATE message does not start a turn", len(_tm), 1)
+    check("coalesce: the teammate fragment's records join the interrupted turn",
+          [x for x in _tm[0].body if isinstance(x, str)], ["A", "B"])
+    # ⟳ r8 R8-4, Low — THE CASE ABOVE CANNOT SEE THE OPENER IT NAMES. Its `isinstance(x, str)`
+    # filter removes the opener dict by construction, so dropping `[opener]` from the merged body
+    # left the suite GREEN (measured on a copy: 132/132, rc=0). That is r7's own F6(e) reproduced
+    # inside a case written for the F2 fix — I asked the reviewer to hold my new cases to that
+    # standard and it found one. Harmless today, because nothing reads the opener back out; NOT
+    # harmless structurally — `_errored_tool_ids` and `paired_outputs` both iterate the whole body,
+    # so an injected record carrying a `tool_result` would make it load-bearing in silence.
+    check("coalesce: the injected opener itself joins the body", len(_tm[0].body), 3)
+    # ⛔ THE NEAR-MISS IS THE POINT. The fold keys on the phrase at the START of the content; a
+    # person QUOTING it mid-sentence is still a person taking a turn, and swallowing their turn
+    # would be a MISS — the direction this guard must never fail in.
+    check("coalesce: the phrase QUOTED mid-message is still a real turn",
+          len(coalesce_injected(
+              [_a, _win("why did Another Claude session sent a message appear?", ["B"])], _W)), 2)
+    check("coalesce: a near-miss spelling is NOT folded",
+          len(coalesce_injected([_a, _win("Another Claude session said something", ["B"])], _W)), 2)
     # Vary `make` with the REAL type the caller passes, so the parameter is not a constant AND the
     # composition is exercised against the actual namedtuple rather than only a stand-in.
     def _real_turnwindow_case():
@@ -1294,12 +1424,27 @@ def _self_test() -> int:
         finally:
             globals()["WARN_LOG"] = real_log
 
+    # ⛔ DERIVED, NOT DECLARED TWICE — found 2026-09-21 while fixing r7's F2, by the fix itself.
+    # This was `total = 128`, a hardcoded literal, and the line below compared it to the docstring's
+    # hardcoded 128. `check-selftest-counts.py` then compared the docstring to what this suite
+    # PRINTED — which was that same literal. Three numbers, one source, nothing counting anything:
+    # adding the five teammate-fold cases left it reporting "128/128 passed", and DELETING fifty
+    # would have done the same. The sibling guards this pattern was copied from do it correctly
+    # (`check-merge-ready.py:529`, `check-review-rounds.py:280` both `cases += 1` inside `check`),
+    # so this file was the outlier — and it is the one that shipped on a `NO-REVIEW:` waiver.
+    # The external observer only ever verifies a number the suite MEASURES about itself.
+    total = cases
     declared = re.search(r"--self-test\s+#\s*(\d+)\s+cases", __doc__ or "")
-    total = 128
     if not declared or int(declared.group(1)) != total:
+        # ⛔ THE CONTRACT FORMAT APPLIES HERE TOO — this line used to read
+        # `declared self-test count 132 != 0 — the docstring is …`, which has no `: got `, so
+        # `check-plan-code`'s attribution parser could extract NO case label from it. Measured:
+        # the mutation that removes `cases += 1` went red and was scored
+        # "caught by something else", because there was nothing for an `expect` to name. This
+        # append bypasses `check()`, so it has to carry the shape `check()` would have given it.
         failures.append(
-            f"declared self-test count {declared.group(1) if declared else 'MISSING'} != {total} "
-            f"— the docstring is the pinned declaration read by check-selftest-counts.py")
+            f"declared self-test count (pinned declaration read by check-selftest-counts.py): "
+            f"got {declared.group(1) if declared else 'MISSING'} want {total}")
 
     if failures:
         print(f"check-closing-table --self-test: {len(failures)} FAILED")
