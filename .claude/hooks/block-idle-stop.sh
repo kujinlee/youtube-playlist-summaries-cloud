@@ -8,8 +8,8 @@
 # ⟳ CORRECTED 2026-09-05 (code review r2, Low). This header used to say the wrapper "only
 # translates Claude Code's stdin JSON into that script's flags", and that all of the reasoning
 # lived in the blocking script. Both were false, and had been since the observers were added:
-#   * it invokes THREE scripts — check-banner-armed.py, check-plan-progress.py and
-#     check-ci-watched.py — not one. (⟳ r2 M1: this line used to give their invocation LINE
+#   * it invokes FOUR scripts — check-banner-armed.py, check-plan-progress.py, check-ci-watched.py
+#     and, since 2026-09-20, check-closing-table.py — not one. (⟳ r2 M1: this line used to give their invocation LINE
 #     NUMBERS. They were already wrong on `origin/master`, and backlog #99 moved them a further
 #     three lines, leaving three counter-examples 74 lines above the paragraph that declares line
 #     numbers expire. The r1 cleanup was instance-not-class; this finishes the sweep.);
@@ -121,6 +121,21 @@ fi
 printf '%s' "$INPUT" | python3 "$REPO_ROOT/scripts/check-ci-watched.py" --decide
 CI_RC=$?
 
+# ── Fourth question, added 2026-09-20 (user decision) ───────────────────────────────────────
+# Did the previous turn CLOSE A JOB — commit, push, merge, tick — and then report it in prose
+# instead of the CHECK / RESULT table `docs/process-checklists.md` requires?
+#
+# ⚠ DELIBERATELY AFTER THE BLOCKING CHECK, and the reason is the opposite of the banner
+# observer's. That one must run FIRST because check-plan-progress UNLINKS the sentinel it needs.
+# This one needs nothing but the transcript, and a BLOCKED stop is a turn that is not finished —
+# no closing table is owed yet, so not running on that path is correct rather than incidental.
+#
+# The rule it enforces was written on 2026-09-04 and then went unfollowed for sixteen days,
+# including by the assistant that had just read it. That is the selection-card shape exactly:
+# a rule recalled rather than read. Warn-only, logged, one turn of latency.
+printf '%s' "$INPUT" | python3 "$REPO_ROOT/scripts/check-closing-table.py" --decide
+TABLE_RC=$?
+
 # Any non-zero from EITHER observer surfaces as exit 1 — Claude Code's non-blocking error, which
 # shows stderr to the human and lets the stop proceed.
 #
@@ -130,7 +145,7 @@ CI_RC=$?
 # What this arithmetic guarantees is that the HOOK never surfaces a 2 on their behalf: a detector
 # that only observes must not be able to wedge a turn it has no stake in. An earlier version of
 # this comment said "neither may return 2", which was false about both scripts (code review r2).
-if [[ "$BANNER_RC" != "0" || "$CI_RC" != "0" || "$PROGRESS_RC" == "3" ]]; then
+if [[ "$BANNER_RC" != "0" || "$CI_RC" != "0" || "$TABLE_RC" != "0" || "$PROGRESS_RC" == "3" ]]; then
     exit 1
 fi
 exit 0

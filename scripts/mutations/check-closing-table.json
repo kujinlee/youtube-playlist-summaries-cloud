@@ -1,0 +1,112 @@
+[
+  {
+    "name": "the separator row stops being required, so a sentence containing two pipes is a table",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        if i + 1 < len(lines) and _SEPARATOR.match(lines[i + 1]):",
+        "        if True:"
+      ]
+    ],
+    "expect": "table: header with NO separator row"
+  },
+  {
+    "name": "a table row no longer has to close with a pipe, so a truncated row opens a table",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    if not s.startswith(\"|\") or not s.endswith(\"|\") or len(s) < 3:",
+        "    if not s.startswith(\"|\") or len(s) < 3:"
+      ]
+    ],
+    "expect": "table: unterminated row"
+  },
+  {
+    "name": "the trigger matches a bare substring, so `git pushover` reads as a push",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    (\"a push\",        re.compile(r\"(?<![\\w-])git\\s+push(?![\\w-])\")),",
+        "    (\"a push\",        re.compile(r\"git\\s+push\")),"
+      ]
+    ],
+    "expect": "acts: substring is not a match"
+  },
+  {
+    "name": "a refused push counts as work, so a blocked act closes a job",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "            if block.get(\"id\") in errored:\n                continue",
+        "            if False:\n                continue"
+      ]
+    ],
+    "expect": "acts: errored tool_use ignored"
+  },
+  {
+    "name": "a present table no longer silences the warning, so every close warns",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    if has_closing_table(final_text):",
+        "    if False:"
+      ]
+    ],
+    "expect": "decide: acts + table -> quiet"
+  },
+  {
+    "name": "a partway stop is claimed by this guard too, duplicating the banner guard",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    if final_text is None:\n        # A partway stop.",
+        "    if False:\n        # A partway stop."
+      ]
+    ],
+    "expect": "decide: acts + no text at all -> quiet (partway stop is the banner guard's)"
+  },
+  {
+    "name": "the log path is rendered with relative_to again, so a redirected log raises",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    try:\n        return str(WARN_LOG.relative_to(ROOT))\n    except ValueError:\n        return str(WARN_LOG)",
+        "    return str(WARN_LOG.relative_to(ROOT))"
+      ]
+    ],
+    "expect": "log display: outside the repo does not raise"
+  },
+  {
+    "name": "the closing message becomes the FIRST text block instead of the last",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    for text in reversed(texts):",
+        "    for text in texts:"
+      ]
+    ],
+    "expect": "final: last non-empty wins"
+  },
+  {
+    "name": "an unreadable transcript passes quietly — the fail-open direction",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "              \"warning as 'no table was owed'.\", file=sys.stderr)\n        return CANNOT_RUN",
+        "              \"warning as 'no table was owed'.\", file=sys.stderr)\n        return QUIET"
+      ]
+    ],
+    "expect": "run: empty payload -> CANNOT RUN"
+  },
+  {
+    "name": "the LIVE turn is judged, so the unflushed final message reads as absent",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    judged = banner.judged_window(banner.windows(records))",
+        "    judged = banner.windows(records)[-1]"
+      ]
+    ],
+    "expect": "run: only one turn -> QUIET (no subject yet)"
+  }
+]

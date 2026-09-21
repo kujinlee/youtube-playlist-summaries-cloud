@@ -86,6 +86,9 @@ POPULATION: frozenset[str] = frozenset({
                                      # ratchet contract's population never sees it — this is the
                                      # only outside observer of its declared count.
     "check-anchors.py",
+    # ⟳ 2026-09-20, the closing-table guard. Pinned in the SAME commit that creates it —
+    # a script that declares a count nothing verifies is exactly the drift this file refuses.
+    "check-closing-table.py",
     # ⟳ 2026-09-19, the feature hub. Both pinned in the commit that wires them into CI — a script
     # that declares a count nothing verifies is the drift this file exists to refuse, and doing it
     # on a NEW file would be that shape at one remove. ⚠ BARE NAMES here and FULL PATHS in
