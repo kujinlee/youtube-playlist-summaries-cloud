@@ -449,5 +449,16 @@
       ]
     ],
     "expect": "table: the headerless | | | key/value shape, the commonest real one"
+  },
+  {
+    "name": "the injected opener is dropped from the merged body, and the case naming it cannot see it (r8 R8-4)",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "            out[-1] = make(prev.opener, list(prev.body) + [opener] + list(window.body))",
+        "            out[-1] = make(prev.opener, list(prev.body) + list(window.body))"
+      ]
+    ],
+    "expect": "coalesce: the injected opener itself joins the body"
   }
 ]

@@ -10911,3 +10911,36 @@ occurrences), 1 mutation — killed via its named case over a green control. Dec
 `EXPECTED_MUTATIONS` 40 → 41, sum 823. Also fixed 3 mutation defects CI caught: one anchor orphaned
 by the F2 edit, one no-op mutation of mine (`.match`→`.search` cannot differ under a `^`-anchored
 pattern), and an unattributable `[FAIL]` line that bypassed the contract format.
+
+## 2026-09-21
+Round 8 came back — the reviewer checked my repairs rather than the original code, and found
+something in a test I had just written.
+
+The short version: the three fixes hold. But one of the new test cases I added was fake. It was
+named "the teammate fragment's records join the interrupted turn", and it filtered out the exact
+record whose joining it was named for — so you could delete that behaviour entirely and the test
+still passed. I had explicitly asked the reviewer to hunt for that, because its earlier round found
+five such cases, and it found a sixth in my own work. Fixed, with a mutation that now fails if the
+behaviour is removed.
+
+The more interesting finding is about how much any of this helps you. The reviewer measured that my
+teammate fix cut the number of *turns* that get warned about by 17%, but barely changed the number
+of warnings you actually see — because the same turn gets warned about over and over. It was right
+about the mechanism and wrong about the size, and the reason is that it measured before your
+"widen the marker" decision had landed. Measured again on what is on the branch now: warnings you
+would actually receive fell from 1,183 to 630, a 47% drop.
+
+But its real point survives and I have raised the priority of the open item accordingly: **half of
+all remaining warnings are repeats of a turn already warned about, and one turn can now warn 71
+times in a row** — up from 36 before. Until that is fixed, counting lines in that log tells you
+nothing, which is the whole reason the log exists.
+<!--tech-->
+r8 (`docs/reviews/claude/closing-table-r8-claude.md`, 233 lines, 5 findings + verdict). R8-1
+(Blocking) was the two mutation defects CI had already caught and I had already fixed — equivalent
+mutant, unattributable `expect`. R8-4 fixed (vacuous case + mutation, 137→138 cases, 42 mutations,
+sum 824). R8-3 recorded as a stated bound in *WHAT THIS CANNOT SEE* (2 turns in 767 flip QUIET→WARN
+when a fold joins two fragments that each closed something; `final_text_of` takes the later one).
+R8-5 mitigated by reciprocal cross-references in both guards — the literal is duplicated and nothing
+observes it; named as a decision, not fixed. R8-2 split: emissions half SUPERSEDED (measured at
+04461e1e, pre-F1; re-measured master→HEAD = 1,183→630, −47%), concentration half CONFIRMED (repeats
+37%→50%, worst turn 36→71) and folded into #149 with the numbers.

@@ -57,6 +57,13 @@ there on suspicion: changing the borrowed rule is precisely what `coalesce_injec
 WHAT THIS CANNOT SEE — stated here and in the warning text, because a guard that covers half a rule
 and reads as covering all of it is a hazard this repo has paid for more than once:
 
+  * ⟳ r8 R8-3 — **WHICH FRAGMENT'S REPORT IS JUDGED, when a fold joins two that each closed
+    something.** `final_text_of` takes the LAST text block of the merged window, so the later
+    fragment's message is judged against the UNION of both fragments' acts. Measured over 767
+    transcripts: 2 turns are QUIET on master and WARN after the fold — the earlier fragment closed
+    with a table, the later one did not. The hazard is inherent to coalescing and predates the r7
+    fix; what the fix changed is that the opener population it applies to grew by 332. 2 in 767,
+    and deliberately NOT repaired — stated here so it is a known bound rather than a surprise.
   * ⛔ **WHETHER THE ROWS COULD HAVE COME BACK ❌.** That is rule 3 of the format, and it is the
     rule that separates a real table from a decorated assertion. A shape check sees a table. It
     cannot see whether the checks were falsifiable. Same stated bound as the selection-card guard's
@@ -110,7 +117,7 @@ Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CAN
 
 Usage:
     python3 scripts/check-closing-table.py --decide      # reads the Stop-hook payload on stdin
-    python3 scripts/check-closing-table.py --self-test   # 137 cases
+    python3 scripts/check-closing-table.py --self-test   # 138 cases
 """
 from __future__ import annotations
 
@@ -189,6 +196,11 @@ _SEGMENT_SPLIT = re.compile(r"\n|;|&&|\|\||\||&")
 # `_meta_carries_a_message` returning True KEEPS the boundary — so consulting it argues the exact
 # opposite of this fold. It is also unreachable for these records: `_is_turn_boundary` only
 # consults it when `isMeta is True`, and all 332 teammate records carry `isMeta: None`.
+# ⚠ r8 R8-5, Low — THIS LITERAL NOW LIVES IN TWO GUARDS AND NOTHING WATCHES IT. It is also in
+# `check-banner-armed._META_IS_REALLY_A_MESSAGE` (for the opposite purpose — see below). If the
+# harness ever rewords the injection, BOTH stop matching, every self-test stays green, and the 332
+# openers silently revert to splitting turns. No standing check reads the string off a real
+# transcript, so this cross-reference is the falsifier's honest substitute, not the falsifier.
 # The warrant is this function's OWN predicate, one line down: *was that boundary a PERSON?*
 # A teammate Claude session is not a person. That is the whole test, and it is why the two guards
 # are allowed to answer differently here (see the docstring at the top of this file).
@@ -1263,6 +1275,14 @@ def _self_test() -> int:
     check("coalesce: a TEAMMATE message does not start a turn", len(_tm), 1)
     check("coalesce: the teammate fragment's records join the interrupted turn",
           [x for x in _tm[0].body if isinstance(x, str)], ["A", "B"])
+    # ⟳ r8 R8-4, Low — THE CASE ABOVE CANNOT SEE THE OPENER IT NAMES. Its `isinstance(x, str)`
+    # filter removes the opener dict by construction, so dropping `[opener]` from the merged body
+    # left the suite GREEN (measured on a copy: 132/132, rc=0). That is r7's own F6(e) reproduced
+    # inside a case written for the F2 fix — I asked the reviewer to hold my new cases to that
+    # standard and it found one. Harmless today, because nothing reads the opener back out; NOT
+    # harmless structurally — `_errored_tool_ids` and `paired_outputs` both iterate the whole body,
+    # so an injected record carrying a `tool_result` would make it load-bearing in silence.
+    check("coalesce: the injected opener itself joins the body", len(_tm[0].body), 3)
     # ⛔ THE NEAR-MISS IS THE POINT. The fold keys on the phrase at the START of the content; a
     # person QUOTING it mid-sentence is still a person taking a turn, and swallowing their turn
     # would be a MISS — the direction this guard must never fail in.

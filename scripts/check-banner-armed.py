@@ -273,6 +273,13 @@ def records_since_last_user(lines: list[str]) -> list[dict] | None:
     return windows(records)[-1].body
 
 
+# ⚠ r8 R8-5 (closing-table round 8), Low — THE SECOND STRING BELOW IS ALSO HARDCODED IN
+# `check-closing-table._INJECTED`, FOR THE OPPOSITE PURPOSE. Here it means *this meta record IS a
+# real new instruction, so KEEP the boundary*; there it means *that boundary was not a PERSON, so
+# FOLD it*. Both readings are deliberate — the two guards answer different questions and are
+# allowed to disagree — but if the harness ever rewords the injection, both stop matching, every
+# self-test stays green, and the behaviour reverts in silence. Nothing observes the literal against
+# a real transcript. ⛔ If you change this tuple, read that one.
 _META_IS_REALLY_A_MESSAGE = (
     "The user sent a new message while you were working",
     "Another Claude session sent a message",
