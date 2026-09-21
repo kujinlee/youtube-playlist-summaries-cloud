@@ -2,7 +2,7 @@
 """Every CI job pins the Python interpreter, the pins agree, and the pin actually took effect.
 
     python3 scripts/check-python-pin.py              # in CI: asserts. locally: advises.
-    python3 scripts/check-python-pin.py --self-test  # 72 cases
+    python3 scripts/check-python-pin.py --self-test  # 75 cases
 
     exit 0 = pinned, agreeing, and (in CI) in effect   exit 1 = a real disagreement
     exit 2 = CANNOT RUN — no workflow or no pin found, which is never a pass
@@ -168,11 +168,44 @@ def _steps(text: str) -> list[Step]:
     #
     # ⛔ THE SENTINEL ENDED THE FILE, NOT THE STEP. There is no sentinel now, and no discard branch:
     # a line is either a sibling dash (new step), a dedent out of the list (close), or body.
+    # ⟳ r4 (codex) High — A DASH IS ONLY A STEP IF IT IS UNDER `steps:`. The previous rule scanned
+    # every structural dash in the file, so a `strategy.matrix.include` entry — a perfectly ordinary
+    # list of mappings — was parsed as a step:
+    #
+    #       strategy:
+    #         matrix:
+    #           include:
+    #             - uses: actions/setup-python@v5
+    #               with:
+    #                 python-version: '9.9'
+    #       steps:
+    #         - run: python3 --version
+    #
+    # Measured: `declared_pins -> ['9.9']`, `unpinned_jobs -> []`, `verdict -> rc 0 "python pin OK"`
+    # for a job with NO setup-python step at all. A FALSE GREEN — the direction this guard must
+    # never fail in — and it predates the sibling rewrite rather than being caused by it.
+    #
+    # ⭐ THE SEVENTH DEFECT IN THIS FUNCTION, AND IT IS THE SAME ROOT CAUSE AS THE OTHER SIX: the
+    # guard reads YAML by scanning lines, so anything SHAPED like a step is a step. Each repair has
+    # taught it one more thing that shape alone cannot tell it — where the step ENDS, which lines
+    # are CONTENT, which dashes are SIBLINGS, and now which list it is IN. That accumulation is the
+    # subject of backlog #153 (the architecture review), which asks whether this should parse or
+    # refuse rather than keep learning YAML one defect at a time.
     out: list[Step] = []
     cur: Step | None = None
+    steps_indent: int | None = None          # the indent of the `steps:` KEY we are inside
     for line in _structural(text.split("\n")):
         m = re.match(r"^(\s*)-(\s.*)$", line)
         indent = len(line) - len(line.lstrip())
+        opens_steps = re.match(r"^(\s*)steps:\s*(#.*)?$", line)
+        if opens_steps:
+            steps_indent, cur = len(opens_steps.group(1)), None
+            continue
+        if steps_indent is None:
+            continue                          # not inside a steps: sequence — nothing here is a step
+        if line.strip() and indent <= steps_indent and not m:
+            steps_indent, cur = None, None    # dedented out of the steps: block entirely
+            continue
         if m and (cur is None or len(m.group(1)) <= cur.indent):
             cur = Step(len(m.group(1)), [" " + m.group(2)])
             out.append(cur)
@@ -558,7 +591,7 @@ def self_test() -> int:
     case("a declared pin is read, quotes stripped", declared_pins(PINNED), ["3.12"])
     case("...and a workflow with none declares none", declared_pins("jobs:\n  a:\n"), [])
     case("...and an unquoted pin reads the same",
-         declared_pins("      - uses: actions/setup-python@v5\n"
+         declared_pins("    steps:\n      - uses: actions/setup-python@v5\n"
                        "        with:\n"
                        "          python-version: 3.12\n"), ["3.12"])
     # ⛔ r1 HIGH (codex), AS CASES — BOTH FALSE-GREEN SHAPES IT REPRODUCED. A `python-version:` that
@@ -571,19 +604,19 @@ def self_test() -> int:
     # whose setup-python never declared a version reported `python pin OK`. Third iteration — each
     # time I narrowed the SPAN instead of naming the THING.
     case("a python-version under env: in the setup-python step is NOT a pin",
-         declared_pins("      - uses: actions/setup-python@v5\n"
+         declared_pins("    steps:\n      - uses: actions/setup-python@v5\n"
                        "        env:\n          python-version: '3.12'\n"), [])
     case("...while the same value under with: is",
-         declared_pins("      - uses: actions/setup-python@v5\n"
+         declared_pins("    steps:\n      - uses: actions/setup-python@v5\n"
                        "        with:\n          python-version: '3.12'\n"), ["3.12"])
     case("...and an env: sibling AFTER with: does not add a second, false pin",
-         declared_pins("      - uses: actions/setup-python@v5\n"
+         declared_pins("    steps:\n      - uses: actions/setup-python@v5\n"
                        "        with:\n          python-version: '3.12'\n"
                        "        env:\n          python-version: '3.11'\n"), ["3.12"])
     case("a python-version inside a run-block heredoc is NOT a pin",
-         declared_pins("      - run: |\n          python-version: '3.12'\n"), [])
+         declared_pins("    steps:\n      - run: |\n          python-version: '3.12'\n"), [])
     case("...nor is one in an UNRELATED action's with: block",
-         declared_pins("      - uses: someone/not-setup-python@v1\n"
+         declared_pins("    steps:\n      - uses: someone/not-setup-python@v1\n"
                        "        with:\n          python-version: '3.12'\n"), [])
     # ⛔⛔ THE SHAPE THE WHOLE REDESIGN EXISTS FOR — r2 (claude) H1, and the reason `_steps` was
     # written. `declared_pins` was wrong three rounds running, and every previous version asked
@@ -593,23 +626,23 @@ def self_test() -> int:
     # they were looking at or to exempt the job. ⚠ THE SUITE HAD NO CASE FOR THE ORDINARY IDIOM,
     # which is why three rounds of narrowing the SPAN never found it.
     case("a step whose `- name:` comes BEFORE `uses:` is still a setup-python step",
-         declared_pins("      - name: Set up Python\n"
+         declared_pins("    steps:\n      - name: Set up Python\n"
                        "        uses: actions/setup-python@v5\n"
                        "        with:\n          python-version: '3.12'\n"), ["3.12"])
     case("...and `id:`/`if:` before `uses:` do not hide it either",
-         declared_pins("      - id: py\n        if: always()\n"
+         declared_pins("    steps:\n      - id: py\n        if: always()\n"
                        "        name: Set up Python\n"
                        "        uses: actions/setup-python@v5\n"
                        "        with:\n          python-version: '3.12'\n"), ["3.12"])
     case("...and `name:` AFTER `uses:` still works, the shape that always did",
-         declared_pins("      - uses: actions/setup-python@v5\n"
+         declared_pins("    steps:\n      - uses: actions/setup-python@v5\n"
                        "        name: Set up Python\n"
                        "        with:\n          python-version: '3.12'\n"), ["3.12"])
     # ⚠ THE NEGATIVE DIRECTION OF THE REDESIGN, asserted rather than assumed. Recognising a step
     # by what it CONTAINS is a wider net than matching its opening line, so the two false-green
     # shapes r1 found must be re-proved under the new rule, not inherited from the old one.
     case("a named step around an UNRELATED action is still not a pin",
-         declared_pins("      - name: Cache things\n        uses: actions/cache@v4\n"
+         declared_pins("    steps:\n      - name: Cache things\n        uses: actions/cache@v4\n"
                        "        with:\n          python-version: '9.9'\n"), [])
     # ⛔⛔ THE FOURTH `declared_pins` DEFECT — found by the coordinator in the coordinator's OWN
     # redesign, 2026-09-21, before round 3 returned. Recognising a step by its CONTENTS fixed r2's
@@ -619,7 +652,7 @@ def self_test() -> int:
     # every existing heredoc case used a step with no `setup-python` anywhere, so none of them
     # reached the identification.
     case("setup-python INSIDE a run-block heredoc does not make a step a setup-python step",
-         declared_pins("      - name: docs\n        run: |\n          cat <<'EOF'\n"
+         declared_pins("    steps:\n      - name: docs\n        run: |\n          cat <<'EOF'\n"
                        "          uses: actions/setup-python@v5\n          EOF\n"
                        "        with:\n          python-version: '9.9'\n"), [])
     # ⛔⛔ CODEX r3's FIXTURE — the FIFTH defect, and the one my own probe missed. A DASH LINE
@@ -628,7 +661,7 @@ def self_test() -> int:
     # AFTER the split, which never ran: the split had already happened. The mask now lives in
     # `_steps`, because "which lines are structure" is prior to "which step owns a line".
     case("a DASH LINE inside a block scalar does not manufacture a step",
-         declared_pins("      - name: write fake workflow\n        run: |\n"
+         declared_pins("    steps:\n      - name: write fake workflow\n        run: |\n"
                        "          - uses: actions/setup-python@v5\n"
                        "            with:\n              python-version: '9.9'\n"), [])
     case("...and the job around it reads as UNPINNED, which is the whole point",
@@ -638,18 +671,18 @@ def self_test() -> int:
                                "            with:\n              python-version: '9.9'\n"},
                               exempt=())), ["w.yml:verify"])
     case("...nor does one in a FOLDED scalar",
-         declared_pins("      - name: docs\n        script: >\n"
+         declared_pins("    steps:\n      - name: docs\n        script: >\n"
                        "          uses: actions/setup-python@v5\n"
                        "        with:\n          python-version: '9.9'\n"), [])
     case("...nor one under a chomping indicator (`|-`)",
-         declared_pins("      - name: docs\n        run: |-\n"
+         declared_pins("    steps:\n      - name: docs\n        run: |-\n"
                        "          uses: actions/setup-python@v5\n"
                        "        with:\n          python-version: '9.9'\n"), [])
     # ⚠ AND THE POSITIVE DIRECTION OF THE SAME MASK: dropping block-scalar CONTENT must not drop
     # the step around it. A real setup-python step followed by a step with a `run:` block still
     # yields its pin.
     case("a real pin survives a neighbouring step that owns a run block",
-         declared_pins("      - name: Set up Python\n        uses: actions/setup-python@v5\n"
+         declared_pins("    steps:\n      - name: Set up Python\n        uses: actions/setup-python@v5\n"
                        "        with:\n          python-version: '3.12'\n"
                        "      - name: after\n        run: |\n          echo hi\n"), ["3.12"])
     # ⟳ r3 (claude) F5, Medium — THIS CASE USED TO PASS FOR AN AMBIENT REASON, and that is exactly
@@ -661,7 +694,7 @@ def self_test() -> int:
     # The fixture now carries a real `uses:` inside the heredoc AND a real `with:` outside it, so
     # the only thing that makes it pass is the block-scalar mask.
     case("a named step whose heredoc CONTAINS a pin line is still not a pin",
-         declared_pins("      - name: write a file\n        run: |\n"
+         declared_pins("    steps:\n      - name: write a file\n        run: |\n"
                        "          cat > x <<'EOF'\n"
                        "          uses: actions/setup-python@v5\n"
                        "          python-version: '9.9'\n          EOF\n"
@@ -671,21 +704,44 @@ def self_test() -> int:
     # the suite stayed green, which is why F3 was never going to be caught here. The sentinel is
     # gone; these two cases hold the clauses that replaced it.
     case("a SIBLING step is a new step — a pin in the SECOND of two is still found",
-         declared_pins("      - uses: actions/cache@v4\n        with:\n          key: x\n"
+         declared_pins("    steps:\n      - uses: actions/cache@v4\n        with:\n          key: x\n"
                        "      - uses: actions/setup-python@v5\n"
                        "        with:\n          python-version: '3.12'\n"), ["3.12"])
     # ⟳ r3 F4 follow-through, the SIXTH defect — a comment at the step's own dash indent satisfied
     # the close test and ENDED THE STEP, so the pin after it vanished. Legal YAML, MISS direction.
+    # ⟳ r4 (codex) High — the SEVENTH defect: a `strategy.matrix.include` entry was parsed as a
+    # step, so a job with NO setup-python reported as pinned. A FALSE GREEN. ⚠ Note the fixture is
+    # a WHOLE WORKFLOW, not a step fragment: the defect lives in which LIST a dash is in, and a
+    # fragment cannot express that. All 22 fragment fixtures in this suite were wrapped in a real
+    # `steps:` sequence for the same reason — r3 F5's lesson, that a fixture unlike real input
+    # cannot fail the way real input does.
+    case("a matrix.include entry is NOT a step, so its pin does not count",
+         declared_pins("jobs:\n  verify:\n    strategy:\n      matrix:\n        include:\n"
+                       "          - uses: actions/setup-python@v5\n            with:\n"
+                       "              python-version: '9.9'\n"
+                       "    steps:\n      - run: python3 --version\n"), [])
+    case("...and the job around it reads UNPINNED",
+         sorted(unpinned_jobs({"w.yml": "jobs:\n  verify:\n    strategy:\n      matrix:\n"
+                               "        include:\n          - uses: actions/setup-python@v5\n"
+                               "            with:\n              python-version: '9.9'\n"
+                               "    steps:\n      - run: python3 --version\n"}, exempt=())),
+         ["w.yml:verify"])
+    case("a real step still counts when a matrix.include sits beside it",
+         declared_pins("jobs:\n  verify:\n    strategy:\n      matrix:\n        include:\n"
+                       "          - uses: actions/setup-python@v5\n            with:\n"
+                       "              python-version: '9.9'\n"
+                       "    steps:\n      - uses: actions/setup-python@v5\n"
+                       "        with:\n          python-version: '3.12'\n"), ["3.12"])
     case("a COMMENT at the dash indent does not end a step",
-         declared_pins("      - name: Set up Python\n      # a comment, legal at any indent\n"
+         declared_pins("    steps:\n      - name: Set up Python\n      # a comment, legal at any indent\n"
                        "        uses: actions/setup-python@v5\n"
                        "        with:\n          python-version: '3.12'\n"), ["3.12"])
     case("...but a comment INSIDE a block scalar is still its CONTENT, not structure",
-         declared_pins("      - name: x\n        run: |\n"
+         declared_pins("    steps:\n      - name: x\n        run: |\n"
                        "          # uses: actions/setup-python@v5\n"
                        "        with:\n          python-version: '9.9'\n"), [])
     case("a BLANK LINE inside a step does not end it",
-         declared_pins("      - name: Set up Python\n        uses: actions/setup-python@v5\n\n"
+         declared_pins("    steps:\n      - name: Set up Python\n        uses: actions/setup-python@v5\n\n"
                        "        with:\n          python-version: '3.12'\n"), ["3.12"])
     # ⛔ AND THE STEP BOUNDARY, DRIVEN. The two cases above never reach it — neither fixture has a
     # `setup-python` step, so the scan loop never starts and the clause that ENDS a step was
@@ -693,7 +749,7 @@ def self_test() -> int:
     # carrying its own `python-version:`; without the boundary the second bleeds in and the two
     # read as a disagreement.
     case("a later step's python-version does NOT bleed into the setup-python step before it",
-         declared_pins("      - uses: actions/setup-python@v5\n"
+         declared_pins("    steps:\n      - uses: actions/setup-python@v5\n"
                        "        with:\n          python-version: '3.12'\n"
                        "      - uses: someone/other@v1\n"
                        "        with:\n          python-version: '3.11'\n"), ["3.12"])
@@ -817,7 +873,7 @@ def self_test() -> int:
          unreadable_jobs(PINNED), 0)
     # ⛔ r2 MEDIUM 3 — r1's inline-comment fix had no case at all; deleting it left the suite green.
     case("an inline comment on the pin line is stripped from the VALUE",
-         declared_pins("      - uses: actions/setup-python@v5\n        with:\n"
+         declared_pins("    steps:\n      - uses: actions/setup-python@v5\n        with:\n"
                        "          python-version: '3.12'  # matches the Dockerfile\n"), ["3.12"])
     # ⛔ r2 LOW 2 — three clauses of pin_took_effect were undriven, and the first is FAIL-OPEN:
     # narrowed to `is None`, an EMPTY location makes startswith("/") true for every absolute path.

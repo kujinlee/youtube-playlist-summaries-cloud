@@ -297,7 +297,7 @@
     "expect": "...and `name:` AFTER `uses:` still works, the shape that always did"
   },
   {
-    "name": "the block-scalar mask is removed from the SPLITTER, so a dash line in a heredoc manufactures a phantom step (Codex r3 High)",
+    "name": "the block-scalar mask is removed from the SPLITTER, so a dash line in a heredoc manufactures a phantom step (Codex r3 High) [r4 codex Medium: expect re-pointed — after the sibling rewrite the dashed fixture no longer discriminates]",
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
@@ -305,7 +305,7 @@
         "    for line in text.split(\"\\n\"):"
       ]
     ],
-    "expect": "a DASH LINE inside a block scalar does not manufacture a step"
+    "expect": "setup-python INSIDE a run-block heredoc does not make a step a setup-python step"
   },
   {
     "name": "the block-scalar opener stops recognising FOLDED scalars, so `>` content is read as structure",
@@ -350,5 +350,16 @@
       ]
     ],
     "expect": "a COMMENT at the dash indent does not end a step"
+  },
+  {
+    "name": "the steps: scope starts OPEN, so any YAML list of mappings is read as steps again — a matrix.include entry pins an unpinned job (r4 codex High)",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    steps_indent: int | None = None          # the indent of the `steps:` KEY we are inside",
+        "    steps_indent: int | None = -1             # MUTATION: every list is a steps list"
+      ]
+    ],
+    "expect": "a matrix.include entry is NOT a step, so its pin does not count"
   }
 ]
