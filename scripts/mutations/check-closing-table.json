@@ -411,8 +411,8 @@
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "    r\"^\\s*(?:<(?:task-notification|system-reminder)\\b\"\n    r\"|Another Claude session sent a message)\")",
-        "    r\"^\\s*(?:<(?:task-notification|system-reminder)\\b\"\n    r\"|ZZ_NEVER_MATCHES_ZZ)\")"
+        "    r\"|Another Claude session sent a message)\")",
+        "    r\"|ZZ_NEVER_MATCHES_ZZ)\")"
       ]
     ],
     "expect": "coalesce: a TEAMMATE message does not start a turn"
@@ -422,8 +422,8 @@
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "    r\"^\\s*(?:<(?:task-notification|system-reminder)\\b\"\n    r\"|Another Claude session sent a message)\")",
-        "    r\"^\\s*.*?(?:<(?:task-notification|system-reminder)\\b\"\n    r\"|Another Claude session sent a message)\")"
+        "    r\"^\\s*(?:<(?:task-notification|system-reminder)\\b\"",
+        "    r\"^\\s*.*?(?:<(?:task-notification|system-reminder)\\b\""
       ]
     ],
     "expect": "coalesce: the phrase QUOTED mid-message is still a real turn"
