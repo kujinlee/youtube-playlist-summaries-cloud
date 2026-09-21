@@ -1,0 +1,435 @@
+[
+  {
+    "name": "declared_pins stops stripping quotes, so '3.12' never matches a bare 3.12",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "                pins.append(value.strip().strip(\"'\\\"\"))",
+        "                pins.append(value.strip())"
+      ]
+    ],
+    "expect": "a declared pin is read, quotes stripped"
+  },
+  {
+    "name": "job_names runs past the jobs block, so a later top-level key reads as a job",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "            if line and not line.startswith(\" \") and not line.startswith(\"#\"):\n                break",
+        "            if False:\n                break"
+      ]
+    ],
+    "expect": "...and a top-level key after jobs ends the block"
+  },
+  {
+    "name": "job_blocks stops splitting, so a pin in ONE job is credited to its sibling",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        end = ordered[idx + 1][1] if idx + 1 < len(ordered) else len(lines)",
+        "        end = len(lines)"
+      ]
+    ],
+    "expect": "a pin in a SIBLING job does not cover its neighbour"
+  },
+  {
+    "name": "unpinned_jobs stops honouring the exemption list",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "            if f\"{fname}:{job}\" in exempt:\n                continue",
+        "            if False:\n                continue"
+      ]
+    ],
+    "expect": "...and an exempt job is not reported either"
+  },
+  {
+    "name": "running_version drops the minor, so 3.12 and 3.14 look identical",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    return f\"{version_info[0]}.{version_info[1]}\"",
+        "    return f\"{version_info[0]}\""
+      ]
+    ],
+    "expect": "the running version is major.minor"
+  },
+  {
+    "name": "the empty-corpus refusal goes, so a missing workflow dir reads as a pass",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    if not workflows:",
+        "    if False:"
+      ]
+    ],
+    "expect": "no workflows at all is CANNOT RUN, never a pass"
+  },
+  {
+    "name": "the no-pin-anywhere refusal goes — the precise state this guard exists to end",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        return 2, (\"CANNOT RUN — no `python-version:` was found in any workflow",
+        "        return 0, (\"CANNOT RUN — no `python-version:` was found in any workflow"
+      ]
+    ],
+    "expect": "...and so is a corpus with no pin anywhere"
+  },
+  {
+    "name": "disagreeing pins stop failing, so guards and gates can run different interpreters",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    if len(pins) > 1:",
+        "    if False:"
+      ]
+    ],
+    "expect": "...and the message names both"
+  },
+  {
+    "name": "an unpinned job stops failing, which is the whole subject of this guard",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    if missing:",
+        "    if False:"
+      ]
+    ],
+    "expect": "...and the failure names it"
+  },
+  {
+    "name": "the in-CI VERSION check goes, so a pinned-but-wrong interpreter reports green",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        if running != pin:\n            return 1, (f\"FAILED — workflows pin {pin}, this interpreter is {running}.\")",
+        "        if False:\n            return 1, (f\"FAILED — workflows pin {pin}, this interpreter is {running}.\")"
+      ]
+    ],
+    "expect": "...and it still FAILS when provenance is fine but the VERSION is wrong"
+  },
+  {
+    "name": "the local advisory becomes a FAILURE, which is how a gate gets switched off",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    if running != pin:\n        return 0, (f\"⚠ ADVISORY",
+        "    if running != pin:\n        return 1, (f\"⚠ ADVISORY"
+      ]
+    ],
+    "expect": "...but LOCALLY the same mismatch is ADVISORY and exits 0"
+  },
+  {
+    "name": "the step's ACTION is no longer checked, so ANY step's with: block can declare a pin (re-anchored 2026-09-21: the redesign deleted the opener-match this named)",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "r\"^\\s*uses:\\s*actions/setup-python\", ln",
+        "r\"^\\s*uses:\", ln"
+      ]
+    ],
+    "expect": "...nor is one in an UNRELATED action's with: block"
+  },
+  {
+    "name": "pin_took_effect answers True with no evidence, so an unexported location reads as pinned",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    if no_evidence:\n        return None",
+        "    if no_evidence:\n        return True"
+      ]
+    ],
+    "expect": "pin_took_effect says None when nothing exported a location"
+  },
+  {
+    "name": "the provenance test loses its separator, so a sibling directory counts as under it",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    return is_the_root or executable.startswith(root + \"/\")",
+        "    return is_the_root or executable.startswith(root)"
+      ]
+    ],
+    "expect": "...and a sibling directory sharing a PREFIX is not under it"
+  },
+  {
+    "name": "the no-provenance refusal goes, so a version match alone passes for the pin taking effect",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        if effect is None:",
+        "        if False:"
+      ]
+    ],
+    "expect": "IN CI, a matching VERSION with no provenance FAILS — the ambient python matches too"
+  },
+  {
+    "name": "the wrong-interpreter refusal goes, which is update-environment: false reporting green",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        if not effect:",
+        "        if False:"
+      ]
+    ],
+    "expect": "...and an interpreter NOT under the exported location FAILS, which is update-environment: false"
+  },
+  {
+    "name": "asserts_here arms everywhere, turning the local advisory into a failure",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    return bool(env.get(\"GITHUB_ACTIONS\"))",
+        "    return True"
+      ]
+    ],
+    "expect": "...and its absence does not"
+  },
+  {
+    "name": "the unreadable-job refusal goes, so an invisible job among readable ones passes",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    if jobless:",
+        "    if False:"
+      ]
+    ],
+    "expect": "...and a workflow containing one is CANNOT RUN even though another job IS readable"
+  },
+  {
+    "name": "the pin need not be under with:, so an env: entry counts as an action input",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "            if not in_with:\n                continue",
+        "            if False:\n                continue"
+      ]
+    ],
+    "expect": "a python-version under env: in the setup-python step is NOT a pin"
+  },
+  {
+    "name": "the unreadable-job COUNT is dropped, so only an all-or-nothing file refuses",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "                     if not job_names(text) or unreadable_jobs(text))",
+        "                     if not job_names(text))"
+      ]
+    ],
+    "expect": "...and a workflow containing one is CANNOT RUN even though another job IS readable"
+  },
+  {
+    "name": "the inline-comment strip goes, so a commented pin reds the required check with nonsense",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "                value = got.group(1).split(\"#\")[0]",
+        "                value = got.group(1)"
+      ]
+    ],
+    "expect": "an inline comment on the pin line is stripped from the VALUE"
+  },
+  {
+    "name": "an EMPTY exported location is treated as provenance — fail-open for every absolute path",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    no_evidence = not tool_location",
+        "    no_evidence = tool_location is None"
+      ]
+    ],
+    "expect": "an EMPTY exported location is no evidence, not proof of provenance"
+  },
+  {
+    "name": "the trailing slash is no longer trimmed, so a slashed location breaks provenance",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    root = tool_location.rstrip(\"/\")",
+        "    root = tool_location"
+      ]
+    ],
+    "expect": "...and a trailing slash on the location does not break it"
+  },
+  {
+    "name": "the equality arm goes, so the location itself stops counting as under itself",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    is_the_root = executable == root",
+        "    is_the_root = False"
+      ]
+    ],
+    "expect": "...and the location itself, as an executable, counts as under it"
+  },
+  {
+    "name": "the .yaml half of the corpus is dropped, so such a workflow is never read at all",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "WORKFLOW_GLOBS = (\"*.yml\", \"*.yaml\")",
+        "WORKFLOW_GLOBS = (\"*.yml\",)"
+      ]
+    ],
+    "expect": "the corpus reads both workflow extensions"
+  },
+  {
+    "name": "the step is identified by its OPENING LINE again, so a `- name:` step hides its pin (r2 H1, the redesign reverted)",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        if not any(re.match(r\"^\\s*uses:\\s*actions/setup-python\", ln) for ln in step.body):",
+        "        if not re.match(r\"^\\s*uses:\\s*actions/setup-python\", step.body[0]):"
+      ]
+    ],
+    "expect": "a step whose `- name:` comes BEFORE `uses:` is still a setup-python step"
+  },
+  {
+    "name": "the dash line is dropped from the step body, so a pin written ON the dash becomes invisible",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "            cur = Step(len(m.group(1)), [\" \" + m.group(2)])",
+        "            cur = Step(len(m.group(1)), [])"
+      ]
+    ],
+    "expect": "...and `name:` AFTER `uses:` still works, the shape that always did"
+  },
+  {
+    "name": "the block-scalar mask is removed from the SPLITTER, so a dash line in a heredoc manufactures a phantom step (Codex r3 High) [r4 codex Medium: expect re-pointed — after the sibling rewrite the dashed fixture no longer discriminates]",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    structural = _structural(text.split(\"\\n\"))",
+        "    structural = text.split(\"\\n\")"
+      ]
+    ],
+    "expect": "setup-python INSIDE a run-block heredoc does not make a step a setup-python step"
+  },
+  {
+    "name": "the block-scalar opener stops recognising FOLDED scalars, so `>` content is read as structure",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "_BLOCK_SCALAR = re.compile(r\"^(\\s*)[\\w.\\-]+:\\s*[|>][-+0-9]*\\s*(#.*)?$\")",
+        "_BLOCK_SCALAR = re.compile(r\"^(\\s*)[\\w.\\-]+:\\s*[|][-+0-9]*\\s*(#.*)?$\")"
+      ]
+    ],
+    "expect": "...nor does one in a FOLDED scalar"
+  },
+  {
+    "name": "a sibling dash stops starting a new step, so the second of two steps is silently discarded (r3 F4)",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        if m and (cur is None or len(m.group(1)) <= cur.indent):",
+        "        if m and (cur is None or len(m.group(1)) < cur.indent):"
+      ]
+    ],
+    "expect": "a SIBLING step is a new step — a pin in the SECOND of two is still found"
+  },
+  {
+    "name": "a blank line ends a step, so a pin written after one vanishes (r3 F4)",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        if line.strip() and indent <= cur.indent:",
+        "        if indent <= cur.indent:"
+      ]
+    ],
+    "expect": "a BLANK LINE inside a step does not end it"
+  },
+  {
+    "name": "comments are read as structure again, so one at the dash indent ends the step and the pin vanishes (r3 F4 follow-through)",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        if line.lstrip().startswith(\"#\"):",
+        "        if False:"
+      ]
+    ],
+    "expect": "a COMMENT at the dash indent does not end a step"
+  },
+  {
+    "name": "the steps: scope starts OPEN, so any YAML list of mappings is read as steps again — a matrix.include entry pins an unpinned job (r4 codex High)",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    steps_indent: int | None = None          # the indent of the `steps:` KEY we are inside",
+        "    steps_indent: int | None = -1             # MUTATION: every list is a steps list"
+      ]
+    ],
+    "expect": "a matrix.include entry is NOT a step, so its pin does not count"
+  },
+  {
+    "name": "the job's steps: is taken as the DEEPEST rather than the shallowest, so a matrix dimension named steps wins (r5 F1)",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "    job_steps_indent = min(depths) if depths else None",
+        "    job_steps_indent = max(depths) if depths else None"
+      ]
+    ],
+    "expect": "a matrix DIMENSION named `steps` is not the job's step list"
+  },
+  {
+    "name": "any steps: key re-scopes, so a nested one named steps eats the real step's body (r5 F2 regression)",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        if (opens_steps and len(opens_steps.group(1)) == job_steps_indent\n                and not job_key[idx]):",
+        "        if opens_steps:"
+      ]
+    ],
+    "expect": "an action INPUT named `steps` does not hide the real pin (r5 F2 regression)"
+  },
+  {
+    "name": "the steps block never closes on dedent, so a later list is read as steps (r5 F3)",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        if line.strip() and indent <= steps_indent and not m:",
+        "        if False:"
+      ]
+    ],
+    "expect": "a list after the steps block is not read as steps"
+  },
+  {
+    "name": "the steps: opener stops accepting YAML node properties, so an anchored step list is invisible (r5 codex Medium)",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "_STEPS_KEY = re.compile(r\"^(\\s*)steps:\\s*(?:[&!]\\S+\\s*)*(#.*)?$\")",
+        "_STEPS_KEY = re.compile(r\"^(\\s*)steps:\\s*(#.*)?$\")"
+      ]
+    ],
+    "expect": "`steps:` with a YAML anchor still opens the step list"
+  },
+  {
+    "name": "job keys stop being excluded from the depth scan, so a job named steps becomes its own step list (r6 codex High) [both guards: the depth scan AND the opener, since either alone masks the other]",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "              if _STEPS_KEY.match(ln) and not is_job]",
+        "              if _STEPS_KEY.match(ln)]"
+      ],
+      [
+        "        if (opens_steps and len(opens_steps.group(1)) == job_steps_indent\n                and not job_key[idx]):",
+        "        if (opens_steps and len(opens_steps.group(1)) == job_steps_indent\n                and True):"
+      ]
+    ],
+    "expect": "a job literally named `steps` does not become its own step list"
+  },
+  {
+    "name": "a job block carries its own key line again, so the job-key exclusion cannot see it (r6 codex High, second half)",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        blocks[name] = \"\\n\".join(lines[start + 1:end])",
+        "        blocks[name] = \"\\n\".join(lines[start:end])"
+      ]
+    ],
+    "expect": "...and that job reads UNPINNED, which is the consequence that matters"
+  }
+]

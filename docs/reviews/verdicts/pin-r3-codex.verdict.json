@@ -1,0 +1,18 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 2134 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "cfefc3771ce1e7611bbe5ac40db1f5585fa59eab",
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b3d559c1-6b4c-49e1-81af-8ac588f0b7d8/scratchpad/pinmut.py: OVERWRITTEN during the run (writer unattributed)"
+  ],
+  "model": "gpt-5.5",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b3d559c1-6b4c-49e1-81af-8ac588f0b7d8/scratchpad/codex-pin-r3.md",
+  "reason": "2134 chars",
+  "review": "pin-r3-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}
