@@ -284,10 +284,14 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # findings: all six parameters are genuinely varied by the suite.
     'check-closing-table.py': (
         'closing_acts_of.records',
+        'coalesce_injected.make',
+        'coalesce_injected.windows_in',
+        'command_segments.command',
         'decide.acts',
         'decide.final_text',
         'final_text_of.texts',
         'has_closing_table.text',
+        'mask_quotes.command',
         'run_decide.payload',
     ),
     # ⟳ 2026-09-20: the merge-readiness checker, pinned in the commit that adds it —

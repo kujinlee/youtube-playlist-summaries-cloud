@@ -191,8 +191,8 @@
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "    judged = banner.judged_window(banner.windows(records))",
-        "    judged = banner.windows(records)[-1]"
+        "    judged = banner.judged_window(\n        coalesce_injected(banner.windows(records), banner.TurnWindow))",
+        "    judged = coalesce_injected(banner.windows(records), banner.TurnWindow)[-1]"
       ]
     ],
     "expect": "run: only one turn -> QUIET (no subject yet)"
@@ -209,15 +209,15 @@
     "expect": "acts: a quoted operator does not split the command"
   },
   {
-    "name": "fences toggle again, so one unterminated marker silences every table after it",
+    "name": "a fence never finishes opening, so no fence hides anything",
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "    for a, b in zip(markers[::2], markers[1::2]):\n        fenced_lines.update(range(a, b + 1))",
-        "    for a in markers:\n        fenced_lines.update(range(a, len(lines)))"
+        "        if open_at is None:\n            open_at, open_mark = i, mark",
+        "        if True:\n            open_at, open_mark = i, mark"
       ]
     ],
-    "expect": "table: an unclosed fence before the table hides nothing"
+    "expect": "table: a matched backtick fence still hides its table"
   },
   {
     "name": "brackets are stripped after env prefixes again, so a subshell hides a real close",
@@ -229,5 +229,60 @@
       ]
     ],
     "expect": "acts: a subshell with an env prefix is still a push"
+  },
+  {
+    "name": "a notification starts a turn again, so a split turn warns falsely",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        if out and isinstance(content, str) and _INJECTED.match(content):",
+        "        if False:"
+      ]
+    ],
+    "expect": "run: a notification splitting a turn does NOT warn falsely"
+  },
+  {
+    "name": "coalescing swallows REAL user turns too, so the subject silently widens",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "_INJECTED = re.compile(r\"^\\s*<(?:task-notification|system-reminder)\\b\")",
+        "_INJECTED = re.compile(r\"\")"
+      ]
+    ],
+    "expect": "coalesce: a REAL user message still starts a turn"
+  },
+  {
+    "name": "escapes are ignored inside a quoted span again, so a false act appears",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        if quote == '\"' and ch == \"\\\\\" and i + 1 < len(command):\n            out.append(\"  \")\n            i += 2\n            continue",
+        "        if False:\n            out.append(\"  \")\n            i += 2\n            continue"
+      ]
+    ],
+    "expect": "acts: an ESCAPED quote does not end the quoted span"
+  },
+  {
+    "name": "fences pair by position again, so a stray ``` is closed by a ~~~",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        elif open_mark is not None and mark[0] == open_mark[0] and mark[1] >= open_mark[1]:",
+        "        elif open_mark is not None:"
+      ]
+    ],
+    "expect": "table: a stray ``` is not closed by a later ~~~"
+  },
+  {
+    "name": "the borrowed-rule semantic probe stops failing closed",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    if len(wins) != 2 or texts != [\"a\"] or lone is not None:",
+        "    if False:"
+      ]
+    ],
+    "expect": "guard: a drifted borrowed turn rule is CANNOT RUN"
   }
 ]

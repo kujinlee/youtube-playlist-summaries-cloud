@@ -578,7 +578,7 @@ EXPECTED_MUTATIONS = {
     # suite found the defects: `relative_to` raising on a redirected log (a warn-only observer
     # turning into a traceback), and judging the LIVE turn instead of the previous one, which
     # would have made the guard silently unable to see any closing message at all.
-    "scripts/check-closing-table.py": 21,
+    "scripts/check-closing-table.py": 26,
     "scripts/gen-dashboard.py": 68,
     # ⟳ 2026-09-12. gen-goals-page.py was the last PAGE-PRODUCING generator with no
     # manifest — gen-dashboard, gen-backlog-page, brief-compose, page_chrome and page_markup
@@ -3326,7 +3326,7 @@ def _self_test() -> int:
     # pinning too. ⚠ THIS COMMENT ITSELF WENT STALE AT 770 WHILE THE SUM WAS 778 (Claude r1,
     # Medium): the transitions are the audit trail for a ratchet that may only rise, so a gap in
     # them is the one thing a reader cannot reconstruct from the number.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 803)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 808)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

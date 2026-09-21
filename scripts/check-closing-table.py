@@ -90,7 +90,7 @@ Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CAN
 
 Usage:
     python3 scripts/check-closing-table.py --decide      # reads the Stop-hook payload on stdin
-    python3 scripts/check-closing-table.py --self-test   # 84 cases
+    python3 scripts/check-closing-table.py --self-test   # 99 cases
 """
 from __future__ import annotations
 
@@ -149,6 +149,38 @@ _ENV_PREFIX = re.compile(r"^(?:[A-Za-z_][A-Za-z_0-9]*=(?:\"[^\"]*\"|'[^']*'|\S*)
 _SEGMENT_SPLIT = re.compile(r"\n|;|&&|\|\||\||&")
 
 
+# A record the SYSTEM injected into the user channel. Not a person taking a turn.
+_INJECTED = re.compile(r"^\s*<(?:task-notification|system-reminder)\b")
+
+
+def coalesce_injected(windows_in: list, make) -> list:
+    """Fold a window opened by a SYSTEM-INJECTED record back into the turn it interrupted.
+
+    ⛔ FOUND ON THE REAL TRANSCRIPT, not in a fixture — every test before this used synthetic
+    records. A `<task-notification>` record is `type: "user"`, carries no `isMeta`, and the borrowed
+    boundary rule therefore calls it a NEW TURN. So a background job finishing mid-turn SPLITS that
+    turn, and the split lands between the act and the report: the fragment before the notification
+    has the `git push` and no table, and would WARN falsely. This session receives such
+    notifications constantly, so the false-alarm rate would have been material.
+
+    ⚠ THIS IS NOT A SECOND IMPLEMENTATION OF THE BORROWED RULE, and the distinction is the whole
+    justification. `check-banner-armed.windows` answers *where does a turn boundary fall* and is
+    still the only answer to that question. This answers a different and narrower one — *was that
+    boundary a PERSON?* — and composes on top of the first. Changing the borrowed rule instead would
+    silently change the banner guard's subject, which is precisely what this file refuses to do.
+    """
+    out: list = []
+    for window in windows_in:
+        opener = getattr(window, "opener", None)
+        content = (opener or {}).get("message", {}).get("content") if opener else None
+        if out and isinstance(content, str) and _INJECTED.match(content):
+            prev = out[-1]
+            out[-1] = make(prev.opener, list(prev.body) + [opener] + list(window.body))
+        else:
+            out.append(window)
+    return out
+
+
 def mask_quotes(command: str) -> str:
     """PURE. `command` with every quoted span blanked, LENGTH PRESERVED.
 
@@ -166,7 +198,22 @@ def mask_quotes(command: str) -> str:
     """
     out: list[str] = []
     quote: str | None = None
-    for ch in command:
+    i = 0
+    while i < len(command):
+        ch = command[i]
+        # ⟳ r3 Codex, High — BACKSLASH ESCAPES. The first version treated any matching quote byte
+        # as a closer, so `echo "a \"; git push"` masked to a string whose `;` and `git push` were
+        # OUTSIDE quotes, producing a FALSE act; and `git commit -m "a \" --dry-run"` exposed the
+        # flag from inside the message and MISSED a real commit. Both directions, one omission.
+        # In POSIX shell a backslash escapes inside double quotes and NOT inside single quotes.
+        if quote == '"' and ch == "\\" and i + 1 < len(command):
+            out.append("  ")
+            i += 2
+            continue
+        if quote is None and ch == "\\" and i + 1 < len(command):
+            out.append(command[i:i + 2])       # outside quotes it escapes one char; keep both
+            i += 2
+            continue
         if quote is not None:
             out.append(" ")
             if ch == quote:
@@ -176,6 +223,7 @@ def mask_quotes(command: str) -> str:
             out.append(" ")
         else:
             out.append(ch)
+        i += 1
     return "".join(out)
 
 
@@ -244,11 +292,31 @@ def has_closing_table(text: str) -> bool:
     # toggled on every marker, so a SINGLE stray ``` earlier in the message suppressed every table
     # after it, turning a correct report into a false warning. Probed before round 2 returned.
     # Fence regions are therefore paired up first, and an unterminated marker fences nothing.
-    markers = [i for i, ln in enumerate(lines)
-               if ln.lstrip().startswith("```") or ln.lstrip().startswith("~~~")]
+    # ⟳ r3 Codex, High — A FENCE IS CLOSED BY ITS OWN CHARACTER, AT ITS OWN LENGTH OR LONGER.
+    # Pairing markers purely by POSITION associated a stray ``` with a later ~~~, so a real table
+    # sitting between them was hidden — and under this file's own "an unterminated marker fences
+    # nothing" rule it should have been visible. CommonMark: the closer must use the same character
+    # and be at least as long as the opener.
+    def _marker(ln: str) -> tuple[str, int] | None:
+        s = ln.lstrip()
+        for ch in ("`", "~"):
+            if s.startswith(ch * 3):
+                return ch, len(s) - len(s.lstrip(ch))
+        return None
+
     fenced_lines: set[int] = set()
-    for a, b in zip(markers[::2], markers[1::2]):
-        fenced_lines.update(range(a, b + 1))
+    open_at: int | None = None
+    open_mark: tuple[str, int] | None = None
+    for i, ln in enumerate(lines):
+        mark = _marker(ln)
+        if mark is None:
+            continue
+        if open_at is None:
+            open_at, open_mark = i, mark
+        elif open_mark is not None and mark[0] == open_mark[0] and mark[1] >= open_mark[1]:
+            fenced_lines.update(range(open_at, i + 1))
+            open_at, open_mark = None, None
+    # An opener that never closes fences NOTHING — deliberately left unrecorded.
     for i, line in enumerate(lines):
         if i in fenced_lines:
             continue
@@ -284,7 +352,7 @@ def _load_banner_guard():
         raise ImportError("cannot load scripts/check-banner-armed.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    for name in ("_parse_records", "windows", "judged_window", "texts_of"):
+    for name in ("_parse_records", "windows", "judged_window", "texts_of", "TurnWindow"):
         if not hasattr(mod, name):
             raise ImportError(
                 f"scripts/check-banner-armed.py no longer defines {name} — this guard borrows the "
@@ -474,7 +542,8 @@ def run_decide(payload: str) -> int:
               "warning as 'no table was owed'.", file=sys.stderr)
         return CANNOT_RUN
 
-    judged = banner.judged_window(banner.windows(records))
+    judged = banner.judged_window(
+        coalesce_injected(banner.windows(records), banner.TurnWindow))
     if judged is None:
         return QUIET            # no subject yet — QUIET, never CANNOT RUN
 
@@ -585,6 +654,13 @@ def _self_test() -> int:
     # silences a correct report. This is the fence fix's own falsifier.
     check("table: an unclosed fence before the table hides nothing",
           has_closing_table("```\nsnippet\n\n| check | result |\n|---|---|\n| a | b |"), True)
+    # ⟳ r3 Codex, High — a fence closes only with its OWN character, at its own length or longer.
+    check("table: a stray ``` is not closed by a later ~~~",
+          has_closing_table("``` stray\n| check | result |\n|-|-|\n| a | b |\n~~~\ncode\n~~~"), True)
+    check("table: a matched backtick fence still hides its table",
+          has_closing_table("```\n| check | result |\n|---|---|\n| a | b |\n```"), False)
+    check("table: a longer closer still closes a shorter opener",
+          has_closing_table("```\n| check | result |\n|---|---|\n| a | b |\n````"), False)
     # A blank line ENDS a markdown table, so a header+separator followed by a blank and then a row
     # is two tables, the first of which has no claims. Rejecting it is correct, not a miss.
     check("table: a blank line ends the table, so the header has no claim rows",
@@ -662,6 +738,13 @@ def _self_test() -> int:
           closing_acts_of([bash("(GIT_SSH=x git push)")]), ["a push"])
     check("acts: a plain subshell is still a push",
           closing_acts_of([bash("(git push)")]), ["a push"])
+    # ⟳ r3 Codex, High — escaped quotes, BOTH directions from one omission.
+    check("acts: an ESCAPED quote does not end the quoted span",
+          closing_acts_of([bash(r'echo "a \"; git push"')]), [])
+    check("acts: an escaped quote does not expose a rehearsal flag",
+          closing_acts_of([bash(r'git commit -m "a \" --dry-run"')]), ["a commit"])
+    check("acts: a single-quoted span has no escapes",
+          closing_acts_of([bash("echo 'a; git push'")]), [])
     # Assert the PROPERTY, not a transcribed literal — the first version of this case hand-counted
     # the spaces and was off by one, which is the same class of error the guard exists to catch.
     check("mask: a different string keeps length and drops every quote",
@@ -721,6 +804,71 @@ def _self_test() -> int:
     check("final: all blank -> None", final_text_of(["", "  "]), None)
     check("final: empty list -> None", final_text_of([]), None)
 
+    # ---- coalesce_injected: a boundary is only a turn if a PERSON made it -------------------
+    class _W:
+        def __init__(self, opener, body):
+            self.opener, self.body = opener, body
+
+    def _win(content, body):
+        return _W({"type": "user", "message": {"content": content}} if content is not None else None,
+                  body)
+
+    _a, _b = _win("real question", ["A"]), _win("<task-notification> x", ["B"])
+    _merged = coalesce_injected([_a, _b], _W)
+    check("coalesce: a notification does not start a turn", len(_merged), 1)
+    check("coalesce: its records join the turn it interrupted",
+          [x for x in _merged[0].body if isinstance(x, str)], ["A", "B"])
+    check("coalesce: a REAL user message still starts a turn",
+          len(coalesce_injected([_a, _win("another question", ["B"])], _W)), 2)
+    check("coalesce: a system-reminder is injected too",
+          len(coalesce_injected([_a, _win("<system-reminder>hi", ["B"])], _W)), 1)
+    check("coalesce: a leading injected window has nothing to join",
+          len(coalesce_injected([_win("<task-notification> x", ["A"])], _W)), 1)
+    # Vary `make` with the REAL type the caller passes, so the parameter is not a constant AND the
+    # composition is exercised against the actual namedtuple rather than only a stand-in.
+    def _real_turnwindow_case():
+        TW = _load_banner_guard().TurnWindow
+        return len(coalesce_injected(
+            [TW({"type": "user", "message": {"content": "q"}}, []),
+             TW({"type": "user", "message": {"content": "<task-notification> x"}}, [])], TW))
+
+    check("coalesce: composes with the REAL TurnWindow the caller uses",
+          _safe(_real_turnwindow_case), 1)
+
+    # ---- the borrowed-rule drift alarm, exercised by actually DRIFTING it -------------------
+    # ⟳ r3 Codex, Medium: the semantic probe had no mutation, because nothing exercised it. A
+    # `hasattr` sweep cannot see `judged_window` changing MEANING while every symbol resolves, so
+    # the probe is the only thing standing between that drift and a silently different subject.
+    # This stands up a fake check-banner-armed.py and asserts the loader REFUSES it.
+    _fake_module = "\n".join([
+        "from typing import NamedTuple",
+        "class TurnWindow(NamedTuple):",
+        "    opener: dict | None",
+        "    body: list",
+        "def _parse_records(lines): return []",
+        "def windows(records): return [TurnWindow(None, list(records))]",
+        "def judged_window(wins): return wins[-1]   # DRIFTED: live turn, not the previous one",
+        "def texts_of(records): return []",
+    ])
+
+    def _drifted_loader_case():
+        with tempfile.TemporaryDirectory() as d:
+            fake_root = Path(d)
+            (fake_root / "scripts").mkdir()
+            (fake_root / "scripts" / "check-banner-armed.py").write_text(_fake_module)
+            real_root = globals()["ROOT"]
+            globals()["ROOT"] = fake_root
+            try:
+                _load_banner_guard()
+                return "LOADED"                     # must not happen
+            except ImportError as exc:
+                return "REFUSED" if "CHANGED SEMANTICS" in str(exc) else f"WRONG: {exc}"
+            finally:
+                globals()["ROOT"] = real_root
+
+    check("guard: a drifted borrowed turn rule is CANNOT RUN",
+          _safe(_drifted_loader_case), "REFUSED")
+
     # ---- run_decide: the boundaries ----------------------------------------------------------
     check("run: empty payload -> CANNOT RUN", run_decide(""), CANNOT_RUN)
     check("run: malformed json -> CANNOT RUN", run_decide("{not json"), CANNOT_RUN)
@@ -776,6 +924,32 @@ def _self_test() -> int:
             check("run: judged turn closed nothing -> QUIET",
                   run_decide(json.dumps({"transcript_path": str(noacts)})), QUIET)
 
+            # ⛔ FOUND ON THE REAL TRANSCRIPT. A background job finishing mid-turn injects a
+            # `<task-notification>` record with `type: "user"` and no `isMeta`, which the borrowed
+            # boundary rule calls a NEW TURN — splitting the turn between the act and the report.
+            # Without coalescing, this transcript warns although the close carries a table.
+            # ⚠ THE NOTIFICATION MUST BE THE LAST BOUNDARY for this to bite: only then is the
+            # ACT fragment the judged window. With the notification in the middle, the fragment
+            # that gets judged is the harmless one and the case cannot tell coalescing apart —
+            # which is exactly how the first version of this case let its mutation survive.
+            split = write("split.jsonl", [
+                user("do it"), bash("git push"),
+                user("<task-notification>\n<task-id>x</task-id>\n</task-notification>"),
+                say("Done.\n\n" + good),
+            ])
+            check("run: a notification splitting a turn does NOT warn falsely",
+                  _safe(lambda: run_decide(json.dumps({"transcript_path": str(split)}))), QUIET)
+
+            # ...and the guard must still fire when that same split turn closes with PROSE.
+            split_prose = write("split_prose.jsonl", [
+                user("do it"), bash("git push"),
+                user("<task-notification>\n<task-id>x</task-id>\n</task-notification>"),
+                say("All done!"),
+                user("next"), say("working"),
+            ])  # notification mid-turn; the merged turn is judged and closes with prose
+            check("run: a split turn closing with prose still warns",
+                  _safe(lambda: run_decide(json.dumps({"transcript_path": str(split_prose)}))), WARN)
+
             # ⛔ THE LIVE TURN IS NEVER JUDGED — one turn of latency is the point, not a bug.
             live_only = write("live.jsonl", [user("do it"), bash("git push"), say("All done.")])
             check("run: only one turn -> QUIET (no subject yet)",
@@ -784,7 +958,7 @@ def _self_test() -> int:
             globals()["WARN_LOG"] = real_log
 
     declared = re.search(r"--self-test\s+#\s*(\d+)\s+cases", __doc__ or "")
-    total = 84
+    total = 99
     if not declared or int(declared.group(1)) != total:
         failures.append(
             f"declared self-test count {declared.group(1) if declared else 'MISSING'} != {total} "
