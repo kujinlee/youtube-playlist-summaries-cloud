@@ -294,6 +294,24 @@ re-read.
 
 ## Running agents concurrently — classify the OPERATION, not the agent (added 2026-09-09)
 
+> ### ⛔ SPAWNING A SUBAGENT IS THE DEFAULT. The table below is the ONLY restriction (2026-09-20).
+>
+> **Measured cost of assuming otherwise:** a session ran under an instruction not to spawn subagents
+> unless asked, and PR #325 shipped after **SIX review rounds with only the Codex half** — every
+> "claude half" document on that branch is a coordinator self-review, which by construction cannot
+> find what the author did not think to look for. `docs/plugins.md` records what a skipped half once
+> cost: a Codex-only round cleared a money guard the Claude half caught in one pass.
+>
+> ⚠ **The gap was one question wide and was never asked.** It was recorded as a `REVIEW GAP:` in all
+> six round documents and a ❌ row in every status table — six mentions, zero escalations. *An
+> escalation has no closer: only a REPLY closes it.* A reviewer that CANNOT run is a **decision**
+> (`docs/plugins.md`), so it belongs in a selection card on round one, not a caveat on round six.
+>
+> **Reliability is not a reason to decline.** A fork can review the wrong subject or never report —
+> both measured here. Those argue for *"agent output is a LEAD, not a finding — verify every
+> load-bearing claim by hand"*, which this repo already requires. The asymmetry decides it: a fork
+> that fails costs a RETRY; not spawning costs the entire second reviewer, permanently.
+
 **Read this before dispatching two halves at once.** Backlog #67; the goal in the user's words:
 *"find a safe method to run multiple agents concurrently, and when no safe method exists, then they
 must be serialised for the dangerous operation. This is balancing of speed and safety."*
