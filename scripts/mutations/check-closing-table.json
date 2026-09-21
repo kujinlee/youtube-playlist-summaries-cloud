@@ -125,7 +125,7 @@
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "            if block.get(\"id\") in errored:\n                continue",
+        "            if tid in errored:\n                continue",
         "            if False:\n                continue"
       ]
     ],
@@ -290,8 +290,8 @@
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "def mask_heredocs(command: str) -> str:\n    \"\"\"PURE. `command` with every heredoc BODY blanked, line count preserved.\"\"\"",
-        "def mask_heredocs(command: str) -> str:\n    \"\"\"PURE. `command` with every heredoc BODY blanked, line count preserved.\"\"\"\n    return command"
+        "    lines = command.split(\"\\n\")\n    out: list[str] = []\n    pending: list[tuple[str, bool]] = []",
+        "    return command\n    lines = command.split(\"\\n\")\n    out: list[str] = []\n    pending: list[tuple[str, bool]] = []"
       ]
     ],
     "expect": "acts: a heredoc BODY is data, not a command"
@@ -301,8 +301,8 @@
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "    return [a for a in found if not vetoed(a, outputs)]",
-        "    return found"
+        "                            and not vetoed(label, own_output)):",
+        "                            and not False):"
       ]
     ],
     "expect": "veto: a REFUSED tick is not a tick"
@@ -317,5 +317,38 @@
       ]
     ],
     "expect": "veto: another act's failure phrase does not veto this one"
+  },
+  {
+    "name": "the veto reads the whole window again, so one failure cancels a later success",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "            own_output = outputs.get(tid, \"\") if isinstance(tid, str) else \"\"",
+        "            own_output = \"\\n\".join(outputs.values())"
+      ]
+    ],
+    "expect": "veto: a FAILED push does not cancel a later successful one"
+  },
+  {
+    "name": "heredoc terminators stop being a queue, so a second heredoc leaks",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "            for found in _HEREDOC_START.finditer(line):\n                pending.append((found.group(3), found.group(1) == \"-\"))",
+        "            found = _HEREDOC_START.search(line)\n            if found:\n                pending.append((found.group(3), found.group(1) == \"-\"))"
+      ]
+    ],
+    "expect": "heredoc: TWO heredocs in one command both stay blanked"
+  },
+  {
+    "name": "heredoc termination goes lenient again, so indented data ends the body",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        candidate = line.lstrip(\"\\t\") if dashed else line",
+        "        candidate = line.strip()"
+      ]
+    ],
+    "expect": "heredoc: a space-indented terminator does NOT end the body"
   }
 ]

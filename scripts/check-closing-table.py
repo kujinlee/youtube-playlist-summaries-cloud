@@ -58,8 +58,10 @@ and reads as covering all of it is a hazard this repo has paid for more than onc
     session has no following Stop to judge it. Structural, and the direction is under-firing.
   * **A CLOSE REACHED BY ANOTHER SPELLING.** `alias g=git; g push`, a wrapper script, or
     `subprocess.run(["git","push"])` are invisible — the trigger reads shell text, not process
-    trees. ⟳ The heredoc half of this bound is CLOSED: a heredoc BODY is blanked by
-    `mask_heredocs`, measured against two real false positives in this session.
+    trees. ⟳ The heredoc half is NARROWED, not closed — `mask_heredocs` blanks bodies, handles a
+    QUEUE of terminators and matches them strictly (POSIX: exact line; `<<-` strips TABS only).
+    ⚠ The first version of this sentence said CLOSED and r4 refuted it with two leaks. It does not
+    understand `$(...)`, backslash-continued `<<`, or a delimiter built by expansion.
   * **AN HTML TABLE.** `<table><tr><th>Check</th>…` is a perfectly readable closing table and is
     not recognised; only the markdown form is. Deliberate — `process-checklists.md` shows markdown.
   * **A PARTIALLY-SUCCESSFUL ACT.** `is_error` on the paired result means "no close happened", but
@@ -91,7 +93,7 @@ Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CAN
 
 Usage:
     python3 scripts/check-closing-table.py --decide      # reads the Stop-hook payload on stdin
-    python3 scripts/check-closing-table.py --self-test   # 111 cases
+    python3 scripts/check-closing-table.py --self-test   # 116 cases
 """
 from __future__ import annotations
 
@@ -217,24 +219,39 @@ def vetoed(act: str, outputs: str) -> bool:
 # `gh pr merge` and `begin-plan.py … --tick` were counted as acts. A heredoc BODY is data being
 # written to a file, never a command being run. This is the same closed-form treatment that fixed
 # quoting — blank the region, preserve the lines — and NOT another open-ended lexer rule.
-_HEREDOC_START = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z_0-9]*)\1")
+_HEREDOC_START = re.compile(r"<<(-?)\s*(['\"]?)([A-Za-z_][A-Za-z_0-9]*)\2")
 
 
 def mask_heredocs(command: str) -> str:
-    """PURE. `command` with every heredoc BODY blanked, line count preserved."""
+    """PURE. `command` with every heredoc BODY blanked, line count preserved.
+
+    ⟳ r4 Codex, Medium — TWO LEAKS, both measured, both from taking the easy version:
+
+      * **one pending terminator.** `cat <<A <<B` opens TWO heredocs on one line; tracking a single
+        terminator closed at `A` and let the rest — still B's body — back into detection.
+        A QUEUE is required, and it drains in order, which is what the shell does.
+      * **`line.strip() == terminator`.** POSIX ends a `<<` heredoc only on a line that is EXACTLY
+        the delimiter, with no leading whitespace; `<<-` strips leading TABS and nothing else. The
+        lenient version ended the body at ` EOF` (a space, inside the data) and released the real
+        lines after it.
+
+    Both repros reported a `git push` that was heredoc DATA. The docstring bound this closes is
+    written as "the common case", not "closed" — see below; the first version overclaimed.
+    """
     lines = command.split("\n")
     out: list[str] = []
-    terminator: str | None = None
+    pending: list[tuple[str, bool]] = []          # (terminator, strip-leading-tabs)
     for line in lines:
-        if terminator is None:
+        if not pending:
             out.append(line)
-            found = _HEREDOC_START.search(line)
-            if found:
-                terminator = found.group(2)
-        else:
-            out.append("")
-            if line.strip() == terminator:
-                terminator = None
+            for found in _HEREDOC_START.finditer(line):
+                pending.append((found.group(3), found.group(1) == "-"))
+            continue
+        out.append("")                            # every body line, and the terminator itself
+        terminator, dashed = pending[0]
+        candidate = line.lstrip("\t") if dashed else line
+        if candidate == terminator:
+            pending.pop(0)
     return "\n".join(out)
 
 
@@ -466,25 +483,40 @@ def _errored_tool_ids(records: list[dict]) -> set[str]:
     return bad
 
 
-def tool_outputs_of(records: list[dict]) -> str:
-    """PURE. Every Bash `tool_result` payload in this window, concatenated.
+def paired_outputs(records: list[dict]) -> dict[str, str]:
+    """PURE. tool_use id -> the text of ITS OWN result.
 
-    This is what the EFFECT VETO reads. It is deliberately the whole window rather than the paired
-    result of one call: a turn that pushes in one call and reports the failure in the next should
-    still be vetoed, and pairing would miss that.
+    ⛔ PAIRED, NOT WHOLE-WINDOW — r4 Codex, High, and it FALSIFIED THE PROPERTY THIS DESIGN RESTS
+    ON. The first version concatenated every result in the turn and applied it to every act, on the
+    reasoning that "a turn that pushes in one call and reports the failure in the next should still
+    be vetoed". That reasoning is wrong, and the counter-example is ordinary:
+
+        git push            -> error: failed to push some refs      (rejected, then rebased)
+        git push            -> To github.com ...                     (succeeds)
+
+    Whole-window scoping let the FIRST call's failure cancel the SECOND call's real push, so the
+    guard MISSED a close — exactly what the comment two screens up promised could never happen.
+    A veto is only safe if it cannot outlive the call that produced its evidence.
+
+    It also closes the sibling hole: with whole-window text, any command printing the literal
+    `Everything up-to-date` — a `cat`, a `printf`, this review document itself — cancelled a real
+    push. Paired scoping makes the evidence come from the act's own invocation or not at all.
     """
-    chunks: list[str] = []
+    out: dict[str, str] = {}
     for rec in records:
         for block in _content_blocks(rec):
             if block.get("type") != "tool_result":
                 continue
+            tid = block.get("tool_use_id")
+            if not isinstance(tid, str):
+                continue
             content = block.get("content")
             if isinstance(content, str):
-                chunks.append(content)
+                out[tid] = content
             elif isinstance(content, list):
-                chunks.extend(x.get("text", "") for x in content
-                              if isinstance(x, dict) and isinstance(x.get("text"), str))
-    return "\n".join(chunks)
+                out[tid] = "\n".join(x.get("text", "") for x in content
+                                     if isinstance(x, dict) and isinstance(x.get("text"), str))
+    return out
 
 
 def closing_acts_of(records: list[dict]) -> list[str]:
@@ -495,26 +527,30 @@ def closing_acts_of(records: list[dict]) -> list[str]:
     failing to make.
     """
     errored = _errored_tool_ids(records)
+    outputs = paired_outputs(records)
     found: list[str] = []
     for rec in records:
         for block in _content_blocks(rec):
             if block.get("type") != "tool_use" or block.get("name") != "Bash":
                 continue
-            if block.get("id") in errored:
+            tid = block.get("id")
+            if tid in errored:
                 continue
             command = (block.get("input") or {}).get("command")
             if not isinstance(command, str):
                 continue
+            # ⛔ THE VETO IS EVALUATED PER CALL, against THIS call's own result (r4 High). It only
+            # ever removes, and a call with no result vetoes nothing — so truncation still cannot
+            # produce a miss, and one call's failure can no longer cancel another call's success.
+            own_output = outputs.get(tid, "") if isinstance(tid, str) else ""
             for segment in command_segments(command):
                 if _REHEARSAL.search(segment):
                     continue                      # `--dry-run` performs nothing
                 for label, pattern in CLOSING_ACTS:
-                    if pattern.search(segment) and label not in found:
+                    if (pattern.search(segment) and label not in found
+                            and not vetoed(label, own_output)):
                         found.append(label)
-    # ⛔ The veto runs LAST and only removes. It can never add an act, so a truncated or missing
-    # result leaves every detected act standing — which is why this cannot introduce a MISS.
-    outputs = tool_outputs_of(records)
-    return [a for a in found if not vetoed(a, outputs)]
+    return found
 
 
 def _log_display() -> str:
@@ -865,6 +901,33 @@ def _self_test() -> int:
     # act — a plan refusing to tick would cancel a real push in the same turn.
     check("veto: another act's failure phrase does not veto this one",
           closing_acts_of(_with_output("git push", "refusing: this plan is PAUSED")), ["a push"])
+
+    # ⛔ r4 Codex, HIGH — this FALSIFIED the property the veto design rests on. Whole-window
+    # scoping let call 1's failure cancel call 2's real push, so the veto INTRODUCED a miss.
+    def _two_calls(c1, o1, err1, c2, o2):
+        return [bash(c1, "p1"),
+                {"type": "user", "message": {"content": [
+                    {"type": "tool_result", "tool_use_id": "p1", "content": o1, "is_error": err1}]}},
+                bash(c2, "p2"),
+                {"type": "user", "message": {"content": [
+                    {"type": "tool_result", "tool_use_id": "p2", "content": o2}]}}]
+
+    check("veto: a FAILED push does not cancel a later successful one",
+          closing_acts_of(_two_calls("git push", "error: failed to push some refs", True,
+                                     "git push", "To github.com\n  aaa..bbb main -> main")),
+          ["a push"])
+    check("veto: unrelated stdout elsewhere in the turn cannot impersonate evidence",
+          closing_acts_of(_two_calls("git push", "To github.com\n  aaa..bbb main -> main", False,
+                                     "cat notes.txt", "Everything up-to-date")),
+          ["a push"])
+
+    # ⛔ r4 Codex, MEDIUM — two heredoc leaks, both reported a `git push` that was DATA.
+    check("heredoc: TWO heredocs in one command both stay blanked",
+          closing_acts_of([bash("cat <<A <<B\nx\nA\ngit push\nB")]), [])
+    check("heredoc: a space-indented terminator does NOT end the body",
+          closing_acts_of([bash("cat <<EOF\n EOF\ngit push\nEOF")]), [])
+    check("heredoc: `<<-` strips leading TABS, so a tabbed terminator DOES end it",
+          closing_acts_of([bash("cat <<-EOF\n\tEOF\ngit push")]), ["a push"])
     check("heredoc mask: a different heredoc, so the parameter is not a constant",
           mask_heredocs("cat <<X\nsecret\nX").split("\n")[1], "")
     # Assert the PROPERTY, not a transcribed literal — the first version of this case hand-counted
@@ -1080,7 +1143,7 @@ def _self_test() -> int:
             globals()["WARN_LOG"] = real_log
 
     declared = re.search(r"--self-test\s+#\s*(\d+)\s+cases", __doc__ or "")
-    total = 111
+    total = 116
     if not declared or int(declared.group(1)) != total:
         failures.append(
             f"declared self-test count {declared.group(1) if declared else 'MISSING'} != {total} "
