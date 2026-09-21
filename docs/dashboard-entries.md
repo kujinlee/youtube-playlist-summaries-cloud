@@ -10883,3 +10883,31 @@ recorded at `_INJECTED`. Fixed: F2 (`_INJECTED` widened, 4 cases, 2 mutations), 
 #149 (F3+F7, one mechanism), #151 (F6, 5 vacuous cases). Net +4 open backlog rows, 3 closed.
 Also recorded: the coordinator's first append to this review was clobbered by the still-live agent's
 final Write — the file-path contract saves the work, not the timing.
+
+## 2026-09-21
+Correction to this morning's entry, which ended by asking you a question — you answered it, so
+here is what happened.
+
+You chose to widen the marker: any real table counts now, not only one headed "check" and "result".
+The result, measured over every transcript this project has rather than argued about: the guard used
+to fire on 96.7% of the turns that close a job, and now fires on 49.1%. The number of times it says
+"you closed with prose" over a message that actually contained a table went from 372 to **zero**.
+Every warning it emits from here is literally true.
+
+One thing worth knowing, because it is the cost you agreed to. A message that happens to contain
+any table — an example of some API output, a comparison — now satisfies the guard even if it never
+really reported. That is the guard staying quiet when it should have spoken, which is the safer
+direction for something that only warns, and there is now a test asserting that behaviour on purpose
+so nobody later files it as a bug and quietly tightens it back.
+
+I also tried a narrower version first and measured it dead before shipping anything: "only count a
+table if it ends the message". Not one of your 304 tabled closing messages ends with the table —
+every single one is followed by a caveat or a next step. That rule would have fired on all of them.
+<!--tech-->
+r7 F1 closed as backlog #145. `_CHECK_CELL`/`_RESULT_CELL` deleted; marker is now separator + ≥2
+cells + ≥1 claim row, outside a fence. 744/769 → 315/642 firing; 372 → 0 false-sentence firings.
+3 cases inverted rather than deleted, 5 added (incl. the verbatim headerless `| | |` shape, 147
+occurrences), 1 mutation — killed via its named case over a green control. Declared count 132 → 137,
+`EXPECTED_MUTATIONS` 40 → 41, sum 823. Also fixed 3 mutation defects CI caught: one anchor orphaned
+by the F2 edit, one no-op mutation of mine (`.match`→`.search` cannot differ under a `^`-anchored
+pattern), and an unattributable `[FAIL]` line that bypassed the contract format.

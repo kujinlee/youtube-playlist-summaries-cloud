@@ -110,7 +110,7 @@ Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CAN
 
 Usage:
     python3 scripts/check-closing-table.py --decide      # reads the Stop-hook payload on stdin
-    python3 scripts/check-closing-table.py --self-test   # 132 cases
+    python3 scripts/check-closing-table.py --self-test   # 137 cases
 """
 from __future__ import annotations
 
@@ -428,15 +428,44 @@ def command_segments(command: str) -> list[str]:
     return out
 
 # ── The marker ─────────────────────────────────────────────────────────────────────────────────
-# A markdown table whose header names a check column and a result column, followed by the
-# separator row that makes it a table rather than a line of prose containing two pipes.
+# A RENDERED MARKDOWN TABLE: a row of two or more cells, the separator row that makes it a table
+# rather than a line of prose containing pipes, and at least one claim row under it.
+#
+# ⟳ r7 (independent Claude half), High — THE HEADER NO LONGER HAS TO SAY `check` / `result`, and
+# requiring it was enforcing ONE EXAMPLE OF THE RULE INSTEAD OF THE RULE. User decision 2026-09-21,
+# taken on measurement, not taste.
+#
+# `docs/process-checklists.md` states the format as three PROPERTIES — one row per claim, evidence
+# in the row, every row could have come back ❌ — and then shows one example that happens to be
+# headed `check`/`result`. This regex pair enforced the example. Measured by replaying the shipped
+# code over 766 real transcripts:
+#
+#     warnings emitted                                              744
+#     …whose closing message ALREADY CONTAINED a rendered table      372  (50.0%)
+#     …of those, the headerless `| | |` key/value shape              147  (the single commonest)
+#
+# So `decide` printed "completed a commit and closed with prose" over a message that closed with a
+# table, in HALF of everything this guard has ever emitted. A warn-only observer whose sentence is
+# false half the time is the shape backlog #56 was measured for — it gets switched off.
+#
+# ⛔ A NARROWER REPAIR WAS PROPOSED AND MEASURED DEAD: "accept a table only when it ENDS the
+# message". Of the 304 warned-on messages containing a table, **0** end with it — every single one
+# is followed by a caveat, a next step, or a closing sentence. That rule would have fired on 100%
+# of them: exactly as wrong as the one it replaced, in a new direction. Recorded so it is not
+# re-proposed.
+#
+# WHAT IS GIVEN UP, STATED RATHER THAN GLOSSED: `check`/`result` was a token a reader could scan
+# for, and a chatty message containing an incidental comparison table now passes silently. That is
+# an UNDER-fire, and on a warn-only observer under-firing is the safe direction — the same argument
+# the effect-veto below is built on. It costs little that was real: this guard already declares
+# itself SHAPE ONLY and cannot see rule 3 (could the row have come back ❌?), so the strict header
+# was never evidence of quality — only of a rendering.
+#
 # ⛔ ONE DASH IS ENOUGH, and requiring two was a measured false negative. GitHub-flavoured markdown
 # needs a single `-` per cell, so `|-|-|` renders as a perfectly good table — and the first version
 # of this regex said `-{2,}`, which would have nagged the user for a table they had written
 # correctly. A warn-only observer's false alarms are the thing that gets it switched off.
 _SEPARATOR = re.compile(r"^\s*\|(?:\s*:?-+:?\s*\|)+\s*$")
-_CHECK_CELL = re.compile(r"^\s*\**\s*check(?:s)?\s*\**\s*$", re.I)
-_RESULT_CELL = re.compile(r"^\s*\**\s*result(?:s)?\s*\**\s*$", re.I)
 
 
 def _cells(line: str) -> list[str] | None:
@@ -452,12 +481,17 @@ def _cells(line: str) -> list[str] | None:
 
 
 def has_closing_table(text: str) -> bool:
-    """PURE. True iff `text` contains a CHECK / RESULT table.
+    """PURE. True iff `text` contains a RENDERED MARKDOWN TABLE with at least one claim row.
+
+    ⟳ r7: this used to require a `check`/`result` HEADER and rejected half the tables this project
+    actually writes — see the measurement above `_SEPARATOR`. The header requirement is gone; the
+    three structural defences are not, and they are now carrying the whole marker:
 
     ⛔ THE SEPARATOR ROW IS REQUIRED, and that is the whole defence against a false pass. Without
-    it, a single line `| check | result |` typed inside a sentence — or inside THIS docstring —
-    satisfies the guard. With it, the marker is a real rendered table, which is the thing the user
-    visually checks for.
+    it, a single line `| a | b |` typed inside a sentence — or inside THIS docstring — satisfies the
+    guard. With it, the marker is a real rendered table. ⚠ This matters MORE now, not less: with
+    the header gone, the separator and the claim row are the only things standing between "a report"
+    and "a line with two pipes in it".
     """
     lines = text.split("\n")
     # ⟳ r1 Codex, Medium: a table INSIDE A CODE FENCE satisfied the marker. A closing message that
@@ -497,10 +531,6 @@ def has_closing_table(text: str) -> bool:
             continue
         cells = _cells(line)
         if not cells or len(cells) < 2:
-            continue
-        if not any(_CHECK_CELL.match(c) for c in cells):
-            continue
-        if not any(_RESULT_CELL.match(c) for c in cells):
             continue
         if i + 1 >= len(lines) or not _SEPARATOR.match(lines[i + 1]):
             continue
@@ -872,12 +902,35 @@ def _self_test() -> int:
           has_closing_table("| check | result |\n| a | b |\n| c | d |"), False)
     check("table: words in prose only",
           has_closing_table("I ran every check and the result was green."), False)
-    check("table: wrong headers",
-          has_closing_table("| step | status |\n|---|---|\n| a | ✅ |"), False)
-    check("table: check column but no result column",
-          has_closing_table("| check | note |\n|---|---|\n| a | b |"), False)
-    check("table: result column but no check column",
-          has_closing_table("| item | result |\n|---|---|\n| a | b |"), False)
+    # ⟳ r7 F1 / user decision 2026-09-21 — THESE THREE USED TO EXPECT False, and that was the
+    # defect: each is a real report by the written rule (one row per claim, evidence in the row),
+    # and each was told it "closed with prose". They are kept, INVERTED, rather than deleted —
+    # a case that changes its expected value records the decision; a deleted one records nothing.
+    check("table: a header that does not say check/result is still a table",
+          has_closing_table("| step | status |\n|---|---|\n| a | ✅ |"), True)
+    check("table: a check column alone is enough",
+          has_closing_table("| check | note |\n|---|---|\n| a | b |"), True)
+    check("table: a result column alone is enough",
+          has_closing_table("| item | result |\n|---|---|\n| a | b |"), True)
+    # ⛔ THE SHAPE THE WHOLE CHANGE IS FOR: the headerless key/value table, 147 occurrences in the
+    # corpus and the single commonest closing table this project writes. Verbatim from a real
+    # transcript whose turn committed, and which the guard called "prose".
+    check("table: the headerless | | | key/value shape, the commonest real one",
+          has_closing_table("| | |\n|---|---|\n| `page_markup` | 78/78 |"), True)
+    check("table: a before/after comparison header is a table",
+          has_closing_table("| `gen-backlog` | before | after |\n|---|---|---|\n| spans | 7 | 0 |"),
+          True)
+    # ⚠ THE UNDER-FIRE THIS DECISION BUYS, asserted rather than left implicit: an incidental table
+    # in a chatty message now satisfies the marker. Stated in the comment above `_SEPARATOR`; a
+    # case is what stops it being quietly re-tightened by someone who reads it as a bug.
+    check("table: an incidental table in prose now passes — the accepted cost",
+          has_closing_table("Here is what the API returns:\n\n| field | type |\n|---|---|\n"
+                            "| id | int |\n\nAnyway, pushed."), True)
+    # The structural defences now carry the marker alone, so each keeps its own falsifier.
+    check("table: two pipes in a sentence are still not a table",
+          has_closing_table("I ran a | b and got c | d"), False)
+    check("table: a separator with no claim row is still nothing",
+          has_closing_table("| a | b |\n|---|---|"), False)
     check("table: unterminated row", has_closing_table("| check | result\n|---|---|"), False)
     # ⟳ r1 Codex, Blocking: the mutation for the closing-pipe rule SURVIVED, because the case above
     # still passes once `endswith` is dropped — `_cells` then chops the final `t` from `result` and
@@ -1363,9 +1416,15 @@ def _self_test() -> int:
     total = cases
     declared = re.search(r"--self-test\s+#\s*(\d+)\s+cases", __doc__ or "")
     if not declared or int(declared.group(1)) != total:
+        # ⛔ THE CONTRACT FORMAT APPLIES HERE TOO — this line used to read
+        # `declared self-test count 132 != 0 — the docstring is …`, which has no `: got `, so
+        # `check-plan-code`'s attribution parser could extract NO case label from it. Measured:
+        # the mutation that removes `cases += 1` went red and was scored
+        # "caught by something else", because there was nothing for an `expect` to name. This
+        # append bypasses `check()`, so it has to carry the shape `check()` would have given it.
         failures.append(
-            f"declared self-test count {declared.group(1) if declared else 'MISSING'} != {total} "
-            f"— the docstring is the pinned declaration read by check-selftest-counts.py")
+            f"declared self-test count (pinned declaration read by check-selftest-counts.py): "
+            f"got {declared.group(1) if declared else 'MISSING'} want {total}")
 
     if failures:
         print(f"check-closing-table --self-test: {len(failures)} FAILED")

@@ -246,8 +246,8 @@
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "_INJECTED = re.compile(r\"^\\s*<(?:task-notification|system-reminder)\\b\")",
-        "_INJECTED = re.compile(r\"\")"
+        "    r\"^\\s*(?:<(?:task-notification|system-reminder)\\b\"\n    r\"|Another Claude session sent a message)\")",
+        "    r\"\")"
       ]
     ],
     "expect": "coalesce: a REAL user message still starts a turn"
@@ -418,12 +418,12 @@
     "expect": "coalesce: a TEAMMATE message does not start a turn"
   },
   {
-    "name": "the fold widens to a SUBSTRING match, so a person quoting the phrase has their turn swallowed",
+    "name": "the fold stops being anchored at the START, so a person QUOTING the phrase has their turn swallowed",
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "_INJECTED.match(content)",
-        "_INJECTED.search(content)"
+        "    r\"^\\s*(?:<(?:task-notification|system-reminder)\\b\"\n    r\"|Another Claude session sent a message)\")",
+        "    r\"^\\s*.*?(?:<(?:task-notification|system-reminder)\\b\"\n    r\"|Another Claude session sent a message)\")"
       ]
     ],
     "expect": "coalesce: the phrase QUOTED mid-message is still a real turn"
@@ -437,6 +437,17 @@
         "        nonlocal cases\n"
       ]
     ],
-    "expect": "declared self-test count"
+    "expect": "declared self-test count (pinned declaration read by check-selftest-counts.py)"
+  },
+  {
+    "name": "the check/result HEADER requirement comes back, so the headerless table this project writes is rejected again (r7 F1)",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        if i + 1 >= len(lines) or not _SEPARATOR.match(lines[i + 1]):",
+        "        if (not any(re.match(r\"(?i)^\\s*\\**\\s*check\", c) for c in cells)\n                or i + 1 >= len(lines) or not _SEPARATOR.match(lines[i + 1])):"
+      ]
+    ],
+    "expect": "table: the headerless | | | key/value shape, the commonest real one"
   }
 ]
