@@ -378,7 +378,7 @@
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
-        "        if opens_steps and len(opens_steps.group(1)) == job_steps_indent:",
+        "        if (opens_steps and len(opens_steps.group(1)) == job_steps_indent\n                and not job_key[idx]):",
         "        if opens_steps:"
       ]
     ],
@@ -405,5 +405,31 @@
       ]
     ],
     "expect": "`steps:` with a YAML anchor still opens the step list"
+  },
+  {
+    "name": "job keys stop being excluded from the depth scan, so a job named steps becomes its own step list (r6 codex High) [both guards: the depth scan AND the opener, since either alone masks the other]",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "              if _STEPS_KEY.match(ln) and not is_job]",
+        "              if _STEPS_KEY.match(ln)]"
+      ],
+      [
+        "        if (opens_steps and len(opens_steps.group(1)) == job_steps_indent\n                and not job_key[idx]):",
+        "        if (opens_steps and len(opens_steps.group(1)) == job_steps_indent\n                and True):"
+      ]
+    ],
+    "expect": "a job literally named `steps` does not become its own step list"
+  },
+  {
+    "name": "a job block carries its own key line again, so the job-key exclusion cannot see it (r6 codex High, second half)",
+    "file": "scripts/check-python-pin.py",
+    "edits": [
+      [
+        "        blocks[name] = \"\\n\".join(lines[start + 1:end])",
+        "        blocks[name] = \"\\n\".join(lines[start:end])"
+      ]
+    ],
+    "expect": "...and that job reads UNPINNED, which is the consequence that matters"
   }
 ]

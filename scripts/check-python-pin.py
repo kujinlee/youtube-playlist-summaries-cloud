@@ -2,7 +2,7 @@
 """Every CI job pins the Python interpreter, the pins agree, and the pin actually took effect.
 
     python3 scripts/check-python-pin.py              # in CI: asserts. locally: advises.
-    python3 scripts/check-python-pin.py --self-test  # 81 cases
+    python3 scripts/check-python-pin.py --self-test  # 84 cases
 
     exit 0 = pinned, agreeing, and (in CI) in effect   exit 1 = a real disagreement
     exit 2 = CANNOT RUN — no workflow or no pin found, which is never a pass
@@ -213,19 +213,46 @@ def _steps(text: str) -> list[Step]:
     # job's `steps:` DEEPER than some other `steps:` key, this picks the wrong one. Measured: no
     # such shape exists in this repository, and a composite action (`runs:` -> `steps:`) is fine
     # because its `steps:` is the only one in the file. The general answer is backlog #153.
+    # ⟳ r6 (codex) High — `steps` IS A VALID JOB ID, and that inverts the shallowest-`steps:`
+    # invariant into a false green:
+    #
+    #       jobs:
+    #         steps:                      <- a JOB KEY at indent 2, matched by _STEPS_KEY
+    #           strategy: {matrix: {include: [ ...setup-python, python-version 3.12... ]}}
+    #           steps:                    <- the job's REAL step list, at indent 4
+    #             - run: python3 --version
+    #
+    # `min(depths)` picked the job-id line, so the matrix entry was credited and `verdict` returned
+    # "python pin OK" for a job whose only step runs `python3 --version`. GitHub allows any job id
+    # starting with a letter or `_`, so `steps` is legal.
+    #
+    # A job key is EXACTLY the shape `job_names` already recognises, and that rule is not restated
+    # here: the same regex is applied to the same `jobs:` block, so the two cannot disagree about
+    # what a job key is.
     structural = _structural(text.split("\n"))
-    depths = [len(ln) - len(ln.lstrip()) for ln in structural
-              if _STEPS_KEY.match(ln)]
+    job_key: list[bool] = []
+    in_jobs = False
+    for ln in structural:
+        if re.match(r"^jobs:\s*(#.*)?$", ln):
+            in_jobs = True
+            job_key.append(False)
+            continue
+        if in_jobs and ln and not ln.startswith(" ") and not ln.startswith("#"):
+            in_jobs = False                       # a new top-level key ends the jobs block
+        job_key.append(bool(in_jobs and re.match(r"^  ([A-Za-z_][\w-]*):(\s.*)?$", ln)))
+    depths = [len(ln) - len(ln.lstrip()) for ln, is_job in zip(structural, job_key)
+              if _STEPS_KEY.match(ln) and not is_job]
     job_steps_indent = min(depths) if depths else None
 
     out: list[Step] = []
     cur: Step | None = None
     steps_indent: int | None = None          # the indent of the `steps:` KEY we are inside
-    for line in structural:
+    for idx, line in enumerate(structural):
         m = re.match(r"^(\s*)-(\s.*)$", line)
         indent = len(line) - len(line.lstrip())
         opens_steps = _STEPS_KEY.match(line)
-        if opens_steps and len(opens_steps.group(1)) == job_steps_indent:
+        if (opens_steps and len(opens_steps.group(1)) == job_steps_indent
+                and not job_key[idx]):
             steps_indent, cur = len(opens_steps.group(1)), None
             continue
         if steps_indent is None:
@@ -450,7 +477,14 @@ def job_blocks(text: str) -> dict[str, str]:
     ordered = sorted(starts.items(), key=lambda kv: kv[1])
     for idx, (name, start) in enumerate(ordered):
         end = ordered[idx + 1][1] if idx + 1 < len(ordered) else len(lines)
-        blocks[name] = "\n".join(lines[start:end])
+        # ⟳ r6 (codex) High, second half — THE BLOCK IS THE JOB'S BODY, NOT ITS KEY LINE. It used
+        # to start AT the key, and `declared_pins` is called on both whole files and blocks. So a
+        # job literally named `steps` shipped its own key line into the block, where — with no
+        # `jobs:` header to mark it — the job-key exclusion could not see it, `min(depths)` picked
+        # indent 2, and the matrix entry was credited again. `declared_pins` was fixed for the FILE
+        # and still wrong for the BLOCK, which is the call `unpinned_jobs` actually makes.
+        # The key is already this dict's KEY; carrying it in the value bought nothing.
+        blocks[name] = "\n".join(lines[start + 1:end])
     return blocks
 
 
@@ -808,6 +842,20 @@ def self_test() -> int:
          declared_pins("jobs:\n  a:\n    env:\n      steps: '3'\n    steps:\n"
                        "      - uses: actions/setup-python@v5\n"
                        "        with:\n          python-version: '3.12'\n"), ["3.12"])
+    # ⟳ r6 (codex) High — `steps` IS A VALID JOB ID, which inverted the shallowest-`steps:`
+    # invariant: the job-key line at indent 2 beat the job's real step list at indent 4, so a
+    # matrix entry was credited and `verdict` returned "python pin OK" for a job whose only step
+    # runs `python3 --version`. TWO fixes, because `declared_pins` is called on whole FILES and on
+    # job BLOCKS: job keys are excluded from the depth scan, AND a block is now the job's BODY.
+    case("a job literally named `steps` does not become its own step list",
+         declared_pins("jobs:\n  steps:\n    strategy:\n      matrix:\n        include:\n          - uses: actions/setup-python@v5\n            with:\n              python-version: '3.12'\n    steps:\n      - run: python3 --version\n"), [])
+    case("...and that job reads UNPINNED, which is the consequence that matters",
+         sorted(unpinned_jobs({"w.yml": "jobs:\n  steps:\n    strategy:\n      matrix:\n        include:\n          - uses: actions/setup-python@v5\n            with:\n              python-version: '3.12'\n    steps:\n      - run: python3 --version\n"}, exempt=())), ["w.yml:steps"])
+    case("...while a job named `steps` WITH a real pin still passes",
+         sorted(unpinned_jobs({"w.yml": "jobs:\n  steps:\n    steps:\n"
+                               "      - uses: actions/setup-python@v5\n"
+                               "        with:\n          python-version: '3.12'\n"},
+                              exempt=())), [])
     case("a COMMENT at the dash indent does not end a step",
          declared_pins("    steps:\n      - name: Set up Python\n      # a comment, legal at any indent\n"
                        "        uses: actions/setup-python@v5\n"
