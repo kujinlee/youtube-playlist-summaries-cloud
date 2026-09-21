@@ -10773,6 +10773,19 @@ warning would have crashed if the log file were ever moved, which for a thing wh
 mention something quietly is the worst possible failure. Fixed, and given tests that fail if it
 ever comes back.
 
+Then six rounds of adversarial review happened, and every single one found its problem inside the
+previous round's repair. That is worth saying plainly because it is unusual: not one round found a
+fresh problem in the original work. The thing being repaired each time was the part that reads
+shell commands to decide whether real work happened — a surface with no natural end, since people
+can write the same command in endlessly many ways. Two changes stopped the bleeding. It now
+disbelieves itself when the output says the work did not happen (a plan that refused to advance, a
+push the server rejected, a commit with nothing to commit), and it ignores text that only looks
+like a command — quoted, commented, or sitting inside a block of text being written to a file.
+
+The last check was the one that mattered most: running it over six OTHER work sessions it had never
+seen, 5,287 commands in total. It flagged 456 and got two apparently wrong. Both were examined by
+hand and in both cases the tool was right and the yardstick was wrong.
+
 **Waiting on you:** nothing new from this entry.
 <!--tech-->
 New `scripts/check-closing-table.py`, wired as a fourth observer in
