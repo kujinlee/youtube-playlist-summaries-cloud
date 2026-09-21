@@ -394,5 +394,16 @@
       ]
     ],
     "expect": "pairing: a result BEFORE its tool_use pairs with nothing"
+  },
+  {
+    "name": "`To <url>` counts as push success again, so a rejected push reads as a close",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    (\"a push\",      re.compile(r\"^\\s*\\* \\[new branch\\]\\s\"",
+        "    (\"a push\",      re.compile(r\"^To \\S+$|^\\s*\\* \\[new branch\\]\\s\""
+      ]
+    ],
+    "expect": "veto: a REJECTED push is still vetoed despite its `To <url>` line"
   }
 ]

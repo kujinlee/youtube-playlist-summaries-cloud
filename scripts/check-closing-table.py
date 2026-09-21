@@ -95,7 +95,7 @@ Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CAN
 
 Usage:
     python3 scripts/check-closing-table.py --decide      # reads the Stop-hook payload on stdin
-    python3 scripts/check-closing-table.py --self-test   # 124 cases
+    python3 scripts/check-closing-table.py --self-test   # 127 cases
 """
 from __future__ import annotations
 
@@ -215,7 +215,16 @@ _VETO: tuple[tuple[str, re.Pattern[str]], ...] = (
 # reading real tool_results out of a transcript, not from memory.
 _SUCCESS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("a commit",    re.compile(r"^\[\S+ [0-9a-f]{7,40}\] ", re.M)),
-    ("a push",      re.compile(r"^To \S+$|^\s*\* \[new branch\]\s"
+    # ⛔ `To <url>` IS NOT A SUCCESS SIGNATURE — git prints it on FAILURE too. A rejected push
+    # emits:
+    #     To https://github.com/owner/repo.git
+    #      ! [rejected]        main -> main (fetch first)
+    #     error: failed to push some refs to '...'
+    # With the bare `To` line in this pattern, adjudication saw "success" in that very output and
+    # stood the veto down, so a genuinely rejected push counted as a close. Only a REF UPDATE
+    # (`sha..sha  ref -> ref`) or a new branch says the push landed; the rejected form carries
+    # `!` where the shas would be, so it cannot match either.
+    ("a push",      re.compile(r"^\s*\* \[new branch\]\s"
                                r"|^\s+[0-9a-f]{7,40}\.\.[0-9a-f]{7,40}\s+\S+ -> \S+$", re.M)),
     ("a plan tick", re.compile(r"^ticked step \d+ of \d+ in ", re.M)),
 )
@@ -993,10 +1002,10 @@ def _self_test() -> int:
 
     check("veto: a FAILED push does not cancel a later successful one",
           closing_acts_of(_two_calls("git push", "error: failed to push some refs", True,
-                                     "git push", "To github.com\n  aaa..bbb main -> main")),
+                                     "git push", "To github.com\n   b85f697c..3b5e4a18  main -> main")),
           ["a push"])
     check("veto: unrelated stdout elsewhere in the turn cannot impersonate evidence",
-          closing_acts_of(_two_calls("git push", "To github.com\n  aaa..bbb main -> main", False,
+          closing_acts_of(_two_calls("git push", "To github.com\n   b85f697c..3b5e4a18  main -> main", False,
                                      "cat notes.txt", "Everything up-to-date")),
           ["a push"])
 
@@ -1007,10 +1016,21 @@ def _self_test() -> int:
     check("veto: a stale failure in the same call cannot beat a success signature",
           closing_acts_of(_with_output(
               "cat old-push.log\ngit push",
-              "error: failed to push some refs\nTo github.com:a/b.git\n   aaa..bbb  main -> main")),
+              "error: failed to push some refs\nTo github.com:a/b.git\n   b85f697c..3b5e4a18  main -> main")),
           ["a push"])
     check("veto: without a success signature the failure still vetoes",
           closing_acts_of(_with_output("git push", "error: failed to push some refs")), [])
+    # ⛔ `To <url>` IS PRINTED ON FAILURE TOO. With it in _SUCCESS, adjudication saw
+    # "success" in a REJECTED push's own output and stood the veto down. Found by probing
+    # git's real wording before r6 reported. Only a ref update or a new branch means it landed.
+    check("veto: a REJECTED push is still vetoed despite its `To <url>` line",
+          closing_acts_of(_with_output("git push", "To https://github.com/o/r.git\n ! [rejected]        main -> main (fetch first)\nerror: failed to push some refs to 'https://github.com/o/r.git'")), [])
+    check("veto: a real ref update IS a success signature",
+          closing_acts_of(_with_output("git push",
+              "To https://github.com/o/r.git\n   b85f697c..3b5e4a18  br -> br")), ["a push"])
+    check("veto: a new branch IS a success signature",
+          closing_acts_of(_with_output("git push",
+              "To https://github.com/o/r.git\n * [new branch]        br -> br")), ["a push"])
     # ⛔ This case exists because the success-signature fix made the WHOLE-WINDOW mutation
     # survivable: with every output joined, call 2's success signature rescued the act and the
     # mutation went unnoticed. Here call 2's output is TRUNCATED (empty, as `| tail` leaves it),
@@ -1026,7 +1046,7 @@ def _self_test() -> int:
         return [bash("git push", "d"),
                 {"type": "user", "message": {"content": [
                     {"type": "tool_result", "tool_use_id": "d",
-                     "content": "To github.com\n aaa..bbb main -> main"}]}},
+                     "content": "To github.com\n   b85f697c..3b5e4a18  main -> main"}]}},
                 {"type": "user", "message": {"content": [
                     {"type": "tool_result", "tool_use_id": "d",
                      "content": "Everything up-to-date"}]}}]
@@ -1269,7 +1289,7 @@ def _self_test() -> int:
             globals()["WARN_LOG"] = real_log
 
     declared = re.search(r"--self-test\s+#\s*(\d+)\s+cases", __doc__ or "")
-    total = 124
+    total = 127
     if not declared or int(declared.group(1)) != total:
         failures.append(
             f"declared self-test count {declared.group(1) if declared else 'MISSING'} != {total} "
