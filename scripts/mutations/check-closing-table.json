@@ -312,8 +312,8 @@
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "    return any(label == act and pattern.search(outputs) for label, pattern in _VETO)",
-        "    return any(pattern.search(outputs) for label, pattern in _VETO)"
+        "    if not any(label == act and pattern.search(outputs) for label, pattern in _VETO):",
+        "    if not any(pattern.search(outputs) for label, pattern in _VETO):"
       ]
     ],
     "expect": "veto: another act's failure phrase does not veto this one"
@@ -327,7 +327,7 @@
         "            own_output = \"\\n\".join(outputs.values())"
       ]
     ],
-    "expect": "veto: a FAILED push does not cancel a later successful one"
+    "expect": "veto: a truncated success is saved by PAIRING, not by adjudication"
   },
   {
     "name": "heredoc terminators stop being a queue, so a second heredoc leaks",
@@ -361,5 +361,38 @@
       ]
     ],
     "expect": "heredoc: a left-shift by a NAME is not an opener"
+  },
+  {
+    "name": "the veto stops checking for a success signature, so a stale error wins",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    return not any(label == act and pattern.search(outputs) for label, pattern in _SUCCESS)",
+        "    return True"
+      ]
+    ],
+    "expect": "veto: a stale failure in the same call cannot beat a success signature"
+  },
+  {
+    "name": "pairing stops rejecting duplicate ids, so a second result overwrites a success",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "            if tid in out:\n                ambiguous.add(tid)                # two results for one call\n                continue",
+        "            if False:\n                ambiguous.add(tid)                # two results for one call\n                continue"
+      ]
+    ],
+    "expect": "pairing: a DUPLICATE id is ambiguous, so it vetoes nothing"
+  },
+  {
+    "name": "pairing stops requiring the tool_use to come first",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "            if not isinstance(tid, str) or tid not in seen_uses:",
+        "            if not isinstance(tid, str):"
+      ]
+    ],
+    "expect": "pairing: a result BEFORE its tool_use pairs with nothing"
   }
 ]

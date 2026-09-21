@@ -95,7 +95,7 @@ Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CAN
 
 Usage:
     python3 scripts/check-closing-table.py --decide      # reads the Stop-hook payload on stdin
-    python3 scripts/check-closing-table.py --self-test   # 119 cases
+    python3 scripts/check-closing-table.py --self-test   # 124 cases
 """
 from __future__ import annotations
 
@@ -211,9 +211,38 @@ _VETO: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 
 
+# The signature the act prints when it SUCCEEDS — git's own wording, or our own tool's. Derived by
+# reading real tool_results out of a transcript, not from memory.
+_SUCCESS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("a commit",    re.compile(r"^\[\S+ [0-9a-f]{7,40}\] ", re.M)),
+    ("a push",      re.compile(r"^To \S+$|^\s*\* \[new branch\]\s"
+                               r"|^\s+[0-9a-f]{7,40}\.\.[0-9a-f]{7,40}\s+\S+ -> \S+$", re.M)),
+    ("a plan tick", re.compile(r"^ticked step \d+ of \d+ in ", re.M)),
+)
+
+
 def vetoed(act: str, outputs: str) -> bool:
-    """PURE. True iff `outputs` carries POSITIVE evidence that `act` did not happen."""
-    return any(label == act and pattern.search(outputs) for label, pattern in _VETO)
+    """PURE. True iff `outputs` carries POSITIVE evidence that `act` did not happen.
+
+    ⟳ r5 Codex, High — A FAILURE PHRASE IS NOT EVIDENCE IF THE SUCCESS SIGNATURE IS ALSO THERE.
+    The veto was paired to the CALL (r4's fix) but the act's unit is a SEGMENT, and one call runs
+    many segments. Codex's repro, which is not exotic:
+
+        cat old-push.log       # the log happens to contain `error: failed to push some refs`
+        git push               # and this one succeeds
+
+    One call, one combined output, so the stale error vetoed the real push — a MISS, which is the
+    direction this branch has consistently refused. Output cannot be attributed to a segment, so
+    attribution is not the fix; ADJUDICATION is. If the same output ALSO carries the act's success
+    signature, the failure phrase did not come from the act that matters, and the veto stands down.
+
+    This reuses the effect signatures measured during the redesign — the ones that were rejected as
+    a DETECTOR because `| tail` truncates them. As a tie-breaker their truncation is harmless: no
+    signature simply means the veto behaves as it did before.
+    """
+    if not any(label == act and pattern.search(outputs) for label, pattern in _VETO):
+        return False
+    return not any(label == act and pattern.search(outputs) for label, pattern in _SUCCESS)
 
 
 # ── Heredoc bodies ─────────────────────────────────────────────────────────────────────────────
@@ -525,14 +554,38 @@ def paired_outputs(records: list[dict]) -> dict[str, str]:
     It also closes the sibling hole: with whole-window text, any command printing the literal
     `Everything up-to-date` — a `cat`, a `printf`, this review document itself — cancelled a real
     push. Paired scoping makes the evidence come from the act's own invocation or not at all.
+
+    ⟳ r5 Codex, Medium — PAIRED BY ORDER AND BY UNIQUENESS, not by dictionary overwrite. The first
+    version accepted any result with a matching id, so two things produced MISSES:
+
+      * a result appearing BEFORE its `tool_use` was accepted as that call's output;
+      * a DUPLICATE id let a later result overwrite an earlier one, so a success could be replaced
+        by a veto phrase.
+
+    Neither occurs in the transcripts checked, which is exactly why it must be asserted rather than
+    assumed — an invariant nobody checks is one nobody notices breaking. A violated pairing now
+    yields NO output for that call, which means NO veto, which means no miss.
     """
     out: dict[str, str] = {}
+    seen_uses: set[str] = set()
+    ambiguous: set[str] = set()
     for rec in records:
         for block in _content_blocks(rec):
-            if block.get("type") != "tool_result":
+            kind = block.get("type")
+            if kind == "tool_use":
+                tid = block.get("id")
+                if isinstance(tid, str):
+                    if tid in seen_uses:
+                        ambiguous.add(tid)       # the id is not unique; trust nothing about it
+                    seen_uses.add(tid)
+                continue
+            if kind != "tool_result":
                 continue
             tid = block.get("tool_use_id")
-            if not isinstance(tid, str):
+            if not isinstance(tid, str) or tid not in seen_uses:
+                continue                          # a result before its use pairs with nothing
+            if tid in out:
+                ambiguous.add(tid)                # two results for one call
                 continue
             content = block.get("content")
             if isinstance(content, str):
@@ -540,6 +593,8 @@ def paired_outputs(records: list[dict]) -> dict[str, str]:
             elif isinstance(content, list):
                 out[tid] = "\n".join(x.get("text", "") for x in content
                                      if isinstance(x, dict) and isinstance(x.get("text"), str))
+    for tid in ambiguous:
+        out.pop(tid, None)
     return out
 
 
@@ -945,6 +1000,45 @@ def _self_test() -> int:
                                      "cat notes.txt", "Everything up-to-date")),
           ["a push"])
 
+    # ⛔ r5 Codex, HIGH — the veto was paired to the CALL, but the act's unit is a SEGMENT, and one
+    # call runs many. A stale error in a cat'ed log vetoed a real push in the same call. The fix is
+    # adjudication, not attribution: if the SUCCESS signature is present too, the failure phrase
+    # did not come from the act that matters.
+    check("veto: a stale failure in the same call cannot beat a success signature",
+          closing_acts_of(_with_output(
+              "cat old-push.log\ngit push",
+              "error: failed to push some refs\nTo github.com:a/b.git\n   aaa..bbb  main -> main")),
+          ["a push"])
+    check("veto: without a success signature the failure still vetoes",
+          closing_acts_of(_with_output("git push", "error: failed to push some refs")), [])
+    # ⛔ This case exists because the success-signature fix made the WHOLE-WINDOW mutation
+    # survivable: with every output joined, call 2's success signature rescued the act and the
+    # mutation went unnoticed. Here call 2's output is TRUNCATED (empty, as `| tail` leaves it),
+    # so only paired scoping can save the push — which is exactly the property under test.
+    check("veto: a truncated success is saved by PAIRING, not by adjudication",
+          closing_acts_of(_two_calls("cat old.log", "Everything up-to-date", False,
+                                     "git push", "")),
+          ["a push"])
+
+    # ⛔ r5 Codex, MEDIUM — pairing must respect ORDER and UNIQUENESS, or a veto attaches to the
+    # wrong call. Neither shape occurs in real transcripts, which is why it is asserted.
+    def _dup_id():
+        return [bash("git push", "d"),
+                {"type": "user", "message": {"content": [
+                    {"type": "tool_result", "tool_use_id": "d",
+                     "content": "To github.com\n aaa..bbb main -> main"}]}},
+                {"type": "user", "message": {"content": [
+                    {"type": "tool_result", "tool_use_id": "d",
+                     "content": "Everything up-to-date"}]}}]
+
+    check("pairing: a DUPLICATE id is ambiguous, so it vetoes nothing",
+          closing_acts_of(_dup_id()), ["a push"])
+    check("pairing: a result BEFORE its tool_use pairs with nothing",
+          closing_acts_of([
+              {"type": "user", "message": {"content": [
+                  {"type": "tool_result", "tool_use_id": "z", "content": "Everything up-to-date"}]}},
+              bash("git push", "z")]), ["a push"])
+
     # ⛔ r4 Codex, MEDIUM — two heredoc leaks, both reported a `git push` that was DATA.
     check("heredoc: TWO heredocs in one command both stay blanked",
           closing_acts_of([bash("cat <<A <<B\nx\nA\ngit push\nB")]), [])
@@ -1175,7 +1269,7 @@ def _self_test() -> int:
             globals()["WARN_LOG"] = real_log
 
     declared = re.search(r"--self-test\s+#\s*(\d+)\s+cases", __doc__ or "")
-    total = 119
+    total = 124
     if not declared or int(declared.group(1)) != total:
         failures.append(
             f"declared self-test count {declared.group(1) if declared else 'MISSING'} != {total} "
