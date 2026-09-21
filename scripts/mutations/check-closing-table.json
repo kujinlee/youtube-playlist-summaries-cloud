@@ -488,8 +488,8 @@
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "    return f\"{when}\\t{session or '-'}\\t{'+'.join(acts) or '-'}\\t{turn or '-'}\\n\"",
-        "    return f\"{when}\\t{session}\\t{'+'.join(acts) or '-'}\\t{turn or '-'}\\n\""
+        "    \"\"\"\n    return f\"{when}\\t{session or '-'}\\t{'+'.join(acts) or '-'}\\t{turn or '-'}\\n\"",
+        "    \"\"\"\n    return f\"{when}\\t{session}\\t{'+'.join(acts) or '-'}\\t{turn or '-'}\\n\""
       ]
     ],
     "expect": "log: an empty session degrades to '-' rather than an empty field"
