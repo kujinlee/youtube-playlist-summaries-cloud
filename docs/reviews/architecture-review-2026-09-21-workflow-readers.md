@@ -245,11 +245,13 @@ pinned, and given the same reason for.
 |---|---|---|
 | Name | `scripts/workflow_structure.py` | Underscored = importable library (six exist against 57 hyphenated executables). Named for what it **does**, **not** `workflow_yaml` — it is not a YAML parser and must not claim to be. Verified free: no `scripts/workflow*` exists |
 | Role | **Peer, never a gate** | `page_markup.py`'s rule, `CONTEXT.md:108-113`. A reader checks nothing |
-| Mutation entries | `check-python-pin.py` **39 → 27**, new key `workflow_structure.py` **= 12** | ⚠ **CORRECTED from 39 → 31 / = 8 by round 1 (both halves, Blocking).** Entries **#26–#37**: ten inside `_steps`/`_structural`/`Step`, plus `_STEPS_KEY` (`:295`) and `_BLOCK_SCALAR` (`:298`), which move because those functions are their only consumers. The sum is preserved at 39 — a **TRANSFER, not a ratchet fall**. The wrong numbers would have produced **two simultaneous drift failures** in `check-plan-code.py:1212-1218`, which compares declared against actual by equality |
+| Mutation entries | `check-python-pin.py` **39 → 27**, new key `workflow_structure.py` **= 12** | ⚠ **CORRECTED from 39 → 31 / = 8 by round 1 (both halves, Blocking).** ⚠ **Identified by ANCHOR LINE, not by index — r3 High.** The first version said *"#26–#37"*, which is **0-based**; `#N` in this repo reads as an ordinal, so the natural 1-based reading picks the wrong twelve — dragging a `declared_pins` anchor into a library that has no `declared_pins` and leaving a `_steps` anchor in a file that no longer has `_steps`. Two unbindable anchors, i.e. verbatim the Blocking this number already caused once. **Indices shift when anything is inserted; line anchors do not.** The twelve: `:232`, `:244`, `:245`, `:249`, `:254`, `:260`, `:263`, `:264`, `:278`, `:295`, `:298`, `:349` — ten inside `_steps`/`_structural`/`Step`, plus `_STEPS_KEY` (`:295`) and `_BLOCK_SCALAR` (`:298`), which move because those functions are their only consumers. No entry straddles the boundary. The sum is preserved at 39 — a **TRANSFER, not a ratchet fall**. The wrong numbers would have produced **two simultaneous drift failures** in `check-plan-code.py:1212-1218`, which compares declared against actual by equality |
 | **Self-test cases** | The 12 killing cases move too; `check-python-pin.py`'s declared count falls from **84** | ⚠ **Missing from the first draft entirely (Claude H2).** `check-plan-code.py:500` runs **only the mutated file's own suite**, and `expect` is matched by exact equality — so a mutation whose file becomes the library is unattributable unless the library has its own `--self-test` carrying the named case |
 | Declared-count bookkeeping | Re-declare in `check-python-pin.py`'s docstring; add the library to `check-selftest-counts.py`'s `POPULATION` | `check-python-pin.py` is already pinned there, so a stale count fails. ⚠ **Bare names in `POPULATION`, full paths in `EXPECTED_MUTATIONS`** — a trap that file records at `:95-97` |
 | Discovery | Add to the `EXPECTED_MUTATIONS` self-test case at `check-plan-code.py:2687` | ⚠ **The first draft named the wrong mechanism (Claude M2).** That list is not a "self-tested-non-guard list" — it asserts `sorted(EXPECTED_MUTATIONS)`, and the reason to join it is that the library **ships a manifest**. The self-tested-non-guard population is *computed*, not listed (`check-ratchet-contract.py:402-409`), so the library joins it automatically the moment it has a `--self-test`, and with a manifest it correctly stays out of `WIDENED_MANIFEST_DEBT` |
 | **Consumer coverage** | `check-ratchet-contract.py` needs its **own** new self-test cases **and** mutation entries for the wiring — *"`ci.yml` prose no longer satisfies R3"* and the pre-join masking path | ⚠ **Round 2 High, and it is this project's most-repeated lesson.** Its manifest holds **10** entries, none about reading `ci.yml`, and its suite has no case for a comment or block scalar there — so **an implementation could forget the mask entirely and keep every suite green.** Library tests prove the library works; they prove nothing about whether the caller called it. *Unit coverage does not compose — mutate the CALL SITE* |
+| **A test seam must be built first** | `check-ratchet-contract.py`'s blob construction has to become a pure, suite-drivable function before the row above can be satisfied at all | ⚠ **r3 High, and it makes the row above unwritable as stated.** The mask must live in `main()` (`:868-885`), which `--self-test` returns before ever reaching (`:832-833`) — so a `CALLER_CASES` case cannot observe it and a mutation anchored there **survives**, which `--mutate .` reports as failure. Measured: all ten existing entries anchor in pure functions or constants, none in `main()`; across the tree, every file carrying a `main()`-anchored mutation has a suite that calls `main()` in-process, and this one cannot (`ROOT` is read at `:40`, `:835`, `:851`). The only way to make a case flip is to mask the **joined** blob — the trap row below, which would strip 163 of 264 lines from `check-schema-gates.sh` alone |
+| **A third guard is affected** | `check-fixture-variation.py` goes red on day one, and the public/private naming of the extracted functions decides whether that is a red or a silent hole | ⚠ **r3 High, named by no earlier round.** It runs unconditionally (`ci.yml:333`) and derives its population from disk — any `scripts/*.py` with a `--self-test`, which the library must have. Arrival is a finding, exit 1, until pinned in `EXAMINED_KEYS`. ⭐ **And `analyse()` skips `_`-prefixed functions**, so keeping the names `_structural`/`_steps` pins the library with an **empty key set** — a guard reporting OK over the file that now owns this repo's most defect-prone reader. Renaming them public yields real findings the library's suite must answer. **That is a decision, and it is unbudgeted either way** |
 | Implementation trap | Mask `ci_path.read_text()` **before** the join, never the joined blob | `blob_for` (`check-ratchet-contract.py:881-885`) joins `ci.yml` with 81 shell, hook and Python files. `_structural` drops every line whose first non-space character is `#`, so masking the blob would strip comments from all 81 and silently change R3 across the whole non-workflow corpus |
 
 ### What this does NOT do — stated, not implied
@@ -273,18 +275,30 @@ pinned, and given the same reason for.
   which is the one thing `docs/dev-process.md` says a Phase 6 must not do: *agent output is a lead,
   not a finding.* Round 2 refuted it in one command, and the coordinator then re-derived it:
 
-  ```
-  steps with BOTH an if: and a guard invocation: 2
-    line 447: if=["if: github.event_name == 'pull_request'"]  guards=['check-dashboard-entry.py']
-    line 472: if=["if: github.event_name == 'pull_request'"]  guards=['check-review-recorded.py']
-  ```
+  *(summary of a measurement, not a capture)* — two steps in `ci.yml` carry both an `if:` and a
+  guard invocation: `check-dashboard-entry.py` (step at `:447`, `if:` at `:448`, invocation at
+  `:453`) and `check-review-recorded.py` (step at `:472`, `if:` at `:473`, invocation at `:478`),
+  both `if: github.event_name == 'pull_request'`.
 
-  ⭐ **The refutation improves #156 rather than merely correcting it.** *"Reject an invocation inside
-  a conditional step"* would **red-line two guards that genuinely run** — and both are PR-only
-  gates, the kind whose absence is hardest to notice. The real distinction is between a condition
-  that is **statically false** (`if: false` — never executes) and one that is **event-scoped**
-  (`if: github.event_name == 'pull_request'` — executes, on some events). Only the first is "not a
-  caller"; treating the second the same way trades a fail-open for a fail-closed on live gates.
+  ⛔⛔ **AND THE FIRST REPAIR OF THIS PARAGRAPH MADE THE SAME MISTAKE AGAIN, one round later, inside
+  the paragraph whose subject is that mistake.** It argued that rejecting conditional-step
+  invocations *"would red-line two guards that genuinely run"*. **False, and never run.** Both guards
+  have a **second, unconditional** invocation in the same file — `check-review-recorded.py` at
+  `ci.yml:162` and `check-dashboard-entry.py` at `:411`, each a `--self-test` step carrying no
+  `if:` — and `invocation_re` matches those. Round 3 excised both conditional steps and re-ran R3:
+  **no violation, for either.** The measured cost of the simpler rule is **0 guards**, not two.
+
+  ⭐ **The distinction still stands, but on its own merits and with no cost figure attached:** a
+  **statically false** condition (`if: false`) names a step that never executes, so it is genuinely
+  not a caller; an **event-scoped** one (`if: github.event_name == …`) names a step that does
+  execute, on some events. That argument needs no arithmetic, which is exactly why the arithmetic
+  should not have been invented for it.
+
+  ⚠ **Twice now, in this document, a plausible inference has been stated as a measurement** — once
+  taken from a reviewer, once my own. Both were caught by the *next* round rather than by the
+  author. The durable lesson is not "verify agent output": it is that **a paragraph mixing what was
+  measured with what follows from it hides the inference from its own writer**, which is why the
+  measurement above is now labelled as a summary and the inference is in a separate sentence.
 
   ⚠ **The sharper statement of the limit, from round 2:** promoting a structure reader into R3 does
   not answer *"does this guard execute?"* — it answers *"does this text survive workflow-content
