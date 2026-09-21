@@ -2,7 +2,7 @@
 """Every CI job pins the Python interpreter, the pins agree, and the pin actually took effect.
 
     python3 scripts/check-python-pin.py              # in CI: asserts. locally: advises.
-    python3 scripts/check-python-pin.py --self-test  # 66 cases
+    python3 scripts/check-python-pin.py --self-test  # 68 cases
 
     exit 0 = pinned, agreeing, and (in CI) in effect   exit 1 = a real disagreement
     exit 2 = CANNOT RUN — no workflow or no pin found, which is never a pass
@@ -122,8 +122,26 @@ def _steps(text: str) -> list[Step]:
     A line scan, not a YAML parse — PyYAML is not installed here and every sibling guard reads
     workflows as text.
     """
+    # ⛔⛔ THE MASK RUNS **HERE**, NOT IN THE CALLER — and putting it in the caller was the fifth
+    # defect on this function, found by Codex r3 against `cfefc377`+`dc4efd1b` with a fixture my
+    # own probe had missed:
+    #
+    #       - name: write fake workflow
+    #         run: |
+    #           - uses: actions/setup-python@v5      <- a DASH LINE inside a block scalar
+    #             with:
+    #               python-version: '9.9'
+    #
+    # `_structural` was applied to each step's body AFTER the split, so it never got the chance:
+    # the split itself saw that dash and manufactured a PHANTOM STEP owning the fake `with:`.
+    # `declared_pins` returned ['9.9'] for a job with no setup-python at all.
+    #
+    # ⭐ THE LAYERING IS THE LESSON. "Which lines are STRUCTURE" is logically prior to "which step
+    # OWNS a line", so the mask belongs to the splitter. Filtering after the split asks the second
+    # question before the first, which is the same ordering error in a new costume — the previous
+    # four all asked "where do I look?" before "what am I looking at?".
     out: list[Step] = []
-    for line in text.split("\n"):
+    for line in _structural(text.split("\n")):
         m = re.match(r"^(\s*)-(\s.*)$", line)
         if m:
             out.append(Step(len(m.group(1)), [" " + m.group(2)]))
@@ -210,8 +228,7 @@ def declared_pins(text: str) -> list[str]:
     next step at the same or shallower indent.
     """
     pins: list[str] = []
-    for raw in _steps(text):
-        step = Step(raw.indent, _structural(raw.body))
+    for step in _steps(text):        # already structural — `_steps` owns the mask
         # ⛔ A STEP IS RECOGNISED BY WHAT IT CONTAINS, NOT BY HOW IT OPENS. See the REDESIGN note
         # in this function's docstring: the previous three versions all asked "does the line that
         # STARTS the step name setup-python?", which is only true when nothing is written before
@@ -557,6 +574,21 @@ def self_test() -> int:
          declared_pins("      - name: docs\n        run: |\n          cat <<'EOF'\n"
                        "          uses: actions/setup-python@v5\n          EOF\n"
                        "        with:\n          python-version: '9.9'\n"), [])
+    # ⛔⛔ CODEX r3's FIXTURE — the FIFTH defect, and the one my own probe missed. A DASH LINE
+    # inside a block scalar manufactured a PHANTOM STEP that owned the fake `with:` beneath it, so
+    # a job with no setup-python anywhere returned a pin. My first repair filtered each step's body
+    # AFTER the split, which never ran: the split had already happened. The mask now lives in
+    # `_steps`, because "which lines are structure" is prior to "which step owns a line".
+    case("a DASH LINE inside a block scalar does not manufacture a step",
+         declared_pins("      - name: write fake workflow\n        run: |\n"
+                       "          - uses: actions/setup-python@v5\n"
+                       "            with:\n              python-version: '9.9'\n"), [])
+    case("...and the job around it reads as UNPINNED, which is the whole point",
+         sorted(unpinned_jobs({"w.yml": "jobs:\n  verify:\n    steps:\n"
+                               "      - name: write fake workflow\n        run: |\n"
+                               "          - uses: actions/setup-python@v5\n"
+                               "            with:\n              python-version: '9.9'\n"},
+                              exempt=())), ["w.yml:verify"])
     case("...nor does one in a FOLDED scalar",
          declared_pins("      - name: docs\n        script: >\n"
                        "          uses: actions/setup-python@v5\n"

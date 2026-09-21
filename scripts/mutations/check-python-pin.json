@@ -121,12 +121,12 @@
     "expect": "...but LOCALLY the same mismatch is ADVISORY and exits 0"
   },
   {
-    "name": "the step's ACTION is no longer checked, so any step's with: block counts as a pin",
+    "name": "the step's ACTION is no longer checked, so ANY step's with: block can declare a pin (re-anchored 2026-09-21: the redesign deleted the opener-match this named)",
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
-        "        m = re.match(r\"^(\\s*)-\\s+uses:\\s*actions/setup-python\", line)\n        if not m:\n            continue",
-        "        m = re.match(r\"^(\\s*)-\\s*\", line)\n        if not m:\n            continue"
+        "r\"^\\s*uses:\\s*actions/setup-python\", ln",
+        "r\"^\\s*uses:\", ln"
       ]
     ],
     "expect": "...nor is one in an UNRELATED action's with: block"
@@ -297,15 +297,15 @@
     "expect": "...and `name:` AFTER `uses:` still works, the shape that always did"
   },
   {
-    "name": "block-scalar content is scanned as structure again, so a heredoc line declares a step (the 4th declared_pins defect)",
+    "name": "the block-scalar mask is removed from the SPLITTER, so a dash line in a heredoc manufactures a phantom step (Codex r3 High)",
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
-        "        step = Step(raw.indent, _structural(raw.body))",
-        "        step = Step(raw.indent, raw.body)"
+        "    for line in _structural(text.split(\"\\n\")):",
+        "    for line in text.split(\"\\n\"):"
       ]
     ],
-    "expect": "setup-python INSIDE a run-block heredoc does not make a step a setup-python step"
+    "expect": "a DASH LINE inside a block scalar does not manufacture a step"
   },
   {
     "name": "the block-scalar opener stops recognising FOLDED scalars, so `>` content is read as structure",
