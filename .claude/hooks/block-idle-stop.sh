@@ -68,6 +68,26 @@ ARGS=(--decide)
 printf '%s' "$INPUT" | python3 "$REPO_ROOT/scripts/check-banner-armed.py" --decide
 BANNER_RC=$?
 
+# ── Fourth question, added 2026-09-20 (user decision) ───────────────────────────────────────
+# Did the previous turn CLOSE A JOB — commit, push, merge, tick — and then report it in prose
+# instead of the CHECK / RESULT table `docs/process-checklists.md` requires?
+#
+# ⟳ MOVED AHEAD OF THE BLOCKING CHECK, r1 Codex (Medium), and the first placement was wrong for a
+# reason worth keeping. It sat after the blocking check, justified as "a blocked stop is an
+# unfinished turn, so no closing table is owed". That argument describes the LIVE turn — and this
+# guard judges the PREVIOUS completed one. Because it holds no journal, a verdict it does not emit
+# is not deferred, it is LOST: the next unblocked stop judges a different turn. So a blocked stop
+# silently swallowed exactly the warnings a mid-plan session most needs.
+#
+# Ordering is free here — unlike the banner observer it reads only the transcript and samples no
+# sentinel — so it runs where it can always be heard.
+#
+# The rule it enforces was written on 2026-09-04 and then went unfollowed for sixteen days,
+# including by the assistant that had just read it. That is the selection-card shape exactly:
+# a rule recalled rather than read. Warn-only, logged, one turn of latency.
+printf '%s' "$INPUT" | python3 "$REPO_ROOT/scripts/check-closing-table.py" --decide
+TABLE_RC=$?
+
 # ⚠ THIS COMMENT DESCRIBES THE BLOCKING CHECK BELOW, not the observer above. The 2026-09-05
 # reorder moved the observer in between and orphaned it; re-attached deliberately.
 #
@@ -120,21 +140,6 @@ fi
 # is the bug, not the fix. Warn-only; it costs no network call on the default branch.
 printf '%s' "$INPUT" | python3 "$REPO_ROOT/scripts/check-ci-watched.py" --decide
 CI_RC=$?
-
-# ── Fourth question, added 2026-09-20 (user decision) ───────────────────────────────────────
-# Did the previous turn CLOSE A JOB — commit, push, merge, tick — and then report it in prose
-# instead of the CHECK / RESULT table `docs/process-checklists.md` requires?
-#
-# ⚠ DELIBERATELY AFTER THE BLOCKING CHECK, and the reason is the opposite of the banner
-# observer's. That one must run FIRST because check-plan-progress UNLINKS the sentinel it needs.
-# This one needs nothing but the transcript, and a BLOCKED stop is a turn that is not finished —
-# no closing table is owed yet, so not running on that path is correct rather than incidental.
-#
-# The rule it enforces was written on 2026-09-04 and then went unfollowed for sixteen days,
-# including by the assistant that had just read it. That is the selection-card shape exactly:
-# a rule recalled rather than read. Warn-only, logged, one turn of latency.
-printf '%s' "$INPUT" | python3 "$REPO_ROOT/scripts/check-closing-table.py" --decide
-TABLE_RC=$?
 
 # Any non-zero from EITHER observer surfaces as exit 1 — Claude Code's non-blocking error, which
 # shows stderr to the human and lets the stop proceed.

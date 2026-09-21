@@ -54,6 +54,15 @@ and reads as covering all of it is a hazard this repo has paid for more than onc
   * **`git commit` mid-job.** A turn that commits and continues next turn looks identical to a turn
     that commits and closes. This is the main false-alarm source, it is why the guard is warn-only,
     and the log is how its rate gets measured rather than guessed.
+  * **THE LAST TURN OF A SESSION IS NEVER JUDGED.** One turn of latency means the final close of a
+    session has no following Stop to judge it. Structural, and the direction is under-firing.
+  * **A CLOSE REACHED BY ANOTHER SPELLING.** `alias g=git; g push`, a wrapper script, or
+    `subprocess.run(["git","push"])` inside a heredoc are all invisible — the trigger reads shell
+    text, not process trees. Likewise a heredoc BODY line beginning `git push` fires falsely.
+  * **AN HTML TABLE.** `<table><tr><th>Check</th>…` is a perfectly readable closing table and is
+    not recognised; only the markdown form is. Deliberate — `process-checklists.md` shows markdown.
+  * **A PARTIALLY-SUCCESSFUL ACT.** `is_error` on the paired result means "no close happened", but
+    a `git push` can update one ref and fail another. That reads here as no close at all.
 
 WHY NOT READ THE CLOSING SENTENCE — backlog #48 already tried
 ---------------------------------------------------------------
@@ -70,16 +79,18 @@ timestamp, backlog #96). So this judges the PREVIOUS completed turn, whose text 
 the next Stop. A warning therefore arrives one turn after the miss. That is a property of the
 transcript, not a choice.
 
-FAILS CLOSED ON ITS OWN BLINDNESS. No readable transcript, or a transcript that parses to zero
-records, is CANNOT RUN — never a quiet pass. ⚠ But a judged turn with NO assistant text at all is
-QUIET and deliberately so: that is a partway stop, which `check-banner-armed.py` owns. Two guards
-warning about one turn is the duplicate-mechanism shape this repo has a script to hunt.
+FAILS CLOSED ON ITS OWN BLINDNESS. No readable transcript, a transcript that parses to zero
+records, or a borrowed turn rule that no longer behaves as borrowed, is CANNOT RUN — never a quiet
+pass. ⟳ r1 Codex (High): a judged turn with NO assistant text at all used to be QUIET, deferred to
+`check-banner-armed.py` as "a partway stop". That was wrong. Its class is *announced N steps,
+stopped at i<N with no plan armed*; a turn that COMPLETED a close and said nothing is this rule's
+subject in its purest form, and deferring made it the one case both guards ignored. It now WARNS.
 
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
 
 Usage:
     python3 scripts/check-closing-table.py --decide      # reads the Stop-hook payload on stdin
-    python3 scripts/check-closing-table.py --self-test   # 37 cases
+    python3 scripts/check-closing-table.py --self-test   # 73 cases
 """
 from __future__ import annotations
 
@@ -100,24 +111,71 @@ CANNOT_RUN = 2
 
 # ── The trigger ────────────────────────────────────────────────────────────────────────────────
 # Each entry is (label, regex). The label is what the warning names, so a reader is told WHICH act
-# closed the job rather than being asked to guess.
+# closed the job rather than being asked to guess. Every pattern is anchored at `^` and matched
+# against ONE COMMAND SEGMENT, never against the whole command string.
 #
-# ⚠ ANCHORED AT A WORD BOUNDARY, NOT A BARE SUBSTRING. `git push` appears inside plenty of strings
-# that never push — the hook's own comments, a grep pattern, this docstring. The boundary does not
-# make that impossible (a heredoc containing the literal command still matches); it makes the
-# common accidental case quiet. The residue is a false WARN, which is the safe direction for a
-# warn-only observer and is recorded in the log where its rate can be counted.
+# ⛔ MATCHING ANYWHERE IN THE COMMAND WAS THE FIRST DESIGN AND IT WAS WRONG. Measured while writing
+# this file, before any reviewer saw it: `grep -n 'git push' file` and `echo 'git push'` both fired,
+# and `git commit --dry-run` counted as a commit. A `grep` for that exact string is something this
+# session runs routinely, so the guard would have nagged about work that never happened — and a
+# warn-only observer that cries wolf is one that gets switched off (backlog #56). Splitting into
+# command segments and anchoring makes the match mean "this segment RUNS git", which is the claim
+# the rule actually rests on.
 CLOSING_ACTS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("a commit",      re.compile(r"(?<![\w-])git\s+commit(?![\w-])")),
-    ("a push",        re.compile(r"(?<![\w-])git\s+push(?![\w-])")),
-    ("a merge",       re.compile(r"(?<![\w-])gh\s+pr\s+merge(?![\w-])")),
-    ("a plan tick",   re.compile(r"begin-plan\.py[^\n|;&]*--tick(?![\w-])")),
+    # `git -C <dir> push` and friends: the global options sit between `git` and the subcommand.
+    ("a commit",      re.compile(r"^git\s+(?:-[A-Za-z]\s+\S+\s+)*commit(?![\w-])")),
+    ("a push",        re.compile(r"^git\s+(?:-[A-Za-z]\s+\S+\s+)*push(?![\w-])")),
+    ("a merge",       re.compile(r"^gh\s+pr\s+merge(?![\w-])")),
+    # ⚠ THE INTERPRETER IS PART OF THE SEGMENT. Anchoring at `^` broke this the moment the trigger
+    # moved to command segments: the real invocation is `python3 scripts/begin-plan.py --tick`, so
+    # the segment starts with `python3`, not with the script. Caught by the suite, not by reading.
+    # `--tick` is required — `--resume` and `--pause` advance nothing and close nothing.
+    ("a plan tick",
+     re.compile(r"^(?:\S*python[\d.]*\s+)?\S*begin-plan\.py(?![\w-]).*(?<![\w-])--tick(?![\w-])")),
 )
+
+# A segment that only REHEARSES or DESCRIBES an act did not perform one.
+# ⟳ r1 Codex, High: `--help` was missing. `git push --help` and `gh pr merge --help` print a manual
+# page and close nothing, and both fired.
+_REHEARSAL = re.compile(r"(?<![\w-])--(?:dry-run|help)(?![\w-])")
+
+# Leading `VAR=value` assignments are part of the invocation, not a different command.
+_ENV_PREFIX = re.compile(r"^(?:[A-Za-z_][A-Za-z_0-9]*=(?:\"[^\"]*\"|'[^']*'|\S*)\s+)+")
+
+# Shell operators that end one command and begin another. A newline counts: a multi-line Bash call
+# is many commands. ⚠ A heredoc BODY is also newline-separated, so a heredoc whose text contains a
+# line beginning `git push` still matches — that bound is named in the docstring and left standing
+# rather than chased with a shell parser this guard has no business containing.
+_SEGMENT_SPLIT = re.compile(r"\n|;|&&|\|\||\||&")
+
+
+def command_segments(command: str) -> list[str]:
+    """PURE. `command` split into individually-runnable segments, env prefixes stripped.
+
+    A segment is what a `^`-anchored pattern is allowed to match, so that "the command mentions
+    git push" and "the command runs git push" stop being the same question.
+    """
+    out: list[str] = []
+    for raw in _SEGMENT_SPLIT.split(command):
+        seg = raw.strip()
+        while True:
+            stripped = _ENV_PREFIX.sub("", seg, count=1)
+            if stripped == seg:
+                break
+            seg = stripped.strip()
+        seg = seg.lstrip("(").lstrip()
+        if seg:
+            out.append(seg)
+    return out
 
 # ── The marker ─────────────────────────────────────────────────────────────────────────────────
 # A markdown table whose header names a check column and a result column, followed by the
 # separator row that makes it a table rather than a line of prose containing two pipes.
-_SEPARATOR = re.compile(r"^\s*\|(?:\s*:?-{2,}:?\s*\|)+\s*$")
+# ⛔ ONE DASH IS ENOUGH, and requiring two was a measured false negative. GitHub-flavoured markdown
+# needs a single `-` per cell, so `|-|-|` renders as a perfectly good table — and the first version
+# of this regex said `-{2,}`, which would have nagged the user for a table they had written
+# correctly. A warn-only observer's false alarms are the thing that gets it switched off.
+_SEPARATOR = re.compile(r"^\s*\|(?:\s*:?-+:?\s*\|)+\s*$")
 _CHECK_CELL = re.compile(r"^\s*\**\s*check(?:s)?\s*\**\s*$", re.I)
 _RESULT_CELL = re.compile(r"^\s*\**\s*result(?:s)?\s*\**\s*$", re.I)
 
@@ -143,7 +201,16 @@ def has_closing_table(text: str) -> bool:
     visually checks for.
     """
     lines = text.split("\n")
+    fenced = False
     for i, line in enumerate(lines):
+        # ⟳ r1 Codex, Medium: a table INSIDE A CODE FENCE satisfied the marker. A closing message
+        # that merely SHOWS an example table — this file's own docstring does — is not a report.
+        # Any fence marker toggles; the info string after it is irrelevant to that.
+        if line.lstrip().startswith("```") or line.lstrip().startswith("~~~"):
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
         cells = _cells(line)
         if not cells or len(cells) < 2:
             continue
@@ -151,7 +218,12 @@ def has_closing_table(text: str) -> bool:
             continue
         if not any(_RESULT_CELL.match(c) for c in cells):
             continue
-        if i + 1 < len(lines) and _SEPARATOR.match(lines[i + 1]):
+        if i + 1 >= len(lines) or not _SEPARATOR.match(lines[i + 1]):
+            continue
+        # ⟳ r1 Codex, Medium: a header plus a separator and NO CLAIM ROWS was accepted. An empty
+        # table reports nothing, and rule 1 of the format is *one row per claim* — zero claims
+        # cannot satisfy it.
+        if i + 2 < len(lines) and _cells(lines[i + 2]):
             return True
     return False
 
@@ -176,6 +248,32 @@ def _load_banner_guard():
             raise ImportError(
                 f"scripts/check-banner-armed.py no longer defines {name} — this guard borrows the "
                 f"turn rule rather than copying it.")
+
+    # ⛔ THE hasattr SWEEP ALONE IS THEATRE — r1 Codex, Medium, and it is right. It catches a
+    # RENAME and is blind to the thing that actually matters: `judged_window` changing from "the
+    # previous completed turn" to "the live turn" would silently change this guard's SUBJECT while
+    # every symbol still resolved. So the borrowed semantics are ASSERTED, not assumed, on a
+    # two-turn fixture whose answer is unambiguous: the judged window must be the FIRST, never the
+    # live one, and a single-window transcript must have no subject at all.
+    probe = [
+        {"type": "user", "message": {"role": "user", "content": "one"}},
+        {"type": "assistant", "message": {"content": [{"type": "text", "text": "a"}]}},
+        {"type": "user", "message": {"role": "user", "content": "two"}},
+        {"type": "assistant", "message": {"content": [{"type": "text", "text": "b"}]}},
+    ]
+    try:
+        wins = mod.windows(probe)
+        judged = mod.judged_window(wins)
+        texts = mod.texts_of(judged.body) if judged is not None else None
+        lone = mod.judged_window(mod.windows(probe[:2]))
+    except Exception as exc:                       # noqa: BLE001 — any failure is CANNOT RUN
+        raise ImportError(f"check-banner-armed.py's turn rule could not be exercised: {exc}")
+    if len(wins) != 2 or texts != ["a"] or lone is not None:
+        raise ImportError(
+            "check-banner-armed.py's turn rule has CHANGED SEMANTICS without changing names: a "
+            f"two-turn probe gave windows={len(wins)}, judged texts={texts!r}, "
+            f"single-window judged={lone!r}; expected 2, ['a'], None. This guard judges the "
+            "PREVIOUS completed turn and cannot borrow a rule that no longer means that.")
     return mod
 
 
@@ -220,9 +318,12 @@ def closing_acts_of(records: list[dict]) -> list[str]:
             command = (block.get("input") or {}).get("command")
             if not isinstance(command, str):
                 continue
-            for label, pattern in CLOSING_ACTS:
-                if pattern.search(command) and label not in found:
-                    found.append(label)
+            for segment in command_segments(command):
+                if _REHEARSAL.search(segment):
+                    continue                      # `--dry-run` performs nothing
+                for label, pattern in CLOSING_ACTS:
+                    if pattern.search(segment) and label not in found:
+                        found.append(label)
     return found
 
 
@@ -249,9 +350,17 @@ def decide(final_text: str | None, acts: list[str]) -> tuple[int, str]:
     if not acts:
         return QUIET, ""
     if final_text is None:
-        # A partway stop. check-banner-armed.py owns that class; two guards warning about one turn
-        # is the duplicate-mechanism shape this repo hunts with a script.
-        return QUIET, ""
+        # ⟳ r1 Codex, High — THIS USED TO RETURN QUIET, and the reasoning was wrong. It deferred to
+        # check-banner-armed.py as "a partway stop". But that guard's class is *announced N steps,
+        # stopped at i<N with no plan armed*; it says nothing about a turn that COMPLETED a
+        # job-closing act and emitted no text at all. That turn has a close and no report, which is
+        # this rule's subject in its purest form — the user is told nothing whatsoever. Deferring
+        # made it the one case both guards ignored.
+        return WARN, (
+            f"CLOSING TABLE MISSING — the previous turn completed {', '.join(acts)} and reported "
+            f"NOTHING: no closing message at all.\n"
+            f"  docs/process-checklists.md -> 'Closing a job: the CHECK / RESULT table'.\n"
+            f"  This is a WARNING, not a block.")
     if has_closing_table(final_text):
         return QUIET, ""
     return WARN, (
@@ -300,7 +409,11 @@ def run_decide(payload: str) -> int:
         data = {}
     session_id = str(data.get("session_id", "") or "")
 
+    # ⟳ r1 Codex, Medium: LOADED ONCE. The second `_load_banner_guard()` call sat outside this
+    # try, so an import or semantic failure there escaped as a traceback and exit 1 — not the
+    # documented CANNOT RUN (2). A guard with two failure sites documents one of them.
     path = data.get("transcript_path")
+    banner = None
     records: list[dict] | None = None
     if isinstance(path, str) and path:
         try:
@@ -308,15 +421,14 @@ def run_decide(payload: str) -> int:
             records = banner._parse_records(Path(path).read_text().splitlines())
         except (OSError, ImportError) as exc:
             print(f"CANNOT RUN: {exc}", file=sys.stderr)
-            records = None
+            banner, records = None, None
 
-    if not records:
+    if banner is None or not records:
         print("CANNOT RUN: the stop-hook payload named no readable transcript, so this check could "
               "not look for a closing table. TREAT THIS AS NOT RUN — do not read the absence of a "
               "warning as 'no table was owed'.", file=sys.stderr)
         return CANNOT_RUN
 
-    banner = _load_banner_guard()
     judged = banner.judged_window(banner.windows(records))
     if judged is None:
         return QUIET            # no subject yet — QUIET, never CANNOT RUN
@@ -326,7 +438,12 @@ def run_decide(payload: str) -> int:
 
     if code == WARN:
         when = _dt.datetime.now().astimezone().strftime("%Y-%m-%dT%H:%M:%S%z")
-        _append_log(log_line(acts, when, session_id))
+        # ⟳ r1 Codex, Low: the message used to PROMISE the warning had been logged while
+        # `_append_log` could return False on OSError and nobody looked. A guard that misreports
+        # its own evidence trail is the shape this repo keeps paying for, one level in.
+        if not _append_log(log_line(acts, when, session_id)):
+            message += (f"\n  ⚠ AND THIS WARNING COULD NOT BE LOGGED — {_log_display()} is not "
+                        f"writable, so it is NOT in the record and cannot be counted later.")
         print(message, file=sys.stderr)
     return code
 
@@ -337,9 +454,29 @@ def _self_test() -> int:
 
     failures: list[str] = []
 
+    def _safe(fn):
+        """Run `fn`, turning any exception into a VALUE.
+
+        ⛔ A raise inside the suite kills it with a traceback and prints no `[FAIL] ` line, so
+        check-plan-code scores the mutation RED-BUT-UNATTRIBUTABLE — noticed, uncreditable.
+        Measured on this file's own manifest twice.
+        """
+        try:
+            return fn()
+        except Exception as exc:                            # noqa: BLE001
+            return f"RAISED {type(exc).__name__}"
+
     def check(label: str, got, want):
+        # ⛔ THE FAILURE LINE IS A CONTRACT, NOT A STYLE CHOICE — r1 Codex, Blocking.
+        # `check-plan-code.run_mutations` attributes a kill by taking lines whose strip() starts
+        # `[FAIL] ` and splitting on the LAST ": got ". The first version of this printer emitted
+        # `  ✗ {label}: got {got!r}, want {want!r}` — a comma, and no marker — so Codex measured
+        # 9 of 10 mutations going RED-BUT-UNATTRIBUTABLE: the suite noticed, and the harness could
+        # not tell which case noticed. That is this project's recorded *a report format is a
+        # CONTRACT* defect, where 12 mutations reported "0 red cases" over a line shape nothing
+        # could parse. Keep this format byte-identical to check-merge-ready.py's.
         if got != want:
-            failures.append(f"{label}: got {got!r}, want {want!r}")
+            failures.append(f"{label}: got {got!r} want {want!r}")
 
     # ---- has_closing_table: the marker ----------------------------------------------------
     good = "| check | result |\n|---|---|\n| a | ✅ |"
@@ -352,6 +489,12 @@ def _self_test() -> int:
           has_closing_table("| CHECK | RESULT |\n|---|---|\n| a | ✅ |"), True)
     check("table: aligned separator",
           has_closing_table("| check | result |\n|:---|---:|\n| a | ✅ |"), True)
+    # ⛔ Measured false negative of the first regex, which demanded two dashes. `|-|-|` is valid
+    # GFM and renders; rejecting it would nag the user for a table they wrote correctly.
+    check("table: single-dash separator is valid markdown",
+          has_closing_table("| check | result |\n|-|-|\n| a | ✅ |"), True)
+    check("table: indented inside a list item",
+          has_closing_table("- done:\n\n  | check | result |\n  |---|---|\n  | a | ✅ |"), True)
     check("table: extra columns",
           has_closing_table("| check | result | note |\n|---|---|---|\n| a | ✅ | b |"), True)
     check("table: preceded by prose",
@@ -359,6 +502,11 @@ def _self_test() -> int:
     # ⛔ The separator is what stops this docstring — and any sentence — passing.
     check("table: header with NO separator row",
           has_closing_table("| check | result |\nnot a table"), False)
+    # ⛔ The case above cannot kill the separator mutation on its own: with no separator AND no
+    # data row, the data-row rule rejects it for a different reason and the mutation survives.
+    # This input has a data row and no separator, so ONLY the separator rule can reject it.
+    check("table: rows with no separator between them are not a table",
+          has_closing_table("| check | result |\n| a | b |\n| c | d |"), False)
     check("table: words in prose only",
           has_closing_table("I ran every check and the result was green."), False)
     check("table: wrong headers",
@@ -368,9 +516,24 @@ def _self_test() -> int:
     check("table: result column but no check column",
           has_closing_table("| item | result |\n|---|---|\n| a | b |"), False)
     check("table: unterminated row", has_closing_table("| check | result\n|---|---|"), False)
+    # ⟳ r1 Codex, Blocking: the mutation for the closing-pipe rule SURVIVED, because the case above
+    # still passes once `endswith` is dropped — `_cells` then chops the final `t` from `result` and
+    # the header stops matching for a DIFFERENT reason. This input dies properly: without the rule,
+    # `| check | result |x` slices to a header that does match.
+    check("table: trailing text after the closing pipe is not a row",
+          has_closing_table("| check | result |x\n|---|---|\n| a | b |"), False)
     check("table: empty text", has_closing_table(""), False)
     check("table: a piped shell line in prose",
           has_closing_table("run `grep -c foo | wc -l` to check the result"), False)
+    # ⟳ r1 Codex, Medium — both measured, both accepted before the fix.
+    check("table: inside a code fence is an EXAMPLE, not a report",
+          has_closing_table("```\n| check | result |\n|---|---|\n| a | b |\n```"), False)
+    check("table: tilde fence too",
+          has_closing_table("~~~\n| check | result |\n|---|---|\n| a | b |\n~~~"), False)
+    check("table: header + separator but NO claim rows reports nothing",
+          has_closing_table("| check | result |\n|---|---|"), False)
+    check("table: a real table AFTER a closed fence still counts",
+          has_closing_table("```\ncode\n```\n\n| check | result |\n|---|---|\n| a | b |"), True)
 
     # ---- closing_acts_of: the trigger -------------------------------------------------------
     def bash(cmd, tid="t1"):
@@ -389,6 +552,13 @@ def _self_test() -> int:
     check("acts: plan tick",
           closing_acts_of([bash("python3 scripts/begin-plan.py --tick")]), ["a plan tick"])
     check("acts: read-only git is not an act", closing_acts_of([bash("git log --oneline")]), [])
+    check("acts: --resume is not a tick",
+          closing_acts_of([bash("python3 scripts/begin-plan.py --resume")]), [])
+    # ⟳ r1 Codex, High: `--help` prints a manual page and closes nothing.
+    check("acts: git push --help closes nothing",
+          closing_acts_of([bash("git push --help")]), [])
+    check("acts: gh pr merge --help closes nothing",
+          closing_acts_of([bash("gh pr merge --help")]), [])
     check("acts: git status is not an act", closing_acts_of([bash("git status --short")]), [])
     check("acts: none", closing_acts_of([bash("ls -la")]), [])
     check("acts: deduped",
@@ -407,6 +577,23 @@ def _self_test() -> int:
                "input": {"command": "git push"}}]}}]), [])
     check("acts: substring is not a match",
           closing_acts_of([bash("git pushover; legit-commit")]), [])
+    # ⛔ These six are the measured false fires of the FIRST design, which matched anywhere in the
+    # command string. `grep -n 'git push'` is a command this session runs routinely.
+    check("acts: echo of the command is not the command",
+          closing_acts_of([bash("echo 'git push'")]), [])
+    check("acts: grep for the command is not the command",
+          closing_acts_of([bash("grep -n 'git push' file")]), [])
+    check("acts: --dry-run rehearses and performs nothing",
+          closing_acts_of([bash("git commit --dry-run")]), [])
+    check("acts: && chain still counts the real act",
+          closing_acts_of([bash("cd /x && git push origin b")]), ["a push"])
+    check("acts: an env prefix is part of the invocation",
+          closing_acts_of([bash("GIT_SSH=x git push")]), ["a push"])
+    check("acts: a git global option before the subcommand",
+          closing_acts_of([bash("git -C /repo push")]), ["a push"])
+    check("segments: splits on newline, ; and &&",
+          command_segments("a\nb; c && d"), ["a", "b", "c", "d"])
+    check("segments: strips an env prefix", command_segments("A=1 B=2 git push"), ["git push"])
     check("acts: prose mentioning a push is not an act",
           closing_acts_of([{"type": "assistant",
                             "message": {"content": [{"type": "text",
@@ -416,8 +603,12 @@ def _self_test() -> int:
     check("decide: no acts -> quiet", decide("anything", [])[0], QUIET)
     check("decide: acts + table -> quiet", decide(good, ["a push"])[0], QUIET)
     check("decide: acts + prose -> warn", decide("All done!", ["a push"])[0], WARN)
-    check("decide: acts + no text at all -> quiet (partway stop is the banner guard's)",
-          decide(None, ["a push"])[0], QUIET)
+    # ⟳ r1 Codex, High: this asserted QUIET and the deferral to the banner guard was wrong.
+    check("decide: acts + NO text at all -> warn (a close with no report at all)",
+          decide(None, ["a push"])[0], WARN)
+    check("decide: the no-report warning says so",
+          "reported\nNOTHING" in decide(None, ["a push"])[1].replace("reported NOTHING", "reported\nNOTHING"),
+          True)
     check("decide: warning names the act", "a push" in decide("All done!", ["a push"])[1], True)
     check("decide: warning states the SHAPE-ONLY bound",
           "SHAPE ONLY" in decide("All done!", ["a push"])[1], True)
@@ -430,10 +621,14 @@ def _self_test() -> int:
         globals()["WARN_LOG"] = ROOT / ".claude/x.log"
         check("log display: inside the repo is relative", _log_display(), ".claude/x.log")
         globals()["WARN_LOG"] = Path("/tmp/elsewhere/x.log")
-        check("log display: outside the repo does not raise", _log_display(),
+        # ⛔ CATCH, DO NOT LET IT CRASH. If the guard raises here the suite dies with a
+        # traceback and prints NO `[FAIL] ` line, so check-plan-code cannot attribute the kill
+        # and the mutation is scored unattributable — red, but useless as evidence. Converting
+        # the exception into a value keeps the report parseable, which is the whole contract.
+        check("log display: outside the repo does not raise", _safe(_log_display),
               "/tmp/elsewhere/x.log")
         check("decide: renders a redirected log without raising",
-              "/tmp/elsewhere/x.log" in decide("All done!", ["a push"])[1], True)
+              _safe(lambda: "/tmp/elsewhere/x.log" in decide("All done!", ["a push"])[1]), True)
     finally:
         globals()["WARN_LOG"] = _real
 
@@ -479,7 +674,8 @@ def _self_test() -> int:
         globals()["WARN_LOG"] = tmp / "warnings.log"
         try:
             check("run: judged turn pushed + prose -> WARN",
-                  run_decide(json.dumps({"transcript_path": str(prose), "session_id": "s"})), WARN)
+                  _safe(lambda: run_decide(json.dumps(
+                      {"transcript_path": str(prose), "session_id": "s"}))), WARN)
             check("run: the warning was logged",
                   (tmp / "warnings.log").exists() and "a push" in (tmp / "warnings.log").read_text(),
                   True)
@@ -505,16 +701,16 @@ def _self_test() -> int:
             globals()["WARN_LOG"] = real_log
 
     declared = re.search(r"--self-test\s+#\s*(\d+)\s+cases", __doc__ or "")
-    total = 37
+    total = 73
     if not declared or int(declared.group(1)) != total:
         failures.append(
             f"declared self-test count {declared.group(1) if declared else 'MISSING'} != {total} "
             f"— the docstring is the pinned declaration read by check-selftest-counts.py")
 
     if failures:
-        print(f"check-closing-table --self-test: {len(failures)} FAILED", file=sys.stderr)
+        print(f"check-closing-table --self-test: {len(failures)} FAILED")
         for f in failures:
-            print(f"  ✗ {f}", file=sys.stderr)
+            print(f"  [FAIL] {f}")
         return 1
     print(f"{total}/{total} passed")
     return 0

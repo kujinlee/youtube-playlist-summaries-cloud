@@ -4,14 +4,25 @@
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "        if i + 1 < len(lines) and _SEPARATOR.match(lines[i + 1]):",
-        "        if True:"
+        "        if i + 1 >= len(lines) or not _SEPARATOR.match(lines[i + 1]):\n            continue",
+        "        if False:\n            continue"
       ]
     ],
-    "expect": "table: header with NO separator row"
+    "expect": "table: rows with no separator between them are not a table"
   },
   {
-    "name": "a table row no longer has to close with a pipe, so a truncated row opens a table",
+    "name": "a separator needs two dashes again, so valid GFM `|-|-|` is rejected",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "_SEPARATOR = re.compile(r\"^\\s*\\|(?:\\s*:?-+:?\\s*\\|)+\\s*$\")",
+        "_SEPARATOR = re.compile(r\"^\\s*\\|(?:\\s*:?-{2,}:?\\s*\\|)+\\s*$\")"
+      ]
+    ],
+    "expect": "table: single-dash separator is valid markdown"
+  },
+  {
+    "name": "a table row no longer has to close with a pipe",
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
@@ -19,18 +30,106 @@
         "    if not s.startswith(\"|\") or len(s) < 3:"
       ]
     ],
-    "expect": "table: unterminated row"
+    "expect": "table: trailing text after the closing pipe is not a row"
   },
   {
-    "name": "the trigger matches a bare substring, so `git pushover` reads as a push",
+    "name": "code fences stop being skipped, so an EXAMPLE table counts as a report",
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "    (\"a push\",        re.compile(r\"(?<![\\w-])git\\s+push(?![\\w-])\")),",
+        "        if fenced:\n            continue",
+        "        if False:\n            continue"
+      ]
+    ],
+    "expect": "table: inside a code fence is an EXAMPLE, not a report"
+  },
+  {
+    "name": "a header and separator with zero claim rows is accepted again",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        if i + 2 < len(lines) and _cells(lines[i + 2]):",
+        "        if True:"
+      ]
+    ],
+    "expect": "table: header + separator but NO claim rows reports nothing"
+  },
+  {
+    "name": "the trigger matches anywhere again, so a grep for the string reads as a push",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    (\"a push\",        re.compile(r\"^git\\s+(?:-[A-Za-z]\\s+\\S+\\s+)*push(?![\\w-])\")),",
         "    (\"a push\",        re.compile(r\"git\\s+push\")),"
       ]
     ],
-    "expect": "acts: substring is not a match"
+    "expect": "acts: grep for the command is not the command"
+  },
+  {
+    "name": "git global options are no longer skipped, so `git -C dir push` is missed",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    (\"a push\",        re.compile(r\"^git\\s+(?:-[A-Za-z]\\s+\\S+\\s+)*push(?![\\w-])\")),",
+        "    (\"a push\",        re.compile(r\"^git\\s+push(?![\\w-])\")),"
+      ]
+    ],
+    "expect": "acts: a git global option before the subcommand"
+  },
+  {
+    "name": "a rehearsal counts as an act, so --dry-run closes a job",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "_REHEARSAL = re.compile(r\"(?<![\\w-])--(?:dry-run|help)(?![\\w-])\")",
+        "_REHEARSAL = re.compile(r\"(?!x)x\")"
+      ]
+    ],
+    "expect": "acts: --dry-run rehearses and performs nothing"
+  },
+  {
+    "name": "--help stops being a rehearsal, so a manual page closes a job",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "_REHEARSAL = re.compile(r\"(?<![\\w-])--(?:dry-run|help)(?![\\w-])\")",
+        "_REHEARSAL = re.compile(r\"(?<![\\w-])--(?:dry-run)(?![\\w-])\")"
+      ]
+    ],
+    "expect": "acts: git push --help closes nothing"
+  },
+  {
+    "name": "the command is no longer split into segments, so a chain hides the real act",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "_SEGMENT_SPLIT = re.compile(r\"\\n|;|&&|\\|\\||\\||&\")",
+        "_SEGMENT_SPLIT = re.compile(r\"\\n\")"
+      ]
+    ],
+    "expect": "acts: && chain still counts the real act"
+  },
+  {
+    "name": "an env assignment prefix is no longer stripped, so the invocation is missed",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "            stripped = _ENV_PREFIX.sub(\"\", seg, count=1)",
+        "            stripped = seg"
+      ]
+    ],
+    "expect": "acts: an env prefix is part of the invocation"
+  },
+  {
+    "name": "the interpreter prefix is dropped, so the real begin-plan invocation is missed",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "     re.compile(r\"^(?:\\S*python[\\d.]*\\s+)?\\S*begin-plan\\.py(?![\\w-]).*(?<![\\w-])--tick(?![\\w-])\")),",
+        "     re.compile(r\"^\\S*begin-plan\\.py(?![\\w-]).*(?<![\\w-])--tick(?![\\w-])\")),"
+      ]
+    ],
+    "expect": "acts: plan tick"
   },
   {
     "name": "a refused push counts as work, so a blocked act closes a job",
@@ -55,15 +154,15 @@
     "expect": "decide: acts + table -> quiet"
   },
   {
-    "name": "a partway stop is claimed by this guard too, duplicating the banner guard",
+    "name": "a close with NO report at all goes quiet again — the r1 High, restored",
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "    if final_text is None:\n        # A partway stop.",
-        "    if False:\n        # A partway stop."
+        "        return WARN, (\n            f\"CLOSING TABLE MISSING — the previous turn completed {', '.join(acts)} and reported \"",
+        "        return QUIET, (\n            f\"CLOSING TABLE MISSING — the previous turn completed {', '.join(acts)} and reported \""
       ]
     ],
-    "expect": "decide: acts + no text at all -> quiet (partway stop is the banner guard's)"
+    "expect": "decide: acts + NO text at all -> warn (a close with no report at all)"
   },
   {
     "name": "the log path is rendered with relative_to again, so a redirected log raises",
