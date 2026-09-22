@@ -65,6 +65,8 @@ must stay in sync — updated proactively, without being asked.
 - A roadmap step is not done until its checkbox is ticked **and** its task entry is `completed`.
 - A **discovered** step (a review finding that becomes work, a blocker, a follow-up) goes into the
   roadmap **and** the task list in the same turn — a discovery living only in chat is lost at `/compact`.
+  ⤳ If you are about to WORK it now rather than file it, it is a **side job** and gets a name first
+  (slug + branch) — sized, switched and announced per the checklists doc; `unheralded` is its guard.
 - At a **milestone boundary**: update the roadmap status line, tick the step, close the task, record
   the outcome in memory.
 - **At session start, reconcile all three against git.** The checkboxes are a claim; `git` is the truth.

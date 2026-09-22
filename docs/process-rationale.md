@@ -649,3 +649,58 @@ the wrong subject. ⚠ Scope is the **Agent tool only**. The sibling line about 
 deep-research audits to the same dead end and the user did **not** rule on it, so it still needs
 asking — widening a ruling to a case it did not cover is the recorded *a framing widened to fit is
 no longer a claim*.
+
+---
+
+## The side job with no name
+
+The rule is in [`process-checklists.md`](process-checklists.md) → *A SIDE JOB gets a name before it
+gets work*. This is what it cost, because the rule reads as obvious and the incident explains why it
+still had to be written.
+
+**2026-09-22, two threads, one session.** Thread A was `banner-blind-spot` — a new warning class in
+`check-banner-armed.py`, four review rounds deep. Mid-session the user reported that the Stop hook
+was emitting an error on every stop. That became thread B: a real defect across three guards
+(`check-ci-watched.py`, `check-plan-progress.py`, `begin-plan.py`), about forty tool calls, three
+suites and nine mutations.
+
+**Thread B ran to completion with no plan armed, no branch named in any message, and no banner
+emitted.** The user's report is the measurement:
+
+> *"you don't show what you are doing (banner or something similar) and I don't know what thread or
+> work is described in your log lines — there are original work and stop-hook work"*
+
+⭐ **THE CAUSAL CHAIN IS THE FINDING, because "remember to emit banners" would not have broken it.**
+`CLAUDE.md` says to derive the thread name from the plan slug in `.claude/executing-plan`,
+specifically so two banners in one thread cannot disagree about what the thread is called. Thread A
+owned that sentinel and was paused. Thread B never armed one. So there was **no slug to derive a
+name from** — and the response to that was to stop bannering entirely rather than to notice the
+gap. The convention had a precondition nobody had named, and when the precondition failed the
+convention failed silently.
+
+⚠ **AND THE SAME SESSION HAD ALREADY DONE IT ONCE**, at smaller scale: an audit of an
+unexplained instruction (→ *The instruction with no author*) ran unnamed inside thread A. That one
+was small enough not to confuse anyone, which is exactly why it taught nothing at the time.
+
+**Why the rule is a SIZE question rather than "always name it".** Naming has a real cost — a plan
+file, a branch, a `--pause`/`--resume` round trip on the single sentinel — and a rule that charges
+it for re-reading a file is a rule people route around. The bar (about five tool calls, or a
+tracked file) is set where the cost stops mattering, and it is deliberately the same bar
+`dev-process.md` Phase 5 already uses for branch + PR: *touching a tracked file* is what makes a
+change worth a name, whoever asked for it.
+
+⛔ **THE CONSTRAINT UNDERNEATH, stated because routing around it is what went wrong.**
+`.claude/executing-plan` supervises exactly ONE plan. Two live threads cannot both be armed, so
+every side job over the bar costs a pause/arm/finish/re-arm cycle on a shared file. Backlog #100
+already records that file as a structured state file with no schema and two de-facto owners; this
+is a different limitation of the same file, and unlike #100's three instances it is not a defect —
+it is a design that has only ever had to supervise one thread. Whether it should hold a stack is a
+real question and is NOT decided here; what is decided is that the swap must be **announced**
+(`⤳` / `↳`) and the pause reason must name the plan file to return to, because the next turn will
+not remember it.
+
+⭐ **The mechanical half already exists and shipped alongside this.** A turn that does substantial
+work with nothing armed and no banner is `check-banner-armed.py`'s `unheralded` class — built in
+thread A, in the same session, for exactly this shape. It would have flagged thread B; it was not
+merged yet. That is the ordinary way round here: the guard gets built because the failure happened,
+and the prose exists to say which failure.
