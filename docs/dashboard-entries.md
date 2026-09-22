@@ -11225,3 +11225,48 @@ found by reviewing the architecture review that had just been written about this
 was, in turn, about the guard repeatedly mistaking text for configuration. The fix is deliberately
 sequenced ahead of the larger change that review recommended, because that change would have copied
 this reader into two more guards.
+
+## 2026-09-22
+Two of the little checks that run when I stop working had started complaining every single time,
+and you told me so.
+
+Neither was complaining about anything real. The first watches whether a code-quality run is going
+unwatched, and to do that it asks GitHub about the branch's pull request. When a branch has no
+pull request yet — which is most of the time a piece of work is being written — that question
+fails, and the check could not tell the difference between "there is no pull request to ask about"
+and "I could not reach GitHub". So it reported the alarming one, on every stop, for days at a time.
+It now separates the two: nothing to watch is silent, and genuinely unreachable is still loud,
+which is the direction that matters.
+
+The second announces when a job has been deliberately parked — waiting on something long-running —
+so that a parked job cannot quietly become a forgotten one. It was announcing that on every stop
+too, twelve lines at a time, which is how a useful signal turns into wallpaper. The thing actually
+worth knowing is narrower: not *that* a job is parked, but that a parked job has quietly started
+moving again. It now records how much was left when the job was parked, so it can tell those apart,
+and says nothing at all while the job really is just waiting.
+
+There is a third case it refuses to be clever about. If a job was parked by hand, there is no
+record of how much was left, and it cannot tell whether work resumed — so it says exactly that, in
+one line. Staying silent there would rebuild the original problem in a quieter form.
+
+**Waiting on you:** nothing yet — this is on a branch and will come to you as a pull request.
+<!--tech-->
+Branch `quiet-stop-observers-wt`, commit `5018606b`, based on `b7ec0c42`.
+
+`check-ci-watched.py`: `gh pr view` EXITS 1 when a branch has no PR, and `_run` collapses every
+non-zero exit to `None`, so `rows=None` → `CANNOT RUN`. ⭐ The file already had a branch for this
+(`raw in ("", "null")`, commented *"or no PR — nothing to watch either way"*) but `gh` never
+returns empty output for that case, so the benign path was unreachable — the recorded *proving a
+negative by interception*. New `_pr_checks_raw()` returns `(stdout|None, no_pr)`; a gh REWORD falls
+back to CANNOT RUN, noisy rather than silent.
+
+`check-plan-progress.py` + `begin-plan.py`: `--pause` records `paused_unticked:`; `--resume` clears
+both fields (one writer with no remover is backlog #99's own shape). Three outcomes — ticked-since
+→ WARN; unchanged → ALLOW silent; no stamp → WARN one line, because "cannot tell" must not read as
+"nothing happened".
+
+Suites 23→28, 35→42, 50→53. Mutations +9; declared sum 881→890. Sweep 890/890 killed, 890
+attributed, 0 survivors. ⚠ Three bugs found in my own manifest pre-check while doing this — an
+f-string case name it could not see, `expect` iterated as a string yielding one "orphan" per
+letter, and a duplicate rule stricter than the harness's. It now derives live case names by RUNNING
+each suite and reports CANNOT RUN for the 45 of 52 files whose suites print only a summary.
