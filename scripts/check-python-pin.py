@@ -2,7 +2,7 @@
 """Every CI job pins the Python interpreter, the pins agree, and the pin actually took effect.
 
     python3 scripts/check-python-pin.py              # in CI: asserts. locally: advises.
-    python3 scripts/check-python-pin.py --self-test  # 100 cases
+    python3 scripts/check-python-pin.py --self-test  # 104 cases
 
     exit 0 = pinned, agreeing, and (in CI) in effect   exit 1 = a real disagreement
     exit 2 = CANNOT RUN — no workflow or no pin found, which is never a pass
@@ -360,6 +360,32 @@ _BLOCK_SCALAR = re.compile(
 # bare `: |`, with no key before the colon at all; `\S.*?:` cannot match that. Measured: the
 # explicit key stayed a FALSE GREEN through the first draft of this very refusal.
 _LOOSE_SCALAR = re.compile(r"^\s*(?:-\s+)*[^\n]*?:\s*(?:[&!]\S+\s*)*[|>][-+0-9]*\s*(#.*)?$")
+# ⛔⛔ r5 BLOCKING — AND IT WAS AIMED AT THE REFUSAL ITSELF. Both patterns above require a
+# COLON on the indicator's own line. YAML does not: a block scalar header is a NODE, and a
+# node may begin on the line AFTER its key —
+#
+#       - name: write a fake workflow
+#         run:
+#           |                      <- the indicator, with no key beside it
+#           uses: actions/setup-python@v5
+#           with:
+#             python-version: '9.9'
+#
+# Measured at `61514c48`: libyaml reports two steps, `run` a STRING, and no setup-python step
+# anywhere — while the guard returned `declared_pins ['9.9']`, ZERO refusals, and
+# `rc 0 python pin OK`. Verbatim the defect backlog #137 and PR #317 exist to end, arriving
+# through the one door the refusal did not watch.
+#
+# ⭐ THE PART WORTH KEEPING: the refusal was added FOR the explicit-key form, and `? run` /
+# `: |` IS refused. Write the same thing as `? run` / `:` / `|` and it was not. The repair had
+# reached one SPELLING of the boundary case, not the boundary — which is this branch's own
+# recurring shape, one level out. Twelve members of the family, all valid YAML, all silent.
+#
+# ⚠ Fixed HERE, in the refusal, rather than in `_BLOCK_SCALAR`: a missed refusal is visible by
+# construction (it refuses, loudly), whereas a thirteenth alternative in the classifier would
+# be r3's rejected answer. A bare indicator cannot be told from a real one line-locally, so
+# the guard declines to guess.
+_BARE_INDICATOR = re.compile(r"^\s*(?:-\s+)*(?:[&!]\S+\s*)*[|>][-+0-9]*\s*(#.*)?$")
 
 
 def _structural(body: list[str]) -> list[str]:
@@ -512,9 +538,25 @@ def unreadable_scalar_openers(text: str) -> list[str]:
     ⚠ ITS BOUND, stated rather than discovered later: it is line-local too, so a block indicator
     inside a quoted string on one line could trip it. That direction is SAFE — it refuses, and a
     refusal is visible — which is the whole reason this shape of check is allowed to be crude.
+
+    ⚠⚠ IT SPEAKS FOR A WHOLE FILE, AND ITS CONSUMER MAY NOT — r5 F3. `verdict` calls this per FILE,
+    while `unpinned_jobs` -> `job_blocks` -> `declared_pins` reads a SLICE with the job's key line
+    removed. A scalar opened ON a job key line is therefore masked when the refusal looks and absent
+    when the pin is read. No schema-valid instance could be constructed (a job key that opens a
+    scalar makes the job a STRING, which GitHub rejects), so this is a recorded bound rather than a
+    live defect — but the structural point is the durable one: **a refusal computed at one
+    granularity does not protect a read performed at another.** A caller that slices must call this
+    on the same text it slices.
+
+    ⛔ AND THE PREDICATE IS ONLY HALF THE MECHANISM — r5 F4. The safety is not in this function; it
+    is in the CALLER refusing before it derives anything from the mask. A consumer that imports
+    `_structural` without this obligation inherits the whole defect class. Stated here because
+    backlog #155 moves these functions into a shared library, and a rule that lives only in
+    `verdict`'s comments does not travel with the code.
     """
     return [ln for ln in _structural(text.split("\n"))
-            if _LOOSE_SCALAR.match(ln) and not _BLOCK_SCALAR.match(ln)]
+            if (_LOOSE_SCALAR.match(ln) or _BARE_INDICATOR.match(ln))
+            and not _BLOCK_SCALAR.match(ln)]
 
 
 def unreadable_jobs(text: str) -> int:
@@ -1057,6 +1099,30 @@ def self_test() -> int:
     # key puts the key (`? run`) and the indicator (`: |`) on DIFFERENT LINES, so a line-local
     # matcher cannot see the key it needs. This is PR #329's conclusion demonstrated: the answer is
     # not a further alternative, it is to stop guessing.
+    # ⛔⛔ r5 BLOCKING — A KEYLESS INDICATOR. A block scalar header is a NODE and may begin on the
+    # line AFTER its key, so both patterns' same-line colon requirement missed an entire family of
+    # twelve valid spellings. Measured before the fix: `rc 0 python pin OK` over a job libyaml
+    # reports as having NO setup-python step at all. ⭐ The refusal was added FOR the explicit key,
+    # and `? run` / `: |` was refused while `? run` / `:` / `|` was not — one spelling of the
+    # boundary, not the boundary.
+    case("a KEYLESS indicator on its own line is refused, not read as structure",
+         unreadable_scalar_openers("jobs:\n  build:\n    steps:\n      - name: fake\n"
+                                   "        run:\n          |\n"
+                                   "          uses: actions/setup-python@v5\n") != [], True)
+    case("...and the same shape written as an explicit key with a bare value node",
+         unreadable_scalar_openers("jobs:\n  build:\n    steps:\n      - ? run\n        :\n"
+                                   "          |\n"
+                                   "          uses: actions/setup-python@v5\n") != [], True)
+    case("...so the whole verdict is CANNOT RUN rather than `python pin OK`",
+         verdict({"ci.yml": "jobs:\n  build:\n    steps:\n      - name: fake\n        run:\n"
+                            "          |\n          uses: actions/setup-python@v5\n"
+                            "          with:\n            python-version: '9.9'\n"
+                            "      - name: real\n        run: python3 --version\n"},
+                 "9.9", True, None, _EXE, _LOC)[0], 2)
+    # ⚠ AND IT MUST NOT OVER-FIRE: measured over all 18 YAML files in this repository (7,623
+    # structural lines), the widened refusal adds ZERO firings — it removed three, because the
+    # Playwright snapshots it used to trip on are now classified.
+    case("...while a real workflow still triggers no refusal", unreadable_scalar_openers(PINNED), [])
     case("an EXPLICIT-KEY scalar cannot be classified, so it is REFUSED rather than guessed",
          unreadable_scalar_openers("jobs:\n  verify:\n    steps:\n      - ? run\n        : |\n"
                                    "            uses: actions/setup-python@v5\n") != [], True)

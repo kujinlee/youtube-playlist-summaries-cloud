@@ -1962,7 +1962,12 @@ anchor's whole subject: the loop decided its own next step from recorded evidenc
       their killing cases** transferred; `EXPECTED_MUTATIONS` 39 → 27 + 12 (a transfer, not a fall).
 - [ ] **#156 — the residue #155 leaves.** `if: false` is structure, so masking cannot see it; and R3
       reads `ci.yml` alone while both siblings read `*.yml` ∪ `*.yaml`.
-- [ ] **#157 — a soundness check for pins and steps.** The mechanism exists in `check-merge-ready.py`.
+- [ ] **backlog #157 — a soundness check for pins and steps.** The mechanism exists in `check-merge-ready.py`. ⭐ Partly answered already: backlog #154 r3–r5 built one for block-scalar
+      openers (`unreadable_scalar_openers`), so this row is now about the REST of the guard.
+- [ ] **backlog #160 — a multi-line QUOTED scalar is still read as structure.** Filed by #154's
+      round 5 with a measured fix deliberately NOT landed: it would be the fourteenth line-local
+      rule, and choosing that over parsing is the decision #153 asked to be made once. Blocked on
+      #155's parse-or-refuse answer; reopen on its own terms if #155 is deferred.
 - [ ] **#158 — the flow-mapping bound.** Read `{k: v}` or refuse on it — a decision, not a regex.
 - [ ] **#159 — found by DOING it, during this review's own repair.** `check-docs.py` verifies a
       backlog row's column COUNT, so content in the wrong column passes identically to content in

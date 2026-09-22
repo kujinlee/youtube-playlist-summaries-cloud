@@ -395,7 +395,7 @@
   },
   {
     "file": "scripts/check-python-pin.py",
-    "name": "the unreadable-scalar refusal is demoted below the `pins` computation, so an unreadable scalar quoting a different version reports a version DISAGREEMENT that does not exist (backlog #154 r4 High)",
+    "name": "the unreadable-scalar refusal is made CONDITIONAL on the pins agreeing, which is what demoting it below `pins` amounts to — an unreadable scalar quoting a different version then reports a version DISAGREEMENT that does not exist (backlog #154 r4 High; ⚠ r5 F5: a PROXY for the move, not the move — a textual reordering is not expressible as an anchor edit, and this reproduces its effect)",
     "expect": "an unreadable scalar refuses even when it makes the pins DISAGREE",
     "edits": [
       [
@@ -528,5 +528,20 @@
       ]
     ],
     "expect": "...and that job reads UNPINNED, which is the consequence that matters"
+  },
+  {
+    "file": "scripts/check-python-pin.py",
+    "name": "the refusal stops looking for a KEYLESS indicator, so a block scalar whose header sits on the line after its key is read as structure again — twelve valid spellings, all silent (backlog #154 r5 Blocking)",
+    "expect": [
+      "a KEYLESS indicator on its own line is refused, not read as structure",
+      "...and the same shape written as an explicit key with a bare value node",
+      "...so the whole verdict is CANNOT RUN rather than `python pin OK`"
+    ],
+    "edits": [
+      [
+        "            if (_LOOSE_SCALAR.match(ln) or _BARE_INDICATOR.match(ln))",
+        "            if _LOOSE_SCALAR.match(ln)"
+      ]
+    ]
   }
 ]
