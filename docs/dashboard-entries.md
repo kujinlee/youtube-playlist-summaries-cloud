@@ -11338,7 +11338,44 @@ file and running both, not by argument.
 
 Now keyed on `paused`, with the strip-before-append removing the orphan rather than letting it be
 inherited again. Two new cases: the field, and the **verdict** — because the field is the mechanism
-and the verdict is the property, and a stamp deliberately far from the true count (9 against 2) so
+and the verdict is the property, and a stamp deliberately far from the true count so
 the case cannot pass by the two numbers happening to agree.
 
 Suite 58→60; manifest +1; declared sum 896→897.
+
+⛔ **ROUND 4 — A RED REQUIRED CHECK, CAUSED BY ROUND 2'S OWN FOLD.** Round 2 rewrote a comment (its
+Low 6). A mutation anchor in `scripts/mutations/check-plan-progress.json` spanned **three comment
+lines plus a `return`**, so rewording the comment unbound it — and `--mutate .`, which `ci.yml` runs
+unconditionally, refuses an anchor that applies zero times. Found by globbing the whole population
+(**905 anchors across 52 manifests, in 0.3 seconds**), confirmed by calling the delivered harness on
+that one entry, and rooted by bisecting the anchor count across five commits: **1** at the original
+fix, **0** from the round-2 fold onward. Re-anchored on the `return` plus the next section's header,
+so a comment rewrite cannot orphan it again.
+
+⭐ **And two Mediums that have been there since the ORIGINAL fix, both invisible to a green sweep.**
+
+The pause stamp's **value** had no falsifier. Replacing the producer with the literal `1`, or with
+the **done** count, both left the suite at 60/60 — while writing the *total* died. One reason: every
+stamped case in the suite was taken over the same 2-step plan with 1 ticked, where
+`outstanding == done == 1`. The case written to prevent exactly this asserts *"not the total and not
+the done count"*, and two-thirds of that sentence was false. ⚠ `--mutate .`'s 0-survivor result was
+silent about it, because the manifest's entry for that line tests the stamp's **presence**, never its
+value. Now driven at a second input — a 4-step plan with 1 ticked, where outstanding (3), done (1)
+and total (4) are three different numbers.
+
+The other: round 2 fixed *"a restatement erases a warning"* where the first pause left a stamp, and
+**not** where it did not. A hand-written pause has no stamp by construction — `decide`'s own BLOCK
+message instructs the human to add the line by hand — and `--pause` then invented a baseline,
+converting a live `⏸ PAUSED (2 of 4 outstanding, no count recorded…)` into permanent silence, with
+two steps ticked and nothing that would ever say so.
+
+⭐ **Three rounds each fixed one corner of one sentence.** The rule is now stated once and covers all
+of them: **restating a reason changes the reason and nothing else** — an already-paused sentinel has
+its stamp state inherited exactly, value *or* absence.
+
+Two Lows, both introduced by round 3's fix and both about round 3's own prose: a verdict case
+asserting `!= WARN`, a negative that `BLOCK` also satisfies and that stayed green on the one mutation
+it was written to catch (now `== ALLOW` and silent); and a figure quoted in this entry and in a code
+comment that was never measured.
+
+Suite 60→63; manifest +3 and three re-anchored; declared sum 897→900.

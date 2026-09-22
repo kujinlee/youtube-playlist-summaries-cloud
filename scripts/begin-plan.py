@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 60 cases
+    scripts/begin-plan.py --self-test  # 63 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -483,12 +483,25 @@ def cmd_pause(why: str) -> int:
     # fabricated instance of the exact defect this whole branch exists to report truthfully.
     # ⚠ THE STRIP BELOW IS WHAT MAKES RECOMPUTING SAFE: the orphan is removed rather than left to
     # be inherited again, so the state cannot survive one `--pause`.
+    # ⛔ AN ALREADY-PAUSED SENTINEL HAS ITS STAMP STATE INHERITED EXACTLY — VALUE *OR* ABSENCE
+    # (code review r4, Medium 3). The r3 form inherited a value and RECOMPUTED when there was none,
+    # which converted the honest "cannot tell" of a hand-written pause into a definite, permanent
+    # silence. That route is not exotic: `check-plan-progress.decide`'s own BLOCK message tells the
+    # human to `add a line 'paused: <why>' to .claude/executing-plan`, a pause with no stamp by
+    # construction — and the natural next act, running `--pause` properly, is what discarded the
+    # signal. Measured: park by hand, tick two steps, restate the reason, and a live
+    # `⏸ PAUSED (2 of 4 outstanding, no count recorded…)` became `ALLOW` with nothing ever said.
+    #
+    # ⭐ THE RULE IS ONE SENTENCE NOW, WHICH IS WHY IT COVERS BOTH CORNERS: restating a reason
+    # changes the reason and NOTHING ELSE. Round 3's corner (an orphan stamp with no `paused:`) and
+    # round 4's (a `paused:` with no stamp) are the two halves of that one statement; the r2 and r3
+    # forms each implemented half of it and left the other as a live defect.
     _pp = _load_plan_progress()
     _text = SENTINEL.read_text()
     _fields = _pp.parse_sentinel(_text)
-    _prior = _fields.get("paused_unticked") if "paused" in _fields else None
-    if _prior is not None:
-        _stamp = f"paused_unticked: {_prior}\n"
+    if "paused" in _fields:
+        _prior = _fields.get("paused_unticked")
+        _stamp = f"paused_unticked: {_prior}\n" if _prior is not None else ""
     else:
         # ⚠ BORROWED, never re-implemented — `count_steps` is the checkbox rule and this file
         # asserts that borrowing at `_load_plan_progress`. A second copy here is the drift this
@@ -718,11 +731,36 @@ def _self_test() -> int:
             case("--pause records the outstanding count at pause time",
                  _f.get("paused_unticked") == "1")
             # ⚠ THE VALUE, NOT MERELY THE KEY. The plan here is 2 steps with 1 ticked, so a stamp
-            # that wrote a constant, or the TOTAL, or the DONE count would all still be present —
-            # and the guard compares this number, so a wrong one silently changes its verdict.
+            # that wrote the TOTAL would still be present — and the guard compares this number, so
+            # a wrong one silently changes its verdict.
+            # ⛔ THIS CASE WAS TWO-THIRDS FALSE FOR ITS WHOLE LIFE, and the comment above claimed
+            # all three (code review r4, Medium 2; present identically at the ORIGINAL fix). The
+            # TOTAL half is real. The CONSTANT and DONE-COUNT halves were not: every stamped case
+            # in the suite was taken over the same 2-step plan with 1 ticked, where
+            # `outstanding == done == 1`, so `{_done}` and the literal `1` both satisfied it.
+            # Measured — both survived at 60/60 while the TOTAL mutation died at 55/60.
+            # ⭐ THE PRODUCER IS NOW EXERCISED AT TWO DISTINCT INPUTS, which is the repo's rule and
+            # the thing that actually removes the class: a 4-step plan with 1 ticked, where
+            # outstanding (3), done (1) and total (4) are three DIFFERENT numbers, so no constant
+            # and no wrong field can satisfy both drives. ⚠ `--mutate .`'s 0-survivor result was
+            # silent about this: the manifest's entry for this line mutates `if _total:` to
+            # `if False:` and is attributed to "…writes NO stamp" — it tests PRESENCE, never value.
             case("...and it is the OUTSTANDING count, not the total and not the done count",
                  pp.count_steps(plan_on_disk.read_text()) == (1, 2)
                  and _f.get("paused_unticked") == "1")
+            _wide = ("### Task 1: wide\n\n- [x] one\n- [ ] two\n- [ ] three\n- [ ] four\n")
+            _saved_plan = plan_on_disk.read_text()
+            cmd_resume()
+            plan_on_disk.write_text(_wide)
+            cmd_pause("a plan where outstanding, done and total are three different numbers")
+            _fw = pp.parse_sentinel(SENTINEL.read_text())
+            case("...and at a SECOND, distinct input where outstanding (3), done (1) and total (4) "
+                 "all differ — a producer exercised once is satisfied by the constant its own "
+                 "fixture supplies, whatever that constant is",
+                 pp.count_steps(_wide) == (1, 4) and _fw.get("paused_unticked") == "3")
+            cmd_resume()
+            plan_on_disk.write_text(_saved_plan)
+            cmd_pause("waiting on CI")
 
             # ── r2 Medium 3: a SECOND --pause restates the reason and keeps the FIRST baseline ──
             # ⛔ TWO DISTINCT INPUTS BY CONSTRUCTION, and the case is worthless without them: the
@@ -760,7 +798,10 @@ def _self_test() -> int:
             # r2 fix directly above, and found by the round the gate insisted on). A sentinel with
             # `paused_unticked:` and no `paused:` is NOT paused, so its number was never a pause
             # baseline; inheriting it made the next real pause report steps ticked that never were.
-            # ⚠ THE STAMP IS DELIBERATELY FAR FROM THE TRUE COUNT (9 against 2 outstanding), so
+            # ⚠ THE STAMP IS DELIBERATELY FAR FROM THE TRUE COUNT — 9, against the 1 this plan
+            # actually has outstanding (r4 Low 5 corrected this sentence: it said 2, and the
+            # plan at this point in the sequence is 2 steps with 1 ticked). The distance is
+            # the point, not the exact figure, so
             # this case cannot pass by the two numbers happening to agree — the ambient-constant
             # shape that cost the sibling branch three rounds.
             cmd_resume()
@@ -778,9 +819,43 @@ def _self_test() -> int:
             # ⚠ AND THE VERDICT, not merely the field — the field is the mechanism, the verdict is
             # the property. Under the unfixed form the next stop said "7 STEP(S) WERE TICKED SINCE"
             # with nothing ticked.
-            case("...and the very next stop does NOT claim steps were ticked",
-                 pp.decide(SENTINEL.read_text(), plan_on_disk.read_text(), None, False)[0]
-                 != pp.WARN)
+            # ⛔ `== ALLOW` AND THE SILENCE, NOT `!= WARN` (code review r4, Low 4). The negative was
+            # ALSO satisfied by BLOCK — which is what `decide` returns when the sentinel is not
+            # paused AT ALL, a strictly worse failure than the one this case watches for. Measured:
+            # across every mutation reaching this code the negative form reddened ONLY where the
+            # field case already did, and it stayed GREEN on the one mutation that breaks the
+            # verdict without breaking the field (`--pause` writing the stamp but not the `paused:`
+            # line). The case written to be the property assertion was the one case that never
+            # distinguished anything.
+            case("...and the very next stop is ALLOW and SILENT — it does not claim steps were "
+                 "ticked, and it has not fallen out of the paused branch altogether",
+                 pp.decide(SENTINEL.read_text(), plan_on_disk.read_text(), None, False)[:2]
+                 == (0, ""))
+            cmd_resume()
+            cmd_pause("waiting on CI")
+
+            # ⛔ THE OTHER HALF OF THE SAME SENTENCE — a `paused:` with NO stamp (r4 Medium 3).
+            # r2 fixed the case where the first pause left a stamp; r3 fixed the orphan-stamp
+            # corner; this is the third, and it was live at all four commits. A hand-written pause
+            # carries no stamp BY CONSTRUCTION — `check-plan-progress.decide`'s own BLOCK message
+            # tells the human to add the line by hand — and `--pause` then INVENTED a baseline,
+            # converting a live "cannot tell" warning into permanent silence. Restating a reason
+            # changes the reason and nothing else: absence is inherited exactly as a value is.
+            cmd_resume()
+            _handpause = SENTINEL.read_text().rstrip("\n") + "\npaused: parked by hand\n"
+            SENTINEL.write_text(_handpause)
+            _before_hand = pp.decide(SENTINEL.read_text(), plan_on_disk.read_text(), None, False)
+            _rc_hand = cmd_pause("restating it properly, after a hand-written park")
+            _f5 = pp.parse_sentinel(SENTINEL.read_text())
+            _after_hand = pp.decide(SENTINEL.read_text(), plan_on_disk.read_text(), None, False)
+            case("a restatement over a STAMP-LESS pause does not invent a baseline — the honest "
+                 "`cannot tell` survives `--pause` instead of becoming a definite silence",
+                 _rc_hand == OK and "paused_unticked" not in _f5)
+            # ⚠ THE CONTROL IS THE VERDICT BEFORE, taken on the same input. Asserting only the
+            # absence would pass on a guard that had stopped warning for some unrelated reason.
+            case("...and the WARNING it was carrying is still there afterwards, unchanged",
+                 _before_hand[0] == pp.WARN and _after_hand[0] == pp.WARN
+                 and "cannot be told" in _after_hand[1])
             cmd_resume()
             cmd_pause("waiting on CI")
 

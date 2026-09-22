@@ -160,8 +160,8 @@
     "file": "scripts/check-plan-progress.py",
     "edits": [
       [
-        "        # Paused, nothing ticked since: genuinely waiting. Allow, and say nothing — the state is\n        # already visible in the sentinel and in `--banner`, and repeating it every stop is what\n        # made it unreadable.\n        return ALLOW, \"\", None",
-        "        return WARN, f\"⏸ PAUSED ({unticked} of {total}) — {paused}\", None"
+        "        return ALLOW, \"\", None\n\n    # Anti-nag",
+        "        return WARN, f\"⏸ PAUSED ({unticked} of {total}) — {paused}\", None\n\n    # Anti-nag"
       ]
     ],
     "expect": [

@@ -1022,7 +1022,7 @@ EXPECTED_MUTATIONS = {
     # exclusion, the alias fullmatch, ALIAS_RHS's repeat quantifier, and the `||` and `??`
     # patterns. Verified through check-plan-code's OWN run_mutations, not a copy of it.
     "scripts/check-producer-enumeration.py": 5,
-    "scripts/begin-plan.py": 15,
+    "scripts/begin-plan.py": 18,
     # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
     # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
     # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
@@ -3368,7 +3368,7 @@ def _self_test() -> int:
     # while this branch sat open (762 was the sum against the OLD base). Derived rather
     # than typed — `sum(EXPECTED_MUTATIONS.values())` over the merged dict is 854 across
     # 52 entries, and `scripts/mutations/check-python-pin.json` holds exactly 25.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 897)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 900)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
