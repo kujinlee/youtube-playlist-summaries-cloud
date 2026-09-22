@@ -123,7 +123,7 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 149 cases
+    python3 scripts/check-banner-armed.py --self-test  # 150 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -1380,6 +1380,19 @@ def _self_test() -> int:
          f"{_BIG} tool calls" in decide([], armed=False, tool_uses=_BIG)[1])
     case("W2 one call BELOW the threshold is quiet — the boundary is exact, not approximate",
          decide([], armed=False, tool_uses=_SMALL)[0] == QUIET)
+    # ⛔ THE BOUNDARY NEEDS ITS OWN CASE, AND FIXING THE AMBIENT-CONSTANT CLASS IS WHAT TOOK IT
+    # AWAY. `_BIG` used to be exactly `LARGE_TURN`, so W1 tested the `>=` edge as a side effect and
+    # killed the `>=` -> `>` mutation. Offsetting `_BIG` to escape the message's threshold sentence
+    # (r4) left `28 > 25` true under that mutant, and the sweep reported it as a SURVIVOR at
+    # 911/912 while the suite stayed green — the THIRD time on this branch a class-fix silently
+    # disarmed an existing falsifier, and the third time only the sweep saw it.
+    #
+    # ⭐ THE TWO PROPERTIES PULL OPPOSITE WAYS and therefore cannot share a case: the ambient-
+    # constant property needs the asserted value AWAY from the threshold, the boundary falsifier
+    # needs it EXACTLY ON it. W1 holds the first; this holds the second.
+    case("W2b a turn AT the threshold exactly WARNS — `>=`, not `>`; the one case that pins the "
+         "comparison itself, which no other case can while `_BIG` is offset",
+         decide([], armed=False, tool_uses=LARGE_TURN)[0] == WARN)
     # ⛔ W3'S LABEL WAS A LIE AND THE LIE WAS LOAD-BEARING (r1 claude H1). It claimed to catch
     # "dropping the banner term" while passing `armed=True` — under which `not armed` is already
     # false, so the class cannot fire wherever the branch sits and W3 is QUIET for a reason with

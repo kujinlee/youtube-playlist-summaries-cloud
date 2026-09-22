@@ -130,7 +130,7 @@
       ]
     ],
     "expect": [
-      "W1 not armed + no banner + a LARGE turn WARNS — the branch that was silent"
+      "W2b a turn AT the threshold exactly WARNS — `>=`, not `>`; the one case that pins the comparison itself, which no other case can while `_BIG` is offset"
     ]
   },
   {
