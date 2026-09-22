@@ -11200,6 +11200,17 @@ is that the test suite appeared to cover this and did not: the test's example wa
 without that line the code took an earlier exit and never reached the part being tested. It passed
 for a reason unrelated to what it claimed to prove.
 
+Review changed two things worth recording. The explanation above originally included a third reason
+that was simply wrong — a claim about the order two pieces of the code run in, which turns out to be
+the reverse of what actually happens. Both reviewers caught it independently. The real reason nobody
+noticed is duller and more useful: no configuration file in this project is written in the short
+form, so the question was never asked of it.
+
+The second is that the first fix closed one of four ways to write the same thing. Reviewers found
+three more — including one that the hosting platform only started supporting in September, and one
+that a sibling piece of code in the same file had already been corrected for, thirteen lines away.
+All four are closed now, and each is held by a test that fails if the fix is removed.
+
 Nothing in the project currently uses the short form, so no job was actually going unchecked. It was
 found by reviewing the architecture review that had just been written about this same guard — which
 was, in turn, about the guard repeatedly mistaking text for configuration. The fix is deliberately

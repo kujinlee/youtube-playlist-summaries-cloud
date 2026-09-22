@@ -1950,7 +1950,12 @@ anchor's whole subject: the loop decided its own next step from recorded evidenc
       interpreter this guard pins) and not *refuse* (that is #157, worth doing but not instead).
       ⚠ The row's own scope was wrong in both directions — `check-ci-watched.py` is not a member,
       `check-ratchet-contract.py:835` is — which is why the population was swept rather than recalled.
-- [x] **#154 — the false green the review FOUND.** ✅ **PR #331** (open, not merged). ⚠ **First.** A block scalar opened on a `- ` dash
+- [x] **backlog #154 — the false green the review FOUND.** ✅ **PR #331** (open, not merged).
+      ⭐ Round 1 widened it: the first fix closed ONE of four spellings. An anchor on the value
+      (`- run: &x` + an indicator — a shape GitHub Actions added Sept 2025), a quoted key and a
+      nested sequence were all still false-green, each confirmed valid YAML by libyaml. Also
+      found: the indent invariant had no falsifier — moving the dash out of `group(1)` loses a
+      real pin while the suite stays green. ⚠ **First.** A block scalar opened on a `- ` dash
       line is never masked, so a job with no `setup-python` reports `rc 0, "every job pins 3.12"`.
       Latent today; **#155 would promote the reader that carries it into two more guards.**
 - [ ] **#155 — the extraction.** `scripts/workflow_structure.py`; R3 wired to it; 12 anchors **and
