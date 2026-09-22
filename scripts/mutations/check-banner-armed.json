@@ -9,7 +9,7 @@
       ]
     ],
     "expect": [
-      "F8 \u2014 a turn with only tool calls and NO assistant text IS judgable"
+      "F8 — a turn with only tool calls and NO assistant text IS judgable"
     ]
   },
   {
@@ -22,7 +22,7 @@
       ]
     ],
     "expect": [
-      "F3 \u2014 the empty slash-command window is skipped and the SUBSTANTIVE turn is judged"
+      "F3 — the empty slash-command window is skipped and the SUBSTANTIVE turn is judged"
     ]
   },
   {
@@ -100,11 +100,519 @@
     "edits": [
       [
         "    return f\"{when}\\t{session or '-'}\\t{before}\\t{after}\\n\"",
-        "    return f\"{when}\\t{session or '-'}\\tflush\\n\""
+        "    return f\"{when}\\t{session or '-'}\\t1\\t2\\n\""
       ]
     ],
     "expect": [
-      "Cx-M1 ...and the observation LINE carries the measured counts, not just a line"
+      "R5-646 flush_line carries BOTH measured counts, at two distinct input pairs — the counts ARE the evidence, and a constant pair keeps the file populated while recording nothing that was measured"
+    ]
+  },
+  {
+    "name": "the third class drops its `not armed` term and fires on an armed plan too",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        if not armed and not paused and tool_uses >= LARGE_TURN:",
+        "        if not paused and tool_uses >= LARGE_TURN:"
+      ]
+    ],
+    "expect": [
+      "W4 a large turn with a plan ARMED is not this class (catches dropping `not armed`)"
+    ]
+  },
+  {
+    "name": "the threshold becomes strictly-greater, so a turn AT the calibrated size is missed",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        if not armed and not paused and tool_uses >= LARGE_TURN:\n            return WARN, (",
+        "        if not armed and not paused and tool_uses > LARGE_TURN:\n            return WARN, ("
+      ]
+    ],
+    "expect": [
+      "W2b a turn AT the threshold exactly WARNS — `>=`, not `>`; the one case that pins the comparison itself, which no other case can while `_BIG` is offset"
+    ]
+  },
+  {
+    "name": "the calibrated threshold is silently re-tuned to a different value",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "LARGE_TURN = 25",
+        "LARGE_TURN = 10"
+      ]
+    ],
+    "expect": [
+      "W0 the threshold is 25 — the calibrated value, pinned against a silent re-tune"
+    ]
+  },
+  {
+    "name": "the third class reports its SIBLING's reason — backlog #97's mislabelling, restored",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "            ), REASON_UNHERALDED",
+        "            ), REASON_UNBANNERED"
+      ]
+    ],
+    "expect": [
+      "W5 a large UNARMED turn reports THIS class, not the sibling that shares banner=None"
+    ]
+  },
+  {
+    "name": "run_decide stops COUNTING the turn, so the class is dead while every unit case stays green",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "                        texts, armed_then, steps=steps_then, edited=edited,\n                        tool_uses=tool_uses_of(judged.body), paused=paused_then)",
+        "                        texts, armed_then, steps=steps_then, edited=edited,\n                        tool_uses=0, paused=paused_then)"
+      ]
+    ],
+    "expect": [
+      "W-INT run_decide WARNS on a large unarmed bannerless turn — the class is WIRED, not merely implemented"
+    ]
+  },
+  {
+    "name": "tool_uses_of loses its assistant filter and counts a tool_use echoed in a user record",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        if rec.get(\"type\") != \"assistant\":\n            continue\n        content = (rec.get(\"message\") or {}).get(\"content\")\n        if not isinstance(content, list):\n            continue\n        n += sum(1 for b in content",
+        "        content = (rec.get(\"message\") or {}).get(\"content\")\n        if not isinstance(content, list):\n            continue\n        n += sum(1 for b in content"
+      ]
+    ],
+    "expect": [
+      "tool_uses_of ignores a non-assistant record carrying a tool_use shape"
+    ]
+  },
+  {
+    "name": "tool_uses_of counts one per RECORD instead of one per call, halving a busy turn",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        n += sum(1 for b in content\n                 if isinstance(b, dict) and b.get(\"type\") == \"tool_use\")",
+        "        n += 1 if any(isinstance(b, dict) and b.get(\"type\") == \"tool_use\"\n                      for b in content) else 0"
+      ]
+    ],
+    "expect": [
+      "tool_uses_of counts EVERY call in one record, not one per record"
+    ]
+  },
+  {
+    "name": "the log RE-DERIVES the class from the output again, the exact #97 defect",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        elif reason == REASON_UNHERALDED:",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "W-INT ...and it logs under its OWN reason, never the sibling that shares banner=None (backlog #97's mislabelling cannot recur), with the count IT SAW rather than the threshold — the two are deliberately different numbers here"
+    ]
+  },
+  {
+    "name": "the third class loses its PAUSE excuse and cries wolf during a deliberate stand-down",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        if not armed and not paused and tool_uses >= LARGE_TURN:\n            return WARN,",
+        "        if not armed and tool_uses >= LARGE_TURN:\n            return WARN,"
+      ]
+    ],
+    "expect": [
+      "P1 a PAUSED plan + a large turn is QUIET — the class stands down like its siblings"
+    ]
+  },
+  {
+    "name": "_paused_from_text drops the colon skip, so `**paused**` stands the guard down",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    for line in text.splitlines():\n        if \":\" not in line:\n            continue\n        if line.split(\":\", 1)[0].strip() == \"paused\":\n            return True",
+        "    for line in text.splitlines():\n        if \"paused\" in line:\n            return True"
+      ]
+    ],
+    "expect": [
+      "P5 a colon-less `paused` is SKIPPED — the same grammar the sibling parser uses, so the two cannot disagree about whether the guard stood down"
+    ]
+  },
+  {
+    "name": "sample_for stops carrying the paused flag out of the CURRENT slot",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "                bool(journal.get(\"paused\", False)))",
+        "                False)"
+      ]
+    ],
+    "expect": [
+      "P7 sample_for carries the paused flag out of the CURRENT slot"
+    ]
+  },
+  {
+    "name": "sample_for stops carrying the paused flag out of the PREVIOUS slot",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "                bool(journal.get(\"prev_paused\", False)))",
+        "                False)"
+      ]
+    ],
+    "expect": [
+      "P8 ...and out of the PREVIOUS slot, which a blocked stop reads instead"
+    ]
+  },
+  {
+    "name": "run_decide stops PASSING the sampled pause, so the excuse never reaches the verdict",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "                        tool_uses=tool_uses_of(judged.body), paused=paused_then)",
+        "                        tool_uses=tool_uses_of(judged.body))"
+      ]
+    ],
+    "expect": [
+      "P-INT a PAUSED plan silences the class end to end — no warning, no log line. Since backlog #94 a pause means 'blocked on in-flight work', which is exactly the shape of turn that runs long"
+    ]
+  },
+  {
+    "name": "run_decide stops SAMPLING the pause, journalling a constant instead",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    paused_now = _paused()",
+        "    paused_now = False"
+      ]
+    ],
+    "expect": [
+      "P-INT a PAUSED plan silences the class end to end — no warning, no log line. Since backlog #94 a pause means 'blocked on in-flight work', which is exactly the shape of turn that runs long"
+    ]
+  },
+  {
+    "name": "the third class is HOISTED above the banner lookup, losing its unwritten `no banner` term",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    banner = highest_banner(texts)\n    if banner is None:",
+        "    if not armed and not paused and tool_uses >= LARGE_TURN:\n        return WARN, \"⚠ WORK WITHOUT A BANNER\", REASON_UNHERALDED\n    banner = highest_banner(texts)\n    if banner is None:"
+      ]
+    ],
+    "expect": [
+      "W11 a large UNARMED turn that CLOSED its sequence is quiet — the class is defined on `no banner`, and that term is carried only by where the branch sits",
+      "W12 ...and a large UNARMED turn stopped PARTWAY is the `unarmed` class, never this one — the hoist relabels every one of the log's 76 entries"
+    ]
+  },
+  {
+    "name": "the pause is RE-READ at judging time instead of consumed from the sample",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "tool_uses=tool_uses_of(judged.body), paused=paused_then)",
+        "tool_uses=tool_uses_of(judged.body), paused=_paused())"
+      ]
+    ],
+    "expect": [
+      "H2a a turn that RAN while paused stays quiet even though the plan was RESUMED before it was judged — the verdict reads the SAMPLE, not the live sentinel"
+    ]
+  },
+  {
+    "name": "the log's detail hardcodes the threshold, so every entry sits on the boundary",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "            detail = f\"{tool_uses_of(judged.body) if judged is not None else 0} tool calls\"",
+        "            detail = f\"{LARGE_TURN} tool calls\""
+      ]
+    ],
+    "expect": [
+      "W-INT ...and it logs under its OWN reason, never the sibling that shares banner=None (backlog #97's mislabelling cannot recur), with the count IT SAW rather than the threshold — the two are deliberately different numbers here"
+    ]
+  },
+  {
+    "name": "the pause excuse is withdrawn from the OLDEST class, which holds 100% of the warn log",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    if armed or paused:\n        return QUIET, \"\", \"\"",
+        "    if armed:\n        return QUIET, \"\", \"\""
+      ]
+    ],
+    "expect": [
+      "P11 a PARTWAY banner with a paused plan is quiet — the pause excuse reaches the `unarmed` class, not only the newest one"
+    ]
+  },
+  {
+    "name": "_paused_from_text matches any key STARTING WITH paused, so the two readers disagree",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        if line.split(\":\", 1)[0].strip() == \"paused\":",
+        "        if line.split(\":\", 1)[0].strip().startswith(\"paused\"):"
+      ]
+    ],
+    "expect": [
+      "P10 a key that merely STARTS WITH `paused` is not a pause — the match is equality, so this reader cannot stand down over a key that leaves the sibling armed"
+    ]
+  },
+  {
+    "name": "`armed` is RE-READ at judging time — the instance-not-class half of r1's H2",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "                        texts, armed_then, steps=steps_then, edited=edited,",
+        "                        texts, _armed(), steps=steps_then, edited=edited,"
+      ]
+    ],
+    "expect": [
+      "H-A1 a turn that RAN with a plan armed stays quiet even though the sentinel was cleared before it was judged — `armed` is consumed from the SAMPLE too, not only `paused`"
+    ]
+  },
+  {
+    "name": "`steps` is RE-READ at judging time, so the detail and the CANNOT-RUN guard describe the wrong turn",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "                    steps = steps_then           # the log block below reads it",
+        "                    steps = steps_now            # the log block below reads it"
+      ]
+    ],
+    "expect": [
+      "H-A4 the LOGGED `unticked` count is COMPUTED from the plan sampled when the judged turn ended — 2 then, 1 now, and 3 in every other fixture here, so no constant satisfies this case and F4 at once"
+    ]
+  },
+  {
+    "name": "the prev-slot pause carry is dropped, so a paused turn judged one stop late warns",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        \"prev_paused\": (already or {}).get(\"paused\", False),",
+        "        \"prev_paused\": False,"
+      ]
+    ],
+    "expect": [
+      "H-B1 the PREVIOUS slot is REACHABLE from a clean journal through run_decide — a window non-judgable when live and judgable one stop later — and the pause sampled THERE still excuses the turn"
+    ]
+  },
+  {
+    "name": "the prev-slot ARMED carry is dropped",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        \"prev_armed\": (already or {}).get(\"armed\"),",
+        "        \"prev_armed\": False,"
+      ]
+    ],
+    "expect": [
+      "H-B2 `prev_armed` and `prev_steps` travel with it — a turn that ran ARMED is quiet, and never CANNOT RUN, when judged out of the previous slot"
+    ]
+  },
+  {
+    "name": "the prev-slot STEPS carry is dropped, turning a sound verdict into CANNOT RUN",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        \"prev_steps\": (already or {}).get(\"steps\"),",
+        "        \"prev_steps\": None,"
+      ]
+    ],
+    "expect": [
+      "H-B2 `prev_armed` and `prev_steps` travel with it — a turn that ran ARMED is quiet, and never CANNOT RUN, when judged out of the previous slot"
+    ]
+  },
+  {
+    "name": "the continuation branch stops carrying prev_paused across a blocked-stop re-fire",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        record[\"prev_paused\"] = (already or {}).get(\"prev_paused\", False)",
+        "        record[\"prev_paused\"] = False"
+      ]
+    ],
+    "expect": [
+      "H-B3 a BLOCKED-STOP re-fire preserves the previous slot's pause — the continuation branch carries `prev_paused`, and reads the PREVIOUS turn's value rather than the current one"
+    ]
+  },
+  {
+    "name": "the continuation branch carries the CURRENT pause instead of the previous turn's",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        record[\"prev_paused\"] = (already or {}).get(\"prev_paused\", False)\n        record[\"prev_steps\"]",
+        "        record[\"prev_paused\"] = (already or {}).get(\"paused\", False)\n        record[\"prev_steps\"]"
+      ]
+    ],
+    "expect": [
+      "H-B3 a BLOCKED-STOP re-fire preserves the previous slot's pause — the continuation branch carries `prev_paused`, and reads the PREVIOUS turn's value rather than the current one"
+    ]
+  },
+  {
+    "name": "the continuation TEST is inverted, so both paths report CANNOT RUN",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    if live_uuid == (already or {}).get(\"sampled_turn_uuid\"):",
+        "    if live_uuid != (already or {}).get(\"sampled_turn_uuid\"):"
+      ]
+    ],
+    "expect": [
+      "H-B1 the PREVIOUS slot is REACHABLE from a clean journal through run_decide — a window non-judgable when live and judgable one stop later — and the pause sampled THERE still excuses the turn"
+    ]
+  },
+  {
+    "name": "_armed_from_text's key match is loosened, so the two sentinel readers disagree",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        if key == \"paused\":",
+        "        if key.startswith(\"paused\"):"
+      ]
+    ],
+    "expect": [
+      "P10b ...and the SIBLING reader has the same rule — a `paused_at:` key must leave the plan ARMED, or the two disagree about a stand-down from the other side"
+    ]
+  },
+  {
+    "name": "the log's unticked detail is frozen at the ambient fixture count",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "            unticked = 0 if steps is _UNSET or steps is None else steps[1] - steps[0]\n            detail = f\"{unticked} unticked\"",
+        "            unticked = 3\n            detail = f\"{unticked} unticked\""
+      ]
+    ],
+    "expect": [
+      "H-A4 the LOGGED `unticked` count is COMPUTED from the plan sampled when the judged turn ended — 2 then, 1 now, and 3 in every other fixture here, so no constant satisfies this case and F4 at once"
+    ]
+  },
+  {
+    "name": "the log's tool-call detail is frozen at the W-INT fixture size",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "            detail = f\"{tool_uses_of(judged.body) if judged is not None else 0} tool calls\"\n        else:",
+        "            detail = f\"{LARGE_TURN + 7} tool calls\"\n        else:"
+      ]
+    ],
+    "expect": [
+      "H-B1 control: the identical three-stop shape with NOTHING in the previous slot does warn, and logs the count THIS turn made — a second, different count, so the log detail cannot be a constant, and the line is one THIS drive wrote"
+    ]
+  },
+  {
+    "name": "the message's tool count is frozen at LARGE_TURN + 3 — the value r4's own fix chose, and therefore the one its single-input case could not catch",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "f\"⚠ WORK WITHOUT A BANNER — this turn made {tool_uses} tool calls, armed no plan, \"",
+        "f\"⚠ WORK WITHOUT A BANNER — this turn made {LARGE_TURN + 3} tool calls, armed no plan, \""
+      ]
+    ],
+    "expect": [
+      "...and it reports the COUNT IT SAW — asserted at TWO distinct inputs, so no constant satisfies it (catches a hardcoded message, which for three rounds it did not)"
+    ]
+  },
+  {
+    "name": "the plan-without-a-banner message freezes its unticked count",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "f\"⚠ PLAN WITHOUT A BANNER — this turn edited a file in the repo with \"\n                f\"{unticked} step(s) still unticked",
+        "f\"⚠ PLAN WITHOUT A BANNER — this turn edited a file in the repo with \"\n                f\"3 step(s) still unticked"
+      ]
+    ],
+    "expect": [
+      "R5-533 the PLAN-WITHOUT-A-BANNER message reports the unticked count it was given, at two distinct inputs — nothing read this number before"
+    ]
+  },
+  {
+    "name": "the banner-without-a-plan message freezes the step and total it reports",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "f\"⚠ BANNER WITHOUT A PLAN — this turn's HIGHEST VISIBLE banner is `STEP {step} of \"\n        f\"{total}`, and .claude/executing-plan names nothing.\\n\"",
+        "f\"⚠ BANNER WITHOUT A PLAN — this turn's HIGHEST VISIBLE banner is `STEP 2 of \"\n        f\"5`, and .claude/executing-plan names nothing.\\n\""
+      ]
+    ],
+    "expect": [
+      "R5-602 the BANNER-WITHOUT-A-PLAN message reports the step AND the total it saw, at two distinct inputs — a frozen `STEP 2 of 5` tells the reader a specific false thing about their own turn, in the sentence asking them not to over-read it"
+    ]
+  },
+  {
+    "name": "the `all N steps` clause freezes its total",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "f\"   a job that announced and finished all {total} steps can look partway-done here.\\n\"",
+        "f\"   a job that announced and finished all 5 steps can look partway-done here.\\n\""
+      ]
+    ],
+    "expect": [
+      "R5-607 ...and so does the `all N steps` clause further down the same message"
+    ]
+  },
+  {
+    "name": "flush_line freezes its session column",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    return f\"{when}\\t{session or '-'}\\t{before}\\t{after}\\n\"\n\n\n# ── I/O shell",
+        "    return f\"{when}\\tfl-text\\t{before}\\t{after}\\n\"\n\n\n# ── I/O shell"
+      ]
+    ],
+    "expect": [
+      "R5-646b ...and its session column too"
+    ]
+  },
+  {
+    "name": "the warn log's banner detail freezes HALF the value — the step, leaving the total live",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "detail = f\"STEP {banner[0]} of {banner[1]}\" if banner else \"?\"",
+        "detail = f\"STEP 2 of {banner[1]}\" if banner else \"?\""
+      ]
+    ],
+    "expect": [
+      "H3 the UNARMED class still warns AND logs its own reason and detail — at TWO distinct (step, total) pairs, so NEITHER half of `STEP i of N` can be frozen"
+    ]
+  },
+  {
+    "name": "the LATE FLUSH note freezes all three of its measured counts at the one scenario's 1 / 2 / 1",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "f\"assistant text this verdict reads held {late[0]} block(s); one \"\n                                f\"stop later it holds {late[1]}. {late[1] - late[0]} arrived after \"",
+        "f\"assistant text this verdict reads held 1 block(s); one \"\n                                f\"stop later it holds 2. 1 arrived after \""
+      ]
+    ],
+    "expect": [
+      "R5-1051 the LATE FLUSH note reports the counts it MEASURED — driven at two distinct scenarios (1/2/1 and 3/6/3), so no constant satisfies any of its three numbers"
+    ]
+  },
+  {
+    "name": "the first-stop CANNOT-RUN guard drops `and judged is None`, manufacturing a CANNOT RUN about a turn whose verdict was sound",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    if armed_now is None and code == QUIET and judged is None:",
+        "    if armed_now is None and code == QUIET:"
+      ]
+    ],
+    "expect": [
+      "R5-1111 a SOUND QUIET verdict survives a sentinel that is unreadable at the judging stop — CANNOT RUN is for the turn that has no verdict, not for one that has a good one"
+    ]
+  },
+  {
+    "name": "flush_line freezes its TIMESTAMP column, the only thing ordering the observation log",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "apart and a third value would make that column mean two different kinds of thing.\n    \"\"\"\n    return f\"{when}\\t{session or '-'}\\t{before}\\t{after}\\n\"",
+        "apart and a third value would make that column mean two different kinds of thing.\n    \"\"\"\n    return f\"T\\t{session or '-'}\\t{before}\\t{after}\\n\""
+      ]
+    ],
+    "expect": [
+      "R5-646c ...and its TIMESTAMP column, which nothing read — a `when` that is the same string at every call site leaves any clause reading it unguarded"
     ]
   }
 ]
