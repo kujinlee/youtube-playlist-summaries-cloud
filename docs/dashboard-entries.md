@@ -11317,3 +11317,28 @@ cite the owner instead of restating it.
 Suites 28→32, 53→58, 42→43. Mutations +6; declared sum 890→896. Each new entry was verified by hand
 to redden the case it names, over a control proved green first, on a staged copy under a redirected
 `$HOME`.
+
+⛔ **ROUND 3 — AND THE FIX FOR ROUND 2'S FIX.** `check-review-recorded` refused to call the branch
+reviewed: it named the six files the round-2 fold changed that no round had seen, and its own
+recorded justification is that on this repo **both defects that survived furthest were introduced by
+a FIX**. Round 3 (Codex, alternating) found exactly one Medium, and it was exactly that.
+
+Keeping the first pause baseline keyed on the **stamp** being present. But a sentinel carrying
+`paused_unticked:` with **no** `paused:` is not paused at all — the guard keys its whole paused
+branch on `paused` and blocks normally in that state. So a stray stamp was inherited as a baseline
+it had never earned. Measured, with a stamp of 9 against a 2-outstanding plan:
+
+```
+⏸ PAUSED, BUT 7 STEP(S) WERE TICKED SINCE — the guard has been stood down while the work carried on
+```
+
+**Nothing had been ticked.** The repair had fabricated an instance of the exact defect this branch
+exists to report truthfully — and it was proved by materialising the parent commit's copy of the
+file and running both, not by argument.
+
+Now keyed on `paused`, with the strip-before-append removing the orphan rather than letting it be
+inherited again. Two new cases: the field, and the **verdict** — because the field is the mechanism
+and the verdict is the property, and a stamp deliberately far from the true count (9 against 2) so
+the case cannot pass by the two numbers happening to agree.
+
+Suite 58→60; manifest +1; declared sum 896→897.

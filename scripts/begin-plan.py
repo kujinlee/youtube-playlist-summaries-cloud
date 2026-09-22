@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 58 cases
+    scripts/begin-plan.py --self-test  # 60 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -473,9 +473,20 @@ def cmd_pause(why: str) -> int:
     # The asymmetry this removes is one the file already argues for elsewhere: `cmd_resume` REFUSES
     # when the plan is not paused — "it never invents a state" — while `cmd_pause` accepted a plan
     # that was already paused and overwrote its baseline.
+    # ⛔ KEYED ON `paused`, NOT ON THE STAMP'S MERE PRESENCE (code review r3, Medium 1 — and that
+    # finding was INTRODUCED BY THE FIX ABOVE, which is why round 3 existed). A sentinel carrying
+    # `paused_unticked:` with NO `paused:` is not paused — `check-plan-progress.decide` keys the
+    # whole paused branch on `paused`, and blocks normally in that state. Preserving that orphan
+    # stamp attached it to the NEXT real pause as a baseline it never earned. Measured on a stray
+    # stamp of 9 against a 2-outstanding plan: the very next stop reported
+    # `⏸ PAUSED, BUT 7 STEP(S) WERE TICKED SINCE`, and nothing had been ticked at all — a
+    # fabricated instance of the exact defect this whole branch exists to report truthfully.
+    # ⚠ THE STRIP BELOW IS WHAT MAKES RECOMPUTING SAFE: the orphan is removed rather than left to
+    # be inherited again, so the state cannot survive one `--pause`.
     _pp = _load_plan_progress()
     _text = SENTINEL.read_text()
-    _prior = _pp.parse_sentinel(_text).get("paused_unticked")
+    _fields = _pp.parse_sentinel(_text)
+    _prior = _fields.get("paused_unticked") if "paused" in _fields else None
     if _prior is not None:
         _stamp = f"paused_unticked: {_prior}\n"
     else:
@@ -744,6 +755,34 @@ def _self_test() -> int:
                  "what they are waiting on without being pushed into a hand edit",
                  _f2.get("paused") == _repause_why)
             plan_on_disk.write_text(_plan_paused)
+
+            # ⛔ AN ORPHAN STAMP IS NOT A BASELINE (code review r3, Medium 1 — introduced by the
+            # r2 fix directly above, and found by the round the gate insisted on). A sentinel with
+            # `paused_unticked:` and no `paused:` is NOT paused, so its number was never a pause
+            # baseline; inheriting it made the next real pause report steps ticked that never were.
+            # ⚠ THE STAMP IS DELIBERATELY FAR FROM THE TRUE COUNT (9 against 2 outstanding), so
+            # this case cannot pass by the two numbers happening to agree — the ambient-constant
+            # shape that cost the sibling branch three rounds.
+            cmd_resume()
+            _orphan = SENTINEL.read_text().rstrip("\n") + "\npaused_unticked: 9\n"
+            SENTINEL.write_text(_orphan)
+            _rc_orphan = cmd_pause("the first REAL pause, after a stray stamp")
+            _f4 = pp.parse_sentinel(SENTINEL.read_text())
+            case("a stray `paused_unticked:` with no `paused:` is NOT inherited as a baseline — "
+                 "an unpaused sentinel never had one, and inheriting it fabricates the very "
+                 "defect this guard exists to report",
+                 _rc_orphan == OK
+                 and _f4.get("paused_unticked") == str(
+                     pp.count_steps(plan_on_disk.read_text())[1]
+                     - pp.count_steps(plan_on_disk.read_text())[0]))
+            # ⚠ AND THE VERDICT, not merely the field — the field is the mechanism, the verdict is
+            # the property. Under the unfixed form the next stop said "7 STEP(S) WERE TICKED SINCE"
+            # with nothing ticked.
+            case("...and the very next stop does NOT claim steps were ticked",
+                 pp.decide(SENTINEL.read_text(), plan_on_disk.read_text(), None, False)[0]
+                 != pp.WARN)
+            cmd_resume()
+            cmd_pause("waiting on CI")
 
             # ── r2 Medium 2: --pause must still RECORD the pause when the plan is unreadable ────
             # The handler had no falsifier, and removing it makes `--pause` CRASH — so the human

@@ -121,8 +121,8 @@
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "            if _total:\n                _stamp = f\"paused_unticked: {_total - _done}\\n\"",
-        "            if False:\n                _stamp = f\"paused_unticked: {_total - _done}\\n\""
+        "                if _total:\n                    _stamp = f\"paused_unticked: {_total - _done}\\n\"",
+        "                if False:\n                    _stamp = f\"paused_unticked: {_total - _done}\\n\""
       ]
     ],
     "expect": [
@@ -160,8 +160,8 @@
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "    _prior = _pp.parse_sentinel(_text).get(\"paused_unticked\")\n    if _prior is not None:",
-        "    _prior = _pp.parse_sentinel(_text).get(\"paused_unticked\")\n    if False:"
+        "    if _prior is not None:\n        _stamp = f\"paused_unticked: {_prior}\\n\"",
+        "    if False:\n        _stamp = f\"paused_unticked: {_prior}\\n\""
       ]
     ],
     "expect": [
@@ -179,6 +179,19 @@
     ],
     "expect": [
       "...and writes NO stamp — the reader treats an absent stamp as `cannot tell`, which is a different verdict from any number it could have guessed"
+    ]
+  },
+  {
+    "name": "an ORPHAN paused_unticked (no `paused:`) is inherited as a baseline, fabricating a 'work resumed' warning",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    _prior = _fields.get(\"paused_unticked\") if \"paused\" in _fields else None",
+        "    _prior = _fields.get(\"paused_unticked\")"
+      ]
+    ],
+    "expect": [
+      "a stray `paused_unticked:` with no `paused:` is NOT inherited as a baseline — an unpaused sentinel never had one, and inheriting it fabricates the very defect this guard exists to report"
     ]
   }
 ]
