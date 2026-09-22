@@ -154,5 +154,31 @@
     "expect": [
       "...and it clears the STAMP too, so no field outlives the pause that set it"
     ]
+  },
+  {
+    "name": "a second --pause RE-BASELINES the stamp, discarding a backlog #99 warning already owed",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    _prior = _pp.parse_sentinel(_text).get(\"paused_unticked\")\n    if _prior is not None:",
+        "    _prior = _pp.parse_sentinel(_text).get(\"paused_unticked\")\n    if False:"
+      ]
+    ],
+    "expect": [
+      "a SECOND --pause keeps the FIRST baseline — the plan now has ZERO outstanding and the stamp still reads the 1 it had when the work was actually parked"
+    ]
+  },
+  {
+    "name": "the unreadable-plan handler INVENTS a count instead of leaving the reader 'cannot tell'",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "                _stamp = \"\"  # unreadable plan -> no stamp; the reader treats that as \"cannot tell\"",
+        "                _stamp = \"paused_unticked: 0\\n\""
+      ]
+    ],
+    "expect": [
+      "...and writes NO stamp — the reader treats an absent stamp as `cannot tell`, which is a different verdict from any number it could have guessed"
+    ]
   }
 ]

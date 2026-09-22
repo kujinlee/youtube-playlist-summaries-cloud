@@ -39,12 +39,14 @@ Usage (the hook calls form 1):
     python3 scripts/check-ci-watched.py --decide
     python3 scripts/check-ci-watched.py --watching   # record that a watcher is armed for HEAD
     python3 scripts/check-ci-watched.py --clear
-    python3 scripts/check-ci-watched.py --self-test  # 28 cases
+    python3 scripts/check-ci-watched.py --self-test  # 32 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN   2 = CANNOT RUN
 """
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import subprocess
 import sys
@@ -306,6 +308,59 @@ def _self_test() -> int:
     case("⚠ the no-PR sentence is gh's OWN wording, so a reword falls back to CANNOT RUN "
          "(noisy) rather than to silence",
          _with(_P(1, "", "no pull request found for branch")) == (None, False))
+    # ⛔ THE CRASH DIRECTION — `gh` MISSING, HUNG OR DYING MUST BE LOUD (code review r2, Medium 1).
+    # `except (OSError, subprocess.SubprocessError): return None, False` had no case at all, so
+    # flipping that `False` to `True` turned "gh is not installed", "gh timed out" and "gh crashed"
+    # into SILENCE, and the suite stayed at 28/28. The docstring above promises the opposite in so
+    # many words — *"noisy, not silent, which is the direction this guard must fail in"* — and a
+    # promise in a docstring that no case reads is the shape this repo calls an undefended claim.
+    def _raising(exc):
+        """`_pr_checks_raw` when `subprocess.run` itself blows up, rather than exiting non-zero."""
+        real = globals()["subprocess"].run
+        def _boom(*_a, **_k):
+            raise exc
+        globals()["subprocess"].run = _boom
+        try:
+            return _pr_checks_raw()
+        finally:
+            globals()["subprocess"].run = real
+    case("gh MISSING is CANNOT RUN territory, never 'no PR' — a crash must not read as silence",
+         _raising(FileNotFoundError("gh")) == (None, False))
+    # ⚠ TWO DISTINCT EXCEPTIONS, because the handler catches a UNION and one member is enough to
+    # satisfy a single-input case while the other is silently dropped from the tuple.
+    case("...and so is gh TIMING OUT, which is the other half of the caught union",
+         _raising(subprocess.TimeoutExpired(cmd=["gh"], timeout=25)) == (None, False))
+
+    # ── r2 Medium 1: run_decide's WIRING, which no case reached ───────────────────────────────
+    # ⛔ THE RULE ABOVE WAS COVERED AND THE CALL SITE WAS NOT, which is this repo's recorded
+    # *unit coverage does not compose — mutate the CALL SITE*. Measured on a staged copy, all three
+    # of these survived at 28/28:
+    #     `if no_pr:`              -> `if False:`   the every-stop CANNOT RUN returns, unnoticed
+    #     `raw, no_pr = …`         -> `no_pr = True` the observer goes silent on EVERY branch
+    #     the crash handler's fail direction        (covered by the two cases above)
+    # The manifest reached none of them: both entries `5018606b` added target the return expression
+    # INSIDE `_pr_checks_raw`. So round 1's 890/890-killed is true and says nothing about these —
+    # a sweep measures the manifest, not the code.
+    def _decide_with(raw, no_pr, skip=None):
+        """Drive `run_decide` end to end with the network boundary and the skip check stubbed."""
+        g = globals()
+        real_raw, real_skip = g["_pr_checks_raw"], g["_skip_reason"]
+        g["_pr_checks_raw"] = lambda: (raw, no_pr)
+        g["_skip_reason"] = lambda: skip
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                return run_decide()
+        finally:
+            g["_pr_checks_raw"], g["_skip_reason"] = real_raw, real_skip
+    case("run_decide is QUIET when there is no PR — the branch is pushed, so there is no CI to be "
+         "unwatched, and this is the every-stop CANNOT RUN the change exists to remove",
+         _decide_with(None, True) == QUIET)
+    # ⚠ THE CONTRASTING INPUT IS WHAT MAKES THE ONE ABOVE MEAN ANYTHING. `no_pr=True -> QUIET`
+    # alone is satisfied by a `run_decide` that returns QUIET unconditionally, which is exactly
+    # what the second surviving mutation produced.
+    case("...and NOT quiet on the same shaped input with no_pr FALSE — an unreadable PR is "
+         "CANNOT RUN, so the verdict tracks the flag rather than being QUIET either way",
+         _decide_with(None, False) == CANNOT_RUN)
 
     # ── state vocabulary ───────────────────────────────────────────────────────────────────
     for st in ("PENDING", "QUEUED", "IN_PROGRESS"):

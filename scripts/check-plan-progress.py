@@ -38,7 +38,7 @@ docstring, not the code, was the thing that needed fixing.
 Usage (the hook calls form 1; a human can call form 2 to see where things stand):
     python3 scripts/check-plan-progress.py --decide [--stop-hook-active]
     python3 scripts/check-plan-progress.py --status
-    python3 scripts/check-plan-progress.py --self-test  # 42 cases
+    python3 scripts/check-plan-progress.py --self-test  # 43 cases
 Exit codes for --decide:
     0 = allow the stop, silently (message, if any, on stdout)
     2 = block it (message on stderr)
@@ -64,9 +64,18 @@ paused"; it was a plan paused while work CONTINUED. `begin-plan.py --pause` now 
 `paused_unticked:` — what was outstanding when the pause began — so that exact state is decidable.
 Three outcomes, and the third is why this is not merely an anti-nag:
     fewer outstanding than at pause time  -> WARN: work resumed without `--resume` (the defect)
-    the same                              -> ALLOW, silent: genuinely waiting, most of a pause
+    not fewer                             -> ALLOW, silent: UNDECIDABLE, treated as waiting
     no stamp (a hand-edited pause)        -> WARN, one line: cannot tell, and silence there would
                                              be the original #99 hole rebuilt
+
+⚠ ROW 2 SAYS *UNDECIDABLE*, NOT *WAITING*, AND THE DIFFERENCE IS THE ONE THING TO KNOW ABOUT THIS
+FILE (code review r2, Low 6; round 1 Codex measured it). The stamp is a SCALAR, so the guard can
+only see a strict FALL in the outstanding count. A hand-edited plan that ticks one step and adds
+another keeps the count flat — work demonstrably resumed, and this row goes quiet. It is the whole
+triangle `unticked >= began > 0`, not one clever input. Row 3 names its undecidability out loud;
+row 2 is undecidable too and used to read as a positive finding of "genuinely waiting", which
+invites a reader to trust a silence the mechanism cannot support. Widening the stamp beyond a
+scalar is `docs/backlog.md` #100's subject and is deliberately NOT done here.
 """
 from __future__ import annotations
 
@@ -285,9 +294,15 @@ def decide(
                 f"   → `--resume` when it does; `--finish` if the plan is done."
             ), None
 
-        # Paused, nothing ticked since: genuinely waiting. Allow, and say nothing — the state is
+        # Paused and the outstanding count did NOT fall. Allow, and say nothing — the state is
         # already visible in the sentinel and in `--banner`, and repeating it every stop is what
         # made it unreadable.
+        # ⚠ "Did not fall" is NOT the same claim as "nothing happened", and the comment here used
+        # to say *genuinely waiting* (r2 Low 6). A scalar stamp cannot distinguish a plan nobody
+        # touched from one where a step was ticked and another added; both land here. Treated as
+        # waiting because a nag gets the whole guard switched off (backlog #56's measured verdict),
+        # and because no supported command reaches the flat-count state — `--tick` refuses on a
+        # paused plan, so it takes a hand edit. Backlog #100 owns the grammar that would decide it.
         return ALLOW, "", None
 
     # Anti-nag: only keep blocking while blocking is producing progress. If a block has already
@@ -477,6 +492,19 @@ def _self_test() -> int:
     case("the quiet branch still records NO unticked count — the anti-nag state is left alone "
          "on every paused path, not just the warning ones",
          decide(_WAIT, PLAN, None, False)[2] is None)
+    # ⛔ THE COMPARISON WAS PINNED ON ONE SIDE ONLY (code review r2, Low 4). `_WAIT` sits AT the
+    # stamp and `_MOVED` BELOW it, so `<` -> `<=` dies but `<` -> `!=` SURVIVED: nothing drove the
+    # third side, `unticked > began`, which is a plan that GREW while parked. Under `!=` that state
+    # warns, and the warning prints `began - unticked` — a NEGATIVE count of steps ticked, i.e. an
+    # impossible sentence in the one message this guard exists to make trustworthy.
+    # ⚠ Steps ADDED while paused is not the same event as steps ticked while paused, and only the
+    # second is backlog #99's defect. Parking a job and then writing down more work to do is
+    # ordinary; being told "-1 steps were ticked since" for it is not.
+    _GREW = SENT + "paused: waiting on a sweep\npaused_unticked: 1\n"
+    case("paused and the plan GREW -> ALLOW and silent: more outstanding than at pause time is "
+         "work ADDED, never work resumed, and the third side of the comparison had no case",
+         decide(_GREW, PLAN, None, False)[0] == ALLOW
+         and decide(_GREW, PLAN, None, False)[1] == "")
 
     # ⛔ r1 H1 / Codex M1 — the ONE finding both review halves reached independently. The first
     # version of this branch CLEARED the sentinel here and said so only on stdout, which the Stop

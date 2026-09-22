@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 53 cases
+    scripts/begin-plan.py --self-test  # 58 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -450,17 +450,52 @@ def cmd_pause(why: str) -> int:
     # ⚠ BORROWED, never re-implemented — `count_steps` is the checkbox rule and this file asserts
     # that borrowing at `_load_plan_progress`. A second copy of it here is the drift this repo
     # has recorded fifteen times.
-    _stamp = ""
-    _armed = _armed_plan()
-    if _armed is not None:
-        try:
-            _done, _total = _load_plan_progress().count_steps(_armed[0].read_text())
-            if _total:
-                _stamp = f"paused_unticked: {_total - _done}\n"
-        except (OSError, UnicodeDecodeError):
-            _stamp = ""     # unreadable plan -> no stamp, and the reader treats that as "cannot tell"
-    SENTINEL.write_text(SENTINEL.read_text().rstrip("\n")
-                        + f"\npaused: {cleaned}\n{_stamp}")
+    # ⛔ A SECOND `--pause` RESTATES THE REASON AND MUST NOT RE-BASELINE THE COUNT (code review r2,
+    # Medium 3). Appending a fresh pair moved the baseline to NOW, which silently discards a #99
+    # warning that was already owed: park, hand-tick a step (`--tick` refuses on a paused plan, so a
+    # hand edit is the only route, and it is round 1's own scenario), park again with a fresher
+    # reason — and the "work resumed while stood down" signal is gone and does not come back.
+    # MEASURED end to end: rc=3 before the second pause, rc=0 after.
+    #
+    # ⚠ NOT HYPOTHETICAL — this worktree's own live sentinel carried TWO `paused:` lines and TWO
+    # `paused_unticked:` lines from two `--pause` calls in one session. Both happened to read 2, so
+    # nothing was lost that time. Round 1 examined this case and passed it, because it asked what
+    # the readers SELECT (last-wins, correct) and not what the second write MEANS.
+    #
+    # ⭐ THE FIX KEEPS THE *FIRST* BASELINE, and refusing outright was rejected: someone parked on
+    # one thing and now waiting on another has a legitimate reason to restate it, and a refusal
+    # would push them to hand-edit the sentinel — the one route that produces the states this guard
+    # cannot read. Restating a reason is not resuming work, so the count from when the work was
+    # ACTUALLY parked is the right one to keep. `--resume` clears both fields, so a genuine
+    # pause -> resume -> work -> pause cycle still takes a fresh baseline; only the back-to-back
+    # restatement is held to the original.
+    #
+    # The asymmetry this removes is one the file already argues for elsewhere: `cmd_resume` REFUSES
+    # when the plan is not paused — "it never invents a state" — while `cmd_pause` accepted a plan
+    # that was already paused and overwrote its baseline.
+    _pp = _load_plan_progress()
+    _text = SENTINEL.read_text()
+    _prior = _pp.parse_sentinel(_text).get("paused_unticked")
+    if _prior is not None:
+        _stamp = f"paused_unticked: {_prior}\n"
+    else:
+        # ⚠ BORROWED, never re-implemented — `count_steps` is the checkbox rule and this file
+        # asserts that borrowing at `_load_plan_progress`. A second copy here is the drift this
+        # repo has recorded fifteen times.
+        _stamp = ""
+        _armed = _armed_plan()
+        if _armed is not None:
+            try:
+                _done, _total = _pp.count_steps(_armed[0].read_text())
+                if _total:
+                    _stamp = f"paused_unticked: {_total - _done}\n"
+            except (OSError, UnicodeDecodeError):
+                _stamp = ""  # unreadable plan -> no stamp; the reader treats that as "cannot tell"
+    # STRIP BEFORE APPEND, so a restatement leaves ONE pair rather than a growing stack. Last-wins
+    # parsing made the stack harmless to READ, which is exactly why it went unnoticed for as long
+    # as it did — the file was wrong in a way no reader complained about.
+    _text = _pp.strip_field(_pp.strip_field(_text, "paused"), "paused_unticked")
+    SENTINEL.write_text(_text.rstrip("\n") + f"\npaused: {cleaned}\n{_stamp}")
     print(f"paused: {cleaned}\nThe Stop guard will now allow the turn to end. "
           f"`--banner` still shows where the plan stands.\n"
           f"⚠ WHEN THE WORK RESUMES, run `scripts/begin-plan.py --resume` FIRST. Until you do, "
@@ -677,6 +712,59 @@ def _self_test() -> int:
             case("...and it is the OUTSTANDING count, not the total and not the done count",
                  pp.count_steps(plan_on_disk.read_text()) == (1, 2)
                  and _f.get("paused_unticked") == "1")
+
+            # ── r2 Medium 3: a SECOND --pause restates the reason and keeps the FIRST baseline ──
+            # ⛔ TWO DISTINCT INPUTS BY CONSTRUCTION, and the case is worthless without them: the
+            # stamp is taken while 1 step is outstanding, then the plan is hand-ticked to 0
+            # outstanding and paused again. Were the second pause to recompute, the stamp would read
+            # 0 and a #99 warning already owed would be discarded for good — measured end to end as
+            # rc=3 before the second pause and rc=0 after. Pausing twice at the SAME count would
+            # pass whether or not the fix is present, which is this repo's recorded ambient-constant
+            # shape. (A hand edit is the only route to this state, because `--tick` refuses on a
+            # paused plan — and that is round 1's own scenario, not an exotic one.)
+            # ⚠ The plan bytes are restored below: a later case asserts this whole sequence leaves
+            # the plan file untouched, and it reads the same `before` snapshot.
+            _plan_paused = plan_on_disk.read_text()
+            plan_on_disk.write_text(_plan_paused.replace("- [ ]", "- [x]"))
+            _repause_why = "restating the reason, which is not resuming the work"
+            _rc_repause = cmd_pause(_repause_why)
+            _f2 = pp.parse_sentinel(SENTINEL.read_text())
+            case("a SECOND --pause keeps the FIRST baseline — the plan now has ZERO outstanding "
+                 "and the stamp still reads the 1 it had when the work was actually parked",
+                 _rc_repause == OK
+                 and pp.count_steps(plan_on_disk.read_text()) == (2, 2)
+                 and _f2.get("paused_unticked") == "1")
+            case("...and it leaves exactly ONE paused/paused_unticked pair, not a growing stack — "
+                 "last-wins parsing made the stack harmless to READ, which is why it went unseen",
+                 [ln for ln in SENTINEL.read_text().splitlines()
+                  if ln.startswith("paused:")] == [f"paused: {_repause_why}"]
+                 and len([ln for ln in SENTINEL.read_text().splitlines()
+                          if ln.startswith("paused_unticked:")]) == 1)
+            case("...and the RESTATED reason is the one now on the sentinel, so the human can say "
+                 "what they are waiting on without being pushed into a hand edit",
+                 _f2.get("paused") == _repause_why)
+            plan_on_disk.write_text(_plan_paused)
+
+            # ── r2 Medium 2: --pause must still RECORD the pause when the plan is unreadable ────
+            # The handler had no falsifier, and removing it makes `--pause` CRASH — so the human
+            # parking a job *because something is wrong* would be unable to park it. The escape
+            # hatch must not depend on the thing being escaped.
+            cmd_resume()
+            plan_on_disk.write_bytes(b"### Task 1: x\n\n- [ ] \xff\xfe not utf-8 \xff\n")
+            _unread_why = "the plan cannot be read, and parking must still work"
+            _rc_unread = cmd_pause(_unread_why)
+            _f3 = pp.parse_sentinel(SENTINEL.read_text())
+            case("--pause RECORDS the pause when the plan is unreadable, rather than raising",
+                 _rc_unread == OK and _f3.get("paused") == _unread_why)
+            # ⚠ ASSERTS THE ABSENCE, NOT JUST THE PRESENCE ABOVE. A stamp invented here (0, or a
+            # crash barrier's default) would be a NUMBER where the reader must see "cannot tell",
+            # and the reader's three-way decision turns on exactly that distinction.
+            case("...and writes NO stamp — the reader treats an absent stamp as `cannot tell`, "
+                 "which is a different verdict from any number it could have guessed",
+                 "paused_unticked" not in _f3)
+            cmd_resume()
+            plan_on_disk.write_text(_plan_paused)
+            cmd_pause("waiting on CI")
 
             # ── backlog #99: --resume is the only way out, and it must exist ───────────────
             # `paused:` had ONE writer and ZERO removers, which is why a stale pause could only

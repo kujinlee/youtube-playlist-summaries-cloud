@@ -11270,3 +11270,50 @@ attributed, 0 survivors. ⚠ Three bugs found in my own manifest pre-check while
 f-string case name it could not see, `expect` iterated as a string yielding one "orphan" per
 letter, and a duplicate rule stricter than the harness's. It now derives live case names by RUNNING
 each suite and reports CANNOT RUN for the 45 of 52 files whose suites print only a summary.
+
+⛔ **ROUND 2 — THE FIX WAS RIGHT AND THREE OF ITS DECISION POINTS WERE UNDEFENDED.** Round 1 (Codex)
+found one Medium. Round 2 (Claude, alternating) found **three Mediums and three Lows**, none of them
+a correctness defect in delivered behaviour — every path it drove behaved as documented. All three
+Mediums are one shape, and it is the shape this repo's ratchet contract exists to prevent: **new
+decision points shipped with falsifiers for their pure rules and none for their wiring or their fail
+direction**, in two guards whose entire purpose is to fail loud rather than silent.
+
+⚠ **Round 1's `890/890 killed, 0 survivors` was TRUE and said nothing about any of them.** Both
+manifest entries that commit added target the return expression *inside* `_pr_checks_raw`; nothing
+reached `run_decide`. Measured on a staged copy, all three of these left the suite at **28/28**:
+
+```
+if no_pr:            -> if False:      the every-stop CANNOT RUN comes back, unnoticed
+raw, no_pr = …()     -> no_pr = True   the observer goes silent on EVERY branch, forever
+except (OSError, …)  -> return None, True   gh missing / timing out / crashing all become SILENCE
+```
+
+The third contradicts the function's own docstring, which promises *"noisy, not silent, which is the
+direction this guard must fail in"* — **a promise in a docstring that no case reads**. A sweep
+measures the manifest, not the code.
+
+⭐ **And round 2 caught the one thing round 1 examined and passed.** Round 1 checked that a double
+`--pause` parses correctly (last-wins — true, and re-derived independently). It never asked what the
+second *write* MEANS: it moved the baseline to now, silently discarding a warning already owed.
+Park, hand-tick a step, park again with a fresher reason, and the "work resumed while stood down"
+signal is gone for good — measured end to end as **rc=3 before the second pause and rc=0 after**.
+**Not hypothetical: this worktree's own live sentinel carried two `paused:` lines and two
+`paused_unticked:` lines** from two `--pause` calls in one session. Both happened to read 2, so
+nothing was lost that time.
+
+The repair keeps the **first** baseline and strips before appending. Refusing outright was
+considered and rejected: someone parked on one thing and now waiting on another has a legitimate
+reason to restate it, and a refusal would push them into hand-editing the sentinel — the one route
+that produces the states this guard cannot read. Restating a reason is not resuming work.
+
+Two smaller things worth the line. The decision table's middle row said *"the same → genuinely
+waiting"*; it now says **undecidable, treated as waiting**, because a scalar stamp can only see a
+strict fall and a plan that ticks one step while adding another keeps the count flat. And three live
+sites elsewhere restated this guard's exit-3 contract — `block-idle-stop.sh` twice and
+`check-banner-armed.py` once — **all three made false by this very commit**, eight lines below a
+comment reading *"a second copy is what drifted, and citing the source is the whole fix."* They now
+cite the owner instead of restating it.
+
+Suites 28→32, 53→58, 42→43. Mutations +6; declared sum 890→896. Each new entry was verified by hand
+to redden the case it names, over a control proved green first, on a staged copy under a redirected
+`$HOME`.

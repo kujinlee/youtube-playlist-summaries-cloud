@@ -206,5 +206,18 @@
     "expect": [
       "the quiet branch still records NO unticked count — the anti-nag state is left alone on every paused path, not just the warning ones"
     ]
+  },
+  {
+    "name": "the pause comparison stops being DIRECTIONAL, so a plan that GREW while parked warns and prints a NEGATIVE count of steps ticked",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "        began = int(stamp) if stamp is not None and stamp.isdigit() else None\n\n        if began is not None and unticked < began:",
+        "        began = int(stamp) if stamp is not None and stamp.isdigit() else None\n\n        if began is not None and unticked != began:"
+      ]
+    ],
+    "expect": [
+      "paused and the plan GREW -> ALLOW and silent: more outstanding than at pause time is work ADDED, never work resumed, and the third side of the comparison had no case"
+    ]
   }
 ]
