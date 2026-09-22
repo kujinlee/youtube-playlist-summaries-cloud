@@ -1,5 +1,9 @@
 <!-- codex-review: model=gpt-5.5 -->
 
+**REVIEW GAP:** claude — not invoked for this round, by design. Rounds 2+ alternate
+(`docs/review-method.md`, Round topology), and the Claude half authored round 5; round 6 was
+Codex and round 7 reviewed the tree round 6's repair produced.
+
 VERDICT: NOT CONVERGED — 1 Blocking, 0 High
 
 Reviewed head: `6a2ed15c`

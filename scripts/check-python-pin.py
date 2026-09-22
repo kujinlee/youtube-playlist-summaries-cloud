@@ -303,7 +303,8 @@ _STEPS_KEY = re.compile(r"^(\s*)steps:\s*(?:[&!]\S+\s*)*(#.*)?$")
 #
 # ⛔ THE FIRST VERSION OF THIS COMMENT EXPLAINED THE WRONG THING, and both review halves caught it.
 # It said the shape "cannot occur inside `_steps`, because `Step.body` blanks the dash before
-# `_structural` sees the line". That is backwards: `_structural` has exactly ONE call site — `:232`,
+# `_structural` sees the line". That is backwards: every `_structural` call site takes WHOLE-FILE
+# text — `:232`,
 # on the WHOLE FILE — and the blanking at `:264` happens strictly AFTER it, on the mask's own
 # output. `_structural` never sees a `Step.body`, and the live defect went straight THROUGH
 # `_steps`. The honest reason it survived is duller and worth more: **no workflow in this repository
@@ -1091,7 +1092,8 @@ def self_test() -> int:
     # never masked and its text was read as structure. ⛔ r2: AN EARLIER VERSION OF THIS COMMENT
     # REPEATED THE INVERTED STORY corrected at `_BLOCK_SCALAR` — I fixed the sentence there and
     # missed its copy here, which is the instance-not-class shape this whole row is about.
-    # `_structural` has ONE call site (`:232`, the whole file) and the dash-blanking at `:264`
+    # every `_structural` call site takes WHOLE-FILE text (`:232`, and `:605` since r5 added the
+    # refusal) and the dash-blanking at `:264`
     # happens AFTER it, so the defect went straight THROUGH `_steps`. It survived because no
     # workflow here uses the short form.
     # ⛔ r1 HIGH — THE INDENT INVARIANT HAD NO FALSIFIER. `_BLOCK_SCALAR`'s group 1 must end at the
