@@ -66,12 +66,12 @@
     "expect": "no workflows at all is CANNOT RUN, never a pass"
   },
   {
-    "name": "the no-pin-anywhere refusal goes — the precise state this guard exists to end",
+    "name": "the no-pin-anywhere refusal goes \u2014 the precise state this guard exists to end",
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
-        "        return 2, (\"CANNOT RUN — no `python-version:` was found in any workflow",
-        "        return 0, (\"CANNOT RUN — no `python-version:` was found in any workflow"
+        "        return 2, (\"CANNOT RUN \u2014 no `python-version:` was found in any workflow",
+        "        return 0, (\"CANNOT RUN \u2014 no `python-version:` was found in any workflow"
       ]
     ],
     "expect": "...and so is a corpus with no pin anywhere"
@@ -103,8 +103,8 @@
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
-        "        if running != pin:\n            return 1, (f\"FAILED — workflows pin {pin}, this interpreter is {running}.\")",
-        "        if False:\n            return 1, (f\"FAILED — workflows pin {pin}, this interpreter is {running}.\")"
+        "        if running != pin:\n            return 1, (f\"FAILED \u2014 workflows pin {pin}, this interpreter is {running}.\")",
+        "        if False:\n            return 1, (f\"FAILED \u2014 workflows pin {pin}, this interpreter is {running}.\")"
       ]
     ],
     "expect": "...and it still FAILS when provenance is fine but the VERSION is wrong"
@@ -114,8 +114,8 @@
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
-        "    if running != pin:\n        return 0, (f\"⚠ ADVISORY",
-        "    if running != pin:\n        return 1, (f\"⚠ ADVISORY"
+        "    if running != pin:\n        return 0, (f\"\u26a0 ADVISORY",
+        "    if running != pin:\n        return 1, (f\"\u26a0 ADVISORY"
       ]
     ],
     "expect": "...but LOCALLY the same mismatch is ADVISORY and exits 0"
@@ -162,7 +162,7 @@
         "        if False:"
       ]
     ],
-    "expect": "IN CI, a matching VERSION with no provenance FAILS — the ambient python matches too"
+    "expect": "IN CI, a matching VERSION with no provenance FAILS \u2014 the ambient python matches too"
   },
   {
     "name": "the wrong-interpreter refusal goes, which is update-environment: false reporting green",
@@ -231,7 +231,7 @@
     "expect": "an inline comment on the pin line is stripped from the VALUE"
   },
   {
-    "name": "an EMPTY exported location is treated as provenance — fail-open for every absolute path",
+    "name": "an EMPTY exported location is treated as provenance \u2014 fail-open for every absolute path",
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
@@ -297,7 +297,7 @@
     "expect": "...and `name:` AFTER `uses:` still works, the shape that always did"
   },
   {
-    "name": "the block-scalar mask is removed from the SPLITTER, so a dash line in a heredoc manufactures a phantom step (Codex r3 High) [r4 codex Medium: expect re-pointed — after the sibling rewrite the dashed fixture no longer discriminates]",
+    "name": "the block-scalar mask is removed from the SPLITTER, so a dash line in a heredoc manufactures a phantom step (Codex r3 High) [r4 codex Medium: expect re-pointed \u2014 after the sibling rewrite the dashed fixture no longer discriminates]",
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
@@ -312,11 +312,22 @@
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
-        "_BLOCK_SCALAR = re.compile(r\"^(\\s*)[\\w.\\-]+:\\s*[|>][-+0-9]*\\s*(#.*)?$\")",
-        "_BLOCK_SCALAR = re.compile(r\"^(\\s*)[\\w.\\-]+:\\s*[|][-+0-9]*\\s*(#.*)?$\")"
+        "[|>][-+0-9]*\\s*(#.*)?$\")",
+        "[|][-+0-9]*\\s*(#.*)?$\")"
       ]
     ],
     "expect": "...nor does one in a FOLDED scalar"
+  },
+  {
+    "file": "scripts/check-python-pin.py",
+    "name": "the block-scalar opener stops accepting a DASH-opened scalar, so `- run: |` content is read as structure again (backlog #154)",
+    "expect": "a pin quoted inside a DASH-opened block scalar is not a pin",
+    "edits": [
+      [
+        "^(\\s*(?:-\\s+)?)[\\w.\\-]+:",
+        "^(\\s*)[\\w.\\-]+:"
+      ]
+    ]
   },
   {
     "name": "a sibling dash stops starting a new step, so the second of two steps is silently discarded (r3 F4)",
@@ -327,7 +338,7 @@
         "        if m and (cur is None or len(m.group(1)) < cur.indent):"
       ]
     ],
-    "expect": "a SIBLING step is a new step — a pin in the SECOND of two is still found"
+    "expect": "a SIBLING step is a new step \u2014 a pin in the SECOND of two is still found"
   },
   {
     "name": "a blank line ends a step, so a pin written after one vanishes (r3 F4)",
@@ -352,7 +363,7 @@
     "expect": "a COMMENT at the dash indent does not end a step"
   },
   {
-    "name": "the steps: scope starts OPEN, so any YAML list of mappings is read as steps again — a matrix.include entry pins an unpinned job (r4 codex High)",
+    "name": "the steps: scope starts OPEN, so any YAML list of mappings is read as steps again \u2014 a matrix.include entry pins an unpinned job (r4 codex High)",
     "file": "scripts/check-python-pin.py",
     "edits": [
       [

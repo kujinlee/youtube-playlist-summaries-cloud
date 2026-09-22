@@ -2,7 +2,7 @@
 """Every CI job pins the Python interpreter, the pins agree, and the pin actually took effect.
 
     python3 scripts/check-python-pin.py              # in CI: asserts. locally: advises.
-    python3 scripts/check-python-pin.py --self-test  # 84 cases
+    python3 scripts/check-python-pin.py --self-test  # 86 cases
 
     exit 0 = pinned, agreeing, and (in CI) in effect   exit 1 = a real disagreement
     exit 2 = CANNOT RUN — no workflow or no pin found, which is never a pass
@@ -295,7 +295,20 @@ def _steps(text: str) -> list[Step]:
 _STEPS_KEY = re.compile(r"^(\s*)steps:\s*(?:[&!]\S+\s*)*(#.*)?$")
 
 
-_BLOCK_SCALAR = re.compile(r"^(\s*)[\w.\-]+:\s*[|>][-+0-9]*\s*(#.*)?$")
+# ⟳ backlog #154 — A BLOCK SCALAR MAY OPEN ON THE DASH LINE, and requiring a bare key meant its
+# body was never masked. `- run: |` is the ordinary GitHub Actions short form: `[\w.\-]+` contains
+# `-` but cannot span the SPACE in `- run:`, so the pattern failed and every line of the shell
+# script below it was read as YAML structure.
+#
+# ⭐ WHY IT WENT UNNOTICED FOR SO LONG, because that is the reusable part: inside `_steps` this
+# shape cannot occur — `Step.body` blanks the dash before `_structural` ever sees the line (`:264`)
+# — so the function was CORRECT about a step's lines and silently weaker about a whole file's, and
+# `:232` passes it a whole file. A rule sound at one level is not sound at another.
+#
+# ⚠ `(?:-\s+)?` is NON-capturing on purpose: `group(1)` must stay the text before the KEY, because
+# `_structural` uses its length as the scalar's indent and compares body lines against it. Capturing
+# the dash separately would renumber the trailing comment group, which two callers read.
+_BLOCK_SCALAR = re.compile(r"^(\s*(?:-\s+)?)[\w.\-]+:\s*[|>][-+0-9]*\s*(#.*)?$")
 
 
 def _structural(body: list[str]) -> list[str]:
@@ -877,9 +890,43 @@ def self_test() -> int:
                        "        with:\n          python-version: '3.12'\n"
                        "      - uses: someone/other@v1\n"
                        "        with:\n          python-version: '3.11'\n"), ["3.12"])
+    # ⛔ THIS CASE USED TO PASS FOR AN AMBIENT REASON — backlog #154. Its fixture carried no
+    # `uses: actions/setup-python`, so `declared_pins` skipped the step at the `any(...)` guard
+    # BEFORE the block-scalar mask was ever load-bearing. It therefore proved nothing about
+    # masking, while reading exactly like the case that did. The `uses:` line below is what makes
+    # the mask the thing under test; measured, the case inverts without it.
     case("...and a job holding only those still reports as unpinned",
          unpinned_jobs({"w.yml": "jobs:\n  verify:\n    steps:\n      - run: |\n"
-                                 "          python-version: '3.12'\n"}, {}), ["w.yml:verify"])
+                                 "          uses: actions/setup-python@v5\n"
+                                 "          with:\n"
+                                 "            python-version: '3.12'\n"}, {}), ["w.yml:verify"])
+    # ⛔ THE DASH-OPENED BLOCK SCALAR — backlog #154, the defect this repair exists for.
+    # `- run: |` is the ordinary GitHub Actions short form. `_BLOCK_SCALAR` required a bare key at
+    # the line's indent, and `[\w.\-]+` cannot span the space in `- run:`, so the scalar's body was
+    # never masked and its text was read as structure. Inside `_steps` this never bit, because
+    # `Step.body` blanks the dash first — the function was right about a STEP and wrong about a
+    # FILE, which is the whole subject of the architecture review that found it.
+    case("a pin quoted inside a DASH-opened block scalar is not a pin",
+         declared_pins("jobs:\n  verify:\n    steps:\n      - run: |\n"
+                       "          uses: actions/setup-python@v5\n"
+                       "          with:\n"
+                       "            python-version: '9.9'\n"
+                       "      - run: python3 -V\n"), [])
+    # ⛔ AND THE LIVE PATH, which the single-job framing understates. `pin_took_effect` speaks only
+    # for the job the guard RUNS IN, while `declared_pins` speaks for ALL jobs — so a genuinely
+    # pinned job A satisfies provenance while job B, holding nothing but heredoc text, reads as
+    # pinned. Measured before the fix: rc 0, "every job pins 3.12", over a job with no setup-python
+    # at all. That is verbatim the defect backlog #137 and PR #317 exist to end.
+    case("...so a SIBLING job pinned only by heredoc text is still unpinned",
+         unpinned_jobs({"ci.yml": "jobs:\n"
+                                  "  verify:\n    steps:\n      - name: Set up Python\n"
+                                  "        uses: actions/setup-python@v5\n"
+                                  "        with:\n          python-version: '3.12'\n"
+                                  "  schema-gates:\n    steps:\n      - run: |\n"
+                                  "          uses: actions/setup-python@v5\n"
+                                  "          with:\n"
+                                  "            python-version: '3.12'\n"}, {}),
+         ["ci.yml:schema-gates"])
     case("job keys are found", job_names(PINNED), ["verify"])
     case("...and both of two are", job_names(TWO_JOBS_ONE_PIN), ["schema-gates", "prod-drift"])
     case("...while a STEP key is not mistaken for a job",
