@@ -395,6 +395,17 @@
   },
   {
     "file": "scripts/check-python-pin.py",
+    "name": "the unreadable-scalar refusal is demoted below the `pins` computation, so an unreadable scalar quoting a different version reports a version DISAGREEMENT that does not exist (backlog #154 r4 High)",
+    "expect": "an unreadable scalar refuses even when it makes the pins DISAGREE",
+    "edits": [
+      [
+        "        for ln in unreadable_scalar_openers(text))\n    if unreadable_openers:",
+        "        for ln in unreadable_scalar_openers(text))\n    if unreadable_openers and len({q for tx in workflows.values() for q in declared_pins(tx)}) <= 1:"
+      ]
+    ]
+  },
+  {
+    "file": "scripts/check-python-pin.py",
     "name": "the block-scalar opener stops accepting node properties, so an ANCHORED scalar (`run: &x |`) is read as structure — the shape GitHub added in Sept 2025 (backlog #154 r1)",
     "expect": "...nor does one behind a YAML ANCHOR on the value",
     "edits": [

@@ -2,7 +2,7 @@
 """Every CI job pins the Python interpreter, the pins agree, and the pin actually took effect.
 
     python3 scripts/check-python-pin.py              # in CI: asserts. locally: advises.
-    python3 scripts/check-python-pin.py --self-test  # 99 cases
+    python3 scripts/check-python-pin.py --self-test  # 100 cases
 
     exit 0 = pinned, agreeing, and (in CI) in effect   exit 1 = a real disagreement
     exit 2 = CANNOT RUN — no workflow or no pin found, which is never a pass
@@ -641,6 +641,25 @@ def verdict(workflows: dict[str, str], running: str, in_ci: bool,
     if not workflows:
         return 2, ("CANNOT RUN — no workflow files were read, so nothing could be compared.\n"
                    "  A zero over an empty corpus is not a pass. NOT CHECKED.")
+    # ⛔ BEFORE `pins` IS COMPUTED, NOT MERELY BEFORE ONE BRANCH — backlog #154 r4 (High).
+    # An unclassifiable scalar opener means `declared_pins` is reading a shell script as YAML, so
+    # EVERY answer derived from it is untrustworthy — not just the one branch this check first sat
+    # in front of. Measured before the move: job A pinned 3.12 and an explicit-key scalar quoting
+    # 9.9 returned `rc 1 FAILED — workflows pin DIFFERENT Python versions: 3.12, 9.9`. Fail-closed,
+    # so not a false green, but it sends the reader to reconcile a disagreement that does not
+    # exist. ⭐ The general rule this instance teaches: a refusal must precede the COMPUTATION it
+    # distrusts, not the first branch that happens to consume it.
+    # This mirrors `unreadable_jobs` (`:470`) — an unreadable shape becomes a loud CANNOT RUN
+    # rather than a silent pass — and is placed one step earlier for the same reason.
+    unreadable_openers = sorted(
+        f"{f}: {ln.strip()}" for f, text in workflows.items()
+        for ln in unreadable_scalar_openers(text))
+    if unreadable_openers:
+        return 2, ("CANNOT RUN — a line opens a block scalar in a shape this scan cannot read:\n"
+                   + "\n".join("    " + o for o in unreadable_openers) + "\n"
+                   "  Its body would be read as YAML STRUCTURE, so a `python-version:` quoted\n"
+                   "  inside it would count as a real pin, and every answer below would be\n"
+                   "  derived from that. Refusing rather than guessing. NOT CHECKED.")
     pins = sorted({p for text in workflows.values() for p in declared_pins(text)})
     if not pins:
         # ⚠ ASKED BEFORE the per-job question on purpose: with no pin anywhere, every job is
@@ -659,18 +678,6 @@ def verdict(workflows: dict[str, str], running: str, in_ci: bool,
     # four shapes; this refuses the rest instead of guessing, turning any future unparseable shape
     # from a silent pass into a loud NOT CHECKED. ⚠ It is the guard being calibrated on its own
     # corpus that made this reachable at all.
-    # ⛔ backlog #154 r3 — refuse a scalar opener the strict pattern could not classify, for the
-    # same reason the job refusal below exists: an unrecognised shape is read as STRUCTURE, and
-    # structure is what `declared_pins` trusts. Silent guess -> loud CANNOT RUN.
-    unreadable_openers = sorted(
-        f"{f}: {ln.strip()}" for f, text in workflows.items()
-        for ln in unreadable_scalar_openers(text))
-    if unreadable_openers:
-        return 2, ("CANNOT RUN — a line opens a block scalar in a shape this scan cannot read:\n"
-                   + "\n".join("    " + o for o in unreadable_openers) + "\n"
-                   "  Its body would be read as YAML STRUCTURE, so a `python-version:` quoted\n"
-                   "  inside it would count as a real pin. Refusing rather than guessing.\n"
-                   "  NOT CHECKED.")
     jobless = sorted(f for f, text in workflows.items()
                      if not job_names(text) or unreadable_jobs(text))
     if jobless:
@@ -1053,6 +1060,19 @@ def self_test() -> int:
     case("an EXPLICIT-KEY scalar cannot be classified, so it is REFUSED rather than guessed",
          unreadable_scalar_openers("jobs:\n  verify:\n    steps:\n      - ? run\n        : |\n"
                                    "            uses: actions/setup-python@v5\n") != [], True)
+    # ⛔ r4 HIGH — THE ORDER IS THE BEHAVIOUR, and it was wrong. The refusal sat in front of ONE
+    # branch instead of in front of the `pins` COMPUTATION that every branch consumes, so an
+    # unreadable scalar quoting a DIFFERENT version answered `rc 1 FAILED — workflows pin DIFFERENT
+    # Python versions` — fail-closed, but it sends the reader to reconcile a disagreement that does
+    # not exist. This case fails if the refusal is ever moved back below `pins`.
+    case("an unreadable scalar refuses even when it makes the pins DISAGREE",
+         verdict({"ci.yml": "jobs:\n  verify:\n    steps:\n      - name: Set up Python\n"
+                            "        uses: actions/setup-python@v5\n"
+                            "        with:\n          python-version: '3.12'\n"
+                            "  schema-gates:\n    steps:\n      - ? run\n        : |\n"
+                            "            uses: actions/setup-python@v5\n"
+                            "            with:\n              python-version: '9.9'\n"},
+                 "3.12", True, None, _EXE, _LOC)[0], 2)
     case("...and that refusal is a CANNOT RUN, not a silent pass",
          verdict({"w.yml": "jobs:\n  verify:\n    steps:\n      - ? run\n        : |\n"
                            "            uses: actions/setup-python@v5\n"
