@@ -75,6 +75,17 @@ WHAT IT CANNOT SEE, stated rather than hidden:
     margin instead of none, which is strictly better, but nothing here establishes that the prior
     turn is ALWAYS flushed by the next Stop. A corpus cannot settle it — a recorded transcript shows
     final file state, never what was readable at hook time. Spec falsifier F11.
+  * ⚠ AN ARMED PLAN + A TURN THAT EDITS NOTHING + NO BANNER — silent in ALL THREE classes, and
+    this branch is what establishes it (r1 claude M3). `unheralded` excludes it for `armed`;
+    `unbannered` excludes it for `not edited`. MEASURED over the same 2,293 `cli` turns: of the
+    207 large bannerless turns, **54 (26%)** edited nothing inside the repo. ⭐ The sting is that
+    this branch's own measurement REFUTES `edited` — 52.2% recall, separating 2.48x against turn
+    size's 5.03x — and then leaves it gating the sibling class, whose missed state is the one the
+    entry below calls "the normal mode, not an edge case". Merging the two classes was considered
+    and REJECTED: `unbannered` is live, with its own falsifiers and mutations, and moving it to fix
+    a gap in the `not armed` half would change a rule nobody asked to change. ⚠ The placement
+    comment at that branch says the gap "is entirely in the `not armed` half" — measured, it is
+    not, and those 54 turns are what it is not.
   * ⚠ A TURN SPLIT BY AN INJECTED BOUNDARY, for the `unheralded` class — UNEXERCISED HERE, NOT
     IMMUNE, and the distinction is the whole point of this entry. A window opened by a record that
     `_meta_carries_a_message` accepts is a fresh turn, so a job interrupted partway yields a
@@ -112,7 +123,7 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 133 cases
+    python3 scripts/check-banner-armed.py --self-test  # 140 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -572,7 +583,19 @@ def decide(texts: list[str] | None, armed: bool,
     step, total = banner
     if step >= total:
         return QUIET, "", ""
-    if armed:
+    # ⟳ 2026-09-22, r1 claude M2 — `or paused` IS A BEHAVIOUR CHANGE TO THE OLDEST CLASS, and it is
+    # here because the message below was stating a FALSEHOOD. `_armed_from_text` maps a paused plan
+    # to armed=False, so a stand-down reached this branch and emitted "⚠ BANNER WITHOUT A PLAN —
+    # and .claude/executing-plan names nothing" while the sentinel named `plans/p.md`. The sibling
+    # blocking guard says the opposite out loud in the same state (`check-plan-progress.py:174`
+    # returns `⏸ PAUSED (<why>)`), and `_armed_from_text`'s docstring requires the two to agree —
+    # they agreed on the verdict and contradicted each other in the sentence.
+    #
+    # ⭐ It also makes the pause excuse uniform: backlog #95's shipped fix states "`paused` now
+    # stands down here as it does in the blocking guard", and until this line that was true of one
+    # class out of three. This is the class holding 100% of the warn log's 76 entries, so it is the
+    # one where crying wolf through a deliberate stand-down costs most.
+    if armed or paused:
         return QUIET, "", ""
 
     return WARN, (
@@ -1351,8 +1374,29 @@ def _self_test() -> int:
          f"{_BIG} tool calls" in decide([], armed=False, tool_uses=_BIG)[1])
     case("W2 one call BELOW the threshold is quiet — the boundary is exact, not approximate",
          decide([], armed=False, tool_uses=_SMALL)[0] == QUIET)
-    case("W3 a large turn that DID banner is quiet (catches dropping the banner term)",
+    # ⛔ W3'S LABEL WAS A LIE AND THE LIE WAS LOAD-BEARING (r1 claude H1). It claimed to catch
+    # "dropping the banner term" while passing `armed=True` — under which `not armed` is already
+    # false, so the class cannot fire wherever the branch sits and W3 is QUIET for a reason with
+    # nothing to do with banners. It is not a dead case (deleting `if armed or paused` reddens it);
+    # it is MISLABELLED, and its label was the only place the banner term was claimed to be covered.
+    # The recorded shape *a case can pass for an AMBIENT reason* — committed three cases after this
+    # block's own opening comment warns against exactly it.
+    case("W3 a large turn with a banner AND a plan armed is quiet — the ARMED term, which is what "
+         "this case actually exercises",
          decide([B.format(2, 5)], armed=True, tool_uses=_BIG)[0] == QUIET)
+    # ⭐ W11 IS THE REAL BANNER-TERM CASE. "no banner" is the one term of the four that is NOT
+    # written in the `if`: it is carried entirely by the branch's POSITION inside `if banner is
+    # None:`. Hoisting the test above `banner = highest_banner(texts)` is one edit, keeps all three
+    # explicit terms, and left the suite at 131/131 — while warning "WORK WITHOUT A BANNER … and
+    # emitted no `## ▶ STEP i of N`" at a turn that emitted five of them, and relabelling every
+    # `unarmed` entry as `unheralded`. `armed=False` here is the whole point: the banner is then
+    # the ONLY thing keeping this quiet.
+    case("W11 a large UNARMED turn that CLOSED its sequence is quiet — the class is defined on "
+         "`no banner`, and that term is carried only by where the branch sits",
+         decide([B.format(5, 5)], armed=False, tool_uses=_BIG)[0] == QUIET)
+    case("W12 ...and a large UNARMED turn stopped PARTWAY is the `unarmed` class, never this one — "
+         "the hoist relabels every one of the log's 76 entries",
+         decide([B.format(2, 5)], armed=False, tool_uses=_BIG)[2] == REASON_UNARMED)
     case("W4 a large turn with a plan ARMED is not this class (catches dropping `not armed`)",
          decide([], armed=True, steps=(1, 4), tool_uses=_BIG)[2] != REASON_UNHERALDED)
     case("W5 a large UNARMED turn reports THIS class, not the sibling that shares banner=None",
@@ -1393,6 +1437,22 @@ def _self_test() -> int:
     case("P5 a colon-less `paused` is SKIPPED — the same grammar the sibling parser uses, so "
          "the two cannot disagree about whether the guard stood down",
          _paused_from_text("plan: x.md\n**paused**\n") is False)
+    # r1 claude L2 — P5 pins the COLON rule; nothing pinned the KEY-EQUALITY rule. Loosening `==`
+    # to `.startswith` left the suite at 131/131, and a key like `paused_at:` would then stand this
+    # reader down while `_armed_from_text`'s `==` keeps the plan armed — the two readers
+    # disagreeing about a stand-down, which is the exact failure both docstrings cite the grammar
+    # rules to prevent. Latent (no writer emits such a key) and pinned anyway, because "no writer
+    # does this today" is a fact about writers, not about the rule.
+    case("P10 a key that merely STARTS WITH `paused` is not a pause — the match is equality, so "
+         "this reader cannot stand down over a key that leaves the sibling armed",
+         _paused_from_text("plan: x.md\npaused_at: 2026-09-22\n") is False)
+    # M2's falsifier: the pause now stands the OLDEST class down too, and the message it used to
+    # emit asserted the sentinel "names nothing" while it named a plan.
+    case("P11 a PARTWAY banner with a paused plan is quiet — the pause excuse reaches the "
+         "`unarmed` class, not only the newest one",
+         decide([B.format(2, 5)], armed=False, paused=True)[0] == QUIET)
+    case("P12 ...and the SAME turn unpaused still warns, so the excuse is doing the work",
+         decide([B.format(2, 5)], armed=False, paused=False)[2] == REASON_UNARMED)
     case("P6 the two sentinel readers agree on a paused file: armed False AND paused True",
          _armed_from_text("plan: x.md\npaused: why\n") is False
          and _paused_from_text("plan: x.md\npaused: why\n") is True)
@@ -1811,17 +1871,27 @@ def _self_test() -> int:
             #
             # The sentinel is still unlinked from H3, which is the state this class is defined on.
             assert not (_fx / ".claude" / "executing-plan").exists()
+            # ⚠ `LARGE_TURN + 7`, NOT `LARGE_TURN` (r1 claude M1). With exactly LARGE_TURN calls the
+            # logged count and the threshold are the SAME NUMBER, so `detail = f"{LARGE_TURN} tool
+            # calls"` — a logger that hardcodes the constant — passed 131/131. That column is the
+            # evidence the promote-to-blocking decision reads; under the mutant every entry sits
+            # exactly on the boundary and the observed distribution is manufactured by the logger.
+            # The W0 comment had already diagnosed this hazard ("every other case derives from
+            # LARGE_TURN and so moves with it") and it was applied to one site only.
+            _WBIG = LARGE_TURN + 7
             _big = _turn("w1", [{"type": "tool_use", "id": f"b{i}", "name": "Bash",
                                  "input": {"command": "echo hi"}}
-                                for i in range(LARGE_TURN)])
+                                for i in range(_WBIG)])
             _rcW = _drive(_fx / "unheralded.jsonl", _big)
             case("W-INT run_decide WARNS on a large unarmed bannerless turn — the class is WIRED, "
                  "not merely implemented",
                  _rcW == WARN)
             case("W-INT ...and it logs under its OWN reason, never the sibling that shares "
-                 "banner=None (backlog #97's mislabelling cannot recur)",
+                 "banner=None (backlog #97's mislabelling cannot recur), with the count IT SAW "
+                 "rather than the threshold — the two are deliberately different numbers here",
                  _logtext().rstrip("\n").endswith(
-                     f"\t{REASON_UNHERALDED}\t{LARGE_TURN} tool calls"))
+                     f"\t{REASON_UNHERALDED}\t{_WBIG} tool calls")
+                 and str(LARGE_TURN) != str(_WBIG))
 
             # The same turn ONE call smaller must be silent all the way through — otherwise the
             # case above would pass for any turn at all and the threshold would be decorative.
@@ -1857,6 +1927,42 @@ def _self_test() -> int:
             _rcP2 = _drive(_fx / "unpaused-big.jsonl", _bigP)
             case("P-INT control: the identical turn with the pause REMOVED does warn",
                  _rcP2 == WARN)
+
+            # ── H2 — the SAMPLE must be what the verdict consumes, not a re-read ──────────
+            # ⛔ EVERY CASE ABOVE HOLDS THE SENTINEL IN ONE STATE ACROSS BOTH STOPS, so
+            # "sampled at that turn's stop" and "re-read at judging time" are behaviourally
+            # IDENTICAL to all of them: `paused=_paused()` at the call site — the thing two
+            # comments in this file explicitly forbid — passed 131/131 (r1 claude H2). These
+            # two legs are the only place in the suite where the sampled value and the live
+            # value DIFFER, which is the only place the distinction can be observed.
+            def _drive_changing(path: Path, subject: list, before, after,
+                                session: str = "s") -> int:
+                """Seed with the sentinel in state `before`, JUDGE with it in state `after`."""
+                for _st in JOURNAL_DIR.glob("*.json"):
+                    _st.unlink()
+                _sent = _fx / ".claude" / "executing-plan"
+                _sent.unlink(missing_ok=True) if before is None else _sent.write_text(before)
+                path.write_text("\n".join(subject))
+                run_decide(json.dumps({"transcript_path": str(path), "session_id": session}))
+                _sent.unlink(missing_ok=True) if after is None else _sent.write_text(after)
+                path.write_text("\n".join(
+                    subject + _turn("later", [{"type": "text", "text": "x"}])))
+                return run_decide(json.dumps({"transcript_path": str(path),
+                                              "session_id": session}))
+
+            _PAUSED_TXT = ("plan: plans/p.md\narmed: t\n"
+                           "paused: waiting on a dispatched review\n")
+            _b1 = _logtext()
+            _rcH2a = _drive_changing(_fx / "h2-resume.jsonl", _bigP, _PAUSED_TXT, None)
+            case("H2a a turn that RAN while paused stays quiet even though the plan was RESUMED "
+                 "before it was judged — the verdict reads the SAMPLE, not the live sentinel",
+                 _rcH2a == QUIET and _logtext() == _b1)
+            _b2 = _logtext()
+            _rcH2b = _drive_changing(_fx / "h2-pause.jsonl", _bigP, None, _PAUSED_TXT)
+            case("H2b ...and the mirror — pausing AFTER that turn ended does not retroactively "
+                 "excuse it, so the sample cannot be read as 'whatever the sentinel says now'",
+                 _rcH2b == WARN and _logtext() != _b2)
+            (_fx / ".claude" / "executing-plan").unlink(missing_ok=True)
         finally:
             (globals()["ROOT"], globals()["SENTINEL"], globals()["WARN_LOG"],
              globals()["FLUSH_LOG"], globals()["JOURNAL_DIR"]) = _saved

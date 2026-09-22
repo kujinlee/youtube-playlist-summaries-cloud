@@ -208,7 +208,7 @@
       ]
     ],
     "expect": [
-      "W-INT ...and it logs under its OWN reason, never the sibling that shares banner=None (backlog #97's mislabelling cannot recur)"
+      "W-INT ...and it logs under its OWN reason, never the sibling that shares banner=None (backlog #97's mislabelling cannot recur), with the count IT SAW rather than the threshold — the two are deliberately different numbers here"
     ]
   },
   {
@@ -287,6 +287,72 @@
     ],
     "expect": [
       "P-INT a PAUSED plan silences the class end to end — no warning, no log line. Since backlog #94 a pause means 'blocked on in-flight work', which is exactly the shape of turn that runs long"
+    ]
+  },
+  {
+    "name": "the third class is HOISTED above the banner lookup, losing its unwritten `no banner` term",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    banner = highest_banner(texts)\n    if banner is None:",
+        "    if not armed and not paused and tool_uses >= LARGE_TURN:\n        return WARN, \"⚠ WORK WITHOUT A BANNER\", REASON_UNHERALDED\n    banner = highest_banner(texts)\n    if banner is None:"
+      ]
+    ],
+    "expect": [
+      "W11 a large UNARMED turn that CLOSED its sequence is quiet — the class is defined on `no banner`, and that term is carried only by where the branch sits",
+      "W12 ...and a large UNARMED turn stopped PARTWAY is the `unarmed` class, never this one — the hoist relabels every one of the log's 76 entries"
+    ]
+  },
+  {
+    "name": "the pause is RE-READ at judging time instead of consumed from the sample",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "tool_uses=tool_uses_of(judged.body), paused=paused_then)",
+        "tool_uses=tool_uses_of(judged.body), paused=_paused())"
+      ]
+    ],
+    "expect": [
+      "H2a a turn that RAN while paused stays quiet even though the plan was RESUMED before it was judged — the verdict reads the SAMPLE, not the live sentinel"
+    ]
+  },
+  {
+    "name": "the log's detail hardcodes the threshold, so every entry sits on the boundary",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "            detail = f\"{tool_uses_of(judged.body) if judged is not None else 0} tool calls\"",
+        "            detail = f\"{LARGE_TURN} tool calls\""
+      ]
+    ],
+    "expect": [
+      "W-INT ...and it logs under its OWN reason, never the sibling that shares banner=None (backlog #97's mislabelling cannot recur), with the count IT SAW rather than the threshold — the two are deliberately different numbers here"
+    ]
+  },
+  {
+    "name": "the pause excuse is withdrawn from the OLDEST class, which holds 100% of the warn log",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    if armed or paused:\n        return QUIET, \"\", \"\"",
+        "    if armed:\n        return QUIET, \"\", \"\""
+      ]
+    ],
+    "expect": [
+      "P11 a PARTWAY banner with a paused plan is quiet — the pause excuse reaches the `unarmed` class, not only the newest one"
+    ]
+  },
+  {
+    "name": "_paused_from_text matches any key STARTING WITH paused, so the two readers disagree",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        if line.split(\":\", 1)[0].strip() == \"paused\":",
+        "        if line.split(\":\", 1)[0].strip().startswith(\"paused\"):"
+      ]
+    ],
+    "expect": [
+      "P10 a key that merely STARTS WITH `paused` is not a pause — the match is equality, so this reader cannot stand down over a key that leaves the sibling armed"
     ]
   }
 ]

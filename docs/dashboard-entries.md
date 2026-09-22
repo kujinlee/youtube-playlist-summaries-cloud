@@ -11256,6 +11256,20 @@ measurement it is built on cannot tell a genuine miss from a job that needed no 
 message it prints says so rather than implying a precision it does not have. And it does not block
 anything yet; that decision is left until the log has enough entries to judge it on.
 
+Review found something worth reporting, and it is not a bug. Two independent reviewers ran over
+this: one read it, ran the tests, and said it was fine. The second went looking for a different
+thing — not "is the code wrong" but "if someone broke this on purpose, would anything notice" — and
+found **four separate ways to break it that every test still passes**. The code was right; the
+tests guarding it were not actually guarding it. One example: the rule is meant to stay quiet when
+a step heading *was* written, and nothing anywhere tested that — the test claiming to was passing
+for an unrelated reason. Moving one line would have made it complain at work that was announced
+properly five times over.
+
+All four are now fixed, along with three smaller things. One is a real change in behaviour: when a
+job is deliberately parked — waiting on something else to finish — the older reminder used to speak
+up anyway and say there was no job registered, which was simply untrue. It now stays quiet, the
+same as the new one does.
+
 **Waiting on you:** nothing yet — this is on a branch and will come to you as a pull request.
 <!--tech-->
 Branch `banner-work-without-banner`. Adds a third warning class to `scripts/check-banner-armed.py`
@@ -11282,9 +11296,38 @@ verbatim backlog #97's second defect, which mislabelled 10 of 15 entries and con
 evidence base the promote-to-blocking decision reads. `decide()` now RETURNS the class that fired,
 so there is one owner; the log derives only the per-class detail.
 
-Suite 98 → 122; manifest 8 → 16. Three of the eight new mutations cover wiring and labelling rather
-than the branch's rules, because the two older classes shipped with their rules covered and their
-wiring not — the suite's own H3 comment records three log mutations surviving on that gap. A fourth
-pins the threshold as a literal: every other case derives from `LARGE_TURN` and so moves with it,
-leaving the calibrated value unfalsifiable. `pyright` on the file: 11 errors before, 11 after, same
-set — none introduced.
+Suite 98 → 140; manifest 8 → 27. Of the nineteen added, three cover WIRING rather than rules (the
+two older classes shipped with their rules covered and their wiring not — the suite's own H3
+comment records three log mutations surviving on that gap), six defend the pause excuse, one pins
+the threshold as a literal, and **five are round 1's**.
+
+⭐ **Those five are the finding of this slice.** The Claude review half found FOUR single-edit
+mutations of the delivered code that left the suite **fully green** — the class's `no banner` term
+(written nowhere; carried only by where the branch sits, so hoisting it warned at a turn that
+emitted five banners and relabelled every `unarmed` entry), `paused` re-read at judging time rather
+than consumed from the sample, the log's `detail` hardcoded to the threshold (invisible because the
+only integration case drove exactly `LARGE_TURN` calls), and the pause key matched by prefix. The
+code computed a correct verdict throughout; it was **undefended**, which is the standard the
+previous commit message set for itself — *"a fix is not done when the suite is green"* — and then
+failed. The Codex half had returned CONVERGED with zero findings over the same diff.
+
+M2 is the one behaviour change: `if armed or paused` in the `unarmed` branch. That class holds
+**100% of the warn log's 76 entries**, and during a stand-down it was emitting *"BANNER WITHOUT A
+PLAN — and `.claude/executing-plan` names nothing"* while the sentinel named a plan. The sibling
+blocking guard says `⏸ PAUSED (<why>)` in the same state; the two agreed on the verdict and
+contradicted each other in the sentence. Backlog #95's fix had promised "`paused` now stands down
+here as it does in the blocking guard" — true of one class out of three until this commit.
+
+M3 is recorded as a bound rather than fixed: an armed plan + no edits + no banner is silent in ALL
+three classes, and **54 of the 207 firing turns (26%)** edit nothing. The branch refutes `edited`
+(52.2% recall, 2.48x separation against turn size's 5.03x) and then leaves it gating the sibling
+class; merging them was rejected because `unbannered` is live with its own falsifiers. L1 is left
+open: `prev_paused`'s path is never reached end to end, and round 1 could not determine whether
+that is untested wiring or dead code.
+
+⭐ Round 1 also re-derived every number in the threshold table independently and **all four rows
+reproduce exactly**, along with the population and all three derived figures — and it measured one
+thing the branch had not: only **12 of 207 firing turns (6%)** sit adjacent to a bannered turn, and
+**71%** are in sessions that used no banner at all. The class is aimed at real silence, not at gaps
+inside announced work. `pyright` on the file: 11 errors before, 11 after, same set — none
+introduced.
