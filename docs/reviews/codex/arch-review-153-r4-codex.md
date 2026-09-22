@@ -1,5 +1,10 @@
 <!-- codex-review: model=gpt-5.5 -->
 
+**REVIEW GAP:** claude — not invoked for this round, by design. Rounds 2+ alternate
+(`docs/review-method.md`, Round topology), and the Claude half authored round 3 — the round whose
+repair this reviews. Its own five Highs are re-graded in the table below by the half that did not
+fix them, which is the point of alternating.
+
 VERDICT: NOT CONVERGED — 0 Blocking, 1 High
 
 | r3 finding | Status | Evidence |
