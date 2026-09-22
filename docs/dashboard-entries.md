@@ -11173,3 +11173,55 @@ One tempting fix is already ruled out and recorded as ruled out, so nobody spend
 it: you cannot catch this by flagging cells that look too long. A legitimate row in the file has a
 554-character entry in exactly that column, because it genuinely touches many files. The workable
 version is to say what *kind* of thing belongs in each column and check for that.
+
+## 2026-09-21
+A guard that is supposed to catch unconfigured CI jobs was telling us everything was fine about a job
+that had no Python setup at all. That is now fixed.
+
+The guard's job is to confirm that every automated check runs on a pinned version of Python, rather
+than whatever version the build machine happens to ship. It works by reading the CI configuration
+files and looking for the setting that pins a version.
+
+The trouble is that those files contain two very different kinds of text. Some of it is
+configuration, which the machine acts on. Some of it is shell script — ordinary commands, written
+into the file as data, which the machine only passes along. A line can look identical in both cases.
+The guard already knew this and deliberately ignored anything inside a script block. It just failed
+to recognise one of the two ways a script block can be opened — the short form, which is by far the
+more common one to type.
+
+So any CI job written in that short form could mention the pinning setting in passing, inside a
+script, and the guard would count it as real. A job could have no Python setup whatsoever and still
+be reported as correctly configured.
+
+Two details made it hide well. The first is that a second safety check, which confirms the pinned
+Python was actually installed, only speaks for the one job the guard itself runs inside — so a
+neighbouring job that was genuinely pinned would satisfy it and the whole file would pass. The second
+is that the test suite appeared to cover this and did not: the test's example was missing a line, and
+without that line the code took an earlier exit and never reached the part being tested. It passed
+for a reason unrelated to what it claimed to prove.
+
+Review changed two things worth recording. The explanation above originally included a third reason
+that was simply wrong — a claim about the order two pieces of the code run in, which turns out to be
+the reverse of what actually happens. Both reviewers caught it independently. The real reason nobody
+noticed is duller and more useful: no configuration file in this project is written in the short
+form, so the question was never asked of it.
+
+The second is that the first fix closed one of four ways to write the same thing — and by the end of
+review it was eleven, not four. Each round of review found more spellings of the same idea, and each
+round's fix was correct; the measured error rate across a generated test space fell by roughly half
+each time. That is the point at which the question stops being "what did we miss" and becomes "is
+this the right instrument at all".
+
+It is not. One of the spellings cannot be caught by this kind of check even in principle, because it
+splits the thing being described across two lines, and the check only ever looks at one line at a
+time. So the last change does something different from the ones before it: instead of teaching the
+check yet another pattern, it makes the check **admit when it cannot tell** and stop with a loud
+"not checked" rather than a quiet "fine". The same file already did exactly this for a different
+case, so this is house style rather than a new idea. Measured before shipping: over the files this
+check actually reads, it never once has to admit defeat — so it is honest without being noisy.
+
+Nothing in the project currently uses the short form, so no job was actually going unchecked. It was
+found by reviewing the architecture review that had just been written about this same guard — which
+was, in turn, about the guard repeatedly mistaking text for configuration. The fix is deliberately
+sequenced ahead of the larger change that review recommended, because that change would have copied
+this reader into two more guards.

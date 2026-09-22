@@ -1950,14 +1950,24 @@ anchor's whole subject: the loop decided its own next step from recorded evidenc
       interpreter this guard pins) and not *refuse* (that is #157, worth doing but not instead).
       ⚠ The row's own scope was wrong in both directions — `check-ci-watched.py` is not a member,
       `check-ratchet-contract.py:835` is — which is why the population was swept rather than recalled.
-- [ ] **#154 — the false green the review FOUND.** ⚠ **First.** A block scalar opened on a `- ` dash
+- [x] **backlog #154 — the false green the review FOUND.** ✅ **PR #331** (open, not merged).
+      ⭐ Round 1 widened it: the first fix closed ONE of four spellings. An anchor on the value
+      (`- run: &x` + an indicator — a shape GitHub Actions added Sept 2025), a quoted key and a
+      nested sequence were all still false-green, each confirmed valid YAML by libyaml. Also
+      found: the indent invariant had no falsifier — moving the dash out of `group(1)` loses a
+      real pin while the suite stays green. ⚠ **First.** A block scalar opened on a `- ` dash
       line is never masked, so a job with no `setup-python` reports `rc 0, "every job pins 3.12"`.
       Latent today; **#155 would promote the reader that carries it into two more guards.**
 - [ ] **#155 — the extraction.** `scripts/workflow_structure.py`; R3 wired to it; 12 anchors **and
       their killing cases** transferred; `EXPECTED_MUTATIONS` 39 → 27 + 12 (a transfer, not a fall).
 - [ ] **#156 — the residue #155 leaves.** `if: false` is structure, so masking cannot see it; and R3
       reads `ci.yml` alone while both siblings read `*.yml` ∪ `*.yaml`.
-- [ ] **#157 — a soundness check for pins and steps.** The mechanism exists in `check-merge-ready.py`.
+- [ ] **backlog #157 — a soundness check for pins and steps.** The mechanism exists in `check-merge-ready.py`. ⭐ Partly answered already: backlog #154 r3–r5 built one for block-scalar
+      openers (`unreadable_scalar_openers`), so this row is now about the REST of the guard.
+- [ ] **backlog #160 — a multi-line QUOTED scalar is still read as structure.** Filed by #154's
+      round 5 with a measured fix deliberately NOT landed: it would be the fourteenth line-local
+      rule, and choosing that over parsing is the decision #153 asked to be made once. Blocked on
+      #155's parse-or-refuse answer; reopen on its own terms if #155 is deferred.
 - [ ] **#158 — the flow-mapping bound.** Read `{k: v}` or refuse on it — a decision, not a regex.
 - [ ] **#159 — found by DOING it, during this review's own repair.** `check-docs.py` verifies a
       backlog row's column COUNT, so content in the wrong column passes identically to content in

@@ -810,7 +810,7 @@ EXPECTED_MUTATIONS = {
     # r1's inline-comment fix had no case and no entry, so deleting it left the suite green.
     # Low 2: three clauses of `pin_took_effect` were undriven and the first is FAIL-OPEN — an
     # EMPTY `pythonLocation` makes `startswith("/")` true for every absolute path on earth.
-    "scripts/check-python-pin.py": 39,
+    "scripts/check-python-pin.py": 52,
     "scripts/check-plan-code.py": 76,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
@@ -3368,7 +3368,7 @@ def _self_test() -> int:
     # while this branch sat open (762 was the sum against the OLD base). Derived rather
     # than typed — `sum(EXPECTED_MUTATIONS.values())` over the merged dict is 854 across
     # 52 entries, and `scripts/mutations/check-python-pin.json` holds exactly 25.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 868)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 881)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
