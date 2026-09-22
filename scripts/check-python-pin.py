@@ -2,7 +2,7 @@
 """Every CI job pins the Python interpreter, the pins agree, and the pin actually took effect.
 
     python3 scripts/check-python-pin.py              # in CI: asserts. locally: advises.
-    python3 scripts/check-python-pin.py --self-test  # 92 cases
+    python3 scripts/check-python-pin.py --self-test  # 99 cases
 
     exit 0 = pinned, agreeing, and (in CI) in effect   exit 1 = a real disagreement
     exit 2 = CANNOT RUN — no workflow or no pin found, which is never a pass
@@ -329,8 +329,37 @@ _STEPS_KEY = re.compile(r"^(\s*)steps:\s*(?:[&!]\S+\s*)*(#.*)?$")
 #                     hold any character; the class is closed by matching quote-to-quote.
 #     - - run: |      a nested sequence, so the dash prefix repeats.
 _BLOCK_SCALAR = re.compile(
-    r"""^(\s*(?:-\s+)*)(?:"[^"]*"|'[^']*'|[\w.\-]+):"""
-    r"""\s*(?:[&!]\S+\s*)*[|>][-+0-9]*\s*(#.*)?$""")
+    r"""^(\s*(?:-\s+)*)(?:"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[^\s:][^:]*?)"""
+    r"""\s*:\s*(?:[&!]\S+\s*)*[|>][-+0-9]*\s*(#.*)?$""")
+
+
+# ⛔ THE REFUSAL, and it is the terminal move rather than a sixth alternative — backlog #154 r3.
+# Three rounds widened this pattern and each round's fix was CORRECT: measured over one fixed
+# 7,200-fixture generated space, the false-green rate fell 100% (master) -> 76.7% -> 36.7%, and the
+# generic key rule above takes it to 0% for every shape a line-local matcher can see.
+#
+# ⭐ BUT ONE SHAPE PROVES THE BOUNDARY AND NO REGEX REACHES IT. YAML's explicit-key form puts the
+# key and the indicator on DIFFERENT LINES:
+#
+#       ? run
+#       : |
+#           uses: actions/setup-python@v5
+#
+# A line-local matcher cannot see the key it needs, however much alternation it is given. That is
+# PR #329's conclusion — *you cannot reach a language by adding special cases to a regular
+# expression* — demonstrated rather than asserted.
+#
+# So this stops guessing and starts refusing, which is EXACTLY what `unreadable_jobs` (`:470`)
+# already does one screen down for the same reason: a shape the scan cannot read becomes a loud
+# CANNOT RUN instead of a silent pass. ⚠ Measured before shipping: over the guard's own corpus
+# (282 structural lines in `.github/workflows/`) this fires ZERO times, and across all 18 YAML files
+# in the repository (7,623 structural lines) it fires three times — all Playwright page snapshots
+# this guard never opens.
+# ⚠ THE KEY PART IS OPTIONAL, and the first version of this required it — which missed the one
+# shape the refusal exists for. YAML's explicit-key form puts the indicator on a line that is
+# bare `: |`, with no key before the colon at all; `\S.*?:` cannot match that. Measured: the
+# explicit key stayed a FALSE GREEN through the first draft of this very refusal.
+_LOOSE_SCALAR = re.compile(r"^\s*(?:-\s+)*[^\n]*?:\s*(?:[&!]\S+\s*)*[|>][-+0-9]*\s*(#.*)?$")
 
 
 def _structural(body: list[str]) -> list[str]:
@@ -465,6 +494,27 @@ def job_names(text: str) -> list[str]:
             if m:
                 out.append(m.group(1))
     return out
+
+
+def unreadable_scalar_openers(text: str) -> list[str]:
+    """PURE. Lines that OPEN a block scalar but that `_BLOCK_SCALAR` could not classify.
+
+    ⛔ backlog #154 r3. `_BLOCK_SCALAR` decides which lines are CONTENT; a line it fails to match is
+    silently treated as structure, and structure is what `declared_pins` reads. So every shape the
+    pattern does not know is a FALSE GREEN by default — the direction this guard must never fail in.
+    Three review rounds found eleven such shapes one at a time.
+
+    This asks the complementary question and refuses instead of guessing: *does this line end in a
+    block indicator after a colon, while the strict pattern did not recognise it?* It needs no YAML
+    knowledge, and it reaches the explicit-key form that no per-line regex can — the caller sees a
+    loud CANNOT RUN rather than a confident wrong answer.
+
+    ⚠ ITS BOUND, stated rather than discovered later: it is line-local too, so a block indicator
+    inside a quoted string on one line could trip it. That direction is SAFE — it refuses, and a
+    refusal is visible — which is the whole reason this shape of check is allowed to be crude.
+    """
+    return [ln for ln in _structural(text.split("\n"))
+            if _LOOSE_SCALAR.match(ln) and not _BLOCK_SCALAR.match(ln)]
 
 
 def unreadable_jobs(text: str) -> int:
@@ -609,6 +659,18 @@ def verdict(workflows: dict[str, str], running: str, in_ci: bool,
     # four shapes; this refuses the rest instead of guessing, turning any future unparseable shape
     # from a silent pass into a loud NOT CHECKED. ⚠ It is the guard being calibrated on its own
     # corpus that made this reachable at all.
+    # ⛔ backlog #154 r3 — refuse a scalar opener the strict pattern could not classify, for the
+    # same reason the job refusal below exists: an unrecognised shape is read as STRUCTURE, and
+    # structure is what `declared_pins` trusts. Silent guess -> loud CANNOT RUN.
+    unreadable_openers = sorted(
+        f"{f}: {ln.strip()}" for f, text in workflows.items()
+        for ln in unreadable_scalar_openers(text))
+    if unreadable_openers:
+        return 2, ("CANNOT RUN — a line opens a block scalar in a shape this scan cannot read:\n"
+                   + "\n".join("    " + o for o in unreadable_openers) + "\n"
+                   "  Its body would be read as YAML STRUCTURE, so a `python-version:` quoted\n"
+                   "  inside it would count as a real pin. Refusing rather than guessing.\n"
+                   "  NOT CHECKED.")
     jobless = sorted(f for f, text in workflows.items()
                      if not job_names(text) or unreadable_jobs(text))
     if jobless:
@@ -934,7 +996,9 @@ def self_test() -> int:
     # ⛔ r1 HIGH — THE INDENT INVARIANT HAD NO FALSIFIER. `_BLOCK_SCALAR`'s group 1 must end at the
     # KEY, because `_structural` uses its length as the scalar's indent. The tidier-looking spelling
     # `(\s*)(?:-\s+)?` makes it the DASH column instead, two too shallow, so the scalar swallows its
-    # own step's sibling keys and a REAL pin is lost — and the suite stayed 86/86 green under it.
+    # own step's sibling keys and a REAL pin is lost — and the suite stayed GREEN under it, which is
+    # why this case exists. (No count quoted: it was written as `86/86` and was two rounds stale
+    # within the hour. The suite declares its own size in the docstring, verified by running it.)
     # A comment was the only thing holding the invariant; this case and its mutation now hold it.
     case("a sibling key at the KEY column ends a dash-opened scalar, so the step's real pin survives",
          declared_pins("jobs:\n  verify:\n    steps:\n      - run: |\n"
@@ -962,6 +1026,42 @@ def self_test() -> int:
          declared_pins("jobs:\n  verify:\n    steps:\n      - \"a:b\": |\n"
                        "          uses: actions/setup-python@v5\n"
                        "          with:\n            python-version: '9.9'\n"), [])
+    # ⛔ r3 — THE CLASS, closed by ONE generic key rule instead of a fifth, sixth and seventh
+    # alternative. Round 3 measured the false-green rate over a fixed 7,200-fixture generated space
+    # at 100% (master) -> 76.7% (r1) -> 36.7% (r2); the rule below takes every line-visible shape to
+    # zero. All four are valid YAML whose body libyaml reports as CONTENT.
+    case("...nor does one behind a key with a SPACE before its colon",
+         declared_pins("jobs:\n  verify:\n    steps:\n      - run : |\n"
+                       "          uses: actions/setup-python@v5\n"
+                       "          with:\n            python-version: '9.9'\n"), [])
+    case("...nor does one behind a double-quoted key holding an ESCAPED quote",
+         declared_pins("jobs:\n  verify:\n    steps:\n      - \"a\\\"b\": |\n"
+                       "          uses: actions/setup-python@v5\n"
+                       "          with:\n            python-version: '9.9'\n"), [])
+    case("...nor does one behind a single-quoted key holding a DOUBLED quote",
+         declared_pins("jobs:\n  verify:\n    steps:\n      - 'a''b': |\n"
+                       "          uses: actions/setup-python@v5\n"
+                       "          with:\n            python-version: '9.9'\n"), [])
+    case("...nor does one behind an unquoted key containing a SPACE",
+         declared_pins("jobs:\n  verify:\n    steps:\n      - my run: |\n"
+                       "          uses: actions/setup-python@v5\n"
+                       "          with:\n            python-version: '9.9'\n"), [])
+    # ⛔ r3 — THE SHAPE NO REGEX REACHES, and therefore the one the guard REFUSES. YAML's explicit
+    # key puts the key (`? run`) and the indicator (`: |`) on DIFFERENT LINES, so a line-local
+    # matcher cannot see the key it needs. This is PR #329's conclusion demonstrated: the answer is
+    # not a further alternative, it is to stop guessing.
+    case("an EXPLICIT-KEY scalar cannot be classified, so it is REFUSED rather than guessed",
+         unreadable_scalar_openers("jobs:\n  verify:\n    steps:\n      - ? run\n        : |\n"
+                                   "            uses: actions/setup-python@v5\n") != [], True)
+    case("...and that refusal is a CANNOT RUN, not a silent pass",
+         verdict({"w.yml": "jobs:\n  verify:\n    steps:\n      - ? run\n        : |\n"
+                           "            uses: actions/setup-python@v5\n"
+                           "            with:\n              python-version: '3.12'\n"},
+                 "3.12", True, None, _EXE, _LOC)[0], 2)
+    # ⚠ AND IT MUST BE QUIET, or it is a gate that gets switched off (backlog #56). Measured over
+    # this repository's own workflows: 282 structural lines, zero refusals.
+    case("...while an ordinary workflow triggers no refusal at all",
+         unreadable_scalar_openers(PINNED), [])
     case("...nor does one behind a QUOTED key",
          declared_pins("jobs:\n  verify:\n    steps:\n      - \"run\": |\n"
                        "          uses: actions/setup-python@v5\n"

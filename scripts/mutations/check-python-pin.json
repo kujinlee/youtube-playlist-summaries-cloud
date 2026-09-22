@@ -312,18 +312,17 @@
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
-        "[|>][-+0-9]*",
-        "[|][-+0-9]*"
+        "[|>][-+0-9]*\\s*(#.*)?$\"\"\"",
+        "[|][-+0-9]*\\s*(#.*)?$\"\"\""
       ]
     ],
     "expect": "...nor does one in a FOLDED scalar"
   },
   {
     "file": "scripts/check-python-pin.py",
-    "name": "the block-scalar opener stops accepting a DASH-opened scalar, so `- run: |` content is read as structure again (backlog #154)",
+    "name": "the dash prefix is dropped from group 1, so a dash-opened scalar's indent becomes the DASH column instead of the KEY column and the scalar swallows its step's sibling keys — ⭐ r3: the GENERIC key rule absorbs `- run` as a key, so this group's remaining job is the INDENT alone (backlog #154)",
     "expect": [
-      "a pin quoted inside a DASH-opened block scalar is not a pin",
-      "...and a job holding only those still reports as unpinned"
+      "a sibling key at the KEY column ends a dash-opened scalar, so the step's real pin survives"
     ],
     "edits": [
       [
@@ -347,14 +346,50 @@
     "file": "scripts/check-python-pin.py",
     "name": "the block-scalar opener stops accepting a QUOTED key of any kind, so `- \"run\": |`, `- \"my run\": |` and `- \"a:b\": |` are read as structure (backlog #154 r1+r2)",
     "expect": [
-      "...nor does one behind a QUOTED key",
-      "...nor does one behind a quoted key containing a SPACE",
-      "...nor does one behind a quoted key containing a COLON"
+      "...nor does one behind a double-quoted key holding an ESCAPED quote",
+      "...nor does one behind a single-quoted key holding a DOUBLED quote",
+      "...nor does one behind an unquoted key containing a SPACE"
     ],
     "edits": [
       [
-        "(?:\"[^\"]*\"|'[^']*'|[\\w.\\-]+):",
-        "[\\w.\\-]+:"
+        "(?:\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^']|'')*'|[^\\s:][^:]*?)",
+        "(?:\"[^\"]*\"|'[^']*'|[\\w.\\-]+)"
+      ]
+    ]
+  },
+  {
+    "file": "scripts/check-python-pin.py",
+    "name": "the colon must touch the key again, so `- run : |` is read as structure (backlog #154 r3)",
+    "expect": "...nor does one behind a key with a SPACE before its colon",
+    "edits": [
+      [
+        "\"\"\"\\s*:\\s*(?:[&!]",
+        "\"\"\"\\s*:(?:[&!]"
+      ]
+    ]
+  },
+  {
+    "file": "scripts/check-python-pin.py",
+    "name": "the REFUSAL predicate requires a key before the colon again, so YAML's explicit-key form — the one shape no per-line regex reaches — goes back to a silent FALSE GREEN (backlog #154 r3)",
+    "expect": [
+      "an EXPLICIT-KEY scalar cannot be classified, so it is REFUSED rather than guessed",
+      "...and that refusal is a CANNOT RUN, not a silent pass"
+    ],
+    "edits": [
+      [
+        "[^\\n]*?:\\s*(?:[&!]",
+        "\\S.*?:\\s*(?:[&!]"
+      ]
+    ]
+  },
+  {
+    "file": "scripts/check-python-pin.py",
+    "name": "verdict stops refusing an unclassifiable scalar opener, so the guess is silent again (backlog #154 r3)",
+    "expect": "...and that refusal is a CANNOT RUN, not a silent pass",
+    "edits": [
+      [
+        "    if unreadable_openers:",
+        "    if False:"
       ]
     ]
   },
@@ -364,8 +399,8 @@
     "expect": "...nor does one behind a YAML ANCHOR on the value",
     "edits": [
       [
-        "(?:[&!]\\S+\\s*)*[|>]",
-        "[|>]"
+        "\\s*:\\s*(?:[&!]\\S+\\s*)*",
+        "\\s*:\\s*"
       ]
     ]
   },

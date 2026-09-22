@@ -11206,10 +11206,19 @@ the reverse of what actually happens. Both reviewers caught it independently. Th
 noticed is duller and more useful: no configuration file in this project is written in the short
 form, so the question was never asked of it.
 
-The second is that the first fix closed one of four ways to write the same thing. Reviewers found
-three more — including one that the hosting platform only started supporting in September, and one
-that a sibling piece of code in the same file had already been corrected for, thirteen lines away.
-All four are closed now, and each is held by a test that fails if the fix is removed.
+The second is that the first fix closed one of four ways to write the same thing — and by the end of
+review it was eleven, not four. Each round of review found more spellings of the same idea, and each
+round's fix was correct; the measured error rate across a generated test space fell by roughly half
+each time. That is the point at which the question stops being "what did we miss" and becomes "is
+this the right instrument at all".
+
+It is not. One of the spellings cannot be caught by this kind of check even in principle, because it
+splits the thing being described across two lines, and the check only ever looks at one line at a
+time. So the last change does something different from the ones before it: instead of teaching the
+check yet another pattern, it makes the check **admit when it cannot tell** and stop with a loud
+"not checked" rather than a quiet "fine". The same file already did exactly this for a different
+case, so this is house style rather than a new idea. Measured before shipping: over the files this
+check actually reads, it never once has to admit defeat — so it is honest without being noisy.
 
 Nothing in the project currently uses the short form, so no job was actually going unchecked. It was
 found by reviewing the architecture review that had just been written about this same guard — which
