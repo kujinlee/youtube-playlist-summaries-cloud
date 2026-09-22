@@ -2,7 +2,7 @@
 """Every CI job pins the Python interpreter, the pins agree, and the pin actually took effect.
 
     python3 scripts/check-python-pin.py              # in CI: asserts. locally: advises.
-    python3 scripts/check-python-pin.py --self-test  # 90 cases
+    python3 scripts/check-python-pin.py --self-test  # 92 cases
 
     exit 0 = pinned, agreeing, and (in CI) in effect   exit 1 = a real disagreement
     exit 2 = CANNOT RUN — no workflow or no pin found, which is never a pass
@@ -323,10 +323,14 @@ _STEPS_KEY = re.compile(r"^(\s*)steps:\s*(?:[&!]\S+\s*)*(#.*)?$")
 #     - run: &x |     a YAML anchor on the value. ⚠ NOT hypothetical — GitHub Actions added
 #                     anchor/alias support in Sept 2025. `_STEPS_KEY` was widened for exactly this
 #                     in r5 and the rule was not carried 13 lines down to its sibling.
-#     - "run": |      a quoted key.
+#     - "run": |      a quoted key. ⛔ r2: MY FIRST CLOSURE OF THIS WAS HALF-DONE — it
+#                     allowed the QUOTES but still required `[\w.\-]+` INSIDE them, so
+#                     `- "my run": |` and `- "a:b": |` stayed false-green. A quoted key may
+#                     hold any character; the class is closed by matching quote-to-quote.
 #     - - run: |      a nested sequence, so the dash prefix repeats.
 _BLOCK_SCALAR = re.compile(
-    r"""^(\s*(?:-\s+)*)["']?[\w.\-]+["']?:\s*(?:[&!]\S+\s*)*[|>][-+0-9]*\s*(#.*)?$""")
+    r"""^(\s*(?:-\s+)*)(?:"[^"]*"|'[^']*'|[\w.\-]+):"""
+    r"""\s*(?:[&!]\S+\s*)*[|>][-+0-9]*\s*(#.*)?$""")
 
 
 def _structural(body: list[str]) -> list[str]:
@@ -921,9 +925,12 @@ def self_test() -> int:
     # ⛔ THE DASH-OPENED BLOCK SCALAR — backlog #154, the defect this repair exists for.
     # `- run: |` is the ordinary GitHub Actions short form. `_BLOCK_SCALAR` required a bare key at
     # the line's indent, and `[\w.\-]+` cannot span the space in `- run:`, so the scalar's body was
-    # never masked and its text was read as structure. Inside `_steps` this never bit, because
-    # `Step.body` blanks the dash first — the function was right about a STEP and wrong about a
-    # FILE, which is the whole subject of the architecture review that found it.
+    # never masked and its text was read as structure. ⛔ r2: AN EARLIER VERSION OF THIS COMMENT
+    # REPEATED THE INVERTED STORY corrected at `_BLOCK_SCALAR` — I fixed the sentence there and
+    # missed its copy here, which is the instance-not-class shape this whole row is about.
+    # `_structural` has ONE call site (`:232`, the whole file) and the dash-blanking at `:264`
+    # happens AFTER it, so the defect went straight THROUGH `_steps`. It survived because no
+    # workflow here uses the short form.
     # ⛔ r1 HIGH — THE INDENT INVARIANT HAD NO FALSIFIER. `_BLOCK_SCALAR`'s group 1 must end at the
     # KEY, because `_structural` uses its length as the scalar's indent. The tidier-looking spelling
     # `(\s*)(?:-\s+)?` makes it the DASH column instead, two too shallow, so the scalar swallows its
@@ -942,6 +949,17 @@ def self_test() -> int:
     # `_STEPS_KEY` had already been widened for anchors in r5 — 13 lines up from here.
     case("...nor does one behind a YAML ANCHOR on the value",
          declared_pins("jobs:\n  verify:\n    steps:\n      - run: &x |\n"
+                       "          uses: actions/setup-python@v5\n"
+                       "          with:\n            python-version: '9.9'\n"), [])
+    # ⛔ r2 — MY FIRST CLOSURE OF THE QUOTED-KEY CLASS WAS HALF-DONE: it allowed the quotes but
+    # still required `[\w.\-]+` inside them, so a key with a SPACE or a COLON stayed false-green.
+    # Both are valid YAML (libyaml agrees) and both reported a pin over a job with no setup-python.
+    case("...nor does one behind a quoted key containing a SPACE",
+         declared_pins("jobs:\n  verify:\n    steps:\n      - \"my run\": |\n"
+                       "          uses: actions/setup-python@v5\n"
+                       "          with:\n            python-version: '9.9'\n"), [])
+    case("...nor does one behind a quoted key containing a COLON",
+         declared_pins("jobs:\n  verify:\n    steps:\n      - \"a:b\": |\n"
                        "          uses: actions/setup-python@v5\n"
                        "          with:\n            python-version: '9.9'\n"), [])
     case("...nor does one behind a QUOTED key",

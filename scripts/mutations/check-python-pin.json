@@ -345,11 +345,15 @@
   },
   {
     "file": "scripts/check-python-pin.py",
-    "name": "the block-scalar opener stops accepting a QUOTED key (backlog #154 r1)",
-    "expect": "...nor does one behind a QUOTED key",
+    "name": "the block-scalar opener stops accepting a QUOTED key of any kind, so `- \"run\": |`, `- \"my run\": |` and `- \"a:b\": |` are read as structure (backlog #154 r1+r2)",
+    "expect": [
+      "...nor does one behind a QUOTED key",
+      "...nor does one behind a quoted key containing a SPACE",
+      "...nor does one behind a quoted key containing a COLON"
+    ],
     "edits": [
       [
-        "[\"']?[\\w.\\-]+[\"']?:",
+        "(?:\"[^\"]*\"|'[^']*'|[\\w.\\-]+):",
         "[\\w.\\-]+:"
       ]
     ]
