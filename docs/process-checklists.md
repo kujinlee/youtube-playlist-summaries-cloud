@@ -551,18 +551,35 @@ a file, answering a question, a one-line correction: naming these costs more tha
 | 2 | a **branch** | `dev-process.md` Phase 5 already requires branch + PR for any `lib/ app/ scripts/ tests/` or config change. A side job is not an exception to it |
 | 3 | a **backlog row** — ONLY if you are deferring it | filing what you are about to do in the next ten minutes is bookkeeping. Filing what you are NOT going to do is the point. ⚠ Filing is the user's step — agree before filing |
 
-### Switching, and the limit that makes it awkward
+### Switching, and what is actually supervised
 
-⛔ **`.claude/executing-plan` supervises ONE plan.** Two threads cannot both be armed. This is not a
-bug to route around; it is a constraint to state:
+⟳ **CORRECTED 2026-09-22, HOURS AFTER THIS RULE WAS WRITTEN.** The first version said
+*"`.claude/executing-plan` supervises ONE plan; two threads cannot both be armed."* **False, and
+measured false the same afternoon** — with both threads live, the main tree's sentinel held one
+plan and a worktree's held the other, simultaneously. `begin-plan.py` resolves `ROOT` from its own
+path, so **every tree gets a private sentinel**. The constraint was written from one observation
+(the two threads happened to share a tree) instead of from the mechanism.
+
+⛔ **THE REAL LIMIT IS NARROWER AND WORSE: one plan per tree, but only ONE TREE IS SUPERVISED.**
+`.claude/hooks/block-idle-stop.sh` derives `REPO_ROOT` from its own path, and the session runs the
+hook belonging to the session's cwd. Observed: while work happened in a worktree, the Stop hook
+kept reporting the MAIN tree's plan. So a worktree plan **gives banners a name and has no guard
+behind it** — premature-stop protection is not running for that thread.
+
+**Same tree as the current thread** (the common case):
 
 1. `--pause` the current thread with a reason that says **how to get back** — name the plan file,
    because the next turn will not remember it.
-2. Arm the side job.
-3. **Mark the switch in the banner.** `⤳ SWITCHED from <old> (state) → <new>` and `↳ RESUMED <old>`.
-   The glyph is what makes it scannable; the parenthetical state is what makes it recoverable.
-4. `--finish` the side job, then re-arm the original with `--plan .claude/plans/<slug>.md`, which
-   preserves its ticks.
+2. Arm the side job; `--finish` it; re-arm the original with `--plan .claude/plans/<slug>.md`,
+   which preserves its ticks.
+
+**A separate worktree** (isolation from an in-flight sweep or a live agent): arm its own plan
+directly — no pause/resume dance — **and know its Stop guard is not firing.** That is a reason to
+prefer the same tree unless isolation is actually needed, not a free upgrade.
+
+**Either way, mark the switch in the banner:** `⤳ SWITCHED from <old> (state) → <new>` and
+`↳ RESUMED <old>`. The glyph is what makes it scannable; the parenthetical state is what makes it
+recoverable. This is the half that does not depend on which tree anything is in.
 
 ### What is mechanically enforced, and what is not
 

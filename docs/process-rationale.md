@@ -689,15 +689,29 @@ tracked file) is set where the cost stops mattering, and it is deliberately the 
 `dev-process.md` Phase 5 already uses for branch + PR: *touching a tracked file* is what makes a
 change worth a name, whoever asked for it.
 
-⛔ **THE CONSTRAINT UNDERNEATH, stated because routing around it is what went wrong.**
-`.claude/executing-plan` supervises exactly ONE plan. Two live threads cannot both be armed, so
-every side job over the bar costs a pause/arm/finish/re-arm cycle on a shared file. Backlog #100
-already records that file as a structured state file with no schema and two de-facto owners; this
-is a different limitation of the same file, and unlike #100's three instances it is not a defect —
-it is a design that has only ever had to supervise one thread. Whether it should hold a stack is a
-real question and is NOT decided here; what is decided is that the swap must be **announced**
-(`⤳` / `↳`) and the pause reason must name the plan file to return to, because the next turn will
-not remember it.
+⟳ **AND THE FIRST VERSION OF THIS SECTION GOT THE CONSTRAINT WRONG, WHICH IS THE MORE USEFUL
+HALF.** It stated: *"`.claude/executing-plan` supervises exactly ONE plan. Two live threads cannot
+both be armed."* Checked hours later, with both threads still live: **both were armed**, one in the
+main tree and one in a worktree. `begin-plan.py` resolves `ROOT` from its own path, so each tree
+has a private sentinel. The claim was generalised from a single observation — the two threads of
+that afternoon happened to share a tree — and written as a property of the mechanism. The recorded
+shape *check the assumption, not just the code*, committed inside a rule about not letting
+unexamined preconditions fail silently.
+
+⛔ **THE ACTUAL LIMIT IS NARROWER AND MORE DANGEROUS.** One sentinel per tree, but only one tree is
+SUPERVISED: `block-idle-stop.sh` derives `REPO_ROOT` from its own path and the session runs the
+hook under its cwd. Observed directly — while work ran in the worktree, every Stop-hook message
+named the MAIN tree's plan. So arming a plan in a worktree buys a thread NAME for banners and buys
+no premature-stop protection at all, which is the opposite of the impression "both threads are
+armed" gives. A worktree is for isolating a tree from an in-flight sweep or a live agent; it is not
+a way to supervise two threads at once.
+
+Backlog #100 already records the sentinel as a structured state file with no schema and two
+de-facto owners; this is a different property of the same file and, unlike #100's instances, not a
+defect — it is a design that has only ever had to supervise one tree. Whether the hook should read
+every worktree's sentinel is a real question and is NOT decided here. What is decided is that the
+swap must be **announced** (`⤳` / `↳`), and that a pause reason must name the plan file to return
+to, because the next turn will not remember it.
 
 ⭐ **The mechanical half already exists and shipped alongside this.** A turn that does substantial
 work with nothing armed and no banner is `check-banner-armed.py`'s `unheralded` class — built in
