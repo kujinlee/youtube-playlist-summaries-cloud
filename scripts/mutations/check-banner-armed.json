@@ -100,11 +100,11 @@
     "edits": [
       [
         "    return f\"{when}\\t{session or '-'}\\t{before}\\t{after}\\n\"",
-        "    return f\"{when}\\t{session or '-'}\\tflush\\n\""
+        "    return f\"{when}\\t{session or '-'}\\t1\\t2\\n\""
       ]
     ],
     "expect": [
-      "Cx-M1 ...and the observation LINE carries the measured counts, not just a line"
+      "R5-646 flush_line carries BOTH measured counts, at two distinct input pairs — the counts ARE the evidence, and a constant pair keeps the file populated while recording nothing that was measured"
     ]
   },
   {
@@ -499,16 +499,68 @@
     ]
   },
   {
-    "name": "the warning message's tool count is frozen, leaving only the threshold sentence",
+    "name": "the message's tool count is frozen at LARGE_TURN + 3 — the value r4's own fix chose, and therefore the one its single-input case could not catch",
     "file": "scripts/check-banner-armed.py",
     "edits": [
       [
         "f\"⚠ WORK WITHOUT A BANNER — this turn made {tool_uses} tool calls, armed no plan, \"",
-        "f\"⚠ WORK WITHOUT A BANNER — this turn made {LARGE_TURN + 7} tool calls, armed no plan, \""
+        "f\"⚠ WORK WITHOUT A BANNER — this turn made {LARGE_TURN + 3} tool calls, armed no plan, \""
       ]
     ],
     "expect": [
-      "...and it reports the COUNT it saw, not a fixed string (catches a hardcoded message)"
+      "...and it reports the COUNT IT SAW — asserted at TWO distinct inputs, so no constant satisfies it (catches a hardcoded message, which for three rounds it did not)"
+    ]
+  },
+  {
+    "name": "the plan-without-a-banner message freezes its unticked count",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "f\"⚠ PLAN WITHOUT A BANNER — this turn edited a file in the repo with \"\n                f\"{unticked} step(s) still unticked",
+        "f\"⚠ PLAN WITHOUT A BANNER — this turn edited a file in the repo with \"\n                f\"3 step(s) still unticked"
+      ]
+    ],
+    "expect": [
+      "R5-533 the PLAN-WITHOUT-A-BANNER message reports the unticked count it was given, at two distinct inputs — nothing read this number before"
+    ]
+  },
+  {
+    "name": "the banner-without-a-plan message freezes the step and total it reports",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "f\"⚠ BANNER WITHOUT A PLAN — this turn's HIGHEST VISIBLE banner is `STEP {step} of \"\n        f\"{total}`, and .claude/executing-plan names nothing.\\n\"",
+        "f\"⚠ BANNER WITHOUT A PLAN — this turn's HIGHEST VISIBLE banner is `STEP 2 of \"\n        f\"5`, and .claude/executing-plan names nothing.\\n\""
+      ]
+    ],
+    "expect": [
+      "R5-602 the BANNER-WITHOUT-A-PLAN message reports the step AND the total it saw, at two distinct inputs — a frozen `STEP 2 of 5` tells the reader a specific false thing about their own turn, in the sentence asking them not to over-read it"
+    ]
+  },
+  {
+    "name": "the `all N steps` clause freezes its total",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "f\"   a job that announced and finished all {total} steps can look partway-done here.\\n\"",
+        "f\"   a job that announced and finished all 5 steps can look partway-done here.\\n\""
+      ]
+    ],
+    "expect": [
+      "R5-607 ...and so does the `all N steps` clause further down the same message"
+    ]
+  },
+  {
+    "name": "flush_line freezes its session column",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    return f\"{when}\\t{session or '-'}\\t{before}\\t{after}\\n\"\n\n\n# ── I/O shell",
+        "    return f\"{when}\\tfl-text\\t{before}\\t{after}\\n\"\n\n\n# ── I/O shell"
+      ]
+    ],
+    "expect": [
+      "R5-646b ...and its session column too"
     ]
   }
 ]

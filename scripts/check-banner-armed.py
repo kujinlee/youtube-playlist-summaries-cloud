@@ -123,7 +123,7 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 150 cases
+    python3 scripts/check-banner-armed.py --self-test  # 156 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -1376,8 +1376,52 @@ def _self_test() -> int:
          decide([], armed=False, tool_uses=_BIG)[0] == WARN)
     case("...and it names the work-without-banner direction",
          "WORK WITHOUT A BANNER" in decide([], armed=False, tool_uses=_BIG)[1])
-    case("...and it reports the COUNT it saw, not a fixed string (catches a hardcoded message)",
-         f"{_BIG} tool calls" in decide([], armed=False, tool_uses=_BIG)[1])
+    # ⛔ TWO DISTINCT INPUTS, IN ONE CASE — r5 High 1, and this case is why the property exists.
+    # For three consecutive rounds a case literally named *catches a hardcoded message* was
+    # satisfied BY a hardcoded message. It called the producer ONCE and asserted the literal that
+    # call supplied, so the constant equal to that literal always passed. r4 tried to fix it by
+    # moving `_BIG` off the threshold; that only changed WHICH constant survives — freezing the
+    # count at `LARGE_TURN + 3` then passed, and `LARGE_TURN + 3` is the value r4 itself chose.
+    #
+    # ⭐ THE PROPERTY, which replaces the whole class rather than its instances: **a case asserting
+    # a derived value must exercise its producer at two DISTINCT inputs.** No constant can satisfy
+    # an assertion evaluated at two different inputs — not the threshold, not either fixture's
+    # literal, not a value chosen later. Pairwise-distinct FIXTURES do not give this: that is a
+    # property of having two call sites that happen to disagree, and r5 measured it holding for
+    # exactly 2 of 11 derived-value sites, by coincidence of fixture design.
+    _lo, _hi = LARGE_TURN + 1, LARGE_TURN + 97
+    case("...and it reports the COUNT IT SAW — asserted at TWO distinct inputs, so no constant "
+         "satisfies it (catches a hardcoded message, which for three rounds it did not)",
+         f"{_lo} tool calls" in decide([], armed=False, tool_uses=_lo)[1]
+         and f"{_hi} tool calls" in decide([], armed=False, tool_uses=_hi)[1])
+    case("R5-533 the PLAN-WITHOUT-A-BANNER message reports the unticked count it was given, at "
+         "two distinct inputs — nothing read this number before",
+         "3 step(s) still unticked" in decide([], armed=True, steps=(1, 4), edited=True)[1]
+         and "7 step(s) still unticked" in decide([], armed=True, steps=(0, 7), edited=True)[1])
+    case("R5-602 the BANNER-WITHOUT-A-PLAN message reports the step AND the total it saw, at two "
+         "distinct inputs — a frozen `STEP 2 of 5` tells the reader a specific false thing about "
+         "their own turn, in the sentence asking them not to over-read it",
+         "`STEP 7 of 8" in decide([B.format(7, 8)], armed=False)[1]
+         and "`STEP 1 of 9" in decide([B.format(1, 9)], armed=False)[1])
+    case("R5-607 ...and so does the `all N steps` clause further down the same message",
+         "all 8 steps" in decide([B.format(7, 8)], armed=False)[1]
+         and "all 9 steps" in decide([B.format(1, 9)], armed=False)[1])
+
+    # The two PURE log producers, each at two distinct inputs. `flush_line`'s counts are the
+    # evidence base for backlog #96/#97 — the case written against exactly this defect (Cx-M1)
+    # pinned the STRING and left the counts and the session ambient, because its only scenario
+    # supplies `fl-text`, 1 and 2 and it asserts those literals.
+    case("R5-636 log_line carries the SESSION it was given, at two distinct inputs",
+         log_line("unarmed", "d", "T", "sess-a").split("\t")[1] == "sess-a"
+         and log_line("unarmed", "d", "T", "sess-b").split("\t")[1] == "sess-b")
+    case("R5-646 flush_line carries BOTH measured counts, at two distinct input pairs — the "
+         "counts ARE the evidence, and a constant pair keeps the file populated while recording "
+         "nothing that was measured",
+         flush_line(4, 11, "T", "s").split("\t")[-2:] == ["4", "11\n"]
+         and flush_line(1, 2, "T", "s").split("\t")[-2:] == ["1", "2\n"])
+    case("R5-646b ...and its session column too",
+         flush_line(1, 2, "T", "sess-a").split("\t")[1] == "sess-a"
+         and flush_line(1, 2, "T", "sess-b").split("\t")[1] == "sess-b")
     case("W2 one call BELOW the threshold is quiet — the boundary is exact, not approximate",
          decide([], armed=False, tool_uses=_SMALL)[0] == QUIET)
     # ⛔ THE BOUNDARY NEEDS ITS OWN CASE, AND FIXING THE AMBIENT-CONSTANT CLASS IS WHAT TOOK IT
