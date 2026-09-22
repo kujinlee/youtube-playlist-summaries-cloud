@@ -1959,6 +1959,14 @@ anchor's whole subject: the loop decided its own next step from recorded evidenc
       reads `ci.yml` alone while both siblings read `*.yml` ∪ `*.yaml`.
 - [ ] **#157 — a soundness check for pins and steps.** The mechanism exists in `check-merge-ready.py`.
 - [ ] **#158 — the flow-mapping bound.** Read `{k: v}` or refuse on it — a decision, not a regex.
+- [ ] **#159 — found by DOING it, during this review's own repair.** `check-docs.py` verifies a
+      backlog row's column COUNT, so content in the wrong column passes identically to content in
+      the right one — an `Edit` anchored on a string beginning with a cell's CLOSING pipe lands one
+      column early. ⚠ Scope stated honestly: Status placement IS guaranteed by count, so no false
+      closure is possible and this is not a repeat of #46/#50; zero rows on master are affected and
+      nothing consumes the Touches/Size columns. Filed because the failure is indistinguishable
+      from success and the one instance was an automated edit. ⚠ A length threshold is REFUTED by
+      the corpus (#23's legitimate Touches cell is 554 chars) — the fix is a per-column TYPE.
 
 **What the review changed outside its own document:** two terms into `CONTEXT.md` → Verification
 Stack (**structural line**, **soundness check**) — the absence of a shared word is why three guards

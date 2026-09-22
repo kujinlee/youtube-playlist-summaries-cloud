@@ -11144,3 +11144,32 @@ one question every architecture review here has to answer out loud: what did we 
 wrote down? In this case, that the project had no word for the distinction all three guards had
 independently invented — so two terms went into the glossary, which is the same gap that created
 that section of the glossary in the first place.
+
+## 2026-09-21
+A note filed about a gate that checks the shape of this project's own backlog table, and cannot see
+one particular way of getting it wrong.
+
+Each row of that table has six columns — the item, which files it touches, a size, a tag, a status.
+The gate counts them. Six columns, row accepted. What it cannot tell you is whether the *right
+thing* is in each column, and there is a specific way to get that wrong that looks like nothing at
+all: an automated edit that inserts text just after a column boundary puts the text in the previous
+column instead. Still six columns. Still accepted.
+
+This happened while editing the review that was merged earlier today — about 1,800 characters
+describing a piece of work ended up in the cell that is supposed to list which files the work
+touches. Nothing complained. It was noticed by eye, and fixed, and then the same failure was
+reproduced deliberately on a throwaway copy to confirm it was a real hole rather than a one-off
+slip: two rows identical apart from which cell the text sits in, and the gate accepts both.
+
+Worth being clear about how much this matters, because the first description of it was louder than
+what the measurement supports. The gate's own stated promise is narrower than "this row is
+well-formed" — it promises that the *status* column is where it is expected to be, and counting
+columns does guarantee that. So nothing has been wrongly marked as finished, which was the original
+fear. No row currently in the file is affected, and nothing else in the project reads the columns in
+question. Today the cost is that the table would render oddly for a human reader, plus a trap laid
+for the next bulk edit.
+
+One tempting fix is already ruled out and recorded as ruled out, so nobody spends an afternoon on
+it: you cannot catch this by flagging cells that look too long. A legitimate row in the file has a
+554-character entry in exactly that column, because it genuinely touches many files. The workable
+version is to say what *kind* of thing belongs in each column and check for that.
