@@ -1950,7 +1950,7 @@ anchor's whole subject: the loop decided its own next step from recorded evidenc
       interpreter this guard pins) and not *refuse* (that is #157, worth doing but not instead).
       ⚠ The row's own scope was wrong in both directions — `check-ci-watched.py` is not a member,
       `check-ratchet-contract.py:835` is — which is why the population was swept rather than recalled.
-- [ ] **#154 — the false green the review FOUND.** ⚠ **First.** A block scalar opened on a `- ` dash
+- [x] **#154 — the false green the review FOUND.** ✅ **PR #331** (open, not merged). ⚠ **First.** A block scalar opened on a `- ` dash
       line is never masked, so a job with no `setup-python` reports `rc 0, "every job pins 3.12"`.
       Latent today; **#155 would promote the reader that carries it into two more guards.**
 - [ ] **#155 — the extraction.** `scripts/workflow_structure.py`; R3 wired to it; 12 anchors **and
