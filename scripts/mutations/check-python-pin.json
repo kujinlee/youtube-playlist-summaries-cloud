@@ -543,5 +543,19 @@
         "            if _LOOSE_SCALAR.match(ln)"
       ]
     ]
+  },
+  {
+    "file": "scripts/check-python-pin.py",
+    "name": "the refusal stops noticing a DOCUMENT MARKER, so a pin in a second YAML document is credited to the first document's jobs (backlog #154 r6 High)",
+    "expect": [
+      "a document marker means the file is a STREAM, and that is refused",
+      "...so a pin in a SECOND document cannot be credited to the first"
+    ],
+    "edits": [
+      [
+        "    markers = [ln for ln in lines if _DOC_MARKER.match(ln)]",
+        "    markers = []"
+      ]
+    ]
   }
 ]

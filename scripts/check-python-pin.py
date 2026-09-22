@@ -2,7 +2,7 @@
 """Every CI job pins the Python interpreter, the pins agree, and the pin actually took effect.
 
     python3 scripts/check-python-pin.py              # in CI: asserts. locally: advises.
-    python3 scripts/check-python-pin.py --self-test  # 104 cases
+    python3 scripts/check-python-pin.py --self-test  # 106 cases
 
     exit 0 = pinned, agreeing, and (in CI) in effect   exit 1 = a real disagreement
     exit 2 = CANNOT RUN — no workflow or no pin found, which is never a pass
@@ -386,6 +386,23 @@ _LOOSE_SCALAR = re.compile(r"^\s*(?:-\s+)*[^\n]*?:\s*(?:[&!]\S+\s*)*[|>][-+0-9]*
 # be r3's rejected answer. A bare indicator cannot be told from a real one line-locally, so
 # the guard declines to guess.
 _BARE_INDICATOR = re.compile(r"^\s*(?:-\s+)*(?:[&!]\S+\s*)*[|>][-+0-9]*\s*(#.*)?$")
+# ⛔ r6 HIGH — THE SAME FAILURE AT DOCUMENT GRANULARITY, found through a door no round had checked.
+# A YAML stream may hold SEVERAL documents separated by `---`. The guard reads a file as one text,
+# so a second document's `setup-python` step is credited to the first document's jobs. Measured at
+# `5c53105c`: libyaml reports two documents and `first_has_setup=false`, while the guard returned
+# `declared_pins ['9.9']` and `rc 0 python pin OK`.
+#
+# ⭐ Every round of this branch has found the next family through a door nobody was watching —
+# line (r1-r4), node (r5), and now document. The pattern is not that the rules are wrong; it is
+# that a line scanner has no notion of the containers YAML actually has. So this REFUSES rather
+# than learning a fourth container: a `---` at column 0 is unambiguous, and which document a job
+# belongs to is exactly the question this guard cannot answer.
+#
+# ⚠ UNVERIFIED and stated rather than assumed: whether GitHub Actions ACCEPTS a multi-document
+# workflow file at all. It may well reject it, which would make this unreachable in practice — but
+# the guard must not decide that on GitHub's behalf, and refusing costs nothing (zero markers exist
+# in this repository's workflows).
+_DOC_MARKER = re.compile(r"^(?:---|\.\.\.)(?:\s.*)?$")
 
 
 def _structural(body: list[str]) -> list[str]:
@@ -554,9 +571,13 @@ def unreadable_scalar_openers(text: str) -> list[str]:
     backlog #155 moves these functions into a shared library, and a rule that lives only in
     `verdict`'s comments does not travel with the code.
     """
-    return [ln for ln in _structural(text.split("\n"))
-            if (_LOOSE_SCALAR.match(ln) or _BARE_INDICATOR.match(ln))
-            and not _BLOCK_SCALAR.match(ln)]
+    lines = _structural(text.split("\n"))
+    # ⛔ r6 — a document marker means the file is a STREAM, and which document a job belongs to is
+    # not a question this scan can answer. Reported through the same channel for the same reason.
+    markers = [ln for ln in lines if _DOC_MARKER.match(ln)]
+    return markers + [ln for ln in lines
+                      if (_LOOSE_SCALAR.match(ln) or _BARE_INDICATOR.match(ln))
+                      and not _BLOCK_SCALAR.match(ln)]
 
 
 def unreadable_jobs(text: str) -> int:
@@ -1105,6 +1126,21 @@ def self_test() -> int:
     # reports as having NO setup-python step at all. ⭐ The refusal was added FOR the explicit key,
     # and `? run` / `: |` was refused while `? run` / `:` / `|` was not — one spelling of the
     # boundary, not the boundary.
+    # ⛔ r6 HIGH — A SECOND DOCUMENT. A YAML stream may hold several documents; the guard reads a
+    # file as one text, so a second document's `setup-python` was credited to the FIRST document's
+    # jobs. Measured: libyaml `docs=2, first_has_setup=false` while the guard said `rc 0 python pin
+    # OK`. Refused rather than learning a fourth container — which document a job belongs to is
+    # exactly the question a line scan cannot answer.
+    case("a document marker means the file is a STREAM, and that is refused",
+         unreadable_scalar_openers("jobs:\n  build:\n    steps:\n      - run: python3 -V\n"
+                                   "---\njobs:\n  other:\n    steps:\n"
+                                   "      - uses: actions/setup-python@v5\n") != [], True)
+    case("...so a pin in a SECOND document cannot be credited to the first",
+         verdict({"ci.yml": "jobs:\n  build:\n    steps:\n      - name: real\n"
+                            "        run: python3 --version\n---\njobs:\n  other:\n    steps:\n"
+                            "      - uses: actions/setup-python@v5\n        with:\n"
+                            "          python-version: '9.9'\n"},
+                 "9.9", True, None, _EXE, _LOC)[0], 2)
     case("a KEYLESS indicator on its own line is refused, not read as structure",
          unreadable_scalar_openers("jobs:\n  build:\n    steps:\n      - name: fake\n"
                                    "        run:\n          |\n"
