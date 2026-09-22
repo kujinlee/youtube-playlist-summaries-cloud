@@ -11321,9 +11321,19 @@ here as it does in the blocking guard" — true of one class out of three until 
 M3 is recorded as a bound rather than fixed: an armed plan + no edits + no banner is silent in ALL
 three classes, and **54 of the 207 firing turns (26%)** edit nothing. The branch refutes `edited`
 (52.2% recall, 2.48x separation against turn size's 5.03x) and then leaves it gating the sibling
-class; merging them was rejected because `unbannered` is live with its own falsifiers. L1 is left
-open: `prev_paused`'s path is never reached end to end, and round 1 could not determine whether
-that is untested wiring or dead code.
+class; merging them was rejected because `unbannered` is live with its own falsifiers.
+
+⛔ **CORRECTION — this paragraph asserted something FALSE and round 3 refuted it.** It read
+*"`prev_paused`'s path is never reached end to end"*. Round 1 had written the careful version —
+*"I tried and failed to construct an input that does"* — and this entry hardened that hedge into a
+statement of fact, which is the recorded *an inference stated as MEASURED*, committed to a
+reader-facing page. **The path is reachable, from a clean journal, through `run_decide` alone.** It
+needs a window that was non-judgable when live and judgable one stop later — which is backlog #96's
+late flush, i.e. this guard's own documented normal case; both earlier passes looked for it in a
+transcript written before the first stop, where it cannot exist by construction. The precursor
+shape is ordinary: **322** non-judgable non-live windows across the 65 `cli` transcripts. Round 3
+drove it and found **six single-edit survivors** on that path, four crying wolf and two turning a
+sound verdict into CANNOT RUN.
 
 ⭐ Round 1 also re-derived every number in the threshold table independently and **all four rows
 reproduce exactly**, along with the population and all three derived figures — and it measured one

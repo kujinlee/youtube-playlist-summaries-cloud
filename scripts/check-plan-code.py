@@ -568,7 +568,7 @@ EXPECTED_MUTATIONS = {
     # surviving on exactly that gap. The threshold entry is the fourth of that kind — every other
     # case derives _BIG/_SMALL from LARGE_TURN and so moves with it, leaving the calibrated value
     # unfalsifiable until one case pinned it as a literal.
-    "scripts/check-banner-armed.py": 27,
+    "scripts/check-banner-armed.py": 36,
     # ⟳ 2026-09-07, R4 manifest debt 8 -> 7. FIVE of the seven cover rules the 15 shipped cases
     # already asserted; the other two are the gaps writing them found, and both are the same
     # shape — a claim about coverage that nothing executed:
@@ -3376,7 +3376,13 @@ def _self_test() -> int:
     # while this branch sat open (762 was the sum against the OLD base). Derived rather
     # than typed — `sum(EXPECTED_MUTATIONS.values())` over the merged dict is 854 across
     # 52 entries, and `scripts/mutations/check-python-pin.json` holds exactly 25.
-    # ⟳ 881 -> 900, 2026-09-22: check-banner-armed 8 -> 27, the third warning class.
+    # ⟳ 881 -> 909, 2026-09-22: check-banner-armed 8 -> 36, the third warning class.
+    # ⭐⭐ NINE OF THE LAST TWELVE CAME FROM REVIEW, AND THE LAST NINE ARE ROUND 3's. Round 1
+    # found four single-edit survivors; the fold fixed them and round 3 found NINE more, six
+    # of them in one place — the journal's PREVIOUS slot, which rounds 1 and 2 had both
+    # concluded was unreachable. It is reachable, through this guard's own late-flush
+    # mechanism. The other three are the instance-not-class half of round 1's own findings:
+    # the fold pinned `paused` and left `armed`/`steps`, and pinned one sentinel reader of two.
     # ⭐ THE LAST FIVE ARE THE REVIEW'S, AND THEY ARE THE POINT. Round 1's Claude half found
     # FOUR single-edit mutations of the delivered code that left the suite fully green — the
     # class's unwritten `no banner` term (carried only by where the branch sits), the pause
@@ -3386,7 +3392,7 @@ def _self_test() -> int:
     # Six of the fourteen defend the PAUSE excuse, which the first cut of the class omitted —
     # it warned during a deliberate stand-down, and the suite stayed green at 122/122 because
     # every case left `paused` at its default.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 900)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 909)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -123,7 +123,7 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 140 cases
+    python3 scripts/check-banner-armed.py --self-test  # 149 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -1446,6 +1446,17 @@ def _self_test() -> int:
     case("P10 a key that merely STARTS WITH `paused` is not a pause — the match is equality, so "
          "this reader cannot stand down over a key that leaves the sibling armed",
          _paused_from_text("plan: x.md\npaused_at: 2026-09-22\n") is False)
+    # ⛔ r3 M-A — P10 PINNED ONE READER AND THE PROPERTY NEEDS BOTH. L2 named both functions in one
+    # sentence and the r1 fold pinned only the one it was shown; loosening `_armed_from_text` the
+    # same way produces the identical disagreement from the other side, and left the suite at
+    # 138/138. Measured on `plan: plans/p.md\narmed: t\npaused_at: …`: delivered reads armed=True,
+    # paused=False, verdict QUIET; the mutant reads armed=False and warns "WORK WITHOUT A BANNER …
+    # armed no plan" at a turn with a plan armed. The recorded *a shim fails BOTH ways* — fixing
+    # the half you were shown is instance-not-class, which is the same error this round found in
+    # H-A one mechanism over.
+    case("P10b ...and the SIBLING reader has the same rule — a `paused_at:` key must leave the "
+         "plan ARMED, or the two disagree about a stand-down from the other side",
+         _armed_from_text("plan: x.md\narmed: t\npaused_at: 2026-09-22\n") is True)
     # M2's falsifier: the pause now stands the OLDEST class down too, and the message it used to
     # emit asserted the sentinel "names nothing" while it named a plan.
     case("P11 a PARTWAY banner with a paused plan is quiet — the pause excuse reaches the "
@@ -1585,12 +1596,37 @@ def _self_test() -> int:
         def _edit_block(path: str) -> dict:
             return {"type": "tool_use", "id": "e1", "name": "Edit", "input": {"file_path": path}}
 
-        def _drive(path: Path, subject: list, session: str = "s") -> int:
-            """Seed the journal with `subject` live, then judge it once a later turn opens."""
+        _UNTOUCHED = object()   # "leave the sentinel exactly as it is", distinct from "delete it"
+
+        def _sentinel(state) -> None:
+            """Put the sentinel into `state`: None deletes it, a string writes it."""
+            if state is _UNTOUCHED:
+                return
+            _s = _fx / ".claude" / "executing-plan"
+            _s.unlink(missing_ok=True) if state is None else _s.write_text(state)
+
+        def _drive(path: Path, subject: list, session: str = "s",
+                   before=_UNTOUCHED, after=_UNTOUCHED) -> int:
+            """Seed the journal with `subject` live, then judge it once a later turn opens.
+
+            ⟳ r3 L-A — `before`/`after` ARE THE WHOLE HELPER NOW. A second copy of this protocol
+            (`_drive_changing`) was added by the r1 fold and duplicated it line for line, differing
+            only by two sentinel writes; if the drive protocol ever changed in one, the other would
+            silently describe a different world while every case depending on it stayed green. One
+            owner, the recorded *a second implementation of one rule DRIFTS*.
+
+            ⛔ `before`/`after` ARE WHAT MAKE SAMPLING OBSERVABLE AT ALL. With the sentinel held in
+            ONE state across both stops — which is every call that omits them — "sampled at the
+            judged turn's stop" and "re-read at judging time" produce identical output, so a
+            re-read passes the whole suite. Every case that pins the journal round trip must pass
+            a `before`/`after` pair that DIFFER.
+            """
             for stale in JOURNAL_DIR.glob("*.json"):
                 stale.unlink()
+            _sentinel(before)
             path.write_text("\n".join(subject))
             run_decide(json.dumps({"transcript_path": str(path), "session_id": session}))
+            _sentinel(after)
             path.write_text("\n".join(subject + _turn("later", [{"type": "text", "text": "x"}])))
             return run_decide(json.dumps({"transcript_path": str(path), "session_id": session}))
 
@@ -1935,33 +1971,156 @@ def _self_test() -> int:
             # comments in this file explicitly forbid — passed 131/131 (r1 claude H2). These
             # two legs are the only place in the suite where the sampled value and the live
             # value DIFFER, which is the only place the distinction can be observed.
-            def _drive_changing(path: Path, subject: list, before, after,
-                                session: str = "s") -> int:
-                """Seed with the sentinel in state `before`, JUDGE with it in state `after`."""
-                for _st in JOURNAL_DIR.glob("*.json"):
-                    _st.unlink()
-                _sent = _fx / ".claude" / "executing-plan"
-                _sent.unlink(missing_ok=True) if before is None else _sent.write_text(before)
-                path.write_text("\n".join(subject))
-                run_decide(json.dumps({"transcript_path": str(path), "session_id": session}))
-                _sent.unlink(missing_ok=True) if after is None else _sent.write_text(after)
-                path.write_text("\n".join(
-                    subject + _turn("later", [{"type": "text", "text": "x"}])))
-                return run_decide(json.dumps({"transcript_path": str(path),
-                                              "session_id": session}))
-
             _PAUSED_TXT = ("plan: plans/p.md\narmed: t\n"
                            "paused: waiting on a dispatched review\n")
+            _ARMED_TXT = "plan: plans/p.md\narmed: t\n"
             _b1 = _logtext()
-            _rcH2a = _drive_changing(_fx / "h2-resume.jsonl", _bigP, _PAUSED_TXT, None)
+            _rcH2a = _drive(_fx / "h2-resume.jsonl", _bigP,
+                            before=_PAUSED_TXT, after=None)
             case("H2a a turn that RAN while paused stays quiet even though the plan was RESUMED "
                  "before it was judged — the verdict reads the SAMPLE, not the live sentinel",
                  _rcH2a == QUIET and _logtext() == _b1)
             _b2 = _logtext()
-            _rcH2b = _drive_changing(_fx / "h2-pause.jsonl", _bigP, None, _PAUSED_TXT)
+            _rcH2b = _drive(_fx / "h2-pause.jsonl", _bigP, before=None, after=_PAUSED_TXT)
             case("H2b ...and the mirror — pausing AFTER that turn ended does not retroactively "
                  "excuse it, so the sample cannot be read as 'whatever the sentinel says now'",
                  _rcH2b == WARN and _logtext() != _b2)
+
+            # ── H-A (r3) — the SAME mechanism, for `armed` and `steps` ───────────────────
+            # ⛔ THE r1 FOLD FIXED THE INSTANCE AND NOT THE CLASS, inside the comment that names
+            # the class. H2 was never a finding about the word `paused`; it was about the journal
+            # round trip — *the value the verdict consumes must be the one sampled at the judged
+            # turn's stop*. The fix comment says so itself: "SAMPLED, NOT RE-READ AT JUDGING TIME
+            # … for the same reason `armed` is". H2a/H2b vary ONLY `paused`; in both legs
+            # `armed_then` is False, so neither can see `armed` being re-read. Measured: `texts,
+            # _armed(), …` at the call site left the suite at 138/138 while INVERTING the verdict
+            # in both directions. The recorded *after fixing, SEARCH for the class*.
+            #
+            # ⚠ Both are PRE-EXISTING (`armed_then, steps_then = sample` is on master). Filed and
+            # fixed here for the reason the fold accepted M2, also pre-existing: this branch makes
+            # them cheap — two legs through the helper it already wrote.
+            #
+            # The scenario is the guard's own documented one: `check-plan-progress.py` UNLINKS the
+            # sentinel when the last box is ticked, which is why this observer runs first. So a
+            # turn that ran armed is routinely judged after the sentinel has gone.
+            _b3 = _logtext()
+            _rcA1 = _drive(_fx / "ha-cleared.jsonl", _bigP,
+                           before=_ARMED_TXT, after=None)
+            case("H-A1 a turn that RAN with a plan armed stays quiet even though the sentinel was "
+                 "cleared before it was judged — `armed` is consumed from the SAMPLE too, not only "
+                 "`paused`",
+                 _rcA1 == QUIET and _logtext() == _b3)
+            _b4 = _logtext()
+            _rcA2 = _drive(_fx / "ha-armed-after.jsonl", _bigP,
+                           before=None, after=_ARMED_TXT)
+            case("H-A2 ...and the mirror — arming a plan AFTER that turn ended does not "
+                 "retroactively excuse it",
+                 _rcA2 == WARN and _logtext() != _b4)
+            # `steps` travels with `armed` and feeds BOTH the `unbannered` detail and the
+            # `armed and steps is None` CANNOT-RUN guard, so a re-read makes both describe the
+            # wrong turn. Seeding armed-with-a-plan and judging armed-with-NO-plan-file separates
+            # `steps_then` from `steps_now` while `armed` stays True on both sides.
+            _rcA3 = _drive(_fx / "ha-steps.jsonl", _bigP,
+                           before=_ARMED_TXT, after="plan: plans/gone.md\narmed: t\n")
+            case("H-A3 `steps` is consumed from the sample as well — a plan file that vanishes "
+                 "between the two stops must not turn a measured turn into CANNOT RUN",
+                 _rcA3 != CANNOT_RUN)
+
+            # ── H-B (r3) — the PREVIOUS journal slot, reached through run_decide ─────────
+            # ⛔ TWO EARLIER ROUNDS CONCLUDED THIS PATH WAS UNREACHABLE AND BOTH WERE WRONG.
+            # r1 hedged ("I tried and failed to construct an input"); r2 answered "no clean
+            # run-generated path"; the r1 fold hardened the hedge into an ASSERTION in a
+            # reader-facing page — the recorded *an inference stated as MEASURED*. Six single
+            # edits to this wiring left the suite at 138/138: four cry wolf, two turn a sound
+            # verdict into CANNOT RUN, which this project's rule says is never a pass.
+            #
+            # ⭐ WHY IT LOOKED UNREACHABLE. The prev slot needs `prev_turn_uuid == U` while
+            # `last_judged_uuid != U`, and every stop that judges something sets the latter. The
+            # only separator is a window that was NON-JUDGABLE when live and judgable one stop
+            # later — which requires the transcript to GROW, i.e. backlog #96's late flush, the
+            # mechanism this file exists to measure. Both earlier passes searched a transcript
+            # written before the first stop, where it cannot exist by construction. The precursor
+            # is ordinary, not exotic: 322 non-judgable non-live windows across the 65 `cli`
+            # transcripts.
+            def _drive_prev_slot(path: Path, late_body: list, before, mid,
+                                 session: str = "p", continuation: bool = False) -> int:
+                """Three stops; `Wa` is non-judgable at A and judgable at C, so it lands in the
+                PREVIOUS slot — sampled at A, judged at C, with the sentinel changed in between.
+
+                ⛔ `continuation=True` ADDS A FOURTH STOP AND IT IS NOT DECORATION. It repeats stop
+                B with the transcript UNCHANGED, so `live_uuid == already["sampled_turn_uuid"]` and
+                `run_decide` takes its continuation branch — the one that PRESERVES the older prev
+                slot instead of shifting the window. Without this leg the two `record["prev_paused"]
+                = …` carries in that branch are unreachable, and both survived as single edits at
+                145/145 while the three-stop legs below killed the other six. Measured, not assumed.
+                """
+                for _st in JOURNAL_DIR.glob("*.json"):
+                    _st.unlink()
+                _u = lambda uid: json.dumps(
+                    {"type": "user", "uuid": uid, "message": {"content": "go"}})
+                _a = lambda body: json.dumps({"type": "assistant", "message": {"content": body}})
+                _sentinel(before)
+                path.write_text(_u("Wa"))                                    # stop A
+                run_decide(json.dumps({"transcript_path": str(path), "session_id": session}))
+                _sentinel(mid)
+                path.write_text("\n".join([_u("Wa"), _u("Wb")]))             # stop B
+                run_decide(json.dumps({"transcript_path": str(path), "session_id": session}))
+                if continuation:
+                    # SAME transcript, so the live window has not moved: a blocked-stop re-fire.
+                    run_decide(json.dumps({"transcript_path": str(path), "session_id": session}))
+                path.write_text("\n".join([                                  # stop C — Wa flushes
+                    _u("Wa"), _a(late_body), _u("Wb"), _u("Wc"),
+                    _a([{"type": "text", "text": "x"}])]))
+                return run_decide(json.dumps({"transcript_path": str(path),
+                                              "session_id": session}))
+
+            _body30 = [{"type": "tool_use", "id": f"x{i}", "name": "Bash",
+                        "input": {"command": "echo hi"}} for i in range(LARGE_TURN + 5)]
+            _bp = _logtext()
+            _rcB1 = _drive_prev_slot(_fx / "prev-paused.jsonl", _body30, _PAUSED_TXT, None)
+            case("H-B1 the PREVIOUS slot is REACHABLE from a clean journal through run_decide — a "
+                 "window non-judgable when live and judgable one stop later — and the pause "
+                 "sampled THERE still excuses the turn",
+                 _rcB1 == QUIET and _logtext() == _bp)
+            _bp2 = _logtext()
+            _rcB2 = _drive_prev_slot(_fx / "prev-none.jsonl", _body30, None, None)
+            case("H-B1 control: the identical three-stop shape with NOTHING in the previous slot "
+                 "does warn — so the case above cannot pass by the path simply never running",
+                 _rcB2 == WARN and _logtext() != _bp2)
+            _rcB3 = _drive_prev_slot(_fx / "prev-armed.jsonl", _body30, _ARMED_TXT, None)
+            case("H-B2 `prev_armed` and `prev_steps` travel with it — a turn that ran ARMED is "
+                 "quiet, and never CANNOT RUN, when judged out of the previous slot",
+                 _rcB3 == QUIET and _rcB3 != CANNOT_RUN)
+            # ⛔ THE CONTINUATION CARRY. Seed PAUSED at A, CLEAR before B, then re-fire B with the
+            # transcript unchanged: the continuation branch must PRESERVE Wa's pause across that
+            # re-fire. Two single edits to it — dropping the carry, and reading `paused` (Wb's,
+            # now False) instead of `prev_paused` (Wa's, True) — survived every other leg here.
+            _bp3 = _logtext()
+            _rcB4 = _drive_prev_slot(_fx / "prev-cont.jsonl", _body30, _PAUSED_TXT, None,
+                                     continuation=True)
+            case("H-B3 a BLOCKED-STOP re-fire preserves the previous slot's pause — the "
+                 "continuation branch carries `prev_paused`, and reads the PREVIOUS turn's value "
+                 "rather than the current one",
+                 _rcB4 == QUIET and _logtext() == _bp3)
+
+            # ── H-A4 — the `steps` SAMPLE, on the path the LOG reads ────────────────────
+            # ⛔ THIS CASE EXISTS BECAUSE A HAND-VERIFICATION TESTED A DIFFERENT EDIT THAN THE
+            # MANIFEST SHIPS. `steps` is bound twice on this path: as `decide()`'s ARGUMENT (the
+            # verdict) and as the local the LOG BLOCK reads (the detail). H-A3 pins the first;
+            # the manifest entry mutates the second, so it survived a full sweep at 908/909 while
+            # every by-hand probe said killed. The two counts must DIFFER for the detail to be
+            # observable at all — pointing the sentinel at a second plan file with a different
+            # tick count is the only way to separate `steps_then` from `steps_now`.
+            (_fx / "plans" / "q.md").write_text(
+                "- [x] one\n- [x] two\n- [x] three\n- [ ] four\n")   # 1 unticked, vs p.md's 3
+            _rcS = _drive(_fx / "steps-sample.jsonl", _subject,
+                          before="plan: plans/p.md\narmed: t\n",
+                          after="plan: plans/q.md\narmed: t\n")
+            case("H-A4 the LOGGED `unticked` count is the one sampled when the judged turn ended, "
+                 "not the plan's count now — 3 unticked then, 1 unticked now",
+                 _rcS == WARN
+                 and _logtext().rstrip("\n").endswith("\tunbannered\t3 unticked"))
+            (_fx / ".claude" / "executing-plan").write_text("plan: plans/p.md\narmed: t\n")
             (_fx / ".claude" / "executing-plan").unlink(missing_ok=True)
         finally:
             (globals()["ROOT"], globals()["SENTINEL"], globals()["WARN_LOG"],

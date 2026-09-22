@@ -354,5 +354,122 @@
     "expect": [
       "P10 a key that merely STARTS WITH `paused` is not a pause — the match is equality, so this reader cannot stand down over a key that leaves the sibling armed"
     ]
+  },
+  {
+    "name": "`armed` is RE-READ at judging time — the instance-not-class half of r1's H2",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "                        texts, armed_then, steps=steps_then, edited=edited,",
+        "                        texts, _armed(), steps=steps_then, edited=edited,"
+      ]
+    ],
+    "expect": [
+      "H-A1 a turn that RAN with a plan armed stays quiet even though the sentinel was cleared before it was judged — `armed` is consumed from the SAMPLE too, not only `paused`"
+    ]
+  },
+  {
+    "name": "`steps` is RE-READ at judging time, so the detail and the CANNOT-RUN guard describe the wrong turn",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "                    steps = steps_then           # the log block below reads it",
+        "                    steps = steps_now            # the log block below reads it"
+      ]
+    ],
+    "expect": [
+      "H-A4 the LOGGED `unticked` count is the one sampled when the judged turn ended, not the plan's count now — 3 unticked then, 1 unticked now"
+    ]
+  },
+  {
+    "name": "the prev-slot pause carry is dropped, so a paused turn judged one stop late warns",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        \"prev_paused\": (already or {}).get(\"paused\", False),",
+        "        \"prev_paused\": False,"
+      ]
+    ],
+    "expect": [
+      "H-B1 the PREVIOUS slot is REACHABLE from a clean journal through run_decide — a window non-judgable when live and judgable one stop later — and the pause sampled THERE still excuses the turn"
+    ]
+  },
+  {
+    "name": "the prev-slot ARMED carry is dropped",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        \"prev_armed\": (already or {}).get(\"armed\"),",
+        "        \"prev_armed\": False,"
+      ]
+    ],
+    "expect": [
+      "H-B2 `prev_armed` and `prev_steps` travel with it — a turn that ran ARMED is quiet, and never CANNOT RUN, when judged out of the previous slot"
+    ]
+  },
+  {
+    "name": "the prev-slot STEPS carry is dropped, turning a sound verdict into CANNOT RUN",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        \"prev_steps\": (already or {}).get(\"steps\"),",
+        "        \"prev_steps\": None,"
+      ]
+    ],
+    "expect": [
+      "H-B2 `prev_armed` and `prev_steps` travel with it — a turn that ran ARMED is quiet, and never CANNOT RUN, when judged out of the previous slot"
+    ]
+  },
+  {
+    "name": "the continuation branch stops carrying prev_paused across a blocked-stop re-fire",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        record[\"prev_paused\"] = (already or {}).get(\"prev_paused\", False)",
+        "        record[\"prev_paused\"] = False"
+      ]
+    ],
+    "expect": [
+      "H-B3 a BLOCKED-STOP re-fire preserves the previous slot's pause — the continuation branch carries `prev_paused`, and reads the PREVIOUS turn's value rather than the current one"
+    ]
+  },
+  {
+    "name": "the continuation branch carries the CURRENT pause instead of the previous turn's",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        record[\"prev_paused\"] = (already or {}).get(\"prev_paused\", False)\n        record[\"prev_steps\"]",
+        "        record[\"prev_paused\"] = (already or {}).get(\"paused\", False)\n        record[\"prev_steps\"]"
+      ]
+    ],
+    "expect": [
+      "H-B3 a BLOCKED-STOP re-fire preserves the previous slot's pause — the continuation branch carries `prev_paused`, and reads the PREVIOUS turn's value rather than the current one"
+    ]
+  },
+  {
+    "name": "the continuation TEST is inverted, so both paths report CANNOT RUN",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    if live_uuid == (already or {}).get(\"sampled_turn_uuid\"):",
+        "    if live_uuid != (already or {}).get(\"sampled_turn_uuid\"):"
+      ]
+    ],
+    "expect": [
+      "H-B1 the PREVIOUS slot is REACHABLE from a clean journal through run_decide — a window non-judgable when live and judgable one stop later — and the pause sampled THERE still excuses the turn"
+    ]
+  },
+  {
+    "name": "_armed_from_text's key match is loosened, so the two sentinel readers disagree",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        if key == \"paused\":",
+        "        if key.startswith(\"paused\"):"
+      ]
+    ],
+    "expect": [
+      "P10b ...and the SIBLING reader has the same rule — a `paused_at:` key must leave the plan ARMED, or the two disagree about a stand-down from the other side"
+    ]
   }
 ]
