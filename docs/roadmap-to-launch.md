@@ -1991,7 +1991,7 @@ Both are **side jobs** under the rule in [`process-checklists.md`](process-check
 JOB gets a name before it gets work*: each has a slug, a branch and a plan sentinel. Recorded here
 because a discovery living only in the session task list does not survive `/compact`.
 
-- [x] **A — `banner-blind-spot`**, branch `banner-work-without-banner` (main tree). Adds a THIRD
+- [x] **A — `banner-blind-spot`** — ✅ **PR #332 OPEN 2026-09-22, awaiting the human merge gate**; branch `banner-work-without-banner` (main tree). Adds a THIRD
   warning class to `scripts/check-banner-armed.py`: `unheralded` — *not armed, not paused, ≥25 tool
   calls, no banner*. The two older classes each need something PRESENT (a banner, or an armed plan),
   so a turn with NEITHER was invisible: **100%** of the warn log's 76 entries are `unarmed`, and
