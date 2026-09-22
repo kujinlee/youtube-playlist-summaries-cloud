@@ -2,7 +2,7 @@
 """Every CI job pins the Python interpreter, the pins agree, and the pin actually took effect.
 
     python3 scripts/check-python-pin.py              # in CI: asserts. locally: advises.
-    python3 scripts/check-python-pin.py --self-test  # 106 cases
+    python3 scripts/check-python-pin.py --self-test  # 111 cases
 
     exit 0 = pinned, agreeing, and (in CI) in effect   exit 1 = a real disagreement
     exit 2 = CANNOT RUN — no workflow or no pin found, which is never a pass
@@ -488,19 +488,50 @@ def declared_pins(text: str) -> list[str]:
         # in this function's docstring: the previous three versions all asked "does the line that
         # STARTS the step name setup-python?", which is only true when nothing is written before
         # `uses:` — and 62 of this repository's 70 steps write `- name:` first.
-        if not any(re.match(r"^\s*uses:\s*actions/setup-python", ln) for ln in step.body):
+        # ⛔⛔ r7 BLOCKING — A KEY MATCHED AT ANY DEPTH IS NOT THE STEP'S KEY. `^\s*uses:` matched
+        # a `uses:` nested inside ANOTHER action's `with:` inputs, so a step whose action is
+        # `someone/other@v1` counted as a setup-python step. Measured: libyaml says
+        # `step_uses=someone/other@v1, input_uses=actions/setup-python@v5`, and the guard returned
+        # `declared_pins ['9.9']`, `rc 0 python pin OK`.
+        #
+        # ⭐ AND SWEEPING THE CLASS FOUND THREE MEMBERS, NOT ONE — all three keys here were
+        # depth-blind, and each produced the same false green on its own fixture:
+        #     `uses:`            nested in another action's `with:`   -> credited as the action
+        #     `with:`            nested under `env:`                  -> credited as the inputs
+        #     `python-version:`  nested under a sub-key inside `with:` -> credited as the pin
+        # Fixed together rather than one per review round, which is what the previous six rounds
+        # cost. A key belongs to the step only when it is a DIRECT CHILD.
+        #
+        # The step's key column is the shallowest indent among its body lines AFTER the first:
+        # `Step.body[0]` is the dash line with the dash blanked, and its class docstring states
+        # that this does NOT restore the true column — so body[0] is treated as a key by position
+        # (it IS one, on the dash) and never by indent.
+        rest = [ln for ln in step.body[1:] if ln.strip()]
+        key_indent = min((len(ln) - len(ln.lstrip()) for ln in rest), default=None)
+
+        def _is_key(idx: int, ln: str) -> bool:
+            return idx == 0 or (key_indent is not None
+                                and len(ln) - len(ln.lstrip()) == key_indent)
+
+        if not any(_is_key(i, ln) and re.match(r"^\s*uses:\s*actions/setup-python", ln)
+                   for i, ln in enumerate(step.body)):
             continue
-        in_with, with_indent = False, 0
-        for later in step.body:
+        in_with, with_indent, child_indent = False, 0, None
+        for i, later in enumerate(step.body):
             here = len(later) - len(later.lstrip())
             opens = re.match(r"^\s*with:\s*(#.*)?$", later)
-            if opens and here > step.indent:
-                in_with, with_indent = True, here
+            if opens and _is_key(i, later) and here > step.indent:
+                in_with, with_indent, child_indent = True, here, None
                 continue
             if in_with and later.strip() and here <= with_indent:
                 in_with = False            # left the `with:` mapping
+            # the FIRST key inside `with:` fixes the child column; deeper keys are not inputs
+            if in_with and later.strip() and child_indent is None and here > with_indent:
+                child_indent = here
             if not in_with:
                 continue
+            if child_indent is not None and here != child_indent:
+                continue               # deeper than the input column: not a direct input
             got = re.match(r"^\s*python-version:\s*(.+?)\s*$", later)
             if got:
                 # ⚠ strip an inline comment BEFORE quotes — r1 Medium 1 (claude): a pin written
@@ -893,9 +924,9 @@ def self_test() -> int:
     # every existing heredoc case used a step with no `setup-python` anywhere, so none of them
     # reached the identification.
     case("setup-python INSIDE a run-block heredoc does not make a step a setup-python step",
-         declared_pins("    steps:\n      - name: docs\n        run: |\n          cat <<'EOF'\n"
+         declared_pins("    steps:\n      - run: |\n          cat <<'EOF'\n"
                        "          uses: actions/setup-python@v5\n          EOF\n"
-                       "        with:\n          python-version: '9.9'\n"), [])
+                       "          with:\n            python-version: '9.9'\n"), [])
     # ⛔⛔ CODEX r3's FIXTURE — the FIFTH defect, and the one my own probe missed. A DASH LINE
     # inside a block scalar manufactured a PHANTOM STEP that owned the fake `with:` beneath it, so
     # a job with no setup-python anywhere returned a pin. My first repair filtered each step's body
@@ -912,9 +943,9 @@ def self_test() -> int:
                                "            with:\n              python-version: '9.9'\n"},
                               exempt=())), ["w.yml:verify"])
     case("...nor does one in a FOLDED scalar",
-         declared_pins("    steps:\n      - name: docs\n        script: >\n"
+         declared_pins("    steps:\n      - script: >\n"
                        "          uses: actions/setup-python@v5\n"
-                       "        with:\n          python-version: '9.9'\n"), [])
+                       "          with:\n            python-version: '9.9'\n"), [])
     case("...nor one under a chomping indicator (`|-`)",
          declared_pins("    steps:\n      - name: docs\n        run: |-\n"
                        "          uses: actions/setup-python@v5\n"
@@ -1141,6 +1172,28 @@ def self_test() -> int:
                             "      - uses: actions/setup-python@v5\n        with:\n"
                             "          python-version: '9.9'\n"},
                  "9.9", True, None, _EXE, _LOC)[0], 2)
+    # ⛔⛔ r7 BLOCKING + THE CLASS SWEEP THAT FOLLOWED IT. All three keys `declared_pins` reads
+    # were matched at ANY depth, and each produced the same false green on its own fixture. r7
+    # found the first; sweeping the predicate found the other two in one pass rather than in two
+    # more review rounds. A key belongs to the step only when it is a DIRECT CHILD.
+    case("a `uses:` nested in ANOTHER action's inputs is not the step's action",
+         declared_pins("jobs:\n  b:\n    steps:\n      - uses: other/x@v1\n"
+                       "        with:\n          uses: actions/setup-python@v5\n"
+                       "          python-version: '9.9'\n"), [])
+    case("...nor is a `with:` nested under another key the step's inputs",
+         declared_pins("jobs:\n  b:\n    steps:\n      - uses: actions/setup-python@v5\n"
+                       "        env:\n          with:\n            python-version: '9.9'\n"), [])
+    case("...nor is a `python-version:` nested below the input column a pin",
+         declared_pins("jobs:\n  b:\n    steps:\n      - uses: actions/setup-python@v5\n"
+                       "        with:\n          config:\n            python-version: '9.9'\n"), [])
+    # ⚠ AND THE CONTROLS, because a depth rule that rejects everything would pass all three above.
+    case("...while a real pin written on the DASH line still counts",
+         declared_pins("jobs:\n  b:\n    steps:\n      - uses: actions/setup-python@v5\n"
+                       "        with:\n          python-version: '3.12'\n"), ["3.12"])
+    case("...and a real pin in a step that opens with `name:` still counts",
+         declared_pins("jobs:\n  b:\n    steps:\n      - name: Set up Python\n"
+                       "        uses: actions/setup-python@v5\n"
+                       "        with:\n          python-version: '3.12'\n"), ["3.12"])
     case("a KEYLESS indicator on its own line is refused, not read as structure",
          unreadable_scalar_openers("jobs:\n  build:\n    steps:\n      - name: fake\n"
                                    "        run:\n          |\n"
@@ -1168,12 +1221,11 @@ def self_test() -> int:
     # Python versions` — fail-closed, but it sends the reader to reconcile a disagreement that does
     # not exist. This case fails if the refusal is ever moved back below `pins`.
     case("an unreadable scalar refuses even when it makes the pins DISAGREE",
-         verdict({"ci.yml": "jobs:\n  verify:\n    steps:\n      - name: Set up Python\n"
-                            "        uses: actions/setup-python@v5\n"
+         verdict({"ci.yml": "jobs:\n  a:\n    steps:\n      - uses: actions/setup-python@v5\n"
                             "        with:\n          python-version: '3.12'\n"
-                            "  schema-gates:\n    steps:\n      - ? run\n        : |\n"
-                            "            uses: actions/setup-python@v5\n"
-                            "            with:\n              python-version: '9.9'\n"},
+                            "---\njobs:\n  b:\n    steps:\n"
+                            "      - uses: actions/setup-python@v5\n"
+                            "        with:\n          python-version: '9.9'\n"},
                  "3.12", True, None, _EXE, _LOC)[0], 2)
     case("...and that refusal is a CANNOT RUN, not a silent pass",
          verdict({"w.yml": "jobs:\n  verify:\n    steps:\n      - ? run\n        : |\n"

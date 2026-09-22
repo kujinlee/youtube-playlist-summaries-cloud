@@ -279,8 +279,8 @@
     "file": "scripts/check-python-pin.py",
     "edits": [
       [
-        "        if not any(re.match(r\"^\\s*uses:\\s*actions/setup-python\", ln) for ln in step.body):",
-        "        if not re.match(r\"^\\s*uses:\\s*actions/setup-python\", step.body[0]):"
+        "        if not any(_is_key(i, ln) and re.match(r\"^\\s*uses:\\s*actions/setup-python\", ln)\n                   for i, ln in enumerate(step.body)):",
+        "        if not any(_is_key(i, ln) and re.match(r\"^\\s*-\\s+uses:\\s*actions/setup-python\", ln)\n                   for i, ln in enumerate(step.body)):"
       ]
     ],
     "expect": "a step whose `- name:` comes BEFORE `uses:` is still a setup-python step"
@@ -372,8 +372,7 @@
     "file": "scripts/check-python-pin.py",
     "name": "the REFUSAL predicate requires a key before the colon again, so YAML's explicit-key form — the one shape no per-line regex reaches — goes back to a silent FALSE GREEN (backlog #154 r3)",
     "expect": [
-      "an EXPLICIT-KEY scalar cannot be classified, so it is REFUSED rather than guessed",
-      "...and that refusal is a CANNOT RUN, not a silent pass"
+      "an EXPLICIT-KEY scalar cannot be classified, so it is REFUSED rather than guessed"
     ],
     "edits": [
       [
@@ -385,7 +384,9 @@
   {
     "file": "scripts/check-python-pin.py",
     "name": "verdict stops refusing an unclassifiable scalar opener, so the guess is silent again (backlog #154 r3)",
-    "expect": "...and that refusal is a CANNOT RUN, not a silent pass",
+    "expect": [
+      "...so a pin in a SECOND document cannot be credited to the first"
+    ],
     "edits": [
       [
         "    if unreadable_openers:",
@@ -534,8 +535,7 @@
     "name": "the refusal stops looking for a KEYLESS indicator, so a block scalar whose header sits on the line after its key is read as structure again — twelve valid spellings, all silent (backlog #154 r5 Blocking)",
     "expect": [
       "a KEYLESS indicator on its own line is refused, not read as structure",
-      "...and the same shape written as an explicit key with a bare value node",
-      "...so the whole verdict is CANNOT RUN rather than `python pin OK`"
+      "...and the same shape written as an explicit key with a bare value node"
     ],
     "edits": [
       [
@@ -555,6 +555,39 @@
       [
         "    markers = [ln for ln in lines if _DOC_MARKER.match(ln)]",
         "    markers = []"
+      ]
+    ]
+  },
+  {
+    "file": "scripts/check-python-pin.py",
+    "name": "the direct-child test accepts any line, so a `uses:` nested in another action's inputs counts as the step's action again (backlog #154 r7 Blocking)",
+    "expect": "a `uses:` nested in ANOTHER action's inputs is not the step's action",
+    "edits": [
+      [
+        "            return idx == 0 or (key_indent is not None",
+        "            return True or (key_indent is not None"
+      ]
+    ]
+  },
+  {
+    "file": "scripts/check-python-pin.py",
+    "name": "the `with:` opener stops requiring a direct child, so a nested `with:` is read as the step's inputs (backlog #154 r7 class sweep)",
+    "expect": "...nor is a `with:` nested under another key the step's inputs",
+    "edits": [
+      [
+        "            if opens and _is_key(i, later) and here > step.indent:",
+        "            if opens and here > step.indent:"
+      ]
+    ]
+  },
+  {
+    "file": "scripts/check-python-pin.py",
+    "name": "the input column is not enforced, so a `python-version:` nested below it is read as a pin (backlog #154 r7 class sweep)",
+    "expect": "...nor is a `python-version:` nested below the input column a pin",
+    "edits": [
+      [
+        "            if child_indent is not None and here != child_indent:",
+        "            if False:"
       ]
     ]
   }
