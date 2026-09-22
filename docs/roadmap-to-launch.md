@@ -1985,6 +1985,37 @@ that section. A stale count in its preamble was **removed rather than corrected*
 and the file sits inside the corpus it describes.
 
 
+## Two Stop-guard side jobs — anchor `status-visibility` — 🏗 BOTH IN REVIEW 2026-09-22, NEITHER MERGED
+
+Both are **side jobs** under the rule in [`process-checklists.md`](process-checklists.md) → *A SIDE
+JOB gets a name before it gets work*: each has a slug, a branch and a plan sentinel. Recorded here
+because a discovery living only in the session task list does not survive `/compact`.
+
+- [x] **A — `banner-blind-spot`**, branch `banner-work-without-banner` (main tree). Adds a THIRD
+  warning class to `scripts/check-banner-armed.py`: `unheralded` — *not armed, not paused, ≥25 tool
+  calls, no banner*. The two older classes each need something PRESENT (a banner, or an armed plan),
+  so a turn with NEITHER was invisible: **100%** of the warn log's 76 entries are `unarmed`, and
+  `unbannered` has never fired. ⛔ **No behavioural defect was ever found** — the guard has computed
+  correct verdicts since its first commit; all findings across five rounds concern whether its
+  falsifiers can FAIL.
+- [x] **B — `quiet-stop-observers`**, branch `quiet-stop-observers-wt` (worktree
+  `../yps-quiet-observers`). Two Stop observers reported *"cannot run"* and *"still paused"* on
+  **every** stop, so both became noise. Touches `check-ci-watched.py`, `begin-plan.py`,
+  `check-plan-progress.py`.
+- [ ] **Phase 6 on A — OWED, and not optional.** The pre-committed thrashing condition **FIRED** at
+  round 5: rounds 3, 4 and 5 each carry findings caused by the previous round's fix, in one
+  component — three consecutive, where [`dev-process.md`](dev-process.md) requires two. The user's
+  decision (2026-09-22) is *fold r5, open the PR, convene Phase 6 as a follow-up*. **Backlog #164**
+  is the concrete question it inherits, with a proposed answer rather than an open one.
+
+⚠ **Two facts this slice measured that outlive it.** (1) `.claude/hooks/block-idle-stop.sh` derives
+`REPO_ROOT` from its own path, so **work in a worktree runs with premature-stop protection OFF** —
+not a defect (the guard predates worktree use), but a real gap and nothing else covers it. (2) The
+r5 partial fold committed a **RED `check-fixture-variation.py`**: it ran the guard's own suite and
+the 912-mutation sweep, and never ran the *other* guard over the file it had just changed. That is
+this project's recorded *a check result is not the claim*, inside a commit whose whole subject was a
+measurement that had chosen its own corpus.
+
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all
 three. **M2 Sync is COMPLETE (PR #23 + #24, 2026-07-19).** **M1.1 is now DONE (2026-07-19).**

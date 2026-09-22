@@ -123,7 +123,7 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 156 cases
+    python3 scripts/check-banner-armed.py --self-test  # 159 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -1084,6 +1084,16 @@ def run_decide(payload: str) -> int:
         "prev_armed": (already or {}).get("armed"),
         "prev_paused": (already or {}).get("paused", False),
         "prev_steps": (already or {}).get("steps"),
+        # ⚠ NO CASE ASSERTS THE `or` CARRY, AND THAT IS RECORDED RATHER THAN HIDDEN (r5 Low 4).
+        # Replacing the whole expression with a bare `judged_uuid` survives the suite. The carry
+        # preserves the exactly-once gate across a stop that judged nothing. r5 tried and COULD NOT
+        # construct a reachable input where it changes the outcome: within one session the
+        # transcript only grows, so a stop that judged something is followed by stops that judge
+        # something, and the states where `judged_uuid` is None AFTER a judgement — a changed
+        # `transcript_path` under the same `session_id`, or an opener record with no `uuid` — are
+        # not producible from the driving surface. It is kept because the cost of being wrong is
+        # re-warning about a turn already warned about, and the cost of keeping it is one `or`.
+        # ⛔ If a later round DOES reach it, this comment is the thing to delete, not to extend.
         "last_judged_uuid": judged_uuid or (already or {}).get("last_judged_uuid"),
     }
     if live_uuid == (already or {}).get("sampled_turn_uuid"):
@@ -1132,6 +1142,13 @@ def run_decide(payload: str) -> int:
             # It is a crash barrier, not a branch; that is why no case asserts it.
             detail = f"STEP {banner[0]} of {banner[1]}" if banner else "?"
         elif reason == REASON_UNHERALDED:
+            # ⚠ AND SO IS THE `else 0` — the SECOND crash barrier in this block, declared because
+            # the `"?"` eight lines up is declared and this one was not (r5 Low 5; r1 coordinator
+            # F2 asked for exactly this sentence about exactly this kind of expression). `reason`
+            # is non-empty only on a path where `judged is not None`, so the `else` is unreachable
+            # by construction and removing it is an EQUIVALENT MUTANT, not a defect — measured at
+            # 150/150. It stays so that a future path reaching here with no judged turn logs a
+            # wrong count instead of raising a TypeError inside a Stop hook. No case asserts it.
             detail = f"{tool_uses_of(judged.body) if judged is not None else 0} tool calls"
         else:
             unticked = 0 if steps is _UNSET or steps is None else steps[1] - steps[0]
@@ -1422,6 +1439,21 @@ def _self_test() -> int:
     case("R5-646b ...and its session column too",
          flush_line(1, 2, "T", "sess-a").split("\t")[1] == "sess-a"
          and flush_line(1, 2, "T", "sess-b").split("\t")[1] == "sess-b")
+    # ⛔ THE TIMESTAMP COLUMN, AND THE FOLD THAT ADDED THESE CASES IS WHAT EXPOSED IT.
+    # `check-fixture-variation.py` went RED on this file at `02218390` and the red was committed:
+    # the R5-646 cases gave `flush_line` its first DIRECT call sites, and all four passed the same
+    # `'T'`, so that guard's rule — do two cases pass different values for this parameter? — had
+    # something to fail on for the first time. ⚠ The two rules are NOT the same rule and neither
+    # subsumes the other: it asks whether two CASES differ in a parameter, r5's property asks
+    # whether ONE CASE exercises a producer at two inputs. `STEP 2 of 5` and `STEP 2 of 3` satisfy
+    # the first and still let half the value be frozen, which is exactly the survivor r5 found.
+    # Varying `when` satisfies the first; asserting it at two inputs satisfies the second, and the
+    # column is the only thing in the observation log that orders the records.
+    case("R5-646c ...and its TIMESTAMP column, which nothing read — a `when` that is the same "
+         "string at every call site leaves any clause reading it unguarded",
+         flush_line(1, 2, "T", "s").split("\t")[0] == "T"
+         and flush_line(1, 2, "2026-09-22T13:59:00-07:00", "s").split("\t")[0]
+         == "2026-09-22T13:59:00-07:00")
     case("W2 one call BELOW the threshold is quiet — the boundary is exact, not approximate",
          decide([], armed=False, tool_uses=_SMALL)[0] == QUIET)
     # ⛔ THE BOUNDARY NEEDS ITS OWN CASE, AND FIXING THE AMBIENT-CONSTANT CLASS IS WHAT TOOK IT
@@ -1530,15 +1562,25 @@ def _self_test() -> int:
     case("P6 the two sentinel readers agree on a paused file: armed False AND paused True",
          _armed_from_text("plan: x.md\npaused: why\n") is False
          and _paused_from_text("plan: x.md\npaused: why\n") is True)
+    # ⚠ `is not None and …[2]`, NOT a bare `[2]` — `sample_for` returns `tuple | None`, so on a
+    # None the bare form raises INSIDE the case expression, before `case()` is reached. That is a
+    # kill by CRASH: it aborts the suite, every case after it silently never runs, and the harness
+    # records a "kill" that names no guard — the hazard `safe()` and `_logtext()` both exist for,
+    # reproduced here in three cases this branch added. The explicit test is also strictly
+    # stronger: a None return is now a named red instead of a stack trace. (It was pyright that
+    # pointed at these — three `reportOptionalSubscript` errors that master does not have.)
     _j = {"sampled_turn_uuid": "u", "armed": False, "steps": None, "paused": True}
+    _p7 = sample_for(_j, "u")
     case("P7 sample_for carries the paused flag out of the CURRENT slot",
-         sample_for(_j, "u")[2] is True)
+         _p7 is not None and _p7[2] is True)
+    _p8 = sample_for({"prev_turn_uuid": "p", "prev_armed": False, "prev_steps": None,
+                      "prev_paused": True}, "p")
     case("P8 ...and out of the PREVIOUS slot, which a blocked stop reads instead",
-         sample_for({"prev_turn_uuid": "p", "prev_armed": False, "prev_steps": None,
-                     "prev_paused": True}, "p")[2] is True)
+         _p8 is not None and _p8[2] is True)
+    _p9 = sample_for({"sampled_turn_uuid": "u", "armed": False, "steps": None}, "u")
     case("P9 a journal written BEFORE this field existed reads as not-paused, not as a crash — "
          "the straddle turn warns rather than going silent",
-         sample_for({"sampled_turn_uuid": "u", "armed": False, "steps": None}, "u")[2] is False)
+         _p9 is not None and _p9[2] is False)
 
     case("tool_uses_of counts a tool call in an assistant record",
          tool_uses_of([{"type": "assistant", "message": {"content": [
@@ -1662,11 +1704,22 @@ def _self_test() -> int:
         _UNTOUCHED = object()   # "leave the sentinel exactly as it is", distinct from "delete it"
 
         def _sentinel(state) -> None:
-            """Put the sentinel into `state`: None deletes it, a string writes it."""
+            """Put the sentinel into `state`: None deletes it, str writes it, bytes write it raw.
+
+            ⚠ `bytes` IS NOT A CONVENIENCE. The UNREADABLE sentinel is a third state, distinct
+            from both "nothing armed" and "a plan is armed", and it can only be produced by
+            writing something that is not UTF-8. Without it the `before`/`after` pair could not
+            reach `armed_now is None` at the JUDGING stop, which is the input r5 Medium 3 needs.
+            """
             if state is _UNTOUCHED:
                 return
             _s = _fx / ".claude" / "executing-plan"
-            _s.unlink(missing_ok=True) if state is None else _s.write_text(state)
+            if state is None:
+                _s.unlink(missing_ok=True)
+            elif isinstance(state, bytes):
+                _s.write_bytes(state)
+            else:
+                _s.write_text(state)
 
         def _drive(path: Path, subject: list, session: str = "s",
                    before=_UNTOUCHED, after=_UNTOUCHED) -> int:
@@ -1833,8 +1886,16 @@ def _self_test() -> int:
                 """
                 return _flush.read_text() if _flush.exists() else ""
 
-            def _flush_scenario(session: str, grow: str) -> tuple:
+            def _flush_scenario(session: str, grow: str, pad: int = 0) -> tuple:
                 """-> (exit code, observation lines added, warn lines added).
+
+                `pad` adds N extra PLAIN-PROSE text blocks to the judged turn and N more to what
+                arrives late, moving the observed pair from (1, 2) to (1+pad, 2+2*pad) — so the
+                three numbers in the LATE FLUSH note (before, after, and their difference) all
+                change together. It exists because the note was asserted only by F97b, at the one
+                scenario this helper could produce, which made `1 / 2 / 1` a constant that
+                satisfied the only case reading it (r5 High 1). Prose carries no banner, so the
+                highest banner and therefore the VERDICT are unchanged by padding.
 
                 `grow` selects WHAT arrives after the turn's own stop:
                   'text'  — a closing assistant banner (a real late flush)
@@ -1856,9 +1917,10 @@ def _self_test() -> int:
                 # the whole point of that case: a real warning and an observation at once.
                 tail = ("more prose" if grow in ("plain", "warnable")
                         else "## ▶ STEP 3 of 3 — done")
-                partial = _turn("f1", [{"type": "text", "text": lead}])
+                _pad = [{"type": "text", "text": f"pad {i}"} for i in range(pad)]
+                partial = _turn("f1", [{"type": "text", "text": lead}] + _pad)
                 closing = json.dumps({"type": "assistant", "message": {"content": [
-                    {"type": "text", "text": tail}]}})
+                    {"type": "text", "text": tail}] + _pad}})
                 tool_result = json.dumps({"type": "user", "message": {"content": [
                     {"type": "tool_result", "tool_use_id": "tr1", "content": "ok"}]}})
                 # What its OWN stop saw: everything except whatever is due to arrive late.
@@ -1908,6 +1970,29 @@ def _self_test() -> int:
                  and _logtext().rstrip("\n").endswith("\tunarmed\tSTEP 2 of 3")
                  and "LATE FLUSH OBSERVED" in _errbuf.getvalue())
 
+            # ⛔ THE NOTE'S THREE COUNTS — r5 High 1, the second integration site, and the same
+            # shape as Cx-M1 one layer out. F97b is the ONLY case that surfaces this note, and it
+            # asserted that the note APPEARS, never what it says. The helper produced exactly one
+            # warnable scenario, whose numbers are 1, 2 and 1, so freezing the note at
+            # `held 1 block(s) … holds 2. 1 arrived after` satisfied the only case reading it. The
+            # note is the reader's own account of backlog #96's race, measured directly; frozen,
+            # it reports a race that did not happen at the size it did not happen at.
+            #
+            # `pad=2` drives the SAME code at 3 / 6 / 3. No constant satisfies both, in any one of
+            # the three slots — the difference is asserted too, because `{late[1] - late[0]}` is a
+            # third producer and 2 - 1 == 1 would have let `1` stand in for it.
+            _errbuf2 = io.StringIO()
+            with contextlib.redirect_stderr(_errbuf2):
+                _rcF2 = _flush_scenario("fl-warn2", "warnable", pad=2)
+            case("R5-1051 the LATE FLUSH note reports the counts it MEASURED — driven at two "
+                 "distinct scenarios (1/2/1 and 3/6/3), so no constant satisfies any of its "
+                 "three numbers",
+                 _rcF2[0] == WARN and _rcF2[1] == 1
+                 and "held 1 block(s); one stop later it holds 2. 1 arrived after"
+                     in _errbuf.getvalue()
+                 and "held 3 block(s); one stop later it holds 6. 3 arrived after"
+                     in _errbuf2.getvalue())
+
             # F97c (author self-review) — THE NEW ERROR PATH HAD NO FALSIFIER, while the sibling
             # journal-write failure has had one since round 1 (F7). The asymmetry is the finding:
             # this slice ADDED a failure mode and asserted nothing about it. It matters more than
@@ -1951,15 +2036,57 @@ def _self_test() -> int:
                  _rcB == CANNOT_RUN)
             (_fx / ".claude" / "executing-plan").write_text("plan: plans/p.md\narmed: t\n")
 
+            # ⛔ THE OTHER SIDE OF THE SAME GUARD — r5 Medium 3, and it is the side that says
+            # NOTHING IS WRONG. `:1111` reads `armed_now is None and code == QUIET and judged is
+            # None`; dropping `and judged is None` left the suite green at 150/150 and changed the
+            # answer on an ordinary input. Cx-M2 above pins the CANNOT-RUN direction and cannot see
+            # this, because it holds the sentinel unreadable at BOTH stops.
+            #
+            # The input: a turn that was judged and whose verdict is a SOUND QUIET, at a stop where
+            # the sentinel happens to be unreadable — which is what `begin-plan.py` writing it looks
+            # like for an instant, so this is routine, not exotic. Pristine stays QUIET; the mutant
+            # reports CANNOT RUN about a turn that WAS checked. The unreadable sentinel is not lost
+            # by staying quiet: it is journalled as `armed: null` and surfaces on the NEXT stop,
+            # where it is the live turn's own excuse that is missing. This repo treats CANNOT RUN as
+            # never a pass, so manufacturing one is cry-wolf on the one channel that surfaces.
+            _rcM3 = _drive(_fx / "sound-quiet-unreadable.jsonl",
+                           _turn("q1", [{"type": "text", "text": "a short bannerless turn"}]),
+                           session="s-m3", before=None,
+                           after=b"plan: plans/p.md\n\xff\xfe not utf-8 \xff\n")
+            case("R5-1111 a SOUND QUIET verdict survives a sentinel that is unreadable at the "
+                 "judging stop — CANNOT RUN is for the turn that has no verdict, not for one "
+                 "that has a good one",
+                 _rcM3 == QUIET)
+            (_fx / ".claude" / "executing-plan").write_text("plan: plans/p.md\narmed: t\n")
+
             # H3 — the UNARMED class, the guard's only previously-shipped behaviour, had no
             # execution coverage at all. Three log mutations survived because of it.
+            #
+            # ⛔ TWO DRIVES AT DISTINCT (step, total) PAIRS, IN ONE CASE — r5 High 1, the
+            # integration half of the property stated at W1. The log's own detail is built at
+            # `detail = f"STEP {banner[0]} of {banner[1]}"`, and the only two cases that read it —
+            # this one and F97b — BOTH used step 2 (`STEP 2 of 5` here, `STEP 2 of 3` there). All
+            # the distinctness r4 relied on lived in the TOTAL, so freezing HALF the value,
+            # `f"STEP 2 of {banner[1]}"`, survived at 150/150 while every `unarmed` entry in the
+            # warn log — 100% of its 76-entry history — would record step 2 whatever step the turn
+            # actually reached. ⚠ PAIRWISE-DISTINCT FIXTURES ACROSS CASES DO NOT GIVE THIS. A
+            # composite value has to be exercised COMPONENT-WISE, which means both components
+            # varying within the assertion, which in turn means both drives living in one case.
             (_fx / ".claude" / "executing-plan").unlink()
             _rcU = _drive(_fx / "unarmed.jsonl",
                           _turn("u1", [{"type": "text",
                                         "text": "## ▶ STEP 2 of 5 — doing a thing"}]))
-            case("H3 the UNARMED class still warns AND logs its own reason and detail",
-                 _rcU == WARN
-                 and _logtext().rstrip("\n").endswith("\tunarmed\tSTEP 2 of 5"))
+            _tailU = _logtext().rstrip("\n").split("\n")[-1]
+            _rcU_b = _drive(_fx / "unarmed-b.jsonl",
+                            _turn("u1b", [{"type": "text",
+                                           "text": "## ▶ STEP 7 of 9 — a different step"}]),
+                            session="s-unarmed-b")
+            _tailU_b = _logtext().rstrip("\n").split("\n")[-1]
+            case("H3 the UNARMED class still warns AND logs its own reason and detail — at TWO "
+                 "distinct (step, total) pairs, so NEITHER half of `STEP i of N` can be frozen",
+                 _rcU == WARN and _rcU_b == WARN
+                 and _tailU.endswith("\tunarmed\tSTEP 2 of 5")
+                 and _tailU_b.endswith("\tunarmed\tSTEP 7 of 9"))
 
             # ── W-INT: the THIRD class, driven end to end (2026-09-22) ────────────────────
             # ⛔ THE UNIT CASES ABOVE CANNOT REACH THE DEFECT THIS ONE COVERS. They call decide()
@@ -2152,10 +2279,20 @@ def _self_test() -> int:
             # W-INT was the only integration case reading a logged tool count, freezing the log
             # detail to that fixture's size satisfied it and survived at 147/147. Two different
             # counts mean no constant satisfies both.
+            #
+            # ⛔ `!= _bp2` IS A CONJUNCT, NOT A CASUALTY — r5 Medium 2. The r4 fold REPLACED the
+            # growth assertion with the `endswith` above, and measured on the staged copy, that
+            # clause is ALREADY TRUE when it is evaluated: the preceding H-A drive had logged
+            # `unheralded / 30 tool calls`, and the two lines differ only in the session column,
+            # which `endswith` does not read. So the tail match alone cannot tell "this drive
+            # logged the right line" from "this drive logged nothing and I am reading someone
+            # else's". The growth check is what makes it THIS drive's line, and the freeze above
+            # still dies through the other drive's count. The repair is one word: `and`.
             case("H-B1 control: the identical three-stop shape with NOTHING in the previous slot "
                  "does warn, and logs the count THIS turn made — a second, different count, so "
-                 "the log detail cannot be a constant",
+                 "the log detail cannot be a constant, and the line is one THIS drive wrote",
                  _rcB2 == WARN
+                 and _logtext() != _bp2
                  and _logtext().rstrip("\n").endswith(
                      f"\t{REASON_UNHERALDED}\t{LARGE_TURN + 5} tool calls"))
             _rcB3 = _drive_prev_slot(_fx / "prev-armed.jsonl", _body30, _ARMED_TXT, None)

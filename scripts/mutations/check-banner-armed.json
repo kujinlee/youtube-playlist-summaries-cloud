@@ -203,8 +203,8 @@
     "file": "scripts/check-banner-armed.py",
     "edits": [
       [
-        "        elif reason == REASON_UNHERALDED:\n            detail = f\"{tool_uses_of(judged.body) if judged is not None else 0} tool calls\"",
-        "        elif False:\n            detail = f\"{tool_uses_of(judged.body) if judged is not None else 0} tool calls\""
+        "        elif reason == REASON_UNHERALDED:",
+        "        elif False:"
       ]
     ],
     "expect": [
@@ -495,7 +495,7 @@
       ]
     ],
     "expect": [
-      "H-B1 control: the identical three-stop shape with NOTHING in the previous slot does warn, and logs the count THIS turn made — a second, different count, so the log detail cannot be a constant"
+      "H-B1 control: the identical three-stop shape with NOTHING in the previous slot does warn, and logs the count THIS turn made — a second, different count, so the log detail cannot be a constant, and the line is one THIS drive wrote"
     ]
   },
   {
@@ -561,6 +561,58 @@
     ],
     "expect": [
       "R5-646b ...and its session column too"
+    ]
+  },
+  {
+    "name": "the warn log's banner detail freezes HALF the value — the step, leaving the total live",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "detail = f\"STEP {banner[0]} of {banner[1]}\" if banner else \"?\"",
+        "detail = f\"STEP 2 of {banner[1]}\" if banner else \"?\""
+      ]
+    ],
+    "expect": [
+      "H3 the UNARMED class still warns AND logs its own reason and detail — at TWO distinct (step, total) pairs, so NEITHER half of `STEP i of N` can be frozen"
+    ]
+  },
+  {
+    "name": "the LATE FLUSH note freezes all three of its measured counts at the one scenario's 1 / 2 / 1",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "f\"assistant text this verdict reads held {late[0]} block(s); one \"\n                                f\"stop later it holds {late[1]}. {late[1] - late[0]} arrived after \"",
+        "f\"assistant text this verdict reads held 1 block(s); one \"\n                                f\"stop later it holds 2. 1 arrived after \""
+      ]
+    ],
+    "expect": [
+      "R5-1051 the LATE FLUSH note reports the counts it MEASURED — driven at two distinct scenarios (1/2/1 and 3/6/3), so no constant satisfies any of its three numbers"
+    ]
+  },
+  {
+    "name": "the first-stop CANNOT-RUN guard drops `and judged is None`, manufacturing a CANNOT RUN about a turn whose verdict was sound",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    if armed_now is None and code == QUIET and judged is None:",
+        "    if armed_now is None and code == QUIET:"
+      ]
+    ],
+    "expect": [
+      "R5-1111 a SOUND QUIET verdict survives a sentinel that is unreadable at the judging stop — CANNOT RUN is for the turn that has no verdict, not for one that has a good one"
+    ]
+  },
+  {
+    "name": "flush_line freezes its TIMESTAMP column, the only thing ordering the observation log",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "apart and a third value would make that column mean two different kinds of thing.\n    \"\"\"\n    return f\"{when}\\t{session or '-'}\\t{before}\\t{after}\\n\"",
+        "apart and a third value would make that column mean two different kinds of thing.\n    \"\"\"\n    return f\"T\\t{session or '-'}\\t{before}\\t{after}\\n\""
+      ]
+    ],
+    "expect": [
+      "R5-646c ...and its TIMESTAMP column, which nothing read — a `when` that is the same string at every call site leaves any clause reading it unguarded"
     ]
   }
 ]

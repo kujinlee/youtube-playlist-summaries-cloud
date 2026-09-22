@@ -163,8 +163,14 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
         'm4_functions.manifest_text',),
     'check-arch-findings.py': (
         'line_counts.rx',),
+    # ⟳ 2026-09-22 — THREE OF FOUR PAID OFF, and the debt shrinks by deletion, which is what the
+    # ⭐ direction of this ratchet is for. The r5 fold of the unheralded-class review gave
+    # `log_line` cases at distinct `detail`, `session` and `when`, so those suppressions went
+    # stale and this guard reported them. Only `reason` is still one value at every call site.
+    # ⚠ It reported them at `02218390` and the red was COMMITTED: that fold ran the guard's own
+    # suite and the mutation sweep, and never ran THIS guard over the file it had just changed.
     'check-banner-armed.py': (
-        'log_line.detail', 'log_line.reason', 'log_line.session', 'log_line.when',),
+        'log_line.reason',),
     'check-catalog-coverage.py': (
         'classify.digested', 'digested_columns.sql',),
     'check-ci-watched.py': (

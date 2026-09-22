@@ -11341,3 +11341,51 @@ thing the branch had not: only **12 of 207 firing turns (6%)** sit adjacent to a
 **71%** are in sessions that used no banner at all. The class is aimed at real silence, not at gaps
 inside announced work. `pyright` on the file: 11 errors before, 11 after, same set — none
 introduced.
+
+⛔ **ROUNDS 4 AND 5, AND THE STOP CONDITION THEY FIRED.** Round 4's fold claimed the ambient-constant
+class was closed *as a class*: *"asserted values are now mutually DISTINCT, so no single constant can
+satisfy two cases at once"*, a property "of the FIXTURE SET", with a sweep reporting **7/7 caught, no
+constant survives**. Round 5 enumerated the population **mechanically** instead of by eye: **eleven**
+freezable derived-value sites in delivered code, of which that sweep had reached **three**. **Nine
+single-edit survivors** remained at 150/150 — including one of the three values round 4 believed it
+had pinned, and one round 4's own fix had *created* (`_BIG` moved to `LARGE_TURN + 3`, and
+`LARGE_TURN + 3` is precisely the constant that then survived). The recorded *a measurement is only
+as good as its CORPUS*, committed inside the sweep written to close that very class.
+
+⭐ **The repair is ONE PROPERTY, not an eighth probe** — an eighth probe is the instance fix at the
+manifest layer, which is exactly why `:559` survived and `:1133` was half covered: an entry pins the
+constant that was *tried*, not the class.
+
+> a case asserting a derived value must exercise its producer at two DISTINCT inputs.
+
+No constant satisfies an assertion evaluated at two different inputs, and — unlike pairwise-distinct
+fixtures — it holds **component-wise**. That last part is what `STEP {i} of {N}` needed: both cases
+reading the warn log used step 2 (`STEP 2 of 5` and `STEP 2 of 3`), so all the distinctness lived in
+the total, and freezing only the step half survived while every `unarmed` entry in the log — 100% of
+its 76-entry history — would have recorded step 2 whatever step the turn reached. The property is now
+applied at all eleven sites; the two that needed integration drives (the log's banner detail, and the
+late-flush note's three counts) are this commit, and each was verified by hand to kill the constant
+round 5 measured surviving, through the case it names.
+
+⛔ **The pre-committed thrashing condition HAS FIRED, and it is not re-argued.** Round 4's own
+document recorded the terms: *if round 5 finds a defect whose root is again* instance-not-class *or*
+ambient constant*, the discipline is not holding.* Round 5's first finding is **both at once**.
+Rounds 3, 4 and 5 therefore each carry findings caused by the previous round's fix, in one component
+— three consecutive, where `docs/dev-process.md` requires two. It was pre-committed by the party
+whose own fixes are under review, which is the one circumstance in which it must not be softened by
+that party. A **Phase 6 architecture review is owed**, and it inherits a concrete mechanical question
+rather than an open one: **backlog #164** — should the two-distinct-inputs property be enforced by a
+script, as a sibling of `check-fixture-variation.py`, or stay a written review rule?
+
+⚠ **Two things this round found that were not in any review.** (1) The round-5 partial fold committed
+a **RED `check-fixture-variation.py`**: adding direct `flush_line(...)` calls gave that function its
+first call sites in the suite, all four passing the same timestamp, and the fold ran its own suite and
+the mutation sweep without ever running the *other* guard over the file it had just changed. Three of
+that guard's four suppressions for this file have now been **deleted** rather than re-pinned, because
+the cases that paid them off are real. (2) Three `pyright` errors the branch had introduced were
+`sample_for(...)[2]` on an Optional return — which on a `None` would raise *inside the case
+expression*, aborting the suite so that every later case silently never runs and the harness records
+a kill naming no guard. That is the hazard this file's own `safe()` helper exists for, reproduced in
+three cases the branch itself added. Fixed; `pyright` is back to master's 11, same set.
+
+Suite 140 → 159; manifest 27 → 47; the declared mutation sum 912 → 920.

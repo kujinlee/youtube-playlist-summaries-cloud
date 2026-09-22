@@ -568,7 +568,7 @@ EXPECTED_MUTATIONS = {
     # surviving on exactly that gap. The threshold entry is the fourth of that kind — every other
     # case derives _BIG/_SMALL from LARGE_TURN and so moves with it, leaving the calibrated value
     # unfalsifiable until one case pinned it as a literal.
-    "scripts/check-banner-armed.py": 43,
+    "scripts/check-banner-armed.py": 47,
     # ⟳ 2026-09-07, R4 manifest debt 8 -> 7. FIVE of the seven cover rules the 15 shipped cases
     # already asserted; the other two are the gaps writing them found, and both are the same
     # shape — a claim about coverage that nothing executed:
@@ -3398,7 +3398,7 @@ def _self_test() -> int:
     # Six of the fourteen defend the PAUSE excuse, which the first cut of the class omitted —
     # it warned during a deliberate stand-down, and the suite stayed green at 122/122 because
     # every case left `paused` at its default.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 916)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 920)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
