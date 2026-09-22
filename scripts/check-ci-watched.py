@@ -39,7 +39,7 @@ Usage (the hook calls form 1):
     python3 scripts/check-ci-watched.py --decide
     python3 scripts/check-ci-watched.py --watching   # record that a watcher is armed for HEAD
     python3 scripts/check-ci-watched.py --clear
-    python3 scripts/check-ci-watched.py --self-test  # 23 cases
+    python3 scripts/check-ci-watched.py --self-test  # 28 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -142,6 +142,45 @@ def _run(args: list[str], timeout: int = 20) -> str | None:
     return p.stdout.strip() if p.returncode == 0 else None
 
 
+# What `gh pr view` says on stderr when the branch simply has no PR yet. MEASURED 2026-09-22 on a
+# pushed branch with no PR open: returncode 1, stdout empty, stderr
+# `no pull requests found for branch "banner-work-without-banner"`.
+_NO_PR = "no pull requests found for branch"
+
+
+def _pr_checks_raw() -> tuple[str | None, bool]:
+    """-> (stdout or None, no_pr_exists).
+
+    ⛔ THIS EXISTS BECAUSE `_run` COLLAPSES TWO DIFFERENT ANSWERS INTO `None`, and the difference
+    is the entire verdict. "There is no PR for this branch" is *nothing to watch* — QUIET. "A PR
+    exists and GitHub could not be read" is *cannot run* — loud, and never to be read as green.
+    `gh` exits 1 for both, so `_run`'s `returncode == 0` test maps them to the same value and the
+    loud one wins.
+
+    ⭐ THE CODE ALREADY BELIEVED IT HANDLED THIS, WHICH IS WHY IT WENT UNNOTICED. `run_decide` has
+    a branch for `raw in ("", "null")` commented *"an open PR with no checks, or no PR — nothing
+    to watch either way"*. `gh pr view` does not return empty output when there is no PR; it FAILS.
+    So that branch is unreachable for the no-PR case and the real signal lands in CANNOT RUN — the
+    recorded *proving a negative by interception*: what `gh` would do was reasoned about, not run.
+
+    **The measured cost**: the observer reported CANNOT RUN on EVERY stop of EVERY branch between
+    its first push and its PR being opened — most of a slice's life — and the wrapper surfaces that
+    as a hook error. `docs/backlog.md` #56's verdict is what happens next: a gate that cries wolf
+    gets switched off, and this one is the only thing watching for unwatched CI.
+    """
+    try:
+        p = subprocess.run(["gh", "pr", "view", "--json", "statusCheckRollup",
+                            "--jq", ".statusCheckRollup"],
+                           cwd=ROOT, capture_output=True, text=True, timeout=25)
+    except (OSError, subprocess.SubprocessError):
+        return None, False
+    if p.returncode == 0:
+        return p.stdout.strip(), False
+    # ⚠ Keyed on gh's own sentence. If gh rewords it, this stops matching and the case falls back
+    # to CANNOT RUN — noisy, not silent, which is the direction this guard must fail in.
+    return None, _NO_PR in (p.stderr or "")
+
+
 def _skip_reason() -> str | None:
     """Why this branch needs no network call at all. Keeps the common turn free."""
     branch = _run(["git", "branch", "--show-current"])
@@ -161,8 +200,11 @@ def run_decide() -> int:
         return QUIET
 
     head = _run(["git", "rev-parse", "HEAD"])
-    raw = _run(["gh", "pr", "view", "--json", "statusCheckRollup",
-                "--jq", ".statusCheckRollup"], timeout=25)
+    raw, no_pr = _pr_checks_raw()
+    if no_pr:
+        # Nothing to watch, and nothing to say. The branch is pushed but has no PR, so there is no
+        # CI to be unwatched — the state this observer exists for cannot arise yet.
+        return QUIET
     rows: list[dict] | None
     if raw is None:
         rows = None
@@ -233,6 +275,37 @@ def _self_test() -> int:
     case("unreadable checks -> CANNOT RUN, not a quiet pass", code == CANNOT_RUN)
     case("...and it refuses to be read as 'CI is green'", "do not read the absence" in msg)
     case("unreadable HEAD -> CANNOT RUN", decide(None, None, PEND)[0] == CANNOT_RUN)
+
+    # ── no PR is NOT "cannot run" (2026-09-22) ─────────────────────────────────────────────
+    # ⛔ THE POINT OF THESE CASES IS THE SEPARATION, so each asserts the OTHER side too. Before
+    # this, `_run` mapped both gh failures to None and CANNOT RUN fired on every stop of every
+    # branch between its first push and its PR opening. The risk in fixing it is the opposite
+    # error — swallowing a real "GitHub unreachable" — so the pair is tested, never one alone.
+    class _P:                      # a stand-in for subprocess.CompletedProcess
+        def __init__(self, rc, out="", err=""):
+            self.returncode, self.stdout, self.stderr = rc, out, err
+
+    def _with(proc):
+        """Run `_pr_checks_raw` against a fixed subprocess result."""
+        real = globals()["subprocess"].run
+        globals()["subprocess"].run = lambda *a, **k: proc
+        try:
+            return _pr_checks_raw()
+        finally:
+            globals()["subprocess"].run = real
+
+    case("gh reporting NO PR is not-a-subject, not a failure — (None, True)",
+         _with(_P(1, "", 'no pull requests found for branch "feat/x"')) == (None, True))
+    case("...while ANY OTHER gh failure stays CANNOT RUN territory — (None, False)",
+         _with(_P(1, "", "HTTP 502: Bad gateway")) == (None, False))
+    case("...and an EMPTY stderr on failure is not read as 'no PR'",
+         _with(_P(1, "", "")) == (None, False))
+    case("a successful call returns its stdout and claims no-PR for nothing",
+         _with(_P(0, '[{"name":"verify","state":"PENDING"}]')) ==
+         ('[{"name":"verify","state":"PENDING"}]', False))
+    case("⚠ the no-PR sentence is gh's OWN wording, so a reword falls back to CANNOT RUN "
+         "(noisy) rather than to silence",
+         _with(_P(1, "", "no pull request found for branch")) == (None, False))
 
     # ── state vocabulary ───────────────────────────────────────────────────────────────────
     for st in ("PENDING", "QUEUED", "IN_PROGRESS"):

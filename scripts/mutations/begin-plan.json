@@ -56,7 +56,7 @@
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "    SENTINEL.write_text(pp.strip_field(text, \"paused\"))",
+        "    SENTINEL.write_text(pp.strip_field(pp.strip_field(text, \"paused\"), \"paused_unticked\"))",
         "    SENTINEL.write_text(text)"
       ]
     ],
@@ -82,7 +82,7 @@
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "    SENTINEL.write_text(pp.strip_field(text, \"paused\"))\n    print(\"resumed:",
+        "    SENTINEL.write_text(pp.strip_field(pp.strip_field(text, \"paused\"), \"paused_unticked\"))\n    print(\"resumed:",
         "    SENTINEL.write_text(pp.strip_field(pp.strip_field(text, \"paused\"), \"plan\"))\n    print(\"resumed:"
       ]
     ],
@@ -114,6 +114,45 @@
     ],
     "expect": [
       "the refused tick leaves the plan BYTE-IDENTICAL on disk"
+    ]
+  },
+  {
+    "name": "--pause stops recording the outstanding count, so the guard can never tell",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "            if _total:\n                _stamp = f\"paused_unticked: {_total - _done}\\n\"",
+        "            if False:\n                _stamp = f\"paused_unticked: {_total - _done}\\n\""
+      ]
+    ],
+    "expect": [
+      "--pause records the outstanding count at pause time"
+    ]
+  },
+  {
+    "name": "--pause records the TOTAL instead of what is outstanding",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "                _stamp = f\"paused_unticked: {_total - _done}\\n\"",
+        "                _stamp = f\"paused_unticked: {_total}\\n\""
+      ]
+    ],
+    "expect": [
+      "...and it is the OUTSTANDING count, not the total and not the done count"
+    ]
+  },
+  {
+    "name": "--resume leaves the stamp behind: one writer, no remover, backlog #99's shape again",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    SENTINEL.write_text(pp.strip_field(pp.strip_field(text, \"paused\"), \"paused_unticked\"))\n    print(\"resumed: the Stop guard is armed again",
+        "    SENTINEL.write_text(pp.strip_field(text, \"paused\"))\n    print(\"resumed: the Stop guard is armed again"
+      ]
+    ],
+    "expect": [
+      "...and it clears the STAMP too, so no field outlives the pause that set it"
     ]
   }
 ]

@@ -47,9 +47,9 @@ Usage:
     scripts/begin-plan.py --banner      # reprint the current step's banner, change nothing
     scripts/begin-plan.py --status      # delegate to check-plan-progress.py --status
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
-    scripts/begin-plan.py --resume      # clear the pause; re-arm the Stop guard
+    scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 50 cases
+    scripts/begin-plan.py --self-test  # 53 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -436,7 +436,31 @@ def cmd_pause(why: str) -> int:
               "shaped `key: value` becomes a live field the Stop guard obeys. Rewrite the reason "
               "on one line.", file=sys.stderr)
         return REFUSED
-    SENTINEL.write_text(SENTINEL.read_text().rstrip("\n") + f"\npaused: {cleaned}\n")
+    # ⭐ RECORD THE OUTSTANDING COUNT AT PAUSE TIME, so the Stop guard can tell "still waiting"
+    # from "quietly resumed" (2026-09-22, user-reported noise). Backlog #99's (c) made a paused
+    # plan visible by reporting it on EVERY stop — which is correct about the state and wrong
+    # about the audience: a plan parked on a 40-minute sweep produced twelve identical twelve-line
+    # notices, rendered by the harness as `Stop hook error`. #99's actual defect was
+    # paused-AND-PROGRESSING, and with this value the guard can fire on precisely that instead.
+    #
+    # ⚠ Written as a SEPARATE FIELD rather than folded into the reason text, because the reason is
+    # free text the human wrote and parsing a number back out of it would be a second grammar over
+    # one line. Absent on a hand-edited pause, which the reader treats as "cannot tell" — see
+    # `check-plan-progress.decide`.
+    # ⚠ BORROWED, never re-implemented — `count_steps` is the checkbox rule and this file asserts
+    # that borrowing at `_load_plan_progress`. A second copy of it here is the drift this repo
+    # has recorded fifteen times.
+    _stamp = ""
+    _armed = _armed_plan()
+    if _armed is not None:
+        try:
+            _done, _total = _load_plan_progress().count_steps(_armed[0].read_text())
+            if _total:
+                _stamp = f"paused_unticked: {_total - _done}\n"
+        except (OSError, UnicodeDecodeError):
+            _stamp = ""     # unreadable plan -> no stamp, and the reader treats that as "cannot tell"
+    SENTINEL.write_text(SENTINEL.read_text().rstrip("\n")
+                        + f"\npaused: {cleaned}\n{_stamp}")
     print(f"paused: {cleaned}\nThe Stop guard will now allow the turn to end. "
           f"`--banner` still shows where the plan stands.\n"
           f"⚠ WHEN THE WORK RESUMES, run `scripts/begin-plan.py --resume` FIRST. Until you do, "
@@ -467,7 +491,12 @@ def cmd_resume() -> int:
         print("refusing: this plan is not paused. `--resume` clears a `paused:` line; there is "
               "none, so the Stop guard is already armed.", file=sys.stderr)
         return REFUSED
-    SENTINEL.write_text(pp.strip_field(text, "paused"))
+    # ⛔ BOTH FIELDS, and forgetting the second would rebuild backlog #99 in a new place. The
+    # stamp means "how much was outstanding WHEN THIS PAUSE BEGAN"; left behind after a resume it
+    # describes a pause that no longer exists, and the next `--pause` would find a stale value
+    # already present. `paused:` had one writer and zero removers, which is the defect this whole
+    # command exists to close — adding a second field with one writer and no remover repeats it.
+    SENTINEL.write_text(pp.strip_field(pp.strip_field(text, "paused"), "paused_unticked"))
     print("resumed: the Stop guard is armed again and will refuse a stop with steps outstanding.")
     return OK
 
@@ -634,12 +663,33 @@ def _self_test() -> int:
             case("the sentinel is still paused after the refusal — a refusal is not a resume",
                  "paused" in pp.parse_sentinel(SENTINEL.read_text()))
 
+            # ── the pause STAMP (2026-09-22) ──────────────────────────────────────────────
+            # `--pause` records what was outstanding when the pause began, so the Stop guard can
+            # distinguish "still waiting" from "quietly resumed" and report only the second.
+            # Without the stamp that guard falls back to a can't-tell notice on every stop, which
+            # is the noise this change exists to remove.
+            _f = pp.parse_sentinel(SENTINEL.read_text())
+            case("--pause records the outstanding count at pause time",
+                 _f.get("paused_unticked") == "1")
+            # ⚠ THE VALUE, NOT MERELY THE KEY. The plan here is 2 steps with 1 ticked, so a stamp
+            # that wrote a constant, or the TOTAL, or the DONE count would all still be present —
+            # and the guard compares this number, so a wrong one silently changes its verdict.
+            case("...and it is the OUTSTANDING count, not the total and not the done count",
+                 pp.count_steps(plan_on_disk.read_text()) == (1, 2)
+                 and _f.get("paused_unticked") == "1")
+
             # ── backlog #99: --resume is the only way out, and it must exist ───────────────
             # `paused:` had ONE writer and ZERO removers, which is why a stale pause could only
             # ever be cleared by hand. A state with a setter and no clearer accumulates.
             case("cmd_resume clears the pause",
                  cmd_resume() == OK
                  and "paused" not in pp.parse_sentinel(SENTINEL.read_text()))
+            # ⛔ BOTH FIELDS. A stamp left behind describes a pause that no longer exists, and the
+            # next `--pause` would find a stale value already there — one writer, no remover,
+            # which is verbatim the shape backlog #99 recorded for `paused:` itself. Adding a
+            # second field with that shape while fixing the first would be the whole lesson lost.
+            case("...and it clears the STAMP too, so no field outlives the pause that set it",
+                 "paused_unticked" not in pp.parse_sentinel(SENTINEL.read_text()))
             # ⟳ r1 L3: this was called "cmd_resume leaves the plan itself untouched", which
             # attributed the observation to the wrong subject — it re-reads the same `before`
             # snapshot and so reddens whenever ANY earlier command in the sequence wrote the

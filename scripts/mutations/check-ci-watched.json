@@ -116,5 +116,31 @@
     "expect": [
       "a sentinel with no sha line reads as unarmed"
     ]
+  },
+  {
+    "name": "a missing PR is reported as CANNOT RUN again — the every-stop noise, restored",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    return None, _NO_PR in (p.stderr or \"\")",
+        "    return None, False"
+      ]
+    ],
+    "expect": [
+      "gh reporting NO PR is not-a-subject, not a failure — (None, True)"
+    ]
+  },
+  {
+    "name": "ANY gh failure is read as 'no PR', so an unreachable GitHub goes silent",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    # ⚠ Keyed on gh's own sentence. If gh rewords it, this stops matching and the case falls back\n    # to CANNOT RUN — noisy, not silent, which is the direction this guard must fail in.\n    return None, _NO_PR in (p.stderr or \"\")",
+        "    # ⚠ Keyed on gh's own sentence. If gh rewords it, this stops matching and the case falls back\n    # to CANNOT RUN — noisy, not silent, which is the direction this guard must fail in.\n    return None, True"
+      ]
+    ],
+    "expect": [
+      "...while ANY OTHER gh failure stays CANNOT RUN territory — (None, False)"
+    ]
   }
 ]

@@ -17,8 +17,8 @@
     "file": "scripts/check-plan-progress.py",
     "edits": [
       [
-        "            f\"⏸ PAUSED with {unticked} of {total} steps still outstanding in `{plan}`.\\n\"",
-        "            f\"⏸ PAUSED with steps still outstanding in `{plan}`.\\n\""
+        "                f\"⏸ PAUSED ({unticked} of {total} outstanding, no count recorded, so whether work \"",
+        "                f\"⏸ PAUSED (outstanding, no count recorded, so whether work \""
       ]
     ],
     "expect": [
@@ -30,8 +30,8 @@
     "file": "scripts/check-plan-progress.py",
     "edits": [
       [
-        "            f\"   Paused because: {paused}\\n\"\n            f\"   Next: {next_pending_task(plan_text)}\\n\"",
-        "            \"   Paused because: (a reason was given)\\n\"\n            f\"   Next: {next_pending_task(plan_text)}\\n\""
+        "                f\"resumed cannot be told) — {paused}\\n\"",
+        "                f\"resumed cannot be told) — (a reason was given)\\n\""
       ]
     ],
     "expect": [
@@ -43,8 +43,8 @@
     "file": "scripts/check-plan-progress.py",
     "edits": [
       [
-        "            \"   If the plan is abandoned   → `scripts/begin-plan.py --finish`.\"\n        ), None",
-        "            \"   If the plan is abandoned   → `scripts/begin-plan.py --finish`.\"\n        ), unticked"
+        "                f\"   → `--resume` when it does; `--finish` if the plan is done.\"\n            ), None",
+        "                f\"   → `--resume` when it does; `--finish` if the plan is done.\"\n            ), unticked"
       ]
     ],
     "expect": [
@@ -134,8 +134,8 @@
     "file": "scripts/check-plan-progress.py",
     "edits": [
       [
-        "\"   If the work HAS resumed  → `scripts/begin-plan.py --resume` re-arms the guard.\\n\"",
-        "\"   If the work HAS resumed  → re-arm the guard before continuing.\\n\""
+        "                f\"   → `--resume` when it does; `--finish` if the plan is done.\"",
+        "                f\"   → re-arm the guard when it does; `--finish` if the plan is done.\""
       ]
     ],
     "expect": [
@@ -153,6 +153,58 @@
     ],
     "expect": [
       "...and it names --finish, the explicit way to clear a parked plan"
+    ]
+  },
+  {
+    "name": "the quiet branch WARNS again, restoring the every-stop notice the user reported",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "        # Paused, nothing ticked since: genuinely waiting. Allow, and say nothing — the state is\n        # already visible in the sentinel and in `--banner`, and repeating it every stop is what\n        # made it unreadable.\n        return ALLOW, \"\", None",
+        "        return WARN, f\"⏸ PAUSED ({unticked} of {total}) — {paused}\", None"
+      ]
+    ],
+    "expect": [
+      "paused, NOTHING ticked since -> ALLOW and SILENT: the genuinely-waiting case, which is most of a pause's life and was emitting twelve lines a stop"
+    ]
+  },
+  {
+    "name": "the resumed-while-paused defect goes QUIET — #99's own case, silenced",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "        if began is not None and unticked < began:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "...but paused while steps WERE ticked -> WARN. This is #99's actual defect, and it is the only paused state that now speaks"
+    ]
+  },
+  {
+    "name": "a missing stamp is read as zero, so every pause looks like progress",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "        began = int(stamp) if stamp is not None and stamp.isdigit() else None",
+        "        began = int(stamp) if stamp is not None and stamp.isdigit() else 0"
+      ]
+    ],
+    "expect": [
+      "a HAND-EDITED pause carries no count -> WARN saying so; 'cannot tell' must never read as 'nothing happened', which is the original #99 hole"
+    ]
+  },
+  {
+    "name": "the quiet branch records an unticked count, poisoning the anti-nag memory",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "        return ALLOW, \"\", None\n\n    # Anti-nag:",
+        "        return ALLOW, \"\", unticked\n\n    # Anti-nag:"
+      ]
+    ],
+    "expect": [
+      "the quiet branch still records NO unticked count — the anti-nag state is left alone on every paused path, not just the warning ones"
     ]
   }
 ]
