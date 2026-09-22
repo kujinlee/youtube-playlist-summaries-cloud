@@ -378,7 +378,7 @@
       ]
     ],
     "expect": [
-      "H-A4 the LOGGED `unticked` count is the one sampled when the judged turn ended, not the plan's count now — 3 unticked then, 1 unticked now"
+      "H-A4 the LOGGED `unticked` count is COMPUTED from the plan sampled when the judged turn ended — 2 then, 1 now, and 3 in every other fixture here, so no constant satisfies this case and F4 at once"
     ]
   },
   {
@@ -470,6 +470,45 @@
     ],
     "expect": [
       "P10b ...and the SIBLING reader has the same rule — a `paused_at:` key must leave the plan ARMED, or the two disagree about a stand-down from the other side"
+    ]
+  },
+  {
+    "name": "the log's unticked detail is frozen at the ambient fixture count",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "            unticked = 0 if steps is _UNSET or steps is None else steps[1] - steps[0]\n            detail = f\"{unticked} unticked\"",
+        "            unticked = 3\n            detail = f\"{unticked} unticked\""
+      ]
+    ],
+    "expect": [
+      "H-A4 the LOGGED `unticked` count is COMPUTED from the plan sampled when the judged turn ended — 2 then, 1 now, and 3 in every other fixture here, so no constant satisfies this case and F4 at once"
+    ]
+  },
+  {
+    "name": "the log's tool-call detail is frozen at the W-INT fixture size",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "            detail = f\"{tool_uses_of(judged.body) if judged is not None else 0} tool calls\"\n        else:",
+        "            detail = f\"{LARGE_TURN + 7} tool calls\"\n        else:"
+      ]
+    ],
+    "expect": [
+      "H-B1 control: the identical three-stop shape with NOTHING in the previous slot does warn, and logs the count THIS turn made — a second, different count, so the log detail cannot be a constant"
+    ]
+  },
+  {
+    "name": "the warning message's tool count is frozen, leaving only the threshold sentence",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "f\"⚠ WORK WITHOUT A BANNER — this turn made {tool_uses} tool calls, armed no plan, \"",
+        "f\"⚠ WORK WITHOUT A BANNER — this turn made {LARGE_TURN + 7} tool calls, armed no plan, \""
+      ]
+    ],
+    "expect": [
+      "...and it reports the COUNT it saw, not a fixed string (catches a hardcoded message)"
     ]
   }
 ]

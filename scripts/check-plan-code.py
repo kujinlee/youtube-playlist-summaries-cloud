@@ -568,7 +568,7 @@ EXPECTED_MUTATIONS = {
     # surviving on exactly that gap. The threshold entry is the fourth of that kind — every other
     # case derives _BIG/_SMALL from LARGE_TURN and so moves with it, leaving the calibrated value
     # unfalsifiable until one case pinned it as a literal.
-    "scripts/check-banner-armed.py": 36,
+    "scripts/check-banner-armed.py": 39,
     # ⟳ 2026-09-07, R4 manifest debt 8 -> 7. FIVE of the seven cover rules the 15 shipped cases
     # already asserted; the other two are the gaps writing them found, and both are the same
     # shape — a claim about coverage that nothing executed:
@@ -3376,7 +3376,13 @@ def _self_test() -> int:
     # while this branch sat open (762 was the sum against the OLD base). Derived rather
     # than typed — `sum(EXPECTED_MUTATIONS.values())` over the merged dict is 854 across
     # 52 entries, and `scripts/mutations/check-python-pin.json` holds exactly 25.
-    # ⟳ 881 -> 909, 2026-09-22: check-banner-armed 8 -> 36, the third warning class.
+    # ⟳ 881 -> 912, 2026-09-22: check-banner-armed 8 -> 39, the third warning class.
+    # ⭐ THE LAST THREE ARE A CLASS SWEEP, not three instances. r4 found a case satisfied by a
+    # CONSTANT — the fixture's plan had 3 unticked and two cases both asserted 3, so hardcoding
+    # 3 passed. Sweeping every derived value that reaches a user-visible string found two more,
+    # including a case LABELLED 'catches a hardcoded message' that was passing via the message's
+    # separate threshold sentence. The repair is that asserted values are now mutually DISTINCT,
+    # so no single constant can satisfy two cases at once; these three entries hold that.
     # ⭐⭐ NINE OF THE LAST TWELVE CAME FROM REVIEW, AND THE LAST NINE ARE ROUND 3's. Round 1
     # found four single-edit survivors; the fold fixed them and round 3 found NINE more, six
     # of them in one place — the journal's PREVIOUS slot, which rounds 1 and 2 had both
@@ -3392,7 +3398,7 @@ def _self_test() -> int:
     # Six of the fourteen defend the PAUSE excuse, which the first cut of the class omitted —
     # it warned during a deliberate stand-down, and the suite stayed green at 122/122 because
     # every case left `paused` at its default.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 909)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 912)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

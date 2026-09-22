@@ -1365,7 +1365,13 @@ def _self_test() -> int:
     # fail loudly rather than silently re-tune the guard.
     case("W0 the threshold is 25 — the calibrated value, pinned against a silent re-tune",
          LARGE_TURN == 25)
-    _BIG, _SMALL = LARGE_TURN, LARGE_TURN - 1
+    # ⛔ `_BIG` IS NOT `LARGE_TURN`, AND THAT IS r4's SWEEP, NOT A STYLE CHOICE. It used to be
+    # exactly the threshold — and the warning message quotes the count AND, in a different
+    # sentence, the threshold ("⚠ THIS CAN BE A FALSE ALARM … {LARGE_TURN} tool calls"). With the
+    # two numbers equal, the case labelled *catches a hardcoded message* was satisfied by the
+    # THRESHOLD sentence, so freezing the count to any constant left it green. Offsetting `_BIG`
+    # makes the count appear nowhere else in the message. W2 still probes the boundary exactly.
+    _BIG, _SMALL = LARGE_TURN + 3, LARGE_TURN - 1
     case("W1 not armed + no banner + a LARGE turn WARNS — the branch that was silent",
          decide([], armed=False, tool_uses=_BIG)[0] == WARN)
     case("...and it names the work-without-banner direction",
@@ -2084,9 +2090,17 @@ def _self_test() -> int:
                  _rcB1 == QUIET and _logtext() == _bp)
             _bp2 = _logtext()
             _rcB2 = _drive_prev_slot(_fx / "prev-none.jsonl", _body30, None, None)
+            # ⚠ THIS ALSO ASSERTS THE LOGGED COUNT, and it is the SECOND such assertion on
+            # purpose (r4). W-INT logs `LARGE_TURN + 7`; this drive logs `LARGE_TURN + 5`. While
+            # W-INT was the only integration case reading a logged tool count, freezing the log
+            # detail to that fixture's size satisfied it and survived at 147/147. Two different
+            # counts mean no constant satisfies both.
             case("H-B1 control: the identical three-stop shape with NOTHING in the previous slot "
-                 "does warn — so the case above cannot pass by the path simply never running",
-                 _rcB2 == WARN and _logtext() != _bp2)
+                 "does warn, and logs the count THIS turn made — a second, different count, so "
+                 "the log detail cannot be a constant",
+                 _rcB2 == WARN
+                 and _logtext().rstrip("\n").endswith(
+                     f"\t{REASON_UNHERALDED}\t{LARGE_TURN + 5} tool calls"))
             _rcB3 = _drive_prev_slot(_fx / "prev-armed.jsonl", _body30, _ARMED_TXT, None)
             case("H-B2 `prev_armed` and `prev_steps` travel with it — a turn that ran ARMED is "
                  "quiet, and never CANNOT RUN, when judged out of the previous slot",
@@ -2111,15 +2125,26 @@ def _self_test() -> int:
             # every by-hand probe said killed. The two counts must DIFFER for the detail to be
             # observable at all — pointing the sentinel at a second plan file with a different
             # tick count is the only way to separate `steps_then` from `steps_now`.
+            # ⛔ THREE DISTINCT COUNTS, AND THE THIRD IS r4's FINDING. The first cut seeded from
+            # `p.md` — the ambient fixture plan, 3 unticked — and asserted "3 unticked". So did the
+            # pre-existing F4 case. A log block hardcoding `unticked = 3` therefore satisfied BOTH
+            # and survived at 149/149: the case proved "not the CURRENT plan's count" and not "the
+            # SAMPLED plan's count", which is the claim. Seeding from `r.md` (2) makes the asserted
+            # value ambient NOWHERE, and leaves F4's 3 and this 2 pinning each other — a constant
+            # satisfying one now reddens the other. The recorded *a case can pass for an AMBIENT
+            # reason*, second instance on this branch after r1's H1.
             (_fx / "plans" / "q.md").write_text(
-                "- [x] one\n- [x] two\n- [x] three\n- [ ] four\n")   # 1 unticked, vs p.md's 3
+                "- [x] one\n- [x] two\n- [x] three\n- [ ] four\n")            # 1 unticked (now)
+            (_fx / "plans" / "r.md").write_text(
+                "- [x] one\n- [x] two\n- [ ] three\n- [ ] four\n")            # 2 unticked (sampled)
             _rcS = _drive(_fx / "steps-sample.jsonl", _subject,
-                          before="plan: plans/p.md\narmed: t\n",
+                          before="plan: plans/r.md\narmed: t\n",
                           after="plan: plans/q.md\narmed: t\n")
-            case("H-A4 the LOGGED `unticked` count is the one sampled when the judged turn ended, "
-                 "not the plan's count now — 3 unticked then, 1 unticked now",
+            case("H-A4 the LOGGED `unticked` count is COMPUTED from the plan sampled when the "
+                 "judged turn ended — 2 then, 1 now, and 3 in every other fixture here, so no "
+                 "constant satisfies this case and F4 at once",
                  _rcS == WARN
-                 and _logtext().rstrip("\n").endswith("\tunbannered\t3 unticked"))
+                 and _logtext().rstrip("\n").endswith("\tunbannered\t2 unticked"))
             (_fx / ".claude" / "executing-plan").write_text("plan: plans/p.md\narmed: t\n")
             (_fx / ".claude" / "executing-plan").unlink(missing_ok=True)
         finally:
