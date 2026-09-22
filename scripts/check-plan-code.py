@@ -560,7 +560,15 @@ EXPECTED_MUTATIONS = {
     # CONTRACT* shape, one layer in from the log-format defect this whole slice is about.
     "scripts/check-anchors.py": 5,
     "scripts/check-arch-findings.py": 5,
-    "scripts/check-banner-armed.py": 8,
+    # ⟳ 2026-09-22, the third warning class: 8 -> 22. THREE of the eight are not about the new
+    # branch's rules at all but about it being WIRED and LABELLED — `run_decide` ceasing to count
+    # the turn, the log re-deriving the class from its output, and the class reporting its
+    # sibling's reason. That split is deliberate: the two older classes shipped with their rules
+    # covered and their wiring not, and the comment on H3 in the suite records three log mutations
+    # surviving on exactly that gap. The threshold entry is the fourth of that kind — every other
+    # case derives _BIG/_SMALL from LARGE_TURN and so moves with it, leaving the calibrated value
+    # unfalsifiable until one case pinned it as a literal.
+    "scripts/check-banner-armed.py": 22,
     # ⟳ 2026-09-07, R4 manifest debt 8 -> 7. FIVE of the seven cover rules the 15 shipped cases
     # already asserted; the other two are the gaps writing them found, and both are the same
     # shape — a claim about coverage that nothing executed:
@@ -3368,7 +3376,11 @@ def _self_test() -> int:
     # while this branch sat open (762 was the sum against the OLD base). Derived rather
     # than typed — `sum(EXPECTED_MUTATIONS.values())` over the merged dict is 854 across
     # 52 entries, and `scripts/mutations/check-python-pin.json` holds exactly 25.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 881)
+    # ⟳ 881 -> 895, 2026-09-22: check-banner-armed 8 -> 22, the third warning class.
+    # Six of the fourteen defend the PAUSE excuse, which the first cut of the class omitted —
+    # it warned during a deliberate stand-down, and the suite stayed green at 122/122 because
+    # every case left `paused` at its default.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 895)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

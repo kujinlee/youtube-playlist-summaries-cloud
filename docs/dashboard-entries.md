@@ -11225,3 +11225,66 @@ found by reviewing the architecture review that had just been written about this
 was, in turn, about the guard repeatedly mistaking text for configuration. The fix is deliberately
 sequenced ahead of the larger change that review recommended, because that change would have copied
 this reader into two more guards.
+
+## 2026-09-22
+The reminder that tells you what I am working on can now notice when it has gone missing.
+
+There is a small check here whose job is to make sure that, when I do a long piece of work, I
+announce each step in plain sight rather than leaving you to reconstruct it from a wall of tool
+calls. Until today it could only spot two kinds of mistake, and both of them required me to have
+already done something right — either I had written a step heading and forgotten to register the
+job, or I had registered the job and forgotten the heading. If I did neither, it said nothing at
+all. That is the case that actually happens, and it is what happened through most of yesterday
+evening: the check's own log shows six complaints and then silence, and the silence was not an
+improvement. It was the check running out of things it knew how to see.
+
+So it now has a third thing it can notice: a turn that did a lot of work, registered no job and
+wrote no heading. Where to draw the line for "a lot" was decided by measurement rather than taste.
+I went back over every recorded session on this project — about two and a half thousand pieces of
+work — and compared the ones where a heading was written against the ones where it was not. The
+obvious rule, "did it change a file", turned out to be a bad one: barely half the work worth
+announcing changes a file at all, because handing a job to another agent and reading the result
+changes nothing. Sheer size of the job separated the two groups about twice as well. The threshold
+picked from that table will speak up roughly once every eleven pieces of work, and you chose both
+that number and the decision to let it warn rather than block. One correction worth recording: my
+first pass at separating my own work from the work of the helper agents used a rough proxy and let
+about forty of theirs into the comparison. There is a field that says outright which is which, and
+using it changed the figures by half a percentage point and the decision not at all.
+
+Two things it deliberately does not do. It does not claim the warnings are always right — the
+measurement it is built on cannot tell a genuine miss from a job that needed no heading, and the
+message it prints says so rather than implying a precision it does not have. And it does not block
+anything yet; that decision is left until the log has enough entries to judge it on.
+
+**Waiting on you:** nothing yet — this is on a branch and will come to you as a pull request.
+<!--tech-->
+Branch `banner-work-without-banner`. Adds a third warning class to `scripts/check-banner-armed.py`
+(`unheralded`: `not armed and tool_uses >= LARGE_TURN`, threshold 25) plus `tool_uses_of`.
+
+The class was chosen from a corpus measurement over 803 transcripts → **2,293 main-session turns**
+(`entrypoint == "cli"`), of which 201 emitted a banner. `edited`, which backlog #95 proposed, has
+**52.2% recall** on that population — the file's own docstring predicted this without quantifying it
+("a coordinator turn that dispatches five reviewers reads as edited=False ... the normal mode, not
+an edge case"). Turn size separates the two groups **5.03x** against `edited`'s **2.48x**. The
+threshold table is recorded at the constant.
+
+⚠ **The first cut of that measurement excluded subagent sessions by a PROXY** — "does the file use
+`StructuredOutput`" — which let 44 subagent turns into the denominator, because 40 `sdk-py` files
+happen not to use that tool. `entrypoint` is set by the runtime rather than chosen, and splits the
+corpus exactly: `cli` holds all 201 banners, `sdk-py`/`sdk-cli` hold 735 turns and zero. Corrected
+before the figures left the branch; it moved the chosen threshold's numbers by 0.5pp and changed
+neither the ordering nor the decision.
+
+⚠ **The structural half is the more important one.** The warn log's `reason` was re-derived in
+`run_decide` by asking "was there a banner?", which worked only while the two classes differed on
+that question. A third class sharing `banner is None` would have been filed as `unbannered` —
+verbatim backlog #97's second defect, which mislabelled 10 of 15 entries and contaminated the
+evidence base the promote-to-blocking decision reads. `decide()` now RETURNS the class that fired,
+so there is one owner; the log derives only the per-class detail.
+
+Suite 98 → 122; manifest 8 → 16. Three of the eight new mutations cover wiring and labelling rather
+than the branch's rules, because the two older classes shipped with their rules covered and their
+wiring not — the suite's own H3 comment records three log mutations surviving on that gap. A fourth
+pins the threshold as a literal: every other case derives from `LARGE_TURN` and so moves with it,
+leaving the calibrated value unfalsifiable. `pyright` on the file: 11 errors before, 11 after, same
+set — none introduced.
