@@ -203,8 +203,8 @@
     "file": "scripts/check-banner-armed.py",
     "edits": [
       [
-        "        if reason == REASON_UNARMED:\n            detail = f\"STEP {banner[0]} of {banner[1]}\" if banner else \"?\"\n        elif reason == REASON_UNHERALDED:",
-        "        if banner:\n            reason_ = REASON_UNARMED\n            detail = f\"STEP {banner[0]} of {banner[1]}\"\n        elif False:"
+        "        elif reason == REASON_UNHERALDED:\n            detail = f\"{tool_uses_of(judged.body) if judged is not None else 0} tool calls\"",
+        "        elif False:\n            detail = f\"{tool_uses_of(judged.body) if judged is not None else 0} tool calls\""
       ]
     ],
     "expect": [

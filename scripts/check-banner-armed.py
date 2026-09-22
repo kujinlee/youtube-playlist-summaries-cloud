@@ -75,6 +75,18 @@ WHAT IT CANNOT SEE, stated rather than hidden:
     margin instead of none, which is strictly better, but nothing here establishes that the prior
     turn is ALWAYS flushed by the next Stop. A corpus cannot settle it — a recorded transcript shows
     final file state, never what was readable at hook time. Spec falsifier F11.
+  * ⚠ A TURN SPLIT BY AN INJECTED BOUNDARY, for the `unheralded` class — UNEXERCISED HERE, NOT
+    IMMUNE, and the distinction is the whole point of this entry. A window opened by a record that
+    `_meta_carries_a_message` accepts is a fresh turn, so a job interrupted partway yields a
+    fragment holding the WORK and not the BANNER — which is exactly `unheralded`'s firing state.
+    Backlog #146 measured `Another Claude session sent a message` as 332 such openers and 125
+    manufactured warnings for the sibling guard. MEASURED 2026-09-22 over the 2,293 `cli` turns
+    this guard actually judges: **0** of them are opened that way. All 90 message-carrying meta
+    openers are `<local-command-caveat>` (a slash command the human typed), and every one opens a
+    window `is_judgable` rejects for holding no assistant record. So the corpus does not produce
+    the shape — and nothing in the code prevents it. `coalesce_injected` is deliberately NOT
+    applied here (see check-closing-table.py); backlog #148 asks this question for the guard as a
+    whole and is still open. Do not read the 0 as a property of the rule.
   * SUBAGENT edits. Measured: 0 `isSidechain:true` records across 508 transcripts for this project —
     subagent work lives in its own session file, so a coordinator turn that dispatches five
     reviewers reads as edited=False. `subagent-driven-development` is the Phase 3 DEFAULT here, so
@@ -684,7 +696,11 @@ def _paused():
     """
     try:
         return _paused_from_text(SENTINEL.read_text())
-    except (FileNotFoundError, OSError, UnicodeDecodeError):
+    except (OSError, UnicodeDecodeError):
+        # ⚠ ONE NAME, NOT TWO (r1 coordinator F3). `FileNotFoundError` IS an `OSError`, and listing
+        # it separately here would imply a distinction that is not being drawn — `_armed()` lists
+        # both precisely BECAUSE it answers them differently (absent -> False, unreadable -> None
+        # -> CANNOT RUN). Here every failure collapses to the same answer, deliberately.
         return False
 
 
@@ -1084,6 +1100,13 @@ def run_decide(payload: str) -> int:
         # derives its own, because the detail is the one thing that genuinely differs per class.
         banner = highest_banner(texts or [])
         if reason == REASON_UNARMED:
+            # ⚠ THE `"?"` IS UNREACHABLE BY CONSTRUCTION AND IS KEPT ANYWAY, said out loud rather
+            # than left for the next reader to work out (r1 coordinator F2). `decide()` returns
+            # REASON_UNARMED only from the branch below `banner is not None`, and `banner` here is
+            # recomputed from the SAME `judged.body`, so the two cannot disagree. It stays because
+            # the alternative is `banner[0]` raising inside a Stop hook if that ever stops being
+            # true — a TypeError here would surface as a broken guard, not as a missing detail.
+            # It is a crash barrier, not a branch; that is why no case asserts it.
             detail = f"STEP {banner[0]} of {banner[1]}" if banner else "?"
         elif reason == REASON_UNHERALDED:
             detail = f"{tool_uses_of(judged.body) if judged is not None else 0} tool calls"

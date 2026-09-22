@@ -573,3 +573,79 @@ context. ⚠ Resolved by deciding, not by deleting: the flag is gone because it 
 both remedies whenever a budgeted file is inside the band; `budget_verdict(220, 220) == "tight"`
 pins the zero-runway case; and the band's upper edge is pinned by a mutation (`<=` → `<`) that must
 kill **through** `"a file one line inside the warn band is 'tight'"`.
+
+---
+
+## The instruction with no author
+
+A system-prompt line — *"Do not call the AgentTool unless the user requested it"* — collided with
+this project's dual-review gate, whose Claude half is normally a fresh subagent. The rule that
+settles it is one box in [`plugins.md`](plugins.md) → *Code Review*; this is the evidence behind it,
+kept here because the **cost was in re-deriving it**, not in the answer.
+
+**Audited 2026-09-22, six sources, all negative:**
+
+| searched | contains it? |
+|---|---|
+| `CLAUDE.md`, `AGENTS.md`, `dev-process.md`, `plugins.md`, the checklists, `review-method.md` | **no** |
+| `.claude/settings.json`, `~/.claude/settings.json`, `~/.claude/CLAUDE.md` | **no** |
+| managed/enterprise policy — all three OS locations | **absent** |
+| the session's launch argv | `claude --allow-dangerously-skip-permissions`, **no `--append-system-prompt`** |
+| every occurrence across 803 project transcripts | **assistant text only** — never a user message |
+
+⭐ **The finding is not "it has no owner". It is that FOUR sessions each discovered that
+independently.** The identical audit ran on **2026-08-27** and reached the identical conclusion —
+and that session then spawned the agent anyway. Nobody wrote it down, so it re-ran on **08-29**,
+was cited again on **09-06** and **09-20**, and ran a fourth time on **09-22**. The instruction was
+therefore never once honoured; it only ever bought a detour, and on 09-22 it also produced an
+unearned `REVIEW GAP: claude` in a review document before being retracted.
+
+This is the recorded shape *it already exists under a name I didn't search*, applied to a
+conclusion rather than to code — and the reason a null result is worth a paragraph. *"We looked and
+there is nothing there"* is a finding with a shelf life; left unwritten it expires the moment the
+session ends, and the next reader cannot tell an unexamined question from an answered one.
+
+**The user's ruling, 2026-09-22, given after being shown that table:** *"if the reason cannot be
+found, remove this restriction."*
+
+### ⭐ The one candidate reason — offered by the user, and it does not explain the instruction, but it BOUNDS the ruling
+
+The user then named the thing that would justify caution: *"shared resource edit and interference
+among writers in agents. We have protocol to avoid this type of interference."* That hazard is real
+and measured here — a concurrency inference was wrong **twice**, each time filing a **Blocking**
+finding against what turned out to be contamination.
+
+But it does not reach the instruction, for two reasons that are already written down in
+[`review-method.md`](review-method.md) → *Running agents concurrently*:
+
+1. **The protocol classifies the OPERATION, not the agent.** *"Both review halves at once"* is in
+   its ✅ MEASURED-SAFE row — they read files and each writes only its own review path, verified by
+   three overlapping processes producing byte-identical data across all 23 manifest entries. Only
+   three operations must be serialised: Postgres **roles**, **`git` in the main working tree**, and
+   **top-level `docs/reviews/` writes while a Codex run is in flight**.
+2. **That section already carries a RULE box saying spawning is the default**, with the measured
+   cost of the opposite: a session running under this very instruction shipped **PR #325 after six
+   review rounds with only the Codex half**, every "claude half" a coordinator self-review.
+
+So the correct shape is not *"don't spawn"* but *"spawn, and respect the operation table"* — which
+is what the `plugins.md` rule now says. **A blanket restriction and a targeted one are not the same
+instrument**, and accepting the blanket version because a targeted concern exists is the recorded
+*a framing widened to fit is no longer a claim*.
+
+⚠ **AND THE COORDINATOR BROKE HAZARD 2 WHILE WRITING THIS, which is the strongest thing in this
+section.** The dispatcher rule is *commit before spawning* — the only protection hazard 2 has. The
+2026-09-22 session did commit (`ffc85be8`) before spawning the review half, and then **kept editing
+the main working tree for the rest of the round**, leaving four modified files uncommitted while a
+subagent with full tool access was live. Nothing was lost: `git stash list` empty, every edit
+present. That is **luck, not safety** — the identical wording the table already uses about a
+`/brief` agent that ran `stash`/`stash pop` mid-edit and *"completed cleanly by luck"*. The user's
+caution was better aimed than the instruction it was offered to explain.
+
+⚠ **What "remove" can and cannot mean, stated rather than glossed.** The line is injected into the
+system prompt; no file in this repo or in `~/.claude` owns it, so it cannot be deleted. What is
+removable is its **authority** — `CLAUDE.md` imports `plugins.md`, and project instructions outrank
+an instruction of unknown provenance. Claiming the line was "removed" would be a green check over
+the wrong subject. ⚠ Scope is the **Agent tool only**. The sibling line about workflows and
+deep-research audits to the same dead end and the user did **not** rule on it, so it still needs
+asking — widening a ruling to a case it did not cover is the recorded *a framing widened to fit is
+no longer a claim*.
