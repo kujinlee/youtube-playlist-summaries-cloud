@@ -11544,3 +11544,71 @@ it was written to catch (now `== ALLOW` and silent); and a figure quoted in this
 comment that was never measured.
 
 Suite 60→63; manifest +3 and three re-anchored; declared sum 897→900.
+
+## 2026-09-22
+The check that notices when nobody is watching a code-quality run now keeps a note of every time it
+spoke up.
+
+There is a small check here whose job is to notice when a quality run is going unwatched — the
+situation where a result arrives and nobody is told, so somebody has to remember to ask. It works.
+But it only ever said so out loud, once, in a place that keeps nothing. So when it mattered today —
+a change was put up for review with nothing watching it, the exact thing the check exists to notice
+— the question "did it warn me about that?" had no answer at all. There was nowhere to look.
+
+Its older sibling, the one that reminds me to announce what I am doing, was given a written record
+long ago for exactly this argument, and that record now has seventy-six entries. It is what lets
+anyone ask how often the reminder is right before deciding whether to make it stricter. This one had
+nothing, so the same question could not even be asked.
+
+It now writes one line per warning, with two kinds kept apart: nothing was watching at all, versus
+something was watching but a newer change moved past it. Those have different causes and mixing them
+would make the record useless for the decision it exists to inform. It writes nothing on the quiet
+turns, which matters more than it sounds — a record that logs everything cannot tell you how often
+the thing spoke.
+
+Review found nine things, and the two reviewers overlapped on exactly one of them. The most
+interesting were not bugs in what the check decides but gaps in what could be proven about it: the
+one line connecting it to the information it needed was untestable where it sat, and a claim written
+in the code — that a malformed input costs a detail but never the verdict — turned out to be false
+for one kind of malformed input nobody had tried. Both are now covered.
+
+Two of those findings are lessons this same file already had written in it, in comments added by
+earlier reviews, and I wrote new code directly underneath them and repeated both. That is recorded
+in the commit rather than quietly fixed.
+
+**Waiting on you:** nothing — this is on a branch and comes to you as a pull request.
+<!--tech-->
+Branch `ci-observer-log`. Adds `WARN_LOG` (`.claude/ci-unwatched.log`, gitignored beside
+`.claude/banner-warnings*.log`), pure `log_line` / `warn_reason` / `_col`, `payload_from(stream)`
+and a testable `main(argv, stream)` to `scripts/check-ci-watched.py`.
+
+⭐ `warn_reason` exists because there are TWO classes and a log that cannot express one reports it
+as never having fired. Not a guess: `check-banner-armed.py`'s log keyed on `(step, total)`, written
+only when a banner existed, so its banner-LESS class was unrecordable and shows **0** across 76
+entries. Here: `unwatched` vs `stale` (armed for a different commit — which a push causes BY DESIGN,
+so it is not neglect), and the `stale` row names the armed sha or one-push-stale and ten-pushes-stale
+are the same record.
+
+⚠ The Stop payload was ALWAYS piped in and never read — `block-idle-stop.sh:149` has run
+`printf '%s' "$INPUT" | … --decide` since this guard shipped. It matters because a session column
+that is always `-` cannot vary, which is the data-level form of a case that cannot fail.
+
+⛔ **Round 1 found 9 (1 Blocking / 3 Medium / 5 Low); the halves overlapped on exactly one.** The
+Blocking was this very ratchet. Two Mediums are lessons already written in this file by earlier
+rounds and reproduced by new code beneath them: *"unit coverage does not compose — mutate the CALL
+SITE"* (`payload_from` was extracted, and the line CALLING it was still unreachable under
+`if __name__`, so `run_decide("")` survived at 42/42 — hence `main(argv, stream)`), and *"TWO
+DISTINCT EXCEPTIONS, because the handler catches a UNION"* (`RecursionError` escaped
+`(ValueError, TypeError, AttributeError)`, costing the verdict the comment beside it promised it
+could not).
+
+⚠ **Three of my own manifest entries first reported SURVIVOR and were not.** The mutations made a
+case RAISE; with the drive outside `safe()`, the suite died before printing one `[FAIL]` line, so
+the harness saw a dead run and nothing to attribute. A kill by crash names no guard. `safe()` added.
+⚠ **And the overflow case was passing for an ambient reason** — it used 60,000 nesting levels, which
+parses fine; 200,000 is where it raises. The precondition is now asserted, so a future interpreter
+that lifts the limit turns the case RED instead of leaving it vacuous.
+
+Suite 32 → 55; manifest 14 → 27; `EXAMINED_KEYS` for this file 7 → 15, derived by running
+`analyse()` rather than transcribed. Declared sum 944 → 952. All 27 entries verified under the
+harness's own attribution rule (`check-plan-code.py:1451`). `pyright`: 0 errors.

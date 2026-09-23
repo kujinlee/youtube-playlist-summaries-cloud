@@ -415,9 +415,40 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'windows.records',),
     'check-catalog-coverage.py': (
         'classify.column', 'classify.digested', 'digested_columns.sql',),
+    # ⟳ 2026-09-22 — 7 -> 15. The warn log's producers (`log_line`, `warn_reason`, `_col`)
+    # and the payload readers (`run_decide.payload`, `payload_from.stream`). ⚠ DERIVED by
+    # running `analyse()` over the file, NOT transcribed: r1 Medium 4 measured that the pin
+    # is compared in ONE direction (`pinned - keys`), so an ARRIVAL is silent at key level —
+    # coverage leaving the new code would go unnoticed exactly as it is caught for the old.
+    # ⟳ 2026-09-22 — 7 -> 17, RE-DERIVED AFTER THE CODE WAS FINAL (r2 Medium 1).
+    # ⛔ THE FIRST ATTEMPT WAS DERIVED AND STILL WRONG, which is the part worth keeping: it ran
+    # `analyse()` honestly, pinned 15, and THEN the same commit added `main(argv, stream)` — so
+    # the derived value went stale inside the commit whose message said it was derived rather
+    # than transcribed. Deriving is not a property of the method, it is a property of WHEN you
+    # run it. r2 proved the gap by construction: renaming `main` to `_main` left this guard
+    # GREEN while renaming `payload_from` turned it RED.
+    # ⚠ The pin is compared in ONE direction (`pinned - keys`), so an ARRIVAL is silent at key
+    # level — nothing would ever have told me.
     'check-ci-watched.py': (
-        'decide.head_sha', 'decide.rows', 'decide.watching_sha', 'parse_sentinel.text',
-        'render_sentinel.sha', 'render_sentinel.when', 'unresolved_checks.rows',),
+        'decide.head_sha',
+        'decide.rows',
+        'decide.watching_sha',
+        'log_line.detail',
+        'log_line.reason',
+        'log_line.session',
+        'log_line.when',
+        'main.argv',
+        'main.stream',
+        'parse_sentinel.text',
+        'payload_from.stream',
+        'payload_from.wait',
+        'render_sentinel.sha',
+        'render_sentinel.when',
+        'run_decide.payload',
+        'unresolved_checks.rows',
+        'warn_reason.head_sha',
+        'warn_reason.watching_sha',
+    ),
     'check-dashboard-entry.py': (
         'added_entry_problems.patch', 'added_reference_errors.base_text',
         'added_reference_errors.head_text', 'decision_errors.category',
