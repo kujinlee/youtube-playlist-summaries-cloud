@@ -11685,3 +11685,39 @@ from 8 cells to 9. Found by comparing cell counts against a pre-edit backup, fix
 
 ⚠ `check-backlog-closure` WARNs on #117 and #159 (merged, no ✅). Both pre-existing, neither touched
 here, and left alone rather than folded in.
+
+## 2026-09-22
+A late addition, and it is the most important thing the review found. One of the three background
+searches that had failed to report finally did, hours later, and it pointed at something none of the
+hand measurements had looked for: the log format these scripts write **has already changed once,
+quietly, and nothing noticed**.
+
+Two columns swapped places between the fourth and fifth of September. The older records say "step 4
+of 5, unarmed"; the newer ones say "unarmed, step 2 of 5". Same file name, same shape, opposite
+meanings, and nothing in either file says which generation it belongs to.
+
+That is exactly what the rest of the review predicted would happen and could not prove. These logs
+are written by four scripts and read by none, so there was nothing that could have caught it. The
+76 records in the live file and the 6 in the older one cannot be compared, and the whole reason the
+logs exist is to be counted later — to answer "does this check cry wolf?" before anyone promotes it
+to something that blocks work.
+
+So the small tidy-up job that looked like cheap insurance is now the one with a real reason behind
+it, and it needs one thing added that nobody had thought of: a marker saying which format a line is
+written in.
+<!--tech-->
+F13 (**High**), F14, F15 appended to `docs/backlog.md` #166 and #169 — inside rows already approved
+for correction rather than as new rows, since filing is the user's step and these post-date that
+decision. ⚠ **F13 may warrant its own row; that is the user's call, flagged rather than taken.**
+
+Leads came from the `observer-logs` agent; every one was re-measured here before being written down
+(file bytes opened, producing lines read). ⛔ Its summary contradicted its own data — it concluded
+`check-banner-armed.py:633`'s referrer list was "still accurate" including a `block-idle-stop.sh`
+comment, while its own 19-file table omitted that hook; re-measured, the hook has **0** references to
+any log name. §4.5 was corrected: it previously said no claim rested on agent output, which stopped
+being true.
+
+Also: `closing-table-warnings.log` stamps `-0700` while the other three stamp `-07:00`
+(`strftime("…%z")` vs `.isoformat()`), and `check-closing-table.py:846` cites an instruction in
+`dev-process.md` that has **0** occurrences there — a citation backlog #149 repeats as its own
+severity justification.

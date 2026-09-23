@@ -444,14 +444,24 @@ has it, and the extension has a natural home with one owner.
 ## §4.5 — How this review was conducted, stated because a gate depends on it
 
 ⚠ **Three `Explore` agents were dispatched** (the observer-log family, the sentinel grammar,
-`check-fixture-variation`'s real scope). **None returned before this document was written**, and a
-partial-results request to each was also unanswered. **No claim in this document rests on agent
-output.** Every measurement in §1–§5 was produced by the coordinator running the code, and the runs
-are reproduced inline so they can be re-executed.
+`check-fixture-variation`'s real scope). **None returned before §1–§6 were written**, and a
+partial-results request to each went unanswered; the agent later reported its replies had been
+plain text that never routed. Every measurement in §1–§6 was produced by the coordinator running
+the code, and the runs are reproduced inline.
 
-That is recorded rather than omitted because the skill's own rule — *agent output is a lead, not a
-finding* — is usually a caution about trusting agents too much; here it happens to be moot, and a
-reader comparing this document to the dispatch log would otherwise find an unexplained gap.
+⟳ **CORRECTION, after §1–§6 were committed: `observer-logs` DID eventually deliver**, and F13–F15
+below originate as **leads from it**. Each was re-measured by the coordinator before being written
+down — the file bytes opened, the producing lines read — and the runs are shown. So the skill's rule
+holds in its usual direction here rather than being moot, and this paragraph is corrected rather
+than left standing, because a claim about how a review was conducted is exactly the kind that gets
+believed without checking.
+
+⛔ **And the agent's own summary contradicted its own data, which is the rule working.** Its §2
+concluded that `check-banner-armed.py:633`'s referrer list is *"still accurate"* — including *"a
+comment in block-idle-stop.sh"* — while the 19-file table in its §1 **omits that hook entirely**.
+Re-measured: `grep -c "banner-warnings\|ci-unwatched\|closing-table-warnings\|banner-flush"
+.claude/hooks/block-idle-stop.sh` → **0**. The hook invokes the *scripts* and never names a log. The
+finding in §2.45 stands; the agent's prose summary was wrong where its table was right.
 
 ---
 
@@ -565,6 +575,61 @@ The two `parse_sentinel`s additionally **share a name and return different types
 (`dict[str, str]` vs `str | None`), which is worse than a plain duplicate: a reader who learns one
 will misread the other (§3.2).
 
+### F13 — ⭐ The record grammar ALREADY DRIFTED, silently, and nothing could have caught it — **High, structural**
+
+*Lead from `observer-logs`; re-measured by opening the files.* Columns 3 and 4 of the banner warning
+log **swapped meaning** between 2026-09-04 and 2026-09-05, with no version marker in any generation:
+
+| File | First record's cols 3, 4 | Meaning |
+|---|---|---|
+| `.claude/banner-warnings.pre-backlog96.log` (2026-09-04) | `STEP 4 of 5`, `unarmed` | **detail, reason** |
+| `.claude/banner-warnings-archived-2026-09-06.log` (2026-09-05) | `unarmed`, `STEP 3 of 4` | **reason, detail** |
+| `.claude/banner-warnings.log` (live, 2026-09-06→) | `unarmed`, `STEP 2 of 5` | reason, detail |
+
+⭐ **This is the thesis of the whole review, already having happened once and gone unnoticed.** §2.45
+establishes the family has four writers and zero readers; F13 is what that costs. A grammar with no
+consumer has no falsifier, so its columns can invert between two generations of the same file and
+**no test, no guard and no reviewer can observe it**. The 76 live records and the 6 pre-backlog96
+records are not comparable, and nothing anywhere says so.
+
+⚠ **The consequence for the promote-to-blocking decision these logs exist to inform**
+(`check-ci-watched.py:170`): any future analysis that concatenates generations of `banner-warnings*`
+silently mixes two column orders. **A shared record owner (§6 work 3) must carry a version marker**,
+which none of the four producers has today. That raises work 3 above the "cheap insurance" framing
+§2.45 gave it — the risk is not injection, it is that the denominator is already unsound.
+
+### F14 — Two timestamp grammars across three writers of one record shape — **Low, structural**
+
+*Lead from `observer-logs`; re-measured from the live files and the producing lines.*
+
+| Log | First field | Producer |
+|---|---|---|
+| `banner-warnings.log` | `2026-09-06T07:27:10-07:00` | `.isoformat()` (`check-banner-armed.py:1162`) |
+| `banner-flush-observations.log` | `2026-09-06T12:39:58-07:00` | `.isoformat()` (`:942`) |
+| `ci-unwatched.log` | `2026-09-22T20:33:31-07:00` | `.isoformat()` (`check-ci-watched.py:411`) |
+| **`closing-table-warnings.log`** | **`2026-09-22T17:10:57-0700`** | **`strftime("%Y-%m-%dT%H:%M:%S%z")`** (`check-closing-table.py:926`) |
+
+Three writers agree; the fourth omits the colon in the UTC offset. Both are valid ISO 8601, and
+`datetime.fromisoformat` accepts both on Python ≥ 3.11 — so this is a latent inconsistency, not a
+parse failure. It belongs to work 3: a single owner emits one.
+
+### F15 — The documented human reader of a log does not exist in the file it is cited from — **Low**
+
+*Lead from `observer-logs`; re-measured.* `check-closing-table.py:846` opens its justification with
+*"`docs/dev-process.md` tells the reader to 'read the log in a few weeks' to answer *does this guard
+cry wolf?*"* — and that is the argument for the whole `turn` column. Measured:
+
+```
+grep -c "closing-table\|closing table" docs/dev-process.md   ->  0
+grep -c "in a few weeks"               docs/dev-process.md   ->  0
+```
+
+The cited instruction is not in the cited file. `docs/backlog.md` row **#149** repeats the same
+citation as its severity justification, so a second row now rests on it. ⚠ **The `turn` column is
+still right** — its own measurement over 767 transcripts (`:848-854`) is independent of who reads
+the log. What has expired is the *reason given for collecting it at all*, which is the same class as
+F6 and §2.45: an evidence citation that is not re-derived when its subject moves.
+
 ### F12 — The two `parse_sentinel`s resolve a DUPLICATE KEY in opposite directions — **Medium, structural, latent**
 
 Measured over sixteen adversarial sentinel texts; fifteen agree, one does not (§3.2a):
@@ -616,7 +681,16 @@ expensive, the extractions remove the *existing* ones it cannot see.
 |---|---|---|---|
 | 1 | **Second adapter for `check-vocabulary-collisions`** — an `ast` reader emitting `(file, module-level symbol)` pairs over `scripts/*.py`, plus a curated observer stem list and its own `ALLOWED`. Fix F3 (case) and F9 (dot round-trip) while extracting. | F1 partly, F2, F3, F9 | **M** |
 | 2 | **One owner for the sentinel grammar** — #100 candidate (a), population = the GRAMMAR. Imported by `begin-plan.py`, `check-plan-progress.py`, `check-banner-armed.py`, `check-ci-watched.py`. | #165, #100, F4, F10 | **M** |
-| 3 | **One owner for the observer-log record** — hoist `_col` and the `when\tsession\t…` prefix. Closes the injection hole in all three producers at once. | #166, F5, F8 | **S** |
+| 3 | **One owner for the observer-log record** — hoist `_col`, the `when\tsession\t…` prefix, **and a VERSION MARKER**. Closes the injection hole in all three producers at once. | #166, F5, F8, **F13**, F14 | **S** |
+
+⟳ **Work 3's justification CHANGED after F13, and the table above already reflects it.** §2.45
+argued work 3 was cheap insurance on a grammar nothing depends on — true as far as it went, and
+based on the correct observation that the family has zero parsers. **F13 then measured that the
+grammar has ALREADY inverted its columns once, between two generations of the same file, unnoticed.**
+So the case for work 3 is not the injection hole (contract-only, exploitability nil) and not a
+future parser: it is that **the denominator these logs exist to provide is already unsound**, and no
+producer carries a version marker that would let a reader tell the generations apart. A shared owner
+that emits a version is what makes the 76 live records mean something.
 
 ⚠ **1 before 2 and 3, and not for tidiness.** The adapter is what makes the extractions *stay*
 extracted: without it, the fourth `log_line` costs nothing to write again, which is precisely what
