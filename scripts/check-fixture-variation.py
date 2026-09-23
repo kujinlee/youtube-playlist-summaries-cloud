@@ -441,6 +441,7 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'main.stream',
         'parse_sentinel.text',
         'payload_from.stream',
+        'payload_from.wait',
         'render_sentinel.sha',
         'render_sentinel.when',
         'run_decide.payload',

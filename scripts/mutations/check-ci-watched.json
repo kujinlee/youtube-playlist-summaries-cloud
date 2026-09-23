@@ -278,8 +278,8 @@
     "file": "scripts/check-ci-watched.py",
     "edits": [
       [
-        "    except (OSError, ValueError, AttributeError):\n        # A stream that cannot be read costs the COLUMN",
-        "    except ():\n        # A stream that cannot be read costs the COLUMN"
+        "    except (OSError, ValueError, AttributeError):\n        fd = None",
+        "    except ():\n        fd = None"
       ]
     ],
     "expect": [
@@ -349,6 +349,32 @@
     ],
     "expect": [
       "warn_reason reads both operands — a watcher armed for the SAME sha is not `stale`"
+    ]
+  },
+  {
+    "name": "the payload deadline is zeroed, so a payload that DID arrive is dropped and the session column is `-`",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    deadline = time.monotonic() + (PAYLOAD_WAIT if wait is None else wait)",
+        "    deadline = time.monotonic()"
+      ]
+    ],
+    "expect": [
+      "...and still returns the full payload when the writer closes, through a REAL fd rather than a stub"
+    ]
+  },
+  {
+    "name": "the bounded read gives up without collecting, which is the same as not reading stdin at all",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "        if not block:\n            break                      # EOF — the whole payload is in hand\n        chunks.append(block)",
+        "        if not block:\n            break                      # EOF — the whole payload is in hand\n        pass"
+      ]
+    ],
+    "expect": [
+      "...and still returns the full payload when the writer closes, through a REAL fd rather than a stub"
     ]
   }
 ]

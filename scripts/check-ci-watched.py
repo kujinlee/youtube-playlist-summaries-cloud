@@ -39,7 +39,7 @@ Usage (the hook calls form 1):
     python3 scripts/check-ci-watched.py --decide
     python3 scripts/check-ci-watched.py --watching   # record that a watcher is armed for HEAD
     python3 scripts/check-ci-watched.py --clear
-    python3 scripts/check-ci-watched.py --self-test  # 55 cases
+    python3 scripts/check-ci-watched.py --self-test  # 57 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -49,6 +49,7 @@ import contextlib
 import datetime as _dt
 import io
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -65,6 +66,10 @@ SENTINEL = ROOT / ".claude/ci-watching"
 # history; this one had none, so its false-alarm rate is unmeasurable and the
 # promote-to-blocking question is unanswerable.
 WARN_LOG = ROOT / ".claude/ci-unwatched.log"
+# How long `payload_from` will wait for a Stop payload that may never arrive. The hook writes and
+# closes immediately, so this is slack for a slow pipe, not a poll interval — and the cost of it
+# expiring is one log column, never a verdict.
+PAYLOAD_WAIT = 2.0
 
 QUIET, WARN, CANNOT_RUN = 0, 1, 2
 
@@ -270,7 +275,7 @@ def _skip_reason() -> str | None:
     return None
 
 
-def payload_from(stream) -> str:
+def payload_from(stream, wait: "float | None" = None) -> str:
     """The Stop payload on `stream`, or "" when there is nothing safely readable. PURE-ish.
 
     ⛔ THIS IS A FUNCTION BECAUSE THE LINE IT REPLACES COULD NOT BE TESTED, and the file says so
@@ -294,11 +299,61 @@ def payload_from(stream) -> str:
     try:
         if stream.isatty():
             return ""
-        return stream.read()
     except (OSError, ValueError, AttributeError):
-        # A stream that cannot be read costs the COLUMN, never the verdict — the same rule the
-        # payload parse below follows, applied one layer out where the stream itself is the risk.
         return ""
+    try:
+        fd = stream.fileno()
+    except (OSError, ValueError, AttributeError):
+        fd = None
+    if fd is None:
+        # No file descriptor — a StringIO or a stub. `read()` cannot block on those.
+        try:
+            return stream.read()
+        except (OSError, ValueError, AttributeError):
+            return ""
+    # ⛔ BOUNDED, BECAUSE `read()` BLOCKS UNTIL EOF AND THAT IS NOT HYPOTHETICAL (r1 Low 6, and it
+    # was still live after the r1 fold claimed otherwise). The hook's `printf … | python3` closes
+    # its pipe, so production never hit it — but `--decide` is documented at the top as a bare
+    # command, and under ANY non-tty stdin that stays open it hangs forever. MEASURED: run from a
+    # tool harness whose stdin is a live pipe with `isatty() == False`, it was still alive after
+    # four seconds and returned the instant the pipe closed. It cost this session a two-minute
+    # timeout, on the guard whose entire subject is guards that fail unhelpfully.
+    # ⚠ THE FAILURE DIRECTION IS DELIBERATE: a payload that does not arrive within the window costs
+    # the session COLUMN and nothing else, which is the same rule the parse below follows. Losing a
+    # column is a worse log; hanging is a dead Stop hook.
+    # ⚠ WHAT IS *NOT* MANIFESTED HERE, stated rather than implied: no single edit falsifies the
+    # BOUND without producing a HANG, and a hang is attributed as CANNOT RUN rather than as a
+    # named red case — the harness cannot tell it from a timeout. What the two entries below do
+    # cover is the read's PRODUCT: a zeroed deadline loses the payload, and a dropped `append`
+    # returns empty. The bound's own falsifier is the two-minute stall that produced this comment.
+    import select
+    import time
+    deadline = time.monotonic() + (PAYLOAD_WAIT if wait is None else wait)
+    chunks: list[bytes] = []
+    while True:
+        left = deadline - time.monotonic()
+        if left <= 0:
+            # ⚠ AN EQUIVALENT MUTANT, AND IT IS DECLARED RATHER THAN MANIFESTED. Removing this
+            # guard changes nothing observable: `select` with a NEGATIVE timeout returns
+            # not-ready immediately, so the loop exits on the next line anyway (measured). It
+            # stays because relying on that is relying on a platform detail, and because a
+            # future reader adding work above this line would otherwise have no bound at all.
+            # No manifest entry names it — a mutation that cannot be seen is not coverage.
+            break
+        try:
+            ready, _, _ = select.select([fd], [], [], left)
+        except (OSError, ValueError):
+            break
+        if not ready:
+            break
+        try:
+            block = os.read(fd, 65536)
+        except (OSError, ValueError):
+            break
+        if not block:
+            break                      # EOF — the whole payload is in hand
+        chunks.append(block)
+    return b"".join(chunks).decode("utf-8", "replace")
 
 
 def run_decide(payload: str = "") -> int:
@@ -537,21 +592,21 @@ def _self_test() -> int:
     # Its sibling won this argument long ago and has a 76-entry history to show for it.
     case("warn_reason tells the two classes apart — a watcher armed for ANOTHER commit is "
          "`stale`, nothing armed at all is `unwatched`",
-         warn_reason("deadbeef", "cafef00d") == "stale"
-         and warn_reason(None, "cafef00d") == "unwatched")
+         safe(lambda: warn_reason("deadbeef", "cafef00d") == "stale"
+     and warn_reason(None, "cafef00d") == "unwatched"))
     # ⚠ AND AT A SECOND, DISTINCT INPUT FOR EACH. A case that calls a producer once is satisfied
     # by the constant its own fixture supplies; this one is two calls per class, at different
     # shas, so neither branch can be frozen to a literal.
     case("...at a second distinct input, so neither class can be a hardcoded string",
-         warn_reason("1111111", "2222222") == "stale"
-         and warn_reason("", "3333333") == "unwatched")
+         safe(lambda: warn_reason("1111111", "2222222") == "stale"
+     and warn_reason("", "3333333") == "unwatched"))
     case("log_line carries all FOUR columns it is given, at two distinct inputs each",
-         log_line("unwatched", "3 unresolved on aaaaaaaa", "T1", "s1").split("\t")
-         == ["T1", "s1", "unwatched", "3 unresolved on aaaaaaaa\n"]
-         and log_line("stale", "1 unresolved on bbbbbbbb", "T2", "s2").split("\t")
-         == ["T2", "s2", "stale", "1 unresolved on bbbbbbbb\n"])
+         safe(lambda: log_line("unwatched", "3 unresolved on aaaaaaaa", "T1", "s1").split("\t")
+     == ["T1", "s1", "unwatched", "3 unresolved on aaaaaaaa\n"]
+     and log_line("stale", "1 unresolved on bbbbbbbb", "T2", "s2").split("\t")
+     == ["T2", "s2", "stale", "1 unresolved on bbbbbbbb\n"]))
     case("...and an EMPTY session renders as `-`, never as a blank column that shifts the rest",
-         log_line("unwatched", "d", "T", "").split("\t")[1] == "-")
+         safe(lambda: log_line("unwatched", "d", "T", "").split("\t")[1] == "-"))
 
     def _drive_log(rows, watching_text, payload="", log=None):
         """Drive run_decide end to end with the network, git and the log file all redirected.
@@ -624,16 +679,22 @@ def _self_test() -> int:
             if self._boom:
                 raise self._boom
             return self._data
+    # ⛔ EVERY `payload_from` CASE IS INSIDE `safe`, and this is the CLASS not the instance. Three
+    # entries earlier in this fold reported SURVIVOR because their mutation made a case RAISE and
+    # the suite died before printing one `[FAIL]` line; I wrapped those three and did not sweep for
+    # the rest, so the next mutation found another unwrapped call and did it again. A kill by crash
+    # names no guard. Every call below can raise under some single edit — `fileno`, `isatty` and
+    # `read` are all attribute lookups on a stub.
     case("payload_from reads a PIPED stream and returns what it carried, at two distinct inputs",
-         payload_from(_S(False, '{"session_id": "a"}')) == '{"session_id": "a"}'
-         and payload_from(_S(False, '{"session_id": "b"}')) == '{"session_id": "b"}')
+         safe(lambda: payload_from(_S(False, '{"session_id": "a"}')) == '{"session_id": "a"}'
+              and payload_from(_S(False, '{"session_id": "b"}')) == '{"session_id": "b"}'))
     # ⚠ THE CONTRAST. "a pipe is read" alone is satisfied by a reader that reads unconditionally,
     # which is exactly what hangs on an interactive terminal.
     case("...and returns EMPTY for a TTY, so an interactive --decide cannot block on a human",
-         payload_from(_S(True, "ignored")) == "")
+         safe(lambda: payload_from(_S(True, "ignored")) == ""))
     case("...and for CLOSED stdin, which used to raise AttributeError and exit 1 — this file's "
          "own WARN, making a crash indistinguishable from a legitimate warning",
-         payload_from(None) == "")
+         safe(lambda: payload_from(None) == ""))
     # ⛔ AND THE DISPATCH ITSELF, which is the layer that stayed uncovered after `payload_from` was
     # extracted. `main(argv, stream)` exists so this case can exist.
     def _main_decide(stream):
@@ -680,6 +741,34 @@ def _self_test() -> int:
     case("...and for a stream that RAISES on read, at two distinct exception types",
          safe(lambda: payload_from(_S(False, boom=OSError("gone"))) == ""
               and payload_from(_S(False, boom=ValueError("closed"))) == ""))
+    # ⛔ A LIVE PIPE THAT NEVER CLOSES — r1 Low 6, which the r1 fold CLAIMED to have folded and had
+    # not. `read()` blocks until EOF; the hook's `printf … | python3` closes, so production never
+    # hit it, but `--decide` is documented as a bare command and under any non-tty stdin that stays
+    # open it hangs forever. It cost this session a two-minute timeout on its own tooling before a
+    # case existed. ⚠ `wait` is a PARAMETER so this costs milliseconds rather than the real window,
+    # 27 times over, every mutation run.
+    def _never_closes() -> bool:
+        r, w = os.pipe()
+        try:
+            with os.fdopen(r, "rb", buffering=0) as rf:
+                got = payload_from(rf, wait=0.05)      # nothing written, writer still open
+            return got == ""
+        finally:
+            os.close(w)
+    case("payload_from RETURNS on a live pipe that never closes — a bounded wait, because a Stop "
+         "hook that hangs is worse than a log column that is missing",
+         safe(_never_closes))
+    # ⚠ AND IT STILL COLLECTS WHAT DID ARRIVE, or the bound above would be satisfied by a reader
+    # that gives up unconditionally — which is the same behaviour as not reading stdin at all.
+    def _arrives_then_eof() -> bool:
+        r, w = os.pipe()
+        os.write(w, b'{"session_id": "through-a-real-pipe"}')
+        os.close(w)                                     # EOF, so the read completes early
+        with os.fdopen(r, "rb", buffering=0) as rf:
+            return payload_from(rf, wait=5.0) == '{"session_id": "through-a-real-pipe"}'
+    case("...and still returns the full payload when the writer closes, through a REAL fd rather "
+         "than a stub",
+         safe(_arrives_then_eof))
     # ⛔ TWO DISTINCT MEMBERS OF THE CAUGHT UNION. r1 Medium 3: the single case used
     # "not json at all" (ValueError), and RecursionError escaped — costing the VERDICT, which the
     # comment beside it promises it cannot.
@@ -711,16 +800,16 @@ def _self_test() -> int:
          safe(_really_overflows) and safe(_overflow_costs_only_the_column))
     # ⛔ FIELD INJECTION — found independently by BOTH review halves.
     case("a session carrying a TAB cannot add a column, at two distinct inputs",
-         len(log_line("unwatched", "d", "T", "a\tb").split("\t")) == 4
-         and len(log_line("unwatched", "d", "T", "a\tb\tc").split("\t")) == 4)
+         safe(lambda: len(log_line("unwatched", "d", "T", "a\tb").split("\t")) == 4
+     and len(log_line("unwatched", "d", "T", "a\tb\tc").split("\t")) == 4))
     case("...and a session carrying a NEWLINE cannot become a second record",
-         log_line("unwatched", "d", "T", "a\nb").count("\n") == 1
-         and log_line("unwatched", "d", "T", "a\r\nb\u2028c").count("\n") == 1)
+         safe(lambda: log_line("unwatched", "d", "T", "a\nb").count("\n") == 1
+     and log_line("unwatched", "d", "T", "a\r\nb\u2028c").count("\n") == 1))
     # ⚠ AND THE VALUE SURVIVES SANITISING — a `_col` that returned "" would satisfy both cases
     # above while destroying the evidence they protect.
     case("...and the sanitised session still CARRIES its content, at two distinct inputs",
-         log_line("unwatched", "d", "T", "a\tb").split("\t")[1] == "a b"
-         and log_line("unwatched", "d", "T", "x\ty").split("\t")[1] == "x y")
+         safe(lambda: log_line("unwatched", "d", "T", "a\tb").split("\t")[1] == "a b"
+     and log_line("unwatched", "d", "T", "x\ty").split("\t")[1] == "x y"))
     # ⛔ THE STALE ROW NAMES THE ARMED COMMIT (r1 Low 8) — without it, one-push-stale and
     # ten-pushes-stale are the same record.
     _rca, _linesa, _ = _drive_log(_PENDING, "sha: 0000111122223333\n")
@@ -728,8 +817,8 @@ def _self_test() -> int:
          _rca == WARN and "armed 00001111" in _linesa[0])
     # ⚠ AND warn_reason NOW READS BOTH OPERANDS: a watcher armed for the CURRENT head is not stale.
     case("warn_reason reads both operands — a watcher armed for the SAME sha is not `stale`",
-         warn_reason("abc123", "abc123") == "unwatched"
-         and warn_reason("abc123", "def456") == "stale")
+         safe(lambda: warn_reason("abc123", "abc123") == "unwatched"
+     and warn_reason("abc123", "def456") == "stale"))
 
     # ── state vocabulary ───────────────────────────────────────────────────────────────────
     for st in ("PENDING", "QUEUED", "IN_PROGRESS"):
