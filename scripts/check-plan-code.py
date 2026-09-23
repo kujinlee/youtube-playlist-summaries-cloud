@@ -3398,13 +3398,18 @@ def _self_test() -> int:
     # Six of the fourteen defend the PAUSE excuse, which the first cut of the class omitted —
     # it warned during a deliberate stand-down, and the suite stayed green at 122/122 because
     # every case left `paused` at its default.
-    # ⟳ 920 -> 930, 2026-09-22 (MERGE): this branch adds ten to three guards —
-    # check-ci-watched 11 -> 14 (run_decide's wiring and the crash fail direction, which
-    # three single edits had left at 28/28), begin-plan 12 -> 18 (the pause stamp's VALUE,
-    # unfalsified since the field was invented, plus two of the three pause corners), and
-    # check-plan-progress 16 -> 17 (the comparison's third side). ⚠ The two branches
-    # collided HERE by construction: one pinned constant, two same-day slices. The value
-    # below is DERIVED from the merged dict, not added by hand.
+    # ⟳ 920 -> 939, 2026-09-22 (MERGE): this branch adds NINETEEN across three guards —
+    # begin-plan 9 -> 18 (the pause stamp's VALUE, unfalsified since the field was invented,
+    # plus two of the three pause corners), check-ci-watched 9 -> 14 (run_decide's wiring and
+    # the crash fail direction, which three single edits had left at 28/28), and
+    # check-plan-progress 12 -> 17 (the comparison's third side). ⚠ The two branches collided
+    # HERE by construction: one pinned constant, two same-day slices.
+    # ⛔ THE VALUE BELOW IS DERIVED FROM THE MERGED DICT — and the first version of THIS COMMENT
+    # proved why that matters by getting its own prose wrong. It read "920 -> 930" with baselines
+    # of 11/12/16; the measured baselines are 9/9/12 and the sum is 939. The pinned number was
+    # right because it was computed; the sentence beside it was wrong because it was typed. That
+    # is the same defect this branch folded as r4's Low 5, committed inside the comment claiming
+    # immunity to it.
     case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 939)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
