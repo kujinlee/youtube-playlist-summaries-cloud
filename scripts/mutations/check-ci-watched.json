@@ -356,8 +356,8 @@
     "file": "scripts/check-ci-watched.py",
     "edits": [
       [
-        "    return observer_log.record(session, reason, detail, when=when)",
-        "    return observer_log.record(\"cw-text\", reason, detail, when=when)"
+        "record(session, reason",
+        "record(\"cw-text\", reason"
       ]
     ],
     "expect": "the SESSION column comes from the Stop payload the hook has always piped in"
@@ -367,10 +367,21 @@
     "file": "scripts/check-ci-watched.py",
     "edits": [
       [
-        "    return observer_log.record(session, reason, detail, when=when)",
-        "    return observer_log.record(session, reason, detail, when=\"T\")"
+        "detail, when=when)",
+        "detail, when=\"T\")"
       ]
     ],
-    "expect": "log_line carries the version cell plus all FOUR columns it is given, at two distinct inputs each"
+    "expect": "log_line puts the TIMESTAMP in the SECOND cell, verbatim, at two distinct inputs"
+  },
+  {
+    "name": "the rewired WARN write is neutered, so a warning fires and records nothing",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "            observer_log.append_or_raise(\n                WARN_LOG, log_line(warn_reason(watching_sha, head or \"\"), detail, when, session))",
+        "            pass"
+      ]
+    ],
+    "expect": "a WARN appends exactly ONE line, and it is the `unwatched` class"
   }
 ]

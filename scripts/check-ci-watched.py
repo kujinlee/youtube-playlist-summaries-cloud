@@ -39,7 +39,7 @@ Usage (the hook calls form 1):
     python3 scripts/check-ci-watched.py --decide
     python3 scripts/check-ci-watched.py --watching   # record that a watcher is armed for HEAD
     python3 scripts/check-ci-watched.py --clear
-    python3 scripts/check-ci-watched.py --self-test  # 57 cases
+    python3 scripts/check-ci-watched.py --self-test  # 58 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -592,6 +592,17 @@ def _self_test() -> int:
      == ["v1", "T2", "s2", "stale", "1 unresolved on bbbbbbbb\n"]))
     case("...and an EMPTY session renders as `-`, never as a blank column that shifts the rest",
          safe(lambda: log_line("unwatched", "d", "T", "").split("\t")[2] == "-"))
+    # ⟳ **r3 addendum M2 — A PER-COLUMN CASE, IN THE SHAPE THE SIBLING ALREADY USES.** The case
+    # above is ONE boolean conjunction over every column, so TWO different manifest entries named
+    # it (the payload-column entry and the timestamp entry) and all three mutations of `log_line`
+    # produced the BYTE-IDENTICAL failure line — `got False want True`. Attribution was still
+    # correct, but a reader of the mutation log could not tell "the timestamp froze" from "a column
+    # was dropped". `check-closing-table` asserts one column per case carrying the VALUE, and its
+    # own comment records paying for that lesson; this is the twin applying it.
+    # ⚠ TWO DISTINCT INPUTS, so a frozen `when` cannot satisfy it. (#164)
+    case("log_line puts the TIMESTAMP in the SECOND cell, verbatim, at two distinct inputs",
+         safe(lambda: (log_line("unwatched", "d", "T1", "s").split("\t")[1],
+                       log_line("stale", "e", "T2", "s").split("\t")[1]) == ("T1", "T2")))
 
     def _drive_log(rows, watching_text, payload="", log=None):
         """Drive run_decide end to end with the network, git and the log file all redirected.
@@ -635,8 +646,13 @@ def _self_test() -> int:
     case("...and a STALE watcher is recorded as its own class, not folded into `unwatched`",
          _rcs == WARN and len(_liness) == 1 and _liness[0].split("\t")[3] == "stale")
     _rcp, _linesp, _ = _drive_log(_PENDING, None, payload='{"session_id": "sess-xyz"}')
+    # ⚠ `len(...) == 1 and` IS LOAD-BEARING, NOT DEFENSIVE TIDYING (r3 M4). `and` short-circuits, so
+    # its three sibling cases fail BY NAME when no line is written and this one RAISED `IndexError` —
+    # a suite crash with no named case, which the mutation harness cannot attribute to anything. It
+    # was measured by neutering the `append_or_raise` call this branch introduced: banner died
+    # through 8 named cases, ci died through a traceback. A kill nobody can attribute is not a kill.
     case("the SESSION column comes from the Stop payload the hook has always piped in",
-         _rcp == WARN and _linesp[0].split("\t")[2] == "sess-xyz")
+         _rcp == WARN and len(_linesp) == 1 and _linesp[0].split("\t")[2] == "sess-xyz")
     _rcb, _linesb, _ = _drive_log(_PENDING, None, payload="not json at all")
     case("...and an UNREADABLE payload costs the column, never the verdict — still WARN, "
          "still logged, session renders as `-`",
@@ -798,8 +814,12 @@ def _self_test() -> int:
     # ⛔ THE STALE ROW NAMES THE ARMED COMMIT (r1 Low 8) — without it, one-push-stale and
     # ten-pushes-stale are the same record.
     _rca, _linesa, _ = _drive_log(_PENDING, "sha: 0000111122223333\n")
+    # ⚠ `len(...) == 1` for the same reason as the session case below — this was the SECOND instance
+    # of the class and it was found by looking for it rather than by the first fix (r3 M4: *after
+    # fixing, search for the class*). A grep for an unguarded `[0]` on a `_drive_log` result now
+    # returns nothing in this file.
     case("a STALE row records WHICH commit was armed, not only HEAD",
-         _rca == WARN and "armed 00001111" in _linesa[0])
+         _rca == WARN and len(_linesa) == 1 and "armed 00001111" in _linesa[0])
     # ⚠ AND warn_reason NOW READS BOTH OPERANDS: a watcher armed for the CURRENT head is not stale.
     case("warn_reason reads both operands — a watcher armed for the SAME sha is not `stale`",
          safe(lambda: warn_reason("abc123", "abc123") == "unwatched"

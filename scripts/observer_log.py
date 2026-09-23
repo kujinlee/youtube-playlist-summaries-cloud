@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """ONE owner for the observer-log record — the grammar four Stop observers write.
 
-    python3 scripts/observer_log.py --self-test  # 41 cases
+    python3 scripts/observer_log.py --self-test  # 44 cases
 
 ⛔ WHY THIS EXISTS, AND IT IS NOT THE INJECTION HOLE. Four functions in three files wrote the same
 tab-separated record and nothing shared a line of it:
@@ -26,7 +26,9 @@ can invert and no test, guard or reviewer observes it.
 
 ⟳ **r2 H2 — WHAT `VERSION` ACTUALLY DELIVERS, because this paragraph overclaimed it.** It used
 to call `VERSION` *"the load-bearing part of this module"*. It is not, today:
-  * **nothing reads it** (`:44` below says so), so it detects nothing on its own;
+  * **nothing reads it** (*WHAT THIS MODULE DOES NOT DO*, below, says so), so it detects nothing
+    on its own — ⟳ r3 H3: this cited `:44`, and the commit that WROTE the citation inserted thirteen
+    lines above the target in the same commit, so it pointed at a blank line from birth;
   * **nothing makes it move** — the bump rule is a comment with no guard behind it, and no
     declaration of what v1's columns MEAN exists for a guard to compare against. A deliberate
     reorder of any adapter's payload leaves this at `v1` and reproduces #170 INSIDE one version;
@@ -96,18 +98,36 @@ def col(v: object) -> str:
     stricter than its reader is the safe direction — it can never emit a record the reader
     mis-splits.
     """
-    # ⚠ THREE STATEMENTS, NOT ONE EXPRESSION — for READABILITY OF THE ANCHORS, which is a
+    # ⚠ SEPARATE STATEMENTS, NOT ONE EXPRESSION — for READABILITY OF THE ANCHORS, which is a
     # defensible reason, and NOT because the harness requires it.
-    # ⟳ r2 H1 CORRECTS THIS COMMENT. It used to say the harness "refuses two entries with the
-    # same anchor". FALSE, and measured: `load_manifests` compares the anchor TUPLE
-    # (`check-plan-code.py:1166`), so three entries aimed at three different SUBSTRINGS of one
-    # line are accepted — verified with a fixture, 3 accepted, 0 problems. The harness says so
-    # itself at `:1172-1176`. A comment asserting a property the code lacks is the defect
-    # `check-plan-code.py:1191` calls this branch's signature one, so it is corrected here
-    # rather than quietly dropped.
+    # ⟳ r2 H1 CORRECTS THIS COMMENT. It used to say the harness "refuses two entries with the same
+    # anchor". FALSE, and measured: `check-plan-code.load_manifests` compares the anchor TUPLE
+    # (`seen_anchors`, built from the find-strings alone), so three entries aimed at three different
+    # SUBSTRINGS of one line are accepted — verified with a fixture, 3 accepted, 0 problems. Its own
+    # `EXACT TUPLE EQUALITY` note says so. ⟳⟳ r3 learned the OTHER half the expensive way: IDENTICAL
+    # find-strings are refused (`repeats the edit anchors of an earlier entry`), which is what four
+    # new entries did, so the sweep returned NOT MEASURED. A comment asserting a property the code
+    # lacks is this branch's signature defect — the refusal `load_manifests` raises for exactly that
+    # is what names it — so this is corrected here rather than quietly dropped.
+    # ⛔ r3 H3: ALL FOUR LINE CITATIONS THAT USED TO BE IN THIS COMMENT RESOLVED WRONG — two onto
+    # blank lines, and one was invalidated by the very commit that wrote it, because that commit
+    # inserted thirteen lines above its own target. They are SYMBOLS now. A line number is a claim
+    # that expires on the next insertion anywhere above it; a symbol survives a rename-free edit and
+    # a grep finds it. This is the repo's standing rule, and it was violated 4-for-4 inside the fold
+    # of a finding about false comments.
     s = "" if v is None else str(v)
     flat = s.replace(SEP, " ")
-    return " ".join(flat.splitlines()) if flat else ""
+    out = " ".join(flat.splitlines()) if flat else ""
+    # ⟳ **r3 M2 — THE SENTINEL WAS DEFEATED FOR THIS GRAMMAR'S OWN PRIMARY SEPARATOR.** `SEP`
+    # becomes a SPACE on the line above, and a space is truthy, so `col(v) or EMPTY` never fired for
+    # a tab: `col("\t")` returned `" "` and the session cell was a space, not `-`. Measured before
+    # the fix — `record("\t", "f", when="T")` was `v1⇥T⇥ ⇥f`. In a TSV a space-filled column is
+    # exactly as indistinguishable from a truncated record as an empty one, which is the stated
+    # reason `EMPTY` exists, so the sentinel failed for the inputs it was written for. ⚠ `session`
+    # comes from the Stop hook payload, so `"\t"` and `" "` are REACHABLE input, not hypothetical.
+    # ⚠ THE TEST IS `.strip()`, THE RETURN IS `out` — trimming the value would silently rewrite
+    # every legitimate field with leading or trailing space. `col(" lead and trail ")` is unchanged.
+    return out if out.strip() else ""
 
 
 def now() -> str:
@@ -162,11 +182,17 @@ def append_or_raise(path: pathlib.Path, line: str) -> None:
     flips from *wrote* to *failed*, at every existing call site and every future one, with no case
     and no guard able to see it. Two differently-named functions cannot be confused by a reader.
 
-    ⚠ **THE ENCODING IS NOT MUTATION-COVERED AND CANNOT BE FROM HERE, which is stated rather than
-    left to be discovered.** Deleting `encoding="utf-8"` survives every case on this machine and in
-    CI, because the platform default IS utf-8 on macOS and on the ubuntu runner — a case would pass
-    for an ambient reason. What the consolidation buys is arithmetic: **one** site that can be wrong
-    instead of four. `mkdir`, which IS falsifiable, is covered here once.
+    ⛔ **AN EARLIER VERSION OF THIS DOCSTRING CLAIMED THE ENCODING COULD NOT BE MUTATION-COVERED
+    FROM HERE. THAT WAS A SELF-AUTHORED EXEMPTION AND r3 H1 REFUTED IT BY BUILDING THE CASE.** The
+    premise was true — deleting `encoding="utf-8"` survives every in-process case on macOS and on
+    the ubuntu runner, because the platform default IS utf-8 on both. The conclusion was false: the
+    locale-default encoding is an **INPUT a case can choose**, fixed before interpreter start. A
+    child under `LC_ALL=C` reports `US-ASCII`, and there the missing `encoding=` raises
+    `UnicodeEncodeError` on the first non-ASCII record. The case is
+    *append_or_raise writes utf-8 even where the PLATFORM default is ASCII* and the manifest entry
+    deletes the argument. ⚠ The shape is worth more than the fix: *a case can pass for an AMBIENT
+    reason* is answered by BUILDING THE WORLD, not by writing down that the world cannot be built —
+    and the exemption was sitting in the one line the whole consolidation concentrates value into.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
@@ -260,8 +286,22 @@ def _self_test() -> int:
     case("an empty session becomes the sentinel", record("", "f", when="T").split(SEP)[2], "-")
     case("a None session becomes the sentinel", record(None, "f", when="T").split(SEP)[2], "-")
     case("an empty field becomes the sentinel", record("s", "", when="T").split(SEP)[3], "-\n")
-    case("a session that is ONLY a separator becomes the sentinel",
-         record("\n", "f", when="T").split(SEP)[2], "-")
+    # ⛔ r3 M2 — THIS CASE WAS NAMED FOR THE CLASS AND TESTED THE ONE MEMBER THAT ALREADY WORKED.
+    # It passed only `"\n"`, and it passed because `"\n".splitlines()` is `[]`. For `SEP` — the
+    # separator this whole grammar is built on — the property was FALSE: the tab became a space
+    # before the emptiness test, and a space is truthy. ⚠ TWO DISTINCT SEPARATORS, per this module's
+    # own #164 rule, and the TAB is the one that matters: a case at one member of a class cannot
+    # distinguish a rule from a coincidence.
+    case("a session that is ONLY a separator becomes the sentinel, at two distinct separators",
+         (record("\n", "f", when="T").split(SEP)[2],
+          record("\t", "f", when="T").split(SEP)[2]), ("-", "-"))
+    case("...and a session that is ONLY whitespace does too, since a TSV cannot tell it from empty",
+         record("  ", "f", when="T").split(SEP)[2], "-")
+    # ⚠ THE COUNTERWEIGHT: the fix tests `.strip()` and returns the UNSTRIPPED value, so a field
+    # whose content merely has edges keeps them. Without this case the fix's cheapest wrong form
+    # (returning `out.strip()`) passes everything above.
+    case("...but interior and edge whitespace in a REAL field is preserved, not trimmed",
+         record("s", " lead and trail ", when="T").split(SEP)[3], " lead and trail \n")
 
     # ── now(): one spelling ──────────────────────────────────────────────────────────────────
     stamp = now()
@@ -311,6 +351,39 @@ def _self_test() -> int:
         except Exception as exc:  # noqa: BLE001 — names what actually came out, never hides it
             raised = type(exc).__name__
         case("append_or_raise RAISES OSError where append returns False", raised, "OSError")
+
+    # ── the ENCODING, which this module claimed could not be covered ──────────────────────────
+    # ⛔ r3 H1 REFUTED THAT CLAIM BY BUILDING THIS. The old docstring argued that deleting
+    # `encoding="utf-8"` is unkillable because the platform default IS utf-8 on macOS and on the
+    # ubuntu runner, so any case would pass for an AMBIENT reason. The premise is true and the
+    # conclusion was wrong: the locale-default encoding is fixed BEFORE interpreter start, so it is
+    # an INPUT, and a case can choose it. Under a C locale this interpreter reports `US-ASCII`, and
+    # there a write without `encoding=` raises `UnicodeEncodeError` on the first non-ASCII byte.
+    # ⚠ **THE CHILD PRINTS ASCII ONLY, DELIBERATELY.** A verdict carried in a non-ASCII string would
+    # be an artefact of the CHILD'S STDOUT encoding rather than of the file write — the review's own
+    # first attempt made exactly that mistake and failed its control. The comparison is on the BYTES
+    # the file holds.
+    # ⚠ It spends a subprocess (~50ms). That is the price of measuring a property of the interpreter
+    # rather than of this process, and the alternative was a paragraph asserting it cannot be done.
+    import os
+    import subprocess
+    import sys
+    with tempfile.TemporaryDirectory() as td:
+        _target = pathlib.Path(td) / "enc.log"
+        _prog = (
+            "import pathlib, sys\n"
+            f"sys.path.insert(0, {str(pathlib.Path(__file__).resolve().parent)!r})\n"
+            "import observer_log as o\n"
+            "p = pathlib.Path(sys.argv[1])\n"
+            "o.append_or_raise(p, o.record('s', '\\u26d4', when='T'))\n"
+            "print('UTF8' if p.read_bytes().decode('utf-8').endswith('\\u26d4\\n') else 'BAD')\n"
+        )
+        _env = dict(os.environ, LC_ALL="C", LANG="C", PYTHONUTF8="0", PYTHONCOERCECLOCALE="0")
+        _env.pop("PYTHONIOENCODING", None)
+        _run = subprocess.run([sys.executable, "-c", _prog, str(_target)],
+                              capture_output=True, text=True, env=_env)
+        case("append_or_raise writes utf-8 even where the PLATFORM default is ASCII",
+             (_run.returncode, _run.stdout.strip()), (0, "UTF8"))
 
     failed = [n for n, ok in cases if not ok]
     print(f"\n{len(cases) - len(failed)}/{len(cases)} passed")

@@ -15,8 +15,8 @@
     "file": "scripts/observer_log.py",
     "edits": [
       [
-        "    return \" \".join(flat.splitlines()) if flat else \"\"",
-        "    return \" \".join(flat.split(\"\\n\")) if flat else \"\""
+        "    out = \" \".join(flat.splitlines()) if flat else \"\"",
+        "    out = \" \".join(flat.split(\"\\n\")) if flat else \"\""
       ]
     ],
     "expect": "col strips a VERTICAL TAB"
@@ -174,5 +174,38 @@
       ]
     ],
     "expect": "append_or_raise RAISES OSError where append returns False"
+  },
+  {
+    "name": "append_or_raise loses `encoding=`, so the write takes the platform default",
+    "file": "scripts/observer_log.py",
+    "edits": [
+      [
+        ", encoding=\"utf-8\") as fh:",
+        ") as fh:"
+      ]
+    ],
+    "expect": "append_or_raise writes utf-8 even where the PLATFORM default is ASCII"
+  },
+  {
+    "name": "col stops sentinelling a whitespace-only field, so a TAB session becomes a space",
+    "file": "scripts/observer_log.py",
+    "edits": [
+      [
+        "if out.strip() else \"\"",
+        "if True else \"\""
+      ]
+    ],
+    "expect": "a session that is ONLY a separator becomes the sentinel, at two distinct separators"
+  },
+  {
+    "name": "col returns the STRIPPED value instead of testing it, trimming every real field",
+    "file": "scripts/observer_log.py",
+    "edits": [
+      [
+        "    return out if out.strip() else \"\"",
+        "    return out.strip()"
+      ]
+    ],
+    "expect": "...but interior and edge whitespace in a REAL field is preserved, not trimmed"
   }
 ]

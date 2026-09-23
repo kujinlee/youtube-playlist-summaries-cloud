@@ -614,5 +614,16 @@
     "expect": [
       "R5-646b ...and its session column too"
     ]
+  },
+  {
+    "name": "the rewired WARN write is neutered, so a warning fires and records nothing",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "            observer_log.append_or_raise(\n                WARN_LOG, log_line(reason, detail, when, str(data.get(\"session_id\", \"\"))))",
+        "            pass"
+      ]
+    ],
+    "expect": "F4 run_decide WARNS on the new class AND appends a line — the side effect"
   }
 ]

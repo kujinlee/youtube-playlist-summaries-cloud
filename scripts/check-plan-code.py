@@ -2,7 +2,7 @@
 """A plan that contains code must ASSEMBLE into that code, and its evidence must be RUN.
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
-    python3 scripts/check-plan-code.py --self-test          # 128 cases
+    python3 scripts/check-plan-code.py --self-test          # 130 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -613,7 +613,12 @@ EXPECTED_MUTATIONS = {
     # above it. r2 B1: the correction had landed in the COMMIT MESSAGE and not in the file, and a
     # justification that disagrees with its own pins is not a justification.
     # Every surviving anchor was re-verified to resolve exactly once AFTER the code was final.
-    "scripts/check-banner-armed.py": 47,
+    # ⟳ r3 M4, 2026-09-23: 47 -> 48. The fold rewired this file's WARN write to
+    # `observer_log.append_or_raise` and ratcheted NOTHING at the new call site — it applied *the
+    # ratchet is what proves the cases can fail* to the passthrough properties it found missing, and
+    # not to the delegation it introduced in the same commit. Measured: neutering the call reds 9
+    # named cases, no crash.
+    "scripts/check-banner-armed.py": 48,
     # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record. Pinned in
     # the commit that creates it, with its manifest — `check-ratchet-contract` REFUSED the
     # module until both existed (R4W_no_mutation_manifest), which is the contract working on
@@ -624,6 +629,16 @@ EXPECTED_MUTATIONS = {
     # (a frozen `when` column) had NO replacement mutation and no case that could fail —
     # `record defaults `when` to now()` asserted `!= ""`, which `col(x) or EMPTY` can never
     # be. A case and a mutation were both added. A RISE needs a reason as much as a fall.
+    # ⟳ r3 H1 + M2, same day: 16 -> 19. THREE entries, all on lines this round changed:
+    #   * `encoding=` deleted from `append_or_raise` — ⛔ THE DOCSTRING SAID THIS COULD NOT BE
+    #     COVERED. r3 H1 refuted that by building the case: the locale default is an INPUT fixed
+    #     before interpreter start, so a child under `LC_ALL=C` reports US-ASCII and the missing
+    #     argument raises. A self-authored exemption sitting in the one line the whole consolidation
+    #     concentrates value into.
+    #   * the whitespace-only guard in `col` reverted — r3 M2, the sentinel was DEFEATED for this
+    #     grammar's own primary separator (`SEP` becomes a space, and a space is truthy).
+    #   * that guard returning `out.strip()` instead of TESTING it — the fix's cheapest wrong form,
+    #     which every other case passes.
     # ⟳ r2 H3, same day: 15 -> 16. M9 was fixed as an INSTANCE — one hand-rolled write delegated,
     # `encoding=` hand-added to a second — and TWO hand-rolled writes stayed in the tree, each with
     # its own `mkdir` + `open`. The API forced that: `append` returns a bool and two callers need
@@ -633,7 +648,7 @@ EXPECTED_MUTATIONS = {
     # `append truncates` and `append stops creating missing parents` bound to 8-space text that no
     # longer exists — a silent orphan of exactly the kind this repo has paid for seven times in one
     # session. Both re-verified to resolve exactly once AFTER the code was final.
-    "scripts/observer_log.py": 16,
+    "scripts/observer_log.py": 19,
     # ⟳ 2026-09-07, R4 manifest debt 8 -> 7. FIVE of the seven cover rules the 15 shipped cases
     # already asserted; the other two are the gaps writing them found, and both are the same
     # shape — a claim about coverage that nothing executed:
@@ -756,7 +771,30 @@ EXPECTED_MUTATIONS = {
     # positional 3 retired the adapter's SANITISING entries correctly and took the PASSTHROUGH
     # entry with them, which is a different property. Both measured on the delivered adapter
     # before being added: freezing session -> 49/57, freezing `when` -> 56/57.
-    "scripts/check-ci-watched.py": 29,
+    # ⚠ **BOTH ANCHOR ON A SUBSTRING, NOT THE WHOLE `return` LINE, AND THE HARNESS IS WHY.** The
+    # first draft gave the two NEW entries the same find-string as the PRE-EXISTING entry already on
+    # that line, and `--mutate .` REFUSED the manifest with `NOT MEASURED`: `load_manifests` builds
+    # `seen_anchors` from the find-strings ALONE, so a differing replacement does not distinguish two
+    # entries, and its `EXACT TUPLE EQUALITY` note names the escape — a distinct substring each.
+    # ⭐ This is the OTHER HALF of r2 H1, which established that different substrings of one line ARE
+    # accepted; identical ones are not, and both halves had to be learned by running it.
+    # ⚠ **THE THIRD ENTRY ON EACH LINE KEEPS ITS FULL-LINE ANCHOR, DELIBERATELY** (r3 addendum L1):
+    # it is the pre-existing payload-column entry, and the whole line IS its subject. So the count is
+    # 3 entries per line, of which 2 per line were retargeted — 4 across the two files, each
+    # RE-MEASURED after retargeting, because a moved anchor is a different mutation until something
+    # proves otherwise.
+    # ⛔ r3 H3 / addendum H1: THE TWO LINE CITATIONS THAT USED TO BE IN THIS PARAGRAPH BROKE THEMSELVES.
+    # They were correct when typed and wrong as delivered, because this comment is long enough to push
+    # its own targets down — an eight-line insertion moves every citation below it by eight. Symbols
+    # now. That is the repo's standing rule and this file cites its own lines nineteen times, so the
+    # class is open and nothing guards it.
+    # ⟳ r3 M4, 2026-09-23: 29 -> 30, the sibling call site. ⛔ AND IT COULD NOT HAVE HAD AN ENTRY
+    # BEFORE ONE CHANGE TO THE SUITE: neutering the write made this suite die by `IndexError`, not
+    # by a named case, and the harness requires death VIA THE CASE AN ENTRY NAMES. Two cases indexed
+    # `_drive_log`'s result with no `len(...) == 1` guard while their three siblings had one, so
+    # `and` short-circuited for the siblings and raised for these. The second instance was found by
+    # grepping for the class, not by the first fix. Now 10 named reds, no crash.
+    "scripts/check-ci-watched.py": 30,
     # ⟳ 2026-09-08, R4 manifest debt 5 -> 4. Two findings, both about a rule with no single owner:
     #   * `range(a, b + 1)`'s INCLUSIVE bound was unfalsifiable — every range case writes both
     #     endpoints (`B1-B5`), and ident_re matches each on its own, so expansion only ever
@@ -3495,18 +3533,30 @@ def _self_test() -> int:
     # right because it was computed; the sentence beside it was wrong because it was typed. That
     # is the same defect this branch folded as r4's Low 5, committed inside the comment claiming
     # immunity to it.
-    # ⟳ 2026-09-23, backlog #166 + #170: 954 -> 964. +15 for the new owner `observer_log.py`
-    # (14 at first write, +1 from r1 HIGH 4), and -5 for anchors RETIRED WITH THEIR SUBJECT
-    # when the record grammar moved out of the three producers. Net +10. The per-file
-    # reasons are on their entries above; this literal is the outside observer of the sum.
-    # ⟳ 2026-09-23, round 3 (folding r2): 966 -> 972. +1 on `observer_log.py` (H3, the fail-open
+    # ⟳ 2026-09-23, backlog #166 + #170: 954 -> 966. +15 for the new owner `observer_log.py`
+    # (+1 of it from r1 HIGH 4), and **-3** for anchors RETIRED WITH THEIR SUBJECT when the record
+    # grammar moved out of the three producers. Net +12. The three classes of removal, and which
+    # entries are in each, are on the `check-banner-armed` entry above; this literal is the outside
+    # observer of the sum.
+    # ⛔ **r3 M1 CORRECTS THIS LINE, AND IT IS r2 B1 ONE COPY OVER.** It read `954 -> 964 … -5`.
+    # `-5` is the PRE-WITHDRAWAL number: it counts the two banner entries that r2 established were
+    # RENAMED, not retired — the unearned ratchet fall. The real retirement fall is 3, so the
+    # arithmetic is 954 + 15 − 3 = 966, which is exactly the literal `b360f7cf` installed. So the
+    # changelog ran 954 → 964 and then jumped to "966 → 972" with **no entry for the 964 → 966
+    # step**, which is the step where the unearned fall was corrected — the one change this branch
+    # most insists must be recorded. ⚠ Round 3 landed that correction in ONE of the two places in
+    # this file that state the number, and no gate can see the other: the case below is DERIVED, so
+    # it passes either way. This is the branch's signature defect committed a third time, inside the
+    # commit that rewrote the account it disagrees with.
+    # ⟳ 2026-09-23, round 3 (folding r2, then r3's own findings): 966 -> 977.
+    # +1 on `observer_log.py` (r2 H3, the fail-open
     # direction of the new raising write), +4 across `check-ci-watched` and `check-closing-table`
     # (M1, the session- and timestamp-passthrough entries the two siblings never had), +1 on
     # `check-dashboard-entry.py` (M2, backlog #168's remedy was an untested sentence). The two
     # RETARGETED anchors are net zero by construction — retargeting keeps the entry and moves its
     # text, which is why it is the repair for a moved subject and retiring is not. This literal is
     # the outside observer of the sum; the reasons are on the entries.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 972)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 977)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
@@ -3516,6 +3566,36 @@ def _self_test() -> int:
     _repo = pathlib.Path(__file__).resolve().parent.parent
     case("every HARNESS_TREE entry is present in the tree this file lives in",
          [r for r in HARNESS_TREE if not (_repo / r).exists()], [])
+
+    # ─── THE MANIFESTS ON DISK, WHICH NOTHING CHEAP READ UNTIL r3 H2 ─────────────────────────
+    # ⛔ **THIS IS HOW A BROKEN MANIFEST SHIPPED THROUGH A 128/128 GREEN SUITE.** Every other
+    # `load_manifests` call in this suite runs against a TEMP-DIRECTORY FIXTURE, and the declared-
+    # count case compares `EXPECTED_MUTATIONS` to a LITERAL A HUMAN TYPED. So both halves of the
+    # claim were checked and the thing the claim is ABOUT — the files on disk — was checked by
+    # nothing until the 8-minute sweep. r3 B1: four entries repeated an earlier anchor tuple, the
+    # loader refused them, `--mutate .` returned NOT MEASURED, and this suite stayed green.
+    # ⭐ The comment above the declared-count case calls that literal "the outside observer of the
+    # sum". It observes the DICT. These two observe the MANIFESTS, which is the other operand, and
+    # they are the pair that makes the sentence true.
+    # ⚠ WHY IT MATTERS BEYOND ONE DEFECT: backlog #173 proposes skipping the sweep when no
+    # `scripts/**` file changed — sound on its own terms, but it makes the only instrument that
+    # catches this class conditional. These cases cost well under a second and are unconditional.
+    # ⚠ **THESE TWO GET NO MANIFEST ENTRY, AND THE REASON IS NOT AN EXCUSE — IT IS THEIR SUBJECT.**
+    # A manifest entry proves a case can fail by mutating PRODUCTION CODE. These cases are about
+    # DATA — the files in `scripts/mutations/` — so the mutation that breaks them is an edit to a
+    # manifest, which this harness deliberately cannot make. The nearest code mutation (slicing one
+    # file out of `load_manifests`' glob) was measured: it reds **13** cases, twelve of them the
+    # pre-existing temp-fixture ones, so an entry naming a case here would be attributed to a case
+    # that is red for an unrelated reason — the `expect` matched 7 case names defect, invited.
+    # ⭐ WHAT PROVES THEY CAN FAIL IS THAT THEY DID: measured at `6367c90f`, where four entries were
+    # refused, these read `4 problems` and `968 != 972` and go RED, while the suite that shipped that
+    # commit was 128/128 green. That is a falsifier with a recorded observation behind it, which is
+    # the property the ratchet exists to supply — supplied here by a different mechanism, said out
+    # loud so nobody reads the missing entry as an oversight.
+    _live_entries, _live_problems = load_manifests(_repo)
+    case("the manifests ON DISK load with no refusal", _live_problems, [])
+    case("...and the entry count they yield is the pinned sum, not a typed literal",
+         len(_live_entries), sum(EXPECTED_MUTATIONS.values()))
 
     # ─── A PRE-FLIGHT FOR THE FAILURE-LINE CONTRACT WAS ATTEMPTED HERE, AND ABANDONED ────
     # ⛔ THE PROBLEM IS REAL AND HAS COST A GROWING LIST OF FILES — see the derivation below,

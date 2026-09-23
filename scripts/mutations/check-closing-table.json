@@ -510,8 +510,8 @@
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "    return observer_log.record(session, \"+\".join(acts), turn, when=when)",
-        "    return observer_log.record(\"ct-text\", \"+\".join(acts), turn, when=when)"
+        "record(session, \"+\".join(acts)",
+        "record(\"ct-text\", \"+\".join(acts)"
       ]
     ],
     "expect": "log: the session is the THIRD field, verbatim"
@@ -521,8 +521,8 @@
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "    return observer_log.record(session, \"+\".join(acts), turn, when=when)",
-        "    return observer_log.record(session, \"+\".join(acts), turn, when=\"T\")"
+        "turn, when=when)",
+        "turn, when=\"T\")"
       ]
     ],
     "expect": "log: the timestamp is the SECOND field, after the version cell, verbatim"

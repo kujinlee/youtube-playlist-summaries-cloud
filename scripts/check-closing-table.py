@@ -117,7 +117,7 @@ Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CAN
 
 Usage:
     python3 scripts/check-closing-table.py --decide      # reads the Stop-hook payload on stdin
-    python3 scripts/check-closing-table.py --self-test   # 153 cases
+    python3 scripts/check-closing-table.py --self-test   # 154 cases
 """
 from __future__ import annotations
 
@@ -1359,6 +1359,19 @@ def _self_test() -> int:
     check("log: the record carries a version cell plus FOUR payload fields",
           len(log_line(["a commit"], "2026-09-21T07:00:00-0700", "sess-a", "u")
               .rstrip("\n").split("\t")[1:]), 4)
+    # ⟳ **r3 L4 — r2 L2 WAS FOLDED FOR THE BANNER SIBLING AND NOT FOR THIS ONE.** The case above
+    # asserts that a FIFTH cell EXISTS; it says nothing about that cell being the version marker, so
+    # a record that DROPPED `v1` and gained a payload field passes it. Measured — blanking `VERSION`
+    # in `observer_log` reds `check-ci-watched` (56/57), `check-banner-armed` (159/160) and
+    # `observer_log` (39/41) each through a NAMED case, and reds this suite through an `IndexError`
+    # in an unrelated positional read. A suite that dies by crashing is a suite whose kill nobody
+    # can attribute — the harness-launders-failures shape, one file over from where it was filed.
+    # ⚠ TWO DISTINCT INPUTS, because a single call cannot tell a pinned literal from a coincidence.
+    check("log: the FIRST cell is the literal v1, at two distinct inputs",
+          _safe(lambda: (
+              log_line(["a commit"], "2026-09-21T07:00:00-0700", "sess-a", "u").split("\t")[0],
+              log_line(["a push"], "2026-01-02T03:04:05+0000", "sess-b", "v").split("\t")[0])),
+          ("v1", "v1"))
     # ⟳ check-fixture-variation, CI: the first draft of these cases passed `when="T"` and
     # `session="s"` at EVERY call site, so no case could tell either parameter from a constant and
     # every clause reading them was unguarded. The guard could not see it while `log_line` had ZERO
