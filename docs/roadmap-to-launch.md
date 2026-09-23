@@ -1991,18 +1991,18 @@ Both are **side jobs** under the rule in [`process-checklists.md`](process-check
 JOB gets a name before it gets work*: each has a slug, a branch and a plan sentinel. Recorded here
 because a discovery living only in the session task list does not survive `/compact`.
 
-- [x] **A — `banner-blind-spot`** — ✅ **PR #332 OPEN 2026-09-22, awaiting the human merge gate**; branch `banner-work-without-banner` (main tree). Adds a THIRD
+- [x] **A — `banner-blind-spot`** — ✅ **MERGED 2026-09-22, PR #332, squash `e9ace42d`**; branch `banner-work-without-banner`. Adds a THIRD
   warning class to `scripts/check-banner-armed.py`: `unheralded` — *not armed, not paused, ≥25 tool
   calls, no banner*. The two older classes each need something PRESENT (a banner, or an armed plan),
   so a turn with NEITHER was invisible: **100%** of the warn log's 76 entries are `unarmed`, and
   `unbannered` has never fired. ⛔ **No behavioural defect was ever found** — the guard has computed
   correct verdicts since its first commit; all findings across five rounds concern whether its
   falsifiers can FAIL.
-- [x] **B — `quiet-stop-observers`**, branch `quiet-stop-observers-wt` (worktree
+- [x] **B — `quiet-stop-observers`** — ✅ **MERGED 2026-09-22, PR #333, squash `7958ba9e`**; branch `quiet-stop-observers-wt` (worktree
   `../yps-quiet-observers`). Two Stop observers reported *"cannot run"* and *"still paused"* on
   **every** stop, so both became noise. Touches `check-ci-watched.py`, `begin-plan.py`,
   `check-plan-progress.py`.
-- [ ] **Phase 6 on A — OWED, and not optional.** The pre-committed thrashing condition **FIRED** at
+- [ ] **Phase 6 on A AND ON B — OWED on both, and not optional.** ⟳ 2026-09-22: the condition fired a SECOND time, on B, and both of B's review halves confirmed it independently (round 4 with a parent-commit comparison per finding, round 5 by re-deriving the arming rule from this document's own text). Backlog **#165** carries B's, **#164** carries A's; both inherit a closed question rather than an open one. The pre-committed thrashing condition **FIRED** at
   round 5: rounds 3, 4 and 5 each carry findings caused by the previous round's fix, in one
   component — three consecutive, where [`dev-process.md`](dev-process.md) requires two. The user's
   decision (2026-09-22) is *fold r5, open the PR, convene Phase 6 as a follow-up*. **Backlog #164**
