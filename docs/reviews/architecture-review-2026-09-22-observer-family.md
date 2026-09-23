@@ -345,11 +345,36 @@ field wins is therefore not academic — it decides which plan is supervised. **
 this grammar answer that question in opposite directions**, and nothing anywhere states which is
 correct, because no document says the grammar permits a duplicate key at all.
 
-⚠ **Honest bound: this is not a live defect today.** The two readers are pointed at *different*
-sentinel files, so no single input reaches both. It is a latent divergence that becomes live the
-moment the shared owner of §3.3 is written — **whoever writes that module must CHOOSE, and today
-there is no basis for choosing.** That is the strongest available argument that #100's *(a)* needs an
-enumerated state set (its candidate *(b)*) and not only a shared parser.
+⚠ **Honest bound: this is not a live defect today — and that is now verified at the WRITER, not
+assumed.** `begin-plan.cmd_pause` strips before it appends (`:521`), and measured,
+`strip_field(stack, "paused")` removes **every** occurrence, so a restatement cannot leave a second
+`paused:` line. The two readers are also pointed at *different* sentinel files, so no single input
+reaches both. It is a latent divergence that becomes live the moment §3.3's shared owner is written.
+
+⭐ **But the duplicate-key shape is NOT hypothetical — this repo has already had it, and already
+measured why nobody noticed.** `begin-plan.py:518-520`, in its own words:
+
+> *"STRIP BEFORE APPEND, so a restatement leaves ONE pair rather than a growing stack. **Last-wins
+> parsing made the stack harmless to READ, which is exactly why it went unnoticed for as long as it
+> did** — the file was wrong in a way no reader complained about."*
+
+⛔ **Correction to this review's own first draft of F12.** It said *"nothing anywhere states which
+[rule] is correct."* **Too strong.** There is recorded evidence, and it points one way — measured
+against the exact stack that comment describes:
+
+```
+"plan: p\narmed: t\npaused: first reason\npaused: second reason\npaused: third reason\n"
+
+  check-plan-progress (LAST wins)  -> 'third reason'   newest — why the defect READ as fine
+  check-ci-watched    (FIRST wins) -> 'first reason'   oldest — a stale reason, silently
+```
+
+So the two rules do not merely differ: **each has a known failure mode in this codebase.** Last-wins
+*masked a writer defect* — recorded, not speculative. First-wins would not have masked it but would
+have pinned the *stale* value, reporting a pause reason three restatements out of date. **Whoever
+writes the shared owner is choosing between two failure modes, not between a right and a wrong
+answer** — which is a stronger argument for #100's candidate *(b)* (enumerate the legal states, so
+*duplicate key* is decided rather than discovered) than "no basis for choosing" was.
 
 **The other fifteen cases agree**, and are recorded so the claim is falsifiable rather than a
 sample: plain, key-with-inner-space, leading whitespace, trailing whitespace on the key, a value
@@ -701,10 +726,17 @@ Measured over sixteen adversarial sentinel texts; fifteen agree, one does not (�
 injected a live second `plan:` field and the Stop guard supervised a different plan. Which field
 wins decides which plan is supervised, and the two readers of this grammar answer oppositely.
 
-⚠ **Not live today** — the readers are pointed at different sentinel files, so no input reaches
-both. It becomes live the moment §3.3's shared owner is written: **whoever writes it must choose,
-and nothing states which is correct**, because no document says the grammar permits duplicate keys
-at all. This is the case for #100's candidate *(b)* (enumerate the legal states) alongside *(a)*.
+⚠ **Not live today, verified at the WRITER** — `cmd_pause` strips before appending (`:521`) and
+`strip_field` removes every occurrence (measured), so a restatement cannot stack; and the readers
+are pointed at different sentinel files. It becomes live when §3.3's shared owner is written.
+
+⟳ **F12's first draft said *"nothing states which rule is correct."* Corrected — there is evidence,
+and it indicts both.** `begin-plan.py:518-520` records that a growing stack of `paused:` lines
+actually occurred and that **last-wins parsing is why it went unnoticed** (*"the file was wrong in a
+way no reader complained about"*). Measured on that exact stack: last-wins returns the newest
+reason (hiding the defect), first-wins returns a **stale** one three restatements old. The choice is
+between two known failure modes — a stronger case for #100's candidate *(b)* (enumerate the legal
+states, so *duplicate key* is decided rather than discovered) than the original wording made.
 
 ### F11 — ⟳ RETRACTED AND REPLACED: #164's example is RIGHT; this review found a SECOND, more general one — **Medium**
 
