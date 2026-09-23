@@ -22,8 +22,21 @@ Columns 3 and 4 of the banner warning log swapped meaning between generations of
 
 MEASURED across every `*.py`, `*.sh`, `*.ts`, `*.js`, `*.yml`, `*.md` in the repo: these four files
 have **FOUR WRITERS AND ZERO READERS**. A grammar with no consumer has no falsifier, so its columns
-can invert and no test, guard or reviewer observes it. That is why `VERSION` below is the
-load-bearing part of this module and the sanitiser is the cheap part.
+can invert and no test, guard or reviewer observes it.
+
+⟳ **r2 H2 — WHAT `VERSION` ACTUALLY DELIVERS, because this paragraph overclaimed it.** It used
+to call `VERSION` *"the load-bearing part of this module"*. It is not, today:
+  * **nothing reads it** (`:44` below says so), so it detects nothing on its own;
+  * **nothing makes it move** — the bump rule is a comment with no guard behind it, and no
+    declaration of what v1's columns MEAN exists for a guard to compare against. A deliberate
+    reorder of any adapter's payload leaves this at `v1` and reproduces #170 INSIDE one version;
+  * it separates pre-v1 from v1, and the two generations that actually inverted are **both**
+    pre-v1 and both unmarked.
+⭐ **What really catches a column reorder on this branch is the adapters' own cases** — measured,
+swapping `reason` and `detail` in `check-banner-armed.log_line` kills **7 of 157**. The marker is
+the right shape and is cheap; what it buys TODAY is that a FUTURE reader can refuse a record it
+does not understand. The missing half — a declared column vocabulary per adapter, plus a guard
+that reds when the emitted order disagrees — is not built.
 
 THE VERSION MARKER IS A LEADING COLUMN, ON PURPOSE
 --------------------------------------------------
@@ -32,8 +45,10 @@ Every record carries its own format token, rather than the file carrying one hea
   * a header cannot reach a file that already exists, and these logs are append-only;
   * a header does not survive rotation, and `.claude/banner-warnings*.log` has already been
     rotated twice;
-  * a per-record token makes backlog #170's own falsifier trivial — concatenate two generations and
-    the boundary is visible on EVERY line, not inferable from the file's first line.
+  * a per-record token makes the pre-v1/v1 boundary visible on EVERY line rather than inferable
+    from a file's first line. ⚠ It does NOT make #170's falsifier trivial in general: the two
+    generations that inverted are both pre-v1, so the marker separates them from what comes
+    AFTER it, not from each other.
 
 ⚠ **Records written before this module have NO version column**, and that is the signal, not a gap:
 absence means "pre-v1, column meanings unknown, not comparable". Do not backfill them — a backfilled
@@ -81,10 +96,15 @@ def col(v: object) -> str:
     stricter than its reader is the safe direction — it can never emit a record the reader
     mis-splits.
     """
-    # ⚠ THREE STATEMENTS, NOT ONE EXPRESSION, and that is deliberate. Each does a separable
-    # job — coerce, kill the column separator, kill every line separator — so each can be
-    # mutated independently. Folded into one line they share an anchor, and the mutation
-    # harness refuses two entries with the same anchor because the second measures nothing new.
+    # ⚠ THREE STATEMENTS, NOT ONE EXPRESSION — for READABILITY OF THE ANCHORS, which is a
+    # defensible reason, and NOT because the harness requires it.
+    # ⟳ r2 H1 CORRECTS THIS COMMENT. It used to say the harness "refuses two entries with the
+    # same anchor". FALSE, and measured: `load_manifests` compares the anchor TUPLE
+    # (`check-plan-code.py:1166`), so three entries aimed at three different SUBSTRINGS of one
+    # line are accepted — verified with a fixture, 3 accepted, 0 problems. The harness says so
+    # itself at `:1172-1176`. A comment asserting a property the code lacks is the defect
+    # `check-plan-code.py:1191` calls this branch's signature one, so it is corrected here
+    # rather than quietly dropped.
     s = "" if v is None else str(v)
     flat = s.replace(SEP, " ")
     return " ".join(flat.splitlines()) if flat else ""
@@ -224,7 +244,7 @@ def _self_test() -> int:
          (record("s", "f", when="T1").split(SEP)[1],
           record("s", "f", when="T2").split(SEP)[1]), ("T1", "T2"))
     case("record defaults `when` to a real stamp when omitted, not to the sentinel",
-         record("s", "f").split(SEP)[1] not in ("", EMPTY, "T1"), True)
+         record("s", "f").split(SEP)[1] not in ("", "-", "T1"), True)
 
     # ── append: never raises, reports its failure ────────────────────────────────────────────
     import tempfile

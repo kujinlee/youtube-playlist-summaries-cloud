@@ -123,7 +123,7 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 159 cases
+    python3 scripts/check-banner-armed.py --self-test  # 160 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -665,7 +665,11 @@ def flush_line(before: int, after: int, when: str, session: str) -> str:
     # covered them. They do not: those prove `record()` PRESERVES arguments it is given, not that
     # this adapter PASSES ITS OWN through. Measured with mutant adapters — the observer_log cases
     # stayed true while the adapter property failed. That was an unearned ratchet fall.
-    # Each line now carries one property, so each can be mutated independently.
+    # Each line carries one property. ⟳ r2 H1: an earlier version of this comment said the
+    # split was REQUIRED because the harness refuses two entries sharing an anchor. It does
+    # not — it refuses an identical anchor TUPLE, so different substrings of one line are
+    # accepted (measured). The split is kept for anchor readability, which is a real reason;
+    # the stated one was not.
     counts = (before, after)
     stamp = when
     return observer_log.record(session, *counts, when=stamp)
@@ -963,15 +967,14 @@ def _log_flush(session: str, late: tuple) -> bool:
     whether a verdict is already being printed. Silence here would be a fail-open handler, which
     `check-ratchet-contract.py` refuses in a guard — and rightly, since the whole point of this
     record is that the durability question is answered by observation rather than by argument.
+
+    ⟳ 2026-09-23, round 1 M9: this used its own write, with `FLUSH_LOG.open("a")` and NO
+    `encoding=` — the PLATFORM DEFAULT, where the shared `append` specifies utf-8. On a non-UTF-8
+    locale a non-ASCII field would raise from this producer and not the others, which is a
+    divergence in exactly the dimension this consolidation exists to remove. It only ever wanted a
+    bool, so unlike `check-ci-watched`'s write there was nothing to lose by sharing.
     """
-    when = observer_log.now()
-    try:
-        FLUSH_LOG.parent.mkdir(parents=True, exist_ok=True)
-        with FLUSH_LOG.open("a") as fh:
-            fh.write(flush_line(late[0], late[1], when, session))
-        return True
-    except OSError:
-        return False
+    return observer_log.append(FLUSH_LOG, flush_line(late[0], late[1], observer_log.now(), session))
 
 
 def run_decide(payload: str) -> int:
@@ -1186,8 +1189,11 @@ def run_decide(payload: str) -> int:
             detail = f"{unticked} unticked"
         when = observer_log.now()
         try:
+            # ⚠ KEEPS ITS OWN WRITE, like `check-ci-watched`'s: it puts `{e}` into the warning
+            # below and `observer_log.append` returns a bool. ⟳ r1 M9: `encoding="utf-8"` added —
+            # it was taking the PLATFORM DEFAULT while the shared writer specified utf-8.
             WARN_LOG.parent.mkdir(parents=True, exist_ok=True)
-            with WARN_LOG.open("a") as fh:
+            with WARN_LOG.open("a", encoding="utf-8") as fh:
                 fh.write(log_line(reason, detail, when, str(data.get("session_id", ""))))
         except OSError as e:
             # NOT swallowed: the log IS the justification for warn-only mode, so losing it is
@@ -1331,6 +1337,12 @@ def _self_test() -> int:
          decide([], armed=False)[0] == QUIET)
 
     # ── the log ────────────────────────────────────────────────────────────────────────────
+    # ⟳ 2026-09-23: reindexed [1:] -> [2:] because the record gained a leading VERSION cell
+    # (backlog #170). r2 L2: the sibling reindex in check-closing-table got a paragraph and
+    # this one got nothing — same edit, inconsistent treatment.
+    case("the log line carries the VERSION cell the shared record owns",
+         log_line("unarmed", "d", "T", "s").split("\t")[0] == "v1"
+         and log_line("stale", "e", "U", "t").split("\t")[0] == "v1")
     case("the log line is tab-separated and states the state and the detail",
          log_line("unarmed", "STEP 2 of 5", "2026-09-04T07:00:00-07:00", "sess").split("\t")[2:]
          == ["sess", "unarmed", "STEP 2 of 5\n"])

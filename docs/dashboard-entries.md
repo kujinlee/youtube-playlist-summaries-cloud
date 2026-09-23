@@ -11929,3 +11929,36 @@ sites.
 
 Also filed from the same review lineage: **#171**, **#172** (the two findings that had no row), and
 **#173**, **#174** (the sweep costs 8m12s — 79% of the CI gate — and every PR pays it).
+
+## 2026-09-23
+Correction to the entry above, and the corrections matter more than the entry did.
+
+That entry described the log-record work using numbers that had already moved by the time it was
+written — how many mutation checks there are, how many were retired, and whether the review had
+finished. It also said the work "closes" four items while those four items still read as open.
+
+A second review round found all of it, along with something worse: I had split a piece of code into
+three lines and written that the checking tool required it. It does not. I had invented the
+constraint, then repeated it in three places including a review document. The tool was measured
+directly and accepts what I said it refused.
+
+The pattern in every one of these is the same, and it is the pattern the original work was about: a
+number or a claim copied into a second place, left behind when the first one moved.
+<!--tech-->
+⟳ CORRECTS the `## 2026-09-23` entry added in `088649a6`. Superseding figures: sweep **966**, not
+964. Ratchet **47→47**, not 47→45. **THREE** anchors retired with their subject, not five — two were
+un-retired after Codex's r2 Blocking. Round 2 is **done**, both halves, not "owed".
+
+⭐ #166, #168, #169, #170 are now ticked ✅ in `docs/backlog.md` **in this branch**, per
+`dev-process.md` Phase 5 (*"write the merge tick BEFORE opening the PR"*). r2 B2 caught that they
+were not — and `check-backlog-closure.py` reads MERGED subjects and is warn-only, so nothing would
+have caught it before merge. That is backlog #98's exact finding recurring.
+
+⛔ r2 H1, the sharpest finding of the day: `check-plan-code.load_manifests` compares the anchor
+TUPLE (`:1166`), so different substrings of ONE line are accepted — measured with a fixture, 3
+accepted / 0 problems. I had claimed it refuses same-line anchors and split `flush_line` and `col`
+to satisfy it. Corrected in all three places rather than dropped.
+
+⟳ r2 H2: `observer_log`'s docstring called `VERSION` "the load-bearing part". Demoted to what ships
+— nothing reads it, nothing bumps it, and the two generations that actually inverted are both
+pre-v1. What catches a reorder today is the adapters' own cases (measured: 7 of 157 kills).

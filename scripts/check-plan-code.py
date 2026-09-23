@@ -569,7 +569,7 @@ EXPECTED_MUTATIONS = {
     # case derives _BIG/_SMALL from LARGE_TURN and so moves with it, leaving the calibrated value
     # unfalsifiable until one case pinned it as a literal.
     # ⟳ 2026-09-23, backlog #166 + #170 — A SANCTIONED RATCHET FALL, and the only kind there
-    # is: 5 anchors stopped resolving because THE CODE THEY NAME IS GONE, moved into
+    # is: THREE anchors stopped resolving because THE CODE THEY NAME IS GONE, moved into
     # `scripts/observer_log.py` with the record grammar. They are RETIRED WITH THEIR SUBJECT
     # rather than orphaned, and each one's property is mutation-covered in its new home:
     #   ⛔ THESE TWO WERE WRONG AND ARE WITHDRAWN (r1 Codex, round 2 on the folded tree):
@@ -586,8 +586,11 @@ EXPECTED_MUTATIONS = {
     # ⚠ THREE were RETARGETED rather than retired, because they are still properties of the
     # per-guard ADAPTER (which payload columns this guard emits) and not of the grammar:
     # flush_line's (before, after), ci log_line's column count, closing log_line's turn.
-    # Net: 47->45, 29->27, 47->46, and +14 for the new owner. Every surviving anchor was
-    # re-verified to resolve exactly once AFTER the code was final, not before.
+    # Net: 47->47, 29->27, 47->46, and +15 for the new owner. ⚠ THIS LINE PREVIOUSLY READ
+    # `47->45 … +14` — the pre-withdrawal numbers — for three commits after the withdrawal
+    # four lines above it. r2 B1: the correction had landed in the COMMIT MESSAGE and not in
+    # the file, and a justification that disagrees with its own pins is not a justification.
+    # Every surviving anchor was re-verified to resolve exactly once AFTER the code was final.
     "scripts/check-banner-armed.py": 47,
     # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record. Pinned in
     # the commit that creates it, with its manifest — `check-ratchet-contract` REFUSED the

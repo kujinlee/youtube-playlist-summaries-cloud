@@ -43,8 +43,9 @@ while the adapter property failed. **An unearned ratchet fall, still standing af
 
 **Folded:** both mutations UN-RETIRED and retargeted onto `flush_line`'s own lines.
 `flush_line` is now three statements rather than one expression, so each property
-(counts / timestamp / session) has its own anchor — the harness refuses two entries that
-share one. Pins **45 -> 47**, declared sum **964 -> 966**. The false equivalence is
+(counts / timestamp / session) has its own anchor — ⟳ **r2 H1 corrects this sentence:** the harness refuses an identical anchor TUPLE, not two
+anchors on one line — measured, three substrings of one line are accepted. The split is kept for
+anchor readability. The original text said the harness "refuses two entries that share one". Pins **45 -> 47**, declared sum **964 -> 966**. The false equivalence is
 **withdrawn in `check-plan-code.py`'s own comment**, not quietly corrected.
 
 ⚠ **Net: of the five original retirements, only THREE were genuine.** The 47->45 fall
