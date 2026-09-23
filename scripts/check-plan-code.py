@@ -572,8 +572,14 @@ EXPECTED_MUTATIONS = {
     # is: 5 anchors stopped resolving because THE CODE THEY NAME IS GONE, moved into
     # `scripts/observer_log.py` with the record grammar. They are RETIRED WITH THEIR SUBJECT
     # rather than orphaned, and each one's property is mutation-covered in its new home:
-    #   banner  flush_line freezes session   -> observer_log "record puts `session` third"
-    #   banner  flush_line freezes timestamp -> observer_log "record puts `when` second"
+    #   ⛔ THESE TWO WERE WRONG AND ARE WITHDRAWN (r1 Codex, round 2 on the folded tree):
+    #     banner  flush_line freezes session   -> NOT covered by "record puts `session` third"
+    #     banner  flush_line freezes timestamp -> NOT covered by "record puts `when` second"
+    #   Those cases prove `record()` PRESERVES arguments it is GIVEN; they say nothing about
+    #   whether the ADAPTER passes its own through. Measured with mutant adapters: the
+    #   observer_log cases stayed true while the adapter property failed. Both mutations are
+    #   UN-RETIRED and retargeted onto `flush_line`'s own lines (45 -> 47), which is why that
+    #   function is now three statements instead of one expression.
     #   ci      fields stop being sanitised  -> observer_log "col stops removing the TAB"
     #   ci      sanitiser empties the field  -> observer_log "col strips a TAB" + content
     #   closing empty-session fallback       -> observer_log "the EMPTY sentinel is blanked"
@@ -582,7 +588,7 @@ EXPECTED_MUTATIONS = {
     # flush_line's (before, after), ci log_line's column count, closing log_line's turn.
     # Net: 47->45, 29->27, 47->46, and +14 for the new owner. Every surviving anchor was
     # re-verified to resolve exactly once AFTER the code was final, not before.
-    "scripts/check-banner-armed.py": 45,
+    "scripts/check-banner-armed.py": 47,
     # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record. Pinned in
     # the commit that creates it, with its manifest — `check-ratchet-contract` REFUSED the
     # module until both existed (R4W_no_mutation_manifest), which is the contract working on
@@ -3444,7 +3450,7 @@ def _self_test() -> int:
     # (14 at first write, +1 from r1 HIGH 4), and -5 for anchors RETIRED WITH THEIR SUBJECT
     # when the record grammar moved out of the three producers. Net +10. The per-file
     # reasons are on their entries above; this literal is the outside observer of the sum.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 964)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 966)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -99,8 +99,8 @@
     "file": "scripts/check-banner-armed.py",
     "edits": [
       [
-        "    return observer_log.record(session, before, after, when=when)",
-        "    return observer_log.record(session, 1, 2, when=when)"
+        "    counts = (before, after)",
+        "    counts = (1, 2)"
       ]
     ],
     "expect": [
@@ -587,6 +587,32 @@
     ],
     "expect": [
       "R5-1111 a SOUND QUIET verdict survives a sentinel that is unreadable at the judging stop — CANNOT RUN is for the turn that has no verdict, not for one that has a good one"
+    ]
+  },
+  {
+    "name": "flush_line freezes its TIMESTAMP column, so the observations lose their order",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    stamp = when",
+        "    stamp = \"T\""
+      ]
+    ],
+    "expect": [
+      "R5-646c ...and its TIMESTAMP column, which nothing read — a `when` that is the same string at every call site leaves any clause reading it unguarded"
+    ]
+  },
+  {
+    "name": "flush_line freezes its session column, so observations stop being attributable",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    return observer_log.record(session, *counts, when=stamp)",
+        "    return observer_log.record(\"fl-text\", *counts, when=stamp)"
+      ]
+    ],
+    "expect": [
+      "R5-646b ...and its session column too"
     ]
   }
 ]

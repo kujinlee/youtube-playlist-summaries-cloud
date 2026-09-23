@@ -660,7 +660,15 @@ def flush_line(before: int, after: int, when: str, session: str) -> str:
     `log_line`. It was injectable for the same reason the others were, and it is fixed by the same
     move — a producer is not safe because nobody thought to list it.
     """
-    return observer_log.record(session, before, after, when=when)
+    # ⛔ THREE STATEMENTS, NOT ONE, and r1's Codex half is why. Two mutations were RETIRED here
+    # on the claim that observer_log's "record puts `session` third" / "`when` second" cases
+    # covered them. They do not: those prove `record()` PRESERVES arguments it is given, not that
+    # this adapter PASSES ITS OWN through. Measured with mutant adapters — the observer_log cases
+    # stayed true while the adapter property failed. That was an unearned ratchet fall.
+    # Each line now carries one property, so each can be mutated independently.
+    counts = (before, after)
+    stamp = when
+    return observer_log.record(session, *counts, when=stamp)
 
 
 # ── I/O shell ─────────────────────────────────────────────────────────────────────────────────
