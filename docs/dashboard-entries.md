@@ -11227,6 +11227,168 @@ sequenced ahead of the larger change that review recommended, because that chang
 this reader into two more guards.
 
 ## 2026-09-22
+The reminder that tells you what I am working on can now notice when it has gone missing.
+
+There is a small check here whose job is to make sure that, when I do a long piece of work, I
+announce each step in plain sight rather than leaving you to reconstruct it from a wall of tool
+calls. Until today it could only spot two kinds of mistake, and both of them required me to have
+already done something right — either I had written a step heading and forgotten to register the
+job, or I had registered the job and forgotten the heading. If I did neither, it said nothing at
+all. That is the case that actually happens, and it is what happened through most of yesterday
+evening: the check's own log shows six complaints and then silence, and the silence was not an
+improvement. It was the check running out of things it knew how to see.
+
+So it now has a third thing it can notice: a turn that did a lot of work, registered no job and
+wrote no heading. Where to draw the line for "a lot" was decided by measurement rather than taste.
+I went back over every recorded session on this project — about two and a half thousand pieces of
+work — and compared the ones where a heading was written against the ones where it was not. The
+obvious rule, "did it change a file", turned out to be a bad one: barely half the work worth
+announcing changes a file at all, because handing a job to another agent and reading the result
+changes nothing. Sheer size of the job separated the two groups about twice as well. The threshold
+picked from that table will speak up roughly once every eleven pieces of work, and you chose both
+that number and the decision to let it warn rather than block. One correction worth recording: my
+first pass at separating my own work from the work of the helper agents used a rough proxy and let
+about forty of theirs into the comparison. There is a field that says outright which is which, and
+using it changed the figures by half a percentage point and the decision not at all.
+
+Two things it deliberately does not do. It does not claim the warnings are always right — the
+measurement it is built on cannot tell a genuine miss from a job that needed no heading, and the
+message it prints says so rather than implying a precision it does not have. And it does not block
+anything yet; that decision is left until the log has enough entries to judge it on.
+
+Review found something worth reporting, and it is not a bug. Two independent reviewers ran over
+this: one read it, ran the tests, and said it was fine. The second went looking for a different
+thing — not "is the code wrong" but "if someone broke this on purpose, would anything notice" — and
+found **four separate ways to break it that every test still passes**. The code was right; the
+tests guarding it were not actually guarding it. One example: the rule is meant to stay quiet when
+a step heading *was* written, and nothing anywhere tested that — the test claiming to was passing
+for an unrelated reason. Moving one line would have made it complain at work that was announced
+properly five times over.
+
+All four are now fixed, along with three smaller things. One is a real change in behaviour: when a
+job is deliberately parked — waiting on something else to finish — the older reminder used to speak
+up anyway and say there was no job registered, which was simply untrue. It now stays quiet, the
+same as the new one does.
+
+**Waiting on you:** nothing yet — this is on a branch and will come to you as a pull request.
+<!--tech-->
+Branch `banner-work-without-banner`. Adds a third warning class to `scripts/check-banner-armed.py`
+(`unheralded`: `not armed and tool_uses >= LARGE_TURN`, threshold 25) plus `tool_uses_of`.
+
+The class was chosen from a corpus measurement over 803 transcripts → **2,293 main-session turns**
+(`entrypoint == "cli"`), of which 201 emitted a banner. `edited`, which backlog #95 proposed, has
+**52.2% recall** on that population — the file's own docstring predicted this without quantifying it
+("a coordinator turn that dispatches five reviewers reads as edited=False ... the normal mode, not
+an edge case"). Turn size separates the two groups **5.03x** against `edited`'s **2.48x**. The
+threshold table is recorded at the constant.
+
+⚠ **The first cut of that measurement excluded subagent sessions by a PROXY** — "does the file use
+`StructuredOutput`" — which let 44 subagent turns into the denominator, because 40 `sdk-py` files
+happen not to use that tool. `entrypoint` is set by the runtime rather than chosen, and splits the
+corpus exactly: `cli` holds all 201 banners, `sdk-py`/`sdk-cli` hold 735 turns and zero. Corrected
+before the figures left the branch; it moved the chosen threshold's numbers by 0.5pp and changed
+neither the ordering nor the decision.
+
+⚠ **The structural half is the more important one.** The warn log's `reason` was re-derived in
+`run_decide` by asking "was there a banner?", which worked only while the two classes differed on
+that question. A third class sharing `banner is None` would have been filed as `unbannered` —
+verbatim backlog #97's second defect, which mislabelled 10 of 15 entries and contaminated the
+evidence base the promote-to-blocking decision reads. `decide()` now RETURNS the class that fired,
+so there is one owner; the log derives only the per-class detail.
+
+Suite 98 → 140; manifest 8 → 27. Of the nineteen added, three cover WIRING rather than rules (the
+two older classes shipped with their rules covered and their wiring not — the suite's own H3
+comment records three log mutations surviving on that gap), six defend the pause excuse, one pins
+the threshold as a literal, and **five are round 1's**.
+
+⭐ **Those five are the finding of this slice.** The Claude review half found FOUR single-edit
+mutations of the delivered code that left the suite **fully green** — the class's `no banner` term
+(written nowhere; carried only by where the branch sits, so hoisting it warned at a turn that
+emitted five banners and relabelled every `unarmed` entry), `paused` re-read at judging time rather
+than consumed from the sample, the log's `detail` hardcoded to the threshold (invisible because the
+only integration case drove exactly `LARGE_TURN` calls), and the pause key matched by prefix. The
+code computed a correct verdict throughout; it was **undefended**, which is the standard the
+previous commit message set for itself — *"a fix is not done when the suite is green"* — and then
+failed. The Codex half had returned CONVERGED with zero findings over the same diff.
+
+M2 is the one behaviour change: `if armed or paused` in the `unarmed` branch. That class holds
+**100% of the warn log's 76 entries**, and during a stand-down it was emitting *"BANNER WITHOUT A
+PLAN — and `.claude/executing-plan` names nothing"* while the sentinel named a plan. The sibling
+blocking guard says `⏸ PAUSED (<why>)` in the same state; the two agreed on the verdict and
+contradicted each other in the sentence. Backlog #95's fix had promised "`paused` now stands down
+here as it does in the blocking guard" — true of one class out of three until this commit.
+
+M3 is recorded as a bound rather than fixed: an armed plan + no edits + no banner is silent in ALL
+three classes, and **54 of the 207 firing turns (26%)** edit nothing. The branch refutes `edited`
+(52.2% recall, 2.48x separation against turn size's 5.03x) and then leaves it gating the sibling
+class; merging them was rejected because `unbannered` is live with its own falsifiers.
+
+⛔ **CORRECTION — this paragraph asserted something FALSE and round 3 refuted it.** It read
+*"`prev_paused`'s path is never reached end to end"*. Round 1 had written the careful version —
+*"I tried and failed to construct an input that does"* — and this entry hardened that hedge into a
+statement of fact, which is the recorded *an inference stated as MEASURED*, committed to a
+reader-facing page. **The path is reachable, from a clean journal, through `run_decide` alone.** It
+needs a window that was non-judgable when live and judgable one stop later — which is backlog #96's
+late flush, i.e. this guard's own documented normal case; both earlier passes looked for it in a
+transcript written before the first stop, where it cannot exist by construction. The precursor
+shape is ordinary: **322** non-judgable non-live windows across the 65 `cli` transcripts. Round 3
+drove it and found **six single-edit survivors** on that path, four crying wolf and two turning a
+sound verdict into CANNOT RUN.
+
+⭐ Round 1 also re-derived every number in the threshold table independently and **all four rows
+reproduce exactly**, along with the population and all three derived figures — and it measured one
+thing the branch had not: only **12 of 207 firing turns (6%)** sit adjacent to a bannered turn, and
+**71%** are in sessions that used no banner at all. The class is aimed at real silence, not at gaps
+inside announced work. `pyright` on the file: 11 errors before, 11 after, same set — none
+introduced.
+
+⛔ **ROUNDS 4 AND 5, AND THE STOP CONDITION THEY FIRED.** Round 4's fold claimed the ambient-constant
+class was closed *as a class*: *"asserted values are now mutually DISTINCT, so no single constant can
+satisfy two cases at once"*, a property "of the FIXTURE SET", with a sweep reporting **7/7 caught, no
+constant survives**. Round 5 enumerated the population **mechanically** instead of by eye: **eleven**
+freezable derived-value sites in delivered code, of which that sweep had reached **three**. **Nine
+single-edit survivors** remained at 150/150 — including one of the three values round 4 believed it
+had pinned, and one round 4's own fix had *created* (`_BIG` moved to `LARGE_TURN + 3`, and
+`LARGE_TURN + 3` is precisely the constant that then survived). The recorded *a measurement is only
+as good as its CORPUS*, committed inside the sweep written to close that very class.
+
+⭐ **The repair is ONE PROPERTY, not an eighth probe** — an eighth probe is the instance fix at the
+manifest layer, which is exactly why `:559` survived and `:1133` was half covered: an entry pins the
+constant that was *tried*, not the class.
+
+> a case asserting a derived value must exercise its producer at two DISTINCT inputs.
+
+No constant satisfies an assertion evaluated at two different inputs, and — unlike pairwise-distinct
+fixtures — it holds **component-wise**. That last part is what `STEP {i} of {N}` needed: both cases
+reading the warn log used step 2 (`STEP 2 of 5` and `STEP 2 of 3`), so all the distinctness lived in
+the total, and freezing only the step half survived while every `unarmed` entry in the log — 100% of
+its 76-entry history — would have recorded step 2 whatever step the turn reached. The property is now
+applied at all eleven sites; the two that needed integration drives (the log's banner detail, and the
+late-flush note's three counts) are this commit, and each was verified by hand to kill the constant
+round 5 measured surviving, through the case it names.
+
+⛔ **The pre-committed thrashing condition HAS FIRED, and it is not re-argued.** Round 4's own
+document recorded the terms: *if round 5 finds a defect whose root is again* instance-not-class *or*
+ambient constant*, the discipline is not holding.* Round 5's first finding is **both at once**.
+Rounds 3, 4 and 5 therefore each carry findings caused by the previous round's fix, in one component
+— three consecutive, where `docs/dev-process.md` requires two. It was pre-committed by the party
+whose own fixes are under review, which is the one circumstance in which it must not be softened by
+that party. A **Phase 6 architecture review is owed**, and it inherits a concrete mechanical question
+rather than an open one: **backlog #164** — should the two-distinct-inputs property be enforced by a
+script, as a sibling of `check-fixture-variation.py`, or stay a written review rule?
+
+⚠ **Two things this round found that were not in any review.** (1) The round-5 partial fold committed
+a **RED `check-fixture-variation.py`**: adding direct `flush_line(...)` calls gave that function its
+first call sites in the suite, all four passing the same timestamp, and the fold ran its own suite and
+the mutation sweep without ever running the *other* guard over the file it had just changed. Three of
+that guard's four suppressions for this file have now been **deleted** rather than re-pinned, because
+the cases that paid them off are real. (2) Three `pyright` errors the branch had introduced were
+`sample_for(...)[2]` on an Optional return — which on a `None` would raise *inside the case
+expression*, aborting the suite so that every later case silently never runs and the harness records
+a kill naming no guard. That is the hazard this file's own `safe()` helper exists for, reproduced in
+three cases the branch itself added. Fixed; `pyright` is back to master's 11, same set.
+
+Suite 140 → 159; manifest 27 → 47; the declared mutation sum 912 → 920.
 Two of the little checks that run when I stop working had started complaining every single time,
 and you told me so.
 

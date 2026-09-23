@@ -521,3 +521,73 @@ is stale at commit time, structurally — this project has measured that on a do
 ⚠ **Only step 5 of the protocol has a machine behind it** (`check-review-recorded.py` refuses a
 branch where guarded code was committed after every round). Steps 1–4 are convention, so this
 re-examination is the only thing that ever observes whether they are being followed.
+
+---
+
+## A SIDE JOB gets a name before it gets work (added 2026-09-22)
+
+**Read when:** something arrives mid-session that is not the thread you are on — a user complaint,
+a defect you tripped over, a blocker, a review finding you want to fix now.
+
+**The failure this prevents, measured twice in one session (2026-09-22).** A user-reported Stop-hook
+defect was diagnosed, fixed across three guards, given nine mutations and three suites — about
+forty tool calls — **with no plan armed, no branch name in any message, and no banner emitted**.
+The user could not tell which of two live threads any line belonged to, and said so. Earlier the
+same day the same thing happened at smaller scale. Neither was a judgement call that went wrong;
+in both cases the work simply started and the naming never happened.
+
+### The rule: SIZE IT FIRST, in one question
+
+> **Will this take more than about five tool calls, or touch a tracked file?**
+
+**No → do it inline.** No plan, no branch, no row. Say in one clause what you are doing. Re-reading
+a file, answering a question, a one-line correction: naming these costs more than it returns.
+
+**Yes → it gets a NAME before the first edit**, and the name means three things that must agree:
+
+| | what | why this one |
+|---|---|---|
+| 1 | a **plan slug** — `scripts/begin-plan.py <slug> …` | banners derive their thread name from the slug. With nothing armed there is no name to print, and the measured outcome is that bannering stops altogether rather than the gap being noticed |
+| 2 | a **branch** | `dev-process.md` Phase 5 already requires branch + PR for any `lib/ app/ scripts/ tests/` or config change. A side job is not an exception to it |
+| 3 | a **backlog row** — ONLY if you are deferring it | filing what you are about to do in the next ten minutes is bookkeeping. Filing what you are NOT going to do is the point. ⚠ Filing is the user's step — agree before filing |
+
+### Switching, and what is actually supervised
+
+⟳ **CORRECTED 2026-09-22, HOURS AFTER THIS RULE WAS WRITTEN.** The first version said
+*"`.claude/executing-plan` supervises ONE plan; two threads cannot both be armed."* **False, and
+measured false the same afternoon** — with both threads live, the main tree's sentinel held one
+plan and a worktree's held the other, simultaneously. `begin-plan.py` resolves `ROOT` from its own
+path, so **every tree gets a private sentinel**. The constraint was written from one observation
+(the two threads happened to share a tree) instead of from the mechanism.
+
+⛔ **THE REAL LIMIT IS NARROWER AND WORSE: one plan per tree, but only ONE TREE IS SUPERVISED.**
+`.claude/hooks/block-idle-stop.sh` derives `REPO_ROOT` from its own path, and the session runs the
+hook belonging to the session's cwd. Observed: while work happened in a worktree, the Stop hook
+kept reporting the MAIN tree's plan. So a worktree plan **gives banners a name and has no guard
+behind it** — premature-stop protection is not running for that thread.
+
+**Same tree as the current thread** (the common case):
+
+1. `--pause` the current thread with a reason that says **how to get back** — name the plan file,
+   because the next turn will not remember it.
+2. Arm the side job; `--finish` it; re-arm the original with `--plan .claude/plans/<slug>.md`,
+   which preserves its ticks.
+
+**A separate worktree** (isolation from an in-flight sweep or a live agent): arm its own plan
+directly — no pause/resume dance — **and know its Stop guard is not firing.** That is a reason to
+prefer the same tree unless isolation is actually needed, not a free upgrade.
+
+**Either way, mark the switch in the banner:** `⤳ SWITCHED from <old> (state) → <new>` and
+`↳ RESUMED <old>`. The glyph is what makes it scannable; the parenthetical state is what makes it
+recoverable. This is the half that does not depend on which tree anything is in.
+
+### What is mechanically enforced, and what is not
+
+**Enforced:** a turn that does substantial work with nothing armed and no banner is exactly
+`check-banner-armed.py`'s `unheralded` class. That guard is the mechanical half of this rule — do
+not restate its threshold here, and read it rather than recalling it.
+
+⚠ **NOT enforced, and stated rather than implied:** nothing checks that the slug, the branch and
+the row describe the same job, and nothing can — three names agreeing is a judgement. Nothing
+detects a side job that stays under the size question's bar and then grows past it; the honest
+mitigation is to ask the question again when it does, not to lower the bar.

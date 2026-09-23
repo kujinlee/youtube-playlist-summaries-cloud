@@ -1,0 +1,16 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 3046 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "b7b963a23bae6d3984f034bc0c3c7b82f585b18e",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/ad53fab4-5d76-46c5-b5e1-641e077c8679/scratchpad/review-r4-prompt.md",
+  "reason": "3046 chars",
+  "review": "r4.md",
+  "schema": 2,
+  "tool": "codex-review"
+}

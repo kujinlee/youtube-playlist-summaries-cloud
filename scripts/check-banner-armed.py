@@ -75,6 +75,29 @@ WHAT IT CANNOT SEE, stated rather than hidden:
     margin instead of none, which is strictly better, but nothing here establishes that the prior
     turn is ALWAYS flushed by the next Stop. A corpus cannot settle it — a recorded transcript shows
     final file state, never what was readable at hook time. Spec falsifier F11.
+  * ⚠ AN ARMED PLAN + A TURN THAT EDITS NOTHING + NO BANNER — silent in ALL THREE classes, and
+    this branch is what establishes it (r1 claude M3). `unheralded` excludes it for `armed`;
+    `unbannered` excludes it for `not edited`. MEASURED over the same 2,293 `cli` turns: of the
+    207 large bannerless turns, **54 (26%)** edited nothing inside the repo. ⭐ The sting is that
+    this branch's own measurement REFUTES `edited` — 52.2% recall, separating 2.48x against turn
+    size's 5.03x — and then leaves it gating the sibling class, whose missed state is the one the
+    entry below calls "the normal mode, not an edge case". Merging the two classes was considered
+    and REJECTED: `unbannered` is live, with its own falsifiers and mutations, and moving it to fix
+    a gap in the `not armed` half would change a rule nobody asked to change. ⚠ The placement
+    comment at that branch says the gap "is entirely in the `not armed` half" — measured, it is
+    not, and those 54 turns are what it is not.
+  * ⚠ A TURN SPLIT BY AN INJECTED BOUNDARY, for the `unheralded` class — UNEXERCISED HERE, NOT
+    IMMUNE, and the distinction is the whole point of this entry. A window opened by a record that
+    `_meta_carries_a_message` accepts is a fresh turn, so a job interrupted partway yields a
+    fragment holding the WORK and not the BANNER — which is exactly `unheralded`'s firing state.
+    Backlog #146 measured `Another Claude session sent a message` as 332 such openers and 125
+    manufactured warnings for the sibling guard. MEASURED 2026-09-22 over the 2,293 `cli` turns
+    this guard actually judges: **0** of them are opened that way. All 90 message-carrying meta
+    openers are `<local-command-caveat>` (a slash command the human typed), and every one opens a
+    window `is_judgable` rejects for holding no assistant record. So the corpus does not produce
+    the shape — and nothing in the code prevents it. `coalesce_injected` is deliberately NOT
+    applied here (see check-closing-table.py); backlog #148 asks this question for the guard as a
+    whole and is still open. Do not read the 0 as a property of the rule.
   * SUBAGENT edits. Measured: 0 `isSidechain:true` records across 508 transcripts for this project —
     subagent work lives in its own session file, so a coordinator turn that dispatches five
     reviewers reads as edited=False. `subagent-driven-development` is the Phase 3 DEFAULT here, so
@@ -100,7 +123,7 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 98 cases
+    python3 scripts/check-banner-armed.py --self-test  # 159 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -359,6 +382,70 @@ def edited_paths_of(records: list[dict]) -> list[str]:
     return out
 
 
+# ⛔ THE THRESHOLD IS A MEASUREMENT, NOT A TASTE — and it is calibrated to the counting rule in
+# `tool_uses_of` BELOW. Changing either without re-running the other makes this number meaningless.
+#
+# MEASURED 2026-09-22 over 803 transcripts for this project -> 2,293 MAIN-SESSION turns, of which
+# 201 emitted a banner and 2,092 did not.
+#
+# ⚠ THE POPULATION IS `entrypoint == "cli"`, AND THE FIRST CUT OF THIS GOT IT WRONG. Subagent
+# sessions live in their own files and the Stop hook never judges them, so counting them quotes a
+# rate over the wrong denominator. The first attempt excluded them by a PROXY — "does the file use
+# `StructuredOutput`" — which let 44 subagent turns through, because 40 `sdk-py` files happen not
+# to use that tool. `entrypoint` is set by the runtime rather than chosen by me, and it separates
+# the corpus exactly: `cli` holds 2,293 turns and ALL 201 banners; `sdk-py` and `sdk-cli` hold 735
+# turns and ZERO. The proxy is kept in the record only because it is what a convenient exclusion
+# looks like from the inside.
+#
+#   threshold   catches, of the 201 turns a human DID banner   fires on unbannered   rate
+#      >= 20                 57.2%                                284              1 per  8.1 turns
+#      >= 25                 49.8%                                207              1 per 11.1 turns
+#      >= 30                 42.3%                                146              1 per 15.7 turns
+#      >= 40                 31.8%                                 85              1 per 27.0 turns
+#
+# 25 chosen by the user 2026-09-22 from a selection card carrying this table (to within the 0.5pp
+# the population correction above moved it; the correction did not change the ordering or the call).
+#
+# ⚠ THAT RIGHT-HAND COLUMN IS NOT A FALSE-ALARM RATE, and reading it as one is the mistake backlog
+# #96 recorded against this very guard's log. `armed` state cannot be recovered from a transcript,
+# so it is an UPPER BOUND on volume: an armed turn among those is caught by the `unbannered` class
+# instead, and a large unbannered turn is frequently the defect itself rather than a false alarm.
+#
+# ⭐ WHY TURN SIZE AND NOT `edited`, which backlog #95 proposed as "most plausible": measured, only
+# 52.2% of the turns a human bannered edited a repo file at all — so `edited` misses HALF the
+# population it is meant to describe. This file's own docstring predicted that without quantifying
+# it ("a coordinator turn that dispatches five reviewers reads as edited=False ... the normal mode,
+# not an edge case"). On the corrected population turn size separates the two groups 5.03x at this
+# threshold, against `edited`'s 2.48x — so it is twice the discriminator, not a marginal one.
+LARGE_TURN = 25
+
+
+def tool_uses_of(records: list[dict]) -> int:
+    """How many tool calls this window made. The proxy for "this was a multi-step job".
+
+    ⚠ EVERY `tool_use` COUNTS, INCLUDING ONE WHOSE RESULT WAS AN ERROR — deliberately UNLIKE
+    `edited_paths_of`, which excludes refused edits because a failed edit changed no bytes. The
+    question here is different: a step that was attempted and failed is still a step the reader who
+    was away cannot follow. Calibrating LARGE_TURN above counted it this way, so excluding errors
+    would silently move the threshold off its measurement.
+
+    The `type == "assistant"` filter is FREE, verified rather than assumed: measured across all
+    3,028 turns in the corpus, counting with and without it gives an identical number in 3,028 of
+    3,028 cases. It is kept because it states where tool calls legitimately live, matching
+    `texts_of` and `edited_paths_of`.
+    """
+    n = 0
+    for rec in records:
+        if rec.get("type") != "assistant":
+            continue
+        content = (rec.get("message") or {}).get("content")
+        if not isinstance(content, list):
+            continue
+        n += sum(1 for b in content
+                 if isinstance(b, dict) and b.get("type") == "tool_use")
+    return n
+
+
 def assistant_texts_since_last_user(lines: list[str]) -> list[str] | None:
     """The text half of the window. Kept because the self-test exercises it directly.
 
@@ -401,14 +488,31 @@ def highest_banner(texts: list[str]) -> tuple[int, int] | None:
     return best
 
 
+# The log's `reason` column. ⛔ THESE ARE RETURNED BY `decide()`, NEVER RE-DERIVED FROM ITS OUTPUT,
+# and that is a repair rather than a style choice. Until 2026-09-22 `run_decide` reconstructed the
+# class by asking "was there a banner?" — which worked only while the two classes happened to differ
+# on that question. `unbannered` and `unheralded` BOTH have `banner is None`, so the old
+# reconstruction would file every `unheralded` warning as `unbannered`: verbatim backlog #97's
+# second defect, which mislabelled 10 of 15 entries and contaminated the evidence base that the
+# promote-to-blocking decision reads. One owner for "which class fired" is the whole fix.
+REASON_UNARMED = "unarmed"          # a banner ran, nothing was armed
+REASON_UNBANNERED = "unbannered"    # a plan was armed and edits happened, no banner
+REASON_UNHERALDED = "unheralded"    # NEITHER armed NOR bannered, and the turn was large
+
+
 def decide(texts: list[str] | None, armed: bool,
-           steps=_UNSET, edited: bool = False) -> tuple[int, str]:
-    """-> (exit_code, message). Pure: every input is passed in."""
+           steps=_UNSET, edited: bool = False,
+           tool_uses: int = 0, paused: bool = False) -> tuple[int, str, str]:
+    """-> (exit_code, message, reason). Pure: every input is passed in.
+
+    `reason` is "" for every non-WARN verdict and one of the REASON_* constants for a WARN. It is
+    returned rather than recomputed by the caller — see the constants above for what that cost once.
+    """
     if texts is None:
         return CANNOT_RUN, (
             "CANNOT RUN: the stop-hook payload named no readable transcript, so this check could "
             "not look for a step banner. TREAT THIS AS NOT RUN — do not read the absence of a "
-            "warning as 'nothing was announced'.")
+            "warning as 'nothing was announced'."), ""
 
     # Blindness is a property of the sentinel and the plan file, NOT of whether the assistant
     # happened to type a heading — so it is answered before the banner is even looked at.
@@ -418,7 +522,7 @@ def decide(texts: list[str] | None, armed: bool,
             "missing, unreadable, or containing zero `- [ ]` step checkboxes — or "
             "`scripts/check-plan-progress.py`, whose checkbox rule this borrows, could not be "
             "imported. TREAT THIS AS NOT RUN — do not read the absence of a warning as 'a banner "
-            "was not owed'.")
+            "was not owed'."), ""
 
     banner = highest_banner(texts)
     if banner is None:
@@ -436,14 +540,63 @@ def decide(texts: list[str] | None, armed: bool,
                 "   If this stop is being blocked, you are reading this mid-plan: emit the\n"
                 "   banner for the step you are on before continuing. If the plan is genuinely\n"
                 "   waiting on in-flight work, `begin-plan.py --pause <why>` stands it down.\n"
-                f"   Logged to {WARN_LOG.relative_to(ROOT)}.")
-        return QUIET, ""
+                f"   Logged to {WARN_LOG.relative_to(ROOT)}."), REASON_UNBANNERED
+
+        # ── THE THIRD CLASS: neither armed NOR bannered (added 2026-09-22) ───────────────────
+        # The branch this guard was blind to, and the one that actually fires in practice. The two
+        # older classes each require something to be PRESENT — a banner (`unarmed`) or an armed plan
+        # (`unbannered`) — so a turn that did substantial work with NEITHER fell straight through to
+        # QUIET. MEASURED: over the warn log's entire 76-entry history, 100% are `unarmed` and the
+        # `unbannered` class has fired ZERO times, because when a plan is armed a banner generally
+        # does get emitted. The real failure is a big turn with no plan and no banner, and it was
+        # the one state nothing could see.
+        #
+        # ⚠ IT IS DELIBERATELY PLACED AFTER the armed class rather than merged with it. Merging
+        # would change when `unbannered` fires — a live class with its own falsifiers and mutations
+        # — to fix a gap that is entirely in the `not armed` half. Nothing above this line moved.
+        if not armed and not paused and tool_uses >= LARGE_TURN:
+            return WARN, (
+                f"⚠ WORK WITHOUT A BANNER — this turn made {tool_uses} tool calls, armed no plan, "
+                f"and emitted no `## ▶ STEP i of N`.\n"
+                "\n"
+                "   A reader who was away cannot tell what you were doing from a wall of tool\n"
+                "   calls — that is the whole reason the banner exists. This is the state the\n"
+                "   other two checks here are both structurally blind to: `unarmed` needs a\n"
+                "   banner to exist and `unbannered` needs a plan to be armed, so a job with\n"
+                "   NEITHER was silent until 2026-09-22.\n"
+                "\n"
+                "   If this was one long job, arm a plan and banner each step:\n"
+                "\n"
+                f"     scripts/begin-plan.py <slug> \"title|doing|why\" ...   # writes the plan AND the banner\n"
+                "\n"
+                "   ⚠ Printing the banner via that script is NOT emitting it — it goes to the\n"
+                "   STDOUT of a Bash call, which reaches you and not reliably the human. It must\n"
+                "   be in your own visible text.\n"
+                "\n"
+                f"   ⚠ THIS CAN BE A FALSE ALARM AND THE THRESHOLD SAYS SO: {LARGE_TURN} tool calls\n"
+                "   is a PROXY for 'multi-step job', not a reading of one. A single mechanical\n"
+                "   sweep can exceed it legitimately. It does not block your stop.\n"
+                f"   Logged to {WARN_LOG.relative_to(ROOT)} as `{REASON_UNHERALDED}`."
+            ), REASON_UNHERALDED
+        return QUIET, "", ""
 
     step, total = banner
     if step >= total:
-        return QUIET, ""
-    if armed:
-        return QUIET, ""
+        return QUIET, "", ""
+    # ⟳ 2026-09-22, r1 claude M2 — `or paused` IS A BEHAVIOUR CHANGE TO THE OLDEST CLASS, and it is
+    # here because the message below was stating a FALSEHOOD. `_armed_from_text` maps a paused plan
+    # to armed=False, so a stand-down reached this branch and emitted "⚠ BANNER WITHOUT A PLAN —
+    # and .claude/executing-plan names nothing" while the sentinel named `plans/p.md`. The sibling
+    # blocking guard says the opposite out loud in the same state (`check-plan-progress.py:174`
+    # returns `⏸ PAUSED (<why>)`), and `_armed_from_text`'s docstring requires the two to agree —
+    # they agreed on the verdict and contradicted each other in the sentence.
+    #
+    # ⭐ It also makes the pause excuse uniform: backlog #95's shipped fix states "`paused` now
+    # stands down here as it does in the blocking guard", and until this line that was true of one
+    # class out of three. This is the class holding 100% of the warn log's 76 entries, so it is the
+    # one where crying wolf through a deliberate stand-down costs most.
+    if armed or paused:
+        return QUIET, "", ""
 
     return WARN, (
         f"⚠ BANNER WITHOUT A PLAN — this turn's HIGHEST VISIBLE banner is `STEP {step} of "
@@ -466,7 +619,8 @@ def decide(texts: list[str] | None, armed: bool,
         "   If the job really is finished, this is a false alarm and it has been logged as one —\n"
         f"   see {WARN_LOG.relative_to(ROOT)}. ⚠ That log MIXES real partway-stops with backlog\n"
         "   #96 artifacts and the two cannot be told apart after the fact, so it is NOT yet a\n"
-        "   false-alarm rate. It was re-baselined 2026-09-05 for exactly that reason.")
+        "   false-alarm rate. It was re-baselined 2026-09-05 for exactly that reason."
+    ), REASON_UNARMED
 
 
 def log_line(reason: str, detail: str, when: str, session: str) -> str:
@@ -530,6 +684,53 @@ def _armed_from_text(text: str) -> bool:
         if key == "plan" and line.split(":", 1)[-1].strip():
             named = True
     return named
+
+
+def _paused_from_text(text: str) -> bool:
+    """PURE. True iff the sentinel has been deliberately stood down.
+
+    ⛔ THIS EXISTS BECAUSE `armed` COLLAPSES TWO DIFFERENT STATES AND THE THIRD CLASS NEEDS THEM
+    APART. `_armed_from_text` returns False both for "no plan at all" and for "a plan explicitly
+    paused" — fine for the two older classes, which only ever fire when something is PRESENT. The
+    `unheralded` class fires on ABSENCE, so without this it would warn during a deliberate stand
+    down: measured before shipping, a paused sentinel plus a 30-call turn returned WARN.
+
+    That direction matters more than it looks. Since backlog #94 `--pause` means *blocked on
+    in-flight work* — waiting on a dispatched review is the standard case, and it is precisely the
+    kind of turn that runs long. So the naive version cried wolf in the one state the project
+    deliberately silences, which is backlog #97's failure reintroduced by the slice written to
+    avoid it. Backlog #95's shipped fix says it plainly: "`paused` now stands down here as it does
+    in the blocking guard."
+
+    ⚠ THE `":" not in line` SKIP IS THE SAME LOAD-BEARING RULE as its sibling above, for the same
+    measured reason — a hand-edited `**paused**` must not read as a pause here while reading as
+    nothing in check-plan-progress.parse_sentinel. The two functions must agree about the grammar
+    or they disagree about whether the guard is standing down.
+    """
+    for line in text.splitlines():
+        if ":" not in line:
+            continue
+        if line.split(":", 1)[0].strip() == "paused":
+            return True
+    return False
+
+
+def _paused():
+    """True / False. Unreadable or absent -> False, and that is SAFE in this direction.
+
+    A pause is an EXCUSE from warning, so failing to read one can only produce a warning that was
+    not owed — never silence that was. The opposite default would let an unreadable sentinel
+    suppress the class. `_armed()` already maps an unreadable sentinel to None -> CANNOT RUN, so
+    the honest-blindness report is made there and is not duplicated here.
+    """
+    try:
+        return _paused_from_text(SENTINEL.read_text())
+    except (OSError, UnicodeDecodeError):
+        # ⚠ ONE NAME, NOT TWO (r1 coordinator F3). `FileNotFoundError` IS an `OSError`, and listing
+        # it separately here would imply a distinction that is not being drawn — `_armed()` lists
+        # both precisely BECAUSE it answers them differently (absent -> False, unreadable -> None
+        # -> CANNOT RUN). Here every failure collapses to the same answer, deliberately.
+        return False
 
 
 def _load_plan_progress():
@@ -630,7 +831,12 @@ def _steps_from_json(armed, raw):
 
 
 def sample_for(journal: dict | None, turn_uuid: str | None):
-    """PURE. -> (armed, steps) sampled at `turn_uuid`'s own Stop, or None if we hold no sample.
+    """PURE. -> (armed, steps, paused) sampled at `turn_uuid`'s Stop, or None if we hold no sample.
+
+    ⚠ `paused` DEFAULTS TO FALSE WHEN THE KEY IS ABSENT, which is exactly what a journal written
+    before 2026-09-22 looks like. The cost is bounded to the single turn that straddles the
+    upgrade, and it falls in the safe direction — a warning that was not owed, never silence that
+    was. Reporting CANNOT RUN instead would make every session's first post-upgrade stop blind.
 
     Checks BOTH slots. The `prev_*` pair exists because a blocked stop re-fires this hook inside
     the SAME turn: the first Stop of turn T judges T-1 and rewrites the current slot with T, and a
@@ -641,10 +847,12 @@ def sample_for(journal: dict | None, turn_uuid: str | None):
         return None
     if journal.get("sampled_turn_uuid") == turn_uuid:
         armed = journal.get("armed")
-        return armed, _steps_from_json(armed, journal.get("steps"))
+        return (armed, _steps_from_json(armed, journal.get("steps")),
+                bool(journal.get("paused", False)))
     if journal.get("prev_turn_uuid") == turn_uuid:
         armed = journal.get("prev_armed")
-        return armed, _steps_from_json(armed, journal.get("prev_steps"))
+        return (armed, _steps_from_json(armed, journal.get("prev_steps")),
+                bool(journal.get("prev_paused", False)))
     return None
 
 
@@ -775,12 +983,16 @@ def run_decide(payload: str) -> int:
     # ENDING NOW. Until backlog #96 it was used to judge that same turn and then thrown away; it is
     # now kept for one turn, which is the entire fix.
     armed_now = _armed()
+    # Sampled HERE, beside `armed_now`, so both describe the same turn. A pause read at judging
+    # time would describe a different moment than the verdict it excuses.
+    paused_now = _paused()
     steps_now = _plan_steps() if armed_now else _UNSET
 
     # ── 3. judge the PRIOR turn, using the sample taken at ITS stop ───────────────────────────
     already = _read_journal(session_id)
     judged_uuid = None if judged is None or judged.opener is None else judged.opener.get("uuid")
     code, message = QUIET, ""
+    reason = ""                    # set ONLY by decide(); see REASON_* for why it is not re-derived
     steps = _UNSET                 # bound before the log block below can read it
     if judged is not None:
         if already and already.get("last_judged_uuid") == judged_uuid and judged_uuid:
@@ -795,7 +1007,7 @@ def run_decide(payload: str) -> int:
                     "would be a guess. TREAT THIS AS NOT RUN — do not read the absence of a warning "
                     "as 'a banner was not owed'.")
             else:
-                armed_then, steps_then = sample
+                armed_then, steps_then, paused_then = sample
                 if armed_then is None:
                     # ⛔ `null` MEANS "THE SENTINEL WAS UNREADABLE WHEN THAT TURN ENDED", NOT
                     # "no plan was armed" — and None is FALSY, so passing it to decide() would make
@@ -810,7 +1022,9 @@ def run_decide(payload: str) -> int:
                 else:
                     texts = texts_of(judged.body)
                     edited = _edit_inside_repo(edited_paths_of(judged.body), ROOT)
-                    code, message = decide(texts, armed_then, steps=steps_then, edited=edited)
+                    code, message, reason = decide(
+                        texts, armed_then, steps=steps_then, edited=edited,
+                        tool_uses=tool_uses_of(judged.body), paused=paused_then)
                     steps = steps_then           # the log block below reads it
                     # ⛔ NOTE WHAT IS *NOT* HERE: the QUIET -> WARN promotion this shipped with
                     # (backlog #97). A late flush is backlog #96's own mechanism — the NORMAL case
@@ -866,10 +1080,26 @@ def run_decide(payload: str) -> int:
         # `:742`, so growth here means the VERDICT'S OWN INPUT was incomplete at the turn's stop.
         "sampled_text_len": len(texts_of(live.body)),
         "armed": armed_now,
+        # ⛔ SAMPLED, NOT RE-READ AT JUDGING TIME, for the same reason `armed` is. The verdict is
+        # about the PREVIOUS turn, so what matters is whether the plan was stood down WHEN THAT
+        # TURN ENDED — resuming a plan between the two stops must not retroactively remove the
+        # excuse, and pausing between them must not retroactively grant one.
+        "paused": paused_now,
         "steps": _steps_to_json(steps_now),
         "prev_turn_uuid": (already or {}).get("sampled_turn_uuid"),
         "prev_armed": (already or {}).get("armed"),
+        "prev_paused": (already or {}).get("paused", False),
         "prev_steps": (already or {}).get("steps"),
+        # ⚠ NO CASE ASSERTS THE `or` CARRY, AND THAT IS RECORDED RATHER THAN HIDDEN (r5 Low 4).
+        # Replacing the whole expression with a bare `judged_uuid` survives the suite. The carry
+        # preserves the exactly-once gate across a stop that judged nothing. r5 tried and COULD NOT
+        # construct a reachable input where it changes the outcome: within one session the
+        # transcript only grows, so a stop that judged something is followed by stops that judge
+        # something, and the states where `judged_uuid` is None AFTER a judgement — a changed
+        # `transcript_path` under the same `session_id`, or an opener record with no `uuid` — are
+        # not producible from the driving surface. It is kept because the cost of being wrong is
+        # re-warning about a turn already warned about, and the cost of keeping it is one `or`.
+        # ⛔ If a later round DOES reach it, this comment is the thing to delete, not to extend.
         "last_judged_uuid": judged_uuid or (already or {}).get("last_judged_uuid"),
     }
     if live_uuid == (already or {}).get("sampled_turn_uuid"):
@@ -877,6 +1107,7 @@ def run_decide(payload: str) -> int:
         # window, or the turn we still owe a verdict falls out of both slots.
         record["prev_turn_uuid"] = (already or {}).get("prev_turn_uuid")
         record["prev_armed"] = (already or {}).get("prev_armed")
+        record["prev_paused"] = (already or {}).get("prev_paused", False)
         record["prev_steps"] = (already or {}).get("prev_steps")
         record["prev_text_len"] = (already or {}).get("prev_text_len")
     else:
@@ -902,12 +1133,32 @@ def run_decide(payload: str) -> int:
     texts = texts_of(judged.body) if judged is not None else []
 
     if code == WARN:
+        # ⛔ `reason` COMES FROM decide(). It used to be reconstructed here by asking "was there a
+        # banner?", which silently became wrong the moment a THIRD class shared `banner is None`
+        # with `unbannered` — see the REASON_* constants. Only `detail` is derived, and each class
+        # derives its own, because the detail is the one thing that genuinely differs per class.
         banner = highest_banner(texts or [])
-        if banner:
-            reason, detail = "unarmed", f"STEP {banner[0]} of {banner[1]}"
+        if reason == REASON_UNARMED:
+            # ⚠ THE `"?"` IS UNREACHABLE BY CONSTRUCTION AND IS KEPT ANYWAY, said out loud rather
+            # than left for the next reader to work out (r1 coordinator F2). `decide()` returns
+            # REASON_UNARMED only from the branch below `banner is not None`, and `banner` here is
+            # recomputed from the SAME `judged.body`, so the two cannot disagree. It stays because
+            # the alternative is `banner[0]` raising inside a Stop hook if that ever stops being
+            # true — a TypeError here would surface as a broken guard, not as a missing detail.
+            # It is a crash barrier, not a branch; that is why no case asserts it.
+            detail = f"STEP {banner[0]} of {banner[1]}" if banner else "?"
+        elif reason == REASON_UNHERALDED:
+            # ⚠ AND SO IS THE `else 0` — the SECOND crash barrier in this block, declared because
+            # the `"?"` eight lines up is declared and this one was not (r5 Low 5; r1 coordinator
+            # F2 asked for exactly this sentence about exactly this kind of expression). `reason`
+            # is non-empty only on a path where `judged is not None`, so the `else` is unreachable
+            # by construction and removing it is an EQUIVALENT MUTANT, not a defect — measured at
+            # 150/150. It stays so that a future path reaching here with no judged turn logs a
+            # wrong count instead of raising a TypeError inside a Stop hook. No case asserts it.
+            detail = f"{tool_uses_of(judged.body) if judged is not None else 0} tool calls"
         else:
             unticked = 0 if steps is _UNSET or steps is None else steps[1] - steps[0]
-            reason, detail = "unbannered", f"{unticked} unticked"
+            detail = f"{unticked} unticked"
         when = _dt.datetime.now().astimezone().replace(microsecond=0).isoformat()
         try:
             WARN_LOG.parent.mkdir(parents=True, exist_ok=True)
@@ -1026,7 +1277,7 @@ def _self_test() -> int:
          highest_banner(["intro text\n" + B.format(2, 6)]) == (2, 6))
 
     # ── fails closed ───────────────────────────────────────────────────────────────────────
-    code, msg = decide(None, armed=False)
+    code, msg, _reason = decide(None, armed=False)
     case("an unreadable transcript is CANNOT RUN, never a quiet pass", code == CANNOT_RUN)
     case("...and it says TREAT THIS AS NOT RUN", "TREAT THIS AS NOT RUN" in msg)
     case("an EMPTY transcript is CANNOT RUN, not 'no banner'",
@@ -1124,6 +1375,239 @@ def _self_test() -> int:
          decide([B.format(2, 4)], armed=True, steps=S, edited=True)[0] == QUIET)
     case("a finished plan (0 unticked) + an edit -> quiet",
          decide([], armed=True, steps=(4, 4), edited=True)[0] == QUIET)
+
+    # ── the THIRD class: neither armed nor bannered (2026-09-22) ───────────────────────────
+    # ⚠ EVERY CASE HERE PASSES `steps=_UNSET` (the default) ON PURPOSE. The class is defined on the
+    # `not armed` half, and an armed sentinel with steps would route to the class above — so a case
+    # that set both would pass for whichever branch happened to win, which is the ambient-reason
+    # failure this repo has recorded four times on one file.
+    # ⛔ THE ONE PLACE THE THRESHOLD IS WRITTEN AS A LITERAL, AND IT IS DELIBERATE. Every other
+    # case derives _BIG/_SMALL from LARGE_TURN, so they all move WITH the constant and not one of
+    # them can notice it changing — the recorded shape *fixing a PREMISE is not covering the
+    # BRANCH*. 25 is a calibrated measurement (see the table at the constant), so altering it must
+    # fail loudly rather than silently re-tune the guard.
+    case("W0 the threshold is 25 — the calibrated value, pinned against a silent re-tune",
+         LARGE_TURN == 25)
+    # ⛔ `_BIG` IS NOT `LARGE_TURN`, AND THAT IS r4's SWEEP, NOT A STYLE CHOICE. It used to be
+    # exactly the threshold — and the warning message quotes the count AND, in a different
+    # sentence, the threshold ("⚠ THIS CAN BE A FALSE ALARM … {LARGE_TURN} tool calls"). With the
+    # two numbers equal, the case labelled *catches a hardcoded message* was satisfied by the
+    # THRESHOLD sentence, so freezing the count to any constant left it green. Offsetting `_BIG`
+    # makes the count appear nowhere else in the message. W2 still probes the boundary exactly.
+    _BIG, _SMALL = LARGE_TURN + 3, LARGE_TURN - 1
+    case("W1 not armed + no banner + a LARGE turn WARNS — the branch that was silent",
+         decide([], armed=False, tool_uses=_BIG)[0] == WARN)
+    case("...and it names the work-without-banner direction",
+         "WORK WITHOUT A BANNER" in decide([], armed=False, tool_uses=_BIG)[1])
+    # ⛔ TWO DISTINCT INPUTS, IN ONE CASE — r5 High 1, and this case is why the property exists.
+    # For three consecutive rounds a case literally named *catches a hardcoded message* was
+    # satisfied BY a hardcoded message. It called the producer ONCE and asserted the literal that
+    # call supplied, so the constant equal to that literal always passed. r4 tried to fix it by
+    # moving `_BIG` off the threshold; that only changed WHICH constant survives — freezing the
+    # count at `LARGE_TURN + 3` then passed, and `LARGE_TURN + 3` is the value r4 itself chose.
+    #
+    # ⭐ THE PROPERTY, which replaces the whole class rather than its instances: **a case asserting
+    # a derived value must exercise its producer at two DISTINCT inputs.** No constant can satisfy
+    # an assertion evaluated at two different inputs — not the threshold, not either fixture's
+    # literal, not a value chosen later. Pairwise-distinct FIXTURES do not give this: that is a
+    # property of having two call sites that happen to disagree, and r5 measured it holding for
+    # exactly 2 of 11 derived-value sites, by coincidence of fixture design.
+    _lo, _hi = LARGE_TURN + 1, LARGE_TURN + 97
+    case("...and it reports the COUNT IT SAW — asserted at TWO distinct inputs, so no constant "
+         "satisfies it (catches a hardcoded message, which for three rounds it did not)",
+         f"{_lo} tool calls" in decide([], armed=False, tool_uses=_lo)[1]
+         and f"{_hi} tool calls" in decide([], armed=False, tool_uses=_hi)[1])
+    case("R5-533 the PLAN-WITHOUT-A-BANNER message reports the unticked count it was given, at "
+         "two distinct inputs — nothing read this number before",
+         "3 step(s) still unticked" in decide([], armed=True, steps=(1, 4), edited=True)[1]
+         and "7 step(s) still unticked" in decide([], armed=True, steps=(0, 7), edited=True)[1])
+    case("R5-602 the BANNER-WITHOUT-A-PLAN message reports the step AND the total it saw, at two "
+         "distinct inputs — a frozen `STEP 2 of 5` tells the reader a specific false thing about "
+         "their own turn, in the sentence asking them not to over-read it",
+         "`STEP 7 of 8" in decide([B.format(7, 8)], armed=False)[1]
+         and "`STEP 1 of 9" in decide([B.format(1, 9)], armed=False)[1])
+    case("R5-607 ...and so does the `all N steps` clause further down the same message",
+         "all 8 steps" in decide([B.format(7, 8)], armed=False)[1]
+         and "all 9 steps" in decide([B.format(1, 9)], armed=False)[1])
+
+    # The two PURE log producers, each at two distinct inputs. `flush_line`'s counts are the
+    # evidence base for backlog #96/#97 — the case written against exactly this defect (Cx-M1)
+    # pinned the STRING and left the counts and the session ambient, because its only scenario
+    # supplies `fl-text`, 1 and 2 and it asserts those literals.
+    case("R5-636 log_line carries the SESSION it was given, at two distinct inputs",
+         log_line("unarmed", "d", "T", "sess-a").split("\t")[1] == "sess-a"
+         and log_line("unarmed", "d", "T", "sess-b").split("\t")[1] == "sess-b")
+    case("R5-646 flush_line carries BOTH measured counts, at two distinct input pairs — the "
+         "counts ARE the evidence, and a constant pair keeps the file populated while recording "
+         "nothing that was measured",
+         flush_line(4, 11, "T", "s").split("\t")[-2:] == ["4", "11\n"]
+         and flush_line(1, 2, "T", "s").split("\t")[-2:] == ["1", "2\n"])
+    case("R5-646b ...and its session column too",
+         flush_line(1, 2, "T", "sess-a").split("\t")[1] == "sess-a"
+         and flush_line(1, 2, "T", "sess-b").split("\t")[1] == "sess-b")
+    # ⛔ THE TIMESTAMP COLUMN, AND THE FOLD THAT ADDED THESE CASES IS WHAT EXPOSED IT.
+    # `check-fixture-variation.py` went RED on this file at `02218390` and the red was committed:
+    # the R5-646 cases gave `flush_line` its first DIRECT call sites, and all four passed the same
+    # `'T'`, so that guard's rule — do two cases pass different values for this parameter? — had
+    # something to fail on for the first time. ⚠ The two rules are NOT the same rule and neither
+    # subsumes the other: it asks whether two CASES differ in a parameter, r5's property asks
+    # whether ONE CASE exercises a producer at two inputs. `STEP 2 of 5` and `STEP 2 of 3` satisfy
+    # the first and still let half the value be frozen, which is exactly the survivor r5 found.
+    # Varying `when` satisfies the first; asserting it at two inputs satisfies the second, and the
+    # column is the only thing in the observation log that orders the records.
+    case("R5-646c ...and its TIMESTAMP column, which nothing read — a `when` that is the same "
+         "string at every call site leaves any clause reading it unguarded",
+         flush_line(1, 2, "T", "s").split("\t")[0] == "T"
+         and flush_line(1, 2, "2026-09-22T13:59:00-07:00", "s").split("\t")[0]
+         == "2026-09-22T13:59:00-07:00")
+    case("W2 one call BELOW the threshold is quiet — the boundary is exact, not approximate",
+         decide([], armed=False, tool_uses=_SMALL)[0] == QUIET)
+    # ⛔ THE BOUNDARY NEEDS ITS OWN CASE, AND FIXING THE AMBIENT-CONSTANT CLASS IS WHAT TOOK IT
+    # AWAY. `_BIG` used to be exactly `LARGE_TURN`, so W1 tested the `>=` edge as a side effect and
+    # killed the `>=` -> `>` mutation. Offsetting `_BIG` to escape the message's threshold sentence
+    # (r4) left `28 > 25` true under that mutant, and the sweep reported it as a SURVIVOR at
+    # 911/912 while the suite stayed green — the THIRD time on this branch a class-fix silently
+    # disarmed an existing falsifier, and the third time only the sweep saw it.
+    #
+    # ⭐ THE TWO PROPERTIES PULL OPPOSITE WAYS and therefore cannot share a case: the ambient-
+    # constant property needs the asserted value AWAY from the threshold, the boundary falsifier
+    # needs it EXACTLY ON it. W1 holds the first; this holds the second.
+    case("W2b a turn AT the threshold exactly WARNS — `>=`, not `>`; the one case that pins the "
+         "comparison itself, which no other case can while `_BIG` is offset",
+         decide([], armed=False, tool_uses=LARGE_TURN)[0] == WARN)
+    # ⛔ W3'S LABEL WAS A LIE AND THE LIE WAS LOAD-BEARING (r1 claude H1). It claimed to catch
+    # "dropping the banner term" while passing `armed=True` — under which `not armed` is already
+    # false, so the class cannot fire wherever the branch sits and W3 is QUIET for a reason with
+    # nothing to do with banners. It is not a dead case (deleting `if armed or paused` reddens it);
+    # it is MISLABELLED, and its label was the only place the banner term was claimed to be covered.
+    # The recorded shape *a case can pass for an AMBIENT reason* — committed three cases after this
+    # block's own opening comment warns against exactly it.
+    case("W3 a large turn with a banner AND a plan armed is quiet — the ARMED term, which is what "
+         "this case actually exercises",
+         decide([B.format(2, 5)], armed=True, tool_uses=_BIG)[0] == QUIET)
+    # ⭐ W11 IS THE REAL BANNER-TERM CASE. "no banner" is the one term of the four that is NOT
+    # written in the `if`: it is carried entirely by the branch's POSITION inside `if banner is
+    # None:`. Hoisting the test above `banner = highest_banner(texts)` is one edit, keeps all three
+    # explicit terms, and left the suite at 131/131 — while warning "WORK WITHOUT A BANNER … and
+    # emitted no `## ▶ STEP i of N`" at a turn that emitted five of them, and relabelling every
+    # `unarmed` entry as `unheralded`. `armed=False` here is the whole point: the banner is then
+    # the ONLY thing keeping this quiet.
+    case("W11 a large UNARMED turn that CLOSED its sequence is quiet — the class is defined on "
+         "`no banner`, and that term is carried only by where the branch sits",
+         decide([B.format(5, 5)], armed=False, tool_uses=_BIG)[0] == QUIET)
+    case("W12 ...and a large UNARMED turn stopped PARTWAY is the `unarmed` class, never this one — "
+         "the hoist relabels every one of the log's 76 entries",
+         decide([B.format(2, 5)], armed=False, tool_uses=_BIG)[2] == REASON_UNARMED)
+    case("W4 a large turn with a plan ARMED is not this class (catches dropping `not armed`)",
+         decide([], armed=True, steps=(1, 4), tool_uses=_BIG)[2] != REASON_UNHERALDED)
+    case("W5 a large UNARMED turn reports THIS class, not the sibling that shares banner=None",
+         decide([], armed=False, tool_uses=_BIG)[2] == REASON_UNHERALDED)
+    case("W6 the armed sibling still reports ITS OWN class — the two are not merged",
+         decide([], armed=True, steps=S, edited=True)[2] == REASON_UNBANNERED)
+    case("W7 the bannered class still reports ITS OWN class",
+         decide([B.format(2, 5)], armed=False)[2] == REASON_UNARMED)
+    case("W8 every QUIET verdict carries an EMPTY reason — a class cannot be logged unfired",
+         decide([], armed=False, tool_uses=_SMALL)[2] == ""
+         and decide([B.format(5, 5)], armed=False)[2] == "")
+    case("W9 CANNOT RUN carries an empty reason too",
+         decide(None, armed=False)[2] == "" and decide([], armed=True, steps=None)[2] == "")
+    # ⭐ BACKLOG #95'S OWN STATED FALSIFIER, transcribed rather than paraphrased: "a session that
+    # arms a plan, edits a file inside the repo and emits no banner must WARN; a session that arms a
+    # plan and spends the turn answering a question must stay QUIET." The first half is F1 above.
+    # The second is here, and it is the cry-wolf direction — the one #97 shipped wrong.
+    case("#95's falsifier: a turn that just ANSWERS — no edits, few calls — stays QUIET",
+         decide(["here is the answer to your question"], armed=True, steps=S,
+                edited=False, tool_uses=3)[0] == QUIET)
+    case("...and the same answering turn is QUIET when nothing is armed either",
+         decide(["here is the answer"], armed=False, tool_uses=3)[0] == QUIET)
+    case("W10 the threshold is a CONSTANT the message quotes — they cannot disagree",
+         str(LARGE_TURN) in decide([], armed=False, tool_uses=_BIG)[1])
+
+    # ── the PAUSE excuse, which the first cut of this class got wrong ──────────────────────
+    # ⛔ FOUND BY REVIEW BEFORE SHIPPING, AND THE SUITE DID NOT NOTICE: adding `not paused` left
+    # 122/122 green, because every case above leaves `paused` at its default. A fix nothing can
+    # falsify is the recorded shape *a test that cannot fail* — these are its falsifiers.
+    case("P1 a PAUSED plan + a large turn is QUIET — the class stands down like its siblings",
+         decide([], armed=False, tool_uses=_BIG, paused=True)[0] == QUIET)
+    case("P2 ...and the SAME turn unpaused still WARNS, so the excuse is doing the work",
+         decide([], armed=False, tool_uses=_BIG, paused=False)[0] == WARN)
+    case("P3 a paused sentinel reads as paused",
+         _paused_from_text("plan: x.md\narmed: t\npaused: waiting on CI\n") is True)
+    case("P4 a plain armed sentinel is NOT paused",
+         _paused_from_text("plan: x.md\narmed: t\n") is False)
+    case("P5 a colon-less `paused` is SKIPPED — the same grammar the sibling parser uses, so "
+         "the two cannot disagree about whether the guard stood down",
+         _paused_from_text("plan: x.md\n**paused**\n") is False)
+    # r1 claude L2 — P5 pins the COLON rule; nothing pinned the KEY-EQUALITY rule. Loosening `==`
+    # to `.startswith` left the suite at 131/131, and a key like `paused_at:` would then stand this
+    # reader down while `_armed_from_text`'s `==` keeps the plan armed — the two readers
+    # disagreeing about a stand-down, which is the exact failure both docstrings cite the grammar
+    # rules to prevent. Latent (no writer emits such a key) and pinned anyway, because "no writer
+    # does this today" is a fact about writers, not about the rule.
+    case("P10 a key that merely STARTS WITH `paused` is not a pause — the match is equality, so "
+         "this reader cannot stand down over a key that leaves the sibling armed",
+         _paused_from_text("plan: x.md\npaused_at: 2026-09-22\n") is False)
+    # ⛔ r3 M-A — P10 PINNED ONE READER AND THE PROPERTY NEEDS BOTH. L2 named both functions in one
+    # sentence and the r1 fold pinned only the one it was shown; loosening `_armed_from_text` the
+    # same way produces the identical disagreement from the other side, and left the suite at
+    # 138/138. Measured on `plan: plans/p.md\narmed: t\npaused_at: …`: delivered reads armed=True,
+    # paused=False, verdict QUIET; the mutant reads armed=False and warns "WORK WITHOUT A BANNER …
+    # armed no plan" at a turn with a plan armed. The recorded *a shim fails BOTH ways* — fixing
+    # the half you were shown is instance-not-class, which is the same error this round found in
+    # H-A one mechanism over.
+    case("P10b ...and the SIBLING reader has the same rule — a `paused_at:` key must leave the "
+         "plan ARMED, or the two disagree about a stand-down from the other side",
+         _armed_from_text("plan: x.md\narmed: t\npaused_at: 2026-09-22\n") is True)
+    # M2's falsifier: the pause now stands the OLDEST class down too, and the message it used to
+    # emit asserted the sentinel "names nothing" while it named a plan.
+    case("P11 a PARTWAY banner with a paused plan is quiet — the pause excuse reaches the "
+         "`unarmed` class, not only the newest one",
+         decide([B.format(2, 5)], armed=False, paused=True)[0] == QUIET)
+    case("P12 ...and the SAME turn unpaused still warns, so the excuse is doing the work",
+         decide([B.format(2, 5)], armed=False, paused=False)[2] == REASON_UNARMED)
+    case("P6 the two sentinel readers agree on a paused file: armed False AND paused True",
+         _armed_from_text("plan: x.md\npaused: why\n") is False
+         and _paused_from_text("plan: x.md\npaused: why\n") is True)
+    # ⚠ `is not None and …[2]`, NOT a bare `[2]` — `sample_for` returns `tuple | None`, so on a
+    # None the bare form raises INSIDE the case expression, before `case()` is reached. That is a
+    # kill by CRASH: it aborts the suite, every case after it silently never runs, and the harness
+    # records a "kill" that names no guard — the hazard `safe()` and `_logtext()` both exist for,
+    # reproduced here in three cases this branch added. The explicit test is also strictly
+    # stronger: a None return is now a named red instead of a stack trace. (It was pyright that
+    # pointed at these — three `reportOptionalSubscript` errors that master does not have.)
+    _j = {"sampled_turn_uuid": "u", "armed": False, "steps": None, "paused": True}
+    _p7 = sample_for(_j, "u")
+    case("P7 sample_for carries the paused flag out of the CURRENT slot",
+         _p7 is not None and _p7[2] is True)
+    _p8 = sample_for({"prev_turn_uuid": "p", "prev_armed": False, "prev_steps": None,
+                      "prev_paused": True}, "p")
+    case("P8 ...and out of the PREVIOUS slot, which a blocked stop reads instead",
+         _p8 is not None and _p8[2] is True)
+    _p9 = sample_for({"sampled_turn_uuid": "u", "armed": False, "steps": None}, "u")
+    case("P9 a journal written BEFORE this field existed reads as not-paused, not as a crash — "
+         "the straddle turn warns rather than going silent",
+         _p9 is not None and _p9[2] is False)
+
+    case("tool_uses_of counts a tool call in an assistant record",
+         tool_uses_of([{"type": "assistant", "message": {"content": [
+             {"type": "tool_use", "name": "Bash", "input": {}}]}}]) == 1)
+    case("tool_uses_of counts EVERY call in one record, not one per record",
+         tool_uses_of([{"type": "assistant", "message": {"content": [
+             {"type": "tool_use", "name": "Bash", "input": {}},
+             {"type": "tool_use", "name": "Read", "input": {}}]}}]) == 2)
+    case("tool_uses_of ignores text blocks",
+         tool_uses_of([{"type": "assistant", "message": {"content": [
+             {"type": "text", "text": "hello"}]}}]) == 0)
+    case("tool_uses_of ignores a non-assistant record carrying a tool_use shape",
+         tool_uses_of([{"type": "user", "message": {"content": [
+             {"type": "tool_use", "name": "Bash", "input": {}}]}}]) == 0)
+    case("tool_uses_of COUNTS a call whose result errored — unlike edited_paths_of, by design",
+         tool_uses_of([{"type": "assistant", "message": {"content": [
+             {"type": "tool_use", "id": "t1", "name": "Bash", "input": {}}]}},
+             {"type": "user", "message": {"content": [
+                 {"type": "tool_result", "tool_use_id": "t1", "is_error": True}]}}]) == 1)
+    case("tool_uses_of survives a record whose content is not a list",
+         tool_uses_of([{"type": "assistant", "message": {"content": "plain string"}}]) == 0)
 
     _r = Path("/repo")
     case("R3 an edit outside the repo does not count (the scratchpad case)",
@@ -1223,12 +1707,48 @@ def _self_test() -> int:
         def _edit_block(path: str) -> dict:
             return {"type": "tool_use", "id": "e1", "name": "Edit", "input": {"file_path": path}}
 
-        def _drive(path: Path, subject: list, session: str = "s") -> int:
-            """Seed the journal with `subject` live, then judge it once a later turn opens."""
+        _UNTOUCHED = object()   # "leave the sentinel exactly as it is", distinct from "delete it"
+
+        def _sentinel(state) -> None:
+            """Put the sentinel into `state`: None deletes it, str writes it, bytes write it raw.
+
+            ⚠ `bytes` IS NOT A CONVENIENCE. The UNREADABLE sentinel is a third state, distinct
+            from both "nothing armed" and "a plan is armed", and it can only be produced by
+            writing something that is not UTF-8. Without it the `before`/`after` pair could not
+            reach `armed_now is None` at the JUDGING stop, which is the input r5 Medium 3 needs.
+            """
+            if state is _UNTOUCHED:
+                return
+            _s = _fx / ".claude" / "executing-plan"
+            if state is None:
+                _s.unlink(missing_ok=True)
+            elif isinstance(state, bytes):
+                _s.write_bytes(state)
+            else:
+                _s.write_text(state)
+
+        def _drive(path: Path, subject: list, session: str = "s",
+                   before=_UNTOUCHED, after=_UNTOUCHED) -> int:
+            """Seed the journal with `subject` live, then judge it once a later turn opens.
+
+            ⟳ r3 L-A — `before`/`after` ARE THE WHOLE HELPER NOW. A second copy of this protocol
+            (`_drive_changing`) was added by the r1 fold and duplicated it line for line, differing
+            only by two sentinel writes; if the drive protocol ever changed in one, the other would
+            silently describe a different world while every case depending on it stayed green. One
+            owner, the recorded *a second implementation of one rule DRIFTS*.
+
+            ⛔ `before`/`after` ARE WHAT MAKE SAMPLING OBSERVABLE AT ALL. With the sentinel held in
+            ONE state across both stops — which is every call that omits them — "sampled at the
+            judged turn's stop" and "re-read at judging time" produce identical output, so a
+            re-read passes the whole suite. Every case that pins the journal round trip must pass
+            a `before`/`after` pair that DIFFER.
+            """
             for stale in JOURNAL_DIR.glob("*.json"):
                 stale.unlink()
+            _sentinel(before)
             path.write_text("\n".join(subject))
             run_decide(json.dumps({"transcript_path": str(path), "session_id": session}))
+            _sentinel(after)
             path.write_text("\n".join(subject + _turn("later", [{"type": "text", "text": "x"}])))
             return run_decide(json.dumps({"transcript_path": str(path), "session_id": session}))
 
@@ -1372,8 +1892,16 @@ def _self_test() -> int:
                 """
                 return _flush.read_text() if _flush.exists() else ""
 
-            def _flush_scenario(session: str, grow: str) -> tuple:
+            def _flush_scenario(session: str, grow: str, pad: int = 0) -> tuple:
                 """-> (exit code, observation lines added, warn lines added).
+
+                `pad` adds N extra PLAIN-PROSE text blocks to the judged turn and N more to what
+                arrives late, moving the observed pair from (1, 2) to (1+pad, 2+2*pad) — so the
+                three numbers in the LATE FLUSH note (before, after, and their difference) all
+                change together. It exists because the note was asserted only by F97b, at the one
+                scenario this helper could produce, which made `1 / 2 / 1` a constant that
+                satisfied the only case reading it (r5 High 1). Prose carries no banner, so the
+                highest banner and therefore the VERDICT are unchanged by padding.
 
                 `grow` selects WHAT arrives after the turn's own stop:
                   'text'  — a closing assistant banner (a real late flush)
@@ -1395,9 +1923,10 @@ def _self_test() -> int:
                 # the whole point of that case: a real warning and an observation at once.
                 tail = ("more prose" if grow in ("plain", "warnable")
                         else "## ▶ STEP 3 of 3 — done")
-                partial = _turn("f1", [{"type": "text", "text": lead}])
+                _pad = [{"type": "text", "text": f"pad {i}"} for i in range(pad)]
+                partial = _turn("f1", [{"type": "text", "text": lead}] + _pad)
                 closing = json.dumps({"type": "assistant", "message": {"content": [
-                    {"type": "text", "text": tail}]}})
+                    {"type": "text", "text": tail}] + _pad}})
                 tool_result = json.dumps({"type": "user", "message": {"content": [
                     {"type": "tool_result", "tool_use_id": "tr1", "content": "ok"}]}})
                 # What its OWN stop saw: everything except whatever is due to arrive late.
@@ -1447,6 +1976,29 @@ def _self_test() -> int:
                  and _logtext().rstrip("\n").endswith("\tunarmed\tSTEP 2 of 3")
                  and "LATE FLUSH OBSERVED" in _errbuf.getvalue())
 
+            # ⛔ THE NOTE'S THREE COUNTS — r5 High 1, the second integration site, and the same
+            # shape as Cx-M1 one layer out. F97b is the ONLY case that surfaces this note, and it
+            # asserted that the note APPEARS, never what it says. The helper produced exactly one
+            # warnable scenario, whose numbers are 1, 2 and 1, so freezing the note at
+            # `held 1 block(s) … holds 2. 1 arrived after` satisfied the only case reading it. The
+            # note is the reader's own account of backlog #96's race, measured directly; frozen,
+            # it reports a race that did not happen at the size it did not happen at.
+            #
+            # `pad=2` drives the SAME code at 3 / 6 / 3. No constant satisfies both, in any one of
+            # the three slots — the difference is asserted too, because `{late[1] - late[0]}` is a
+            # third producer and 2 - 1 == 1 would have let `1` stand in for it.
+            _errbuf2 = io.StringIO()
+            with contextlib.redirect_stderr(_errbuf2):
+                _rcF2 = _flush_scenario("fl-warn2", "warnable", pad=2)
+            case("R5-1051 the LATE FLUSH note reports the counts it MEASURED — driven at two "
+                 "distinct scenarios (1/2/1 and 3/6/3), so no constant satisfies any of its "
+                 "three numbers",
+                 _rcF2[0] == WARN and _rcF2[1] == 1
+                 and "held 1 block(s); one stop later it holds 2. 1 arrived after"
+                     in _errbuf.getvalue()
+                 and "held 3 block(s); one stop later it holds 6. 3 arrived after"
+                     in _errbuf2.getvalue())
+
             # F97c (author self-review) — THE NEW ERROR PATH HAD NO FALSIFIER, while the sibling
             # journal-write failure has had one since round 1 (F7). The asymmetry is the finding:
             # this slice ADDED a failure mode and asserted nothing about it. It matters more than
@@ -1490,15 +2042,311 @@ def _self_test() -> int:
                  _rcB == CANNOT_RUN)
             (_fx / ".claude" / "executing-plan").write_text("plan: plans/p.md\narmed: t\n")
 
+            # ⛔ THE OTHER SIDE OF THE SAME GUARD — r5 Medium 3, and it is the side that says
+            # NOTHING IS WRONG. `:1111` reads `armed_now is None and code == QUIET and judged is
+            # None`; dropping `and judged is None` left the suite green at 150/150 and changed the
+            # answer on an ordinary input. Cx-M2 above pins the CANNOT-RUN direction and cannot see
+            # this, because it holds the sentinel unreadable at BOTH stops.
+            #
+            # The input: a turn that was judged and whose verdict is a SOUND QUIET, at a stop where
+            # the sentinel happens to be unreadable — which is what `begin-plan.py` writing it looks
+            # like for an instant, so this is routine, not exotic. Pristine stays QUIET; the mutant
+            # reports CANNOT RUN about a turn that WAS checked. The unreadable sentinel is not lost
+            # by staying quiet: it is journalled as `armed: null` and surfaces on the NEXT stop,
+            # where it is the live turn's own excuse that is missing. This repo treats CANNOT RUN as
+            # never a pass, so manufacturing one is cry-wolf on the one channel that surfaces.
+            _rcM3 = _drive(_fx / "sound-quiet-unreadable.jsonl",
+                           _turn("q1", [{"type": "text", "text": "a short bannerless turn"}]),
+                           session="s-m3", before=None,
+                           after=b"plan: plans/p.md\n\xff\xfe not utf-8 \xff\n")
+            case("R5-1111 a SOUND QUIET verdict survives a sentinel that is unreadable at the "
+                 "judging stop — CANNOT RUN is for the turn that has no verdict, not for one "
+                 "that has a good one",
+                 _rcM3 == QUIET)
+            (_fx / ".claude" / "executing-plan").write_text("plan: plans/p.md\narmed: t\n")
+
             # H3 — the UNARMED class, the guard's only previously-shipped behaviour, had no
             # execution coverage at all. Three log mutations survived because of it.
+            #
+            # ⛔ TWO DRIVES AT DISTINCT (step, total) PAIRS, IN ONE CASE — r5 High 1, the
+            # integration half of the property stated at W1. The log's own detail is built at
+            # `detail = f"STEP {banner[0]} of {banner[1]}"`, and the only two cases that read it —
+            # this one and F97b — BOTH used step 2 (`STEP 2 of 5` here, `STEP 2 of 3` there). All
+            # the distinctness r4 relied on lived in the TOTAL, so freezing HALF the value,
+            # `f"STEP 2 of {banner[1]}"`, survived at 150/150 while every `unarmed` entry in the
+            # warn log — 100% of its 76-entry history — would record step 2 whatever step the turn
+            # actually reached. ⚠ PAIRWISE-DISTINCT FIXTURES ACROSS CASES DO NOT GIVE THIS. A
+            # composite value has to be exercised COMPONENT-WISE, which means both components
+            # varying within the assertion, which in turn means both drives living in one case.
             (_fx / ".claude" / "executing-plan").unlink()
             _rcU = _drive(_fx / "unarmed.jsonl",
                           _turn("u1", [{"type": "text",
                                         "text": "## ▶ STEP 2 of 5 — doing a thing"}]))
-            case("H3 the UNARMED class still warns AND logs its own reason and detail",
-                 _rcU == WARN
-                 and _logtext().rstrip("\n").endswith("\tunarmed\tSTEP 2 of 5"))
+            _tailU = _logtext().rstrip("\n").split("\n")[-1]
+            _rcU_b = _drive(_fx / "unarmed-b.jsonl",
+                            _turn("u1b", [{"type": "text",
+                                           "text": "## ▶ STEP 7 of 9 — a different step"}]),
+                            session="s-unarmed-b")
+            _tailU_b = _logtext().rstrip("\n").split("\n")[-1]
+            case("H3 the UNARMED class still warns AND logs its own reason and detail — at TWO "
+                 "distinct (step, total) pairs, so NEITHER half of `STEP i of N` can be frozen",
+                 _rcU == WARN and _rcU_b == WARN
+                 and _tailU.endswith("\tunarmed\tSTEP 2 of 5")
+                 and _tailU_b.endswith("\tunarmed\tSTEP 7 of 9"))
+
+            # ── W-INT: the THIRD class, driven end to end (2026-09-22) ────────────────────
+            # ⛔ THE UNIT CASES ABOVE CANNOT REACH THE DEFECT THIS ONE COVERS. They call decide()
+            # with `tool_uses=` supplied by hand, so `run_decide` failing to COUNT or to PASS it
+            # leaves every one of them green while the class is dead on arrival — the recorded
+            # shape *unit coverage does NOT compose: mutate the CALL SITE*. The comment on H3
+            # directly above records the same omission costing three surviving log mutations.
+            #
+            # The sentinel is still unlinked from H3, which is the state this class is defined on.
+            assert not (_fx / ".claude" / "executing-plan").exists()
+            # ⚠ `LARGE_TURN + 7`, NOT `LARGE_TURN` (r1 claude M1). With exactly LARGE_TURN calls the
+            # logged count and the threshold are the SAME NUMBER, so `detail = f"{LARGE_TURN} tool
+            # calls"` — a logger that hardcodes the constant — passed 131/131. That column is the
+            # evidence the promote-to-blocking decision reads; under the mutant every entry sits
+            # exactly on the boundary and the observed distribution is manufactured by the logger.
+            # The W0 comment had already diagnosed this hazard ("every other case derives from
+            # LARGE_TURN and so moves with it") and it was applied to one site only.
+            _WBIG = LARGE_TURN + 7
+            _big = _turn("w1", [{"type": "tool_use", "id": f"b{i}", "name": "Bash",
+                                 "input": {"command": "echo hi"}}
+                                for i in range(_WBIG)])
+            _rcW = _drive(_fx / "unheralded.jsonl", _big)
+            case("W-INT run_decide WARNS on a large unarmed bannerless turn — the class is WIRED, "
+                 "not merely implemented",
+                 _rcW == WARN)
+            case("W-INT ...and it logs under its OWN reason, never the sibling that shares "
+                 "banner=None (backlog #97's mislabelling cannot recur), with the count IT SAW "
+                 "rather than the threshold — the two are deliberately different numbers here",
+                 _logtext().rstrip("\n").endswith(
+                     f"\t{REASON_UNHERALDED}\t{_WBIG} tool calls")
+                 and str(LARGE_TURN) != str(_WBIG))
+
+            # The same turn ONE call smaller must be silent all the way through — otherwise the
+            # case above would pass for any turn at all and the threshold would be decorative.
+            _beforeW = _logtext()
+            _small = _turn("w2", [{"type": "tool_use", "id": f"s{i}", "name": "Bash",
+                                   "input": {"command": "echo hi"}}
+                                  for i in range(LARGE_TURN - 1)])
+            _rcS = _drive(_fx / "heralded-small.jsonl", _small)
+            case("W-INT a turn ONE call below the threshold is QUIET and appends NOTHING — "
+                 "the boundary survives the wiring, and the log stays countable",
+                 _rcS == QUIET and _logtext() == _beforeW)
+
+            # P-INT — the pause excuse, driven end to end. The unit cases pass `paused=` by hand,
+            # so they cannot see run_decide failing to SAMPLE it, to JOURNAL it, or to pass it on.
+            # That is three wiring steps, and the sample is the subtle one: the flag must describe
+            # the turn being JUDGED, so it travels through the journal rather than being re-read.
+            _beforeP = _logtext()
+            (_fx / ".claude" / "executing-plan").write_text(
+                "plan: plans/p.md\narmed: t\npaused: blocked on a dispatched review\n")
+            _bigP = _turn("p1", [{"type": "tool_use", "id": f"p{i}", "name": "Bash",
+                                  "input": {"command": "echo hi"}}
+                                 for i in range(LARGE_TURN + 5)])
+            _rcP = _drive(_fx / "paused-big.jsonl", _bigP)
+            case("P-INT a PAUSED plan silences the class end to end — no warning, no log line. "
+                 "Since backlog #94 a pause means 'blocked on in-flight work', which is exactly "
+                 "the shape of turn that runs long",
+                 _rcP == QUIET and _logtext() == _beforeP)
+
+            # ...and the control that stops P-INT passing for an ambient reason: the SAME turn,
+            # same size, with the pause removed, must warn. Without this, deleting the whole class
+            # would keep P-INT green.
+            (_fx / ".claude" / "executing-plan").unlink()
+            _rcP2 = _drive(_fx / "unpaused-big.jsonl", _bigP)
+            case("P-INT control: the identical turn with the pause REMOVED does warn",
+                 _rcP2 == WARN)
+
+            # ── H2 — the SAMPLE must be what the verdict consumes, not a re-read ──────────
+            # ⛔ EVERY CASE ABOVE HOLDS THE SENTINEL IN ONE STATE ACROSS BOTH STOPS, so
+            # "sampled at that turn's stop" and "re-read at judging time" are behaviourally
+            # IDENTICAL to all of them: `paused=_paused()` at the call site — the thing two
+            # comments in this file explicitly forbid — passed 131/131 (r1 claude H2). These
+            # two legs are the only place in the suite where the sampled value and the live
+            # value DIFFER, which is the only place the distinction can be observed.
+            _PAUSED_TXT = ("plan: plans/p.md\narmed: t\n"
+                           "paused: waiting on a dispatched review\n")
+            _ARMED_TXT = "plan: plans/p.md\narmed: t\n"
+            _b1 = _logtext()
+            _rcH2a = _drive(_fx / "h2-resume.jsonl", _bigP,
+                            before=_PAUSED_TXT, after=None)
+            case("H2a a turn that RAN while paused stays quiet even though the plan was RESUMED "
+                 "before it was judged — the verdict reads the SAMPLE, not the live sentinel",
+                 _rcH2a == QUIET and _logtext() == _b1)
+            _b2 = _logtext()
+            _rcH2b = _drive(_fx / "h2-pause.jsonl", _bigP, before=None, after=_PAUSED_TXT)
+            case("H2b ...and the mirror — pausing AFTER that turn ended does not retroactively "
+                 "excuse it, so the sample cannot be read as 'whatever the sentinel says now'",
+                 _rcH2b == WARN and _logtext() != _b2)
+
+            # ── H-A (r3) — the SAME mechanism, for `armed` and `steps` ───────────────────
+            # ⛔ THE r1 FOLD FIXED THE INSTANCE AND NOT THE CLASS, inside the comment that names
+            # the class. H2 was never a finding about the word `paused`; it was about the journal
+            # round trip — *the value the verdict consumes must be the one sampled at the judged
+            # turn's stop*. The fix comment says so itself: "SAMPLED, NOT RE-READ AT JUDGING TIME
+            # … for the same reason `armed` is". H2a/H2b vary ONLY `paused`; in both legs
+            # `armed_then` is False, so neither can see `armed` being re-read. Measured: `texts,
+            # _armed(), …` at the call site left the suite at 138/138 while INVERTING the verdict
+            # in both directions. The recorded *after fixing, SEARCH for the class*.
+            #
+            # ⚠ Both are PRE-EXISTING (`armed_then, steps_then = sample` is on master). Filed and
+            # fixed here for the reason the fold accepted M2, also pre-existing: this branch makes
+            # them cheap — two legs through the helper it already wrote.
+            #
+            # The scenario is the guard's own documented one: `check-plan-progress.py` UNLINKS the
+            # sentinel when the last box is ticked, which is why this observer runs first. So a
+            # turn that ran armed is routinely judged after the sentinel has gone.
+            _b3 = _logtext()
+            _rcA1 = _drive(_fx / "ha-cleared.jsonl", _bigP,
+                           before=_ARMED_TXT, after=None)
+            case("H-A1 a turn that RAN with a plan armed stays quiet even though the sentinel was "
+                 "cleared before it was judged — `armed` is consumed from the SAMPLE too, not only "
+                 "`paused`",
+                 _rcA1 == QUIET and _logtext() == _b3)
+            _b4 = _logtext()
+            _rcA2 = _drive(_fx / "ha-armed-after.jsonl", _bigP,
+                           before=None, after=_ARMED_TXT)
+            case("H-A2 ...and the mirror — arming a plan AFTER that turn ended does not "
+                 "retroactively excuse it",
+                 _rcA2 == WARN and _logtext() != _b4)
+            # `steps` travels with `armed` and feeds BOTH the `unbannered` detail and the
+            # `armed and steps is None` CANNOT-RUN guard, so a re-read makes both describe the
+            # wrong turn. Seeding armed-with-a-plan and judging armed-with-NO-plan-file separates
+            # `steps_then` from `steps_now` while `armed` stays True on both sides.
+            _rcA3 = _drive(_fx / "ha-steps.jsonl", _bigP,
+                           before=_ARMED_TXT, after="plan: plans/gone.md\narmed: t\n")
+            case("H-A3 `steps` is consumed from the sample as well — a plan file that vanishes "
+                 "between the two stops must not turn a measured turn into CANNOT RUN",
+                 _rcA3 != CANNOT_RUN)
+
+            # ── H-B (r3) — the PREVIOUS journal slot, reached through run_decide ─────────
+            # ⛔ TWO EARLIER ROUNDS CONCLUDED THIS PATH WAS UNREACHABLE AND BOTH WERE WRONG.
+            # r1 hedged ("I tried and failed to construct an input"); r2 answered "no clean
+            # run-generated path"; the r1 fold hardened the hedge into an ASSERTION in a
+            # reader-facing page — the recorded *an inference stated as MEASURED*. Six single
+            # edits to this wiring left the suite at 138/138: four cry wolf, two turn a sound
+            # verdict into CANNOT RUN, which this project's rule says is never a pass.
+            #
+            # ⭐ WHY IT LOOKED UNREACHABLE. The prev slot needs `prev_turn_uuid == U` while
+            # `last_judged_uuid != U`, and every stop that judges something sets the latter. The
+            # only separator is a window that was NON-JUDGABLE when live and judgable one stop
+            # later — which requires the transcript to GROW, i.e. backlog #96's late flush, the
+            # mechanism this file exists to measure. Both earlier passes searched a transcript
+            # written before the first stop, where it cannot exist by construction. The precursor
+            # is ordinary, not exotic: 322 non-judgable non-live windows across the 65 `cli`
+            # transcripts.
+            def _drive_prev_slot(path: Path, late_body: list, before, mid,
+                                 session: str = "p", continuation: bool = False) -> int:
+                """Three stops; `Wa` is non-judgable at A and judgable at C, so it lands in the
+                PREVIOUS slot — sampled at A, judged at C, with the sentinel changed in between.
+
+                ⛔ `continuation=True` ADDS A FOURTH STOP AND IT IS NOT DECORATION. It repeats stop
+                B with the transcript UNCHANGED, so `live_uuid == already["sampled_turn_uuid"]` and
+                `run_decide` takes its continuation branch — the one that PRESERVES the older prev
+                slot instead of shifting the window. Without this leg the two `record["prev_paused"]
+                = …` carries in that branch are unreachable, and both survived as single edits at
+                145/145 while the three-stop legs below killed the other six. Measured, not assumed.
+                """
+                for _st in JOURNAL_DIR.glob("*.json"):
+                    _st.unlink()
+                _u = lambda uid: json.dumps(
+                    {"type": "user", "uuid": uid, "message": {"content": "go"}})
+                _a = lambda body: json.dumps({"type": "assistant", "message": {"content": body}})
+                _sentinel(before)
+                path.write_text(_u("Wa"))                                    # stop A
+                run_decide(json.dumps({"transcript_path": str(path), "session_id": session}))
+                _sentinel(mid)
+                path.write_text("\n".join([_u("Wa"), _u("Wb")]))             # stop B
+                run_decide(json.dumps({"transcript_path": str(path), "session_id": session}))
+                if continuation:
+                    # SAME transcript, so the live window has not moved: a blocked-stop re-fire.
+                    run_decide(json.dumps({"transcript_path": str(path), "session_id": session}))
+                path.write_text("\n".join([                                  # stop C — Wa flushes
+                    _u("Wa"), _a(late_body), _u("Wb"), _u("Wc"),
+                    _a([{"type": "text", "text": "x"}])]))
+                return run_decide(json.dumps({"transcript_path": str(path),
+                                              "session_id": session}))
+
+            _body30 = [{"type": "tool_use", "id": f"x{i}", "name": "Bash",
+                        "input": {"command": "echo hi"}} for i in range(LARGE_TURN + 5)]
+            _bp = _logtext()
+            _rcB1 = _drive_prev_slot(_fx / "prev-paused.jsonl", _body30, _PAUSED_TXT, None)
+            case("H-B1 the PREVIOUS slot is REACHABLE from a clean journal through run_decide — a "
+                 "window non-judgable when live and judgable one stop later — and the pause "
+                 "sampled THERE still excuses the turn",
+                 _rcB1 == QUIET and _logtext() == _bp)
+            _bp2 = _logtext()
+            _rcB2 = _drive_prev_slot(_fx / "prev-none.jsonl", _body30, None, None)
+            # ⚠ THIS ALSO ASSERTS THE LOGGED COUNT, and it is the SECOND such assertion on
+            # purpose (r4). W-INT logs `LARGE_TURN + 7`; this drive logs `LARGE_TURN + 5`. While
+            # W-INT was the only integration case reading a logged tool count, freezing the log
+            # detail to that fixture's size satisfied it and survived at 147/147. Two different
+            # counts mean no constant satisfies both.
+            #
+            # ⛔ `!= _bp2` IS A CONJUNCT, NOT A CASUALTY — r5 Medium 2. The r4 fold REPLACED the
+            # growth assertion with the `endswith` above, and measured on the staged copy, that
+            # clause is ALREADY TRUE when it is evaluated: the preceding H-A drive had logged
+            # `unheralded / 30 tool calls`, and the two lines differ only in the session column,
+            # which `endswith` does not read. So the tail match alone cannot tell "this drive
+            # logged the right line" from "this drive logged nothing and I am reading someone
+            # else's". The growth check is what makes it THIS drive's line, and the freeze above
+            # still dies through the other drive's count. The repair is one word: `and`.
+            case("H-B1 control: the identical three-stop shape with NOTHING in the previous slot "
+                 "does warn, and logs the count THIS turn made — a second, different count, so "
+                 "the log detail cannot be a constant, and the line is one THIS drive wrote",
+                 _rcB2 == WARN
+                 and _logtext() != _bp2
+                 and _logtext().rstrip("\n").endswith(
+                     f"\t{REASON_UNHERALDED}\t{LARGE_TURN + 5} tool calls"))
+            _rcB3 = _drive_prev_slot(_fx / "prev-armed.jsonl", _body30, _ARMED_TXT, None)
+            case("H-B2 `prev_armed` and `prev_steps` travel with it — a turn that ran ARMED is "
+                 "quiet, and never CANNOT RUN, when judged out of the previous slot",
+                 _rcB3 == QUIET and _rcB3 != CANNOT_RUN)
+            # ⛔ THE CONTINUATION CARRY. Seed PAUSED at A, CLEAR before B, then re-fire B with the
+            # transcript unchanged: the continuation branch must PRESERVE Wa's pause across that
+            # re-fire. Two single edits to it — dropping the carry, and reading `paused` (Wb's,
+            # now False) instead of `prev_paused` (Wa's, True) — survived every other leg here.
+            _bp3 = _logtext()
+            _rcB4 = _drive_prev_slot(_fx / "prev-cont.jsonl", _body30, _PAUSED_TXT, None,
+                                     continuation=True)
+            case("H-B3 a BLOCKED-STOP re-fire preserves the previous slot's pause — the "
+                 "continuation branch carries `prev_paused`, and reads the PREVIOUS turn's value "
+                 "rather than the current one",
+                 _rcB4 == QUIET and _logtext() == _bp3)
+
+            # ── H-A4 — the `steps` SAMPLE, on the path the LOG reads ────────────────────
+            # ⛔ THIS CASE EXISTS BECAUSE A HAND-VERIFICATION TESTED A DIFFERENT EDIT THAN THE
+            # MANIFEST SHIPS. `steps` is bound twice on this path: as `decide()`'s ARGUMENT (the
+            # verdict) and as the local the LOG BLOCK reads (the detail). H-A3 pins the first;
+            # the manifest entry mutates the second, so it survived a full sweep at 908/909 while
+            # every by-hand probe said killed. The two counts must DIFFER for the detail to be
+            # observable at all — pointing the sentinel at a second plan file with a different
+            # tick count is the only way to separate `steps_then` from `steps_now`.
+            # ⛔ THREE DISTINCT COUNTS, AND THE THIRD IS r4's FINDING. The first cut seeded from
+            # `p.md` — the ambient fixture plan, 3 unticked — and asserted "3 unticked". So did the
+            # pre-existing F4 case. A log block hardcoding `unticked = 3` therefore satisfied BOTH
+            # and survived at 149/149: the case proved "not the CURRENT plan's count" and not "the
+            # SAMPLED plan's count", which is the claim. Seeding from `r.md` (2) makes the asserted
+            # value ambient NOWHERE, and leaves F4's 3 and this 2 pinning each other — a constant
+            # satisfying one now reddens the other. The recorded *a case can pass for an AMBIENT
+            # reason*, second instance on this branch after r1's H1.
+            (_fx / "plans" / "q.md").write_text(
+                "- [x] one\n- [x] two\n- [x] three\n- [ ] four\n")            # 1 unticked (now)
+            (_fx / "plans" / "r.md").write_text(
+                "- [x] one\n- [x] two\n- [ ] three\n- [ ] four\n")            # 2 unticked (sampled)
+            _rcS = _drive(_fx / "steps-sample.jsonl", _subject,
+                          before="plan: plans/r.md\narmed: t\n",
+                          after="plan: plans/q.md\narmed: t\n")
+            case("H-A4 the LOGGED `unticked` count is COMPUTED from the plan sampled when the "
+                 "judged turn ended — 2 then, 1 now, and 3 in every other fixture here, so no "
+                 "constant satisfies this case and F4 at once",
+                 _rcS == WARN
+                 and _logtext().rstrip("\n").endswith("\tunbannered\t2 unticked"))
+            (_fx / ".claude" / "executing-plan").write_text("plan: plans/p.md\narmed: t\n")
+            (_fx / ".claude" / "executing-plan").unlink(missing_ok=True)
         finally:
             (globals()["ROOT"], globals()["SENTINEL"], globals()["WARN_LOG"],
              globals()["FLUSH_LOG"], globals()["JOURNAL_DIR"]) = _saved
