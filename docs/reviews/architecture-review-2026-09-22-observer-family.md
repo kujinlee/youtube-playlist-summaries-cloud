@@ -204,6 +204,38 @@ reason for existing is catching what every other gate structurally cannot — an
 standing note that a vocabulary which silently stops matching is worse than no check at all
 (ADR-0010 §2, rejecting free-text tags on exactly this ground).
 
+### 2.45 — The family has FOUR log files, 131 live records, and **zero parsers** — measured across all four
+
+Each producer's docstring claims its own log has no consumer. Taken together and verified as one
+sweep (every `*.py`, `*.sh`, `*.ts`, `*.js`, `*.yml`, `*.md` under `scripts/`, `.claude/`,
+`.github/`, `docs/`):
+
+| Log file | Lines on disk | Code that reads it |
+|---|---:|---|
+| `.claude/banner-warnings.log` | 76 | **none** — only `check-banner-armed.py` itself |
+| `.claude/banner-flush-observations.log` | 45 | **none** — only `check-banner-armed.py` itself |
+| `.claude/ci-unwatched.log` | 5 | **none** — only `check-ci-watched.py` itself |
+| `.claude/closing-table-warnings.log` | 5 | **none** — only `check-closing-table.py` itself |
+
+Every other reference in the repo is prose — designs, backlog rows, review documents.
+
+⭐ **This matters for §6's ordering, in the honest direction: it LOWERS the urgency of the log work
+and raises the urgency of the instrument.** Three injectable producers with no parser cannot corrupt
+a consumer that does not exist; the hole is a contract hole, exactly as #166 says. The logs exist to
+*become* a denominator later — `check-ci-watched.log_line:170` says so outright (*"it exists so the
+promote-to-blocking decision has a denominator"*). **So work 3 is cheap insurance on a grammar
+nothing yet depends on, and work 1 is what stops the family growing a fifth member meanwhile.**
+
+⚠ **One stale claim found while verifying this.** `check-banner-armed.py:633` reads: *"Nothing parses
+this file (searched 2026-09-04: only this module, its self-test, **a comment in block-idle-stop.sh**,
+and prose in docs/dashboard-entries.md)."* Measured — `.claude/hooks/block-idle-stop.sh` contains no
+reference to `banner-warnings.log` or `WARN_LOG` at all; it references the **script**
+`check-banner-armed.py` (`:11`, `:75`), which is a different thing. The load-bearing half of the
+sentence (*nothing parses this file*) is **true and now verified family-wide**; its enumeration of
+referrers has expired. Same class as F6 — an evidence list that is not re-derived when it moves, in
+a file whose own hook records at `:156` having *"measured the check-banner-armed line reference as
+already pointing at unrelated prose."*
+
 ### 2.5 — ⛔ The second thing that stops it, and it is the important one: **a renamed duplicate is invisible**
 
 This is a limitation of the proposed fix, found by testing the fix rather than the finding, and it
