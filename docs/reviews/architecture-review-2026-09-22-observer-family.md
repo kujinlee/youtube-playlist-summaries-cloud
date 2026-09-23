@@ -406,8 +406,12 @@ alongside the other two, as the brief asks, produces the wrong fix: a **new sibl
 would be a *second independent reader of the same test suites* — a fresh instance of exactly the
 class #165 and #166 are instances of.
 
-**The row's conclusion is right and its worked example is wrong**, and the difference decides where
-the code goes. Measured by running `check-fixture-variation.analyse` on a miniature of
+**The row's conclusion is right, and so is its worked example** — ⟳ this sentence is a correction;
+an earlier draft of this section, and of backlog #164, claimed the example was wrong. It was
+refuted by an adversarial check and the retraction is §4.3. What follows is a **second, more
+general** demonstration of the same gap, not a replacement for the row's.
+
+Measured by running `check-fixture-variation.analyse` on a miniature of
 `begin-plan.render_banner` (`:222`, whose banner is
 `f"## ▶ STEP {index + 1} of {len(steps)} — {s.title}"` at `:230`):
 
@@ -428,16 +432,67 @@ The guard's own docstring states the cause without drawing this conclusion from 
 > *"It compares the SOURCE TEXT of arguments… So it is a floor — it proves a parameter was
 > *thought about*, never that the values chosen are good ones."*
 
-⚠ **Correction to backlog #164's justification.** The row's distinguishing example is
-`STEP 2 of 5` and `STEP 2 of 3` in two cases. Measured, that example **would be caught** — a frozen
-`index` is a parameter, and an unvaried parameter is precisely what `analyse` flags. The real gap is
-a frozen **derived component** (`len(steps)`) whose **source parameter varies in text**. The row's
-*conclusion* (not subsumed) survives; its *evidence* is replaced.
-
 **Therefore the work belongs inside `check-fixture-variation.py`, as an extension of `analyse` from
 argument source text to derived components — not as a sibling.** That also answers the row's own open
 question (*"decide whether the property is mechanisable"*): the machinery is `ast`, the guard already
 has it, and the extension has a natural home with one owner.
+
+### ⟳ 4.3 — RETRACTION: this review claimed #164's worked example was wrong. It is not.
+
+**What was published and is now withdrawn.** §4.2 and F11 asserted that #164's distinguishing
+example — `STEP 2 of 5` and `STEP 2 of 3` in two cases — *"would be caught, because a frozen `index`
+is an unvaried parameter"*, and a correction saying so was appended to backlog **#164**.
+
+**The refutation.** Raised by an adversarial check on this review's own finding, then re-measured
+here. The claim rests on `step` being a **parameter**. In the real subject it is not:
+
+```python
+# scripts/check-banner-armed.py:503
+def decide(texts: list[str] | None, armed: bool,
+           steps=_UNSET, edited: bool = False,
+           tool_uses: int = 0, paused: bool = False) -> tuple[int, str, str]:
+```
+
+The banner — and therefore the step number — rides **inside `texts`**. There is no `decide.step`.
+Two cases passing `["…STEP 2 of 5…"]` and `["…STEP 2 of 3…"]` vary `texts` in source text while the
+step stays frozen at 2, and `analyse` has nothing to flag.
+
+Measured against that signature, with **every other parameter varied** so nothing else can account
+for the verdict:
+
+```
+findings : []
+examined : ['decide.armed', 'decide.edited', 'decide.steps', 'decide.texts']
+```
+
+Non-vacuous (all four parameters discovered and judged) and **zero findings**. **#164's example is a
+genuine miss in situ.**
+
+⛔ **The error, named, because it is one this project has a standing note about.** I measured a
+*synthetic* signature — `render_banner(steps, index)`, where `index` genuinely is a parameter — and
+generalised the result to a subject with a different shape. That is *measure the population the code
+actually sees*, failed at the point of drawing the conclusion rather than at the point of running the
+code. My run was correct about `render_banner` and silent about `decide`.
+
+**What survives, and it is the more useful framing.** There are **two distinct ways** a quantity can
+be frozen and invisible to `analyse`, and the row and this review each found one:
+
+| | Frozen quantity | Why `analyse` cannot see it | Example |
+|---|---|---|---|
+| **#164's** | a component of a **composite parameter** | the parameter's text varies; the component inside it does not | `texts=["…STEP 2 of 5…"]` vs `["…STEP 2 of 3…"]` |
+| **this review's** | a value **derived** from a parameter | the parameter's text varies; `len()` of it does not | `len(steps)` = 3 for `["a","b","c"]` and `["x","y","z"]` |
+
+Both are real. This review's is **more general** — it holds for any signature, because the frozen
+quantity is computed inside the producer and never appears at a call site at all — so it is the
+better example to build the extension against. **But #164's evidence is not wrong, and the backlog
+row's correction has been rewritten to say so.**
+
+⭐ **One thing the adversarial check established that this review had not:** `analyse` returns
+`(findings, examined_keys)` — a *set*, not a count — deliberately, because *"'this entry did not
+fire' and 'this parameter is no longer examined at all' are the same observation"* (`:703-708`).
+That second value is what separates a real pass from a vacuous one, and every `PASSES` claimed in
+§4.2 and here is now reported with its non-empty `examined` set. A private function or an uncalled
+one yields `examined=[]` and would have passed for an unrelated reason.
 
 ---
 
@@ -651,7 +706,20 @@ both. It becomes live the moment §3.3's shared owner is written: **whoever writ
 and nothing states which is correct**, because no document says the grammar permits duplicate keys
 at all. This is the case for #100's candidate *(b)* (enumerate the legal states) alongside *(a)*.
 
-### F11 — Backlog #164's conclusion is right; its worked example is wrong — **Medium**
+### F11 — ⟳ RETRACTED AND REPLACED: #164's example is RIGHT; this review found a SECOND, more general one — **Medium**
+
+⛔ **As first published, F11 read *"#164's conclusion is right; its worked example is wrong"*. That
+is withdrawn.** The example rests on `step` being a parameter of `check-banner-armed.decide`; it is
+not — the banner rides inside `texts` (`:503`). Re-measured with every other parameter varied:
+`findings=[]`, `examined=['decide.armed','decide.edited','decide.steps','decide.texts']`. **#164's
+example is a genuine miss in situ.** The error was generalising a run against a *synthetic*
+signature to a subject with a different shape. Full retraction and the two-mechanism table: §4.3.
+
+**What stands:** `analyse` compares `ast.unparse`-normalised argument text and is blind to any
+frozen quantity that is not itself a parameter — whether it is a *component of a composite
+parameter* (#164's case) or a *value derived from one* (this review's, `len(steps)`). The second is
+more general and is the better target to build against. The fix still belongs **inside**
+`check-fixture-variation.py`, not in a sibling guard.
 
 Measured by running `check-fixture-variation.analyse` (§4.2). The row's example
 (`STEP 2 of 5` / `STEP 2 of 3` in two cases) **would be caught** — a frozen `index` is an unvaried
@@ -746,7 +814,7 @@ sequence. What would be filed, if agreed:
 | one new row — the cross-member instrument over `scripts/` | F1, F2, F3, F9 | new |
 | widen **#100**'s population from one file to the grammar | F4, F10 | edits #100 |
 | widen **#165** to point at #100 as answered, not open | §3 | edits #165 |
-| correct **#164**'s worked example and move the fix inside `check-fixture-variation.py` | F11 | edits #164 |
+| ⟳ move #164's fix inside `check-fixture-variation.py` — its example is RIGHT, see §4.3 | F11 | edits #164 |
 | correct **#166**'s producer count from two to three | F5 | edits #166 |
 | two ride-alongs — `ci.yml` comment (F7), `:183` five-not-six (F6) | F6, F7 | new, small |
 

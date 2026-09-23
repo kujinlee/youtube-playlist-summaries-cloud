@@ -11721,3 +11721,37 @@ Also: `closing-table-warnings.log` stamps `-0700` while the other three stamp `-
 (`strftime("…%z")` vs `.isoformat()`), and `check-closing-table.py:846` cites an instruction in
 `dev-process.md` that has **0** occurrences there — a citation backlog #149 repeats as its own
 severity justification.
+
+## 2026-09-22
+Correction to what I wrote earlier today. I said the review had caught a mistake in one of the
+existing backlog items — that its example of the problem wouldn't actually have been missed. That
+was wrong, and the item was right all along.
+
+What happened is worth writing down because it is the same mistake the review is about. I tested the
+idea against a small made-up example rather than against the real code, got a correct answer about
+the made-up one, and then wrote down a conclusion about the real one. The two have different shapes,
+and the difference is the whole point: in the real code the step number is buried inside a larger
+value, which is exactly why nothing notices when it stops changing.
+
+The review's own example is still useful — it shows a second, broader version of the same gap — but
+it does not replace the original, and I have rewritten the backlog item to say so.
+
+This was caught by asking one of the background searches to try to knock the finding down rather
+than to confirm it.
+<!--tech-->
+⟳ RETRACTION, §4.3 + F11 of `docs/reviews/architecture-review-2026-09-22-observer-family.md`, and
+backlog #164's correction rewritten in place (unmerged draft, so no history rewritten).
+
+The claim assumed `step` is a parameter of `check-banner-armed.decide`. It is not — the banner rides
+inside `texts` (`:503`), so there is no `decide.step`. Re-measured against the real signature with
+every other parameter varied: `findings=[]`,
+`examined=['decide.armed','decide.edited','decide.steps','decide.texts']` — non-vacuous, zero
+findings. #164's example is a genuine miss in situ.
+
+⭐ Two distinct freeze mechanisms, one each: (i) a component of a COMPOSITE parameter (#164's), (ii)
+a value DERIVED from a parameter (the review's, `len(steps)`). Both real; (ii) is more general.
+
+⭐ The adversarial check also established something the review had not: `analyse` returns
+`(findings, examined_keys)` as a SET, deliberately (`:703-708`) — *"'this entry did not fire' and
+'this parameter is no longer examined at all' are the same observation"*. Every PASSES in §4.2/§4.3
+now reports its non-empty `examined` set, so a vacuous pass cannot be mistaken for a real one.
