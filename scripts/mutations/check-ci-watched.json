@@ -96,8 +96,8 @@
     "file": "scripts/check-ci-watched.py",
     "edits": [
       [
-        "if watching_sha else \"\"",
-        "if False else \"\""
+        "             if watching_sha else \"\")",
+        "             if False else \"\")"
       ]
     ],
     "expect": [
@@ -187,8 +187,8 @@
     "file": "scripts/check-ci-watched.py",
     "edits": [
       [
-        "    return \"stale\" if watching_sha else \"unwatched\"",
-        "    return \"unwatched\""
+        "    return \"stale\" if watching_sha and watching_sha != head_sha else \"unwatched\"\n",
+        "    return \"unwatched\"\n"
       ]
     ],
     "expect": [
@@ -200,8 +200,8 @@
     "file": "scripts/check-ci-watched.py",
     "edits": [
       [
-        "    return f\"{when}\\t{session or '-'}\\t{reason}\\t{detail}\\n\"",
-        "    return f\"{when}\\t{reason}\\t{detail}\\n\""
+        "    return (f\"{_col(when)}\\t{_col(session) or '-'}\\t{_col(reason)}\\t{_col(detail)}\\n\")",
+        "    return (f\"{_col(when)}\\t{_col(reason)}\\t{_col(detail)}\\n\")"
       ]
     ],
     "expect": [
@@ -245,6 +245,110 @@
     ],
     "expect": [
       "the SESSION column comes from the Stop payload the hook has always piped in"
+    ]
+  },
+  {
+    "name": "the dispatch stops reading stdin, so the session column is `-` forever — the exact behaviour the payload read exists to remove",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "        return run_decide(payload_from(stream))",
+        "        return run_decide(\"\")"
+      ]
+    ],
+    "expect": [
+      "`main --decide` feeds the STREAM to the log, at two distinct sessions — the dispatch line, which survived every mutation while it lived under `if __name__`"
+    ]
+  },
+  {
+    "name": "payload_from reads a TTY, so an interactive --decide blocks on a human",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "        if stream.isatty():\n            return \"\"",
+        "        if False:\n            return \"\""
+      ]
+    ],
+    "expect": [
+      "...and returns EMPTY for a TTY, so an interactive --decide cannot block on a human"
+    ]
+  },
+  {
+    "name": "a closed or unreadable stdin raises instead of costing only the column",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    except (OSError, ValueError, AttributeError):\n        # A stream that cannot be read costs the COLUMN",
+        "    except ():\n        # A stream that cannot be read costs the COLUMN"
+      ]
+    ],
+    "expect": [
+      "...and for a stream that RAISES on read, at two distinct exception types"
+    ]
+  },
+  {
+    "name": "RecursionError leaves the payload union again, so an overflowing payload costs the VERDICT",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    except (ValueError, TypeError, AttributeError, RecursionError):",
+        "    except (ValueError, TypeError, AttributeError):"
+      ]
+    ],
+    "expect": [
+      "a payload that overflows the JSON decoder costs the COLUMN, never the verdict — the second distinct member of the union the handler catches"
+    ]
+  },
+  {
+    "name": "log fields stop being sanitised, so a tab in the session adds a column and a newline adds a record",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    return \" \".join(str(v).replace(\"\\t\", \" \").splitlines()) if v else \"\"",
+        "    return str(v) if v else \"\""
+      ]
+    ],
+    "expect": [
+      "a session carrying a TAB cannot add a column, at two distinct inputs"
+    ]
+  },
+  {
+    "name": "the sanitiser EMPTIES the field instead of flattening it, destroying the evidence it protects",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    return \" \".join(str(v).replace(\"\\t\", \" \").splitlines()) if v else \"\"\n",
+        "    return \"\"\n"
+      ]
+    ],
+    "expect": [
+      "...and the sanitised session still CARRIES its content, at two distinct inputs"
+    ]
+  },
+  {
+    "name": "the stale row loses the armed sha, so one-push-stale and ten-pushes-stale are the same record",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "        armed = f\" (armed {watching_sha[:8]})\" if watching_sha else \"\"",
+        "        armed = \"\""
+      ]
+    ],
+    "expect": [
+      "a STALE row records WHICH commit was armed, not only HEAD"
+    ]
+  },
+  {
+    "name": "warn_reason stops comparing the two shas, so a watcher armed for the CURRENT head reads as stale",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    return \"stale\" if watching_sha and watching_sha != head_sha else \"unwatched\"",
+        "    return \"stale\" if watching_sha else \"unwatched\""
+      ]
+    ],
+    "expect": [
+      "warn_reason reads both operands — a watcher armed for the SAME sha is not `stale`"
     ]
   }
 ]

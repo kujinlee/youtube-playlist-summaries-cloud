@@ -39,7 +39,7 @@ Usage (the hook calls form 1):
     python3 scripts/check-ci-watched.py --decide
     python3 scripts/check-ci-watched.py --watching   # record that a watcher is armed for HEAD
     python3 scripts/check-ci-watched.py --clear
-    python3 scripts/check-ci-watched.py --self-test  # 42 cases
+    python3 scripts/check-ci-watched.py --self-test  # 55 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -145,7 +145,7 @@ def warn_reason(watching_sha: str | None, head_sha: str) -> str:
       stale     — a watcher IS armed, for a DIFFERENT commit. A new push un-arms it by design, so
                   this is the "I armed one, then pushed again" shape, not neglect.
     """
-    return "stale" if watching_sha else "unwatched"
+    return "stale" if watching_sha and watching_sha != head_sha else "unwatched"
 
 
 def log_line(reason: str, detail: str, when: str, session: str) -> str:
@@ -166,7 +166,32 @@ def log_line(reason: str, detail: str, when: str, session: str) -> str:
     the same argument the banner guard's log already won, and the reason this guard could not
     answer "did it warn me?" when it mattered.
     """
-    return f"{when}\t{session or '-'}\t{reason}\t{detail}\n"
+    return (f"{_col(when)}\t{_col(session) or '-'}\t{_col(reason)}\t{_col(detail)}\n")
+
+
+def _col(v: str) -> str:
+    """One field, with every separator this grammar uses removed. PURE.
+
+    ⛔ FIELD INJECTION, AND BOTH REVIEW HALVES FOUND IT INDEPENDENTLY (r1). `session` comes from
+    outside the process — the Stop payload — and went in raw:
+
+        log_line("unwatched", "d", "T", "s\tinjected")   -> SIX columns, not four
+        log_line("unwatched", "d", "T", "s\nsecond")     -> TWO records, not one
+
+    ⚠ IT IS THE SAME CLASS THIS PROJECT FIXED THIS MORNING, one file over. `begin-plan.py --pause`
+    took free text into a `key: value` file, where a newline promoted the remainder to LIVE FIELDS.
+    The repair there was to ask `str.splitlines()` — the consumer's own rule — rather than
+    enumerate separators, because a hand-written character list covered two of eleven. Same
+    principle here: the separators are `\t` and whatever `splitlines()` treats as a break, so this
+    asks that function instead of listing `\r\n`.
+
+    ⚠ A UUID never contains either, so this is a CONTRACT hole rather than a live corruption — and
+    `check-banner-armed.py:log_line` is byte-identical and has the same one, over 76 live entries.
+    Fixing only this file was the choice, and it is recorded in the backlog rather than left
+    implicit: a stricter producer cannot break a four-column consumer, so the two do not diverge
+    in any way a reader can observe.
+    """
+    return " ".join(str(v).replace("\t", " ").splitlines()) if v else ""
 
 
 def render_sentinel(sha: str, when: str) -> str:
@@ -245,6 +270,37 @@ def _skip_reason() -> str | None:
     return None
 
 
+def payload_from(stream) -> str:
+    """The Stop payload on `stream`, or "" when there is nothing safely readable. PURE-ish.
+
+    ⛔ THIS IS A FUNCTION BECAUSE THE LINE IT REPLACES COULD NOT BE TESTED, and the file says so
+    eighty lines up: *"THE RULE ABOVE WAS COVERED AND THE CALL SITE WAS NOT"*. That comment was
+    added by an earlier round about this very file, and the commit that added the payload read put
+    a new untestable call site directly beneath it. MEASURED (r1 Medium 2): `run_decide("")` and
+    the inverted `isatty()` guard BOTH survived at 42/42, and either one silently returns the
+    behaviour the change exists to remove — a session column that is `-` forever.
+
+    Three ways there is nothing to read, and all three used to be a crash or a hang:
+      * `stream is None` — stdin CLOSED (`--decide 0<&-`). Before the payload read this file never
+        touched stdin, so `0<&-` was harmless; it then raised AttributeError and exited 1, which is
+        this file's own WARN, making a crash indistinguishable from a legitimate warning (r1 Low 5).
+      * a TTY — an interactive run, where reading would block on a human.
+      * a non-tty stream that never closes — a wrapper or harness holding the pipe open. `read()`
+        blocks until EOF, so `--decide`, documented at the top as a bare command, hangs (r1 Low 6).
+        The hook's `printf … | python3` closes, which is why this never fired in production.
+    """
+    if stream is None:
+        return ""
+    try:
+        if stream.isatty():
+            return ""
+        return stream.read()
+    except (OSError, ValueError, AttributeError):
+        # A stream that cannot be read costs the COLUMN, never the verdict — the same rule the
+        # payload parse below follows, applied one layer out where the stream itself is the risk.
+        return ""
+
+
 def run_decide(payload: str = "") -> int:
     """`payload` is the Stop hook's JSON, piped in by `block-idle-stop.sh:149`.
 
@@ -258,7 +314,14 @@ def run_decide(payload: str = "") -> int:
     """
     try:
         session = str(json.loads(payload).get("session_id", "")) if payload.strip() else ""
-    except (ValueError, TypeError, AttributeError):
+    except (ValueError, TypeError, AttributeError, RecursionError):
+        # ⚠ `RecursionError` IS IN THIS UNION BECAUSE IT ESCAPED IT (r1 Medium 3). Measured:
+        # `"[" * 200000 + "]" * 200000` through `--decide` exited 1 with a stack overflow — it cost
+        # the VERDICT, which is precisely what the comment below promises it cannot. The one
+        # defending case used "not json at all", landing in the ValueError member; this file
+        # already records that lesson eighty lines up — *"TWO DISTINCT EXCEPTIONS, because the
+        # handler catches a UNION and one member is enough to satisfy a single-input case while the
+        # other is silently dropped"* — and this commit reproduced it in new code beneath it.
         session = ""          # an unreadable payload costs the column, never the verdict
     reason = _skip_reason()
     if reason is not None:
@@ -292,7 +355,20 @@ def run_decide(payload: str = "") -> int:
         # turns cannot answer "how often did this speak", which is the one question it is for.
         when = _dt.datetime.now().astimezone().replace(microsecond=0).isoformat()
         watching_sha = watching if isinstance(watching, str) else None
-        detail = f"{len(unresolved_checks(rows or []))} unresolved on {(head or '?')[:8]}"
+        # ⚠ THE ARMED SHA IS IN THE ROW, not just HEAD (r1 Low 8). Without it a `stale` entry
+        # cannot say WHICH commit was armed, so one-push-stale and ten-pushes-stale are the same
+        # record — and the column exists to make the stale class measurable, not merely countable.
+        # ⚠ `rows or []` AND `head or '?'` ARE UNREACHABLE HERE AND ARE KEPT ANYWAY, said out
+        # loud rather than left for the next reader to work out (r1 Low 9 — this file's own
+        # convention, borrowed from `check-banner-armed.py`, is that an unreachable expression
+        # declares itself). `decide` returns CANNOT_RUN when `head_sha is None` or `rows is None`,
+        # so WARN implies both are present and neither fallback can fire. They stay because the
+        # alternative is a TypeError raised INSIDE a Stop hook, which surfaces as a broken guard
+        # rather than as a missing detail. They are crash barriers, not branches; no case asserts
+        # them. ⚠ `if watching_sha` one line down IS a real branch — it is the stale/unwatched
+        # distinction — and is asserted at two distinct inputs.
+        armed = f" (armed {watching_sha[:8]})" if watching_sha else ""
+        detail = f"{len(unresolved_checks(rows or []))} unresolved on {(head or '?')[:8]}{armed}"
         try:
             WARN_LOG.parent.mkdir(parents=True, exist_ok=True)
             with WARN_LOG.open("a", encoding="utf-8") as fh:
@@ -325,6 +401,20 @@ def run_watching() -> int:
 
 def _self_test() -> int:
     cases: list[tuple[str, bool]] = []
+
+    def safe(predicate) -> bool:
+        """Evaluate a predicate so a RAISE is a FAILED CASE, not an aborted run.
+
+        ⚠ WITHOUT THIS A KILL AND A CRASH ARE INDISTINGUISHABLE, and the crash is worse because it
+        also hides every case after it. MEASURED while folding r1: three manifest entries whose
+        mutations make a case RAISE were reported as SURVIVORS — the suite died before printing a
+        single `[FAIL]` line, so the harness saw no red case to attribute. The sibling
+        `check-banner-armed.py` carries the same helper for the same reason.
+        """
+        try:
+            return bool(predicate())
+        except Exception:
+            return False
 
     def case(name: str, ok: bool) -> None:
         cases.append((name, ok))
@@ -521,6 +611,126 @@ def _self_test() -> int:
          "it is part of the warning, not a swallowed detail",
          _rcu == WARN and "LOG COULD NOT BE WRITTEN" in _erru)
 
+    # ── r1 fold: the layers the first cut left uncovered ──────────────────────────────────
+    # ⛔ THE DISPATCH LINE, which is the one the whole payload change exists for. Measured in r1:
+    # `run_decide("")` and an INVERTED `isatty()` guard both survived at 42/42, and either returns
+    # the behaviour this change removes — a session column that is `-` forever.
+    class _S:
+        def __init__(self, tty, data="", boom=None):
+            self._tty, self._data, self._boom = tty, data, boom
+        def isatty(self):
+            return self._tty
+        def read(self):
+            if self._boom:
+                raise self._boom
+            return self._data
+    case("payload_from reads a PIPED stream and returns what it carried, at two distinct inputs",
+         payload_from(_S(False, '{"session_id": "a"}')) == '{"session_id": "a"}'
+         and payload_from(_S(False, '{"session_id": "b"}')) == '{"session_id": "b"}')
+    # ⚠ THE CONTRAST. "a pipe is read" alone is satisfied by a reader that reads unconditionally,
+    # which is exactly what hangs on an interactive terminal.
+    case("...and returns EMPTY for a TTY, so an interactive --decide cannot block on a human",
+         payload_from(_S(True, "ignored")) == "")
+    case("...and for CLOSED stdin, which used to raise AttributeError and exit 1 — this file's "
+         "own WARN, making a crash indistinguishable from a legitimate warning",
+         payload_from(None) == "")
+    # ⛔ AND THE DISPATCH ITSELF, which is the layer that stayed uncovered after `payload_from` was
+    # extracted. `main(argv, stream)` exists so this case can exist.
+    def _main_decide(stream):
+        """-> the session column `main --decide` writes, driving the real dispatch."""
+        g = globals()
+        keep = {k: g[k] for k in ("_pr_checks_raw", "_skip_reason", "_run", "SENTINEL", "WARN_LOG")}
+        with tempfile.TemporaryDirectory() as td:
+            g["WARN_LOG"] = pathlib.Path(td) / "log"
+            g["SENTINEL"] = pathlib.Path(td) / "absent"
+            g["_skip_reason"] = lambda: None
+            g["_pr_checks_raw"] = lambda: (json.dumps(_PENDING), False)
+            g["_run"] = lambda *a, **k: "cafef00dcafef00d"
+            try:
+                with contextlib.redirect_stderr(io.StringIO()):
+                    main(["--decide"], stream)
+                return g["WARN_LOG"].read_text().split("\t")[1]
+            finally:
+                g.update(keep)
+    case("`main --decide` feeds the STREAM to the log, at two distinct sessions — the dispatch "
+         "line, which survived every mutation while it lived under `if __name__`",
+         safe(lambda: _main_decide(_S(False, '{"session_id": "from-main-1"}')) == "from-main-1"
+              and _main_decide(_S(False, '{"session_id": "from-main-2"}')) == "from-main-2"))
+    case("...and a TTY stream through the SAME dispatch yields `-`, so the guard is read, "
+         "not merely present",
+         safe(lambda: _main_decide(_S(True, '{"session_id": "ignored"}')) == "-"))
+    # ⛔ A SECOND DISPATCH BRANCH, at a DISTINCT argv and a distinct stream. `check-fixture-variation`
+    # refused the commit that added `main` with only `--decide` driven: both of its parameters were
+    # passed one value each, so no case could tell either apart from a constant. Varying them is not
+    # a shape-satisfying tweak — `--clear` is a real branch that nothing reached before.
+    def _main_clear() -> bool:
+        g = globals(); keep = g["SENTINEL"]
+        with tempfile.TemporaryDirectory() as td:
+            g["SENTINEL"] = pathlib.Path(td) / "ci-watching"
+            g["SENTINEL"].write_text("sha: abc\n")
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    rc = main(["--clear"], None)
+                return rc == QUIET and not g["SENTINEL"].exists()
+            finally:
+                g["SENTINEL"] = keep
+    case("`main --clear` removes the sentinel and is QUIET — a second dispatch branch, driven at "
+         "a distinct argv and a distinct stream",
+         safe(_main_clear))
+    case("...and for a stream that RAISES on read, at two distinct exception types",
+         safe(lambda: payload_from(_S(False, boom=OSError("gone"))) == ""
+              and payload_from(_S(False, boom=ValueError("closed"))) == ""))
+    # ⛔ TWO DISTINCT MEMBERS OF THE CAUGHT UNION. r1 Medium 3: the single case used
+    # "not json at all" (ValueError), and RecursionError escaped — costing the VERDICT, which the
+    # comment beside it promises it cannot.
+    # ⛔ THE DEPTH IS ASSERTED, NOT ASSUMED. The first cut used 60_000 and PASSED WITHOUT EVER
+    # RAISING — measured: 60_000 parses fine, 200_000 overflows. The case was satisfied by the
+    # ambient fact that nothing went wrong, which is this repo's recorded *a case can pass for an
+    # AMBIENT reason*, committed inside the fold for a finding about undefended claims. Asserting
+    # the precondition means a future interpreter that raises the limit turns this RED rather than
+    # leaving it quietly vacuous.
+    _deep = "[" * 200000 + "]" * 200000
+    def _really_overflows() -> bool:
+        try:
+            json.loads(_deep)
+            return False
+        except RecursionError:
+            return True
+        except ValueError:
+            return False
+    def _overflow_costs_only_the_column() -> bool:
+        # ⛔ INSIDE `safe`, AND THE DRIVE IS TOO. Measured while folding: with RecursionError out of
+        # the union this drive RAISES, and evaluating it OUTSIDE the case killed the whole run —
+        # rc=1, no tally line, not one `[FAIL]`. The harness saw a dead suite and no red case to
+        # attribute, so the manifest entry read SURVIVOR while the mutation was in fact fatal.
+        # A kill by crash names no guard, and it hides every case after it.
+        rc, lines, _ = _drive_log(_PENDING, None, payload=_deep)
+        return rc == WARN and len(lines) == 1 and lines[0].split("\t")[1] == "-"
+    case("a payload that overflows the JSON decoder costs the COLUMN, never the verdict — the "
+         "second distinct member of the union the handler catches",
+         safe(_really_overflows) and safe(_overflow_costs_only_the_column))
+    # ⛔ FIELD INJECTION — found independently by BOTH review halves.
+    case("a session carrying a TAB cannot add a column, at two distinct inputs",
+         len(log_line("unwatched", "d", "T", "a\tb").split("\t")) == 4
+         and len(log_line("unwatched", "d", "T", "a\tb\tc").split("\t")) == 4)
+    case("...and a session carrying a NEWLINE cannot become a second record",
+         log_line("unwatched", "d", "T", "a\nb").count("\n") == 1
+         and log_line("unwatched", "d", "T", "a\r\nb\u2028c").count("\n") == 1)
+    # ⚠ AND THE VALUE SURVIVES SANITISING — a `_col` that returned "" would satisfy both cases
+    # above while destroying the evidence they protect.
+    case("...and the sanitised session still CARRIES its content, at two distinct inputs",
+         log_line("unwatched", "d", "T", "a\tb").split("\t")[1] == "a b"
+         and log_line("unwatched", "d", "T", "x\ty").split("\t")[1] == "x y")
+    # ⛔ THE STALE ROW NAMES THE ARMED COMMIT (r1 Low 8) — without it, one-push-stale and
+    # ten-pushes-stale are the same record.
+    _rca, _linesa, _ = _drive_log(_PENDING, "sha: 0000111122223333\n")
+    case("a STALE row records WHICH commit was armed, not only HEAD",
+         _rca == WARN and "armed 00001111" in _linesa[0])
+    # ⚠ AND warn_reason NOW READS BOTH OPERANDS: a watcher armed for the CURRENT head is not stale.
+    case("warn_reason reads both operands — a watcher armed for the SAME sha is not `stale`",
+         warn_reason("abc123", "abc123") == "unwatched"
+         and warn_reason("abc123", "def456") == "stale")
+
     # ── state vocabulary ───────────────────────────────────────────────────────────────────
     for st in ("PENDING", "QUEUED", "IN_PROGRESS"):
         case(f"{st} counts as unresolved",
@@ -553,22 +763,39 @@ def _self_test() -> int:
     return 0 if passed == len(cases) else 1
 
 
-if __name__ == "__main__":
+def main(argv: "list[str] | None" = None, stream=None) -> int:
+    """The CLI, as a FUNCTION that returns an exit code rather than calling `sys.exit`.
+
+    ⛔ IT IS A FUNCTION BECAUSE THE DISPATCH COULD NOT OTHERWISE BE TESTED (r1 Medium 2, and its
+    fold). While this lived under `if __name__`, mutating the `--decide` line to `run_decide("")`
+    or inverting the `isatty()` guard both survived at 42/42 — and either silently returns the
+    behaviour the payload read exists to remove: a session column that is `-` forever. Extracting
+    `payload_from` was only half the repair; the line that CALLS it was still unreachable, which is
+    the same "unit coverage does not compose — mutate the CALL SITE" lesson this file already
+    records, at the next layer out again.
+
+    ⚠ `stream` IS PASSED, NOT READ FROM THE MODULE, so a case can hand it a stub. `__main__` binds
+    the real `sys.stdin`; everything else can bind a fake without touching module globals.
+    """
     ap = argparse.ArgumentParser(description="Warn when CI is running with nothing watching it.")
     ap.add_argument("--decide", action="store_true")
     ap.add_argument("--watching", action="store_true")
     ap.add_argument("--clear", action="store_true")
     ap.add_argument("--self-test", action="store_true")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
     if a.self_test:
-        sys.exit(_self_test())
+        return _self_test()
     if a.watching:
-        sys.exit(run_watching())
+        return run_watching()
     if a.clear:
         SENTINEL.unlink(missing_ok=True)
         print("cleared .claude/ci-watching")
-        sys.exit(QUIET)
+        return QUIET
     if a.decide:
-        sys.exit(run_decide(sys.stdin.read() if not sys.stdin.isatty() else ""))
+        return run_decide(payload_from(stream))
     ap.print_help()
-    sys.exit(CANNOT_RUN)
+    return CANNOT_RUN
+
+
+if __name__ == "__main__":
+    sys.exit(main(None, sys.stdin))

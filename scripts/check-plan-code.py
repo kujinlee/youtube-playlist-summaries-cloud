@@ -681,7 +681,7 @@ EXPECTED_MUTATIONS = {
     # NO input can distinguish it. It is defensive (it catches a future edit that wrongly moves a
     # pending state into the resolved list), not decisive — mutating it would be unkillable-by-
     # construction, the `check-storage-grant-pin` case-5 shape.
-    "scripts/check-ci-watched.py": 19,
+    "scripts/check-ci-watched.py": 27,
     # ⟳ 2026-09-08, R4 manifest debt 5 -> 4. Two findings, both about a rule with no single owner:
     #   * `range(a, b + 1)`'s INCLUSIVE bound was unfalsifiable — every range case writes both
     #     endpoints (`B1-B5`), and ident_re matches each on its own, so expansion only ever
@@ -3410,7 +3410,7 @@ def _self_test() -> int:
     # right because it was computed; the sentence beside it was wrong because it was typed. That
     # is the same defect this branch folded as r4's Low 5, committed inside the comment claiming
     # immunity to it.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 944)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 952)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
