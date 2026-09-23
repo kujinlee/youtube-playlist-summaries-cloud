@@ -2002,10 +2002,10 @@ because a discovery living only in the session task list does not survive `/comp
   `../yps-quiet-observers`). Two Stop observers reported *"cannot run"* and *"still paused"* on
   **every** stop, so both became noise. Touches `check-ci-watched.py`, `begin-plan.py`,
   `check-plan-progress.py`.
-- [ ] **Phase 6 on A AND ON B — OWED on both, and not optional.** ⟳ 2026-09-22: the condition fired a SECOND time, on B, and both of B's review halves confirmed it independently (round 4 with a parent-commit comparison per finding, round 5 by re-deriving the arming rule from this document's own text). Backlog **#165** carries B's, **#164** carries A's; both inherit a closed question rather than an open one. The pre-committed thrashing condition **FIRED** at
+- [ ] **An ARCHITECTURE REVIEW is owed on A AND ON B, and it is not optional.** ⟳ 2026-09-22: the condition fired a SECOND time, on B, and both of B's review halves confirmed it independently (round 4 with a parent-commit comparison per finding, round 5 by re-deriving the arming rule from this document's own text). Backlog **#165** carries B's, **#164** carries A's; both inherit a closed question rather than an open one. The pre-committed thrashing condition **FIRED** at
   round 5: rounds 3, 4 and 5 each carry findings caused by the previous round's fix, in one
   component — three consecutive, where [`dev-process.md`](dev-process.md) requires two. The user's
-  decision (2026-09-22) is *fold r5, open the PR, convene Phase 6 as a follow-up*. **Backlog #164**
+  decision (2026-09-22) is *fold r5, open the PR, convene the architecture review as a follow-up*. **Backlog #164**
   is the concrete question it inherits, with a proposed answer rather than an open one.
 
 ⚠ **Two facts this slice measured that outlive it.** (1) `.claude/hooks/block-idle-stop.sh` derives
