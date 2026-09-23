@@ -136,8 +136,8 @@
     "file": "scripts/observer_log.py",
     "edits": [
       [
-        "        with path.open(\"a\", encoding=\"utf-8\") as fh:",
-        "        with path.open(\"w\", encoding=\"utf-8\") as fh:"
+        "    with path.open(\"a\", encoding=\"utf-8\") as fh:",
+        "    with path.open(\"w\", encoding=\"utf-8\") as fh:"
       ]
     ],
     "expect": "append is additive"
@@ -158,10 +158,21 @@
     "file": "scripts/observer_log.py",
     "edits": [
       [
-        "        path.parent.mkdir(parents=True, exist_ok=True)\n",
+        "    path.parent.mkdir(parents=True, exist_ok=True)\n",
         ""
       ]
     ],
     "expect": "append creates missing parents and writes"
+  },
+  {
+    "name": "append_or_raise swallows the OSError itself, so no caller can report it",
+    "file": "scripts/observer_log.py",
+    "edits": [
+      [
+        "    with path.open(\"a\", encoding=\"utf-8\") as fh:\n        fh.write(line)",
+        "    try:\n        with path.open(\"a\", encoding=\"utf-8\") as fh:\n            fh.write(line)\n    except OSError:\n        pass"
+      ]
+    ],
+    "expect": "append_or_raise RAISES OSError where append returns False"
   }
 ]

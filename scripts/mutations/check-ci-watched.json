@@ -350,5 +350,27 @@
     "expect": [
       "...and still returns the full payload when the writer closes, through a REAL fd rather than a stub"
     ]
+  },
+  {
+    "name": "ci log_line freezes its session column, so entries stop being attributable",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    return observer_log.record(session, reason, detail, when=when)",
+        "    return observer_log.record(\"cw-text\", reason, detail, when=when)"
+      ]
+    ],
+    "expect": "the SESSION column comes from the Stop payload the hook has always piped in"
+  },
+  {
+    "name": "ci log_line freezes its TIMESTAMP column, so the records lose their order",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    return observer_log.record(session, reason, detail, when=when)",
+        "    return observer_log.record(session, reason, detail, when=\"T\")"
+      ]
+    ],
+    "expect": "log_line carries the version cell plus all FOUR columns it is given, at two distinct inputs each"
   }
 ]

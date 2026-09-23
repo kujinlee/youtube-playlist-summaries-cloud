@@ -1189,12 +1189,13 @@ def run_decide(payload: str) -> int:
             detail = f"{unticked} unticked"
         when = observer_log.now()
         try:
-            # ⚠ KEEPS ITS OWN WRITE, like `check-ci-watched`'s: it puts `{e}` into the warning
-            # below and `observer_log.append` returns a bool. ⟳ r1 M9: `encoding="utf-8"` added —
-            # it was taking the PLATFORM DEFAULT while the shared writer specified utf-8.
-            WARN_LOG.parent.mkdir(parents=True, exist_ok=True)
-            with WARN_LOG.open("a", encoding="utf-8") as fh:
-                fh.write(log_line(reason, detail, when, str(data.get("session_id", ""))))
+            # ⟳ r1 M9 added `encoding="utf-8"` here — it was taking the PLATFORM DEFAULT while the
+            # shared writer specified utf-8. ⟳⟳ r2 H3: that was the INSTANCE fix, and this is the
+            # class one. The hand-rolled write existed because this caller puts `{e}` into the
+            # warning below and `append` returns a bool; `append_or_raise` gives it the exception,
+            # so `mkdir` and the encoding live in ONE place for all four observers.
+            observer_log.append_or_raise(
+                WARN_LOG, log_line(reason, detail, when, str(data.get("session_id", ""))))
         except OSError as e:
             # NOT swallowed: the log IS the justification for warn-only mode, so losing it is
             # part of the warning rather than a detail. Still non-blocking, still exit WARN.

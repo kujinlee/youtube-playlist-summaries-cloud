@@ -25,7 +25,7 @@
         "            col += 0"
       ]
     ],
-    "expect": "exemption_reason \u2014 TAB-indented code block"
+    "expect": "exemption_reason — TAB-indented code block"
   },
   {
     "name": "head path skips the indent check",
@@ -36,7 +36,7 @@
         "                if True:"
       ]
     ],
-    "expect": "exemption_reason \u2014 indented, with a comment later on the line"
+    "expect": "exemption_reason — indented, with a comment later on the line"
   },
   {
     "name": "indent rule removed entirely",
@@ -48,8 +48,8 @@
       ]
     ],
     "expect": [
-      "exemption_reason \u2014 indented code block",
-      "exemption_reason \u2014 TAB-indented code block"
+      "exemption_reason — indented code block",
+      "exemption_reason — TAB-indented code block"
     ]
   },
   {
@@ -61,7 +61,7 @@
         "    if False:"
       ]
     ],
-    "expect": "exemption_reason \u2014 blockquoted"
+    "expect": "exemption_reason — blockquoted"
   },
   {
     "name": "the three-valued reason collapses: empty and absent become one message",
@@ -97,15 +97,15 @@
     "expect": "collect: a missing git is a could-not-tell, not 'nothing changed'"
   },
   {
-    "name": "THE RATCHET GOES FAIL-OPEN \u2014 a git failure exits 0 and the branch merges",
+    "name": "THE RATCHET GOES FAIL-OPEN — a git failure exits 0 and the branch merges",
     "file": "scripts/check-dashboard-entry.py",
     "edits": [
       [
-        "        print(f\"CANNOT RUN \u2014 {err}\\nTreat this as NOT CHECKED.\")\n        return 2",
-        "        print(f\"CANNOT RUN \u2014 {err}\\nTreat this as NOT CHECKED.\")\n        return 0"
+        "        print(f\"CANNOT RUN — {err}\\nTreat this as NOT CHECKED.\")\n        return 2",
+        "        print(f\"CANNOT RUN — {err}\\nTreat this as NOT CHECKED.\")\n        return 0"
       ]
     ],
-    "expect": "main: a could-not-tell exits 2 \u2014 NEVER 0"
+    "expect": "main: a could-not-tell exits 2 — NEVER 0"
   },
   {
     "name": "the entry ratchet fails OPEN: added is hardcoded true",
@@ -199,7 +199,7 @@
   {
     "name": "block-start regex stops excluding sub-headings",
     "file": "scripts/check-dashboard-entry.py",
-    "_note": "RETARGETED 2026-09-01. It used to edit `ENTRY_ISH = re.compile(r'^\\+##(?!#)')` in this same file; that literal no longer exists, because ENTRY_ISH is now DERIVED from BLOCK and BLOCK moved here from gen-dashboard.py. Left unrepaired the anchor would stop matching and the coverage would vanish silently \u2014 the third time in this repo that a refactor orphaned the mutation guarding it. \u26a0 `expect` NAMES ONLY CASES IN THIS FILE'S OWN SUITE: `mutate_delivered` calls `run_suite(d, fname)` for the MUTATED FILE ALONE (check-plan-code.py:694), so a renderer case named here resolves to 0 red cases and the manifest fails. The first draft named `a level-3 heading does not split the entry` \u2014 a gen-dashboard case \u2014 and the Codex review half caught it by running `--mutate .`. The page-side blast radius of this same edit is covered by its own entry in gen-dashboard.json.",
+    "_note": "RETARGETED 2026-09-01. It used to edit `ENTRY_ISH = re.compile(r'^\\+##(?!#)')` in this same file; that literal no longer exists, because ENTRY_ISH is now DERIVED from BLOCK and BLOCK moved here from gen-dashboard.py. Left unrepaired the anchor would stop matching and the coverage would vanish silently — the third time in this repo that a refactor orphaned the mutation guarding it. ⚠ `expect` NAMES ONLY CASES IN THIS FILE'S OWN SUITE: `mutate_delivered` calls `run_suite(d, fname)` for the MUTATED FILE ALONE (check-plan-code.py:694), so a renderer case named here resolves to 0 red cases and the manifest fails. The first draft named `a level-3 heading does not split the entry` — a gen-dashboard case — and the Codex review half caught it by running `--mutate .`. The page-side blast radius of this same edit is covered by its own entry in gen-dashboard.json.",
     "edits": [
       [
         "BLOCK = re.compile(r\"^##(?!#)\\s*\\S\")",
@@ -333,7 +333,7 @@
   {
     "name": "the added-line rule is re-typed instead of derived",
     "file": "scripts/check-dashboard-entry.py",
-    "_note": "NEW 2026-09-01, added by the Claude review half after the Codex half rated the agreement case Low ('verifies agreement, not derivation'). The point stands and this is the answer to it: the agreement case WAS load-bearing but nothing proved it fired, which by this repo's own standard is an unproven guard \u2014 the layer nothing checks back. Restoring a hand-written ENTRY_ISH is the exact regression the seam exists to prevent, and it is NOT covered by the BLOCK mutation: that one corrupts the shared rule so both sides move together and the agreement case stays green. Only breaking the DERIVATION separates them.",
+    "_note": "NEW 2026-09-01, added by the Claude review half after the Codex half rated the agreement case Low ('verifies agreement, not derivation'). The point stands and this is the answer to it: the agreement case WAS load-bearing but nothing proved it fired, which by this repo's own standard is an unproven guard — the layer nothing checks back. Restoring a hand-written ENTRY_ISH is the exact regression the seam exists to prevent, and it is NOT covered by the BLOCK mutation: that one corrupts the shared rule so both sides move together and the agreement case stays green. Only breaking the DERIVATION separates them.",
     "edits": [
       [
         "ENTRY_ISH = re.compile(r\"^\\+\" + BLOCK.pattern.removeprefix(\"^\"))",
@@ -362,7 +362,7 @@
   {
     "name": "fence closes on the WRONG character",
     "file": "scripts/check-dashboard-entry.py",
-    "_note": "\u27f3 2026-09-02, backlog #85. RETARGETED, not deleted: the three closing rules moved out of `fenced_lines` into `fence_closes`, which all THREE consumers now ask. Anchoring by text means a refactor orphans the guard unless it is moved with the code \u2014 this file has recorded that twice.",
+    "_note": "⟳ 2026-09-02, backlog #85. RETARGETED, not deleted: the three closing rules moved out of `fenced_lines` into `fence_closes`, which all THREE consumers now ask. Anchoring by text means a refactor orphans the guard unless it is moved with the code — this file has recorded that twice.",
     "edits": [
       [
         "    same_char = run[0] == open_run[0]",
@@ -377,7 +377,7 @@
   {
     "name": "fence LENGTH ignored in the shared closer",
     "file": "scripts/check-dashboard-entry.py",
-    "_note": "\u27f3 2026-09-02, backlog #85. RETARGETED, not deleted: the three closing rules moved out of `fenced_lines` into `fence_closes`, which all THREE consumers now ask. Anchoring by text means a refactor orphans the guard unless it is moved with the code \u2014 this file has recorded that twice.",
+    "_note": "⟳ 2026-09-02, backlog #85. RETARGETED, not deleted: the three closing rules moved out of `fenced_lines` into `fence_closes`, which all THREE consumers now ask. Anchoring by text means a refactor orphans the guard unless it is moved with the code — this file has recorded that twice.",
     "edits": [
       [
         "    long_enough = len(run) >= len(open_run)",
@@ -392,7 +392,7 @@
   {
     "name": "a closing fence may carry trailing text",
     "file": "scripts/check-dashboard-entry.py",
-    "_note": "\u27f3 2026-09-02, backlog #85. RETARGETED, not deleted: the three closing rules moved out of `fenced_lines` into `fence_closes`, which all THREE consumers now ask. Anchoring by text means a refactor orphans the guard unless it is moved with the code \u2014 this file has recorded that twice. This is the rule that existed in ONE of three copies and let a NO-ENTRY: inside a code block exempt the branch \u2014 measured 2026-09-02. \u26a0 The 'two scanners agree' case is deliberately NOT listed: now that both ask fence_closes, a wrong shared rule breaks them IDENTICALLY and they still agree. That case guards against RE-FORKING the rule, not against the rule being wrong \u2014 measured, it matched 0 red cases here.",
+    "_note": "⟳ 2026-09-02, backlog #85. RETARGETED, not deleted: the three closing rules moved out of `fenced_lines` into `fence_closes`, which all THREE consumers now ask. Anchoring by text means a refactor orphans the guard unless it is moved with the code — this file has recorded that twice. This is the rule that existed in ONE of three copies and let a NO-ENTRY: inside a code block exempt the branch — measured 2026-09-02. ⚠ The 'two scanners agree' case is deliberately NOT listed: now that both ask fence_closes, a wrong shared rule breaks them IDENTICALLY and they still agree. That case guards against RE-FORKING the rule, not against the rule being wrong — measured, it matched 0 red cases here.",
     "edits": [
       [
         "    no_trailing_text = not rest.strip()",
@@ -473,7 +473,7 @@
     ]
   },
   {
-    "name": "the page imports the grammar's SYMBOLS but not its MEANING \u2014 a new flag crashes every render",
+    "name": "the page imports the grammar's SYMBOLS but not its MEANING — a new flag crashes every render",
     "file": "scripts/check-dashboard-entry.py",
     "edits": [
       [
@@ -486,7 +486,7 @@
     ]
   },
   {
-    "name": "the unknown flag is swallowed instead of degrading the entry \u2014 the GRACEFUL half of C1's fix",
+    "name": "the unknown flag is swallowed instead of degrading the entry — the GRACEFUL half of C1's fix",
     "file": "scripts/check-dashboard-entry.py",
     "edits": [
       [
@@ -515,7 +515,7 @@
   {
     "name": "the parser stops asking which lines are fenced",
     "file": "scripts/check-dashboard-entry.py",
-    "_note": "backlog #84, THE defect. Restores the fence-blind split, which minted a fully VALID phantom entry holding a real id \u2014 no error, renders like any other card. Ids are positional and `[resolved: <id>]` binds by id.",
+    "_note": "backlog #84, THE defect. Restores the fence-blind split, which minted a fully VALID phantom entry holding a real id — no error, renders like any other card. Ids are positional and `[resolved: <id>]` binds by id.",
     "edits": [
       [
         "        if BLOCK.match(line) and i not in fenced:",
@@ -530,7 +530,7 @@
   {
     "name": "the parser asks for INERT lines instead of fenced ones",
     "file": "scripts/check-dashboard-entry.py",
-    "_note": "backlog #84, and this is the OVER-rejection half \u2014 the first cut of the fix, which looked equivalent and DELETED entry 2026-09-01/16 from the live store. `_inert_lines` treats an unclosed `<!--` as running to end-of-input; one entry mentioning the marker in prose erased every entry after it. A mutation only on the under-rejection half would let this ship again.",
+    "_note": "backlog #84, and this is the OVER-rejection half — the first cut of the fix, which looked equivalent and DELETED entry 2026-09-01/16 from the live store. `_inert_lines` treats an unclosed `<!--` as running to end-of-input; one entry mentioning the marker in prose erased every entry after it. A mutation only on the under-rejection half would let this ship again.",
     "edits": [
       [
         "    fenced = fenced_lines(text)",
@@ -552,5 +552,16 @@
       ]
     ],
     "expect": "reads a NO-REVIEW declaration through the shared parser"
+  },
+  {
+    "name": "the #168 push clause is dropped from the refusal, so editing the PR body looks sufficient",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "               f\"⚠ If you edit the PR body to answer this, you must then PUSH something — \"\n               f\"CI reads the body from the frozen event payload, so an edit alone (and a \"\n               f\"`gh run rerun`) will fail again with this identical message.\")",
+        "               f\"\")"
+      ]
+    ],
+    "expect": "the refusal telling you to edit the PR body also says you must PUSH, and why (#168)"
   }
 ]

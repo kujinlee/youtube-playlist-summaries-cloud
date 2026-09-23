@@ -504,5 +504,27 @@
       ]
     ],
     "expect": "run: the logged line carries the JUDGED turn's opener id, not the live one"
+  },
+  {
+    "name": "closing log_line freezes its session column, so entries stop being attributable",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    return observer_log.record(session, \"+\".join(acts), turn, when=when)",
+        "    return observer_log.record(\"ct-text\", \"+\".join(acts), turn, when=when)"
+      ]
+    ],
+    "expect": "log: the session is the THIRD field, verbatim"
+  },
+  {
+    "name": "closing log_line freezes its TIMESTAMP column, so the records lose their order",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    return observer_log.record(session, \"+\".join(acts), turn, when=when)",
+        "    return observer_log.record(session, \"+\".join(acts), turn, when=\"T\")"
+      ]
+    ],
+    "expect": "log: the timestamp is the SECOND field, after the version cell, verbatim"
   }
 ]

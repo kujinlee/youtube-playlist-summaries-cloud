@@ -407,15 +407,13 @@ def run_decide(payload: str = "") -> int:
         armed = f" (armed {watching_sha[:8]})" if watching_sha else ""
         detail = f"{len(unresolved_checks(rows or []))} unresolved on {(head or '?')[:8]}{armed}"
         try:
-            # ⚠ WRITES ITSELF RATHER THAN CALLING `observer_log.append`, deliberately. `append`
-            # returns a bool and swallows the exception; this caller puts `{e}` INTO the warning
-            # text below, because losing the log is part of the warning rather than a detail. The
-            # shared module owns the GRAMMAR (`log_line` -> `observer_log.record`), which is what
-            # backlog #166 named; the three-line write is not worth degrading this message for.
-            WARN_LOG.parent.mkdir(parents=True, exist_ok=True)
-            with WARN_LOG.open("a", encoding="utf-8") as fh:
-                fh.write(log_line(warn_reason(watching_sha, head or ""), detail, when,
-                                  session))
+            # ⟳ r2 H3: THIS USED TO HAND-ROLL ITS OWN `mkdir` + `open("a", encoding="utf-8")`,
+            # arguing — correctly, for the API it had — that `observer_log.append` returns a bool
+            # and swallows the exception this caller puts `{e}` into below. The module now owns a
+            # raising write, so the argument is gone and so is the duplication: the shared module
+            # owns the GRAMMAR (`log_line` -> `record`) **and** the WRITE (`encoding=`, `mkdir`).
+            observer_log.append_or_raise(
+                WARN_LOG, log_line(warn_reason(watching_sha, head or ""), detail, when, session))
         except OSError as e:
             # ⛔ NOT SWALLOWED. The log IS the justification for warn-only mode, so losing it is
             # part of the warning rather than a detail — the same choice `check-banner-armed.py`

@@ -568,28 +568,50 @@ EXPECTED_MUTATIONS = {
     # surviving on exactly that gap. The threshold entry is the fourth of that kind — every other
     # case derives _BIG/_SMALL from LARGE_TURN and so moves with it, leaving the calibrated value
     # unfalsifiable until one case pinned it as a literal.
-    # ⟳ 2026-09-23, backlog #166 + #170 — A SANCTIONED RATCHET FALL, and the only kind there
-    # is: THREE anchors stopped resolving because THE CODE THEY NAME IS GONE, moved into
-    # `scripts/observer_log.py` with the record grammar. They are RETIRED WITH THEIR SUBJECT
-    # rather than orphaned, and each one's property is mutation-covered in its new home:
-    #   ⛔ THESE TWO WERE WRONG AND ARE WITHDRAWN (r1 Codex, round 2 on the folded tree):
-    #     banner  flush_line freezes session   -> NOT covered by "record puts `session` third"
-    #     banner  flush_line freezes timestamp -> NOT covered by "record puts `when` second"
-    #   Those cases prove `record()` PRESERVES arguments it is GIVEN; they say nothing about
-    #   whether the ADAPTER passes its own through. Measured with mutant adapters: the
-    #   observer_log cases stayed true while the adapter property failed. Both mutations are
-    #   UN-RETIRED and retargeted onto `flush_line`'s own lines (45 -> 47), which is why that
-    #   function is now three statements instead of one expression.
-    #   ci      fields stop being sanitised  -> observer_log "col stops removing the TAB"
-    #   ci      sanitiser empties the field  -> observer_log "col strips a TAB" + content
-    #   closing empty-session fallback       -> observer_log "the EMPTY sentinel is blanked"
-    # ⚠ THREE were RETARGETED rather than retired, because they are still properties of the
-    # per-guard ADAPTER (which payload columns this guard emits) and not of the grammar:
-    # flush_line's (before, after), ci log_line's column count, closing log_line's turn.
-    # Net: 47->47, 29->27, 47->46, and +15 for the new owner. ⚠ THIS LINE PREVIOUSLY READ
-    # `47->45 … +14` — the pre-withdrawal numbers — for three commits after the withdrawal
-    # four lines above it. r2 B1: the correction had landed in the COMMIT MESSAGE and not in
-    # the file, and a justification that disagrees with its own pins is not a justification.
+    # ⟳ 2026-09-23, backlog #166 + #170 — A SANCTIONED RATCHET FALL, and the only kind there is.
+    # ⟳⟳ r2 M1 REWROTE THIS ACCOUNT, because it was off by one entry and mislabelled another. It
+    # said "THREE anchors stopped resolving" and listed five; **SIX entry names left the three
+    # adapters and three arrived**, and the sixth was unaccounted for. The count is now DERIVED
+    # rather than recalled — `git show origin/master:scripts/mutations/<f>.json` against the branch
+    # copy, names diffed as sets — and every removal is in exactly ONE of the three classes below.
+    #
+    #   ⑴ RETIRED WITH THEIR SUBJECT — 3. The code they name is GONE, moved into
+    #     `scripts/observer_log.py` with the record grammar, and each property is mutation-covered
+    #     in its new home. This is the only sanctioned kind of fall:
+    #       ci      fields stop being sanitised  -> observer_log "col stops removing the TAB"
+    #       ci      sanitiser empties the field  -> observer_log "col strips a TAB" + content
+    #       closing empty-session fallback       -> observer_log "the EMPTY sentinel is blanked"
+    #
+    #   ⑵ RENAMED AND RETARGETED, NOT RETIRED — 2, so they appear in BOTH the removed and the
+    #     added set and net to zero. ⛔ THEY WERE BRIEFLY IN CLASS ⑴ AND THAT WAS WRONG (r1 Codex,
+    #     round 2 on the folded tree):
+    #       banner  flush_line freezes session   -> NOT covered by "record puts `session` third"
+    #       banner  flush_line freezes timestamp -> NOT covered by "record puts `when` second"
+    #     Those cases prove `record()` PRESERVES arguments it is GIVEN; they say nothing about
+    #     whether the ADAPTER passes its own through. Measured with mutant adapters: the
+    #     observer_log cases stayed true while the adapter property failed.
+    #
+    #   ⑶ REPLACED BY A DIFFERENT PROPERTY — 1, and THIS IS THE ONE THE OLD ACCOUNT LOST. ci's
+    #     *"the log line drops its SESSION column, so entries stop being attributable"* became
+    #     *"the log line drops a PAYLOAD column, so a record loses a field"*. Calling that a
+    #     retarget was loose: the old property is *this adapter passes `session` through*, the new
+    #     one is *this adapter emits its payload fields*, and they are different claims. The reason
+    #     the swap is correct is that `session` is now the shared module's POSITIONAL 3, so what
+    #     remains the adapter's own is its payload; the reason it needed saying is that the
+    #     passthrough property still exists and still needs an owner — which is ⑵'s whole lesson,
+    #     accepted for `flush_line` and then not searched for over its two siblings.
+    #
+    # ⭐ **SO THE SEARCH WAS RUN, AND IT CLOSES THE CLASS** (r2 M1): neither `check-ci-watched`'s
+    # nor `check-closing-table`'s `log_line` had a session- or timestamp-passthrough entry. FOUR
+    # were added (ci 27 -> 29, closing 46 -> 48), each MEASURED first by freezing the argument in
+    # the delivered adapter and reading which named case went red — 49/57, 56/57, and two clean
+    # closing-table failures. The properties were never uncovered; the RATCHET is what proves the
+    # cases can fail, and for two of three adapters nothing held it.
+    #
+    # Net: banner 47->47, ci 29->29, closing 47->48, +16 for the new owner. ⚠ THIS LINE PREVIOUSLY
+    # READ `47->45 … +14` — the pre-withdrawal numbers — for three commits after the withdrawal
+    # above it. r2 B1: the correction had landed in the COMMIT MESSAGE and not in the file, and a
+    # justification that disagrees with its own pins is not a justification.
     # Every surviving anchor was re-verified to resolve exactly once AFTER the code was final.
     "scripts/check-banner-armed.py": 47,
     # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record. Pinned in
@@ -602,7 +624,16 @@ EXPECTED_MUTATIONS = {
     # (a frozen `when` column) had NO replacement mutation and no case that could fail —
     # `record defaults `when` to now()` asserted `!= ""`, which `col(x) or EMPTY` can never
     # be. A case and a mutation were both added. A RISE needs a reason as much as a fall.
-    "scripts/observer_log.py": 15,
+    # ⟳ r2 H3, same day: 15 -> 16. M9 was fixed as an INSTANCE — one hand-rolled write delegated,
+    # `encoding=` hand-added to a second — and TWO hand-rolled writes stayed in the tree, each with
+    # its own `mkdir` + `open`. The API forced that: `append` returns a bool and two callers need
+    # `{e}`. `append_or_raise` is the class fix, and the new entry is the FAIL-OPEN direction on it
+    # (it swallows the error itself, so no caller can report one). ⚠ TWO EXISTING ANCHORS WERE
+    # RETARGETED, NOT RETIRED: the write body moved from `append`'s `try:` to module indent, so
+    # `append truncates` and `append stops creating missing parents` bound to 8-space text that no
+    # longer exists — a silent orphan of exactly the kind this repo has paid for seven times in one
+    # session. Both re-verified to resolve exactly once AFTER the code was final.
+    "scripts/observer_log.py": 16,
     # ⟳ 2026-09-07, R4 manifest debt 8 -> 7. FIVE of the seven cover rules the 15 shipped cases
     # already asserted; the other two are the gaps writing them found, and both are the same
     # shape — a claim about coverage that nothing executed:
@@ -620,7 +651,11 @@ EXPECTED_MUTATIONS = {
     # suite found the defects: `relative_to` raising on a redirected log (a warn-only observer
     # turning into a traceback), and judging the LIVE turn instead of the previous one, which
     # would have made the guard silently unable to see any closing message at all.
-    "scripts/check-closing-table.py": 46,
+    # ⟳ r2 M1, 2026-09-23: 46 -> 48, the same two passthrough entries as its ci sibling, and for
+    # the same reason — the search Codex's `flush_line` Blocking implied was never run over the
+    # other two adapters. Measured first: freezing session reds *log: the session is the THIRD
+    # field, verbatim*, freezing `when` reds *log: the timestamp is the SECOND field*.
+    "scripts/check-closing-table.py": 48,
     "scripts/gen-dashboard.py": 68,
     # ⟳ 2026-09-12. gen-goals-page.py was the last PAGE-PRODUCING generator with no
     # manifest — gen-dashboard, gen-backlog-page, brief-compose, page_chrome and page_markup
@@ -715,7 +750,13 @@ EXPECTED_MUTATIONS = {
     # NO input can distinguish it. It is defensive (it catches a future edit that wrongly moves a
     # pending state into the resolved list), not decisive — mutating it would be unkillable-by-
     # construction, the `check-storage-grant-pin` case-5 shape.
-    "scripts/check-ci-watched.py": 27,
+    # ⟳ r2 M1, 2026-09-23: 27 -> 29. `log_line` had NO entry for either of the two arguments it
+    # passes through to the shared record — session and the timestamp — while its banner sibling
+    # had both. The gap is the shape of the fall above it: `session` moving into `observer_log`'s
+    # positional 3 retired the adapter's SANITISING entries correctly and took the PASSTHROUGH
+    # entry with them, which is a different property. Both measured on the delivered adapter
+    # before being added: freezing session -> 49/57, freezing `when` -> 56/57.
+    "scripts/check-ci-watched.py": 29,
     # ⟳ 2026-09-08, R4 manifest debt 5 -> 4. Two findings, both about a rule with no single owner:
     #   * `range(a, b + 1)`'s INCLUSIVE bound was unfalsifiable — every range case writes both
     #     endpoints (`B1-B5`), and ident_re matches each on its own, so expansion only ever
@@ -760,7 +801,12 @@ EXPECTED_MUTATIONS = {
     # video_artifacts (video_id)` PASSED — and no case arrived with the fix. Removing "idx" from
     # that tuple survived all 117 cases; the drift table now carries an INDEX row, so it does not.
     "scripts/check-live-schema.py": 12,
-    "scripts/check-dashboard-entry.py": 43,
+    # ⟳ r2 M2, 2026-09-23: 43 -> 44. Backlog #168's remedy — the sentence in this guard's refusal
+    # telling the reader that editing the PR body cannot re-arm the gate and they must PUSH — was
+    # an UNTESTED SENTENCE: the suite was 148/148 with it present or absent. The entry deletes the
+    # clause and the new case reds. ⭐ Worth naming the shape: #168 is *the knowledge lives where
+    # the person in trouble is not looking*, and it shipped with its own remedy unmeasured.
+    "scripts/check-dashboard-entry.py": 44,
     # ⟳ backlog #91: check-plan-code 35 -> 30, and the FIVE did not disappear — they MOVED
     # to scripts/coverage_verdict.py with the clauses they guard. The sum below is unchanged
     # at 359, which is the point: a seam that relocates coverage must not be able to look
@@ -3453,7 +3499,14 @@ def _self_test() -> int:
     # (14 at first write, +1 from r1 HIGH 4), and -5 for anchors RETIRED WITH THEIR SUBJECT
     # when the record grammar moved out of the three producers. Net +10. The per-file
     # reasons are on their entries above; this literal is the outside observer of the sum.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 966)
+    # ⟳ 2026-09-23, round 3 (folding r2): 966 -> 972. +1 on `observer_log.py` (H3, the fail-open
+    # direction of the new raising write), +4 across `check-ci-watched` and `check-closing-table`
+    # (M1, the session- and timestamp-passthrough entries the two siblings never had), +1 on
+    # `check-dashboard-entry.py` (M2, backlog #168's remedy was an untested sentence). The two
+    # RETARGETED anchors are net zero by construction — retargeting keeps the entry and moves its
+    # text, which is why it is the repair for a moved subject and retiring is not. This literal is
+    # the outside observer of the sum; the reasons are on the entries.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 972)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

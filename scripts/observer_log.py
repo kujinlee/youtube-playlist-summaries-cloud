@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """ONE owner for the observer-log record — the grammar four Stop observers write.
 
-    python3 scripts/observer_log.py --self-test  # 39 cases
+    python3 scripts/observer_log.py --self-test  # 41 cases
 
 ⛔ WHY THIS EXISTS, AND IT IS NOT THE INJECTION HOLE. Four functions in three files wrote the same
 tab-separated record and nothing shared a line of it:
@@ -141,6 +141,38 @@ def record(session: object, *fields: object, when: str | None = None) -> str:
     return SEP.join(cells) + "\n"
 
 
+def append_or_raise(path: pathlib.Path, line: str) -> None:
+    """THE ONE WRITE. Owns `mkdir` and the ENCODING for all four observers, and RAISES `OSError`.
+
+    ⟳ **r2 H3 — M9 WAS FIXED AS AN INSTANCE, AND THIS IS THE CLASS FIX.** M9's defect was a
+    hand-rolled write drifting from the shared one: `FLUSH_LOG.open("a")` with no `encoding=`,
+    taking the PLATFORM DEFAULT while this module specified utf-8. The first fold delegated that one
+    site and hand-added `encoding=` to another, which left **two** hand-rolled writes in the tree,
+    each with its own `mkdir` + `open` — so the next one could omit `encoding=` again with nothing
+    able to notice. That is M9 verbatim, which is what makes an instance fix the wrong fix.
+
+    ⭐ **WHAT FORCED THE DUPLICATION WAS THIS MODULE'S API, NOT THE CALLERS.** `append` returns a
+    bool and discards the exception; two callers interpolate `{e}` into their warning text, because
+    losing the log is part of the warning rather than a detail. Those callers are RIGHT to want it,
+    so the module owed them a function that raises. Both "deliberately keeps its own write" comments
+    are deleted rather than improved — the argument they made was sound about the API it had.
+
+    ⚠ **A SEPARATE FUNCTION RATHER THAN A CHANGED RETURN TYPE, ON PURPOSE.** The reviewed suggestion
+    was for `append` to return `OSError | None`. That inverts truthiness SILENTLY: `if append(...)`
+    flips from *wrote* to *failed*, at every existing call site and every future one, with no case
+    and no guard able to see it. Two differently-named functions cannot be confused by a reader.
+
+    ⚠ **THE ENCODING IS NOT MUTATION-COVERED AND CANNOT BE FROM HERE, which is stated rather than
+    left to be discovered.** Deleting `encoding="utf-8"` survives every case on this machine and in
+    CI, because the platform default IS utf-8 on macOS and on the ubuntu runner — a case would pass
+    for an ambient reason. What the consolidation buys is arithmetic: **one** site that can be wrong
+    instead of four. `mkdir`, which IS falsifiable, is covered here once.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(line)
+
+
 def append(path: pathlib.Path, line: str) -> bool:
     """Best effort. -> True on success, False on any failure. NEVER raises.
 
@@ -151,12 +183,10 @@ def append(path: pathlib.Path, line: str) -> bool:
     ⚠ **IT RETURNS THE FAILURE RATHER THAN SWALLOWING IT.** `check-ratchet-contract.py` refuses a
     guard with a fail-open handler, and rightly: the caller is the only place that knows whether a
     verdict is already being printed, so only the caller can decide whether a failed write is worth
-    a word to the human.
+    a word to the human. A caller that wants the exception TEXT calls `append_or_raise` instead.
     """
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(line)
+        append_or_raise(path, line)
         return True
     except OSError:
         return False
@@ -257,6 +287,30 @@ def _self_test() -> int:
         d = pathlib.Path(td) / "adir"
         d.mkdir()
         case("append returns False on OSError rather than raising", append(d, "x\n"), False)
+
+    # ── append_or_raise: the same write, and the exception the two warning callers need ───────
+    # ⟳ r2 H3. These cases exist so the raising half has its own falsifier rather than inheriting
+    # `append`'s: `append` would still pass every case above if `append_or_raise` swallowed the
+    # error itself and returned normally, which is precisely the fail-open direction.
+    with tempfile.TemporaryDirectory() as td:
+        q = pathlib.Path(td) / "deep" / "sub" / "y.log"
+        append_or_raise(q, "a\n")
+        append_or_raise(q, "b\n")
+        # ⚠ TWO DISTINCT INPUTS: one write cannot distinguish appending from truncating. (#164)
+        case("append_or_raise creates missing parents and is additive", q.read_text(), "a\nb\n")
+    with tempfile.TemporaryDirectory() as td:
+        d = pathlib.Path(td) / "adir"
+        d.mkdir()
+        # ⛔ ASSERT THE TYPE, NOT "an error happened". A bare `except Exception` here would pass on
+        # a TypeError from a wrong signature — the harness-launders-failures shape.
+        try:
+            append_or_raise(d, "x\n")
+            raised = "nothing"
+        except OSError:
+            raised = "OSError"
+        except Exception as exc:  # noqa: BLE001 — names what actually came out, never hides it
+            raised = type(exc).__name__
+        case("append_or_raise RAISES OSError where append returns False", raised, "OSError")
 
     failed = [n for n, ok in cases if not ok]
     print(f"\n{len(cases) - len(failed)}/{len(cases)} passed")

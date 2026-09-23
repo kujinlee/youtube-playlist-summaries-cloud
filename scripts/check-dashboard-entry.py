@@ -880,6 +880,20 @@ def _self_test() -> int:
     case("no changes at all passes", verdict([], False, "")[0], 0)
     case("mixed exempt and real is refused", verdict(["docs/reviews/r.md", "lib/x.ts"], False, "")[0], 1)
     case("refusal explains itself", "entry" in verdict(["lib/x.ts"], False, "")[1].lower(), True)
+    # ⟳ r2 M2, backlog #168 — THE REMEDY SHIPPED AS AN UNTESTED SENTENCE. The message below is the
+    # ONE place a reader learns that editing the PR body cannot by itself re-arm this gate, and no
+    # case asserted it: the suite was 148/148 with the clause present or absent, so a later message
+    # rewrite would delete it silently. ⭐ That is #168 ITSELF — the knowledge existing only where
+    # the person in trouble is not looking — committed inside the fix for it.
+    # ⚠ IT ASSERTS THE THREE HALVES TOGETHER, in the one message that tells the reader to edit the
+    # body: the instruction without its reason still invites a `gh run rerun`, which is precisely
+    # what happened on PR #336 and cost a rerun cycle before the cause was found on a sibling
+    # step's comment. A rewrite keeping "push" and dropping "frozen event payload" is the same
+    # defect one word smaller.
+    _refuse_body = verdict(["lib/x.ts"], False, "")[1]
+    case("the refusal telling you to edit the PR body also says you must PUSH, and why (#168)",
+         ("PR body" in _refuse_body, "PUSH" in _refuse_body,
+          "frozen event payload" in _refuse_body), (True, True, True))
     case("NO-ENTRY reason is echoed", "typo fix" in verdict(["lib/x.ts"], False, "NO-ENTRY: typo fix")[1], True)
     case("a lookalike filename is NOT exempt", verdict(["docs/dashboard-entries.md.bak"], False, "")[0], 1)
     case("a lookalike directory is NOT exempt", verdict(["docs/reviews-not-really/x.ts"], False, "")[0], 1)
