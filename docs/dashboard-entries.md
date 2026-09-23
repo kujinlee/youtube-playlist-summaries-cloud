@@ -11389,6 +11389,9 @@ a kill naming no guard. That is the hazard this file's own `safe()` helper exist
 three cases the branch itself added. Fixed; `pyright` is back to master's 11, same set.
 
 Suite 140 → 159; manifest 27 → 47; the declared mutation sum 912 → 920.
+
+## 2026-09-22
+
 Two of the little checks that run when I stop working had started complaining every single time,
 and you told me so.
 
