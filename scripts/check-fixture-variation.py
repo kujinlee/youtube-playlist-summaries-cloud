@@ -420,6 +420,15 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # running `analyse()` over the file, NOT transcribed: r1 Medium 4 measured that the pin
     # is compared in ONE direction (`pinned - keys`), so an ARRIVAL is silent at key level —
     # coverage leaving the new code would go unnoticed exactly as it is caught for the old.
+    # ⟳ 2026-09-22 — 7 -> 17, RE-DERIVED AFTER THE CODE WAS FINAL (r2 Medium 1).
+    # ⛔ THE FIRST ATTEMPT WAS DERIVED AND STILL WRONG, which is the part worth keeping: it ran
+    # `analyse()` honestly, pinned 15, and THEN the same commit added `main(argv, stream)` — so
+    # the derived value went stale inside the commit whose message said it was derived rather
+    # than transcribed. Deriving is not a property of the method, it is a property of WHEN you
+    # run it. r2 proved the gap by construction: renaming `main` to `_main` left this guard
+    # GREEN while renaming `payload_from` turned it RED.
+    # ⚠ The pin is compared in ONE direction (`pinned - keys`), so an ARRIVAL is silent at key
+    # level — nothing would ever have told me.
     'check-ci-watched.py': (
         'decide.head_sha',
         'decide.rows',
@@ -428,6 +437,8 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'log_line.reason',
         'log_line.session',
         'log_line.when',
+        'main.argv',
+        'main.stream',
         'parse_sentinel.text',
         'payload_from.stream',
         'render_sentinel.sha',
