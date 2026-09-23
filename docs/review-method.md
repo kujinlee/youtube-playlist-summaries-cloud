@@ -442,6 +442,39 @@ hand-written tally of it — this project has measured what those do.
 ## Adversarial Review
 
 Dispatch Codex (`codex:rescue`) with an explicit adversarial mandate at every phase.
+
+### ⛔ The mandate applies to a CLAUDE subagent too, and it must say REFUTE
+
+**When you dispatch an agent to check a finding, instruct it to REFUTE the finding and to default to
+*refuted* when uncertain.** A prompt that asks *"is this right?"* buys agreement, which is the
+cheapest output an agent has.
+
+**MEASURED 2026-09-23** across four dispatches on one architecture review:
+
+| Prompt shape | Result |
+|---|---|
+| *"map the observer-log family"* (confirming) | its **summary contradicted its own table** — concluded a docstring's referrer list was *"still accurate"* including a `block-idle-stop.sh` comment, while its own 19-file table omitted that hook. Re-measured: **0** references |
+| *"try to break this, default to refuted"* | **refuted a sub-claim already published to backlog #164** — the example rested on `step` being a parameter of `check-banner-armed.decide` (`:503`), and it is not |
+| *"try to break this"* (second) | main claim SURVIVED, and it supplied a **better control than the coordinator's**: `check-fixture-variation.analyse` returns `(findings, examined_keys)` as a SET (`:703-708`) so *"did not fire"* and *"no longer examined"* are distinguishable. The original run never reported it |
+| the same discipline turned inward | a review finding's *"nothing states which rule is correct"* was too strong — `begin-plan.py:518-520` states a great deal |
+
+⭐ **The asymmetry is the argument.** A confirming agent that is wrong leaves a false green nobody
+revisits. A refuting agent that is wrong costs five minutes of re-measurement. The expected values
+are not close.
+
+**How:** say *"your job is to REFUTE this, not confirm it; default to refuted if uncertain"*; **name
+the failure mode you most fear** and ask them to hunt it (*"is my synthetic fixture representative
+of the real callee?"* is what found the #164 error); hand over the claim **with** its evidence so
+they attack the reasoning instead of re-deriving it. ⚠ **Record which shape you ran** — a survived
+refutation is a far stronger result than a confirmation, and a reader cannot tell them apart later.
+
+⚠ **NOT MECHANISABLE, and that is stated rather than hidden.** Nothing persists a subagent's prompt
+where a guard could read it, so no script can assert this was done. It is a convention, and this
+project's own doctrine says a convention catches only what you READ. ⛔ It is written here because
+the alternative was measured on the day: the pattern was observed, called *"worth keeping"* twice in
+chat, and **nothing was built** — until the user asked *"have you done something to keep the
+pattern?"* and the answer was no. That is the failure the same day's architecture review documented
+at length: naming a class does not stop it.
 - **Spec:** architectural gaps, underspecified behaviour, security risks, contradictions, edge cases
 - **Plan:** missing tasks, wrong order, underspecified acceptance criteria, implementation risks
 - **Code:** per-task (Claude + Codex independently). Both must complete before marking a task done.

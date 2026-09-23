@@ -11818,3 +11818,37 @@ candidates, not verdicts. That is what `ALLOWED` is for.
 ⛔ `check-docs` caught a real defect in this edit: #165's Status cell said ✅ while its description
 still led with 🟡, so a severity scan would have counted a closed row as open. Fixed to
 `✅ (was 🟡)`. The guard found it, not me.
+
+## 2026-09-23
+You asked whether I had actually done anything to keep a pattern I had just called valuable. I had
+not, and the answer is worth recording because of what it repeats.
+
+The pattern: when I send a background agent to check a finding, telling it to *try to break the
+finding* works far better than asking it to confirm. Four times yesterday and today it earned its
+keep — once catching a correction I had already written into the backlog and which was wrong.
+
+What I did about it, before you asked: I wrote it in the review document, and said twice in
+conversation that it was worth keeping. That is all. No note, no rule, nothing that would reach the
+next session.
+
+That is exactly the failure the architecture review spent its length documenting — naming a problem
+does not stop it happening, and writing prose about it is not a mechanism. I did it about the
+lesson of the session, inside the session, hours after describing the same shape in someone else's
+code.
+
+Now it is written in two places that outlive the conversation: the working notes that load at the
+start of a session, and the project's own review method document.
+<!--tech-->
+New memory `ask-an-agent-to-refute-not-confirm` + index line. New section in
+`docs/review-method.md` under *Adversarial Review* — the existing mandate there covered Codex only;
+nothing said how to prompt a Claude subagent, which is where all four of today's wins came from.
+
+⚠ Stated in the rule itself: **not mechanisable.** No subagent prompt is persisted anywhere a guard
+can read, so no script can assert it was done. It is a convention, and this repo's own doctrine is
+that a convention catches only what you read — so the rule says so rather than implying enforcement
+it does not have.
+
+The four measured dispatches, with outcomes, are in the rule as the evidence: one confirming prompt
+whose summary contradicted its own table; two refutation prompts, one of which overturned a
+published claim and the other of which supplied a better control than the coordinator had; and the
+same discipline turned inward, which found a review finding stated too strongly.
