@@ -181,5 +181,70 @@
     "expect": [
       "gh MISSING is CANNOT RUN territory, never 'no PR' — a crash must not read as silence"
     ]
+  },
+  {
+    "name": "warn_reason collapses to ONE class, so a stale watcher and no watcher at all become the same event",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    return \"stale\" if watching_sha else \"unwatched\"",
+        "    return \"unwatched\""
+      ]
+    ],
+    "expect": [
+      "warn_reason tells the two classes apart — a watcher armed for ANOTHER commit is `stale`, nothing armed at all is `unwatched`"
+    ]
+  },
+  {
+    "name": "the log line drops its SESSION column, so entries stop being attributable to a session",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    return f\"{when}\\t{session or '-'}\\t{reason}\\t{detail}\\n\"",
+        "    return f\"{when}\\t{reason}\\t{detail}\\n\""
+      ]
+    ],
+    "expect": [
+      "log_line carries all FOUR columns it is given, at two distinct inputs each"
+    ]
+  },
+  {
+    "name": "the log records EVERY stop, not only the warnings — destroying the one number it exists to produce",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    if code == WARN:\n        # ⚠ RECORDED ONLY ON A REAL WARNING",
+        "    if True:\n        # ⚠ RECORDED ONLY ON A REAL WARNING"
+      ]
+    ],
+    "expect": [
+      "...and a QUIET turn appends NOTHING — a log that records the quiet turns cannot say how often this spoke, which is the only question it is for"
+    ]
+  },
+  {
+    "name": "a failed log write is SWALLOWED, so the false-alarm rate silently stops being recorded",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "            message += (f\"\\n\\n   ⚠ AND THE LOG COULD NOT BE WRITTEN ({e}) — the false-alarm \"\n                        f\"rate is not being recorded.\")",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "an UNWRITABLE log still WARNS and says the false-alarm rate is not being recorded — it is part of the warning, not a swallowed detail"
+    ]
+  },
+  {
+    "name": "the Stop payload is ignored, so the session column is always `-` and cannot vary",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "        session = str(json.loads(payload).get(\"session_id\", \"\")) if payload.strip() else \"\"",
+        "        session = \"\""
+      ]
+    ],
+    "expect": [
+      "the SESSION column comes from the Stop payload the hook has always piped in"
+    ]
   }
 ]
