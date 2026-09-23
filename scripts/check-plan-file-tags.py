@@ -530,8 +530,17 @@ def self_test() -> int:
         # suite under two of this file's own mutations (`IndexError`, no summary line, and every
         # later case unreported), which the mutation harness reads as `caught by something
         # else: []`. It is the same ban this file states at the `f[0]` case above and that
-        # `check-plan-code.py:1668` records as measured on 2026-09-08 — the day before the commit
-        # that introduced it here. A path the fixture already knows cannot raise.
+        # `check-plan-code._entries_of`'s docstring records as measured on 2026-09-08 — the day
+        # before the commit that introduced it here. A path the fixture already knows cannot raise.
+        # ⟳ **r4 M4: this CITED A LINE IN `check-plan-code.py` (1668) AND THE LINE MOVED.** ⚠ The
+        # old citation is deliberately NOT written here in its backticked form: this file's own
+        # subject is that prose ABOUT a tag must not be mistaken for the tag, and a census of
+        # `file.py:NNN` citations counts any backticked instance, including one being explained.
+        # Quoting the dead citation verbatim would keep it in the broken tally forever. It was
+        # already pointing at the wrong content on `origin/master`; `c3ad7727`'s 16-line insertion
+        # above it then pushed it onto a BLANK line, and that commit counted the result while
+        # asserting the breakages were "not this branch's regression" — false for this member.
+        # A symbol survives an insertion above it; a line number is a claim that expires. (#175)
         # ⚠ This does NOT test what its old name implied about `unreadable`: `coverage_shortfall`
         # never receives a `Finding`, so no value of that field can reach it (r3, F4). It is set
         # arithmetic, and that is all it claims now.

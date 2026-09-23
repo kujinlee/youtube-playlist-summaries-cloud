@@ -174,5 +174,60 @@
       ]
     ],
     "expect": "an EXPLICIT --verdict over a tracked file is ALLOWED — chosen, not derived"
+  },
+  {
+    "name": "r4 H1: the allocator is dropped, so the documented mktemp call shape collides again",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    if run_id:\n        stem = f\"{stem}.{run_id}\"",
+        "    if False:\n        stem = f\"{stem}.{run_id}\""
+      ]
+    ],
+    "expect": "H1: two DIFFERENT reviews at one HEAD cannot collide, even under the documented `--out \"$(mktemp -d)/r.md\"` shape that names them both `r`"
+  },
+  {
+    "name": "r4 H1: the run token ignores the PROMPT, so two different reviews become one run",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    h.update(prompt_text.encode(\"utf-8\"))",
+        "    pass"
+      ]
+    ],
+    "expect": "the token separates two reviews by PROMPT at one head, at two distinct prompts"
+  },
+  {
+    "name": "r4 H1: the run token ignores the HEAD, which is the r3 incident's own shape",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    h.update((head or \"no-head\").encode(\"utf-8\"))",
+        "    pass"
+      ]
+    ],
+    "expect": "…and by HEAD at one prompt — the r3 incident, where an earlier session's verdict was lost"
+  },
+  {
+    "name": "r4 M5: the refusal testifies to the very path it is protecting, destroying it",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    return f\"{base}.refused.verdict.json\"",
+        "    return vpath"
+      ]
+    ],
+    "expect": "the refusal's testimony is never the path it is protecting"
+  },
+  {
+    "name": "r4 M2: a git that cannot be run is reported as a repository successfully built",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    except OSError:\n        return False",
+        "    except OSError:\n        return True"
+      ]
+    ],
+    "expect": "an ABSENT git binary is REPORTED, not raised — so the guard case below is reached rather than pre-empted by a traceback"
   }
 ]

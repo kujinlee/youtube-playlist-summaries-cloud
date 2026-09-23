@@ -1057,10 +1057,13 @@ EXPECTED_MUTATIONS = {
     #   * `tracked is None` read as answerable — the RULE's fail-open;
     #   * ⭐ git's rc=128 read as "not tracked" — the FETCH's fail-open, which SURVIVED 101/101
     #     until a case drove it. git answers three ways and the first two cases drove two of
-    #     them; `--out` is documented to live OUTSIDE the repo, where rc=128 is what you get.
+    #     them. ⟳ r4 M1: the reason first written here — "`--out` lives outside the repo, where
+    #     rc=128 is what you get" — is FALSE at the call site, because the query is made on
+    #     `vpath`, which is always joined under `REPO_ROOT`. What reaches it is `REPO_ROOT` not
+    #     being a git repository: this very harness stages a `copytree` with no `.git`.
     #   * the explicit `--verdict` escape removed — the OVER-refusal direction, which would
     #     break the legitimate replacement and teach callers to route around the guard.
-    "scripts/codex-review.py": 16,
+    "scripts/codex-review.py": 21,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
@@ -3572,7 +3575,14 @@ def _self_test() -> int:
     # RETARGETED anchors are net zero by construction — retargeting keeps the entry and moves its
     # text, which is why it is the repair for a moved subject and retiring is not. This literal is
     # the outside observer of the sum; the reasons are on the entries.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 981)
+    # ⟳ 2026-09-23, round 4 (folding r4's H1/M2/M5 on `codex-review.py`): 981 -> 986. All +5 on
+    # `codex-review.py`: three for the ALLOCATOR r4 H1 found missing — the run id dropped from the
+    # path, and the token ignoring each of its two inputs — one for the refusal that testified to
+    # the path it was protecting (M5), and one for a git that could not be run being reported as a
+    # repository successfully built (M2). ⚠ The M2 entry exists because a `try/except` alone left
+    # the `False` branch unreachable from any case; the builder takes the executable's NAME so a
+    # case can drive it, which is what gave the mutation something to go red on.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 986)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

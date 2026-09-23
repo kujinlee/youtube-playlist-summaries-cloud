@@ -42,7 +42,7 @@ candidate yields a message ends in a loud non-zero exit.
 Usage:
   scripts/codex-review.py --out docs/reviews/task-N-foo-codex.md "<review prompt>"
   scripts/codex-review.py --out <file> --prompt-file <file> [--timeout 900] [--model <slug>]
-  scripts/codex-review.py --self-test  # 103 cases
+  scripts/codex-review.py --self-test  # 115 cases
 
 Exit codes:  0 = a real review was written   |   1 = no candidate produced one (gate did NOT run)
 """
@@ -215,12 +215,55 @@ VERDICT_DIR = os.path.join("docs", "reviews", "verdicts")
 VERDICT_SCHEMA = 2
 
 
-def verdict_path(out_path: str, override: "str | None" = None) -> str:
+def run_token(head: "str | None", prompt_text: str) -> str:
+    """A short, deterministic name for THIS run. PURE — no clock, no filesystem, no git call.
+
+    ⭐ **THIS IS THE ALLOCATOR, AND ITS ABSENCE WAS r4 H1.** `c3ad7727` was titled *"the verdict
+    path had no allocator"* and then did not add one: it REFUSED one collision shape (a derived
+    path that is already tracked) and left the namespace unallocated. Measured in round 4 — the
+    call shape `docs/plugins.md` documents as PREFERRED,
+
+        --out "$(mktemp -d)/r.md"
+
+    reduces to the basename `r` for every caller, so every review in the repo derived
+    `docs/reviews/verdicts/r.verdict.json`. That file is not tracked, so the new refusal passed it,
+    and run B destroyed run A's testimony exactly as before. The fix that was shipped protected
+    against the instance that had already happened and not against the path everyone is told to use.
+
+    ⚠ **PURE ON PURPOSE, AND THAT IS WHY IT TAKES `head` RATHER THAN ASKING GIT.** The two
+    alternatives considered both fuse the rule to a fetch: scanning `VERDICT_DIR` for a free `-NN`
+    suffix needs the filesystem (and races), and reading HEAD here needs git. This repo has paid for
+    that fusion — it is why `verdict_collision` takes `tracked` as an argument and `path_is_tracked`
+    does the asking. The caller gathers `head` from `reviewed_state()`, which it already calls.
+
+    **What the identity is, stated so a reader can predict it:** the same HEAD and the same prompt
+    text yield the SAME token. That is deliberate — re-running one review is the same run and should
+    land on its own testimony rather than accumulating debris. Two DIFFERENT reviews, which is the
+    H1 scenario, differ in prompt text and so cannot collide however `--out` is named. A review of a
+    different commit differs in HEAD, which is the r3 incident that cost a restore.
+
+    ⚠ `head is None` (git could not answer) does not make two runs the same run: the prompt still
+    separates them. It is folded in as a literal rather than dropped so the token is always defined.
+    """
+    h = hashlib.sha256()
+    h.update((head or "no-head").encode("utf-8"))
+    h.update(b"\x00")
+    h.update(prompt_text.encode("utf-8"))
+    return h.hexdigest()[:8]
+
+
+def verdict_path(out_path: str, override: "str | None" = None,
+                 run_id: "str | None" = None) -> str:
     """Where this run's testimony goes. PURE.
 
     Defaults into the repo — not next to `--out`, which the documented safe call shape puts
     OUTSIDE the repo precisely so a stray write cannot reach an artifact. A verdict written there
     would be invisible to CI, which is the whole failure being fixed.
+
+    `run_id` is what makes the namespace ALLOCATED rather than merely guarded — see `run_token`.
+    It is optional so the function stays usable (and testable) without one, but `main` always
+    passes it; a caller that omits it gets the old, collision-prone naming and that is why the
+    refusal below survives as a fallback rather than being deleted.
     """
     if override:
         return os.path.abspath(override)
@@ -229,7 +272,27 @@ def verdict_path(out_path: str, override: "str | None" = None) -> str:
         if stem.endswith(ext):
             stem = stem[: -len(ext)]
             break
-    return os.path.join(REPO_ROOT, VERDICT_DIR, f"{stem or 'review'}.verdict.json")
+    stem = stem or "review"
+    if run_id:
+        stem = f"{stem}.{run_id}"
+    return os.path.join(REPO_ROOT, VERDICT_DIR, f"{stem}.verdict.json")
+
+
+def refusal_verdict_path(vpath: str) -> str:
+    """Where a REFUSED dispatch leaves its testimony. PURE, and it must not be `vpath`.
+
+    r4 M5: the collision refusal was the one exit that wrote no verdict, so its only channel was the
+    caller's exit code — the channel this file's own header calls unreliable, and which this repo has
+    recorded an agent ignoring four times. Downstream, a refused run and a run that never happened
+    were indistinguishable, which is precisely the property the verdict mechanism exists to abolish.
+
+    The comment it replaces framed that as forced (write to `vpath` and destroy the thing being
+    protected, or write nothing). It was not forced: the refusal can testify under a name derived
+    from `vpath` that is not `vpath`. `check-review-rounds.read_verdicts` globs `*.json` and needs
+    only a `gate_ran` field, so this needs no grammar change downstream.
+    """
+    base = vpath[: -len(".verdict.json")] if vpath.endswith(".verdict.json") else vpath
+    return f"{base}.refused.verdict.json"
 
 
 def verdict_collision(vpath: str, *, tracked: "bool | None", override_given: bool) -> "str | None":
@@ -270,8 +333,38 @@ def verdict_collision(vpath: str, *, tracked: "bool | None", override_given: boo
                 f"  verdict present and is satisfied. THIRD measured instance.\n"
                 f"  Fix: give --out a name unique to this review — the convention is\n"
                 f"  <subject>-r<N>-codex.md, which yields <subject>-r<N>-codex.verdict.json — or\n"
-                f"  pass --verdict <path> to replace that testimony deliberately.")
+                f"  pass --verdict <path> to replace that testimony deliberately.\n"
+                f"  ⚠ --allow-overwrite does NOT authorise this: it governs the review artifact\n"
+                f"  (--out) only. Two artifacts, two deliberate acts, neither implying the other.")
     return None
+
+
+def build_probe_repo(repo_dir: str, git: str = "git") -> bool:
+    """Build a throwaway git repository holding one TRACKED file. -> did it work?
+
+    ⚠ **`git` IS A PARAMETER FOR ONE REASON: without it, the failure branch is unreachable from a
+    case (r4 M2).** `7840a3be` claimed "a case asserting the repository was really built, so an
+    environment without git fails loudly instead of reporting three passes". Measured in round 4:
+    `subprocess.run` does not return a code when the executable is missing — it RAISES — so with git
+    genuinely absent the suite died with `FileNotFoundError` before that case ran. The loudness was
+    real, but it came from a traceback rather than the named mechanism, and the `False` branch it
+    guarded required git to be PRESENT and `init`/`config`/`add` to fail, which nothing drives.
+
+    A traceback is not a case: it names nothing, the mutation harness cannot attribute a kill to it,
+    and this repo files that shape as *a suite that dies by crashing is a suite whose kill nobody can
+    attribute*. Taking the executable's name lets a case hand it one that does not exist.
+    """
+    try:
+        for cmd in (["init", "-q"], ["config", "user.email", "t@example.invalid"],
+                    ["config", "user.name", "t"]):
+            if subprocess.run([git, "-C", repo_dir] + cmd, capture_output=True).returncode != 0:
+                return False
+        with open(os.path.join(repo_dir, "tracked.txt"), "w", encoding="utf-8") as f:
+            f.write("committed\n")
+        return subprocess.run([git, "-C", repo_dir, "add", "tracked.txt"],
+                              capture_output=True).returncode == 0
+    except OSError:
+        return False
 
 
 def path_is_tracked(path: str, repo_root: "str | None" = None) -> "bool | None":
@@ -748,7 +841,11 @@ def main() -> int:
     ap.add_argument("--allow-overwrite", action="store_true",
                     help="permit --out to replace an existing file (refused by default: backlog #68)")
     ap.add_argument("--verdict", help="write the run's verdict here "
-                                      f"(default: {VERDICT_DIR}/<review-stem>.verdict.json)")
+                                      f"(default: {VERDICT_DIR}/<review-stem>.<run-token>.verdict.json, "
+                                      "where the run token is derived from the dispatch HEAD and the "
+                                      "prompt). Also the deliberate escape when the derived path "
+                                      "holds committed testimony — --allow-overwrite governs --out "
+                                      "only and does not authorise replacing a verdict.")
     ap.add_argument("--self-test", action="store_true", help="run classifier checks and exit")
     args = ap.parse_args()
 
@@ -793,19 +890,39 @@ def main() -> int:
     # `emit` is the ONLY way out below, so a new branch cannot forget to record one. A verdict that
     # cannot be written downgrades the run to CANNOT RUN (2) rather than reporting the outcome it
     # was about to report — an unrecorded success is indistinguishable from the failure this fixes.
-    vpath = verdict_path(args.out, args.verdict)
+    # Taken ONCE, here, before any candidate runs — this is the tree the reviewer is handed. Taken
+    # at `emit` instead it would describe the tree after the run, and a commit made while a 15-minute
+    # review was in flight would be recorded as something the reviewer had seen.
+    # ⟳ **r4 H1: THIS MOVED ABOVE `vpath`, AND THE ORDER IS NOW LOAD-BEARING.** The allocator names
+    # the run from the dispatch HEAD, so the state has to be gathered before the path is derived.
+    head_at_dispatch, dirty_at_dispatch = reviewed_state()
+    vpath = verdict_path(args.out, args.verdict,
+                         run_id=run_token(head_at_dispatch, prompt))
     # ⛔ BEFORE ANY TESTIMONY IS WRITTEN, and before `emit` exists — because `emit` WRITES to `vpath`,
     # so a refusal discovered inside it would have to destroy the thing it is protecting in order to
-    # report that it was protecting it. This is the one exit below that deliberately leaves no verdict.
+    # report that it was protecting it.
     _collision = verdict_collision(vpath, tracked=path_is_tracked(vpath),
                                    override_given=bool(args.verdict))
     if _collision:
         print(f"[codex-review] {_collision}", file=sys.stderr)
+        # ⟳ **r4 M5 — THE REFUSAL NOW TESTIFIES, under a name that collides with nothing.** This was
+        # the ONE exit that left nothing on disk, so downstream a refused dispatch and a dispatch
+        # that never happened read identically — the exact indistinguishability the verdict
+        # mechanism was built to abolish, re-opened for one path. It is written to
+        # `refusal_verdict_path(vpath)`, never `vpath`, so reporting the protection cannot perform
+        # the destruction it is protecting against.
+        _rpath = refusal_verdict_path(vpath)
+        _rerr = write_verdict(_rpath, verdict_record(
+            gate_ran=False, exit_code=2, out_path=args.out,
+            reason=f"refused: {_collision.splitlines()[0]}",
+            head=head_at_dispatch, dirty=dirty_at_dispatch,
+            prompt=getattr(args, "prompt_file", None)))
+        if _rerr:
+            print(f"[codex-review]   ⚠ and the refusal itself could not be recorded: {_rerr}",
+                  file=sys.stderr)
+        else:
+            print(f"[codex-review]   testimony (gate_ran=false): {_rpath}", file=sys.stderr)
         return 2
-    # Taken ONCE, here, before any candidate runs — this is the tree the reviewer is handed. Taken
-    # at `emit` instead it would describe the tree after the run, and a commit made while a 15-minute
-    # review was in flight would be recorded as something the reviewer had seen.
-    head_at_dispatch, dirty_at_dispatch = reviewed_state()
 
     def emit(rc: int, *, gate_ran: bool, reason: str, model=None, attempts=None, hits=None) -> int:
         rec = verdict_record(gate_ran=gate_ran, exit_code=rc, out_path=args.out, reason=reason,
@@ -1252,6 +1369,49 @@ def self_test() -> int:
         "plan-x-r3-codex.verdict.json")
     chk("an explicit --verdict wins", os.path.basename(verdict_path("/a/b.md", "/c/mine.json")),
         "mine.json")
+    # ── r4 H1: THE ALLOCATOR. The refusal below is now the FALLBACK; this is the mechanism ──────
+    # ⛔ **THE CASE THAT WOULD HAVE CAUGHT H1 IS THE FIRST ONE, AND IT IS THE DOCUMENTED CALL SHAPE.**
+    # `docs/plugins.md` tells every caller to use `--out "$(mktemp -d)/r.md"`. Two reviews in one
+    # session both reduced to the basename `r`, both derived `r.verdict.json`, and the second
+    # destroyed the first — untracked, so the tracked-file refusal never fired. Dropping `run_id`
+    # from `verdict_path` makes these two paths equal again and reds this case.
+    # ⚠ TWO DISTINCT INPUTS on every property below: a token compared against ONE other value cannot
+    # tell a real digest from a constant.
+    _tokA = run_token("abc123", "review prompt A")
+    _tokB = run_token("abc123", "review prompt B")
+    _tokA2 = run_token("abc123", "review prompt A")
+    _tokC = run_token("deadbee", "review prompt A")
+    chk("H1: two DIFFERENT reviews at one HEAD cannot collide, even under the documented "
+        "`--out \"$(mktemp -d)/r.md\"` shape that names them both `r`",
+        verdict_path("/tmp/one/r.md", run_id=_tokA) == verdict_path("/tmp/two/r.md", run_id=_tokB),
+        False)
+    chk("…and the SAME review re-run lands on its own testimony rather than accumulating debris",
+        verdict_path("/tmp/one/r.md", run_id=_tokA)
+        == verdict_path("/tmp/three/r.md", run_id=_tokA2), True)
+    chk("the token separates two reviews by PROMPT at one head, at two distinct prompts",
+        (_tokA == _tokB, _tokA == _tokA2), (False, True))
+    chk("…and by HEAD at one prompt — the r3 incident, where an earlier session's verdict was lost",
+        (_tokA == _tokC, len(_tokC)), (False, 8))
+    chk("a head that git could not answer for still separates runs by prompt, never fusing them",
+        run_token(None, "p1") == run_token(None, "p2"), False)
+    chk("…and is stable for one run, so an unanswerable head is not a random name",
+        run_token(None, "p1"), run_token(None, "p1"))
+    chk("the allocated name still carries the review stem, so a human can read it",
+        os.path.basename(verdict_path("/tmp/a/plan-x-r3-codex.md", run_id="0f0f0f0f")),
+        "plan-x-r3-codex.0f0f0f0f.verdict.json")
+    chk("…and WITHOUT a run id the old naming survives, which is why the refusal is kept as a "
+        "fallback rather than deleted",
+        os.path.basename(verdict_path("/tmp/a/plan-x-r3-codex.md")),
+        "plan-x-r3-codex.verdict.json")
+    # ── r4 M5: a refusal testifies, under a name that is NEVER the one being protected ──────────
+    _prot = os.path.join(REPO_ROOT, VERDICT_DIR, "codex-r3.verdict.json")
+    chk("the refusal's testimony is never the path it is protecting",
+        refusal_verdict_path(_prot) == _prot, False)
+    chk("…and it is still a verdict file, so `read_verdicts` picks it up with no grammar change",
+        os.path.basename(refusal_verdict_path(_prot)), "codex-r3.refused.verdict.json")
+    chk("…at a second, distinct input, so the name is derived rather than a constant",
+        os.path.basename(refusal_verdict_path("/r/v/other-r9-codex.verdict.json")),
+        "other-r9-codex.refused.verdict.json")
     # ── the derived verdict path is a namespace with NO ALLOCATOR (third instance, 2026-09-23) ──
     # ⚠ THE RULE IS DRIVEN AT ALL FOUR OF ITS INPUTS, not only the one that fires. A case that
     # exercises only `tracked=True` leaves the pass-through directions unfalsifiable, and the
@@ -1293,16 +1453,16 @@ def self_test() -> int:
     # answer, rc=128). `git -c` keeps identity out of the user's config.
     with tempfile.TemporaryDirectory() as td:
         _repo = os.path.join(td, "r"); os.makedirs(_repo)
-        _git_ok = True
-        for cmd in (["init", "-q"], ["config", "user.email", "t@example.invalid"],
-                    ["config", "user.name", "t"]):
-            if subprocess.run(["git", "-C", _repo] + cmd, capture_output=True).returncode != 0:
-                _git_ok = False
-        with open(os.path.join(_repo, "tracked.txt"), "w") as f:
-            f.write("committed\n")
-        if _git_ok:
-            _git_ok = subprocess.run(["git", "-C", _repo, "add", "tracked.txt"],
-                                     capture_output=True).returncode == 0
+        _git_ok = build_probe_repo(_repo)
+        # ⛔ **r4 M2 — THE `False` BRANCH HAD NO FALSIFIER, AND A try/except ALONE WOULD NOT GIVE IT
+        # ONE.** The builder is a function taking the git executable's NAME so a case can hand it one
+        # that does not exist; that is the only input in reach that drives the branch. Asserting it
+        # here, beside the case that consumes `_git_ok`, is what turns "an environment without git
+        # fails loudly" from a sentence in a commit message into something the suite can check.
+        _probe2 = os.path.join(td, "probe2"); os.makedirs(_probe2)
+        chk("an ABSENT git binary is REPORTED, not raised — so the guard case below is reached "
+            "rather than pre-empted by a traceback",
+            build_probe_repo(_probe2, git="definitely-not-git-xyzzy"), False)
         # ⛔ CANNOT RUN IS A FAILURE. If git is unavailable this must not quietly report three passes.
         chk("the throwaway repository was really built — otherwise the three cases below are void",
             _git_ok, True)
@@ -1314,10 +1474,14 @@ def self_test() -> int:
         # three ways — 0 tracked, 1 not tracked, **128 the question was invalid** — and the two cases
         # above drive only the first two. Measured: collapsing `returncode == 1 -> False` into a bare
         # `return False` passed 101/101, so the fail-open direction of the FETCH was unfalsifiable
-        # while the same direction of the RULE was covered. ⚠ A REACHABLE input, not a contrived one:
-        # `--out` is documented to live OUTSIDE the repo, and `git ls-files --error-unmatch` exits
-        # 128 with "is outside repository" for any such path. Reading that as "not tracked" is the
-        # exact shrug this rule refuses.
+        # while the same direction of the RULE was covered. ⚠ A REACHABLE input, not a contrived one
+        # — ⟳ **but NOT for the reason first written here (r4 M1).** That said `--out` is documented
+        # to live outside the repo, where git answers 128. It cannot: `path_is_tracked` is called on
+        # `vpath`, and `verdict_path` joins its result under `REPO_ROOT` for every possible `--out`,
+        # so `relpath` never yields `../…`. The cause that DOES reach it was measured one commit
+        # later and not back-fitted: **`REPO_ROOT` need not be a git repository at all** — the
+        # mutation harness stages a `copytree` with no `.git`, and a source export has none either.
+        # `git ls-files` exits 128 there, and reading that as "not tracked" is the shrug this refuses.
         # ⚠⚠ ITS FIRST FORM WAS `path_is_tracked("/etc/hosts")` AGAINST THE AMBIENT ROOT, AND THAT
         # PASSED FOR THE WRONG REASON IN HALF THE WORLDS IT RUNS IN. Inside this checkout it returned
         # None because the path is outside the repository; inside the harness's staged tree it
