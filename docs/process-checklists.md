@@ -278,6 +278,26 @@ said 500¢ for days.
 **5. Code-enforced acceptance points do not go stale on deploy; manual ones do.** A2 has three points,
 two held by tests. Only the human-checked one was reopened. Reopen the part that rots, not the item.
 
+## Running a gate AS EVIDENCE (added 2026-09-22)
+
+⛔ **A gate run over an uncommitted working tree is not evidence about what CI will read.** Several
+gates compare the **committed** diff against a base — `check-dashboard-entry.py`,
+`check-review-recorded.py`, `check-backlog-closure.py`. Run before committing, they answer about a
+tree that does not exist yet, and the answer is usually a cheerful pass.
+
+MEASURED 2026-09-22, **twice in one session, an hour apart**: a merge resolution that fused two
+dashboard entries under one header, and a roadmap edit — both reported *ok* locally and **REFUSED**
+in CI. The second happened after the first had been diagnosed and written down, which is the
+argument for a line here rather than a remembered lesson.
+
+**Do this:** commit first, then run the gate with the arguments CI uses — `--base origin/master`,
+and `--pr-body-file` where the gate reads the PR body. A pass over `git status`-dirty work is a
+statement about your editor, not about the branch.
+
+⚠ **And capture the exit code on its own line.** `cmd >out 2>&1; echo "rc=$?"` reports the
+redirect's status, not the command's — it produced a false `rc=0` over a red gate and a false
+"exit code 0" over a mutation sweep whose log said `NOT MEASURED` on the same day.
+
 ## Writing a RATCHET (added 2026-08-11)
 
 **There are EIGHT**, and each invented these independently, differently:
