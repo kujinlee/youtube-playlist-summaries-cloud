@@ -11389,3 +11389,158 @@ a kill naming no guard. That is the hazard this file's own `safe()` helper exist
 three cases the branch itself added. Fixed; `pyright` is back to master's 11, same set.
 
 Suite 140 → 159; manifest 27 → 47; the declared mutation sum 912 → 920.
+
+## 2026-09-22
+
+Two of the little checks that run when I stop working had started complaining every single time,
+and you told me so.
+
+Neither was complaining about anything real. The first watches whether a code-quality run is going
+unwatched, and to do that it asks GitHub about the branch's pull request. When a branch has no
+pull request yet — which is most of the time a piece of work is being written — that question
+fails, and the check could not tell the difference between "there is no pull request to ask about"
+and "I could not reach GitHub". So it reported the alarming one, on every stop, for days at a time.
+It now separates the two: nothing to watch is silent, and genuinely unreachable is still loud,
+which is the direction that matters.
+
+The second announces when a job has been deliberately parked — waiting on something long-running —
+so that a parked job cannot quietly become a forgotten one. It was announcing that on every stop
+too, twelve lines at a time, which is how a useful signal turns into wallpaper. The thing actually
+worth knowing is narrower: not *that* a job is parked, but that a parked job has quietly started
+moving again. It now records how much was left when the job was parked, so it can tell those apart,
+and says nothing at all while the job really is just waiting.
+
+There is a third case it refuses to be clever about. If a job was parked by hand, there is no
+record of how much was left, and it cannot tell whether work resumed — so it says exactly that, in
+one line. Staying silent there would rebuild the original problem in a quieter form.
+
+**Waiting on you:** nothing yet — this is on a branch and will come to you as a pull request.
+<!--tech-->
+Branch `quiet-stop-observers-wt`, commit `5018606b`, based on `b7ec0c42`.
+
+`check-ci-watched.py`: `gh pr view` EXITS 1 when a branch has no PR, and `_run` collapses every
+non-zero exit to `None`, so `rows=None` → `CANNOT RUN`. ⭐ The file already had a branch for this
+(`raw in ("", "null")`, commented *"or no PR — nothing to watch either way"*) but `gh` never
+returns empty output for that case, so the benign path was unreachable — the recorded *proving a
+negative by interception*. New `_pr_checks_raw()` returns `(stdout|None, no_pr)`; a gh REWORD falls
+back to CANNOT RUN, noisy rather than silent.
+
+`check-plan-progress.py` + `begin-plan.py`: `--pause` records `paused_unticked:`; `--resume` clears
+both fields (one writer with no remover is backlog #99's own shape). Three outcomes — ticked-since
+→ WARN; unchanged → ALLOW silent; no stamp → WARN one line, because "cannot tell" must not read as
+"nothing happened".
+
+Suites 23→28, 35→42, 50→53. Mutations +9; declared sum 881→890. Sweep 890/890 killed, 890
+attributed, 0 survivors. ⚠ Three bugs found in my own manifest pre-check while doing this — an
+f-string case name it could not see, `expect` iterated as a string yielding one "orphan" per
+letter, and a duplicate rule stricter than the harness's. It now derives live case names by RUNNING
+each suite and reports CANNOT RUN for the 45 of 52 files whose suites print only a summary.
+
+⛔ **ROUND 2 — THE FIX WAS RIGHT AND THREE OF ITS DECISION POINTS WERE UNDEFENDED.** Round 1 (Codex)
+found one Medium. Round 2 (Claude, alternating) found **three Mediums and three Lows**, none of them
+a correctness defect in delivered behaviour — every path it drove behaved as documented. All three
+Mediums are one shape, and it is the shape this repo's ratchet contract exists to prevent: **new
+decision points shipped with falsifiers for their pure rules and none for their wiring or their fail
+direction**, in two guards whose entire purpose is to fail loud rather than silent.
+
+⚠ **Round 1's `890/890 killed, 0 survivors` was TRUE and said nothing about any of them.** Both
+manifest entries that commit added target the return expression *inside* `_pr_checks_raw`; nothing
+reached `run_decide`. Measured on a staged copy, all three of these left the suite at **28/28**:
+
+```
+if no_pr:            -> if False:      the every-stop CANNOT RUN comes back, unnoticed
+raw, no_pr = …()     -> no_pr = True   the observer goes silent on EVERY branch, forever
+except (OSError, …)  -> return None, True   gh missing / timing out / crashing all become SILENCE
+```
+
+The third contradicts the function's own docstring, which promises *"noisy, not silent, which is the
+direction this guard must fail in"* — **a promise in a docstring that no case reads**. A sweep
+measures the manifest, not the code.
+
+⭐ **And round 2 caught the one thing round 1 examined and passed.** Round 1 checked that a double
+`--pause` parses correctly (last-wins — true, and re-derived independently). It never asked what the
+second *write* MEANS: it moved the baseline to now, silently discarding a warning already owed.
+Park, hand-tick a step, park again with a fresher reason, and the "work resumed while stood down"
+signal is gone for good — measured end to end as **rc=3 before the second pause and rc=0 after**.
+**Not hypothetical: this worktree's own live sentinel carried two `paused:` lines and two
+`paused_unticked:` lines** from two `--pause` calls in one session. Both happened to read 2, so
+nothing was lost that time.
+
+The repair keeps the **first** baseline and strips before appending. Refusing outright was
+considered and rejected: someone parked on one thing and now waiting on another has a legitimate
+reason to restate it, and a refusal would push them into hand-editing the sentinel — the one route
+that produces the states this guard cannot read. Restating a reason is not resuming work.
+
+Two smaller things worth the line. The decision table's middle row said *"the same → genuinely
+waiting"*; it now says **undecidable, treated as waiting**, because a scalar stamp can only see a
+strict fall and a plan that ticks one step while adding another keeps the count flat. And three live
+sites elsewhere restated this guard's exit-3 contract — `block-idle-stop.sh` twice and
+`check-banner-armed.py` once — **all three made false by this very commit**, eight lines below a
+comment reading *"a second copy is what drifted, and citing the source is the whole fix."* They now
+cite the owner instead of restating it.
+
+Suites 28→32, 53→58, 42→43. Mutations +6; declared sum 890→896. Each new entry was verified by hand
+to redden the case it names, over a control proved green first, on a staged copy under a redirected
+`$HOME`.
+
+⛔ **ROUND 3 — AND THE FIX FOR ROUND 2'S FIX.** `check-review-recorded` refused to call the branch
+reviewed: it named the six files the round-2 fold changed that no round had seen, and its own
+recorded justification is that on this repo **both defects that survived furthest were introduced by
+a FIX**. Round 3 (Codex, alternating) found exactly one Medium, and it was exactly that.
+
+Keeping the first pause baseline keyed on the **stamp** being present. But a sentinel carrying
+`paused_unticked:` with **no** `paused:` is not paused at all — the guard keys its whole paused
+branch on `paused` and blocks normally in that state. So a stray stamp was inherited as a baseline
+it had never earned. Measured, with a stamp of 9 against a 2-outstanding plan:
+
+```
+⏸ PAUSED, BUT 7 STEP(S) WERE TICKED SINCE — the guard has been stood down while the work carried on
+```
+
+**Nothing had been ticked.** The repair had fabricated an instance of the exact defect this branch
+exists to report truthfully — and it was proved by materialising the parent commit's copy of the
+file and running both, not by argument.
+
+Now keyed on `paused`, with the strip-before-append removing the orphan rather than letting it be
+inherited again. Two new cases: the field, and the **verdict** — because the field is the mechanism
+and the verdict is the property, and a stamp deliberately far from the true count so
+the case cannot pass by the two numbers happening to agree.
+
+Suite 58→60; manifest +1; declared sum 896→897.
+
+⛔ **ROUND 4 — A RED REQUIRED CHECK, CAUSED BY ROUND 2'S OWN FOLD.** Round 2 rewrote a comment (its
+Low 6). A mutation anchor in `scripts/mutations/check-plan-progress.json` spanned **three comment
+lines plus a `return`**, so rewording the comment unbound it — and `--mutate .`, which `ci.yml` runs
+unconditionally, refuses an anchor that applies zero times. Found by globbing the whole population
+(**905 anchors across 52 manifests, in 0.3 seconds**), confirmed by calling the delivered harness on
+that one entry, and rooted by bisecting the anchor count across five commits: **1** at the original
+fix, **0** from the round-2 fold onward. Re-anchored on the `return` plus the next section's header,
+so a comment rewrite cannot orphan it again.
+
+⭐ **And two Mediums that have been there since the ORIGINAL fix, both invisible to a green sweep.**
+
+The pause stamp's **value** had no falsifier. Replacing the producer with the literal `1`, or with
+the **done** count, both left the suite at 60/60 — while writing the *total* died. One reason: every
+stamped case in the suite was taken over the same 2-step plan with 1 ticked, where
+`outstanding == done == 1`. The case written to prevent exactly this asserts *"not the total and not
+the done count"*, and two-thirds of that sentence was false. ⚠ `--mutate .`'s 0-survivor result was
+silent about it, because the manifest's entry for that line tests the stamp's **presence**, never its
+value. Now driven at a second input — a 4-step plan with 1 ticked, where outstanding (3), done (1)
+and total (4) are three different numbers.
+
+The other: round 2 fixed *"a restatement erases a warning"* where the first pause left a stamp, and
+**not** where it did not. A hand-written pause has no stamp by construction — `decide`'s own BLOCK
+message instructs the human to add the line by hand — and `--pause` then invented a baseline,
+converting a live `⏸ PAUSED (2 of 4 outstanding, no count recorded…)` into permanent silence, with
+two steps ticked and nothing that would ever say so.
+
+⭐ **Three rounds each fixed one corner of one sentence.** The rule is now stated once and covers all
+of them: **restating a reason changes the reason and nothing else** — an already-paused sentinel has
+its stamp state inherited exactly, value *or* absence.
+
+Two Lows, both introduced by round 3's fix and both about round 3's own prose: a verdict case
+asserting `!= WARN`, a negative that `BLOCK` also satisfies and that stayed green on the one mutation
+it was written to catch (now `== ALLOW` and silent); and a figure quoted in this entry and in a code
+comment that was never measured.
+
+Suite 60→63; manifest +3 and three re-anchored; declared sum 897→900.

@@ -116,5 +116,70 @@
     "expect": [
       "a sentinel with no sha line reads as unarmed"
     ]
+  },
+  {
+    "name": "a missing PR is reported as CANNOT RUN again — the every-stop noise, restored",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    return None, _NO_PR in (p.stderr or \"\")",
+        "    return None, False"
+      ]
+    ],
+    "expect": [
+      "gh reporting NO PR is not-a-subject, not a failure — (None, True)"
+    ]
+  },
+  {
+    "name": "ANY gh failure is read as 'no PR', so an unreachable GitHub goes silent",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    # ⚠ Keyed on gh's own sentence. If gh rewords it, this stops matching and the case falls back\n    # to CANNOT RUN — noisy, not silent, which is the direction this guard must fail in.\n    return None, _NO_PR in (p.stderr or \"\")",
+        "    # ⚠ Keyed on gh's own sentence. If gh rewords it, this stops matching and the case falls back\n    # to CANNOT RUN — noisy, not silent, which is the direction this guard must fail in.\n    return None, True"
+      ]
+    ],
+    "expect": [
+      "...while ANY OTHER gh failure stays CANNOT RUN territory — (None, False)"
+    ]
+  },
+  {
+    "name": "the no-PR call site is dead, so the every-stop CANNOT RUN returns",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    if no_pr:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "run_decide is QUIET when there is no PR — the branch is pushed, so there is no CI to be unwatched, and this is the every-stop CANNOT RUN the change exists to remove"
+    ]
+  },
+  {
+    "name": "the no-PR flag is forced TRUE at the call site, so the observer is silent on every branch forever",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    raw, no_pr = _pr_checks_raw()\n",
+        "    raw, no_pr = _pr_checks_raw()\n    no_pr = True\n"
+      ]
+    ],
+    "expect": [
+      "...and NOT quiet on the same shaped input with no_pr FALSE — an unreadable PR is CANNOT RUN, so the verdict tracks the flag rather than being QUIET either way"
+    ]
+  },
+  {
+    "name": "a gh CRASH is reported as 'no PR', turning gh-missing and gh-timing-out into silence",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    except (OSError, subprocess.SubprocessError):\n        return None, False\n",
+        "    except (OSError, subprocess.SubprocessError):\n        return None, True\n"
+      ]
+    ],
+    "expect": [
+      "gh MISSING is CANNOT RUN territory, never 'no PR' — a crash must not read as silence"
+    ]
   }
 ]

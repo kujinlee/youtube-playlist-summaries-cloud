@@ -1,0 +1,20 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 3889 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "843bada6c76f7ce86b4c6cb6197ffc20f84cbcc6",
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/e8d4fa1c-667d-4d08-bd64-55931cd5a12f/scratchpad/codex-r3.log: OVERWRITTEN during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/e8d4fa1c-667d-4d08-bd64-55931cd5a12f/scratchpad/precheck_manifests.py: CREATED during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/e8d4fa1c-667d-4d08-bd64-55931cd5a12f/scratchpad/sweep-A2.log: OVERWRITTEN during the run (writer unattributed)"
+  ],
+  "model": "gpt-5.5",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/e8d4fa1c-667d-4d08-bd64-55931cd5a12f/scratchpad/quiet-r3-prompt.md",
+  "reason": "3889 chars",
+  "review": "quiet-r3-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}

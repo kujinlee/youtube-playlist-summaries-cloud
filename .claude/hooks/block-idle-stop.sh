@@ -30,8 +30,15 @@
 #            reporting CANNOT RUN. This is the path the banner/CI observers added, and the header
 #            omitted it entirely until 2026-09-05 (code review r2, Low).
 #            ⟳ 2026-09-06 (backlog #99): the BLOCKING check can now reach this path too, by
-#            returning 3 — a paused plan with steps outstanding. It is the only case where the
-#            blocking check declines to block and still has something to say.
+#            returning 3. It is the only case where the blocking check declines to block and
+#            still has something to say.
+#            ⟳⟳ 2026-09-22 — WHICH paused state reaches it NARROWED, and this comment is a second
+#            copy of a rule it does not own, so it drifted the moment the rule moved. It used to
+#            read "a paused plan with steps outstanding"; that state is now exit 0, SILENT, in the
+#            common case. Exit 3 fires only on a paused plan whose OUTSTANDING COUNT HAS FALLEN
+#            since the pause (work resumed without `--resume`), or on a paused plan with no count
+#            recorded at all (a hand edit — cannot tell). `scripts/check-plan-progress.py`'s
+#            module docstring is the owner; do not restate its table here, cite it.
 #   exit 0 — allows the stop silently.
 #
 # stop_hook_active tells us this turn is ALREADY a continuation caused by this hook. It is passed
@@ -116,9 +123,10 @@ TABLE_RC=$?
 #
 # ⟳ 2026-09-06, backlog #99 (shape (c)). This used to be `if ! python3 ...; then exit 2; fi` —
 # EVERY non-zero was a block. That is still the default, and deliberately so, but the blocking
-# check can now also return 3 = WARN: a paused plan that still has steps outstanding. It allows
-# the stop and says so out loud, because "paused" and "finished" used to produce identical
-# output (nothing at all).
+# check can now also return 3 = WARN. It allows the stop and says so out loud, because "paused"
+# and "finished" used to produce identical output (nothing at all).
+# ⟳ 2026-09-22: the trigger is NOT "a paused plan with steps outstanding" — that is exit 0 and
+# silent now. See the header note above, and the owning table in check-plan-progress.py.
 #
 # ⛔ THE ALLOW-LIST IS {0, 3} AND NOTHING WIDER, WHICH IS WHY WARN IS 3 AND NOT 1. A Python
 # traceback exits 1 and an argparse error exits 2; both must keep landing on the fail-closed

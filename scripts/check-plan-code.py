@@ -681,7 +681,7 @@ EXPECTED_MUTATIONS = {
     # NO input can distinguish it. It is defensive (it catches a future edit that wrongly moves a
     # pending state into the resolved list), not decisive — mutating it would be unkillable-by-
     # construction, the `check-storage-grant-pin` case-5 shape.
-    "scripts/check-ci-watched.py": 9,
+    "scripts/check-ci-watched.py": 14,
     # ⟳ 2026-09-08, R4 manifest debt 5 -> 4. Two findings, both about a rule with no single owner:
     #   * `range(a, b + 1)`'s INCLUSIVE bound was unfalsifiable — every range case writes both
     #     endpoints (`B1-B5`), and ident_re matches each on its own, so expansion only ever
@@ -1025,12 +1025,12 @@ EXPECTED_MUTATIONS = {
     # stops naming `--resume` strands the reader in #99's own state with no discoverable exit),
     # and two on `--resume` — one for a write-back that never clears, one for a clear that takes
     # the `plan:` pointer with it.
-    "scripts/check-plan-progress.py": 12,
+    "scripts/check-plan-progress.py": 17,
     # ⟳ 2026-09-07. Five targets in the PURE rules: the ternary probe's optional-chain
     # exclusion, the alias fullmatch, ALIAS_RHS's repeat quantifier, and the `||` and `??`
     # patterns. Verified through check-plan-code's OWN run_mutations, not a copy of it.
     "scripts/check-producer-enumeration.py": 5,
-    "scripts/begin-plan.py": 9,
+    "scripts/begin-plan.py": 18,
     # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
     # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
     # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
@@ -3398,7 +3398,19 @@ def _self_test() -> int:
     # Six of the fourteen defend the PAUSE excuse, which the first cut of the class omitted —
     # it warned during a deliberate stand-down, and the suite stayed green at 122/122 because
     # every case left `paused` at its default.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 920)
+    # ⟳ 920 -> 939, 2026-09-22 (MERGE): this branch adds NINETEEN across three guards —
+    # begin-plan 9 -> 18 (the pause stamp's VALUE, unfalsified since the field was invented,
+    # plus two of the three pause corners), check-ci-watched 9 -> 14 (run_decide's wiring and
+    # the crash fail direction, which three single edits had left at 28/28), and
+    # check-plan-progress 12 -> 17 (the comparison's third side). ⚠ The two branches collided
+    # HERE by construction: one pinned constant, two same-day slices.
+    # ⛔ THE VALUE BELOW IS DERIVED FROM THE MERGED DICT — and the first version of THIS COMMENT
+    # proved why that matters by getting its own prose wrong. It read "920 -> 930" with baselines
+    # of 11/12/16; the measured baselines are 9/9/12 and the sum is 939. The pinned number was
+    # right because it was computed; the sentence beside it was wrong because it was typed. That
+    # is the same defect this branch folded as r4's Low 5, committed inside the comment claiming
+    # immunity to it.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 939)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

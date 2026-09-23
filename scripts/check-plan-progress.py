@@ -38,17 +38,44 @@ docstring, not the code, was the thing that needed fixing.
 Usage (the hook calls form 1; a human can call form 2 to see where things stand):
     python3 scripts/check-plan-progress.py --decide [--stop-hook-active]
     python3 scripts/check-plan-progress.py --status
-    python3 scripts/check-plan-progress.py --self-test  # 35 cases
+    python3 scripts/check-plan-progress.py --self-test  # 43 cases
 Exit codes for --decide:
     0 = allow the stop, silently (message, if any, on stdout)
     2 = block it (message on stderr)
-    3 = allow it but SAY SO — the plan is paused with steps outstanding (message on stderr)
+    3 = allow it but SAY SO — a paused plan that shows signs of having resumed (stderr)
 
 ⏸ WHY 3 EXISTS (backlog #99, decided 2026-09-06). `paused:` used to short-circuit this whole
 check, so a paused plan and a finished plan produced the same output: none. Measured 2026-09-06 —
 a pause written at a checkpoint outlived the pause by four steps, a code review and a PR, and the
 premature-stop guard was stood down for all of it with no symptom anyone could distinguish from
 noise. A pause still ALLOWS the stop; it just stops being invisible while doing it.
+
+⟳ 2026-09-22 — AND (c) AS FIRST SHIPPED WAS TOO LOUD TO SURVIVE, which is a failure of the same
+kind it was fixing. It reported on EVERY stop while paused: correct about the state, wrong about
+the audience. A plan parked on a 40-minute job emitted the identical twelve-line notice a dozen
+times, and `.claude/hooks/block-idle-stop.sh` maps this exit code to Claude Code's non-blocking
+error, so a STATUS LINE reached the human as `Stop hook error`. Reported by the user:
+*"error should not happen all the time. and if it happens, it should be simple."* Backlog #56
+already measured what comes next for a gate that nags — it gets switched off, and this one is the
+only thing watching for a stood-down Stop guard.
+
+⭐ THE REPAIR IS TO FIRE ON THE DEFECT RATHER THAN THE STATE. #99's defect was never "a plan is
+paused"; it was a plan paused while work CONTINUED. `begin-plan.py --pause` now records
+`paused_unticked:` — what was outstanding when the pause began — so that exact state is decidable.
+Three outcomes, and the third is why this is not merely an anti-nag:
+    fewer outstanding than at pause time  -> WARN: work resumed without `--resume` (the defect)
+    not fewer                             -> ALLOW, silent: UNDECIDABLE, treated as waiting
+    no stamp (a hand-edited pause)        -> WARN, one line: cannot tell, and silence there would
+                                             be the original #99 hole rebuilt
+
+⚠ ROW 2 SAYS *UNDECIDABLE*, NOT *WAITING*, AND THE DIFFERENCE IS THE ONE THING TO KNOW ABOUT THIS
+FILE (code review r2, Low 6; round 1 Codex measured it). The stamp is a SCALAR, so the guard can
+only see a strict FALL in the outstanding count. A hand-edited plan that ticks one step and adds
+another keeps the count flat — work demonstrably resumed, and this row goes quiet. It is the whole
+triangle `unticked >= began > 0`, not one clever input. Row 3 names its undecidability out loud;
+row 2 is undecidable too and used to read as a positive finding of "genuinely waiting", which
+invites a reader to trust a silence the mechanism cannot support. Widening the stamp beyond a
+scalar is `docs/backlog.md` #100's subject and is deliberately NOT done here.
 """
 from __future__ import annotations
 
@@ -227,20 +254,56 @@ def decide(
         # ⟳ r1 L4: that hazard ALSO requires `stop_hook_active`, which is false on a fresh turn.
         # The earlier wording said "the first stop AFTER the resume", omitting that conjunct and
         # overstating the case. The conservative `None` is still right; the reason is narrower.
-        return WARN, (
-            f"⏸ PAUSED with {unticked} of {total} steps still outstanding in `{plan}`.\n"
-            f"   Paused because: {paused}\n"
-            f"   Next: {next_pending_task(plan_text)}\n"
-            "\n"
-            "   The Stop guard is STOOD DOWN while that line is present — this stop is allowed,\n"
-            "   and so is every stop after it. That is intended when the plan really is waiting\n"
-            "   on something. It is NOT intended when the work has quietly resumed, which is the\n"
-            "   case this line exists to make visible (backlog #99).\n"
-            "\n"
-            "   If the work HAS resumed  → `scripts/begin-plan.py --resume` re-arms the guard.\n"
-            "   If it is genuinely waiting → nothing to do; this is a status line, not an error.\n"
-            "   If the plan is abandoned   → `scripts/begin-plan.py --finish`."
-        ), None
+        # ⏸ FIRE ON THE DEFECT, NOT ON THE STATE (2026-09-22, user-reported).
+        #
+        # ⛔ WHAT WENT WRONG WITH (c). Backlog #99 asked for a paused plan to stop standing the
+        # guard down SILENTLY, and the answer was a twelve-line notice on every stop. That is
+        # correct about the state and wrong about the AUDIENCE: a plan parked on a 40-minute
+        # sweep emitted the identical twelve lines a dozen times, and the harness renders this
+        # exit code as `Stop hook error`, so a status line reaches the human as a failure. The
+        # user's words: *"error should not happen all the time. and if it happens, it should be
+        # simple."* Backlog #56's measured verdict is what comes next for a gate that nags.
+        #
+        # ⭐ #99's DEFECT WAS NEVER "a plan is paused". It was a plan paused while work CONTINUED
+        # — the guard stood down through four more steps, a code review and a PR. `--pause` now
+        # records the outstanding count at pause time, so that exact state is decidable: if fewer
+        # steps are outstanding than when the pause began, work resumed without `--resume`.
+        #
+        # ⚠ THREE STATES, AND THE THIRD IS WHY THIS IS NOT JUST AN ANTI-NAG. A hand-edited pause
+        # carries no stamp; "cannot tell" must not read as "nothing happened", because silence
+        # there is the original #99 hole. It gets one short line, not twelve and not none.
+        stamp = fields.get("paused_unticked")
+        began = int(stamp) if stamp is not None and stamp.isdigit() else None
+
+        if began is not None and unticked < began:
+            return WARN, (
+                f"⏸ PAUSED, BUT {began - unticked} STEP(S) WERE TICKED SINCE — the guard has been "
+                f"stood down while the work carried on (backlog #99).\n"
+                f"   Paused because: {paused}\n"
+                f"   → `scripts/begin-plan.py --resume` re-arms it."
+            ), None
+
+        if began is None:
+            # ⚠ THE REASON IS REPEATED EVEN IN THE SHORT FORM. The first cut of this dropped it to
+            # save a line and a case caught it: the reason is the one thing in the sentinel the
+            # HUMAN wrote, and a status line that omits it makes them open the file to learn what
+            # they already told it. Shortening is not the same as discarding.
+            return WARN, (
+                f"⏸ PAUSED ({unticked} of {total} outstanding, no count recorded, so whether work "
+                f"resumed cannot be told) — {paused}\n"
+                f"   → `--resume` when it does; `--finish` if the plan is done."
+            ), None
+
+        # Paused and the outstanding count did NOT fall. Allow, and say nothing — the state is
+        # already visible in the sentinel and in `--banner`, and repeating it every stop is what
+        # made it unreadable.
+        # ⚠ "Did not fall" is NOT the same claim as "nothing happened", and the comment here used
+        # to say *genuinely waiting* (r2 Low 6). A scalar stamp cannot distinguish a plan nobody
+        # touched from one where a step was ticked and another added; both land here. Treated as
+        # waiting because a nag gets the whole guard switched off (backlog #56's measured verdict),
+        # and because no supported command reaches the flat-count state — `--tick` refuses on a
+        # paused plan, so it takes a hand edit. Backlog #100 owns the grammar that would decide it.
+        return ALLOW, "", None
 
     # Anti-nag: only keep blocking while blocking is producing progress. If a block has already
     # fired and the unticked count has not fallen since, let the stop through — a hook that can
@@ -395,6 +458,53 @@ def _self_test() -> int:
     # stop AFTER the resume — re-disarming the guard by a different route than #99's.
     case("WARN is a code CPython does not produce by accident (not 1, not 2)",
          WARN == 3 and WARN not in (ALLOW, BLOCK, 1))
+
+    # ── THE PAUSE REPORTS THE DEFECT, NOT THE STATE (2026-09-22) ───────────────────────────
+    # #99's (c) fired on EVERY stop while paused. Correct about the state, wrong about the
+    # audience — a plan parked on a long job emitted the same twelve lines a dozen times, and
+    # the wrapper renders this exit code as `Stop hook error`. #99's real defect was paused
+    # AND PROGRESSING, which `paused_unticked` makes decidable.
+    #
+    # ⛔ THE QUIET BRANCH IS THE ONE THAT NEEDS FALSIFIERS, because silence is what the
+    # original #99 hole looked like. Each case below is paired with its opposite so no branch
+    # can pass by the guard simply never speaking.
+    _WAIT = SENT + "paused: waiting on a sweep\npaused_unticked: 2\n"
+    _MOVED = SENT + "paused: waiting on a sweep\npaused_unticked: 4\n"
+    case("paused, NOTHING ticked since -> ALLOW and SILENT: the genuinely-waiting case, which "
+         "is most of a pause's life and was emitting twelve lines a stop",
+         decide(_WAIT, PLAN, None, False)[0] == ALLOW
+         and decide(_WAIT, PLAN, None, False)[1] == "")
+    case("...but paused while steps WERE ticked -> WARN. This is #99's actual defect, and it "
+         "is the only paused state that now speaks",
+         decide(_MOVED, PLAN, None, False)[0] == WARN)
+    case("...and that warning SAYS how many were ticked, so it is a measurement not a nag",
+         "2 STEP(S) WERE TICKED" in decide(_MOVED, PLAN, None, False)[1])
+    case("...and still names --resume", "--resume" in decide(_MOVED, PLAN, None, False)[1])
+    case("a HAND-EDITED pause carries no count -> WARN saying so; 'cannot tell' must never "
+         "read as 'nothing happened', which is the original #99 hole",
+         decide(PAUSED, PLAN, None, False)[0] == WARN
+         and "cannot be told" in decide(PAUSED, PLAN, None, False)[1])
+    case("⚠ a NON-NUMERIC stamp is treated as absent, not as zero — `int()` on free text would "
+         "raise inside a Stop hook, and zero would make every pause look like progress",
+         decide(SENT + "paused: why\npaused_unticked: soon\n", PLAN, None, False)[0] == WARN
+         and "cannot be told" in
+             decide(SENT + "paused: why\npaused_unticked: soon\n", PLAN, None, False)[1])
+    case("the quiet branch still records NO unticked count — the anti-nag state is left alone "
+         "on every paused path, not just the warning ones",
+         decide(_WAIT, PLAN, None, False)[2] is None)
+    # ⛔ THE COMPARISON WAS PINNED ON ONE SIDE ONLY (code review r2, Low 4). `_WAIT` sits AT the
+    # stamp and `_MOVED` BELOW it, so `<` -> `<=` dies but `<` -> `!=` SURVIVED: nothing drove the
+    # third side, `unticked > began`, which is a plan that GREW while parked. Under `!=` that state
+    # warns, and the warning prints `began - unticked` — a NEGATIVE count of steps ticked, i.e. an
+    # impossible sentence in the one message this guard exists to make trustworthy.
+    # ⚠ Steps ADDED while paused is not the same event as steps ticked while paused, and only the
+    # second is backlog #99's defect. Parking a job and then writing down more work to do is
+    # ordinary; being told "-1 steps were ticked since" for it is not.
+    _GREW = SENT + "paused: waiting on a sweep\npaused_unticked: 1\n"
+    case("paused and the plan GREW -> ALLOW and silent: more outstanding than at pause time is "
+         "work ADDED, never work resumed, and the third side of the comparison had no case",
+         decide(_GREW, PLAN, None, False)[0] == ALLOW
+         and decide(_GREW, PLAN, None, False)[1] == "")
 
     # ⛔ r1 H1 / Codex M1 — the ONE finding both review halves reached independently. The first
     # version of this branch CLEARED the sentinel here and said so only on stdout, which the Stop

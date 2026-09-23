@@ -56,7 +56,7 @@
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "    SENTINEL.write_text(pp.strip_field(text, \"paused\"))",
+        "    SENTINEL.write_text(pp.strip_field(pp.strip_field(text, \"paused\"), \"paused_unticked\"))",
         "    SENTINEL.write_text(text)"
       ]
     ],
@@ -82,7 +82,7 @@
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "    SENTINEL.write_text(pp.strip_field(text, \"paused\"))\n    print(\"resumed:",
+        "    SENTINEL.write_text(pp.strip_field(pp.strip_field(text, \"paused\"), \"paused_unticked\"))\n    print(\"resumed:",
         "    SENTINEL.write_text(pp.strip_field(pp.strip_field(text, \"paused\"), \"plan\"))\n    print(\"resumed:"
       ]
     ],
@@ -114,6 +114,123 @@
     ],
     "expect": [
       "the refused tick leaves the plan BYTE-IDENTICAL on disk"
+    ]
+  },
+  {
+    "name": "--pause stops recording the outstanding count, so the guard can never tell",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "                if _total:\n                    _stamp = f\"paused_unticked: {_total - _done}\\n\"",
+        "                if False:\n                    _stamp = f\"paused_unticked: {_total - _done}\\n\""
+      ]
+    ],
+    "expect": [
+      "--pause records the outstanding count at pause time"
+    ]
+  },
+  {
+    "name": "--pause records the TOTAL instead of what is outstanding",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "                _stamp = f\"paused_unticked: {_total - _done}\\n\"",
+        "                _stamp = f\"paused_unticked: {_total}\\n\""
+      ]
+    ],
+    "expect": [
+      "...and it is the OUTSTANDING count, not the total and not the done count"
+    ]
+  },
+  {
+    "name": "--resume leaves the stamp behind: one writer, no remover, backlog #99's shape again",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    SENTINEL.write_text(pp.strip_field(pp.strip_field(text, \"paused\"), \"paused_unticked\"))\n    print(\"resumed: the Stop guard is armed again",
+        "    SENTINEL.write_text(pp.strip_field(text, \"paused\"))\n    print(\"resumed: the Stop guard is armed again"
+      ]
+    ],
+    "expect": [
+      "...and it clears the STAMP too, so no field outlives the pause that set it"
+    ]
+  },
+  {
+    "name": "a second --pause RE-BASELINES the stamp, discarding a backlog #99 warning already owed",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if \"paused\" in _fields:\n        _prior = _fields.get(\"paused_unticked\")",
+        "    if False:\n        _prior = _fields.get(\"paused_unticked\")"
+      ]
+    ],
+    "expect": [
+      "a SECOND --pause keeps the FIRST baseline — the plan now has ZERO outstanding and the stamp still reads the 1 it had when the work was actually parked"
+    ]
+  },
+  {
+    "name": "the unreadable-plan handler INVENTS a count instead of leaving the reader 'cannot tell'",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "                _stamp = \"\"  # unreadable plan -> no stamp; the reader treats that as \"cannot tell\"",
+        "                _stamp = \"paused_unticked: 0\\n\""
+      ]
+    ],
+    "expect": [
+      "...and writes NO stamp — the reader treats an absent stamp as `cannot tell`, which is a different verdict from any number it could have guessed"
+    ]
+  },
+  {
+    "name": "an ORPHAN paused_unticked (no `paused:`) is inherited as a baseline, fabricating a 'work resumed' warning",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    _fields = _pp.parse_sentinel(_text)\n    if \"paused\" in _fields:",
+        "    _fields = _pp.parse_sentinel(_text)\n    if _fields.get(\"paused_unticked\") is not None:"
+      ]
+    ],
+    "expect": [
+      "a stray `paused_unticked:` with no `paused:` is NOT inherited as a baseline — an unpaused sentinel never had one, and inheriting it fabricates the very defect this guard exists to report"
+    ]
+  },
+  {
+    "name": "the pause stamp becomes a CONSTANT — the shape a single-input case cannot see",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "                    _stamp = f\"paused_unticked: {_total - _done}\\n\"",
+        "                    _stamp = \"paused_unticked: 1\\n\""
+      ]
+    ],
+    "expect": [
+      "...and at a SECOND, distinct input where outstanding (3), done (1) and total (4) all differ — a producer exercised once is satisfied by the constant its own fixture supplies, whatever that constant is"
+    ]
+  },
+  {
+    "name": "the pause stamp writes the DONE count instead of the OUTSTANDING count",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "                    _stamp = f\"paused_unticked: {_total - _done}\\n\"\n            except (OSError, UnicodeDecodeError):",
+        "                    _stamp = f\"paused_unticked: {_done}\\n\"\n            except (OSError, UnicodeDecodeError):"
+      ]
+    ],
+    "expect": [
+      "...and at a SECOND, distinct input where outstanding (3), done (1) and total (4) all differ — a producer exercised once is satisfied by the constant its own fixture supplies, whatever that constant is"
+    ]
+  },
+  {
+    "name": "a restatement over a STAMP-LESS pause INVENTS a baseline, converting a live `cannot tell` into permanent silence",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "        _stamp = f\"paused_unticked: {_prior}\\n\" if _prior is not None else \"\"",
+        "        _stamp = f\"paused_unticked: {_prior}\\n\" if _prior is not None else \"paused_unticked: 0\\n\""
+      ]
+    ],
+    "expect": [
+      "a restatement over a STAMP-LESS pause does not invent a baseline — the honest `cannot tell` survives `--pause` instead of becoming a definite silence"
     ]
   }
 ]
