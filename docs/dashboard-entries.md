@@ -11657,3 +11657,31 @@ fact be caught (the real gap is a frozen *derived component* whose source parame
 and #100 is scoped to one file when the grammar was already in two at the time it was filed.
 
 ⚠ Three `Explore` agents were dispatched and **none returned**; no claim rests on agent output.
+
+## 2026-09-22 [resolved: 2026-09-22/4]
+Decided: file all six, including the four corrections to rows that already existed. The findings are
+now backlog items rather than a document — three new rows (#167, #168, #169) and dated corrections
+appended to #100, #164, #165 and #166. Corrections were appended rather than rewritten, so each row
+still shows what it originally claimed alongside the measurement that changed it.
+
+The one that matters is #167, and the order matters more than the content: the tool that would catch
+this class has to be pointed at the code before the tidying happens, not after. The review measured
+why — the class was named in writing a day earlier and a fourth copy shipped anyway, in a file whose
+own comments describe the problem in capitals. Tidying first and building the check later leaves
+nothing to stop the fifth copy.
+
+Also decided: the terminology PR merged; the review PR is held for you to read.
+<!--tech-->
+Filed on `arch-review-observer-family`, PR #337 (rebased onto `master` after #336 squash-merged as
+`d99d9349`; the empty re-arm commit was dropped). Roadmap step ticked with the verdict and two
+follow-ups: **#167 first**, then **#100 + #166 as ONE decision**, because taken separately the
+observer family gets a shared sentinel module and a shared log module by two independent choices.
+
+⚠ One defect in the filing itself, caught before commit: the #100 correction contained a literal `|`
+inside `` `str \| None` ``, which splits a markdown table cell even within backticks — row 100 went
+from 8 cells to 9. Found by comparing cell counts against a pre-edit backup, fixed by escaping, and
+**verified with `check-docs.CELL_SPLIT`** — the rule that owns the definition — rather than with
+`awk -F'|'`, which cannot see markdown escaping and still reports 9.
+
+⚠ `check-backlog-closure` WARNs on #117 and #159 (merged, no ✅). Both pre-existing, neither touched
+here, and left alone rather than folded in.
