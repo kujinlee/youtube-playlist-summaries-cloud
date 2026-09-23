@@ -102,6 +102,11 @@ POPULATION: frozenset[str] = frozenset({
     # enforces R4 had exempted itself from it, because the escape regex matched its own docstring.
     "check-ratchet-contract.py",
     "check-banner-armed.py",
+    # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record, pinned in the
+    # same commit that creates it — for the reason this file keeps restating, and because it is a
+    # LIBRARY: `check-ratchet-contract`'s population is `check-*` guards, so nothing else observes
+    # its declared count at all. Its own first run printed 37 against a docstring saying 34.
+    "observer_log.py",
     "check-ci-watched.py",           # ⟳ 2026-09-04: CI ran unwatched on 2 of 3 pushes
     "check-group-claims.py",         # ⟳ 2026-09-11. Pinned in the commit that creates it:
                                      # a guard declaring a count nothing verifies is the

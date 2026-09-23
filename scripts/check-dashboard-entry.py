@@ -837,9 +837,21 @@ def verdict(changed: list[str], added_entry: bool, pr_body: str,
         return 0, f"exempted by declaration — {reason}"
     if reason == "":
         return 1, f"{NO_ENTRY} was declared with no reason after it"
+    # ⛔ THE LAST SENTENCE IS BACKLOG #168, AND IT IS THE HALF THAT WAS MISSING. This message
+    # tells the reader to edit the PR body — and editing the PR body CANNOT, BY ITSELF, make this
+    # gate pass. CI reads `github.event.pull_request.body` from the EVENT PAYLOAD, which is frozen
+    # when the event fires; `gh run rerun` replays that same stale payload. Measured twice: PR #322
+    # on 2026-09-18 (two rerun cycles) and PR #336 on 2026-09-22, where the author followed this
+    # very message, spent a rerun, and found the cause written on a DIFFERENT step's comment.
+    # ⭐ The remedy belongs HERE rather than only in a `ci.yml` comment, because a comment on the
+    # sibling step is exactly the mechanism that already failed — the person reading a refusal is
+    # not reading the workflow file.
     return 1, (f"{len(real)} tracked file(s) changed and no entry was added to "
                f"docs/dashboard-entries.md. Add a '## YYYY-MM-DD' block describing "
-               f"the change in plain words, or put 'NO-ENTRY: <reason>' in the PR body.")
+               f"the change in plain words, or put 'NO-ENTRY: <reason>' in the PR body. "
+               f"⚠ If you edit the PR body to answer this, you must then PUSH something — "
+               f"CI reads the body from the frozen event payload, so an edit alone (and a "
+               f"`gh run rerun`) will fail again with this identical message.")
 
 def _self_test() -> int:
     ok = fail = 0

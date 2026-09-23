@@ -568,7 +568,32 @@ EXPECTED_MUTATIONS = {
     # surviving on exactly that gap. The threshold entry is the fourth of that kind — every other
     # case derives _BIG/_SMALL from LARGE_TURN and so moves with it, leaving the calibrated value
     # unfalsifiable until one case pinned it as a literal.
-    "scripts/check-banner-armed.py": 47,
+    # ⟳ 2026-09-23, backlog #166 + #170 — A SANCTIONED RATCHET FALL, and the only kind there
+    # is: 5 anchors stopped resolving because THE CODE THEY NAME IS GONE, moved into
+    # `scripts/observer_log.py` with the record grammar. They are RETIRED WITH THEIR SUBJECT
+    # rather than orphaned, and each one's property is mutation-covered in its new home:
+    #   banner  flush_line freezes session   -> observer_log "record puts `session` third"
+    #   banner  flush_line freezes timestamp -> observer_log "record puts `when` second"
+    #   ci      fields stop being sanitised  -> observer_log "col stops removing the TAB"
+    #   ci      sanitiser empties the field  -> observer_log "col strips a TAB" + content
+    #   closing empty-session fallback       -> observer_log "the EMPTY sentinel is blanked"
+    # ⚠ THREE were RETARGETED rather than retired, because they are still properties of the
+    # per-guard ADAPTER (which payload columns this guard emits) and not of the grammar:
+    # flush_line's (before, after), ci log_line's column count, closing log_line's turn.
+    # Net: 47->45, 29->27, 47->46, and +14 for the new owner. Every surviving anchor was
+    # re-verified to resolve exactly once AFTER the code was final, not before.
+    "scripts/check-banner-armed.py": 45,
+    # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record. Pinned in
+    # the commit that creates it, with its manifest — `check-ratchet-contract` REFUSED the
+    # module until both existed (R4W_no_mutation_manifest), which is the contract working on
+    # a file minutes old. ⭐ Mutation 2 is the load-bearing one: it swaps `splitlines()` for
+    # `split("\n")`, which is the EXACT historical defect one file over — a hand-written line
+    # rule that covered 2 of the 11 characters `splitlines()` honours.
+    # ⟳ r1 HIGH 4, same day: 14 -> 15. The review measured that the retired R5-646c property
+    # (a frozen `when` column) had NO replacement mutation and no case that could fail —
+    # `record defaults `when` to now()` asserted `!= ""`, which `col(x) or EMPTY` can never
+    # be. A case and a mutation were both added. A RISE needs a reason as much as a fall.
+    "scripts/observer_log.py": 15,
     # ⟳ 2026-09-07, R4 manifest debt 8 -> 7. FIVE of the seven cover rules the 15 shipped cases
     # already asserted; the other two are the gaps writing them found, and both are the same
     # shape — a claim about coverage that nothing executed:
@@ -586,7 +611,7 @@ EXPECTED_MUTATIONS = {
     # suite found the defects: `relative_to` raising on a redirected log (a warn-only observer
     # turning into a traceback), and judging the LIVE turn instead of the previous one, which
     # would have made the guard silently unable to see any closing message at all.
-    "scripts/check-closing-table.py": 47,
+    "scripts/check-closing-table.py": 46,
     "scripts/gen-dashboard.py": 68,
     # ⟳ 2026-09-12. gen-goals-page.py was the last PAGE-PRODUCING generator with no
     # manifest — gen-dashboard, gen-backlog-page, brief-compose, page_chrome and page_markup
@@ -681,7 +706,7 @@ EXPECTED_MUTATIONS = {
     # NO input can distinguish it. It is defensive (it catches a future edit that wrongly moves a
     # pending state into the resolved list), not decisive — mutating it would be unkillable-by-
     # construction, the `check-storage-grant-pin` case-5 shape.
-    "scripts/check-ci-watched.py": 29,
+    "scripts/check-ci-watched.py": 27,
     # ⟳ 2026-09-08, R4 manifest debt 5 -> 4. Two findings, both about a rule with no single owner:
     #   * `range(a, b + 1)`'s INCLUSIVE bound was unfalsifiable — every range case writes both
     #     endpoints (`B1-B5`), and ident_re matches each on its own, so expansion only ever
@@ -2757,6 +2782,11 @@ def _self_test() -> int:
                                       "scripts/gen-dashboard.py",
                                       "scripts/gen-features-page.py",
                                       "scripts/gen-goals-page.py",
+                                      # ⟳ 2026-09-23, backlog #166 + #170 — the ONE owner of
+                                      # the observer-log record. A LIBRARY, not a guard, so
+                                      # `check-ratchet-contract`'s population never sees it;
+                                      # this literal is the outside observer of its manifest.
+                                      "scripts/observer_log.py",
                                       "scripts/page_chrome.py",
                                       "scripts/page_markup.py",
                                       "scripts/peer-sites.py"])
@@ -3410,7 +3440,11 @@ def _self_test() -> int:
     # right because it was computed; the sentence beside it was wrong because it was typed. That
     # is the same defect this branch folded as r4's Low 5, committed inside the comment claiming
     # immunity to it.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 954)
+    # ⟳ 2026-09-23, backlog #166 + #170: 954 -> 964. +15 for the new owner `observer_log.py`
+    # (14 at first write, +1 from r1 HIGH 4), and -5 for anchors RETIRED WITH THEIR SUBJECT
+    # when the record grammar moved out of the three producers. Net +10. The per-file
+    # reasons are on their entries above; this literal is the outside observer of the sum.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 964)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -140,6 +140,8 @@ from pathlib import Path
 from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import observer_log  # noqa: E402  — the ONE owner of the record grammar (backlog #166, #170)
 SENTINEL = ROOT / ".claude/executing-plan"
 WARN_LOG = ROOT / ".claude/banner-warnings.log"
 # ⛔ A SEPARATE FILE, AND THAT IS THE POINT (backlog #97). The late flush is an OBSERVATION, not a
@@ -624,26 +626,41 @@ def decide(texts: list[str] | None, armed: bool,
 
 
 def log_line(reason: str, detail: str, when: str, session: str) -> str:
-    """One appended record. Tab-separated so the log stays greppable and countable.
+    """This guard's warn payload, over the SHARED record grammar. -> `v1⇥when⇥session⇥reason⇥detail`
 
     `reason` discriminates the two warning classes. The banner-less class has NO banner by
     construction, so the previous shape — (step, total), written only when a banner existed —
     could never record it, and a class the log cannot express reads as never having fired.
 
-    Nothing parses this file (searched 2026-09-04: only this module, its self-test, a comment in
-    block-idle-stop.sh, and prose in docs/dashboard-entries.md).
+    ⟳ **2026-09-23, backlog #166 + #170 — THE GRAMMAR MOVED TO `observer_log`, AND `session` IS NOW
+    SANITISED.** It was interpolated raw here (`session or '-'`) while the sibling one file over had
+    already fixed exactly that: a TAB in the Stop payload's `session_id` added a column, a newline
+    added a record. Measured on this function before the change: 5 columns and 2 records.
+
+    ⛔ **THE STALE REFERRER LIST IS GONE RATHER THAN CORRECTED.** It read *"Nothing parses this file
+    (searched 2026-09-04: only this module, its self-test, a comment in block-idle-stop.sh, and
+    prose in docs/dashboard-entries.md)"*. Re-measured 2026-09-22: `block-idle-stop.sh` contains
+    **no** reference to this log — it names the SCRIPT, which is a different thing. The
+    load-bearing half (*nothing parses this file*) held and is now verified family-wide across all
+    four logs; the enumeration had expired, and an enumeration that has to be re-derived to stay
+    true does not belong in a docstring.
     """
-    return f"{when}\t{session or '-'}\t{reason}\t{detail}\n"
+    return observer_log.record(session, reason, detail, when=when)
 
 
 def flush_line(before: int, after: int, when: str, session: str) -> str:
-    """One appended observation. Same tab-separated grammar as `log_line`, a DIFFERENT file.
+    """One appended observation, over the same shared grammar. A DIFFERENT file.
 
     It carries counts rather than a `reason` because there is only one thing it can record — which
     is precisely why it must not live in the warn log, where `reason` is what tells two classes
     apart and a third value would make that column mean two different kinds of thing.
+
+    ⚠ **THIS IS THE FOURTH PRODUCER, AND BACKLOG #166 COUNTED THREE.** It shares the two leading
+    columns and diverges after them, which made it invisible to a count that keyed on the name
+    `log_line`. It was injectable for the same reason the others were, and it is fixed by the same
+    move — a producer is not safe because nobody thought to list it.
     """
-    return f"{when}\t{session or '-'}\t{before}\t{after}\n"
+    return observer_log.record(session, before, after, when=when)
 
 
 # ── I/O shell ─────────────────────────────────────────────────────────────────────────────────
@@ -939,7 +956,7 @@ def _log_flush(session: str, late: tuple) -> bool:
     `check-ratchet-contract.py` refuses in a guard — and rightly, since the whole point of this
     record is that the durability question is answered by observation rather than by argument.
     """
-    when = _dt.datetime.now().astimezone().replace(microsecond=0).isoformat()
+    when = observer_log.now()
     try:
         FLUSH_LOG.parent.mkdir(parents=True, exist_ok=True)
         with FLUSH_LOG.open("a") as fh:
@@ -1159,7 +1176,7 @@ def run_decide(payload: str) -> int:
         else:
             unticked = 0 if steps is _UNSET or steps is None else steps[1] - steps[0]
             detail = f"{unticked} unticked"
-        when = _dt.datetime.now().astimezone().replace(microsecond=0).isoformat()
+        when = observer_log.now()
         try:
             WARN_LOG.parent.mkdir(parents=True, exist_ok=True)
             with WARN_LOG.open("a") as fh:
@@ -1307,7 +1324,7 @@ def _self_test() -> int:
 
     # ── the log ────────────────────────────────────────────────────────────────────────────
     case("the log line is tab-separated and states the state and the detail",
-         log_line("unarmed", "STEP 2 of 5", "2026-09-04T07:00:00-07:00", "sess").split("\t")[1:]
+         log_line("unarmed", "STEP 2 of 5", "2026-09-04T07:00:00-07:00", "sess").split("\t")[2:]
          == ["sess", "unarmed", "STEP 2 of 5\n"])
 
 
@@ -1435,16 +1452,16 @@ def _self_test() -> int:
     # pinned the STRING and left the counts and the session ambient, because its only scenario
     # supplies `fl-text`, 1 and 2 and it asserts those literals.
     case("R5-636 log_line carries the SESSION it was given, at two distinct inputs",
-         log_line("unarmed", "d", "T", "sess-a").split("\t")[1] == "sess-a"
-         and log_line("unarmed", "d", "T", "sess-b").split("\t")[1] == "sess-b")
+         log_line("unarmed", "d", "T", "sess-a").split("\t")[2] == "sess-a"
+         and log_line("unarmed", "d", "T", "sess-b").split("\t")[2] == "sess-b")
     case("R5-646 flush_line carries BOTH measured counts, at two distinct input pairs — the "
          "counts ARE the evidence, and a constant pair keeps the file populated while recording "
          "nothing that was measured",
          flush_line(4, 11, "T", "s").split("\t")[-2:] == ["4", "11\n"]
          and flush_line(1, 2, "T", "s").split("\t")[-2:] == ["1", "2\n"])
     case("R5-646b ...and its session column too",
-         flush_line(1, 2, "T", "sess-a").split("\t")[1] == "sess-a"
-         and flush_line(1, 2, "T", "sess-b").split("\t")[1] == "sess-b")
+         flush_line(1, 2, "T", "sess-a").split("\t")[2] == "sess-a"
+         and flush_line(1, 2, "T", "sess-b").split("\t")[2] == "sess-b")
     # ⛔ THE TIMESTAMP COLUMN, AND THE FOLD THAT ADDED THESE CASES IS WHAT EXPOSED IT.
     # `check-fixture-variation.py` went RED on this file at `02218390` and the red was committed:
     # the R5-646 cases gave `flush_line` its first DIRECT call sites, and all four passed the same
@@ -1457,8 +1474,8 @@ def _self_test() -> int:
     # column is the only thing in the observation log that orders the records.
     case("R5-646c ...and its TIMESTAMP column, which nothing read — a `when` that is the same "
          "string at every call site leaves any clause reading it unguarded",
-         flush_line(1, 2, "T", "s").split("\t")[0] == "T"
-         and flush_line(1, 2, "2026-09-22T13:59:00-07:00", "s").split("\t")[0]
+         flush_line(1, 2, "T", "s").split("\t")[1] == "T"
+         and flush_line(1, 2, "2026-09-22T13:59:00-07:00", "s").split("\t")[1]
          == "2026-09-22T13:59:00-07:00")
     case("W2 one call BELOW the threshold is quiet — the boundary is exact, not approximate",
          decide([], armed=False, tool_uses=_SMALL)[0] == QUIET)

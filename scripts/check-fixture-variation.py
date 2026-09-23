@@ -284,6 +284,20 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # ⟳ 2026-09-23, backlog #166 + #170: the ONE owner of the observer-log record, pinned in the
+    # commit that adds it — this guard refused the file until it was, which is now the fourth time
+    # it has caught a new script arriving unmeasured. DERIVED by running `analyse()` on the final
+    # source, not transcribed: ⚠ an earlier slice derived this honestly and then invalidated it
+    # with a later edit IN THE SAME COMMIT, so it is re-derived after the module is frozen.
+    # It reports NO findings — all six parameters are genuinely varied by the suite.
+    'observer_log.py': (
+        'append.line',
+        'append.path',
+        'col.v',
+        'record.fields',
+        'record.session',
+        'record.when',
+    ),
     # ⟳ 2026-09-20: the closing-table guard, pinned in the commit that adds it — this guard
     # refused it until it was, which is the third time in two days it has caught a new file
     # arriving unmeasured. DERIVED by running `analyse()`, not transcribed. It reports NO

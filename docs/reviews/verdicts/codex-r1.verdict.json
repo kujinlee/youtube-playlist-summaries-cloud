@@ -1,19 +1,37 @@
 {
   "attempts": [
-    "  gpt-5.6-sol: try_next \u2014 CLI reported HTTP 400",
-    "  gpt-5.6-terra: try_next \u2014 CLI reported HTTP 400",
-    "  gpt-5.6-luna: try_next \u2014 CLI reported HTTP 400",
-    "  gpt-5.5: ok \u2014 6677 chars"
+    "  gpt-5.5: ok \u2014 1798 chars"
   ],
+  "dirty": {
+    ".github/workflows/ci.yml": "100644 93e0fbd928d1207062d0b29979c5e513b66d49f1",
+    "docs/backlog.md": "100644 8487ed789b2adeb36f9f2217a9ec54457c918585",
+    "docs/reviews/claude/observer-log-owner-r1-claude.md": "100644 6e46f61ad6762854044c855328f2d5f5b0cd6cd1",
+    "scripts/check-banner-armed.py": "100755 4cee9fafa7e9e3fecf84d71587fe0bc0e96bab19",
+    "scripts/check-ci-watched.py": "100755 c66e1610fc7caa4a8e14a724117e4f1c637c0f99",
+    "scripts/check-closing-table.py": "100644 37a18a24f52dd105d49d1af1dcb231feb312c38b",
+    "scripts/check-dashboard-entry.py": "100644 5b5f444049e96fa84123fa3ee5454867eb6419f7",
+    "scripts/check-fixture-variation.py": "100644 3b30659895b95bdfa1276e5ae1af6c54a12cb316",
+    "scripts/check-plan-code.py": "100644 66be8ae80ae6367e3eca8ed117d8a7bcbabd4b0e",
+    "scripts/check-selftest-counts.py": "100644 722fafe8c89a36ab887ec4fe2d1d13e370fc584c",
+    "scripts/mutations/check-banner-armed.json": "100644 cf8b33dc42dfc54c1710c12ff0a4ce7b6e10bf83",
+    "scripts/mutations/check-ci-watched.json": "100644 de29a345937d458306d4a832eae43b6e3e980755",
+    "scripts/mutations/check-closing-table.json": "100644 1a0d4e6f6030506ba5deeb443691c198c1342110",
+    "scripts/mutations/observer_log.json": "100644 15288643cf14171082c96fb25bc2bacce2136ff2",
+    "scripts/observer_log.py": "100644 19ddf63f5092d078c65b374c99b5a6890f72b7a3"
+  },
   "exit_code": 0,
   "gate_ran": true,
+  "head": "b493edccb5f4b6020f40710f828c3b2311319bf7",
   "intrusions": [
-    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/c2bc498d-be8e-4506-ad67-8de0e6e78903/scratchpad/codex-run.log: OVERWRITTEN by the agent during the run",
-    "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/docs/reviews/spec-mutation-drift-report-contract-r1-claude.md: CREATED by the agent during the run"
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/47586cf2-5f2e-4357-8ff6-1ddf3a06b5ee/scratchpad/build_manifest.py: OVERWRITTEN during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/47586cf2-5f2e-4357-8ff6-1ddf3a06b5ee/scratchpad/codex-run.log: OVERWRITTEN during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/47586cf2-5f2e-4357-8ff6-1ddf3a06b5ee/scratchpad/sweep.log: CREATED during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/47586cf2-5f2e-4357-8ff6-1ddf3a06b5ee/scratchpad/sweep2.log: CREATED during the run (writer unattributed)"
   ],
   "model": "gpt-5.5",
-  "reason": "6677 chars",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/47586cf2-5f2e-4357-8ff6-1ddf3a06b5ee/scratchpad/codex-prompt.md",
+  "reason": "1798 chars",
   "review": "codex-r1.md",
-  "schema": 1,
+  "schema": 2,
   "tool": "codex-review"
 }
