@@ -2009,6 +2009,7 @@ because a discovery living only in the session task list does not survive `/comp
   is the concrete question it inherits, with a proposed answer rather than an open one.
 
 - [ ] **Do backlog #167 FIRST — the cross-member instrument over `scripts/`.** The review's own §0 measured why order matters: architecture review #153 NAMED this class on 2026-09-21 and a fourth duplicate shipped on 2026-09-22 anyway, in a docstring that names the problem in capitals. Prose did not hold. #167 is what makes the extractions in #100 and #166 stay extracted; taken after them, nothing stops the fifth copy. ⚠ **#167 does NOT close #165** — a name-keyed check cannot see `check-banner-armed._armed_from_text`, which was renamed.
+- [ ] **🟠 #170 rides with that shared owner, and it is WHY the owner is worth building.** The record grammar has already inverted two columns once, between generations of the same file, and nothing could have caught it — the family has four writers and ZERO readers, so a grammar with no consumer has no falsifier. Promoted out of #166 to its own row 2026-09-23 by user decision. The shared owner must emit a **version marker**; none of the four producers has one.
 - [ ] **Then #100 and #166 as ONE decision, not two.** Taken separately the observer family gets a shared *sentinel* module and a shared *log* module by two independent choices, which is how a third arrives. #100's population is the GRAMMAR (two sentinel files), not one file.
 
 ⚠ **Two facts this slice measured that outlive it.** (1) `.claude/hooks/block-idle-stop.sh` derives

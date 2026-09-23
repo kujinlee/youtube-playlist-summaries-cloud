@@ -11755,3 +11755,37 @@ a value DERIVED from a parameter (the review's, `len(steps)`). Both real; (ii) i
 `(findings, examined_keys)` as a SET, deliberately (`:703-708`) — *"'this entry did not fire' and
 'this parameter is no longer examined at all' are the same observation"*. Every PASSES in §4.2/§4.3
 now reports its non-empty `examined` set, so a vacuous pass cannot be mistaken for a real one.
+
+## 2026-09-23
+Two decisions taken, both yours. The architecture review is merged and on master. And the finding
+that mattered most in it has been pulled out into a item of its own, where it can be seen.
+
+That finding, in plain words: the small log files these background checks write have already changed
+shape once without anyone noticing. Two columns swapped places in early September, so the older
+records and the newer ones mean different things while looking identical. Nothing in the project
+could have caught it, and the reason is the point — four scripts write those files and nothing at
+all reads them, so there was no reader to complain.
+
+It matters because those records exist to be counted later. The whole reason for keeping them is to
+answer "does this check nag me for no reason?" before anyone promotes it to something that blocks
+work. A count taken across the boundary quietly mixes two meanings.
+
+The fix is small and it rides along with tidying the four writers into one — but it adds something
+nobody had thought of: a marker on each line saying which format it is written in.
+<!--tech-->
+PR #338 merged as `71a32378`. F13 promoted out of #166 into **🟠 #170** by user decision; #166 keeps
+a pointer rather than a summary, so the two cannot drift apart. Roadmap follow-up updated: #167
+first (it stops a FIFTH producer appearing), then #100 + #166 as one decision, with #170 riding on
+that shared owner.
+
+⚠ #170 carries its own falsifier — concatenate `banner-warnings.pre-backlog96.log` with
+`banner-warnings.log`, count `unarmed` in column 3, and if the answer is not obviously wrong to a
+reader then nothing is marking the boundary.
+
+⚠ It also carries a warning about its own numbers: the review recorded the logs as 76/45/5/5 and
+`ci-unwatched.log` was **12** within the hour, because a session's own Stop hooks append to it. The
+inverted files are closed, so the finding is unaffected — but no live count in that row should be
+quoted without re-measuring.
+
+Row surgery used unescaped-pipe positioning with cell counts asserted before and after (8 → 8 on
+both rows), after a naive `split("|")` corrupted row 100 earlier in this effort.
