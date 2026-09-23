@@ -162,7 +162,7 @@
         "    return False"
       ]
     ],
-    "expect": "path_is_tracked returns None — NOT False — when git says the question is invalid"
+    "expect": "…and None for a path OUTSIDE that root — git's third answer, never read as False"
   },
   {
     "name": "the explicit --verdict escape is removed, so a deliberate replacement is refused too",

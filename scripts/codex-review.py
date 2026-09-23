@@ -42,7 +42,7 @@ candidate yields a message ends in a loud non-zero exit.
 Usage:
   scripts/codex-review.py --out docs/reviews/task-N-foo-codex.md "<review prompt>"
   scripts/codex-review.py --out <file> --prompt-file <file> [--timeout 900] [--model <slug>]
-  scripts/codex-review.py --self-test  # 101 cases
+  scripts/codex-review.py --self-test  # 103 cases
 
 Exit codes:  0 = a real review was written   |   1 = no candidate produced one (gate did NOT run)
 """
@@ -274,16 +274,26 @@ def verdict_collision(vpath: str, *, tracked: "bool | None", override_given: boo
     return None
 
 
-def path_is_tracked(path: str) -> "bool | None":
+def path_is_tracked(path: str, repo_root: "str | None" = None) -> "bool | None":
     """Is this path tracked by git? -> True / False / None when the question cannot be answered.
 
     ⚠ **None IS NOT False.** Returning False on a failed `git` call would be a fail-open handler in
     front of a rule whose entire job is to refuse — `check-ratchet-contract.py` exists to catch that
     shape, and the rule above turns None into a CANNOT RUN rather than a shrug.
+
+    ⚠ **`repo_root` IS A PARAMETER BECAUSE THE FIRST VERSION'S CASES PASSED FOR AN AMBIENT REASON,
+    and the mutation harness caught it by REFUSING.** They asserted True for a real tracked file and
+    False for an absent one — both true only while the suite ran inside this git checkout. The
+    harness stages a `copytree` of the tree with NO `.git`, so there `git` exits 128, this returns
+    None for both, and the CONTROL went red at 100/102 before any mutation was applied: *every
+    verdict below would be an artefact. Treat this as NOT CHECKED.* The suite now BUILDS a throwaway
+    repository and drives all three outcomes inside it, so the answers come from a world the case
+    made rather than one it happened to be standing in.
     """
+    root = repo_root if repo_root is not None else REPO_ROOT
     try:
-        rel = os.path.relpath(path, REPO_ROOT)
-        r = subprocess.run(["git", "-C", REPO_ROOT, "ls-files", "--error-unmatch", "--", rel],
+        rel = os.path.relpath(path, root)
+        r = subprocess.run(["git", "-C", root, "ls-files", "--error-unmatch", "--", rel],
                            capture_output=True, text=True)
     except (OSError, ValueError):
         return None
@@ -1271,23 +1281,51 @@ def self_test() -> int:
         "CANNOT RUN" in (_unk or ""), True)
     chk("…but an explicit --verdict still wins over an unanswerable query",
         verdict_collision("/r/v/x.verdict.json", tracked=None, override_given=True), None)
-    # The FETCH, against this repo: a real tracked file and a real absent one, so the pair proves the
-    # query discriminates rather than returning one constant.
-    chk("path_is_tracked says True for a file git really tracks",
-        path_is_tracked(os.path.join(REPO_ROOT, "scripts", "codex-review.py")), True)
-    chk("…and False for one it does not, which no constant can satisfy alongside the above",
-        path_is_tracked(os.path.join(REPO_ROOT, "docs", "reviews", "verdicts",
-                                     "no-such-verdict-ZZZ.verdict.json")), False)
-    # ⛔ **THE THIRD OUTCOME, AND IT SURVIVED UNTIL THIS CASE EXISTED.** git answers this question
-    # three ways — 0 tracked, 1 not tracked, **128 the question was invalid** — and the two cases
-    # above drive only the first two. Measured: collapsing `returncode == 1 -> False` into a bare
-    # `return False` passed 101/101, so the fail-open direction of the FETCH was unfalsifiable while
-    # the fail-open direction of the RULE was covered. ⚠ It is a REACHABLE input, not a contrived
-    # one: `--out` is documented to live OUTSIDE the repo, and `git ls-files --error-unmatch` exits
-    # 128 with "is outside repository" for any such path. Reading that as "not tracked" is the exact
-    # shrug this rule was written to refuse.
-    chk("path_is_tracked returns None — NOT False — when git says the question is invalid",
-        path_is_tracked("/etc/hosts"), None)
+    # ── the FETCH, in a repository this case BUILDS ────────────────────────────────────────────
+    # ⛔ **THE FIRST VERSION OF THESE CASES PASSED FOR AN AMBIENT REASON AND THE HARNESS REFUSED THE
+    # WHOLE SWEEP OVER IT.** They asked this repo about its own files — true only while the suite ran
+    # inside this checkout. `--mutate .` stages a `copytree` with NO `.git`, so git exited 128, both
+    # answers came back None, and the CONTROL was red at 100/102 before any mutation ran:
+    # *every verdict below would be an artefact. Treat this as NOT CHECKED.* A red control is the
+    # harness working — it refused to report coverage it had not earned.
+    # ⚠ All three outcomes are driven in ONE built world, so no answer depends on where the suite is
+    # standing: a file that is added, a file that is absent, and a path OUTSIDE the root (git's third
+    # answer, rc=128). `git -c` keeps identity out of the user's config.
+    with tempfile.TemporaryDirectory() as td:
+        _repo = os.path.join(td, "r"); os.makedirs(_repo)
+        _git_ok = True
+        for cmd in (["init", "-q"], ["config", "user.email", "t@example.invalid"],
+                    ["config", "user.name", "t"]):
+            if subprocess.run(["git", "-C", _repo] + cmd, capture_output=True).returncode != 0:
+                _git_ok = False
+        with open(os.path.join(_repo, "tracked.txt"), "w") as f:
+            f.write("committed\n")
+        if _git_ok:
+            _git_ok = subprocess.run(["git", "-C", _repo, "add", "tracked.txt"],
+                                     capture_output=True).returncode == 0
+        # ⛔ CANNOT RUN IS A FAILURE. If git is unavailable this must not quietly report three passes.
+        chk("the throwaway repository was really built — otherwise the three cases below are void",
+            _git_ok, True)
+        chk("path_is_tracked says True for a file that repo really tracks",
+            path_is_tracked(os.path.join(_repo, "tracked.txt"), _repo), True)
+        chk("…and False for one it does not, which no constant can satisfy alongside the above",
+            path_is_tracked(os.path.join(_repo, "absent.txt"), _repo), False)
+        # ⛔ **THE THIRD OUTCOME, AND IT SURVIVED UNTIL A CASE DROVE IT.** git answers this question
+        # three ways — 0 tracked, 1 not tracked, **128 the question was invalid** — and the two cases
+        # above drive only the first two. Measured: collapsing `returncode == 1 -> False` into a bare
+        # `return False` passed 101/101, so the fail-open direction of the FETCH was unfalsifiable
+        # while the same direction of the RULE was covered. ⚠ A REACHABLE input, not a contrived one:
+        # `--out` is documented to live OUTSIDE the repo, and `git ls-files --error-unmatch` exits
+        # 128 with "is outside repository" for any such path. Reading that as "not tracked" is the
+        # exact shrug this rule refuses.
+        # ⚠⚠ ITS FIRST FORM WAS `path_is_tracked("/etc/hosts")` AGAINST THE AMBIENT ROOT, AND THAT
+        # PASSED FOR THE WRONG REASON IN HALF THE WORLDS IT RUNS IN. Inside this checkout it returned
+        # None because the path is outside the repository; inside the harness's staged tree it
+        # returned None because there is no repository at all. Same verdict, different cause — so the
+        # case could not tell the behaviour it names from the absence of git. Driving it against a
+        # root this block BUILT makes the cause the one the name claims.
+        chk("…and None for a path OUTSIDE that root — git's third answer, never read as False",
+            path_is_tracked(os.path.join(td, "elsewhere.txt"), _repo), None)
     # gate_ran is STATED, not derived. This case exists so that a later "simplification" which
     # computes it from exit_code fails here rather than in production: the two are independent
     # fields on purpose, and a reader must never have to infer one from the other.
