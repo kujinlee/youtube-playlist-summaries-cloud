@@ -11612,3 +11612,146 @@ that lifts the limit turns the case RED instead of leaving it vacuous.
 Suite 32 → 55; manifest 14 → 27; `EXAMINED_KEYS` for this file 7 → 15, derived by running
 `analyse()` rather than transcribed. Declared sum 944 → 952. All 27 entries verified under the
 harness's own attribution rule (`check-plan-code.py:1451`). `pyright`: 0 errors.
+
+## 2026-09-22 [needs-you]
+An architecture review looked at the five scripts that watch what you and I do while we work — the
+ones that notice a missing banner, an unwatched CI run, a plan left half-finished. Two separate
+pieces of work this week kept breaking in the same way, each fix causing the next round's problem,
+which is the signal that says stop patching and look at the shape.
+
+The shape turned out to be this. These five files are about six and a half thousand lines and they
+share no code at all. When one of them needs to do something a neighbour already does, whoever
+writes it reads the neighbour and copies the answer. That works, and it is what a careful person
+would do — but it copies the answer without copying the obligation, so when the original is later
+fixed the copies are not. There are now four places that write the same kind of log line, three of
+which have a small flaw the fourth had fixed, and three places that read the same small settings
+file, two of which have the same name and give different answers.
+
+The repo already has a tool that catches exactly this, built last month after a similar problem cost
+six rounds of review. It only looks at the database. Handed this code instead, unchanged, it finds
+six instances immediately. It needs about a day's work to point it at the right place.
+
+**Waiting on you:** eleven findings are written up and **none of them have been filed** as backlog
+items, because you have asked before that filing be your step rather than mine. Four of them are
+corrections to rows that already exist — the rows are right in their conclusions and wrong in the
+evidence or the scope — and editing someone's row to say something they did not measure felt like a
+call for you rather than me. There is also a PR waiting to merge (#336).
+<!--tech-->
+`docs/reviews/architecture-review-2026-09-22-observer-family.md` (587 lines). Armed by THRASHING on
+two slices (PR #332, #333), both pre-committed in writing before the round that would have been
+accused of softening them.
+
+⭐ **The class was named 24 hours earlier by architecture review #153** and recurred anyway:
+`check-ci-watched.log_line` shipped in `ebfb74f1` (2026-09-22) with a docstring naming the problem in
+capitals. So §0 asks why naming it did not stop it, rather than re-deriving that it is duplication.
+
+Measured, all by hand: 6 guards take `scripts/` as subject and **all six ask a per-member question**;
+`check-vocabulary-collisions.evaluate()` is already substrate-neutral and finds **6** collisions over
+the live `scripts/` population (1,382 symbols / 63 files) where #166 names 1; its stem match is
+case-sensitive so a naive second adapter reports **zero** on `WARN_LOG` (false green); **3 of 4** log
+producers are injectable, not 2 (`flush_line` is uncounted by #166); `check-ci-watched.py:183` says
+six columns where the measurement is five.
+
+⛔ Two claims in inherited rows were **refuted by running the code**: #164's worked example would in
+fact be caught (the real gap is a frozen *derived component* whose source parameter varies in text),
+and #100 is scoped to one file when the grammar was already in two at the time it was filed.
+
+⚠ Three `Explore` agents were dispatched and **none returned**; no claim rests on agent output.
+
+## 2026-09-22 [resolved: 2026-09-22/4]
+Decided: file all six, including the four corrections to rows that already existed. The findings are
+now backlog items rather than a document — three new rows (#167, #168, #169) and dated corrections
+appended to #100, #164, #165 and #166. Corrections were appended rather than rewritten, so each row
+still shows what it originally claimed alongside the measurement that changed it.
+
+The one that matters is #167, and the order matters more than the content: the tool that would catch
+this class has to be pointed at the code before the tidying happens, not after. The review measured
+why — the class was named in writing a day earlier and a fourth copy shipped anyway, in a file whose
+own comments describe the problem in capitals. Tidying first and building the check later leaves
+nothing to stop the fifth copy.
+
+Also decided: the terminology PR merged; the review PR is held for you to read.
+<!--tech-->
+Filed on `arch-review-observer-family`, PR #337 (rebased onto `master` after #336 squash-merged as
+`d99d9349`; the empty re-arm commit was dropped). Roadmap step ticked with the verdict and two
+follow-ups: **#167 first**, then **#100 + #166 as ONE decision**, because taken separately the
+observer family gets a shared sentinel module and a shared log module by two independent choices.
+
+⚠ One defect in the filing itself, caught before commit: the #100 correction contained a literal `|`
+inside `` `str \| None` ``, which splits a markdown table cell even within backticks — row 100 went
+from 8 cells to 9. Found by comparing cell counts against a pre-edit backup, fixed by escaping, and
+**verified with `check-docs.CELL_SPLIT`** — the rule that owns the definition — rather than with
+`awk -F'|'`, which cannot see markdown escaping and still reports 9.
+
+⚠ `check-backlog-closure` WARNs on #117 and #159 (merged, no ✅). Both pre-existing, neither touched
+here, and left alone rather than folded in.
+
+## 2026-09-22
+A late addition, and it is the most important thing the review found. One of the three background
+searches that had failed to report finally did, hours later, and it pointed at something none of the
+hand measurements had looked for: the log format these scripts write **has already changed once,
+quietly, and nothing noticed**.
+
+Two columns swapped places between the fourth and fifth of September. The older records say "step 4
+of 5, unarmed"; the newer ones say "unarmed, step 2 of 5". Same file name, same shape, opposite
+meanings, and nothing in either file says which generation it belongs to.
+
+That is exactly what the rest of the review predicted would happen and could not prove. These logs
+are written by four scripts and read by none, so there was nothing that could have caught it. The
+76 records in the live file and the 6 in the older one cannot be compared, and the whole reason the
+logs exist is to be counted later — to answer "does this check cry wolf?" before anyone promotes it
+to something that blocks work.
+
+So the small tidy-up job that looked like cheap insurance is now the one with a real reason behind
+it, and it needs one thing added that nobody had thought of: a marker saying which format a line is
+written in.
+<!--tech-->
+F13 (**High**), F14, F15 appended to `docs/backlog.md` #166 and #169 — inside rows already approved
+for correction rather than as new rows, since filing is the user's step and these post-date that
+decision. ⚠ **F13 may warrant its own row; that is the user's call, flagged rather than taken.**
+
+Leads came from the `observer-logs` agent; every one was re-measured here before being written down
+(file bytes opened, producing lines read). ⛔ Its summary contradicted its own data — it concluded
+`check-banner-armed.py:633`'s referrer list was "still accurate" including a `block-idle-stop.sh`
+comment, while its own 19-file table omitted that hook; re-measured, the hook has **0** references to
+any log name. §4.5 was corrected: it previously said no claim rested on agent output, which stopped
+being true.
+
+Also: `closing-table-warnings.log` stamps `-0700` while the other three stamp `-07:00`
+(`strftime("…%z")` vs `.isoformat()`), and `check-closing-table.py:846` cites an instruction in
+`dev-process.md` that has **0** occurrences there — a citation backlog #149 repeats as its own
+severity justification.
+
+## 2026-09-22
+Correction to what I wrote earlier today. I said the review had caught a mistake in one of the
+existing backlog items — that its example of the problem wouldn't actually have been missed. That
+was wrong, and the item was right all along.
+
+What happened is worth writing down because it is the same mistake the review is about. I tested the
+idea against a small made-up example rather than against the real code, got a correct answer about
+the made-up one, and then wrote down a conclusion about the real one. The two have different shapes,
+and the difference is the whole point: in the real code the step number is buried inside a larger
+value, which is exactly why nothing notices when it stops changing.
+
+The review's own example is still useful — it shows a second, broader version of the same gap — but
+it does not replace the original, and I have rewritten the backlog item to say so.
+
+This was caught by asking one of the background searches to try to knock the finding down rather
+than to confirm it.
+<!--tech-->
+⟳ RETRACTION, §4.3 + F11 of `docs/reviews/architecture-review-2026-09-22-observer-family.md`, and
+backlog #164's correction rewritten in place (unmerged draft, so no history rewritten).
+
+The claim assumed `step` is a parameter of `check-banner-armed.decide`. It is not — the banner rides
+inside `texts` (`:503`), so there is no `decide.step`. Re-measured against the real signature with
+every other parameter varied: `findings=[]`,
+`examined=['decide.armed','decide.edited','decide.steps','decide.texts']` — non-vacuous, zero
+findings. #164's example is a genuine miss in situ.
+
+⭐ Two distinct freeze mechanisms, one each: (i) a component of a COMPOSITE parameter (#164's), (ii)
+a value DERIVED from a parameter (the review's, `len(steps)`). Both real; (ii) is more general.
+
+⭐ The adversarial check also established something the review had not: `analyse` returns
+`(findings, examined_keys)` as a SET, deliberately (`:703-708`) — *"'this entry did not fire' and
+'this parameter is no longer examined at all' are the same observation"*. Every PASSES in §4.2/§4.3
+now reports its non-empty `examined` set, so a vacuous pass cannot be mistaken for a real one.
