@@ -11818,3 +11818,70 @@ candidates, not verdicts. That is what `ALLOWED` is for.
 ⛔ `check-docs` caught a real defect in this edit: #165's Status cell said ✅ while its description
 still led with 🟡, so a severity scan would have counted a closed row as open. Fixed to
 `✅ (was 🟡)`. The guard found it, not me.
+
+## 2026-09-23
+You asked whether I had actually done anything to keep a pattern I had just called valuable. I had
+not, and the answer is worth recording because of what it repeats.
+
+The pattern: when I send a background agent to check a finding, telling it to *try to break the
+finding* works far better than asking it to confirm. Four times yesterday and today it earned its
+keep — once catching a correction I had already written into the backlog and which was wrong.
+
+What I did about it, before you asked: I wrote it in the review document, and said twice in
+conversation that it was worth keeping. That is all. No note, no rule, nothing that would reach the
+next session.
+
+That is exactly the failure the architecture review spent its length documenting — naming a problem
+does not stop it happening, and writing prose about it is not a mechanism. I did it about the
+lesson of the session, inside the session, hours after describing the same shape in someone else's
+code.
+
+Now it is written in two places that outlive the conversation: the working notes that load at the
+start of a session, and the project's own review method document.
+<!--tech-->
+New memory `ask-an-agent-to-refute-not-confirm` + index line. New section in
+`docs/review-method.md` under *Adversarial Review* — the existing mandate there covered Codex only;
+nothing said how to prompt a Claude subagent, which is where all four of today's wins came from.
+
+⚠ Stated in the rule itself: **not mechanisable.** No subagent prompt is persisted anywhere a guard
+can read, so no script can assert it was done. It is a convention, and this repo's own doctrine is
+that a convention catches only what you read — so the rule says so rather than implying enforcement
+it does not have.
+
+The four measured dispatches, with outcomes, are in the rule as the evidence: one confirming prompt
+whose summary contradicted its own table; two refutation prompts, one of which overturned a
+published claim and the other of which supplied a better control than the coordinator had; and the
+same discipline turned inward, which found a review finding stated too strongly.
+
+## 2026-09-23
+Correction, and the user caught it by simply refusing to believe me.
+
+I said the project had nothing written about giving a background Claude agent an adversarial brief —
+an instruction to attack the work rather than agree with it. That was wrong. Thirty-three review
+documents in this repo say, in their own header, that the reviewer was Claude working to exactly
+such a brief. It has been standard practice for months.
+
+The real gap is narrower and I had walked straight past it. The rule covers the two agents that
+*review* a change. It says nothing about the agents sent to *look something up* or *check whether a
+finding is true* — and those get asked things like "map this out" or "answer these questions", which
+invite agreement by the way they are phrased. That is the group that needed the rule, and all four
+of the cases I had measured were from it.
+
+Worth saying plainly: I reached for "nothing anywhere" without running the search, during a session
+whose entire subject was claims that outrun their evidence.
+<!--tech-->
+⟳ PR #341's section rewritten before merge — it opened on a false premise. Measured: 33 docs under
+`docs/reviews/` carry `Reviewer: Claude (adversarial mandate)`; `plugins.md:148-149` specifies one
+verbatim for the Codex-fallback path.
+
+⭐ The corrected framing: the dual-review protocol covers REVIEW HALVES. The gap is VERIFICATION and
+RESEARCH agents — all four measured dispatches were `Explore` agents prompted "map the family" /
+"answer these questions", confirming by construction. The rule now names that population explicitly
+and carries the withdrawal of its own first draft.
+
+⚠ One nuance the rewrite keeps: `plugins.md:124-125` designates the split as *Claude code review* /
+*Codex adversarial review*, so an adversarial Claude half is documented mainly as a Codex
+SUBSTITUTE. That is a real but much narrower framing point than what I originally claimed, and it is
+recorded as such rather than inflated back into the headline.
+
+Memory `ask-an-agent-to-refute-not-confirm` carries the same correction.
