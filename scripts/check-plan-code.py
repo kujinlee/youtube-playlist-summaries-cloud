@@ -1044,7 +1044,23 @@ EXPECTED_MUTATIONS = {
     # subject. Nine entries: the two the earlier rounds bought back, the destination-mode read, the
     # throwaway index, the unchanged-file rule, the null-vs-empty distinction, the recorded prompt,
     # and repository redirection in both directions.
-    "scripts/codex-review.py": 12,
+    # ⟳ 2026-09-23, THE VERDICT-PATH COLLISION — 12 -> 16, and it is the THIRD measured
+    # instance of one defect: `verdict_path` DERIVES the verdict name from `--out`'s basename,
+    # so the namespace has no allocator and two reviews choosing the same output name write the
+    # same file. A round-3 run with `--out codex-r3.md` overwrote a COMMITTED
+    # `codex-r3.verdict.json` from an earlier session; both records honestly said
+    # `"review": "codex-r3.md"`, so the stem cannot tell them apart. ⛔ `check-review-recorded`
+    # catches a MISSING verdict and the overwritten file shows as MODIFIED, not ADDED — so
+    # nothing in the repo could see it. FOUR entries, because the rule has four directions and
+    # three of them are ways to be wrong in the SAFE-LOOKING direction:
+    #   * the refusal dropped (the defect itself);
+    #   * `tracked is None` read as answerable — the RULE's fail-open;
+    #   * ⭐ git's rc=128 read as "not tracked" — the FETCH's fail-open, which SURVIVED 101/101
+    #     until a case drove it. git answers three ways and the first two cases drove two of
+    #     them; `--out` is documented to live OUTSIDE the repo, where rc=128 is what you get.
+    #   * the explicit `--verdict` escape removed — the OVER-refusal direction, which would
+    #     break the legitimate replacement and teach callers to route around the guard.
+    "scripts/codex-review.py": 16,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
@@ -3548,7 +3564,7 @@ def _self_test() -> int:
     # this file that state the number, and no gate can see the other: the case below is DERIVED, so
     # it passes either way. This is the branch's signature defect committed a third time, inside the
     # commit that rewrote the account it disagrees with.
-    # ⟳ 2026-09-23, round 3 (folding r2, then r3's own findings): 966 -> 977.
+    # ⟳ 2026-09-23, round 3 (folding r2, then r3's own findings, then the verdict-path collision): 966 -> 981.
     # +1 on `observer_log.py` (r2 H3, the fail-open
     # direction of the new raising write), +4 across `check-ci-watched` and `check-closing-table`
     # (M1, the session- and timestamp-passthrough entries the two siblings never had), +1 on
@@ -3556,7 +3572,7 @@ def _self_test() -> int:
     # RETARGETED anchors are net zero by construction — retargeting keeps the entry and moves its
     # text, which is why it is the repair for a moved subject and retiring is not. This literal is
     # the outside observer of the sum; the reasons are on the entries.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 977)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 981)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

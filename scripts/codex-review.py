@@ -42,7 +42,7 @@ candidate yields a message ends in a loud non-zero exit.
 Usage:
   scripts/codex-review.py --out docs/reviews/task-N-foo-codex.md "<review prompt>"
   scripts/codex-review.py --out <file> --prompt-file <file> [--timeout 900] [--model <slug>]
-  scripts/codex-review.py --self-test  # 91 cases
+  scripts/codex-review.py --self-test  # 101 cases
 
 Exit codes:  0 = a real review was written   |   1 = no candidate produced one (gate did NOT run)
 """
@@ -230,6 +230,69 @@ def verdict_path(out_path: str, override: "str | None" = None) -> str:
             stem = stem[: -len(ext)]
             break
     return os.path.join(REPO_ROOT, VERDICT_DIR, f"{stem or 'review'}.verdict.json")
+
+
+def verdict_collision(vpath: str, *, tracked: "bool | None", override_given: bool) -> "str | None":
+    """Would writing here destroy COMMITTED testimony about a different run? -> refusal, or None.
+
+    PURE — `tracked` is passed in, because the git query is the caller's to make. This repo has paid
+    for fusing a rule to its fetch: it makes the rule untestable without the world the fetch needs.
+
+    ⛔ **THIRD MEASURED INSTANCE, 2026-09-23.** `verdict_path` DERIVES this name from `--out`'s
+    basename, so the namespace has no allocator: any two reviews that pick the same output name write
+    the same verdict. A round-3 review dispatched with `--out codex-r3.md` overwrote a COMMITTED
+    `codex-r3.verdict.json` belonging to a different review from an earlier session — 6,677 chars the
+    first time this happened, and both files honestly reported `"review": "codex-r3.md"`, so the stem
+    cannot distinguish them. `check-review-recorded.py` catches a MISSING verdict (the file shows as
+    MODIFIED, not ADDED, so it sees nothing) and **nothing catches an overwrite.**
+
+    ⭐ **IT REFUSES THE ACCIDENT AND ALLOWS THE DELIBERATE ACT, which is the whole design.** A
+    DERIVED path that is already tracked is a refusal: the caller never chose it, so the destruction
+    is a side effect of naming an output file. An EXPLICIT `--verdict` is allowed through, because
+    replacing committed testimony on purpose is a decision someone made and can be seen making in the
+    command line. A blanket refusal would break the legitimate re-run, and a blanket allow is the
+    status quo that has now failed three times.
+
+    ⚠ `tracked=None` means the git query could not be answered, and that is a REFUSAL, not a pass.
+    Proceeding would clobber on exactly the machines where nobody can tell afterwards.
+    """
+    if override_given:
+        return None
+    if tracked is None:
+        return (f"CANNOT RUN — could not ask git whether {vpath} is already tracked, so this run "
+                f"cannot tell a fresh verdict path from one holding committed testimony. Pass "
+                f"--verdict <path> to choose deliberately. TREAT THIS AS NOT RUN.")
+    if tracked:
+        return (f"REFUSED — the verdict path derived from --out is already TRACKED: {vpath}\n"
+                f"  It holds committed testimony, and writing over it would destroy evidence that\n"
+                f"  a different run's gate ran. Nothing in this repo detects that overwrite: the\n"
+                f"  file shows as MODIFIED rather than ADDED, so check-review-recorded sees a\n"
+                f"  verdict present and is satisfied. THIRD measured instance.\n"
+                f"  Fix: give --out a name unique to this review — the convention is\n"
+                f"  <subject>-r<N>-codex.md, which yields <subject>-r<N>-codex.verdict.json — or\n"
+                f"  pass --verdict <path> to replace that testimony deliberately.")
+    return None
+
+
+def path_is_tracked(path: str) -> "bool | None":
+    """Is this path tracked by git? -> True / False / None when the question cannot be answered.
+
+    ⚠ **None IS NOT False.** Returning False on a failed `git` call would be a fail-open handler in
+    front of a rule whose entire job is to refuse — `check-ratchet-contract.py` exists to catch that
+    shape, and the rule above turns None into a CANNOT RUN rather than a shrug.
+    """
+    try:
+        rel = os.path.relpath(path, REPO_ROOT)
+        r = subprocess.run(["git", "-C", REPO_ROOT, "ls-files", "--error-unmatch", "--", rel],
+                           capture_output=True, text=True)
+    except (OSError, ValueError):
+        return None
+    if r.returncode == 0:
+        return True
+    # git distinguishes "not tracked" (1) from a broken invocation (128: not a repo, bad option).
+    if r.returncode == 1:
+        return False
+    return None
 
 
 def verdict_record(*, gate_ran: bool, exit_code: int, out_path: str, reason: str,
@@ -721,6 +784,14 @@ def main() -> int:
     # cannot be written downgrades the run to CANNOT RUN (2) rather than reporting the outcome it
     # was about to report — an unrecorded success is indistinguishable from the failure this fixes.
     vpath = verdict_path(args.out, args.verdict)
+    # ⛔ BEFORE ANY TESTIMONY IS WRITTEN, and before `emit` exists — because `emit` WRITES to `vpath`,
+    # so a refusal discovered inside it would have to destroy the thing it is protecting in order to
+    # report that it was protecting it. This is the one exit below that deliberately leaves no verdict.
+    _collision = verdict_collision(vpath, tracked=path_is_tracked(vpath),
+                                   override_given=bool(args.verdict))
+    if _collision:
+        print(f"[codex-review] {_collision}", file=sys.stderr)
+        return 2
     # Taken ONCE, here, before any candidate runs — this is the tree the reviewer is handed. Taken
     # at `emit` instead it would describe the tree after the run, and a commit made while a 15-minute
     # review was in flight would be recorded as something the reviewer had seen.
@@ -1171,6 +1242,52 @@ def self_test() -> int:
         "plan-x-r3-codex.verdict.json")
     chk("an explicit --verdict wins", os.path.basename(verdict_path("/a/b.md", "/c/mine.json")),
         "mine.json")
+    # ── the derived verdict path is a namespace with NO ALLOCATOR (third instance, 2026-09-23) ──
+    # ⚠ THE RULE IS DRIVEN AT ALL FOUR OF ITS INPUTS, not only the one that fires. A case that
+    # exercises only `tracked=True` leaves the pass-through directions unfalsifiable, and the
+    # dangerous mistake in a refusal is refusing the wrong thing, not failing to refuse.
+    chk("a DERIVED verdict path over a TRACKED file is refused",
+        bool(verdict_collision("/r/docs/reviews/verdicts/codex-r3.verdict.json",
+                               tracked=True, override_given=False)), True)
+    chk("…and the refusal NAMES the path, so the reader can see which evidence was at risk",
+        "codex-r3.verdict.json" in (verdict_collision(
+            "/r/docs/reviews/verdicts/codex-r3.verdict.json",
+            tracked=True, override_given=False) or ""), True)
+    chk("…and it says what to do instead, rather than only that it refused",
+        all(t in (verdict_collision("/r/v/x.verdict.json", tracked=True, override_given=False) or "")
+            for t in ("--verdict", "--out")), True)
+    chk("an UNTRACKED path is not a collision — a scratch verdict is free to be replaced",
+        verdict_collision("/r/v/fresh.verdict.json", tracked=False, override_given=False), None)
+    # ⭐ THE DELIBERATE ACT IS ALLOWED THROUGH, and this case is the one that keeps the rule honest:
+    # refusing an explicit --verdict would break the legitimate replacement and teach callers to
+    # route around the guard, which is how a guard becomes a prefix everyone types past.
+    chk("an EXPLICIT --verdict over a tracked file is ALLOWED — chosen, not derived",
+        verdict_collision("/r/v/codex-r3.verdict.json", tracked=True, override_given=True), None)
+    # ⛔ CANNOT RUN IS A REFUSAL. `tracked=None` means git could not answer; passing there would
+    # clobber on exactly the machines where nobody can reconstruct what was lost.
+    _unk = verdict_collision("/r/v/x.verdict.json", tracked=None, override_given=False)
+    chk("an UNANSWERABLE git query refuses rather than proceeding", bool(_unk), True)
+    chk("…and says CANNOT RUN, so it is not read as a found collision",
+        "CANNOT RUN" in (_unk or ""), True)
+    chk("…but an explicit --verdict still wins over an unanswerable query",
+        verdict_collision("/r/v/x.verdict.json", tracked=None, override_given=True), None)
+    # The FETCH, against this repo: a real tracked file and a real absent one, so the pair proves the
+    # query discriminates rather than returning one constant.
+    chk("path_is_tracked says True for a file git really tracks",
+        path_is_tracked(os.path.join(REPO_ROOT, "scripts", "codex-review.py")), True)
+    chk("…and False for one it does not, which no constant can satisfy alongside the above",
+        path_is_tracked(os.path.join(REPO_ROOT, "docs", "reviews", "verdicts",
+                                     "no-such-verdict-ZZZ.verdict.json")), False)
+    # ⛔ **THE THIRD OUTCOME, AND IT SURVIVED UNTIL THIS CASE EXISTED.** git answers this question
+    # three ways — 0 tracked, 1 not tracked, **128 the question was invalid** — and the two cases
+    # above drive only the first two. Measured: collapsing `returncode == 1 -> False` into a bare
+    # `return False` passed 101/101, so the fail-open direction of the FETCH was unfalsifiable while
+    # the fail-open direction of the RULE was covered. ⚠ It is a REACHABLE input, not a contrived
+    # one: `--out` is documented to live OUTSIDE the repo, and `git ls-files --error-unmatch` exits
+    # 128 with "is outside repository" for any such path. Reading that as "not tracked" is the exact
+    # shrug this rule was written to refuse.
+    chk("path_is_tracked returns None — NOT False — when git says the question is invalid",
+        path_is_tracked("/etc/hosts"), None)
     # gate_ran is STATED, not derived. This case exists so that a later "simplification" which
     # computes it from exit_code fails here rather than in production: the two are independent
     # fields on purpose, and a reader must never have to infer one from the other.

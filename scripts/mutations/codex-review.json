@@ -130,5 +130,49 @@
       ]
     ],
     "expect": "the line keeps the canonical shape the harness documents: got=False"
+  },
+  {
+    "name": "the collision refusal is dropped, so a DERIVED path overwrites committed testimony",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    if tracked:\n        return (f\"REFUSED",
+        "    if False:\n        return (f\"REFUSED"
+      ]
+    ],
+    "expect": "a DERIVED verdict path over a TRACKED file is refused"
+  },
+  {
+    "name": "an unanswerable git query is read as answerable — the RULE's fail-open direction",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    if tracked is None:",
+        "    if tracked is False:"
+      ]
+    ],
+    "expect": "an UNANSWERABLE git query refuses rather than proceeding"
+  },
+  {
+    "name": "path_is_tracked reports an INVALID git question as 'not tracked' — the FETCH's fail-open",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    if r.returncode == 1:\n        return False\n    return None",
+        "    return False"
+      ]
+    ],
+    "expect": "path_is_tracked returns None — NOT False — when git says the question is invalid"
+  },
+  {
+    "name": "the explicit --verdict escape is removed, so a deliberate replacement is refused too",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    if override_given:\n        return None",
+        "    if False:\n        return None"
+      ]
+    ],
+    "expect": "an EXPLICIT --verdict over a tracked file is ALLOWED — chosen, not derived"
   }
 ]

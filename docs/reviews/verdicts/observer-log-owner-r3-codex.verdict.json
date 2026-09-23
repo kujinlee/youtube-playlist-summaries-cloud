@@ -1,0 +1,18 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 4854 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "26fc8f82f575cedd3afb72284b7eb19bd057d1c3",
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/3cd75aad-e1c3-4f60-a74f-8e0b72c27165/scratchpad/codex-r3-run.log: OVERWRITTEN during the run (writer unattributed)"
+  ],
+  "model": "gpt-5.5",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/3cd75aad-e1c3-4f60-a74f-8e0b72c27165/scratchpad/codex-r3-prompt.md",
+  "reason": "4854 chars",
+  "review": "observer-log-owner-r3-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}
