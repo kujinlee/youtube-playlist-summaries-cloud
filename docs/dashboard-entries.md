@@ -11612,3 +11612,48 @@ that lifts the limit turns the case RED instead of leaving it vacuous.
 Suite 32 → 55; manifest 14 → 27; `EXAMINED_KEYS` for this file 7 → 15, derived by running
 `analyse()` rather than transcribed. Declared sum 944 → 952. All 27 entries verified under the
 harness's own attribution rule (`check-plan-code.py:1451`). `pyright`: 0 errors.
+
+## 2026-09-22 [needs-you]
+An architecture review looked at the five scripts that watch what you and I do while we work — the
+ones that notice a missing banner, an unwatched CI run, a plan left half-finished. Two separate
+pieces of work this week kept breaking in the same way, each fix causing the next round's problem,
+which is the signal that says stop patching and look at the shape.
+
+The shape turned out to be this. These five files are about six and a half thousand lines and they
+share no code at all. When one of them needs to do something a neighbour already does, whoever
+writes it reads the neighbour and copies the answer. That works, and it is what a careful person
+would do — but it copies the answer without copying the obligation, so when the original is later
+fixed the copies are not. There are now four places that write the same kind of log line, three of
+which have a small flaw the fourth had fixed, and three places that read the same small settings
+file, two of which have the same name and give different answers.
+
+The repo already has a tool that catches exactly this, built last month after a similar problem cost
+six rounds of review. It only looks at the database. Handed this code instead, unchanged, it finds
+six instances immediately. It needs about a day's work to point it at the right place.
+
+**Waiting on you:** eleven findings are written up and **none of them have been filed** as backlog
+items, because you have asked before that filing be your step rather than mine. Four of them are
+corrections to rows that already exist — the rows are right in their conclusions and wrong in the
+evidence or the scope — and editing someone's row to say something they did not measure felt like a
+call for you rather than me. There is also a PR waiting to merge (#336).
+<!--tech-->
+`docs/reviews/architecture-review-2026-09-22-observer-family.md` (587 lines). Armed by THRASHING on
+two slices (PR #332, #333), both pre-committed in writing before the round that would have been
+accused of softening them.
+
+⭐ **The class was named 24 hours earlier by architecture review #153** and recurred anyway:
+`check-ci-watched.log_line` shipped in `ebfb74f1` (2026-09-22) with a docstring naming the problem in
+capitals. So §0 asks why naming it did not stop it, rather than re-deriving that it is duplication.
+
+Measured, all by hand: 6 guards take `scripts/` as subject and **all six ask a per-member question**;
+`check-vocabulary-collisions.evaluate()` is already substrate-neutral and finds **6** collisions over
+the live `scripts/` population (1,382 symbols / 63 files) where #166 names 1; its stem match is
+case-sensitive so a naive second adapter reports **zero** on `WARN_LOG` (false green); **3 of 4** log
+producers are injectable, not 2 (`flush_line` is uncounted by #166); `check-ci-watched.py:183` says
+six columns where the measurement is five.
+
+⛔ Two claims in inherited rows were **refuted by running the code**: #164's worked example would in
+fact be caught (the real gap is a frozen *derived component* whose source parameter varies in text),
+and #100 is scoped to one file when the grammar was already in two at the time it was filed.
+
+⚠ Three `Explore` agents were dispatched and **none returned**; no claim rests on agent output.
