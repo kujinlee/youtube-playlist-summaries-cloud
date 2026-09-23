@@ -11789,3 +11789,32 @@ quoted without re-measuring.
 
 Row surgery used unescaped-pipe positioning with cell counts asserted before and after (8 → 8 on
 both rows), after a naive `split("|")` corrupted row 100 earlier in this effort.
+
+## 2026-09-23
+Tidied the backlog where it was genuinely saying the wrong thing, and left it alone everywhere else.
+
+One item was asking for work that has already been done — it requested the architecture review that
+merged this morning, and its own text already said so while its status still read "open". It is now
+closed, with a note saying plainly that closing it is not the same as the work being finished: the
+work it pointed at lives in three other items.
+
+The more useful find: an older item listing four places where the same small piece of parsing code
+had been copied rather than shared. It turns out the tool proposed in a newer item would find those
+copies automatically — and running it now finds a fifth the older item never knew about. So the two
+are linked, and the older one can stop being a list somebody has to re-check by hand.
+
+Nothing was merged together. Combining items would have thrown away the measurements that make each
+one worth keeping.
+<!--tech-->
+#165 CLOSED (the review ran, `71a32378`); #143 ↔ #167 linked as inventory ↔ mechanism; #164's stale
+status refreshed. **No rows merged** — three carry measured instances a merge would lose.
+
+⭐ The #143/#167 link is MEASURED, not thematic: `evaluate()` over an `ast` reading of `scripts/`
+with #143's own stems finds `CELL_SPLIT` in 3 files, `ANCHOR` in **4**, `REGISTRY_ROW` in 2 —
+including `gen-goals-page`, which #143 names nowhere. ⚠ Stated with its caveat: `gen-backlog-page`
+legitimately BORROWS `CELL_SPLIT` via `_cell_split()` and would be flagged, so the adapter reports
+candidates, not verdicts. That is what `ALLOWED` is for.
+
+⛔ `check-docs` caught a real defect in this edit: #165's Status cell said ✅ while its description
+still led with 🟡, so a severity scan would have counted a closed row as open. Fixed to
+`✅ (was 🟡)`. The guard found it, not me.
