@@ -443,13 +443,24 @@ hand-written tally of it — this project has measured what those do.
 
 Dispatch Codex (`codex:rescue`) with an explicit adversarial mandate at every phase.
 
-### ⛔ The mandate applies to a CLAUDE subagent too, and it must say REFUTE
+### ⛔ A VERIFICATION agent must be told to REFUTE — the review halves already have a mandate; these do not
 
-**When you dispatch an agent to check a finding, instruct it to REFUTE the finding and to default to
-*refuted* when uncertain.** A prompt that asks *"is this right?"* buys agreement, which is the
-cheapest output an agent has.
+⟳ **This section's first draft claimed "nothing says how to prompt a Claude subagent". That was
+FALSE and is withdrawn.** Measured: **33 documents** under `docs/reviews/` carry a reviewer line of
+the form *"Claude (adversarial mandate)"*, and [`plugins.md`](plugins.md) specifies one explicitly
+for the fallback path — *"a fresh subagent with full file access and an explicit adversarial
+mandate"*. Claude review halves have been dispatched adversarially for months.
 
-**MEASURED 2026-09-23** across four dispatches on one architecture review:
+**The real gap is a different population.** The dual-review protocol covers the two REVIEW HALVES.
+It says nothing about the agents dispatched to **map a subject or check a finding** — and those are
+prompted with verbs like *"map the family"*, *"answer these questions"*, *"is this right?"*, which
+are **confirming by construction**.
+
+**So: when you dispatch an agent to CHECK A FINDING, instruct it to REFUTE the finding and to
+default to *refuted* when uncertain.** A prompt that asks *"is this right?"* buys agreement, which
+is the cheapest output an agent has.
+
+**MEASURED 2026-09-23** across four dispatches on one architecture review — all four were `Explore` agents, i.e. exactly the population this section is about, not review halves:
 
 | Prompt shape | Result |
 |---|---|
