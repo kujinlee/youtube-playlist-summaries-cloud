@@ -314,6 +314,48 @@ will misread the other — and `check-banner-armed._armed_from_text:670-675` rec
 colon-skip rule is *load-bearing* and that a divergence between readers already cost a measured
 defect on 2026-09-04.
 
+#### ⛔ 3.2a — They do not merely differ in type. On a DUPLICATE KEY they give OPPOSITE answers.
+
+Measured by driving all three readers over sixteen adversarial sentinel texts. Fifteen agree. One
+does not, and it is the one that matters:
+
+```
+input:  "sha: first\nsha: second\n"
+
+  check-plan-progress.parse_sentinel  ->  'second'     LAST wins
+  check-ci-watched.parse_sentinel     ->  'first'      FIRST wins
+```
+
+The mechanism, quoted rather than characterised — both loop `for line in text.splitlines()` and both
+guard on `if ":" in line`, and then:
+
+```python
+# check-plan-progress.py:112     accumulates, so a later line OVERWRITES
+out[k.strip()] = v.strip()
+
+# check-ci-watched.py:211-212    returns on the first match, so a later line is UNREACHABLE
+if k.strip() == "sha" and v.strip():
+    return v.strip()
+```
+
+⭐ **Why this is the important finding in §3, and not a curiosity.** Backlog #100's instance (2) is
+*exactly* a duplicate-key event: `--pause` wrote free text into the `key: value` file and **a
+newline injected a live second `plan:` field**, so the Stop guard supervised a DIFFERENT plan. Which
+field wins is therefore not academic — it decides which plan is supervised. **The two readers of
+this grammar answer that question in opposite directions**, and nothing anywhere states which is
+correct, because no document says the grammar permits a duplicate key at all.
+
+⚠ **Honest bound: this is not a live defect today.** The two readers are pointed at *different*
+sentinel files, so no single input reaches both. It is a latent divergence that becomes live the
+moment the shared owner of §3.3 is written — **whoever writes that module must CHOOSE, and today
+there is no basis for choosing.** That is the strongest available argument that #100's *(a)* needs an
+enumerated state set (its candidate *(b)*) and not only a shared parser.
+
+**The other fifteen cases agree**, and are recorded so the claim is falsifiable rather than a
+sample: plain, key-with-inner-space, leading whitespace, trailing whitespace on the key, a value
+containing a colon, empty value, a bare `":"` line, an uppercase key, `**paused**` with no colon,
+`paused:` with a colon, CRLF, ` `, and form feed.
+
 ### 3.3 — What the fix must therefore be
 
 **#100 candidate (a), with its population taken as the GRAMMAR rather than one file.** One module
@@ -522,6 +564,27 @@ written. Executed literally it gives one sentinel an owner and leaves the second
 The two `parse_sentinel`s additionally **share a name and return different types**
 (`dict[str, str]` vs `str | None`), which is worse than a plain duplicate: a reader who learns one
 will misread the other (§3.2).
+
+### F12 — The two `parse_sentinel`s resolve a DUPLICATE KEY in opposite directions — **Medium, structural, latent**
+
+Measured over sixteen adversarial sentinel texts; fifteen agree, one does not (§3.2a):
+
+```
+"sha: first\nsha: second\n"   ->  check-plan-progress: 'second' (LAST wins)
+                                  check-ci-watched:    'first'  (FIRST wins)
+```
+
+`check-plan-progress.py:112` accumulates into a dict so a later line overwrites;
+`check-ci-watched.py:211-212` returns on the first match so a later line is unreachable.
+
+⭐ **Backlog #100's own instance (2) is a duplicate-key event** — `--pause` free text with a newline
+injected a live second `plan:` field and the Stop guard supervised a different plan. Which field
+wins decides which plan is supervised, and the two readers of this grammar answer oppositely.
+
+⚠ **Not live today** — the readers are pointed at different sentinel files, so no input reaches
+both. It becomes live the moment §3.3's shared owner is written: **whoever writes it must choose,
+and nothing states which is correct**, because no document says the grammar permits duplicate keys
+at all. This is the case for #100's candidate *(b)* (enumerate the legal states) alongside *(a)*.
 
 ### F11 — Backlog #164's conclusion is right; its worked example is wrong — **Medium**
 
