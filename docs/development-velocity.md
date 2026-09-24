@@ -1,8 +1,17 @@
 # Development Velocity — what actually costs time here, and what to do about it
 
-> ⚠ **THIS IS A PROPOSAL, NOT ADOPTED PROCESS.** Nothing here governs until it lands in
-> `docs/dev-process.md`, `docs/review-method.md` or a script. It is filed as **backlog #177** and is
-> to be worked in its own session. Do not cite it as a rule.
+> ⟳ **2026-09-24 — PARTLY ADOPTED. Read this line before citing anything below.**
+>
+> | Section | Status |
+> |---|---|
+> | **§6 injection rules**, **§7 side jobs** | ✅ **ADOPTED** — they now live in `docs/process-checklists.md` and govern. **Read them there, not here** |
+> | **§2 Q0**, §3 signals, §4 timing rules | 🟠 **DECIDED IN FORM, NOT BUILT** — see §9 Q2 |
+> | **§5 sweep policy** | ✅ draft-PR-at-slice-start adopted as practice; **not** automated |
+> | everything else | proposal |
+>
+> ⛔ **An adopted rule is not cited from here.** This document is the measurement that justified the
+> rules; `process-checklists.md` is where they govern. Citing a rule from its rationale is how two
+> copies start.
 
 **Written 2026-09-24**, out of a session that merged PR #342 (five adversarial review rounds), held
 a Phase 6 architecture review, and implemented backlog #176. Every number below was measured in
@@ -31,6 +40,28 @@ round costs a model dispatch, a fold, and a sweep.
 ⛔ **THE GAP THIS DOCUMENT EXISTS FOR.** `docs/review-method.md` §0 is a decision procedure that
 starts at *"full loop, or one round?"* — it asks **how much** adversarial review to run and never
 asks **whether adversarial review is the right instrument**. Proposed as a new **Q0**, before Q1.
+
+> ✅ **FORM DECIDED 2026-09-24 by the user — HYBRID. Not built; this is the design session's input.**
+>
+> Q0's **entry** is a judgement — *does this change move a seam?* — because no definition of "seam"
+> exists that a script can read, and three hand-kept path lists have already each scored something
+> dangerous as one-round (`review-method.md` §0 Q1).
+>
+> Q0's **escalation** is mechanical where it can be. Of §3's four signals, *fixes do not terminate*
+> and *each fix ADDS code* are both measurable from the round documents and the diff.
+>
+> ⛔ **The reason the escalation half is the load-bearing one:** §3 records that all four signals
+> were present in the 2026-09-23 thrashing and it was **still called three rounds late**. A card
+> that a human reads and then misjudges is a detection failure a machine fixes and prose does not.
+>
+> ⚠ **And the thing the design session must answer first:** §0's own banner is *"read this, do not
+> recall it"*, and its Q1 is explicitly keyed on the changed path set **rather than judgement**. A
+> judgement question sitting at the top of that card is in tension with the card's own claim. Q0
+> has to say out loud that it is the exception, and why — or it weakens everything under it.
+>
+> ⚠ **Calibrate the mechanical half against a corpus of past rounds before shipping it.** Untested,
+> it is an assertion with a script around it. Ask which past slices it would have fired on, and
+> whether it fires on the verdict-path thrashing it was designed from.
 
 | Characteristic of the code | Primary instrument | Timing |
 |---|---|---|
@@ -127,7 +158,13 @@ needing one.
 
 ---
 
-## 6. Reduce defect INJECTION, not just detection
+## 6. Reduce defect INJECTION, not just detection — ✅ ADOPTED 2026-09-24
+
+> ✅ **These four rules now live in `docs/process-checklists.md` → *Reduce defect INJECTION, not
+> just detection*, and they govern from there.** What follows is the measurement that justified
+> them, kept because a rule without its evidence gets argued away. ⚠ Rule 3 landed as a
+> **cross-reference** to `review-method.md` §0 Q2 step 5, not a restatement — that step binds the
+> reviewer, and the gap was that nothing bound the author.
 
 A large share of review findings in the source session were **the author's own unverified claims** —
 each costing a full round to surface:
@@ -151,7 +188,12 @@ each costing a full round to surface:
 
 ---
 
-## 7. Side jobs
+## 7. Side jobs — ✅ ADOPTED 2026-09-24
+
+> ✅ **Landed in `docs/process-checklists.md` → *A SIDE JOB gets a name before it gets work*, as a
+> new subsection: a side job inherits NO design approval from the slice it arrived in.** ⛔ The
+> literal *"re-asks Q0"* wording was **deliberately not adopted** — Q0 does not exist yet, and a
+> rule pointing at nothing is a rule that cannot run. The attachment point is marked there instead.
 
 The repo already has the rule — *a side job gets a NAME first: slug + branch BEFORE the first edit* —
 and not applying it is what pulled an entire un-designed component into PR #342.
@@ -173,14 +215,48 @@ the branch's existing approval, and nothing currently checks whether it has a de
 
 ---
 
-## 9. Open questions for the implementing session
+## 9. The five open questions — ANSWERED 2026-09-24
 
-1. **Where does Q0 live?** `review-method.md` §0 is the natural home, but `dev-process.md` is the
-   spine and is at **214/220** lines — it can hold a pointer row and nothing more.
-2. **Is Q0 mechanisable at all**, or is it irreducibly a judgement? A guard that asked *"does this
-   change move a seam?"* would need a definition of seam that a script can read.
-3. **Should the draft-PR pattern be automatic** — i.e. does a new slice branch always open a draft
-   PR, and what does that cost in CI minutes?
-4. **Can the "no unmeasured number" rule be a gate** rather than a habit? `check-docs.py` already
-   polices some counts; the commit-message surface is unguarded.
-5. **Does the side-job trigger belong in a hook?** `unheralded` already guards the banner case.
+All five were settled in the implementing session. Q2 and the scope were the user's decisions; the
+other three were settled from evidence and are recorded so they are not re-opened from scratch.
+
+**1 · Where does Q0 live? → `review-method.md` §0.** Measured, not argued: `check-docs.LINE_BUDGETS`
+covers exactly two files — `dev-process.md` at 220 and `plugins.md` at 260. `review-method.md` is
+**not budgeted** and §0 is already the decision-procedure home. `dev-process.md` (214/220) gets
+nothing; it already points at `review-method.md`, and a pointer row would be a second pointer.
+
+**2 · Is Q0 mechanisable? → PARTLY, and that is the shape: HYBRID.** Decided by the user. Judgement
+at the entry, mechanical for escalation. Full statement and the two warnings that go with it are in
+§2 above — read it there, it is the design session's brief.
+
+**3 · Should the draft PR be automatic? → NO. Adopt the practice, do not build the hook.** It is
+already carrying its weight by hand: it caught backlog #176 r2's Blocking on its first use. A hook
+that opens a draft PR on branch creation is a separate build with its own failure modes — an
+unwanted PR on every throwaway branch, and a hook that must know which branches are slices. ⚠ The
+CI-minutes question that framed this turned out not to bind: `concurrency: cancel-in-progress`
+means repeated pushes cost **one** run, and the measured `verify` job is roughly twice as fast as
+the local sweep it replaces.
+
+**4 · Can "no unmeasured number" be a gate? → NO, and the repo already proved why.** The rule at
+`process-checklists.md` → *Qualify every number in prose* records the identical question being
+tried at three scopes and rejected: a syntactic proxy for a **semantic** property. Provenance is
+strictly harder than resolvability — a number's truth is not visible in its spelling at all. The
+specific, declared counts that CAN be guarded already are (`check-test-counts.py`,
+`check-selftest-counts.py`). It is adopted as a habit, in `process-checklists.md`.
+
+**5 · Does the side-job trigger belong in a hook? → DEFERRED, and it depends on Q0's form.** If
+Q0's escalation half lands mechanically, the hook has something real to fire on. Until then a hook
+could only nag, and `unheralded` already occupies that slot — a second nagging hook on the same
+moment is the duplicate-mechanism shape `check-vocabulary-collisions.py` exists to catch.
+
+---
+
+## 10. What is left — the design session's brief
+
+| Item | State |
+|---|---|
+| **Q0 itself** — the card in `review-method.md` §0 | 🟠 form decided (§2), not designed, not built |
+| **§3's four signals as mechanical tests** | 🟠 two of four look measurable; none is specified |
+| **Calibration corpus** for the mechanical half | 🟠 not started — ⛔ ship nothing without it |
+| **§5's "what is lost"** — a red CI sweep no longer names which commit broke coverage | 🟠 accepted, unmitigated |
+| **Side-job hook** (Q5) | ⏸ blocked on Q0's escalation half |

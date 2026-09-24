@@ -2057,7 +2057,7 @@ taken on, and the weaker original argument is kept on the record rather than rew
 not return within the session — **treat it as NOT RUN**. Every claim in the document was verified by
 hand with command and output recorded, so nothing rests on agent output.
 
-## Development velocity — backlog #177 — anchor `review-decides-itself` — 🟠 ANALYSIS DONE, NOTHING ADOPTED
+## Development velocity — backlog #177 — anchor `review-decides-itself` — 🟠 §6+§7 ADOPTED 2026-09-24; Q0 DESIGNED-IN-FORM, NOT BUILT
 
 **The analysis is the deliverable and it is complete:** [`docs/development-velocity.md`](development-velocity.md).
 Written 2026-09-24 at the user's request, out of the session that merged PR #342 (five adversarial
@@ -2070,12 +2070,23 @@ it lands in a process doc or a script** — the document says so in its own firs
       work had an upfront architecture review and CONVERGED by round 3; the verdict-path work
       entered as an un-designed side job and thrashed three more rounds. ⚠ An upfront review would
       NOT have caught the second — it was out of scope. The gap is work entering AFTER a review.
-- [ ] **#177 — adopt it.** 🟠 OPEN, NOT STARTED, and **to be worked in its OWN session at the user's
-      request**. Five strands: Q0 into `review-method.md`; the draft-PR pattern so sweeps run on
-      GitHub; the injection rules; the side-job trigger; de-escalation.
-- [ ] **Five open questions** are listed in §9, the sharpest being whether Q0 is mechanisable at all
-      or is irreducibly a judgement. A guard asking *"does this change move a seam?"* needs a
-      definition of seam a script can read.
+- [x] **The injection rules (§6) and the side-job rule (§7) — ADOPTED, PR #345.** They govern from
+      `docs/process-checklists.md`. ⚠ Rule 3 landed as a CROSS-REFERENCE to `review-method.md` §0 Q2
+      step 5, not a restatement: that step binds the reviewer, and the gap was that nothing bound
+      the author. ⛔ The literal *"side job re-asks Q0"* wording was NOT adopted — Q0 does not exist,
+      and a rule pointing at nothing cannot run; the attachment point is marked instead.
+- [x] **The draft-PR pattern — adopted as PRACTICE, deliberately not automated.** It caught #176 r2's
+      Blocking on its first use. The CI-minutes worry did not bind: `cancel-in-progress` makes
+      repeated pushes cost ONE run, and `verify` is ~2× faster than the local sweep.
+- [x] **All five §9 questions ANSWERED** in the doc, with their evidence, so none is re-opened from
+      scratch. Two were the user's decisions; three were settled from measurement.
+- [ ] **Q0 itself — DESIGNED IN FORM, NOT BUILT.** 🟠 The user decided it is **HYBRID**: judgement at
+      the entry, mechanical for escalation. `docs/development-velocity.md` §10 is the design
+      session's brief. ⛔ Two constraints that are not optional — Q0 must declare itself the
+      EXCEPTION to §0's *keyed on paths, not judgement* design and say why, and the mechanical half
+      must be calibrated against a corpus of past rounds before it ships.
+- [ ] **Side-job hook (§9 Q5)** — ⏸ blocked on Q0's escalation half. A hook now could only nag, and
+      `unheralded` already occupies that moment.
 
 ⚠ **Measured, so the priority is not guessed:** 7 sweeps ≈ 100 min but ~0 tokens; 3 of 5 review
 rounds were rework; GitHub runs the sweep ~2× faster than this machine (8m08s for the whole `verify`

@@ -12106,3 +12106,67 @@ for a filing decision, not filed.
 ⚠ **The store's append-only rule was knowingly set aside for this**, with the user's decision on the
 record. Its stated reason is that positional ids silently rebind a standing `[resolved:]`; measured
 above, no pre-existing id moves, so that specific hazard was verified absent before the edit.
+
+## 2026-09-24
+The review process now has rules about what the author writes down, not just about what reviewers look for.
+
+A study written earlier today asked where the time actually goes on this project. Its most useful
+finding was not about reviewing at all. A large share of the problems reviewers were spending whole
+rounds catching were not faults in the code — they were claims the author had written and never
+checked. A line count that was asserted and had gone the other way. A count of files that was wrong
+and then copied into three more places. Twice, a claim that a whole category of problem had been
+dealt with when only the one example in front of us had been.
+
+Four rules now cover that, and all four are free — they cost nothing but attention:
+
+- Do not write a number unless you measured it in the session you are writing in.
+- If a sentence turns out to be wrong, fix that sentence. Do not add a correction underneath it,
+  because the reader meets the wrong one first.
+- Saying "this whole category is handled" requires actually listing the category and checking each
+  one. Otherwise say you fixed the example, which costs nothing to admit.
+- Before claiming the automated checks pass, read the file that lists them rather than remembering
+  which ones there are.
+
+A fifth rule was added about work that turns up mid-way through something else. The study compared
+two pieces of work on the same branch, with the same reviewers: the one that had been designed in
+advance settled after three rounds; the one that was picked up opportunistically part-way through
+needed three further rounds and then a review of its own. The rule now says that work arriving
+mid-stream does not inherit the approval the surrounding work had.
+
+One larger idea from the study is deliberately not built yet: a question to ask before any review
+starts, about whether reviewing is even the right tool for this particular change. Its shape was
+decided today and written down. Building it is its own job.
+
+<!--tech-->
+**PR #345**, backlog #177. Adopts `docs/development-velocity.md` §6 and §7 into
+`docs/process-checklists.md`; both now govern from there. All five §9 open questions ANSWERED in
+the doc; §10 added as the design session's brief.
+
+⚠ **Rule 1 is NOT the neighbouring rule it sits beside.** *Qualify every number in prose* is about
+RESOLVABILITY — write `backlog #39`, not a bare `#39`. The new rule is about PROVENANCE — whether
+the number is true. A number can be perfectly qualified and entirely invented; one of the four
+cited findings was exactly that.
+
+⚠ **Rule 3 landed as a CROSS-REFERENCE**, not a restatement, to `review-method.md` §0 Q2 step 5.
+That step binds the REVIEWER to name a sample rather than a scope; nothing bound the AUTHOR, and
+two of the four findings are what that gap produced. A second copy is a copy that drifts.
+
+⚠ **Rule 2 carries its own exception:** an append-only store requires a correction to be a NEW
+entry, because ids there are positional and editing rebinds a standing `[resolved:]`.
+
+⛔ **The literal *"side job re-asks Q0"* wording was NOT adopted.** Q0 does not exist yet; a rule
+pointing at nothing is a rule that cannot run. What landed is the part true without it — a side job
+inherits no design approval — with the attachment point marked.
+
+⭐ **Q0's FORM, decided by the user: HYBRID.** Judgement at the entry, because no definition of
+*seam* exists that a script can read and three hand-kept path lists each scored something dangerous
+as one-round. Mechanical for ESCALATION, because §3 records all four seam signals present in the
+2026-09-23 thrashing and it was **still called three rounds late** — a human misjudging a card is a
+detection failure prose does not fix. ⛔ Two constraints on the designer: Q0 must declare itself the
+EXCEPTION to §0's *keyed on paths, not judgement* stance and say why, and the mechanical half must
+be calibrated against a corpus of past rounds or it is an assertion with a script around it.
+
+⚠ §9 Q3/Q4/Q5 settled from evidence, not opinion: the draft PR stays a practice (the CI-minutes
+worry did not bind — `cancel-in-progress` makes repeated pushes cost one run); the number rule
+cannot be a gate (the repo already rejected the syntactic proxy at three scopes, and provenance is
+strictly harder than resolvability); the side-job hook is blocked on Q0's escalation half.
