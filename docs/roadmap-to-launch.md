@@ -2095,6 +2095,30 @@ had updated to say otherwise.)
 - [ ] **Side-job hook (§9 Q5)** — ⏸ blocked on Q0's escalation half. A hook now could only nag, and
       `unheralded` already occupies that moment.
 
+- [x] **⭐ Phase 6 architecture review — `number-populations`, 2026-09-24.**
+      `docs/reviews/architecture-review-2026-09-24-number-populations.md`. Convened **mechanically**:
+      `check-review-decision.py` returned `ARCHITECTURE_REVIEW` from the coordinator round headers,
+      not from anyone's judgement, and the user chose to convene despite the redesign being applied.
+      ⭐ **Root cause, and it INVERTS Phase 6's standing question.** *"What did we decide this
+      milestone that isn't written down?"* — it **was** written down, on 2026-09-21 in `5ffe6017`
+      (backlog #153): *a figure in a document inside the corpus it describes is stale at the commit
+      that writes it — remove it, point at the live producer.* Three days later three consecutive
+      rounds re-derived it one instance at a time. **The gap is between RECORDED and FINDABLE.**
+      ⚠ r4 (High) refuted the review's own first wording — the decision has **two** homes, not one;
+      corrected in place. The claim that survives is that neither home is a document an author
+      writing a number would open, and no process doc points at either.
+- [ ] **backlog #179 — an ADR for the principle.** ⭐ The one that would have prevented the episode:
+      Phase 6's gate obliges a reviewer to read `docs/adr/`, so an ADR is read by exactly the process
+      that re-derived the decision. ⛔ **Not a guard** — the syntactic hunt is refuted at three
+      scopes and was reproduced once more on this section.
+- [ ] **backlog #180 — a pointer from *Qualify every number in prose*.** The only one of the three
+      that reaches the moment the figure is typed. ⚠ Its own weakness stated: a pointer is easy to
+      stop reading.
+- [ ] **backlog #181 — a named term in `CONTEXT.md` → Verification Stack.** That section exists
+      because seven rounds were once argued in words the file did not contain, and it has now
+      answered three thrashing reviews. ⚠ The most speculative of the three: a term with no rule
+      behind it is vocabulary.
+
 ⚠ **Measured, so the priority is not guessed:** 7 sweeps ≈ 100 min but ~0 tokens; 3 of 5 review
 rounds were rework; GitHub runs the sweep ~2× faster than this machine (8m08s for the whole `verify`
 job vs ~14 min for the local sweep alone). **The sweep is the most VISIBLE cost and not the largest.**

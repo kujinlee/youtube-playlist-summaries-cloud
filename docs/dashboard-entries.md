@@ -12170,3 +12170,65 @@ be calibrated against a corpus of past rounds or it is an assertion with a scrip
 worry did not bind — `cancel-in-progress` makes repeated pushes cost one run); the number rule
 cannot be a gate (the repo already rejected the syntactic proxy at three scopes, and provenance is
 strictly harder than resolvability); the side-job hook is blocked on Q0's escalation half.
+
+## 2026-09-24
+A small rule about writing down numbers took four rounds of review, and the reason turned out to be a decision we had already made and then could not find.
+
+The change itself is modest: four rules about what an author writes down, because a study earlier
+today found that a large share of what reviewers were catching were not faults in the code but
+claims the author had never checked.
+
+Reviewing it went badly in an interesting way. Each round found a wrong number inside the rule
+about numbers, and each fix was correct and still did not finish the job — because each fix looked
+for the form of mistake it had just been shown. First numbers in bold, then any digits, then
+numbers written as words, then references to line numbers in other files. Five attempts, each
+outrun by the next spelling.
+
+That pattern triggers an automatic rule here: when two rounds in a row find problems caused by the
+previous round's own repair, the work stops and gets an architecture review instead. It fired by
+itself, from the review records, and we ran it.
+
+What the review found is the useful part. Three days ago this project decided that a document which
+describes the project should not quote counts about the project, because such a number is out of
+date the moment it is written — it should point at the thing that can count. That decision was
+correct and it was recorded. It was recorded in a parenthesis, inside a glossary entry about
+something else, in a file nobody writing a number has any reason to open. So the rounds were not
+being careless. They were rediscovering, one example at a time, something already settled.
+
+Three follow-ups are now filed so the next person meets that decision instead of rediscovering it.
+The rule itself was rewritten to make no claims about the project at all — it gives instructions and
+names the tool to run, and there is nothing left in it that can go stale.
+
+<!--tech-->
+**PR #345**, backlog #177. Four review rounds, both halves across them, plus a Phase 6 architecture
+review at `docs/reviews/architecture-review-2026-09-24-number-populations.md`.
+
+⭐ **The trigger fired MECHANICALLY.** `check-review-decision.py` returned `ARCHITECTURE_REVIEW —
+thrashing: 'number-populations' carried fix-induced findings in r2 and r3`, derived from the
+coordinator round headers rather than asserted. Convening it anyway, given the redesign was already
+applied, was the user's call.
+
+⭐ **Root cause INVERTS Phase 6's standing question.** *"What did we decide this milestone that
+isn't written down?"* — it **was** written down: `CONTEXT.md` → Verification Stack, `5ffe6017`,
+2026-09-21, backlog #153. *"The number is removed rather than corrected — it had no owner, and this
+file is inside the corpus it describes, so any figure here is stale at the commit that writes it."*
+**The gap is between RECORDED and FINDABLE.**
+
+⚠ **r4 (High) refuted the architecture review's own wording** — the decision has **two** homes, not
+one; the second was found by a grep I did not run. An asserted claim inside a review about asserted
+claims. Corrected **in place**; the narrower version survives.
+
+⛔ **THE TERMINATING MOVE WAS A SHAPE, NOT A WIDER PATTERN** — the resolution backlog #154 already
+recorded for this signature (*refuse, don't widen*): *a governing rule's body may contain
+instructions and the name of a producer to run, and makes no claim about the repository's contents —
+no count in digits or words, no `file:line` locator, no "N lines below".* Measured while writing it:
+a numeric sweep over the section flags most of its lines (dates, PR ids, rule numbers, the word
+*one* as a pronoun) against four genuine hits — reproducing the false-positive result this repo
+measured and rejected at three scopes.
+
+**Filed, at the user's decision:** #179 (an ADR for the principle — the one that reaches Phase 6's
+own required reading), #180 (a pointer from the section an author writing a number already opens),
+#181 (a named term, since Verification Stack has now answered three thrashing reviews).
+
+⚠ Round 5 is the verifying round on the shape invariant, which is the one fix that differs in KIND
+from the four that failed and has not been reviewed even once.
