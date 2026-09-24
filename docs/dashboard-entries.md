@@ -9007,8 +9007,8 @@ Same branch `file-parse-header-redesign`; two more rows on `docs/backlog.md`.
 means `ROUND_OWED` *and* `ARCHITECTURE_REVIEW`. The two-line repair is not the hard part —
 what a **fourth** value should mean is, and the row says so rather than prescribing.
 
-**#119 🟢** — measured over `docs/reviews/coordinator/`: **7 of 81** documents carry a
-```yaml header, **74 do not**, and all 7 belong to PR #303, the branch that invented the
+**#119 🟢** — measured over `docs/reviews/coordinator/`: **7 of 81** documents carry
+a ```yaml header, **74 do not**, and all 7 belong to PR #303, the branch that invented the
 grammar. 6 of 7 subjects have no headered round at all. ⛔ Backfilling REJECTED by the user
 today; the reason is filed so it is not re-proposed as an obvious cleanup.
 
@@ -12006,3 +12006,103 @@ shape it exists for. It now receives the promotion path.
 Gates: `codex-review` 124/124, `check-plan-code` 131/131, every `check-*` in `ci.yml` rc=0
 (including the two Postgres-backed ones, run for real), `--mutate .` 995/995/0.
 NOT reviewed yet — round 1 is next.
+
+## 2026-09-24
+The review-identity work is merged, and the backlog row describing it was wrong until now.
+
+PR #343 is on master. It finishes the repair the architecture review called for: a review now states
+its own name when it is dispatched, instead of the harness trying to guess that name from a
+temporary file. Three adversarial rounds, both reviewers each time, and the third round came back
+with nothing — which is the outcome the process is aiming for.
+
+Something worth knowing came out of tidying up afterwards. The merged work did not carry its own
+closing tick, so for a while master held a backlog row that said this work was "not started" while
+the work was sitting a few commits above it. The check built precisely to catch that kind of stale
+row stayed silent, and not by accident: it only recognises a closing note written in one exact
+shape, and the merge commit wrote it a slightly different way. So the check being quiet about a row
+is not the same as the row being right — which is worth remembering, because it is the only check
+that compares the backlog against what actually happened rather than against itself.
+
+The same check flagged two other rows as finished. Both were wrong. It cannot tell the commit that
+CREATED a row from the commit that closed one, and in both cases it had found the commit that
+created it. Those two rows are untouched and stay open.
+
+One piece of this work is still outstanding: a written architecture decision about who is allowed to
+write review files. It had been recorded as something to do "if this lands". It has landed, so it is
+now simply due.
+
+<!--tech-->
+**PR #343 MERGED as `45b65cb7`** (squash), backlog #176. Three rounds, both halves each, r3 Codex
+CONVERGED with no findings. `check-merge-ready.py` READY; `verify` 9m35s and `schema-gates` 1m43s
+both green. Branch `review-identity-176` deleted local and remote.
+
+**`tick-176`** — `docs/backlog.md` row 176 and three `docs/roadmap-to-launch.md` lines. Every
+replacement asserted `src.count(old) == 1` before applying.
+
+⭐ **`check-backlog-closure.py` was silent about #176 by design.** It keys on `(backlog #N)` at the
+subject TAIL; #343's squash subject carried the token unparenthesised — `… names itself — backlog
+#176 (#343)` — so no closing token was seen at all. The tail rule is the right trade-off (measured:
+ANY-occurrence matched 18 ids and would have fired on 10; the tail rule matched 7 and fired on 1, a
+true positive) but the consequence is that its silence is not evidence.
+
+⚠ **Its two WARN rows, #117 and #159, are FALSE POSITIVES.** `git show 939c97b4 -- docs/backlog.md`
+and `git show b184bbbc -- docs/backlog.md` each show the cited commit ADDING the row it is credited
+with closing. The grammar cannot separate "filed" from "closed". Not fixed and not filed — filing is
+the user's step; surfaced for a decision.
+
+⚠ **`check-dashboard-entry.py` returned rc=0 on this very change before it was committed** and rc=1
+after. Its subject is a git range, so an uncommitted tree gives it an empty set and a vacuous pass.
+
+`check-docs.py` supplied the closed-row convention: the leading marker becomes `✅ (was 🟠)`, so a
+severity scan cannot still count the row open.
+
+## 2026-09-24
+This page had been quietly nine days out of date, and the section that tells you what needs you was showing answered questions while hiding the live ones.
+
+Everything written here since the 16th was still in the file — nothing was lost — but the page was
+not reading it as separate entries. It was treating nine days of writing as one enormous blob
+attached to the bottom of an entry from the 15th.
+
+The cause is one line of ordinary prose. An entry from the 15th mentions a file format by name, and
+the sentence happened to wrap so that the format's name — which is written between backticks —
+landed at the very start of a line. Backticks at the start of a line are how you begin a block of
+code. So the page believed a code block opened there, and since nothing ever closed it, everything
+after it was read as code rather than as entries.
+
+The repair is to move one word so the sentence wraps differently. No wording changed, nothing was
+deleted, and no existing entry changed its identity.
+
+What was actually costing you something: four items were waiting on you and could not be seen, and
+one item you had already dealt with was still showing as open. The section is correct again.
+
+<!--tech-->
+`docs/dashboard-entries.md:9011` began with ` ```yaml ` after a wrap. `parse_entries` defers to
+`fenced_lines()` for what Markdown treats as literal, so the unclosed fence made every later `^##`
+inert. The 64 blocks were absorbed into `2026-09-15/2`, whose `raw` measured **214,317** chars
+against its neighbour's **2,882**, with `error` **None** — no card, no warning, nothing to notice.
+
+MEASURED, same parser, store before vs after the one-word reflow:
+
+| check | before | after |
+|---|---|---|
+| entries parsed | 187 | 251 |
+| newest date visible | 2026-09-15 | 2026-09-24 |
+| entries with a parse error | 0 | 0 |
+| pre-existing ids that move | — | none |
+| dangling `[resolved:]` ids | — | none |
+| open `[needs-you]` | 4 (all ≥9 days old, all answered) | 7, incl. `2026-09-15/8`, `2026-09-18/13`, `2026-09-21/1` |
+
+⭐ **This is the MIRROR of a bug this parser already fixed.** Its docstring records that a header
+*inside* a fence used to become a phantom entry — "a fully VALID entry that renders like any other,
+holding a real id", `errors 0`. That fix made fenced lines inert. Nobody asked what an UNCLOSED
+fence does; it does the opposite damage with the same silence.
+
+⚠ **The class fix is NOT done here.** Editing the store removes this instance; it does not stop the
+next wrapped line that lands a code span at column 0. A parser that treats a fence running to
+end-of-input as not-a-fence would, and the docstring's own warning applies — that would be the third
+hand-written fence scanner in this feature, and the existing two have drifted once already. Raised
+for a filing decision, not filed.
+
+⚠ **The store's append-only rule was knowingly set aside for this**, with the user's decision on the
+record. Its stated reason is that positional ids silently rebind a standing `[resolved:]`; measured
+above, no pre-existing id moves, so that specific hazard was verified absent before the edit.
