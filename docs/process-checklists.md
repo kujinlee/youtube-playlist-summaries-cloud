@@ -476,8 +476,15 @@ because the label names a different population from the command:
 | *"28 gates named"* | distinct `scripts/check-*.py` in one workflow | the regex excluded `.sh`; "gates" names steps (54), scripts (34) or workflows — not this |
 | *"the draft PR caught #176 r2's Blocking"* | a Blocking that states it rests on an anchor measurement, **not** a CI verdict | the claim named a cause the source explicitly disclaims |
 | *"derive from `ci.yml`"* | one of two required workflows | the scope was the hand-written part |
+| *"34 distinct scripts invoked by `ci.yml`"* | `grep` over the file's **text** — 33 are invoked | ⟳ **r2 Medium: this table's own row, written to illustrate the rule, committed the defect.** The 34th is mentioned only in a comment |
 
-**So a number carries its population or it is not a measurement.** Write *"34 distinct scripts
+**So a number carries its population or it is not a measurement.**
+
+⛔ **THE FOURTH ROW IS THE STRONGEST ONE, AND IT WAS NOT PLANNED.** Rule 1b was written in the r1
+fold from the three rows above; writing it produced the fourth, in the same paragraph, and review
+round 2 found it. A rule that catches its own author while he is writing it down is not a rule
+about carelessness — **the slip is in how measuring works**, because `grep` answers a question that
+sounds identical to the one you meant and is not. Write *"34 distinct scripts
 invoked by `ci.yml`"*, never *"34 gates"*. ⚠ This is the failure mode that survives rule 1: rule 1
 asks *did you measure it*, and all three answered **yes**.
 
@@ -527,9 +534,16 @@ the hand-written part."* `schema-gates` is the other required context on every P
 that reads `ci.yml` only omits the fifteen schema gates entirely — while congratulating itself on
 being immune to exactly that.
 
-⚠ **AND SAY WHICH POPULATION YOU COUNTED** — see rule 1's second clause. Measured 2026-09-24:
-`ci.yml` invokes **34** distinct `scripts/*.py|sh` and `schema-gates.yml` a further **4**, while
-`ci.yml` carries **54** `run:` steps. "The gates" names none of those three on its own.
+⚠ **AND SAY WHICH POPULATION YOU COUNTED** — see rule 1b. Measured 2026-09-24 **by parsing `run:`
+blocks, not by grepping the file**: `ci.yml` invokes **33** distinct `scripts/*.py|sh` (of which
+**28** are `check-*`) and `schema-gates.yml` a further **4**, while `ci.yml` carries **54** `run:`
+steps. "The gates" names none of those on its own.
+
+⛔ **A GREP OVER THE WORKFLOW IS THE WRONG POPULATION, AND THIS SENTENCE SHIPPED WITH THE PROOF.**
+The first version said **34**, from `grep -oE 'scripts/…' ci.yml | sort -u`. The extra one was
+`scripts/check-schema-gates.sh`, which appears in `ci.yml` **only in comments** (`:267`, `:286`) —
+the exact fact this rule's own correction rests on. A text match counts what the file MENTIONS; the
+question is what it RUNS.
 
 **Prefer running `scripts/check-merge-ready.py` over assembling a list at all** — it derives its
 own, and it reaches the pull-request-only gates a local run cannot.
