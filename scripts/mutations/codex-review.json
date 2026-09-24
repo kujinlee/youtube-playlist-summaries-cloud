@@ -409,8 +409,8 @@
     "file": "scripts/codex-review.py",
     "edits": [
       [
-        "    return review_id not in (\".\", \"..\")",
-        "    return True"
+        "    if review_id in (\".\", \"..\"):\n        return \"it is a relative path component",
+        "    if False:\n        return \"it is a relative path component"
       ]
     ],
     "expect": "…nor the relative components themselves"
@@ -420,8 +420,8 @@
     "file": "scripts/codex-review.py",
     "edits": [
       [
-        "    if not is_single_segment(review_id):",
-        "    if False and not is_single_segment(review_id):"
+        "    problem = segment_problem(review_id)\n    if problem is not None:",
+        "    problem = segment_problem(review_id)\n    if False:"
       ]
     ],
     "expect": [
@@ -495,21 +495,62 @@
     "file": "scripts/codex-review.py",
     "edits": [
       [
-        "    if review_id != review_id.strip():\n        return False",
-        "    if False:\n        return False"
+        "    if review_id != review_id.strip():\n        return \"it has leading or trailing whitespace\"",
+        "    if False:\n        return \"it has leading or trailing whitespace\""
       ]
     ],
     "expect": "…nor one with leading whitespace, which survives a join and is invisible in a listing"
   },
   {
-    "name": "r2: reserved device names stop disqualifying an id",
+    "name": "r2 Claude M4: the length cap becomes an off-by-one, refusing a stem that is exactly at it",
     "file": "scripts/codex-review.py",
     "edits": [
       [
-        "    return review_id.split(\"-\")[0].upper() not in _RESERVED_NAMES",
-        "    return True"
+        "    if len(review_id) > MAX_ID_LEN:",
+        "    if len(review_id) >= MAX_ID_LEN:"
       ]
     ],
-    "expect": "…nor a reserved device name, which cannot be created on Windows at all"
+    "expect": "…while a stem AT the cap is still accepted, so the bound is a cap and not an off-by-one"
+  },
+  {
+    "name": "r2 Claude M4: the cap moves, so the two boundary cases are measuring a different bound from the one the code enforces",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "MAX_ID_LEN = 200",
+        "MAX_ID_LEN = 250"
+      ]
+    ],
+    "expect": [
+      "…nor one PAST the cap — exactly one character over, which is where an off-by-one lives",
+      "MAX_ID_LEN is pinned — the two cases above are written against the literal, so the cap cannot be moved without one of the three disagreeing"
+    ]
+  },
+  {
+    "name": "r2 Claude M3: the refusal stops naming the rule that was broken and answers every shape with the separator rule again",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "        return \"it has leading or trailing whitespace\"",
+        "        return \"it contains a path separator (`/` or `\\\\`)\""
+      ]
+    ],
+    "expect": "the refusal for LEADING WHITESPACE names the whitespace rule and not the separator rule"
+  },
+  {
+    "name": "r2 Claude M3: the reason is computed and then dropped, so the refusal carries a sentence that is the same for every id again",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "as one: {problem}. The wrapper chooses the directory ",
+        "as one. The wrapper chooses the directory "
+      ]
+    ],
+    "expect": [
+      "the refusal for LEADING WHITESPACE names the whitespace rule and not the separator rule",
+      "…and a DRIVE-LETTER prefix is answered with the drive-letter rule, at a second distinct shape, so the reason is read off the id and is not one constant sentence",
+      "…and an OVER-LENGTH id is told its length and the cap, which is the one reason a caller cannot work out by looking",
+      "…while a SEPARATOR still gets the separator rule, so naming the reason did not lose the one rule the message always named"
+    ]
   }
 ]

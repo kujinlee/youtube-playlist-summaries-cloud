@@ -66,7 +66,7 @@ field), so it was not a cheaper version of this fix.
 Usage:
   scripts/codex-review.py --review-id <subject>-r<N>-codex --out "$(mktemp -d)/r.md" "<prompt>"
   scripts/codex-review.py --review-id <stem> --out <scratch> --prompt-file <file> [--timeout 900]
-  scripts/codex-review.py --self-test  # 162 cases
+  scripts/codex-review.py --self-test  # 168 cases
 
 Exit codes:  0 = a real review was written and promoted
              1 = no candidate produced one (the gate did NOT run) — fall back to a Claude half
@@ -293,16 +293,53 @@ REVIEW_ROOT = os.path.join("docs", "reviews")
 VERDICT_SCHEMA = 3
 
 
-# Windows reserved device names. A file with one of these stems cannot be created there at all,
-# and this repo's mutation harness already stages trees on more than one platform. (r2 Low)
-_RESERVED_NAMES = frozenset(
-    ["CON", "PRN", "AUX", "NUL"]
-    + [f"COM{i}" for i in range(1, 10)]
-    + [f"LPT{i}" for i in range(1, 10)])
+# ⛔ **THE RESERVED-DEVICE-NAME RULE WAS RETIRED HERE — r2 Claude half, M2, A RATCHET FALL.** The
+# r2 Low added `_RESERVED_NAMES` and `review_id.split("-")[0].upper() not in _RESERVED_NAMES`, and
+# it was WRONG IN BOTH DIRECTIONS AND GUARDED A PLATFORM THIS REPO'S CI NEVER RUNS. The Windows
+# reservation keys on the filename base — the portion before the FIRST PERIOD — so a hyphen token
+# is not the rule it names. Measured on the delivered function before removal:
+#
+#     aux-tokens-r1-codex       accepted=False   ← a legitimate id, REFUSED before dispatch
+#     com1-migration-r1-codex   accepted=False   ← a legitimate id, REFUSED
+#     prn-cache-r1-claude       accepted=False   ← a legitimate id, REFUSED
+#     CON.md-r1-codex           accepted=True    ← genuinely reserved on Windows, ADMITTED
+#     NUL.json-r1-codex         accepted=True    ← genuinely reserved, ADMITTED
+#
+# And its stated justification — *"this repo's mutation harness already stages trees on more than
+# one platform"* — is false: `grep -rn "runs-on" .github/workflows/` is `ubuntu-latest` three times
+# and nothing else, and the second platform is a developer's macOS machine. Neither reserves these
+# names. ⚠ The over-refusal side was the LIVE one: such an id was a `CANNOT RUN` before dispatch,
+# fail-closed so no spend, but a paid review that would not start for a reason that is not real.
+# Its one case asserted the incorrect behaviour and its mutation was killed THROUGH that case, so
+# the guard was green about a property the code did not have — repairing the token would have kept
+# a rule protecting nothing measured. `EXPECTED_MUTATIONS["scripts/codex-review.py"]` records the
+# same reason at the other site. The whitespace, `%2f`/`%5c`, drive-letter and length rules stay.
+
+# The cap on a single path component. ⚠ 255 is the common filesystem limit and the id gains
+# `.verdict.json` (13) on one of its two destinations, so the cap is set below it. The SUITE pins
+# 200 and 201 as literals — an expectation written through this constant would move with it, which
+# is the self-agreeing-constant hole `TRUSTED_SCHEMA` was caught in.
+MAX_ID_LEN = 200
 
 
-def is_single_segment(review_id: str) -> bool:
-    """True when `review_id` is ONE path component and cannot traverse out of it. PURE.
+def segment_problem(review_id: str) -> "str | None":
+    """The RULE `review_id` breaks, in that rule's own words; None when it breaks none. PURE.
+
+    ⚠ **r2 Claude half, M3 — A REFUSAL MUST NAME THE RULE THAT WAS ACTUALLY BROKEN.** This was a
+    bare predicate, and `review_identity` answered every rejection with one fixed sentence
+    enumerating `/`, `\\` and the relative components. Measured: all five shapes the r2 Low added —
+    leading whitespace, trailing whitespace, a reserved name, a drive letter, a percent-encoded
+    separator, an over-length stem — were refused with a sentence naming three rules none of them
+    broke, on the diagnostic path of a CANNOT RUN, which this repo's own rule says must say what
+    was wrong. The reason is returned BY the check rather than restated beside it, so the
+    enumeration cannot diverge from the rules a second time.
+
+    ⛔ **ORDER IS PART OF THE ANSWER.** The separator rule is asked FIRST so that
+    `docs/reviews/codex/x-r1-codex.md`, which is two mistakes at once, is answered about the path
+    rather than about the extension — being told about `.md` while the wrapper silently files two
+    levels down is the less useful half.
+
+    True when `review_id` is ONE path component and cannot traverse out of it. PURE.
 
     ⛔ r1 H1. `check-review-rounds.PATTERNS` spells the subject `(?P<subject>.+)`, which matches
     `/` and `..` — correct for ITS job, which is recognising filenames that already exist, and
@@ -328,33 +365,32 @@ def is_single_segment(review_id: str) -> bool:
     character in a filename on the other, and an id is not the place to let that decide.
     """
     if not review_id:
-        return False
+        return "it is empty"
     if "/" in review_id or "\\" in review_id:
-        return False
+        return "it contains a path separator (`/` or `\\`)"
     if review_id in (".", ".."):
-        return False
-    # ⟳ **r2 Codex half, Low — FOUR MORE SHAPES THAT PASSED THE THREE RULES ABOVE**, each measured
+        return "it is a relative path component (`.` or `..`)"
+    # ⟳ **r2 Codex half, Low — THREE MORE SHAPES THAT PASSED THE RULES ABOVE**, each measured
     # against the delivered function. None traverses out of the directory, so none is the r1 H1
-    # defect; all four make the id a filename that is nonportable or expensive to discover later.
+    # defect; each makes the id a filename that is nonportable or expensive to discover later.
     #   ` x-r1-codex`      leading/trailing whitespace — survives `os.path.join`, is invisible in a
     #                      terminal listing, and a reader who retypes the id gets a DIFFERENT file
     #   `x%2Fy-r1-codex`   a percent-encoded separator — harmless here, but it is a separator the
     #                      moment the name reaches anything that decodes, and the join key is read
     #                      by CI and quoted in PR bodies
     #   `C:foo-r1-codex`   a drive-letter prefix: an ordinary filename on POSIX, a PATH on Windows
-    #   `CON-r1-codex`     a reserved device name — uncreatable on Windows, and this repo's harness
-    #                      already stages trees on more than one platform
-    # ⚠ And a LENGTH cap: 255 is the common filesystem limit for a single component, and the id
-    # gains `.verdict.json` (13) on one of its two destinations, so the cap is set below it.
+    # ⚠ A FOURTH, the reserved device name, was RETIRED by r2 M2 — see the note above `MAX_ID_LEN`.
+    # ⚠ And a LENGTH cap, `MAX_ID_LEN`, whose two sides the suite pins as literals.
     if review_id != review_id.strip():
-        return False
+        return "it has leading or trailing whitespace"
     if "%2f" in review_id.lower() or "%5c" in review_id.lower():
-        return False
-    if len(review_id) > 200:
-        return False
+        return "it contains a percent-encoded path separator (`%2f` or `%5c`)"
+    if len(review_id) > MAX_ID_LEN:
+        return f"it is {len(review_id)} characters, over the {MAX_ID_LEN}-character cap"
     if len(review_id) > 1 and review_id[1] == ":":
-        return False
-    return review_id.split("-")[0].upper() not in _RESERVED_NAMES
+        return "it carries a drive-letter prefix, which is an ordinary filename here and a PATH "\
+               "on Windows"
+    return None
 
 
 def review_identity(review_id: str) -> "tuple[str | None, str | None]":
@@ -371,6 +407,11 @@ def review_identity(review_id: str) -> "tuple[str | None, str | None]":
     nobody supplied cannot be guessed correctly. The refusal names BOTH accepted shapes, because a
     caller who got the shape wrong needs to see the shape.
 
+    ⚠ **AND THE SEGMENT REFUSAL NAMES THE RULE THAT WAS BROKEN, NOT A FIXED LIST OF THREE — r2
+    Claude half, M3.** The sentence below used to enumerate `/`, `\\` and the relative components
+    whatever the id had done, so five of the seven rules answered with three rules the caller had
+    not broken. `segment_problem` returns the reason; nothing here restates it.
+
     ⚠ `coordinator` PARSES AND IS STILL REFUSED. `parse` accepts it — a coordinator document is a
     real thing filed in `docs/reviews/coordinator/` — but it ADJUDICATES the two halves and is not
     one, which is why `HALVES` excludes it. This wrapper dispatches a review half; promoting one
@@ -380,10 +421,11 @@ def review_identity(review_id: str) -> "tuple[str | None, str | None]":
     once, and being told about the extension while the wrapper silently files two levels down is
     the less useful half of the answer.
     """
-    if not is_single_segment(review_id):
+    problem = segment_problem(review_id)
+    if problem is not None:
         return None, (
-            f"CANNOT RUN — --review-id {review_id!r} is a NAME, not a path. It must be ONE path "
-            f"segment: no `/`, no `\\`, and not `.` or `..`. The wrapper chooses the directory "
+            f"CANNOT RUN — --review-id {review_id!r} is a NAME, not a path, and it is not usable "
+            f"as one: {problem}. The wrapper chooses the directory "
             f"itself — `docs/reviews/<writer>/` for the review and `docs/reviews/verdicts/` for "
             f"its testimony — from the WRITER in the id, so a path here does not point the "
             f"promotion somewhere, it relocates it: `../x-r1-codex` files the half at the artifact "
@@ -1768,38 +1810,89 @@ def self_test() -> int:
     # `check-review-rounds.PATTERNS` spells the subject `.+`, which matches `/` and `..` — correct
     # for recognising filenames that already exist, and not a constraint on a string this wrapper
     # WRITES to. Measured at 4c29fe25, all three accepted with a valid writer.
-    chk("a plain stem is one path segment", is_single_segment("plan-x-r3-codex"), True)
+    # ⚠ `segment_problem(x) is None` IS the predicate — r2 M3 folded the bare boolean into the
+    # function that returns the reason, so there is one rule set and the refusal cannot restate it.
+    # ⚠ AND THE REASON IS EXERCISED AT TWO DISTINCT INPUTS BEFORE THE PREDICATE CASES BELOW. Every
+    # case after this one reads the function through `is None` and so could not tell a reason from
+    # any other non-None string; a producer driven at one value is satisfied by the constant its
+    # own fixture supplies, which is what `check-fixture-variation.py` refuses.
+    chk("segment_problem answers with the RULE, not a boolean — an accepted id has no problem and "
+        "a rejected one says which rule it broke",
+        (segment_problem("plan-x-r3-codex"), segment_problem(" plan-x-r3-codex")),
+        (None, "it has leading or trailing whitespace"))
+    chk("…and at a SECOND distinct rejected id it is a DIFFERENT reason, so the answer is read off "
+        "the id rather than being one sentence for everything",
+        segment_problem("docs%2Fplan-x-r3-codex"),
+        "it contains a percent-encoded path separator (`%2f` or `%5c`)")
+    _seg = lambda s: segment_problem(s) is None
+    chk("a plain stem is one path segment", _seg("plan-x-r3-codex"), True)
     chk("…and so is one with dots inside it, which must NOT be mistaken for traversal",
-        is_single_segment("plan-v1.2-r3-codex"), True)
+        _seg("plan-v1.2-r3-codex"), True)
     chk("a TRAVERSING id is not — `../x` files the half at the artifact ROOT, the zone "
-        "quarantine() empties", is_single_segment("../plan-x-r3-codex"), False)
+        "quarantine() empties", _seg("../plan-x-r3-codex"), False)
     chk("…nor is a NESTED one — `docs/reviews/codex/x` files it two levels down, where "
         "check-review-rounds.review_files (ONE level) cannot see it",
-        is_single_segment("docs/reviews/codex/plan-x-r3-codex"), False)
+        _seg("docs/reviews/codex/plan-x-r3-codex"), False)
     # ⚠ BOTH SEPARATORS. A `\` is a separator on one platform and an ordinary character on the
     # other; an id is not the place to let the platform decide where a file lands.
-    chk("…nor one carrying a backslash", is_single_segment("docs\\plan-x-r3-codex"), False)
-    # ── r2 Codex half, Low: four shapes that PASSED the traversal rules and should not ──────────
+    chk("…nor one carrying a backslash", _seg("docs\\plan-x-r3-codex"), False)
+    # ── r2 Codex half, Low: shapes that PASSED the traversal rules and should not ───────────────
     # ⚠ None of these traverses out of the directory — they are not the r1 H1 defect. Each makes
     # the id a filename that is nonportable or expensive to discover, and the id becomes BOTH a
     # committed review filename and a CI join key, so it is read by people and by machines.
+    # ⚠ The reserved-device-name case was RETIRED WITH ITS RULE by r2 M2: it asserted a behaviour
+    # the rule did not have, and its mutation was killed through it. See the note above MAX_ID_LEN.
     chk("…nor one with leading whitespace, which survives a join and is invisible in a listing",
-        is_single_segment(" plan-x-r3-codex"), False)
+        _seg(" plan-x-r3-codex"), False)
     chk("…nor TRAILING whitespace, the direction a `lstrip`-shaped fix would miss",
-        is_single_segment("plan-x-r3-codex "), False)
+        _seg("plan-x-r3-codex "), False)
     chk("…nor a PERCENT-ENCODED separator, which is a separator the moment anything decodes it",
-        is_single_segment("docs%2Fplan-x-r3-codex"), False)
+        _seg("docs%2Fplan-x-r3-codex"), False)
     chk("…nor a drive-letter prefix — an ordinary filename on POSIX, a PATH on Windows",
-        is_single_segment("C:plan-x-r3-codex"), False)
-    chk("…nor a reserved device name, which cannot be created on Windows at all",
-        is_single_segment("CON-r3-codex"), False)
-    chk("…nor one longer than a filesystem component allows, with room for `.verdict.json`",
-        is_single_segment("a" * 201 + "-r3-codex"), False)
+        _seg("C:plan-x-r3-codex"), False)
+    # ── r2 Claude half, M4: THE CAP'S TWO SIDES, CONSTRUCTED FROM THE CAP ──────────────────────
+    # ⛔ THE OLD PAIR TOUCHED NEITHER BOUNDARY AND THE OFF-BY-ONE SURVIVED THEM. The case named
+    # "…a stem AT the cap" was `"a" * 190 + "-r3-codex"` — 199 characters against a cap of 200, a
+    # length that is an accident of `len("-r3-codex")` — and the over-cap case was 210. Driven by
+    # the reviewer in a staged tree over a green control, `> 200` -> `>= 200` SURVIVED at 162/162:
+    # a stated, committed verification that the bound was "a cap and not an off-by-one", satisfied
+    # by something other than the mechanism it names.
+    # ⚠ THE LITERALS 200 AND 201 ARE THE OUTSIDE OBSERVER. Writing these through `MAX_ID_LEN`
+    # would move the expectation with the constant, which is the self-agreeing-constant hole
+    # `TRUSTED_SCHEMA` was caught in; the lengths are ASSERTED alongside so a fixture that stopped
+    # being the length it claims cannot pass quietly.
+    _at_cap = "a" * (200 - len("-r3-codex")) + "-r3-codex"
+    _past_cap = "a" * (201 - len("-r3-codex")) + "-r3-codex"
+    chk("…nor one PAST the cap — exactly one character over, which is where an off-by-one lives",
+        (len(_past_cap), _seg(_past_cap)), (201, False))
     chk("…while a stem AT the cap is still accepted, so the bound is a cap and not an off-by-one",
-        is_single_segment("a" * 190 + "-r3-codex"), True)
+        (len(_at_cap), _seg(_at_cap)), (200, True))
+    chk("MAX_ID_LEN is pinned — the two cases above are written against the literal, so the cap "
+        "cannot be moved without one of the three disagreeing", MAX_ID_LEN, 200)
     chk("…nor the relative components themselves",
-        (is_single_segment("."), is_single_segment(""), is_single_segment("..")),
+        (_seg("."), _seg(""), _seg("..")),
         (False, False, False))
+    # ── r2 Claude half, M3: THE REFUSAL NAMES THE RULE THE ID ACTUALLY BROKE ────────────────────
+    # ⛔ Measured on the delivered function before the fix: all five shapes the r2 Low added were
+    # refused with the SAME sentence — "It must be ONE path segment: no `/`, no `\`, and not `.`
+    # or `..`" — enumerating three rules none of them broke, on the diagnostic path of a CANNOT
+    # RUN. ⚠ EACH CASE ASSERTS BOTH DIRECTIONS: the right reason present AND a wrong one absent.
+    # Asserting presence alone passes under a message that names every rule at once.
+    _why = lambda s: review_identity(s)[1] or ""
+    chk("the refusal for LEADING WHITESPACE names the whitespace rule and not the separator rule",
+        ("whitespace" in _why(" plan-x-r3-codex"),
+         "path separator" in _why(" plan-x-r3-codex")), (True, False))
+    chk("…and a DRIVE-LETTER prefix is answered with the drive-letter rule, at a second distinct "
+        "shape, so the reason is read off the id and is not one constant sentence",
+        ("drive-letter" in _why("C:plan-x-r3-codex"),
+         "whitespace" in _why("C:plan-x-r3-codex")), (True, False))
+    chk("…and an OVER-LENGTH id is told its length and the cap, which is the one reason a caller "
+        "cannot work out by looking", (f"{len(_past_cap)} characters" in _why(_past_cap),
+                                       f"{MAX_ID_LEN}-character cap" in _why(_past_cap)),
+        (True, True))
+    chk("…while a SEPARATOR still gets the separator rule, so naming the reason did not lose the "
+        "one rule the message always named",
+        "path separator" in _why("../plan-x-r3-codex"), True)
     # THE REFUSAL, driven through the real entry point rather than the predicate alone: a correct
     # predicate nothing calls is the shape this repo keeps measuring.
     _idP, _errP = review_identity("../plan-x-r3-codex")
@@ -2007,7 +2100,7 @@ def self_test() -> int:
     _rc_i, _msg_i = _cli("--out", "/tmp/nowhere-out.md", "a prompt")
     # ⛔ THE SENTENCE, NOT THE EXIT CODE — AND NOT MERELY THE FLAG NAME EITHER. Measured while
     # folding r1 H1: with the REQUIRED check removed, the new one-segment rule refuses an empty id
-    # too (`is_single_segment("")` is False), with `rc=2` and a message that also mentions
+    # too (`segment_problem("")` is "it is empty"), with `rc=2` and a message that also mentions
     # `--review-id` — so the entry that guards "the identity can go unsupplied again" SURVIVED
     # against both of the assertions that used to stand here. Two refusals answering one input is
     # not a defect; a case that cannot tell them apart is.

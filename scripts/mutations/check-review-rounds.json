@@ -43,7 +43,7 @@
     "file": "scripts/check-review-rounds.py",
     "edits": [
       [
-        "        if not rec.get(\"gate_ran\"):",
+        "        if rec.get(\"gate_ran\") is not True:",
         "        if False:"
       ]
     ],
@@ -59,8 +59,8 @@
     "file": "scripts/check-review-rounds.py",
     "edits": [
       [
-        "rec.get(\"gate_ran\")",
-        "rec.get(\"exit_code\") == 0"
+        "rec.get(\"gate_ran\") is not True",
+        "rec.get(\"exit_code\") != 0"
       ]
     ],
     "expect": [
@@ -163,7 +163,7 @@
     "file": "scripts/check-review-rounds.py",
     "edits": [
       [
-        "        if rec.get(\"refused\"):\n            continue",
+        "        if rec.get(\"refused\") is True:\n            continue",
         "        if False:\n            continue"
       ]
     ],
@@ -174,7 +174,7 @@
     "file": "scripts/check-review-rounds.py",
     "edits": [
       [
-        "        if (rec.get(\"schema\") or 0) < TRUSTED_SCHEMA:\n            continue",
+        "        if (schema_of(rec) or 0) < TRUSTED_SCHEMA:\n            continue",
         "        if False:\n            continue"
       ]
     ],
@@ -203,7 +203,7 @@
     "file": "scripts/check-review-rounds.py",
     "edits": [
       [
-        "        elif (rec.get(\"schema\") or 0) < TRUSTED_SCHEMA:\n            out[\"pre_cutover\"] += 1",
+        "        elif (schema_of(rec) or 0) < TRUSTED_SCHEMA:\n            out[\"pre_cutover\"] += 1",
         "        elif False:\n            out[\"pre_cutover\"] += 1"
       ]
     ],
@@ -214,7 +214,7 @@
     "file": "scripts/check-review-rounds.py",
     "edits": [
       [
-        "        if rec.get(\"refused\"):\n            out[\"refused\"] += 1",
+        "        if rec.get(\"refused\") is True:\n            out[\"refused\"] += 1",
         "        if False:\n            out[\"refused\"] += 1"
       ]
     ],
@@ -236,10 +236,81 @@
     "file": "scripts/check-review-rounds.py",
     "edits": [
       [
-        "if rec.get(\"refused\") is True:",
-        "if rec.get(\"refused\"):"
+        "if rec.get(\"refused\") is True:\n            continue\n        if (schema_of(rec) or 0)",
+        "if rec.get(\"refused\"):\n            continue\n        if (schema_of(rec) or 0)"
       ]
     ],
     "expect": "…but a TRUTHY NON-BOOL `refused` does NOT suppress the check — the string \"false\" is truthy, and accepting it let malformed testimony switch the CI join off"
+  },
+  {
+    "name": "r2 Claude H1: `gate_ran` is tested for TRUTHINESS, so a truthy non-bool reads as `the gate ran` and silences the failed-gate direction",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "        if rec.get(\"gate_ran\") is not True:\n            if review in",
+        "        if not rec.get(\"gate_ran\"):\n            if review in"
+      ]
+    ],
+    "expect": [
+      "…and a TRUTHY NON-BOOL `gate_ran` does NOT read as `the gate ran` — the string \"false\" is truthy, and accepting it silenced that direction entirely",
+      "…at a second distinct truthy non-bool, so this is not a special case for one value either"
+    ]
+  },
+  {
+    "name": "r2 Claude H1: a non-bool `gate_ran` is accepted as a readable record instead of being reported as testimony nobody can read",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "        _gr = rec.get(\"gate_ran\")\n        if not isinstance(_gr, bool):",
+        "        _gr = rec.get(\"gate_ran\")\n        if False:"
+      ]
+    ],
+    "expect": [
+      "a non-bool `gate_ran` is a CANNOT RUN, not a record read as `the gate ran`",
+      "…and the refusal names the FIELD, so a reader is not sent to the wrong one"
+    ]
+  },
+  {
+    "name": "r2 Claude M1: era_split reads `refused` for TRUTHINESS again, so the derived caveat partitions a record differently from the check it describes",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "records:\n        if rec.get(\"refused\") is True:",
+        "records:\n        if rec.get(\"refused\"):"
+      ]
+    ],
+    "expect": [
+      "a truthy NON-BOOL `refused` is not counted as a refusal in the derived caveat either — the two readers of this field must not partition one record two ways",
+      "…at a second distinct truthy non-bool, so era_split is not a special case for one value"
+    ]
+  },
+  {
+    "name": "r2 Claude L1: a malformed `schema` stops being unreadable, so the era gate meets it as arithmetic and a CANNOT RUN is reported as a finding",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "    if isinstance(v, bool) or not isinstance(v, int):\n        return None",
+        "    if isinstance(v, bool) or not isinstance(v, int):\n        return 0"
+      ]
+    ],
+    "expect": [
+      "a NON-NUMERIC `schema` is a CANNOT RUN too, not a TypeError out of the era gate",
+      "…and so is a BOOLEAN schema, which `isinstance(v, int)` alone would call version 1",
+      "schema_of answers the era gate's question and nothing else: a version, 0 for absent, None for a field that is not a version"
+    ]
+  },
+  {
+    "name": "r2 Claude L1: an ABSENT `schema` becomes unreadable rather than the oldest era, so every pre-field record in the corpus turns into a CANNOT RUN",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "    if \"schema\" not in rec:\n        return 0",
+        "    if \"schema\" not in rec:\n        return None"
+      ]
+    ],
+    "expect": [
+      "…while a record with NO `schema` field is still read — absent is the oldest era, not unreadable",
+      "schema_of answers the era gate's question and nothing else: a version, 0 for absent, None for a field that is not a version"
+    ]
   }
 ]

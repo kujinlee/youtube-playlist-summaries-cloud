@@ -836,7 +836,23 @@ EXPECTED_MUTATIONS = {
     # `gate_ran: true` naming a review that is not filed (M1 — the shape #176 was convened
     # over, `continue`d until the era gate made it safe to read); and two on the derived
     # era counts (M3 — the figure that stood in prose was wrong at the denominator).
-    "scripts/check-review-rounds.py": 19,
+    # ⟳ 2026-09-24, folding round 2: 19 -> 24, AND SIX EXISTING ENTRIES WERE RETARGETED — five of
+    # them because the round-2 fix moved the line they named, which is the finding that convened
+    # this fold. TWO of the five had already gone silently orphaned on the previous fold and were
+    # caught by CI, not by `--self-test`, which loads the manifests without resolving them.
+    #   ⑴ RETARGETED — 6. `r1 B1` and `r1 M3 (refusals)` moved when `refused` became `is True` at
+    #     both sites; `r1 M2` and `r1 M3 (era counts)` moved when the era gate became `schema_of`;
+    #     the two `gate_ran` entries moved when H1's fix made that field `is not True` as well.
+    #     ⚠ The re-derivation entry was retargeted to a DIFFERENT text from its neighbour on
+    #     purpose: a bare `rec.get("gate_ran")` anchor now survives the fix while measuring
+    #     something the case it names cannot see, and identical anchor tuples are refused.
+    #   ⑵ ADDED — 5. TWO hold H1 (`gate_ran` read by identity in the join, and refused as a
+    #     non-bool on the read side); ONE holds M1, the third site of the same idiom, whose
+    #     hardening left the suite at 49/49 until the case beside it existed; TWO hold L1's
+    #     `schema_of` in both directions — a field that is not a version is unreadable, and an
+    #     ABSENT field is the oldest era rather than unreadable, which is the direction that would
+    #     turn the whole 184-record pre-cutover corpus into a CANNOT RUN.
+    "scripts/check-review-rounds.py": 24,
     # ⟳ 2026-09-08, R4 manifest debt 3 -> 2. ⚠ ONE MUTATION SURVIVED FIRST: I removed the words
     # "Produce one with" from the absent-results refusal, but the case asserts that `--outputFile=`
     # appears in the message and that token is on the NEXT fragment. The mutation READ like the one
@@ -1120,7 +1136,28 @@ EXPECTED_MUTATIONS = {
     #     (over-refusal — 9, including the documented scratch shape, which is the direction
     #     that would teach callers to route around the guard). The r11 `tail_candidates`
     #     split is the precedent for clearing the duplicate-anchor rule this way.
-    "scripts/codex-review.py": 42,
+    # ⟳ 2026-09-24, folding round 2: 42 -> 45. FOUR ADDED, ONE RETIRED WITH ITS SUBJECT, AND THREE
+    # RETARGETED — one of which had gone orphaned on the previous fold and was caught by CI.
+    #   ⑴ RETIRED — 1, A SANCTIONED RATCHET FALL. `r2: reserved device names stop disqualifying an
+    #     id` is gone because the RULE is gone (r2 Claude half, M2). It was wrong in both
+    #     directions — measured, `aux-tokens-r1-codex`, `com1-migration-r1-codex` and
+    #     `prn-cache-r1-claude` were REFUSED while the genuinely reserved `CON.md-r1-codex` and
+    #     `NUL.json-r1-codex` were ADMITTED, because `split("-")[0]` is not the Windows rule, which
+    #     keys on the base before the first PERIOD — and its stated justification was false: all
+    #     three `runs-on` lines in `.github/workflows/` are `ubuntu-latest`. ⚠ The entry was KILLED
+    #     THROUGH THE CASE THAT ENCODED THE ERROR, so it was a green guard over a property the code
+    #     did not have; repairing the token would have kept a rule protecting nothing measured. The
+    #     same reason is written above `MAX_ID_LEN` in `scripts/codex-review.py`, at the code.
+    #   ⑵ RETARGETED — 3. `r1 H1: the relative components` and `r2: whitespace` moved when the
+    #     predicate became `segment_problem`, which RETURNS THE RULE IT BROKE (M3); `r1 H1:
+    #     review_identity stops applying the one-segment rule` moved with its call site.
+    #   ⑶ ADDED — 4. TWO hold M4's boundary, which the previous fold stated as VERIFIED and was
+    #     not: its "AT the cap" case was 199 against a cap of 200, and the reviewer drove
+    #     `> 200 -> >= 200` SURVIVING at 162/162 — one entry mutates the comparison, the other
+    #     moves `MAX_ID_LEN` so the two cases cannot silently agree with a cap that shifted. TWO
+    #     hold M3: the reason returning the WRONG rule, and the reason being computed and dropped,
+    #     which is the state the message was in before this fold.
+    "scripts/codex-review.py": 45,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
@@ -3679,7 +3716,15 @@ def _self_test() -> int:
     # `check-review-rounds.py` 12 -> 17. NOTHING RETIRED — this fold adds guards for a
     # Blocking, a High and four Mediums, and four of the sixteen are the r4 M5 entry this
     # slice retired with the wrong subject. The split is on each file's own entry above.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1015)
+    # ⟳ 1015 -> 1023, folding round 2: `codex-review.py` 42 -> 45 and `check-review-rounds.py`
+    # 19 -> 24. NINE ADDED, ONE RETIRED WITH ITS SUBJECT (the reserved-device-name rule, wrong in
+    # both directions and guarding a platform this repo's CI never runs — the only sanctioned kind
+    # of fall), and NINE EXISTING ENTRIES RETARGETED. ⚠ THE RETARGETS ARE THE POINT OF THIS FOLD,
+    # not the +8: two anchors had gone silently orphaned on the PREVIOUS fold — for round 1's own
+    # Blocking and High — and the sum stayed at 1015 throughout, because an orphan keeps the count
+    # while removing the coverage. CI caught it; `--self-test` cannot, because it loads the
+    # manifests without resolving them. The split is on each file's own entry above.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1023)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
