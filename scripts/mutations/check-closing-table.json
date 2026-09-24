@@ -466,11 +466,11 @@
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "    return f\"{when}\\t{session or '-'}\\t{'+'.join(acts) or '-'}\\t{turn or '-'}\\n\"",
-        "    return f\"{when}\\t{session or '-'}\\t{'+'.join(acts) or '-'}\\n\""
+        "    return observer_log.record(session, \"+\".join(acts), turn, when=when)",
+        "    return observer_log.record(session, \"+\".join(acts), when=when)"
       ]
     ],
-    "expect": "log: the line carries FOUR tab-separated fields"
+    "expect": "log: the record carries a version cell plus FOUR payload fields"
   },
   {
     "name": "turn_id_of stops tolerating an opener-less window, turning a Stop hook into a traceback",
@@ -482,17 +482,6 @@
       ]
     ],
     "expect": "log: a window object with no opener attribute at all yields '-'"
-  },
-  {
-    "name": "the empty-session fallback is removed, so a session-less stop logs a blank field",
-    "file": "scripts/check-closing-table.py",
-    "edits": [
-      [
-        "    \"\"\"\n    return f\"{when}\\t{session or '-'}\\t{'+'.join(acts) or '-'}\\t{turn or '-'}\\n\"",
-        "    \"\"\"\n    return f\"{when}\\t{session}\\t{'+'.join(acts) or '-'}\\t{turn or '-'}\\n\""
-      ]
-    ],
-    "expect": "log: an empty session degrades to '-' rather than an empty field"
   },
   {
     "name": "the wiring is severed: run_decide logs a constant '-' instead of the judged turn, which is this change reverted where it takes effect (r9 R9-1)",
@@ -515,5 +504,27 @@
       ]
     ],
     "expect": "run: the logged line carries the JUDGED turn's opener id, not the live one"
+  },
+  {
+    "name": "closing log_line freezes its session column, so entries stop being attributable",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "record(session, \"+\".join(acts)",
+        "record(\"ct-text\", \"+\".join(acts)"
+      ]
+    ],
+    "expect": "log: the session is the THIRD field, verbatim"
+  },
+  {
+    "name": "closing log_line freezes its TIMESTAMP column, so the records lose their order",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "turn, when=when)",
+        "turn, when=\"T\")"
+      ]
+    ],
+    "expect": "log: the timestamp is the SECOND field, after the version cell, verbatim"
   }
 ]

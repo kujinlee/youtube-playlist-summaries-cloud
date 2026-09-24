@@ -444,6 +444,14 @@ jobs:
       # The gate itself. Needs the merge base, hence fetch-depth: 0 on the checkout.
       # BODY goes through env and then a FILE — never interpolated into the shell —
       # because a PR body is attacker-controlled text full of backticks and quotes.
+      # ⛔ SAME FROZEN-PAYLOAD PROPERTY AS `check-review-recorded` BELOW, and backlog #168 exists
+      # because this warning was written on THAT step and not this one. Editing the PR body does
+      # not re-arm this gate and `gh run rerun` replays the stale payload — only a new
+      # `pull_request` event (a push) picks the edit up. Measured on PR #336, 2026-09-22: the
+      # author read this step's refusal, edited the body exactly as instructed, spent a rerun, and
+      # found the cause on the sibling's comment. ⭐ The durable fix is in the REFUSAL MESSAGE
+      # (`scripts/check-dashboard-entry.py`), which the reader actually sees; this comment is the
+      # cheap half, for whoever is editing the workflow rather than reading its output.
       - name: dashboard entry ratchet
         if: github.event_name == 'pull_request'
         env:

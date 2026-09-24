@@ -196,16 +196,16 @@
     ]
   },
   {
-    "name": "the log line drops its SESSION column, so entries stop being attributable to a session",
+    "name": "the log line drops a PAYLOAD column, so a record loses a field",
     "file": "scripts/check-ci-watched.py",
     "edits": [
       [
-        "    return (f\"{_col(when)}\\t{_col(session) or '-'}\\t{_col(reason)}\\t{_col(detail)}\\n\")",
-        "    return (f\"{_col(when)}\\t{_col(reason)}\\t{_col(detail)}\\n\")"
+        "    return observer_log.record(session, reason, detail, when=when)",
+        "    return observer_log.record(session, detail, when=when)"
       ]
     ],
     "expect": [
-      "log_line carries all FOUR columns it is given, at two distinct inputs each"
+      "log_line carries the version cell plus all FOUR columns it is given, at two distinct inputs each"
     ]
   },
   {
@@ -300,32 +300,6 @@
     ]
   },
   {
-    "name": "log fields stop being sanitised, so a tab in the session adds a column and a newline adds a record",
-    "file": "scripts/check-ci-watched.py",
-    "edits": [
-      [
-        "    return \" \".join(str(v).replace(\"\\t\", \" \").splitlines()) if v else \"\"",
-        "    return str(v) if v else \"\""
-      ]
-    ],
-    "expect": [
-      "a session carrying a TAB cannot add a column, at two distinct inputs"
-    ]
-  },
-  {
-    "name": "the sanitiser EMPTIES the field instead of flattening it, destroying the evidence it protects",
-    "file": "scripts/check-ci-watched.py",
-    "edits": [
-      [
-        "    return \" \".join(str(v).replace(\"\\t\", \" \").splitlines()) if v else \"\"\n",
-        "    return \"\"\n"
-      ]
-    ],
-    "expect": [
-      "...and the sanitised session still CARRIES its content, at two distinct inputs"
-    ]
-  },
-  {
     "name": "the stale row loses the armed sha, so one-push-stale and ten-pushes-stale are the same record",
     "file": "scripts/check-ci-watched.py",
     "edits": [
@@ -376,5 +350,38 @@
     "expect": [
       "...and still returns the full payload when the writer closes, through a REAL fd rather than a stub"
     ]
+  },
+  {
+    "name": "ci log_line freezes its session column, so entries stop being attributable",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "record(session, reason",
+        "record(\"cw-text\", reason"
+      ]
+    ],
+    "expect": "the SESSION column comes from the Stop payload the hook has always piped in"
+  },
+  {
+    "name": "ci log_line freezes its TIMESTAMP column, so the records lose their order",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "detail, when=when)",
+        "detail, when=\"T\")"
+      ]
+    ],
+    "expect": "log_line puts the TIMESTAMP in the SECOND cell, verbatim, at two distinct inputs"
+  },
+  {
+    "name": "the rewired WARN write is neutered, so a warning fires and records nothing",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "            observer_log.append_or_raise(\n                WARN_LOG, log_line(warn_reason(watching_sha, head or \"\"), detail, when, session))",
+        "            pass"
+      ]
+    ],
+    "expect": "a WARN appends exactly ONE line, and it is the `unwatched` class"
   }
 ]

@@ -1,0 +1,211 @@
+[
+  {
+    "name": "col stops removing the TAB",
+    "file": "scripts/observer_log.py",
+    "edits": [
+      [
+        "    flat = s.replace(SEP, \" \")",
+        "    flat = s"
+      ]
+    ],
+    "expect": "col strips a TAB"
+  },
+  {
+    "name": "col hand-rolls the line rule instead of asking splitlines()",
+    "file": "scripts/observer_log.py",
+    "edits": [
+      [
+        "    out = \" \".join(flat.splitlines()) if flat else \"\"",
+        "    out = \" \".join(flat.split(\"\\n\")) if flat else \"\""
+      ]
+    ],
+    "expect": "col strips a VERTICAL TAB"
+  },
+  {
+    "name": "col drops the None guard",
+    "file": "scripts/observer_log.py",
+    "edits": [
+      [
+        "    s = \"\" if v is None else str(v)",
+        "    s = str(v)"
+      ]
+    ],
+    "expect": "col on None is empty"
+  },
+  {
+    "name": "the record loses its VERSION column",
+    "file": "scripts/observer_log.py",
+    "edits": [
+      [
+        "    cells = [VERSION, ts, sess]",
+        "    cells = [ts, sess]"
+      ]
+    ],
+    "expect": "record starts with the VERSION column"
+  },
+  {
+    "name": "VERSION is blanked rather than removed",
+    "file": "scripts/observer_log.py",
+    "edits": [
+      [
+        "VERSION = \"v1\"",
+        "VERSION = \"\""
+      ]
+    ],
+    "expect": "record starts with the VERSION column"
+  },
+  {
+    "name": "record stops sanitising its trailing fields",
+    "file": "scripts/observer_log.py",
+    "edits": [
+      [
+        "    cells += [col(f) or EMPTY for f in fields]",
+        "    cells += [str(f) or EMPTY for f in fields]"
+      ]
+    ],
+    "expect": "a field is sanitised too, not only the session"
+  },
+  {
+    "name": "record stops sanitising `when`",
+    "file": "scripts/observer_log.py",
+    "edits": [
+      [
+        "    ts = col(stamped) or EMPTY",
+        "    ts = str(stamped) or EMPTY"
+      ]
+    ],
+    "expect": "`when` is sanitised as well"
+  },
+  {
+    "name": "record stops sanitising `session` — the injection hole reopens",
+    "file": "scripts/observer_log.py",
+    "edits": [
+      [
+        "    sess = col(session) or EMPTY",
+        "    sess = str(session) or EMPTY"
+      ]
+    ],
+    "expect": "an injected TAB cannot add a column"
+  },
+  {
+    "name": "the EMPTY sentinel is blanked, so a missing field becomes a bare column",
+    "file": "scripts/observer_log.py",
+    "edits": [
+      [
+        "EMPTY = \"-\"",
+        "EMPTY = \"\""
+      ]
+    ],
+    "expect": "an empty session becomes the sentinel"
+  },
+  {
+    "name": "the timestamp column is frozen at a constant",
+    "file": "scripts/observer_log.py",
+    "edits": [
+      [
+        "    stamped = when if when is not None else now()",
+        "    stamped = \"T\""
+      ]
+    ],
+    "expect": "record carries the `when` it was GIVEN, at two distinct inputs"
+  },
+  {
+    "name": "the record loses its terminator",
+    "file": "scripts/observer_log.py",
+    "edits": [
+      [
+        "    return SEP.join(cells) + \"\\n\"",
+        "    return SEP.join(cells)"
+      ]
+    ],
+    "expect": "record terminates with a newline"
+  },
+  {
+    "name": "now() reverts to the second spelling of the offset",
+    "file": "scripts/observer_log.py",
+    "edits": [
+      [
+        "    return _dt.datetime.now().astimezone().replace(microsecond=0).isoformat()",
+        "    return _dt.datetime.now().astimezone().strftime(\"%Y-%m-%dT%H:%M:%S%z\")"
+      ]
+    ],
+    "expect": "now() offset uses a COLON (isoformat, not %z)"
+  },
+  {
+    "name": "append truncates instead of appending",
+    "file": "scripts/observer_log.py",
+    "edits": [
+      [
+        "    with path.open(\"a\", encoding=\"utf-8\") as fh:",
+        "    with path.open(\"w\", encoding=\"utf-8\") as fh:"
+      ]
+    ],
+    "expect": "append is additive"
+  },
+  {
+    "name": "append claims success on a failed write",
+    "file": "scripts/observer_log.py",
+    "edits": [
+      [
+        "    except OSError:\n        return False",
+        "    except OSError:\n        return True"
+      ]
+    ],
+    "expect": "append returns False on OSError rather than raising"
+  },
+  {
+    "name": "append stops creating missing parents",
+    "file": "scripts/observer_log.py",
+    "edits": [
+      [
+        "    path.parent.mkdir(parents=True, exist_ok=True)\n",
+        ""
+      ]
+    ],
+    "expect": "append creates missing parents and writes"
+  },
+  {
+    "name": "append_or_raise swallows the OSError itself, so no caller can report it",
+    "file": "scripts/observer_log.py",
+    "edits": [
+      [
+        "    with path.open(\"a\", encoding=\"utf-8\") as fh:\n        fh.write(line)",
+        "    try:\n        with path.open(\"a\", encoding=\"utf-8\") as fh:\n            fh.write(line)\n    except OSError:\n        pass"
+      ]
+    ],
+    "expect": "append_or_raise RAISES OSError where append returns False"
+  },
+  {
+    "name": "append_or_raise loses `encoding=`, so the write takes the platform default",
+    "file": "scripts/observer_log.py",
+    "edits": [
+      [
+        ", encoding=\"utf-8\") as fh:",
+        ") as fh:"
+      ]
+    ],
+    "expect": "append_or_raise writes utf-8 even where the PLATFORM default is ASCII"
+  },
+  {
+    "name": "col stops sentinelling a whitespace-only field, so a TAB session becomes a space",
+    "file": "scripts/observer_log.py",
+    "edits": [
+      [
+        "if out.strip() else \"\"",
+        "if True else \"\""
+      ]
+    ],
+    "expect": "a session that is ONLY a separator becomes the sentinel, at two distinct separators"
+  },
+  {
+    "name": "col returns the STRIPPED value instead of testing it, trimming every real field",
+    "file": "scripts/observer_log.py",
+    "edits": [
+      [
+        "    return out if out.strip() else \"\"",
+        "    return out.strip()"
+      ]
+    ],
+    "expect": "...but interior and edge whitespace in a REAL field is preserved, not trimmed"
+  }
+]

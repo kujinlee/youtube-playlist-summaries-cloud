@@ -39,7 +39,7 @@ Usage (the hook calls form 1):
     python3 scripts/check-ci-watched.py --decide
     python3 scripts/check-ci-watched.py --watching   # record that a watcher is armed for HEAD
     python3 scripts/check-ci-watched.py --clear
-    python3 scripts/check-ci-watched.py --self-test  # 57 cases
+    python3 scripts/check-ci-watched.py --self-test  # 58 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -57,6 +57,9 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import observer_log  # noqa: E402  — the ONE owner of the record grammar (backlog #166, #170)
+
 SENTINEL = ROOT / ".claude/ci-watching"
 # ⛔ THE EVIDENCE BASE, and the reason it is a FILE and not stderr. This guard warns on a
 # Stop hook, where the wrapper shows stderr once and keeps nothing. MEASURED 2026-09-22: a
@@ -154,49 +157,28 @@ def warn_reason(watching_sha: str | None, head_sha: str) -> str:
 
 
 def log_line(reason: str, detail: str, when: str, session: str) -> str:
-    """One appended record. Tab-separated, and DELIBERATELY the same four columns as
-    `check-banner-armed.log_line` — `when`, `session`, `reason`, `detail`.
+    """This guard's payload, over the SHARED record grammar. -> `v1⇥when⇥session⇥reason⇥detail`
 
-    ⚠ THIS IS THE THIRD `log_line` IN `scripts/`, AND THAT IS WORTH SAYING OUT LOUD RATHER THAN
-    LEAVING FOR THE NEXT READER TO NOTICE. `check-banner-armed.py` has one (this shape) and
-    `check-closing-table.py` has another (`acts, when, session, turn`). Three observers, three
-    copies, and `check-vocabulary-collisions.py` exists on the principle that duplicate
-    coordination vocabulary is the shadow of a duplicate protocol.
-    ⭐ SO THIS ONE DOES NOT INVENT A FOURTH GRAMMAR. Matching the closest sibling is the cheapest
-    thing that does not make the problem worse; CONSOLIDATING the three is a design question, not a
-    thing to decide inside a slice that was asked for a log. It is filed for the Phase 6 reviews
-    that backlog #164 and #165 already owe.
+    ⟳ **2026-09-23, backlog #166 + #170 — THE GRAMMAR MOVED OUT AND THIS IS NOW A THIN ADAPTER.**
+    It used to build the record itself, alongside a private `_col` sanitiser. Both are gone;
+    `observer_log` owns the separator rule, the `VERSION⇥when⇥session` prefix and the write.
 
-    Nothing parses this file yet. It exists so the promote-to-blocking decision has a denominator —
-    the same argument the banner guard's log already won, and the reason this guard could not
-    answer "did it warn me?" when it mattered.
+    What this function still owns, and should: **which payload columns this guard emits, and in
+    what order.** That is a per-guard decision and it does not belong in a shared module.
+
+    ⛔ THE PREVIOUS DOCSTRING ARGUED FOR THE DUPLICATION AND WAS RIGHT AT THE TIME — *"matching the
+    closest sibling is the cheapest thing that does not make the problem worse; CONSOLIDATING the
+    three is a design question"*. The architecture review of 2026-09-22 answered that question, and
+    measured what the duplication had already cost: the banner log's columns 3 and 4 **swapped
+    meaning between generations of the same file** and nothing could observe it, because the family
+    has four writers and zero readers (backlog #170).
+
+    ⚠ **THE NAME `log_line` STILL COLLIDES ACROSS THREE FILES, AND THAT IS NOW SHARED IDENTITY
+    RATHER THAN A DUPLICATE MECHANISM** — the same category as `decide`, which five guards define
+    and nobody considers a defect. The implementations no longer diverge because there is only one.
+    When backlog #167's adapter flags this stem, that is the `ALLOWED` entry to write.
     """
-    return (f"{_col(when)}\t{_col(session) or '-'}\t{_col(reason)}\t{_col(detail)}\n")
-
-
-def _col(v: str) -> str:
-    """One field, with every separator this grammar uses removed. PURE.
-
-    ⛔ FIELD INJECTION, AND BOTH REVIEW HALVES FOUND IT INDEPENDENTLY (r1). `session` comes from
-    outside the process — the Stop payload — and went in raw:
-
-        log_line("unwatched", "d", "T", "s\tinjected")   -> SIX columns, not four
-        log_line("unwatched", "d", "T", "s\nsecond")     -> TWO records, not one
-
-    ⚠ IT IS THE SAME CLASS THIS PROJECT FIXED THIS MORNING, one file over. `begin-plan.py --pause`
-    took free text into a `key: value` file, where a newline promoted the remainder to LIVE FIELDS.
-    The repair there was to ask `str.splitlines()` — the consumer's own rule — rather than
-    enumerate separators, because a hand-written character list covered two of eleven. Same
-    principle here: the separators are `\t` and whatever `splitlines()` treats as a break, so this
-    asks that function instead of listing `\r\n`.
-
-    ⚠ A UUID never contains either, so this is a CONTRACT hole rather than a live corruption — and
-    `check-banner-armed.py:log_line` is byte-identical and has the same one, over 76 live entries.
-    Fixing only this file was the choice, and it is recorded in the backlog rather than left
-    implicit: a stricter producer cannot break a four-column consumer, so the two do not diverge
-    in any way a reader can observe.
-    """
-    return " ".join(str(v).replace("\t", " ").splitlines()) if v else ""
+    return observer_log.record(session, reason, detail, when=when)
 
 
 def render_sentinel(sha: str, when: str) -> str:
@@ -408,7 +390,7 @@ def run_decide(payload: str = "") -> int:
     if code == WARN:
         # ⚠ RECORDED ONLY ON A REAL WARNING, never on QUIET. A log that also records the quiet
         # turns cannot answer "how often did this speak", which is the one question it is for.
-        when = _dt.datetime.now().astimezone().replace(microsecond=0).isoformat()
+        when = observer_log.now()
         watching_sha = watching if isinstance(watching, str) else None
         # ⚠ THE ARMED SHA IS IN THE ROW, not just HEAD (r1 Low 8). Without it a `stale` entry
         # cannot say WHICH commit was armed, so one-push-stale and ten-pushes-stale are the same
@@ -425,10 +407,13 @@ def run_decide(payload: str = "") -> int:
         armed = f" (armed {watching_sha[:8]})" if watching_sha else ""
         detail = f"{len(unresolved_checks(rows or []))} unresolved on {(head or '?')[:8]}{armed}"
         try:
-            WARN_LOG.parent.mkdir(parents=True, exist_ok=True)
-            with WARN_LOG.open("a", encoding="utf-8") as fh:
-                fh.write(log_line(warn_reason(watching_sha, head or ""), detail, when,
-                                  session))
+            # ⟳ r2 H3: THIS USED TO HAND-ROLL ITS OWN `mkdir` + `open("a", encoding="utf-8")`,
+            # arguing — correctly, for the API it had — that `observer_log.append` returns a bool
+            # and swallows the exception this caller puts `{e}` into below. The module now owns a
+            # raising write, so the argument is gone and so is the duplication: the shared module
+            # owns the GRAMMAR (`log_line` -> `record`) **and** the WRITE (`encoding=`, `mkdir`).
+            observer_log.append_or_raise(
+                WARN_LOG, log_line(warn_reason(watching_sha, head or ""), detail, when, session))
         except OSError as e:
             # ⛔ NOT SWALLOWED. The log IS the justification for warn-only mode, so losing it is
             # part of the warning rather than a detail — the same choice `check-banner-armed.py`
@@ -445,7 +430,7 @@ def run_watching() -> int:
     if not head:
         print("CANNOT RUN: could not read HEAD.", file=sys.stderr)
         return CANNOT_RUN
-    now = _dt.datetime.now().astimezone().replace(microsecond=0).isoformat()
+    now = observer_log.now()
     SENTINEL.parent.mkdir(parents=True, exist_ok=True)
     SENTINEL.write_text(render_sentinel(head, now))
     print(f"recorded: a watcher is armed for {head[:8]}. A new push un-arms it by design.")
@@ -600,13 +585,24 @@ def _self_test() -> int:
     case("...at a second distinct input, so neither class can be a hardcoded string",
          safe(lambda: warn_reason("1111111", "2222222") == "stale"
      and warn_reason("", "3333333") == "unwatched"))
-    case("log_line carries all FOUR columns it is given, at two distinct inputs each",
+    case("log_line carries the version cell plus all FOUR columns it is given, at two distinct inputs each",
          safe(lambda: log_line("unwatched", "3 unresolved on aaaaaaaa", "T1", "s1").split("\t")
-     == ["T1", "s1", "unwatched", "3 unresolved on aaaaaaaa\n"]
+     == ["v1", "T1", "s1", "unwatched", "3 unresolved on aaaaaaaa\n"]
      and log_line("stale", "1 unresolved on bbbbbbbb", "T2", "s2").split("\t")
-     == ["T2", "s2", "stale", "1 unresolved on bbbbbbbb\n"]))
+     == ["v1", "T2", "s2", "stale", "1 unresolved on bbbbbbbb\n"]))
     case("...and an EMPTY session renders as `-`, never as a blank column that shifts the rest",
-         safe(lambda: log_line("unwatched", "d", "T", "").split("\t")[1] == "-"))
+         safe(lambda: log_line("unwatched", "d", "T", "").split("\t")[2] == "-"))
+    # ⟳ **r3 addendum M2 — A PER-COLUMN CASE, IN THE SHAPE THE SIBLING ALREADY USES.** The case
+    # above is ONE boolean conjunction over every column, so TWO different manifest entries named
+    # it (the payload-column entry and the timestamp entry) and all three mutations of `log_line`
+    # produced the BYTE-IDENTICAL failure line — `got False want True`. Attribution was still
+    # correct, but a reader of the mutation log could not tell "the timestamp froze" from "a column
+    # was dropped". `check-closing-table` asserts one column per case carrying the VALUE, and its
+    # own comment records paying for that lesson; this is the twin applying it.
+    # ⚠ TWO DISTINCT INPUTS, so a frozen `when` cannot satisfy it. (#164)
+    case("log_line puts the TIMESTAMP in the SECOND cell, verbatim, at two distinct inputs",
+         safe(lambda: (log_line("unwatched", "d", "T1", "s").split("\t")[1],
+                       log_line("stale", "e", "T2", "s").split("\t")[1]) == ("T1", "T2")))
 
     def _drive_log(rows, watching_text, payload="", log=None):
         """Drive run_decide end to end with the network, git and the log file all redirected.
@@ -639,7 +635,7 @@ def _self_test() -> int:
     _PENDING = [{"name": "verify", "state": "PENDING"}]
     _rc, _lines, _ = _drive_log(_PENDING, None)
     case("a WARN appends exactly ONE line, and it is the `unwatched` class",
-         _rc == WARN and len(_lines) == 1 and _lines[0].split("\t")[2] == "unwatched")
+         _rc == WARN and len(_lines) == 1 and _lines[0].split("\t")[3] == "unwatched")
     # ⚠ THE CONTRAST IS THE CASE. "a warning logs" alone is satisfied by a guard that logs on
     # EVERY stop, which would destroy the one number the log exists to produce.
     _rcq, _linesq, _ = _drive_log([{"name": "verify", "state": "SUCCESS"}], None)
@@ -648,14 +644,19 @@ def _self_test() -> int:
          _rcq == QUIET and _linesq == [])
     _rcs, _liness, _ = _drive_log(_PENDING, "sha: 0000111122223333\n")
     case("...and a STALE watcher is recorded as its own class, not folded into `unwatched`",
-         _rcs == WARN and len(_liness) == 1 and _liness[0].split("\t")[2] == "stale")
+         _rcs == WARN and len(_liness) == 1 and _liness[0].split("\t")[3] == "stale")
     _rcp, _linesp, _ = _drive_log(_PENDING, None, payload='{"session_id": "sess-xyz"}')
+    # ⚠ `len(...) == 1 and` IS LOAD-BEARING, NOT DEFENSIVE TIDYING (r3 M4). `and` short-circuits, so
+    # its three sibling cases fail BY NAME when no line is written and this one RAISED `IndexError` —
+    # a suite crash with no named case, which the mutation harness cannot attribute to anything. It
+    # was measured by neutering the `append_or_raise` call this branch introduced: banner died
+    # through 8 named cases, ci died through a traceback. A kill nobody can attribute is not a kill.
     case("the SESSION column comes from the Stop payload the hook has always piped in",
-         _rcp == WARN and _linesp[0].split("\t")[1] == "sess-xyz")
+         _rcp == WARN and len(_linesp) == 1 and _linesp[0].split("\t")[2] == "sess-xyz")
     _rcb, _linesb, _ = _drive_log(_PENDING, None, payload="not json at all")
     case("...and an UNREADABLE payload costs the column, never the verdict — still WARN, "
          "still logged, session renders as `-`",
-         _rcb == WARN and len(_linesb) == 1 and _linesb[0].split("\t")[1] == "-")
+         _rcb == WARN and len(_linesb) == 1 and _linesb[0].split("\t")[2] == "-")
     # ⛔ THE FAILURE PATH. The log IS the justification for warn-only mode, so losing it must ride
     # in the warning rather than vanish — the sibling makes the same choice.
     with tempfile.TemporaryDirectory() as _td:
@@ -710,7 +711,7 @@ def _self_test() -> int:
             try:
                 with contextlib.redirect_stderr(io.StringIO()):
                     main(["--decide"], stream)
-                return g["WARN_LOG"].read_text().split("\t")[1]
+                return g["WARN_LOG"].read_text().split("\t")[2]
             finally:
                 g.update(keep)
     case("`main --decide` feeds the STREAM to the log, at two distinct sessions — the dispatch "
@@ -794,27 +795,31 @@ def _self_test() -> int:
         # attribute, so the manifest entry read SURVIVOR while the mutation was in fact fatal.
         # A kill by crash names no guard, and it hides every case after it.
         rc, lines, _ = _drive_log(_PENDING, None, payload=_deep)
-        return rc == WARN and len(lines) == 1 and lines[0].split("\t")[1] == "-"
+        return rc == WARN and len(lines) == 1 and lines[0].split("\t")[2] == "-"
     case("a payload that overflows the JSON decoder costs the COLUMN, never the verdict — the "
          "second distinct member of the union the handler catches",
          safe(_really_overflows) and safe(_overflow_costs_only_the_column))
     # ⛔ FIELD INJECTION — found independently by BOTH review halves.
     case("a session carrying a TAB cannot add a column, at two distinct inputs",
-         safe(lambda: len(log_line("unwatched", "d", "T", "a\tb").split("\t")) == 4
-     and len(log_line("unwatched", "d", "T", "a\tb\tc").split("\t")) == 4))
+         safe(lambda: len(log_line("unwatched", "d", "T", "a\tb").split("\t")) == 5
+     and len(log_line("unwatched", "d", "T", "a\tb\tc").split("\t")) == 5))
     case("...and a session carrying a NEWLINE cannot become a second record",
          safe(lambda: log_line("unwatched", "d", "T", "a\nb").count("\n") == 1
      and log_line("unwatched", "d", "T", "a\r\nb\u2028c").count("\n") == 1))
     # ⚠ AND THE VALUE SURVIVES SANITISING — a `_col` that returned "" would satisfy both cases
     # above while destroying the evidence they protect.
     case("...and the sanitised session still CARRIES its content, at two distinct inputs",
-         safe(lambda: log_line("unwatched", "d", "T", "a\tb").split("\t")[1] == "a b"
-     and log_line("unwatched", "d", "T", "x\ty").split("\t")[1] == "x y"))
+         safe(lambda: log_line("unwatched", "d", "T", "a\tb").split("\t")[2] == "a b"
+     and log_line("unwatched", "d", "T", "x\ty").split("\t")[2] == "x y"))
     # ⛔ THE STALE ROW NAMES THE ARMED COMMIT (r1 Low 8) — without it, one-push-stale and
     # ten-pushes-stale are the same record.
     _rca, _linesa, _ = _drive_log(_PENDING, "sha: 0000111122223333\n")
+    # ⚠ `len(...) == 1` for the same reason as the session case below — this was the SECOND instance
+    # of the class and it was found by looking for it rather than by the first fix (r3 M4: *after
+    # fixing, search for the class*). A grep for an unguarded `[0]` on a `_drive_log` result now
+    # returns nothing in this file.
     case("a STALE row records WHICH commit was armed, not only HEAD",
-         _rca == WARN and "armed 00001111" in _linesa[0])
+         _rca == WARN and len(_linesa) == 1 and "armed 00001111" in _linesa[0])
     # ⚠ AND warn_reason NOW READS BOTH OPERANDS: a watcher armed for the CURRENT head is not stale.
     case("warn_reason reads both operands — a watcher armed for the SAME sha is not `stale`",
          safe(lambda: warn_reason("abc123", "abc123") == "unwatched"

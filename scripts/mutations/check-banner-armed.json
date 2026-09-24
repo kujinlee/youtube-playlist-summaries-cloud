@@ -99,8 +99,8 @@
     "file": "scripts/check-banner-armed.py",
     "edits": [
       [
-        "    return f\"{when}\\t{session or '-'}\\t{before}\\t{after}\\n\"",
-        "    return f\"{when}\\t{session or '-'}\\t1\\t2\\n\""
+        "    counts = (before, after)",
+        "    counts = (1, 2)"
       ]
     ],
     "expect": [
@@ -551,19 +551,6 @@
     ]
   },
   {
-    "name": "flush_line freezes its session column",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "    return f\"{when}\\t{session or '-'}\\t{before}\\t{after}\\n\"\n\n\n# ── I/O shell",
-        "    return f\"{when}\\tfl-text\\t{before}\\t{after}\\n\"\n\n\n# ── I/O shell"
-      ]
-    ],
-    "expect": [
-      "R5-646b ...and its session column too"
-    ]
-  },
-  {
     "name": "the warn log's banner detail freezes HALF the value — the step, leaving the total live",
     "file": "scripts/check-banner-armed.py",
     "edits": [
@@ -603,16 +590,40 @@
     ]
   },
   {
-    "name": "flush_line freezes its TIMESTAMP column, the only thing ordering the observation log",
+    "name": "flush_line freezes its TIMESTAMP column, so the observations lose their order",
     "file": "scripts/check-banner-armed.py",
     "edits": [
       [
-        "apart and a third value would make that column mean two different kinds of thing.\n    \"\"\"\n    return f\"{when}\\t{session or '-'}\\t{before}\\t{after}\\n\"",
-        "apart and a third value would make that column mean two different kinds of thing.\n    \"\"\"\n    return f\"T\\t{session or '-'}\\t{before}\\t{after}\\n\""
+        "    stamp = when",
+        "    stamp = \"T\""
       ]
     ],
     "expect": [
       "R5-646c ...and its TIMESTAMP column, which nothing read — a `when` that is the same string at every call site leaves any clause reading it unguarded"
     ]
+  },
+  {
+    "name": "flush_line freezes its session column, so observations stop being attributable",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    return observer_log.record(session, *counts, when=stamp)",
+        "    return observer_log.record(\"fl-text\", *counts, when=stamp)"
+      ]
+    ],
+    "expect": [
+      "R5-646b ...and its session column too"
+    ]
+  },
+  {
+    "name": "the rewired WARN write is neutered, so a warning fires and records nothing",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "            observer_log.append_or_raise(\n                WARN_LOG, log_line(reason, detail, when, str(data.get(\"session_id\", \"\"))))",
+        "            pass"
+      ]
+    ],
+    "expect": "F4 run_decide WARNS on the new class AND appends a line — the side effect"
   }
 ]

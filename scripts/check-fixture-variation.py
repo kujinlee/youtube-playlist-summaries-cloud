@@ -166,11 +166,16 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
     # ⟳ 2026-09-22 — THREE OF FOUR PAID OFF, and the debt shrinks by deletion, which is what the
     # ⭐ direction of this ratchet is for. The r5 fold of the unheralded-class review gave
     # `log_line` cases at distinct `detail`, `session` and `when`, so those suppressions went
-    # stale and this guard reported them. Only `reason` is still one value at every call site.
+    # stale and this guard reported them. Only `reason` was still one value at every call site.
     # ⚠ It reported them at `02218390` and the red was COMMITTED: that fold ran the guard's own
     # suite and the mutation sweep, and never ran THIS guard over the file it had just changed.
-    'check-banner-armed.py': (
-        'log_line.reason',),
+    # ⟳⟳ 2026-09-23, r3 L3 — **THE FOURTH IS NOW PAID OFF TOO, SO `check-banner-armed.py` LEAVES
+    # THIS DICT ENTIRELY.** The observer-log fold rewrote `log_line`'s call sites, `reason` now
+    # varies, and this guard said so in its own advisory output. ⚠ AND IT SAID SO WHILE THE FOLD WAS
+    # BEING REVIEWED, NOT WHEN IT LANDED — the identical omission the ⚠ above records: the fold ran
+    # the mutation sweep and the touched suites, and did not run THIS guard over the file it changed.
+    # Twice on one file is a habit, not an accident; the guard is advisory (`rc=0`), which is exactly
+    # why it needs to be run deliberately rather than waited for.
     'check-catalog-coverage.py': (
         'classify.digested', 'digested_columns.sql',),
     'check-ci-watched.py': (
@@ -284,6 +289,34 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # ⟳ 2026-09-23, backlog #166 + #170: the ONE owner of the observer-log record, pinned in the
+    # commit that adds it — this guard refused the file until it was, which is now the fourth time
+    # it has caught a new script arriving unmeasured. DERIVED by running `analyse()` on the final
+    # source, not transcribed: ⚠ an earlier slice derived this honestly and then invalidated it
+    # with a later edit IN THE SAME COMMIT, so it is re-derived after the module is frozen.
+    # It reports NO findings — all EIGHT parameters are genuinely varied by the suite.
+    # ⛔ **r3 M3 — THE COMMENT ABOVE DESCRIBED ITS OWN DEFECT AND THEN COMMITTED IT.** It said "all
+    # six" and "re-derived after the module is frozen"; round 3 added a FIFTH function,
+    # `append_or_raise`, and did not re-derive, so `append_or_raise.line` and `append_or_raise.path`
+    # were missing — the two parameters of the fold's own headline fix.
+    # ⚠ **NOTHING CATCHES THIS, BY DESIGN, AND THAT IS THE DURABLE PART OF THE FINDING:** the check
+    # iterates `sorted(pinned - keys)`, so a parameter LEAVING is a finding and a parameter ARRIVING
+    # is not. The live guard was `rc=0` with a pin that under-described its file by two keys. No
+    # coverage was missing (`findings = []`, the suite varies `path` and `line` for both functions),
+    # so this was a derivation defect — but a pin that cannot notice a new parameter is a pin whose
+    # silence means nothing, which is the same one-directional asymmetry r2 M1 was about.
+    # RE-DERIVED by running this guard's own `analyse(src, "observer_log.py")` on the delivered
+    # module: 8 keys, `findings = []`, `pinned - keys` empty in both directions.
+    'observer_log.py': (
+        'append.line',
+        'append.path',
+        'append_or_raise.line',
+        'append_or_raise.path',
+        'col.v',
+        'record.fields',
+        'record.session',
+        'record.when',
+    ),
     # ⟳ 2026-09-20: the closing-table guard, pinned in the commit that adds it — this guard
     # refused it until it was, which is the third time in two days it has caught a new file
     # arriving unmeasured. DERIVED by running `analyse()`, not transcribed. It reports NO

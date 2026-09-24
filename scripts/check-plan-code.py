@@ -2,7 +2,7 @@
 """A plan that contains code must ASSEMBLE into that code, and its evidence must be RUN.
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
-    python3 scripts/check-plan-code.py --self-test          # 128 cases
+    python3 scripts/check-plan-code.py --self-test          # 131 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -568,7 +568,87 @@ EXPECTED_MUTATIONS = {
     # surviving on exactly that gap. The threshold entry is the fourth of that kind — every other
     # case derives _BIG/_SMALL from LARGE_TURN and so moves with it, leaving the calibrated value
     # unfalsifiable until one case pinned it as a literal.
-    "scripts/check-banner-armed.py": 47,
+    # ⟳ 2026-09-23, backlog #166 + #170 — A SANCTIONED RATCHET FALL, and the only kind there is.
+    # ⟳⟳ r2 M1 REWROTE THIS ACCOUNT, because it was off by one entry and mislabelled another. It
+    # said "THREE anchors stopped resolving" and listed five; **SIX entry names left the three
+    # adapters and three arrived**, and the sixth was unaccounted for. The count is now DERIVED
+    # rather than recalled — `git show origin/master:scripts/mutations/<f>.json` against the branch
+    # copy, names diffed as sets — and every removal is in exactly ONE of the three classes below.
+    #
+    #   ⑴ RETIRED WITH THEIR SUBJECT — 3. The code they name is GONE, moved into
+    #     `scripts/observer_log.py` with the record grammar, and each property is mutation-covered
+    #     in its new home. This is the only sanctioned kind of fall:
+    #       ci      fields stop being sanitised  -> observer_log "col stops removing the TAB"
+    #       ci      sanitiser empties the field  -> observer_log "col strips a TAB" + content
+    #       closing empty-session fallback       -> observer_log "the EMPTY sentinel is blanked"
+    #
+    #   ⑵ RENAMED AND RETARGETED, NOT RETIRED — 2, so they appear in BOTH the removed and the
+    #     added set and net to zero. ⛔ THEY WERE BRIEFLY IN CLASS ⑴ AND THAT WAS WRONG (r1 Codex,
+    #     round 2 on the folded tree):
+    #       banner  flush_line freezes session   -> NOT covered by "record puts `session` third"
+    #       banner  flush_line freezes timestamp -> NOT covered by "record puts `when` second"
+    #     Those cases prove `record()` PRESERVES arguments it is GIVEN; they say nothing about
+    #     whether the ADAPTER passes its own through. Measured with mutant adapters: the
+    #     observer_log cases stayed true while the adapter property failed.
+    #
+    #   ⑶ REPLACED BY A DIFFERENT PROPERTY — 1, and THIS IS THE ONE THE OLD ACCOUNT LOST. ci's
+    #     *"the log line drops its SESSION column, so entries stop being attributable"* became
+    #     *"the log line drops a PAYLOAD column, so a record loses a field"*. Calling that a
+    #     retarget was loose: the old property is *this adapter passes `session` through*, the new
+    #     one is *this adapter emits its payload fields*, and they are different claims. The reason
+    #     the swap is correct is that `session` is now the shared module's POSITIONAL 3, so what
+    #     remains the adapter's own is its payload; the reason it needed saying is that the
+    #     passthrough property still exists and still needs an owner — which is ⑵'s whole lesson,
+    #     accepted for `flush_line` and then not searched for over its two siblings.
+    #
+    # ⭐ **SO THE SEARCH WAS RUN, AND IT CLOSES THE CLASS** (r2 M1): neither `check-ci-watched`'s
+    # nor `check-closing-table`'s `log_line` had a session- or timestamp-passthrough entry. FOUR
+    # were added (ci 27 -> 29, closing 46 -> 48), each MEASURED first by freezing the argument in
+    # the delivered adapter and reading which named case went red — 49/57, 56/57, and two clean
+    # closing-table failures. The properties were never uncovered; the RATCHET is what proves the
+    # cases can fail, and for two of three adapters nothing held it.
+    #
+    # Net: banner 47->47, ci 29->29, closing 47->48, +16 for the new owner. ⚠ THIS LINE PREVIOUSLY
+    # READ `47->45 … +14` — the pre-withdrawal numbers — for three commits after the withdrawal
+    # above it. r2 B1: the correction had landed in the COMMIT MESSAGE and not in the file, and a
+    # justification that disagrees with its own pins is not a justification.
+    # Every surviving anchor was re-verified to resolve exactly once AFTER the code was final.
+    # ⟳ r3 M4, 2026-09-23: 47 -> 48. The fold rewired this file's WARN write to
+    # `observer_log.append_or_raise` and ratcheted NOTHING at the new call site — it applied *the
+    # ratchet is what proves the cases can fail* to the passthrough properties it found missing, and
+    # not to the delegation it introduced in the same commit. Measured: neutering the call reds 9
+    # named cases, no crash.
+    "scripts/check-banner-armed.py": 48,
+    # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record. Pinned in
+    # the commit that creates it, with its manifest — `check-ratchet-contract` REFUSED the
+    # module until both existed (R4W_no_mutation_manifest), which is the contract working on
+    # a file minutes old. ⭐ Mutation 2 is the load-bearing one: it swaps `splitlines()` for
+    # `split("\n")`, which is the EXACT historical defect one file over — a hand-written line
+    # rule that covered 2 of the 11 characters `splitlines()` honours.
+    # ⟳ r1 HIGH 4, same day: 14 -> 15. The review measured that the retired R5-646c property
+    # (a frozen `when` column) had NO replacement mutation and no case that could fail —
+    # `record defaults `when` to now()` asserted `!= ""`, which `col(x) or EMPTY` can never
+    # be. A case and a mutation were both added. A RISE needs a reason as much as a fall.
+    # ⟳ r3 H1 + M2, same day: 16 -> 19. THREE entries, all on lines this round changed:
+    #   * `encoding=` deleted from `append_or_raise` — ⛔ THE DOCSTRING SAID THIS COULD NOT BE
+    #     COVERED. r3 H1 refuted that by building the case: the locale default is an INPUT fixed
+    #     before interpreter start, so a child under `LC_ALL=C` reports US-ASCII and the missing
+    #     argument raises. A self-authored exemption sitting in the one line the whole consolidation
+    #     concentrates value into.
+    #   * the whitespace-only guard in `col` reverted — r3 M2, the sentinel was DEFEATED for this
+    #     grammar's own primary separator (`SEP` becomes a space, and a space is truthy).
+    #   * that guard returning `out.strip()` instead of TESTING it — the fix's cheapest wrong form,
+    #     which every other case passes.
+    # ⟳ r2 H3, same day: 15 -> 16. M9 was fixed as an INSTANCE — one hand-rolled write delegated,
+    # `encoding=` hand-added to a second — and TWO hand-rolled writes stayed in the tree, each with
+    # its own `mkdir` + `open`. The API forced that: `append` returns a bool and two callers need
+    # `{e}`. `append_or_raise` is the class fix, and the new entry is the FAIL-OPEN direction on it
+    # (it swallows the error itself, so no caller can report one). ⚠ TWO EXISTING ANCHORS WERE
+    # RETARGETED, NOT RETIRED: the write body moved from `append`'s `try:` to module indent, so
+    # `append truncates` and `append stops creating missing parents` bound to 8-space text that no
+    # longer exists — a silent orphan of exactly the kind this repo has paid for seven times in one
+    # session. Both re-verified to resolve exactly once AFTER the code was final.
+    "scripts/observer_log.py": 19,
     # ⟳ 2026-09-07, R4 manifest debt 8 -> 7. FIVE of the seven cover rules the 15 shipped cases
     # already asserted; the other two are the gaps writing them found, and both are the same
     # shape — a claim about coverage that nothing executed:
@@ -586,7 +666,11 @@ EXPECTED_MUTATIONS = {
     # suite found the defects: `relative_to` raising on a redirected log (a warn-only observer
     # turning into a traceback), and judging the LIVE turn instead of the previous one, which
     # would have made the guard silently unable to see any closing message at all.
-    "scripts/check-closing-table.py": 47,
+    # ⟳ r2 M1, 2026-09-23: 46 -> 48, the same two passthrough entries as its ci sibling, and for
+    # the same reason — the search Codex's `flush_line` Blocking implied was never run over the
+    # other two adapters. Measured first: freezing session reds *log: the session is the THIRD
+    # field, verbatim*, freezing `when` reds *log: the timestamp is the SECOND field*.
+    "scripts/check-closing-table.py": 48,
     "scripts/gen-dashboard.py": 68,
     # ⟳ 2026-09-12. gen-goals-page.py was the last PAGE-PRODUCING generator with no
     # manifest — gen-dashboard, gen-backlog-page, brief-compose, page_chrome and page_markup
@@ -681,7 +765,36 @@ EXPECTED_MUTATIONS = {
     # NO input can distinguish it. It is defensive (it catches a future edit that wrongly moves a
     # pending state into the resolved list), not decisive — mutating it would be unkillable-by-
     # construction, the `check-storage-grant-pin` case-5 shape.
-    "scripts/check-ci-watched.py": 29,
+    # ⟳ r2 M1, 2026-09-23: 27 -> 29. `log_line` had NO entry for either of the two arguments it
+    # passes through to the shared record — session and the timestamp — while its banner sibling
+    # had both. The gap is the shape of the fall above it: `session` moving into `observer_log`'s
+    # positional 3 retired the adapter's SANITISING entries correctly and took the PASSTHROUGH
+    # entry with them, which is a different property. Both measured on the delivered adapter
+    # before being added: freezing session -> 49/57, freezing `when` -> 56/57.
+    # ⚠ **BOTH ANCHOR ON A SUBSTRING, NOT THE WHOLE `return` LINE, AND THE HARNESS IS WHY.** The
+    # first draft gave the two NEW entries the same find-string as the PRE-EXISTING entry already on
+    # that line, and `--mutate .` REFUSED the manifest with `NOT MEASURED`: `load_manifests` builds
+    # `seen_anchors` from the find-strings ALONE, so a differing replacement does not distinguish two
+    # entries, and its `EXACT TUPLE EQUALITY` note names the escape — a distinct substring each.
+    # ⭐ This is the OTHER HALF of r2 H1, which established that different substrings of one line ARE
+    # accepted; identical ones are not, and both halves had to be learned by running it.
+    # ⚠ **THE THIRD ENTRY ON EACH LINE KEEPS ITS FULL-LINE ANCHOR, DELIBERATELY** (r3 addendum L1):
+    # it is the pre-existing payload-column entry, and the whole line IS its subject. So the count is
+    # 3 entries per line, of which 2 per line were retargeted — 4 across the two files, each
+    # RE-MEASURED after retargeting, because a moved anchor is a different mutation until something
+    # proves otherwise.
+    # ⛔ r3 H3 / addendum H1: THE TWO LINE CITATIONS THAT USED TO BE IN THIS PARAGRAPH BROKE THEMSELVES.
+    # They were correct when typed and wrong as delivered, because this comment is long enough to push
+    # its own targets down — an eight-line insertion moves every citation below it by eight. Symbols
+    # now. That is the repo's standing rule and this file cites its own lines nineteen times, so the
+    # class is open and nothing guards it.
+    # ⟳ r3 M4, 2026-09-23: 29 -> 30, the sibling call site. ⛔ AND IT COULD NOT HAVE HAD AN ENTRY
+    # BEFORE ONE CHANGE TO THE SUITE: neutering the write made this suite die by `IndexError`, not
+    # by a named case, and the harness requires death VIA THE CASE AN ENTRY NAMES. Two cases indexed
+    # `_drive_log`'s result with no `len(...) == 1` guard while their three siblings had one, so
+    # `and` short-circuited for the siblings and raised for these. The second instance was found by
+    # grepping for the class, not by the first fix. Now 10 named reds, no crash.
+    "scripts/check-ci-watched.py": 30,
     # ⟳ 2026-09-08, R4 manifest debt 5 -> 4. Two findings, both about a rule with no single owner:
     #   * `range(a, b + 1)`'s INCLUSIVE bound was unfalsifiable — every range case writes both
     #     endpoints (`B1-B5`), and ident_re matches each on its own, so expansion only ever
@@ -726,7 +839,12 @@ EXPECTED_MUTATIONS = {
     # video_artifacts (video_id)` PASSED — and no case arrived with the fix. Removing "idx" from
     # that tuple survived all 117 cases; the drift table now carries an INDEX row, so it does not.
     "scripts/check-live-schema.py": 12,
-    "scripts/check-dashboard-entry.py": 43,
+    # ⟳ r2 M2, 2026-09-23: 43 -> 44. Backlog #168's remedy — the sentence in this guard's refusal
+    # telling the reader that editing the PR body cannot re-arm the gate and they must PUSH — was
+    # an UNTESTED SENTENCE: the suite was 148/148 with it present or absent. The entry deletes the
+    # clause and the new case reds. ⭐ Worth naming the shape: #168 is *the knowledge lives where
+    # the person in trouble is not looking*, and it shipped with its own remedy unmeasured.
+    "scripts/check-dashboard-entry.py": 44,
     # ⟳ backlog #91: check-plan-code 35 -> 30, and the FIVE did not disappear — they MOVED
     # to scripts/coverage_verdict.py with the clauses they guard. The sum below is unchanged
     # at 359, which is the point: a seam that relocates coverage must not be able to look
@@ -819,7 +937,7 @@ EXPECTED_MUTATIONS = {
     # Low 2: three clauses of `pin_took_effect` were undriven and the first is FAIL-OPEN — an
     # EMPTY `pythonLocation` makes `startswith("/")` true for every absolute path on earth.
     "scripts/check-python-pin.py": 52,
-    "scripts/check-plan-code.py": 76,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 77,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -926,7 +1044,26 @@ EXPECTED_MUTATIONS = {
     # subject. Nine entries: the two the earlier rounds bought back, the destination-mode read, the
     # throwaway index, the unchanged-file rule, the null-vs-empty distinction, the recorded prompt,
     # and repository redirection in both directions.
-    "scripts/codex-review.py": 12,
+    # ⟳ 2026-09-23, THE VERDICT-PATH COLLISION — 12 -> 16, and it is the THIRD measured
+    # instance of one defect: `verdict_path` DERIVES the verdict name from `--out`'s basename,
+    # so the namespace has no allocator and two reviews choosing the same output name write the
+    # same file. A round-3 run with `--out codex-r3.md` overwrote a COMMITTED
+    # `codex-r3.verdict.json` from an earlier session; both records honestly said
+    # `"review": "codex-r3.md"`, so the stem cannot tell them apart. ⛔ `check-review-recorded`
+    # catches a MISSING verdict and the overwritten file shows as MODIFIED, not ADDED — so
+    # nothing in the repo could see it. FOUR entries, because the rule has four directions and
+    # three of them are ways to be wrong in the SAFE-LOOKING direction:
+    #   * the refusal dropped (the defect itself);
+    #   * `tracked is None` read as answerable — the RULE's fail-open;
+    #   * ⭐ git's rc=128 read as "not tracked" — the FETCH's fail-open, which SURVIVED 101/101
+    #     until a case drove it. git answers three ways and the first two cases drove two of
+    #     them. ⟳ r4 M1: the reason first written here — "`--out` lives outside the repo, where
+    #     rc=128 is what you get" — is FALSE at the call site, because the query is made on
+    #     `vpath`, which is always joined under `REPO_ROOT`. What reaches it is `REPO_ROOT` not
+    #     being a git repository: this very harness stages a `copytree` with no `.git`.
+    #   * the explicit `--verdict` escape removed — the OVER-refusal direction, which would
+    #     break the legitimate replacement and teach callers to route around the guard.
+    "scripts/codex-review.py": 28,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
@@ -2757,6 +2894,11 @@ def _self_test() -> int:
                                       "scripts/gen-dashboard.py",
                                       "scripts/gen-features-page.py",
                                       "scripts/gen-goals-page.py",
+                                      # ⟳ 2026-09-23, backlog #166 + #170 — the ONE owner of
+                                      # the observer-log record. A LIBRARY, not a guard, so
+                                      # `check-ratchet-contract`'s population never sees it;
+                                      # this literal is the outside observer of its manifest.
+                                      "scripts/observer_log.py",
                                       "scripts/page_chrome.py",
                                       "scripts/page_markup.py",
                                       "scripts/peer-sites.py"])
@@ -3410,7 +3552,65 @@ def _self_test() -> int:
     # right because it was computed; the sentence beside it was wrong because it was typed. That
     # is the same defect this branch folded as r4's Low 5, committed inside the comment claiming
     # immunity to it.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 954)
+    # ⟳ 2026-09-23, backlog #166 + #170: 954 -> 966. +15 for the new owner `observer_log.py`
+    # (+1 of it from r1 HIGH 4), and **-3** for anchors RETIRED WITH THEIR SUBJECT when the record
+    # grammar moved out of the three producers. Net +12. The three classes of removal, and which
+    # entries are in each, are on the `check-banner-armed` entry above; this literal is the outside
+    # observer of the sum.
+    # ⛔ **r3 M1 CORRECTS THIS LINE, AND IT IS r2 B1 ONE COPY OVER.** It read `954 -> 964 … -5`.
+    # `-5` is the PRE-WITHDRAWAL number: it counts the two banner entries that r2 established were
+    # RENAMED, not retired — the unearned ratchet fall. The real retirement fall is 3, so the
+    # arithmetic is 954 + 15 − 3 = 966, which is exactly the literal `b360f7cf` installed. So the
+    # changelog ran 954 → 964 and then jumped to "966 → 972" with **no entry for the 964 → 966
+    # step**, which is the step where the unearned fall was corrected — the one change this branch
+    # most insists must be recorded. ⚠ Round 3 landed that correction in ONE of the two places in
+    # this file that state the number, and no gate can see the other: the case below is DERIVED, so
+    # it passes either way. This is the branch's signature defect committed a third time, inside the
+    # commit that rewrote the account it disagrees with.
+    # ⟳ 2026-09-23, round 3 (folding r2, then r3's own findings, then the verdict-path collision): 966 -> 981.
+    # +1 on `observer_log.py` (r2 H3, the fail-open
+    # direction of the new raising write), +4 across `check-ci-watched` and `check-closing-table`
+    # (M1, the session- and timestamp-passthrough entries the two siblings never had), +1 on
+    # `check-dashboard-entry.py` (M2, backlog #168's remedy was an untested sentence). The two
+    # RETARGETED anchors are net zero by construction — retargeting keeps the entry and moves its
+    # text, which is why it is the repair for a moved subject and retiring is not. This literal is
+    # the outside observer of the sum; the reasons are on the entries.
+    # ⟳ 2026-09-23, round 4 (folding r4's H1/M2/M5 on `codex-review.py`): 981 -> 986. All +5 on
+    # `codex-review.py`: three for the ALLOCATOR r4 H1 found missing — the run id dropped from the
+    # path, and the token ignoring each of its two inputs — one for the refusal that testified to
+    # the path it was protecting (M5), and one for a git that could not be run being reported as a
+    # repository successfully built (M2). ⚠ The M2 entry exists because a `try/except` alone left
+    # the `False` branch unreachable from any case; the builder takes the executable's NAME so a
+    # case can drive it, which is what gave the mutation something to go red on.
+    # ⟳ 2026-09-23, round 5 (the Codex half, on round 4's OWN fix): 986 -> 990. All +4 on
+    # `codex-review.py`, and they are the fifth consecutive round to find a defect inside the
+    # previous round's fold. r4 added an allocator; r5 showed its identity function was a pure
+    # function of `(head, prompt)` while `reviewed_state` hands it the TREE as well — so one brief
+    # at one commit over two different trees was one run. Three entries for the tree (dropped
+    # entirely, its None/{} marker collapsed, and its order made significant) and one for the token
+    # WIDTH, which named `TOKEN_HEX` so the 32-bit namespace a birthday collision was demonstrated
+    # over cannot come back as a literal in a slice.
+    # ⛔ **r5 CODEX HALF — THE LAST SELF-AGREEING CONSTANT, AND MY FIX FOR THAT CLASS HAD BEEN AN
+    # INSTANCE FIX OF AN INSTANCE FIX.** `27db82a8` pinned three constants in `codex-review.py` and
+    # declared the class closed; the Claude half had ALREADY named this one, inside its M3, and I
+    # folded only the half of M3 that lived in the other file. Measured: `SUITE_TIMEOUT 120 -> 3`
+    # passes 130/130 — a mutation that changes the operational budget of every suite this harness
+    # runs, invisible to the suite.
+    # ⚠ **THE LITERAL IS THE POINT, AND IT IS NOT `SUITE_TIMEOUT`.** Comparing against the constant
+    # agrees with whatever value it takes; that is the exact hole this case exists to close, and
+    # writing it the other way is how the width case survived at r5.
+    # ⚠ A stronger BEHAVIOURAL form was offered by the reviewer — stub `subprocess.run` and assert
+    # the `timeout` kwarg is exactly 120, which also proves the constant is USED. Not taken here:
+    # it would stub the one call this file makes to run a real suite, and a stub in front of the
+    # harness's only execution path buys a stronger assertion at the cost of the thing it measures.
+    # Recorded so the choice is visible rather than looking like an oversight.
+    # ⭐ THE CLASS IS NOW CLOSED, AND THAT IS MEASURED RATHER THAN ASSERTED: every module-level
+    # literal constant in BOTH touched files was perturbed and re-run — `codex-review.py` 0
+    # survivors (MIN_REVIEW_CHARS, ACCOUNT_FAULT_STATUSES, TOKEN_HEX, VERDICT_SCHEMA all killed),
+    # `check-plan-code.py` this one alone (DIAGNOSTIC_WINDOW, PROGRESS_WIDTH killed).
+    case("SUITE_TIMEOUT is pinned — the budget every spawned suite runs under cannot drift silently",
+         SUITE_TIMEOUT, 120)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 994)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
@@ -3420,6 +3620,36 @@ def _self_test() -> int:
     _repo = pathlib.Path(__file__).resolve().parent.parent
     case("every HARNESS_TREE entry is present in the tree this file lives in",
          [r for r in HARNESS_TREE if not (_repo / r).exists()], [])
+
+    # ─── THE MANIFESTS ON DISK, WHICH NOTHING CHEAP READ UNTIL r3 H2 ─────────────────────────
+    # ⛔ **THIS IS HOW A BROKEN MANIFEST SHIPPED THROUGH A 128/128 GREEN SUITE.** Every other
+    # `load_manifests` call in this suite runs against a TEMP-DIRECTORY FIXTURE, and the declared-
+    # count case compares `EXPECTED_MUTATIONS` to a LITERAL A HUMAN TYPED. So both halves of the
+    # claim were checked and the thing the claim is ABOUT — the files on disk — was checked by
+    # nothing until the 8-minute sweep. r3 B1: four entries repeated an earlier anchor tuple, the
+    # loader refused them, `--mutate .` returned NOT MEASURED, and this suite stayed green.
+    # ⭐ The comment above the declared-count case calls that literal "the outside observer of the
+    # sum". It observes the DICT. These two observe the MANIFESTS, which is the other operand, and
+    # they are the pair that makes the sentence true.
+    # ⚠ WHY IT MATTERS BEYOND ONE DEFECT: backlog #173 proposes skipping the sweep when no
+    # `scripts/**` file changed — sound on its own terms, but it makes the only instrument that
+    # catches this class conditional. These cases cost well under a second and are unconditional.
+    # ⚠ **THESE TWO GET NO MANIFEST ENTRY, AND THE REASON IS NOT AN EXCUSE — IT IS THEIR SUBJECT.**
+    # A manifest entry proves a case can fail by mutating PRODUCTION CODE. These cases are about
+    # DATA — the files in `scripts/mutations/` — so the mutation that breaks them is an edit to a
+    # manifest, which this harness deliberately cannot make. The nearest code mutation (slicing one
+    # file out of `load_manifests`' glob) was measured: it reds **13** cases, twelve of them the
+    # pre-existing temp-fixture ones, so an entry naming a case here would be attributed to a case
+    # that is red for an unrelated reason — the `expect` matched 7 case names defect, invited.
+    # ⭐ WHAT PROVES THEY CAN FAIL IS THAT THEY DID: measured at `6367c90f`, where four entries were
+    # refused, these read `4 problems` and `968 != 972` and go RED, while the suite that shipped that
+    # commit was 128/128 green. That is a falsifier with a recorded observation behind it, which is
+    # the property the ratchet exists to supply — supplied here by a different mechanism, said out
+    # loud so nobody reads the missing entry as an oversight.
+    _live_entries, _live_problems = load_manifests(_repo)
+    case("the manifests ON DISK load with no refusal", _live_problems, [])
+    case("...and the entry count they yield is the pinned sum, not a typed literal",
+         len(_live_entries), sum(EXPECTED_MUTATIONS.values()))
 
     # ─── A PRE-FLIGHT FOR THE FAILURE-LINE CONTRACT WAS ATTEMPTED HERE, AND ABANDONED ────
     # ⛔ THE PROBLEM IS REAL AND HAS COST A GROWING LIST OF FILES — see the derivation below,

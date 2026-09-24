@@ -11885,3 +11885,80 @@ SUBSTITUTE. That is a real but much narrower framing point than what I originall
 recorded as such rather than inflated back into the headline.
 
 Memory `ask-an-agent-to-refute-not-confirm` carries the same correction.
+
+## 2026-09-23
+Four small background scripts write short log files recording when they spoke — a note each time one
+of them warns you about something. Until today each wrote that record its own way. Three of the four
+would have been confused by a stray tab or newline arriving from outside; the fourth had been fixed
+months ago and the fix never travelled.
+
+More importantly: the format had already changed once without anyone noticing. Two columns swapped
+places in early September, so older records and newer ones mean different things while looking
+identical. Nothing could have caught it, because these files are written by four scripts and read by
+none.
+
+There is now one piece of code that owns that record. Every line it writes starts with a version
+marker, so the two generations can never again be silently mixed. The four writers share it.
+
+The review of this work found two serious problems with my first attempt, and both were the same
+mistake: I had written tests that compared the output against the very setting they were supposed to
+be checking, so switching that setting off made both sides agree and the test passed. The test
+guarding the whole point of the change could not fail. Both review passes found it independently.
+<!--tech-->
+New `scripts/observer_log.py` — owns `col()`, the `VERSION⇥when⇥session` prefix, `now()`, `append()`.
+Closes **#166**, **#170**, **#168**, **#169**. 39 self-test cases, 15 mutations, pinned in
+`EXPECTED_MUTATIONS`, `check-selftest-counts.POPULATION` and `check-fixture-variation.EXAMINED_KEYS`
+— all three in the commit that creates it, because each refused the file until it was.
+
+⭐ Dual review r1: Claude **2B/3H/4M/2L**, Codex **the same 2 Blocking**, High/Medium/Low empty —
+found independently, by different methods (Codex ran the mutations; Claude read the assertions).
+Both halves filed. The halves were NOT redundant, which is the standing argument for running both.
+
+⛔ The sweep was refused **three times, each correctly**: an unpinned 15th mutation; a stale declared
+sum; and a **red control**, which had printed *0 survivors* — a number that was worthless. Fourth run:
+**964 mutations, 964 killed, 964 attributed to the case each names, 0 survivors**, controls green
+before and after.
+
+⚠ **NOT CONVERGED — round 2 is owed** for M9: `check-banner-armed`'s two writes use `.open("a")` with
+no `encoding=`, taking the platform default where the shared `append` specifies utf-8. Measurement
+recorded in the review so round 2 does not re-derive it.
+
+⚠ Ratchet fall 47→45, 29→27, 47→46 with +15: five anchors RETIRED WITH THEIR SUBJECT when the grammar
+moved out, three RETARGETED because they are still the per-guard adapter's property. Reasons at both
+sites.
+
+Also filed from the same review lineage: **#171**, **#172** (the two findings that had no row), and
+**#173**, **#174** (the sweep costs 8m12s — 79% of the CI gate — and every PR pays it).
+
+## 2026-09-23
+Correction to the entry above, and the corrections matter more than the entry did.
+
+That entry described the log-record work using numbers that had already moved by the time it was
+written — how many mutation checks there are, how many were retired, and whether the review had
+finished. It also said the work "closes" four items while those four items still read as open.
+
+A second review round found all of it, along with something worse: I had split a piece of code into
+three lines and written that the checking tool required it. It does not. I had invented the
+constraint, then repeated it in three places including a review document. The tool was measured
+directly and accepts what I said it refused.
+
+The pattern in every one of these is the same, and it is the pattern the original work was about: a
+number or a claim copied into a second place, left behind when the first one moved.
+<!--tech-->
+⟳ CORRECTS the `## 2026-09-23` entry added in `088649a6`. Superseding figures: sweep **966**, not
+964. Ratchet **47→47**, not 47→45. **THREE** anchors retired with their subject, not five — two were
+un-retired after Codex's r2 Blocking. Round 2 is **done**, both halves, not "owed".
+
+⭐ #166, #168, #169, #170 are now ticked ✅ in `docs/backlog.md` **in this branch**, per
+`dev-process.md` Phase 5 (*"write the merge tick BEFORE opening the PR"*). r2 B2 caught that they
+were not — and `check-backlog-closure.py` reads MERGED subjects and is warn-only, so nothing would
+have caught it before merge. That is backlog #98's exact finding recurring.
+
+⛔ r2 H1, the sharpest finding of the day: `check-plan-code.load_manifests` compares the anchor
+TUPLE (`:1166`), so different substrings of ONE line are accepted — measured with a fixture, 3
+accepted / 0 problems. I had claimed it refuses same-line anchors and split `flush_line` and `col`
+to satisfy it. Corrected in all three places rather than dropped.
+
+⟳ r2 H2: `observer_log`'s docstring called `VERSION` "the load-bearing part". Demoted to what ships
+— nothing reads it, nothing bumps it, and the two generations that actually inverted are both
+pre-v1. What catches a reorder today is the adapters' own cases (measured: 7 of 157 kills).

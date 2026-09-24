@@ -837,9 +837,21 @@ def verdict(changed: list[str], added_entry: bool, pr_body: str,
         return 0, f"exempted by declaration — {reason}"
     if reason == "":
         return 1, f"{NO_ENTRY} was declared with no reason after it"
+    # ⛔ THE LAST SENTENCE IS BACKLOG #168, AND IT IS THE HALF THAT WAS MISSING. This message
+    # tells the reader to edit the PR body — and editing the PR body CANNOT, BY ITSELF, make this
+    # gate pass. CI reads `github.event.pull_request.body` from the EVENT PAYLOAD, which is frozen
+    # when the event fires; `gh run rerun` replays that same stale payload. Measured twice: PR #322
+    # on 2026-09-18 (two rerun cycles) and PR #336 on 2026-09-22, where the author followed this
+    # very message, spent a rerun, and found the cause written on a DIFFERENT step's comment.
+    # ⭐ The remedy belongs HERE rather than only in a `ci.yml` comment, because a comment on the
+    # sibling step is exactly the mechanism that already failed — the person reading a refusal is
+    # not reading the workflow file.
     return 1, (f"{len(real)} tracked file(s) changed and no entry was added to "
                f"docs/dashboard-entries.md. Add a '## YYYY-MM-DD' block describing "
-               f"the change in plain words, or put 'NO-ENTRY: <reason>' in the PR body.")
+               f"the change in plain words, or put 'NO-ENTRY: <reason>' in the PR body. "
+               f"⚠ If you edit the PR body to answer this, you must then PUSH something — "
+               f"CI reads the body from the frozen event payload, so an edit alone (and a "
+               f"`gh run rerun`) will fail again with this identical message.")
 
 def _self_test() -> int:
     ok = fail = 0
@@ -868,6 +880,20 @@ def _self_test() -> int:
     case("no changes at all passes", verdict([], False, "")[0], 0)
     case("mixed exempt and real is refused", verdict(["docs/reviews/r.md", "lib/x.ts"], False, "")[0], 1)
     case("refusal explains itself", "entry" in verdict(["lib/x.ts"], False, "")[1].lower(), True)
+    # ⟳ r2 M2, backlog #168 — THE REMEDY SHIPPED AS AN UNTESTED SENTENCE. The message below is the
+    # ONE place a reader learns that editing the PR body cannot by itself re-arm this gate, and no
+    # case asserted it: the suite was 148/148 with the clause present or absent, so a later message
+    # rewrite would delete it silently. ⭐ That is #168 ITSELF — the knowledge existing only where
+    # the person in trouble is not looking — committed inside the fix for it.
+    # ⚠ IT ASSERTS THE THREE HALVES TOGETHER, in the one message that tells the reader to edit the
+    # body: the instruction without its reason still invites a `gh run rerun`, which is precisely
+    # what happened on PR #336 and cost a rerun cycle before the cause was found on a sibling
+    # step's comment. A rewrite keeping "push" and dropping "frozen event payload" is the same
+    # defect one word smaller.
+    _refuse_body = verdict(["lib/x.ts"], False, "")[1]
+    case("the refusal telling you to edit the PR body also says you must PUSH, and why (#168)",
+         ("PR body" in _refuse_body, "PUSH" in _refuse_body,
+          "frozen event payload" in _refuse_body), (True, True, True))
     case("NO-ENTRY reason is echoed", "typo fix" in verdict(["lib/x.ts"], False, "NO-ENTRY: typo fix")[1], True)
     case("a lookalike filename is NOT exempt", verdict(["docs/dashboard-entries.md.bak"], False, "")[0], 1)
     case("a lookalike directory is NOT exempt", verdict(["docs/reviews-not-really/x.ts"], False, "")[0], 1)

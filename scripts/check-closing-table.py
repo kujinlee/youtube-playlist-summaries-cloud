@@ -117,7 +117,7 @@ Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CAN
 
 Usage:
     python3 scripts/check-closing-table.py --decide      # reads the Stop-hook payload on stdin
-    python3 scripts/check-closing-table.py --self-test   # 153 cases
+    python3 scripts/check-closing-table.py --self-test   # 154 cases
 """
 from __future__ import annotations
 
@@ -130,6 +130,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import observer_log  # noqa: E402  — the ONE owner of the record grammar (#166, #170)
 WARN_LOG = ROOT / ".claude/closing-table-warnings.log"
 
 QUIET = 0
@@ -863,18 +865,17 @@ def log_line(acts: list[str], when: str, session: str, turn: str) -> str:
     live log has recorded zero firings since the guard merged. Spending a design change on a nag
     nobody has experienced is the wrong order.
     """
-    return f"{when}\t{session or '-'}\t{'+'.join(acts) or '-'}\t{turn or '-'}\n"
+    return observer_log.record(session, "+".join(acts), turn, when=when)
 
 
 def _append_log(line: str) -> bool:
-    """Best effort. A log that cannot be written must not turn an observer into a traceback."""
-    try:
-        WARN_LOG.parent.mkdir(parents=True, exist_ok=True)
-        with WARN_LOG.open("a", encoding="utf-8") as fh:
-            fh.write(line)
-        return True
-    except OSError:
-        return False
+    """Best effort. A log that cannot be written must not turn an observer into a traceback.
+
+    ⟳ 2026-09-23, backlog #166: delegates to `observer_log.append`. This caller only ever wanted a
+    bool, so unlike `check-ci-watched`'s — which puts the OSError text INTO its warning and so keeps
+    its own write — there was nothing here to lose by sharing it.
+    """
+    return observer_log.append(WARN_LOG, line)
 
 
 def final_text_of(texts: list[str]) -> str | None:
@@ -923,7 +924,11 @@ def run_decide(payload: str) -> int:
     code, message = decide(final_text_of(banner.texts_of(judged.body)), acts)
 
     if code == WARN:
-        when = _dt.datetime.now().astimezone().strftime("%Y-%m-%dT%H:%M:%S%z")
+        # ⟳ 2026-09-23, backlog #166 (review finding F14): this was the ONLY producer using
+        # `strftime("…%z")` -> `-0700`, while the other three used `.isoformat()` -> `-07:00`. Both
+        # are valid ISO 8601 and `fromisoformat` accepts either on >=3.11, so nothing was broken —
+        # but two spellings of one field in one grammar is what this consolidation removes.
+        when = observer_log.now()
         # ⟳ r1 Codex, Low: the message used to PROMISE the warning had been logged while
         # `_append_log` could return False on OSError and nobody looked. A guard that misreports
         # its own evidence trail is the shape this repo keeps paying for, one level in.
@@ -1348,23 +1353,39 @@ def _self_test() -> int:
     check("log: an empty-string uuid is not an id", turn_id_of(_O({"uuid": ""})), "-")
     check("log: a window object with no opener attribute at all yields '-'",
           _safe(lambda: turn_id_of(object())), "-")
-    check("log: the line carries FOUR tab-separated fields",
+    # ⟳ 2026-09-23: the record gained a leading VERSION cell (backlog #170), so the assertion
+    # drops it and measures the PAYLOAD — which keeps this case name literally true rather than
+    # merely unchanged. The name is pinned by a mutation `expect`, so it must not be reworded.
+    check("log: the record carries a version cell plus FOUR payload fields",
           len(log_line(["a commit"], "2026-09-21T07:00:00-0700", "sess-a", "u")
-              .rstrip("\n").split("\t")), 4)
+              .rstrip("\n").split("\t")[1:]), 4)
+    # ⟳ **r3 L4 — r2 L2 WAS FOLDED FOR THE BANNER SIBLING AND NOT FOR THIS ONE.** The case above
+    # asserts that a FIFTH cell EXISTS; it says nothing about that cell being the version marker, so
+    # a record that DROPPED `v1` and gained a payload field passes it. Measured — blanking `VERSION`
+    # in `observer_log` reds `check-ci-watched` (56/57), `check-banner-armed` (159/160) and
+    # `observer_log` (39/41) each through a NAMED case, and reds this suite through an `IndexError`
+    # in an unrelated positional read. A suite that dies by crashing is a suite whose kill nobody
+    # can attribute — the harness-launders-failures shape, one file over from where it was filed.
+    # ⚠ TWO DISTINCT INPUTS, because a single call cannot tell a pinned literal from a coincidence.
+    check("log: the FIRST cell is the literal v1, at two distinct inputs",
+          _safe(lambda: (
+              log_line(["a commit"], "2026-09-21T07:00:00-0700", "sess-a", "u").split("\t")[0],
+              log_line(["a push"], "2026-01-02T03:04:05+0000", "sess-b", "v").split("\t")[0])),
+          ("v1", "v1"))
     # ⟳ check-fixture-variation, CI: the first draft of these cases passed `when="T"` and
     # `session="s"` at EVERY call site, so no case could tell either parameter from a constant and
     # every clause reading them was unguarded. The guard could not see it while `log_line` had ZERO
     # cases — ADDING the tests is what made the gap visible. Both are now varied, and the `or '-'`
     # fallback each carries has its own case rather than being inferred from the other's.
-    check("log: the timestamp is the FIRST field, verbatim",
+    check("log: the timestamp is the SECOND field, after the version cell, verbatim",
           _safe(lambda: log_line(["a push"], "2026-01-02T03:04:05+0000", "sess-b", "u")
-                .split("\t")[0]), "2026-01-02T03:04:05+0000")
-    check("log: the session is the SECOND field, verbatim",
+                .split("\t")[1]), "2026-01-02T03:04:05+0000")
+    check("log: the session is the THIRD field, verbatim",
           _safe(lambda: log_line(["a push"], "2026-06-06T06:06:06-0700", "sess-ZZZ", "u")
-                .split("\t")[1]), "sess-ZZZ")
+                .split("\t")[2]), "sess-ZZZ")
     check("log: an empty session degrades to '-' rather than an empty field",
           _safe(lambda: log_line(["a push"], "2026-03-03T03:03:03-0700", "", "u")
-                .split("\t")[1]), "-")
+                .split("\t")[2]), "-")
     # ⛔ EVERY POSITIONAL FIELD READ GOES THROUGH `_safe`, and this is the THIRD time this file has
     # paid for forgetting it. `_safe`'s own docstring: a raise inside the suite kills it with a
     # traceback and prints NO `[FAIL] ` line, so check-plan-code scores the mutation
@@ -1372,15 +1393,15 @@ def _self_test() -> int:
     # turn column makes `split("\t")[3]` an IndexError, the suite died on a traceback, and the
     # harness reported `labels=[]`. A bare index is a raise waiting for the mutation that proves
     # the case matters.
-    check("log: the turn id is the FOURTH field",
+    check("log: the turn id is the FIFTH field",
           _safe(lambda: log_line(["a commit"], "2026-04-04T04:04:04-0700", "sess-c", "u-9")
-                .rstrip("\n").split("\t")[3]), "u-9")
-    check("log: acts are joined with + in the third field",
+                .rstrip("\n").split("\t")[4]), "u-9")
+    check("log: acts are joined with + in the fourth field",
           _safe(lambda: log_line(["a commit", "a push"], "2026-05-05T05:05:05-0700", "sess-d",
-                                 "u").split("\t")[2]), "a commit+a push")
+                                 "u").split("\t")[3]), "a commit+a push")
     check("log: a missing turn id degrades to '-' rather than an empty field",
           _safe(lambda: log_line(["a commit"], "2026-07-07T07:07:07-0700", "sess-e", "")
-                .rstrip("\n").split("\t")[3]), "-")
+                .rstrip("\n").split("\t")[4]), "-")
 
     # ---- final_text_of -----------------------------------------------------------------------
     check("final: last non-empty wins", final_text_of(["a", "b"]), "b")
@@ -1532,7 +1553,7 @@ def _self_test() -> int:
             # BETWEEN two well-tested pieces, not inside either. Unit coverage does not compose.
             check("run: the logged line carries the JUDGED turn's opener id, not the live one",
                   _safe(lambda: (tmp / "warnings.log").read_text().strip()
-                        .split("\n")[-1].split("\t")[3]), "OPENER-OF-THE-JUDGED-TURN")
+                        .split("\n")[-1].split("\t")[4]), "OPENER-OF-THE-JUDGED-TURN")
             # ⟳ r10 Codex, Medium — A `-` IS REACHABLE, AND r9 CLAIMED IT WAS NOT. This is Codex's
             # own transcript: a perfectly ordinary judged turn whose opener record simply carries no
             # `uuid` key. `_is_turn_boundary` never inspects `uuid`, so it is an ordinary boundary.
@@ -1562,7 +1583,7 @@ def _self_test() -> int:
                   _safe(lambda: (run_decide(json.dumps({"transcript_path": str(no_uuid),
                                                         "session_id": "s"})),
                                  (tmp / "warnings.log").read_text().strip()
-                                 .split("\n")[-1].split("\t")[3])), (WARN, "-"))
+                                 .split("\n")[-1].split("\t")[4])), (WARN, "-"))
 
             tabled = write("tabled.jsonl", [
                 user("do it"), bash("git push"), say("Done.\n\n" + good),
