@@ -200,7 +200,7 @@ written; it was produced by §6's own first review round.
 
 ⛔ **THIS PARAGRAPH REPLACED A FULL COPY OF THE RULES, AND THE COPY HAD ALREADY GONE WRONG —
 r1 Medium.** It still said *"derive gate lists from `ci.yml`"*, which r1 established is the wrong
-scope (`schema-gates` is the other required context; `check-merge-ready.py:52-55` records the repo
+scope (`schema-gates` is the other required context; `check-merge-ready.py`'s `WORKFLOW` comment records the repo
 learning this once already), and it carried a survivor count the underlying measurement disagrees
 with. **Both were fixed in the adopted text and both survived here**, which is the whole argument
 against a rationale that also carries the rule: the copy nobody is looking at is the one that keeps

@@ -473,7 +473,7 @@ measured and still be false, because the label names a different population from
 ⛔ **THIS RULE QUOTES NO LIVE FIGURE, AND THAT IS THE RULE'S OWN DESIGN — NOT AN OVERSIGHT.**
 Three consecutive review rounds found a wrong number *inside this rule*, each introduced by the
 previous round's fix, and every one of them was a figure the text had to keep in sync with the
-repository. Rule 3 twenty lines below had already solved this — *"the survivor COUNT is
+repository. Rule 3, below, had already solved this — *"the survivor COUNT is
 deliberately not quoted here"* — and this rule was written doing the opposite. So: **the examples
 below are SHAPES. Where a count would go, they say `N`.** A rule that must be re-measured whenever
 the repo changes is a rule that goes stale silently, which is the defect it was written to prevent.
@@ -482,7 +482,7 @@ the repo changes is a rule that goes stale silently, which is the defect it was 
 |---|---|---|
 | *"N gates named"* | distinct `scripts/check-*.py` matched in one workflow | the regex excluded `.sh`, and *gates* could equally mean `run:` steps, all invoked scripts, or workflows |
 | *"the draft PR caught that Blocking"* | nothing — the cited review states it rested on a different measurement | the claim named a cause its own source disclaims |
-| *"derive from `ci.yml`"* | one of two required workflows | the scope was the hand-written part |
+| *"derive from `ci.yml`"* | one required workflow, not all of them | the scope was the hand-written part |
 | *"N distinct scripts invoked by `ci.yml`"* | a `grep` over the file's **text**, not what it runs | a script mentioned only in a comment is counted |
 
 **So a number carries its population, or it is not a measurement.** Write *"N distinct scripts
@@ -536,12 +536,13 @@ is the reviewer's step; read that one at its own site.
 Before claiming the gates pass, read what `.github/workflows/` actually invokes and run that. A
 hand-written list of five gates cost a full CI round-trip in the source session.
 
-⛔ **NOT `ci.yml` ALONE.** `scripts/check-merge-ready.py:52-55` already carries this defect and its
-correction, in its own words: *"EVERY WORKFLOW, NOT `ci.yml` ALONE … The first version parsed one
+⛔ **NOT `ci.yml` ALONE.** `scripts/check-merge-ready.py` already carries this defect and its
+correction, in the comment above its `WORKFLOW` constant: *"EVERY WORKFLOW, NOT `ci.yml` ALONE … The first version parsed one
 file and claimed the pull-request-only list was 'derived, never hand-written'; the FILE SCOPE was
 the hand-written part."* `schema-gates` is the other required context on every PR, so a derivation
-that reads `ci.yml` only omits the fifteen schema gates entirely — while congratulating itself on
-being immune to exactly that.
+that reads `ci.yml` only omits **the schema gates** entirely — while congratulating itself on being
+immune to exactly that. (⟳ r4 Blocking: this said *"the fifteen schema gates"*. A count spelled as a
+word is still a count, and the check that had just removed the digits looked only for digits.)
 
 ⚠ **AND SAY WHICH POPULATION YOU COUNTED** — see rule 1b. *"The gates"* can mean at least four
 different sets, and they are different sizes: the workflows' `run:` **steps**; the distinct
@@ -564,6 +565,28 @@ the decision above was found; that history is why the figures are gone rather th
 
 **Prefer running `scripts/check-merge-ready.py` over assembling a list at all** — it derives its
 own, and it reaches the pull-request-only gates a local run cannot.
+
+### ⛔ The shape these rules keep, and why it is a SHAPE and not a pattern
+
+> **A governing rule's body may contain instructions and the name of a producer to run. It makes no
+> claim about the repository's contents — no count in digits or in words, no `file:line` locator, no
+> "N lines below".** Those belong in review and rationale documents, which are dated and expected to
+> go stale.
+
+⟳ **FIVE consecutive attempts narrowed to the form just seen** — bolded digits, then any digits,
+then number-words, then locators. Each fix was correct and none terminated, because each was a
+*pattern* and the next instance wore a different spelling.
+
+⛔ **And a wider pattern is already refuted, twice.** *Qualify every number in prose* above records
+the syntactic hunt being measured and rejected at three scopes. Re-run over this section while
+writing this paragraph: a numeric sweep flags **most of it** — dates, PR ids, rule numbers, row
+references, and the word *one* used as a pronoun — while the genuinely repo-tracking expressions
+were a handful. That is the same false-positive result one more time.
+
+**So the terminating move is the invariant above, checked by reading, not by matching** — the shape
+`check-merge-ready`'s own soundness check argues for: *a hand-rolled parser cannot be made correct;
+it can be made unable to be silently wrong.* Here the equivalent is that there is nothing to parse:
+the rule simply does not make claims that can rot.
 
 ---
 

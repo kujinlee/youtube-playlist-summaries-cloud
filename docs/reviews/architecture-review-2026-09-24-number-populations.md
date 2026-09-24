@@ -36,7 +36,7 @@ describes is stale at the commit that writes it — remove it and point at the l
 | Question | Answer |
 |---|---|
 | Is it an ADR? | **No.** `grep -rliE 'stale at the commit\|inside the corpus' docs/adr/` → nothing |
-| Do the process docs point at it? | **No.** It is reachable only by reading a parenthetical inside one glossary entry |
+| Do the process docs point at it? | **Partly — ⟳ CORRECTED IN PLACE, r4 High.** `docs/roadmap-to-launch.md` records the same decision in the backlog #153 entry (*"a stale count in its preamble was removed rather than corrected … the file sits inside the corpus it describes"*). My first answer said **No**, and it was asserted rather than measured — inside a review about asserted claims. What is true is narrower: **it is recorded in two places an author writing a number would not read, and pointed at from none they would** |
 | Does any guard detect a new pinned figure? | **No** |
 | Days between the decision and this thrashing | **3** |
 
@@ -48,8 +48,14 @@ already records for a **wrong seam rather than a wrong line** — and it is the 
 
 ⚠ **The failure is NOT that the decision was unwritten.** Phase 6's standing question is *"what did
 we decide this milestone that isn't written down?"* — here it was written down, three days ago, by a
-previous architecture review. **The gap is between *recorded* and *findable*.** A principle whose
-only home is a parenthesis inside a glossary entry about something else is, operationally, undecided.
+previous architecture review. **The gap is between *recorded* and *findable*.**
+
+⟳ **r4 (High) sharpened this, and refuted the first version of the sentence.** I wrote that the
+decision's *only* home is a parenthesis in a glossary entry. It has **two** homes — that entry and
+the backlog #153 roadmap section — and r4 found the second with a grep I did not run. The corrected
+claim is narrower and survives: **both homes are documents an author writing a number has no reason
+to open, and neither `process-checklists.md` nor `review-method.md` points at either.** Operationally
+that is still undecided, but the review overstated it, in a review about overstated claims.
 
 ## Finding 2 — the last violator, and it was written today
 
