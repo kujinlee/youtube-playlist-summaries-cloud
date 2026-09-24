@@ -836,7 +836,7 @@ EXPECTED_MUTATIONS = {
     # `gate_ran: true` naming a review that is not filed (M1 — the shape #176 was convened
     # over, `continue`d until the era gate made it safe to read); and two on the derived
     # era counts (M3 — the figure that stood in prose was wrong at the denominator).
-    "scripts/check-review-rounds.py": 18,
+    "scripts/check-review-rounds.py": 19,
     # ⟳ 2026-09-08, R4 manifest debt 3 -> 2. ⚠ ONE MUTATION SURVIVED FIRST: I removed the words
     # "Produce one with" from the absent-results refusal, but the case asserts that `--outputFile=`
     # appears in the message and that token is on the NEXT fragment. The mutation READ like the one
@@ -1120,7 +1120,7 @@ EXPECTED_MUTATIONS = {
     #     (over-refusal — 9, including the documented scratch shape, which is the direction
     #     that would teach callers to route around the guard). The r11 `tail_candidates`
     #     split is the precedent for clearing the duplicate-anchor rule this way.
-    "scripts/codex-review.py": 40,
+    "scripts/codex-review.py": 42,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
@@ -3679,7 +3679,7 @@ def _self_test() -> int:
     # `check-review-rounds.py` 12 -> 17. NOTHING RETIRED — this fold adds guards for a
     # Blocking, a High and four Mediums, and four of the sixteen are the r4 M5 entry this
     # slice retired with the wrong subject. The split is on each file's own entry above.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1012)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1015)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

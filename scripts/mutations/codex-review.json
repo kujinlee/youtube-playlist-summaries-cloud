@@ -489,5 +489,27 @@
       "the gate-ran-but-not-filed outcome has its own exit code",
       "…and it is NOT the CANNOT-RUN code, so a caller following the fallback rule cannot discard a review that exists"
     ]
+  },
+  {
+    "name": "r2: a review id keeps surrounding whitespace, giving an invisible filename",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    if review_id != review_id.strip():\n        return False",
+        "    if False:\n        return False"
+      ]
+    ],
+    "expect": "…nor one with leading whitespace, which survives a join and is invisible in a listing"
+  },
+  {
+    "name": "r2: reserved device names stop disqualifying an id",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    return review_id.split(\"-\")[0].upper() not in _RESERVED_NAMES",
+        "    return True"
+      ]
+    ],
+    "expect": "…nor a reserved device name, which cannot be created on Windows at all"
   }
 ]

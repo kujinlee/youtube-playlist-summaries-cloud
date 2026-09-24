@@ -2,7 +2,7 @@
 """A review round has TWO halves, or a written reason why it does not — a RATCHET on silent gaps.
 
     python3 scripts/check-review-rounds.py             # audit docs/reviews/
-    python3 scripts/check-review-rounds.py --self-test # 43 cases
+    python3 scripts/check-review-rounds.py --self-test # 49 cases
 
 WHY THIS EXISTS
 ---------------
@@ -229,7 +229,15 @@ def verdict_problems(records: "list[tuple[str, dict]]", review_names: "set[str]"
     """
     out = []
     for src, rec in records:
-        if rec.get("refused"):
+        # ⛔ **`is True`, NOT TRUTHINESS — r2 Codex half, High.** `rec.get("refused")` accepted any
+        # truthy value, so a CURRENT-ERA record carrying `"refused": "false"` — a string, which is
+        # truthy — was silently skipped in BOTH join directions. Measured: `"false"`, `"no"` and `1`
+        # all suppressed the check; only `0`, `False` and absence reported. The field was added to
+        # stop the read side falsely accusing a genuine review (r1 B1); truthiness turned it into a
+        # way for malformed testimony to switch the whole CI join off without being reported as
+        # unreadable. `read_verdicts` now refuses a non-bool `refused` outright, so this line and
+        # that one are two halves of one rule: the value must BE a boolean, and it must be True.
+        if rec.get("refused") is True:
             continue
         if (rec.get("schema") or 0) < TRUSTED_SCHEMA:
             continue
@@ -269,6 +277,15 @@ def read_verdicts(directory: pathlib.Path) -> "tuple[list[tuple[str, dict]], lis
             continue
         if not isinstance(rec, dict) or "gate_ran" not in rec:
             bad.append(f"{p.name}: no `gate_ran` field — cannot tell whether the gate ran")
+            continue
+        # ⚠ A malformed `refused` is a CANNOT RUN, never a quiet skip (r2 Codex High). Only records
+        # at or above the trusted schema are held to it: the pre-cutover corpus predates the field
+        # and carries `None` throughout (measured: 184 records, all `refused=None`), so demanding a
+        # boolean there would fail 184 files about runs nobody can re-observe.
+        _ref = rec.get("refused")
+        if (rec.get("schema") or 0) >= TRUSTED_SCHEMA and _ref is not None and not isinstance(_ref, bool):
+            bad.append(f"{p.name}: `refused` is {type(_ref).__name__}, not a boolean — a truthy "
+                       f"non-bool would switch this check off for that record")
             continue
         records.append((p.name, rec))
     return records, bad
@@ -487,6 +504,34 @@ def self_test() -> int:
     # whole corpus as unmeanable and every clause below it goes vacuous — the check keeps printing
     # and stops checking. ⚠ The literal 3 is the OUTSIDE OBSERVER; writing `TRUSTED_SCHEMA` here
     # would agree with whatever value the constant took, which is exactly the hole being closed.
+    # ── r2 Codex half, High: `refused` must BE a boolean, and only True suppresses ──────────────
+    # ⚠ THE TRUTHY VALUES ARE THE CASE. Asserting only `True` suppresses and `False` does not would
+    # pass under the defect, because both are bools; what defeated the join was a truthy NON-bool.
+    _rf = lambda v: {"schema": TRUSTED_SCHEMA, "gate_ran": False, "review": "x-r1-codex.md",
+                     "reason": "r", "refused": v}
+    _filed_x = {"x-r1-codex.md"}
+    check("a genuine refusal (refused is True) is skipped, so the read side cannot accuse the "
+          "review it protected", verdict_problems([("v.json", _rf(True))], _filed_x) == [], True)
+    check("…but a TRUTHY NON-BOOL `refused` does NOT suppress the check — the string \"false\" is "
+          "truthy, and accepting it let malformed testimony switch the CI join off",
+          len(verdict_problems([("v.json", _rf("false"))], _filed_x)), 1)
+    check("…at a second distinct truthy non-bool, so this is not a special case for one value",
+          len(verdict_problems([("v.json", _rf(1))], _filed_x)), 1)
+    with tempfile.TemporaryDirectory() as _td:
+        _vd = pathlib.Path(_td)
+        (_vd / "bad.json").write_text(json.dumps(_rf("false")), encoding="utf-8")
+        _recs, _bad = read_verdicts(_vd)
+        check("a non-bool `refused` in the trusted era is a CANNOT RUN, not a quiet skip",
+              (len(_recs), len(_bad)), (0, 1))
+        check("…and the refusal SAYS what was wrong, so a reader is not left guessing",
+              "not a boolean" in (_bad[0] if _bad else ""), True)
+        # ⚠ The pre-cutover corpus predates the field and carries None throughout — measured, 184
+        # records. Holding it to a boolean would fail 184 files about runs nobody can re-observe.
+        (_vd / "old.json").write_text(
+            json.dumps({"schema": 2, "gate_ran": True, "review": "y.md"}), encoding="utf-8")
+        _recs2, _bad2 = read_verdicts(_vd)
+        check("…while a PRE-CUTOVER record with no `refused` at all is still read, not condemned",
+              any(n == "old.json" for n, _ in _recs2), True)
     check("TRUSTED_SCHEMA is pinned — the threshold that decides which records this check can mean "
           "anything about cannot drift silently", TRUSTED_SCHEMA, 3)
     # ⚠ **AND THE PRODUCER'S STAMP MUST CLEAR IT — READ FROM SOURCE, NEVER IMPORTED.** The

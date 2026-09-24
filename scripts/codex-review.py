@@ -66,7 +66,7 @@ field), so it was not a cheaper version of this fix.
 Usage:
   scripts/codex-review.py --review-id <subject>-r<N>-codex --out "$(mktemp -d)/r.md" "<prompt>"
   scripts/codex-review.py --review-id <stem> --out <scratch> --prompt-file <file> [--timeout 900]
-  scripts/codex-review.py --self-test  # 155 cases
+  scripts/codex-review.py --self-test  # 162 cases
 
 Exit codes:  0 = a real review was written and promoted
              1 = no candidate produced one (the gate did NOT run) — fall back to a Claude half
@@ -293,6 +293,14 @@ REVIEW_ROOT = os.path.join("docs", "reviews")
 VERDICT_SCHEMA = 3
 
 
+# Windows reserved device names. A file with one of these stems cannot be created there at all,
+# and this repo's mutation harness already stages trees on more than one platform. (r2 Low)
+_RESERVED_NAMES = frozenset(
+    ["CON", "PRN", "AUX", "NUL"]
+    + [f"COM{i}" for i in range(1, 10)]
+    + [f"LPT{i}" for i in range(1, 10)])
+
+
 def is_single_segment(review_id: str) -> bool:
     """True when `review_id` is ONE path component and cannot traverse out of it. PURE.
 
@@ -323,7 +331,30 @@ def is_single_segment(review_id: str) -> bool:
         return False
     if "/" in review_id or "\\" in review_id:
         return False
-    return review_id not in (".", "..")
+    if review_id in (".", ".."):
+        return False
+    # ⟳ **r2 Codex half, Low — FOUR MORE SHAPES THAT PASSED THE THREE RULES ABOVE**, each measured
+    # against the delivered function. None traverses out of the directory, so none is the r1 H1
+    # defect; all four make the id a filename that is nonportable or expensive to discover later.
+    #   ` x-r1-codex`      leading/trailing whitespace — survives `os.path.join`, is invisible in a
+    #                      terminal listing, and a reader who retypes the id gets a DIFFERENT file
+    #   `x%2Fy-r1-codex`   a percent-encoded separator — harmless here, but it is a separator the
+    #                      moment the name reaches anything that decodes, and the join key is read
+    #                      by CI and quoted in PR bodies
+    #   `C:foo-r1-codex`   a drive-letter prefix: an ordinary filename on POSIX, a PATH on Windows
+    #   `CON-r1-codex`     a reserved device name — uncreatable on Windows, and this repo's harness
+    #                      already stages trees on more than one platform
+    # ⚠ And a LENGTH cap: 255 is the common filesystem limit for a single component, and the id
+    # gains `.verdict.json` (13) on one of its two destinations, so the cap is set below it.
+    if review_id != review_id.strip():
+        return False
+    if "%2f" in review_id.lower() or "%5c" in review_id.lower():
+        return False
+    if len(review_id) > 200:
+        return False
+    if len(review_id) > 1 and review_id[1] == ":":
+        return False
+    return review_id.split("-")[0].upper() not in _RESERVED_NAMES
 
 
 def review_identity(review_id: str) -> "tuple[str | None, str | None]":
@@ -1748,6 +1779,24 @@ def self_test() -> int:
     # ⚠ BOTH SEPARATORS. A `\` is a separator on one platform and an ordinary character on the
     # other; an id is not the place to let the platform decide where a file lands.
     chk("…nor one carrying a backslash", is_single_segment("docs\\plan-x-r3-codex"), False)
+    # ── r2 Codex half, Low: four shapes that PASSED the traversal rules and should not ──────────
+    # ⚠ None of these traverses out of the directory — they are not the r1 H1 defect. Each makes
+    # the id a filename that is nonportable or expensive to discover, and the id becomes BOTH a
+    # committed review filename and a CI join key, so it is read by people and by machines.
+    chk("…nor one with leading whitespace, which survives a join and is invisible in a listing",
+        is_single_segment(" plan-x-r3-codex"), False)
+    chk("…nor TRAILING whitespace, the direction a `lstrip`-shaped fix would miss",
+        is_single_segment("plan-x-r3-codex "), False)
+    chk("…nor a PERCENT-ENCODED separator, which is a separator the moment anything decodes it",
+        is_single_segment("docs%2Fplan-x-r3-codex"), False)
+    chk("…nor a drive-letter prefix — an ordinary filename on POSIX, a PATH on Windows",
+        is_single_segment("C:plan-x-r3-codex"), False)
+    chk("…nor a reserved device name, which cannot be created on Windows at all",
+        is_single_segment("CON-r3-codex"), False)
+    chk("…nor one longer than a filesystem component allows, with room for `.verdict.json`",
+        is_single_segment("a" * 201 + "-r3-codex"), False)
+    chk("…while a stem AT the cap is still accepted, so the bound is a cap and not an off-by-one",
+        is_single_segment("a" * 190 + "-r3-codex"), True)
     chk("…nor the relative components themselves",
         (is_single_segment("."), is_single_segment(""), is_single_segment("..")),
         (False, False, False))

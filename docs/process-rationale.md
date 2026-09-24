@@ -405,10 +405,18 @@ independently confirmed by the Claude half and by `scripts/check-plan-code.py`, 
 and a committed review was silently replaced. It was mitigated by hand at the time, and a hand
 mitigation is not a mechanism, which is why backlog #68 existed at all.
 
-**Exit codes, and what the wrapper now enforces.** `scripts/codex-review.py` returns **0** (a real
-review was captured and written), **1** (no candidate produced one — the gate did NOT run, fall back
-to a Claude adversarial review and record the gap), or **2** (REFUSED before contacting any model,
-because `--out` already exists — pass `--allow-overwrite` to mean it). It also snapshots the `--out`
+**Exit codes, and what the wrapper now enforces.** ⟳ **CORRECTED 2026-09-24 (#176 r2, Medium) — this
+passage described a THREE-way partition that the code had outgrown, and it is the page a reader is
+sent to when questioning the rule.** `scripts/codex-review.py` returns **0** (a real review was
+captured AND FILED), **1** (no candidate produced one — the gate did NOT run, fall back to a Claude
+adversarial review and record the gap), **2** (CANNOT RUN / REFUSED — nothing was measured and
+nothing was written), or **3** (`RC_NOT_FILED`: **the gate RAN and a real review EXISTS at `--out`**,
+but filing it failed).
+
+⛔ **3 IS NOT A FALLBACK, AND THAT IS WHY IT STOPPED BEING 2.** The fallback rule turns a CANNOT RUN
+into *"discard it and run a Claude review in its place"*. Applied to a run whose Codex review exists,
+that throws the review away — so two opposite outcomes sharing one code was a live hazard, not an
+untidiness. Recover the capture from the path the wrapper prints and file it by hand. It also snapshots the `--out`
 directory and names any file the agent created, overwrote or deleted behind its back on BOTH the
 success and failure paths, and warns — quoting the phrase — when the prompt itself tells the agent
 to write a file. None of that substitutes for the brief being right; it makes the failure loud

@@ -230,5 +230,16 @@
       ]
     ],
     "expect": "TRUSTED_SCHEMA is pinned — the threshold that decides which records this check can mean anything about cannot drift silently"
+  },
+  {
+    "name": "r2: `refused` is tested for TRUTHINESS, so a non-bool switches the join off",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "if rec.get(\"refused\") is True:",
+        "if rec.get(\"refused\"):"
+      ]
+    ],
+    "expect": "…but a TRUTHY NON-BOOL `refused` does NOT suppress the check — the string \"false\" is truthy, and accepting it let malformed testimony switch the CI join off"
   }
 ]
