@@ -2020,6 +2020,36 @@ the 912-mutation sweep, and never ran the *other* guard over the file it had jus
 this project's recorded *a check result is not the claim*, inside a commit whose whole subject was a
 measurement that had chosen its own corpus.
 
+## Review-verdict path — backlog #176 — anchor `review-decides-itself` — ✅ REVIEW DONE 2026-09-23; #176 OPEN
+
+**The Phase 6 review is the deliverable and it is complete.**
+`docs/reviews/architecture-review-2026-09-23-review-verdict-path.md`. ⭐ It fired from **THRASHING**
+— a defect inside the component's own fix twice running — not from a round count, and the arming
+argument is a causal chain, not a total. ⚠ The literal trigger reads *two consecutive ROUNDS* and
+these were two halves of ONE round; the document says so rather than quietly widening the rule, and
+the user decided it on the evidence.
+
+- [x] **The architecture review itself.** Verdict: the **review identity** is assigned AFTER
+      dispatch by a promotion step **no code implements**, so no derivation from `--out` — which is
+      deliberately SCRATCH, because `quarantine` needs it to be — can ever be correct. Four
+      successive fixes were each locally correct and none could terminate: the signature of a wrong
+      seam rather than a wrong line. Same shape `coverage_verdict.py` already recorded after seven
+      rounds one module over.
+- [ ] **backlog #176 — give the testimony a real identity.** 🟠 OPEN, NOT STARTED. `--review-id`
+      REQUIRED, basename-derivation DELETED, and the wrapper OWNS the promotion so one module writes
+      both artifacts of a run. Deletes `run_token`, `verdict_collision`, `path_is_tracked`,
+      `refusal_verdict_path` and 9 mutation entries. ⚠ **PR #342 must land first** — it is the
+      branch these findings were raised against.
+- [x] **`CONTEXT.md` gained the two missing words** — **Testimony** and **Review identity**. The
+      component had been argued for four rounds in vocabulary the glossary did not contain, which is
+      the same failure Architecture Review #7 recorded; "verdict" was silently naming two concepts.
+- [ ] **ADR candidate when #176 lands** — decision ⑵ changes who writes committed review files.
+      Recorded so a future architecture review does not re-open it from scratch.
+
+⚠ **Evidence bound, stated rather than implied:** the `Explore` agent dispatched for this review did
+not return within the session — **treat it as NOT RUN**. Every claim in the document was verified by
+hand with command and output recorded, so nothing rests on agent output.
+
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all
 three. **M2 Sync is COMPLETE (PR #23 + #24, 2026-07-19).** **M1.1 is now DONE (2026-07-19).**
