@@ -543,16 +543,24 @@ the hand-written part."* `schema-gates` is the other required context on every P
 that reads `ci.yml` only omits the fifteen schema gates entirely — while congratulating itself on
 being immune to exactly that.
 
-⚠ **AND SAY WHICH POPULATION YOU COUNTED** — see rule 1b. Measured 2026-09-24 **by parsing `run:`
-blocks, not by grepping the file**: `ci.yml` invokes **33** distinct `scripts/*.py|sh` (of which
-**28** are `check-*`) and `schema-gates.yml` a further **4**, while `ci.yml` carries **54** `run:`
-steps. "The gates" names none of those on its own.
+⚠ **AND SAY WHICH POPULATION YOU COUNTED** — see rule 1b. *"The gates"* can mean at least four
+different sets, and they are different sizes: the workflows' `run:` **steps**; the distinct
+**scripts** those steps invoke; the **`check-*`** subset of those; and the **workflows** themselves.
+Name which, and name the method — **parse `run:` blocks, do not grep the file.**
 
-⛔ **A GREP OVER THE WORKFLOW IS THE WRONG POPULATION, AND THIS SENTENCE SHIPPED WITH THE PROOF.**
-The first version said **34**, from `grep -oE 'scripts/…' ci.yml | sort -u`. The extra one was
-`scripts/check-schema-gates.sh`, which appears in `ci.yml` **only in comments** (`:267`, `:286`) —
-the exact fact this rule's own correction rests on. A text match counts what the file MENTIONS; the
-question is what it RUNS.
+⛔ **NO COUNT IS QUOTED HERE, BY AN EXISTING DECISION THIS RULE WAS WRITTEN IN VIOLATION OF.**
+`CONTEXT.md` → *Verification Stack* settled it on **2026-09-21** (`5ffe6017`), after that glossary
+said one number while the live guard printed another: *"the number is removed rather than corrected
+— it had no owner, and this file is inside the corpus it describes, so any figure here is stale at
+the commit that writes it."* A process document is inside that corpus too. **Re-derive, or run the
+producer; do not read a count out of prose.**
+
+⛔ **AND A GREP OVER THE WORKFLOW IS THE WRONG POPULATION — this rule shipped with its own proof.**
+Its first version counted with `grep -oE 'scripts/…' ci.yml | sort -u` and was one too high. The
+extra entry was `scripts/check-schema-gates.sh`, which `ci.yml` **mentions only inside comments** —
+the exact fact this rule's own correction rests on. A text match counts what a file MENTIONS; the
+question is what it RUNS. Three consecutive review rounds corrected a figure in this section before
+the decision above was found; that history is why the figures are gone rather than fixed.
 
 **Prefer running `scripts/check-merge-ready.py` over assembling a list at all** — it derives its
 own, and it reaches the pull-request-only gates a local run cannot.
