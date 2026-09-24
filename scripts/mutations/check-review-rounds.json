@@ -312,5 +312,16 @@
       "…while a record with NO `schema` field is still read — absent is the oldest era, not unreadable",
       "schema_of answers the era gate's question and nothing else: a version, 0 for absent, None for a field that is not a version"
     ]
+  },
+  {
+    "name": "r2 codex: a negative schema is read as an old era instead of malformed testimony",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "    if v < 1:\n        return None\n    return v",
+        "    return v"
+      ]
+    ],
+    "expect": "a NEGATIVE schema is unreadable, not an old era — it is malformed testimony carrying the field, and reading it as legacy silences the join"
   }
 ]

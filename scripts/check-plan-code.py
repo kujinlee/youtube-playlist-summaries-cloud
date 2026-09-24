@@ -852,7 +852,7 @@ EXPECTED_MUTATIONS = {
     #     `schema_of` in both directions — a field that is not a version is unreadable, and an
     #     ABSENT field is the oldest era rather than unreadable, which is the direction that would
     #     turn the whole 184-record pre-cutover corpus into a CANNOT RUN.
-    "scripts/check-review-rounds.py": 24,
+    "scripts/check-review-rounds.py": 25,
     # ⟳ 2026-09-08, R4 manifest debt 3 -> 2. ⚠ ONE MUTATION SURVIVED FIRST: I removed the words
     # "Produce one with" from the absent-results refusal, but the case asserts that `--outputFile=`
     # appears in the message and that token is on the NEXT fragment. The mutation READ like the one
@@ -3724,7 +3724,7 @@ def _self_test() -> int:
     # Blocking and High — and the sum stayed at 1015 throughout, because an orphan keeps the count
     # while removing the coverage. CI caught it; `--self-test` cannot, because it loads the
     # manifests without resolving them. The split is on each file's own entry above.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1023)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1024)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -2,7 +2,7 @@
 """A review round has TWO halves, or a written reason why it does not — a RATCHET on silent gaps.
 
     python3 scripts/check-review-rounds.py             # audit docs/reviews/
-    python3 scripts/check-review-rounds.py --self-test # 61 cases
+    python3 scripts/check-review-rounds.py --self-test # 64 cases
 
 WHY THIS EXISTS
 ---------------
@@ -192,11 +192,26 @@ def schema_of(rec: dict) -> "int | None":
     oldest era, which is a readable answer; only a field that is PRESENT and is not a version is
     unreadable. And a `bool` is rejected on its own line because `True` IS an `int` in Python —
     `isinstance(True, int)` is True — and a schema version is not a flag.
+
+    ⛔ **AND A PRESENT VERSION MUST BE POSITIVE — r2 Codex half, High.** The first version of this
+    helper rejected bools and non-ints and then returned whatever integer it found, so
+    `{"schema": -1}` was accepted AS A VERSION, compared as `-1 < TRUSTED_SCHEMA`, and read as
+    pre-cutover. Measured on the delivered code: a record with `schema: -1`, `gate_ran: true` and a
+    `review` naming a file that does not exist produced `bad=0`, `pre_cutover=1`, `problems=0` — the
+    exact join contradiction this guard exists to report, silenced by a malformed field it had just
+    promised to refuse. **That is the fourth shape in this slice by which malformed testimony
+    switched the check off** (`refused` truthy, `gate_ran` truthy, `schema` non-int, now `schema`
+    negative), which is why the rule is stated as a RANGE rather than patched value by value.
+    ⚠ An explicit `0` is refused too, deliberately: 0 is this function's answer for ABSENT, so a
+    record carrying it would be indistinguishable from one written before the field existed. The
+    sentinel must not be expressible as a real value.
     """
     if "schema" not in rec:
         return 0
     v = rec["schema"]
     if isinstance(v, bool) or not isinstance(v, int):
+        return None
+    if v < 1:
         return None
     return v
 
@@ -664,6 +679,17 @@ def self_test() -> int:
           "None for a field that is not a version",
           (schema_of({"schema": 3}), schema_of({}), schema_of({"schema": "3"}),
            schema_of({"schema": True})), (3, 0, None, None))
+    # ⛔ r2 Codex half, High: a PRESENT version must be positive. `{"schema": -1}` was accepted AS a
+    # version, compared `-1 < TRUSTED_SCHEMA`, and read as pre-cutover — silencing the join
+    # contradiction this guard exists to report. ⚠ Explicit 0 is refused with it, because 0 is this
+    # function's answer for ABSENT and the sentinel must not be expressible as a real value.
+    check("a NEGATIVE schema is unreadable, not an old era — it is malformed testimony carrying the "
+          "field, and reading it as legacy silences the join",
+          schema_of({"schema": -1}), None)
+    check("…and an EXPLICIT 0 is unreadable too, because 0 is the answer for ABSENT and the two "
+          "must not be indistinguishable", schema_of({"schema": 0}), None)
+    check("…while 1 — the oldest REAL version — is still read, so the floor is a floor and not an "
+          "off-by-one that condemns the earliest corpus", schema_of({"schema": 1}), 1)
     check("TRUSTED_SCHEMA is pinned — the threshold that decides which records this check can mean "
           "anything about cannot drift silently", TRUSTED_SCHEMA, 3)
     # ⚠ **AND THE PRODUCER'S STAMP MUST CLEAR IT — READ FROM SOURCE, NEVER IMPORTED.** The
