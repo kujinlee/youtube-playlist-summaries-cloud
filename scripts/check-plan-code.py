@@ -1063,7 +1063,32 @@ EXPECTED_MUTATIONS = {
     #     being a git repository: this very harness stages a `copytree` with no `.git`.
     #   * the explicit `--verdict` escape removed — the OVER-refusal direction, which would
     #     break the legitimate replacement and teach callers to route around the guard.
-    "scripts/codex-review.py": 28,
+    # ⟳ 2026-09-23, backlog #176: 28 -> 29, AND THE CARDINALITY IS THE LEAST INTERESTING PART OF
+    # THIS MOVE — THIRTEEN ENTRIES WERE RETIRED AND FOURTEEN ADDED. A pin that only counted would
+    # have read +1 and said nothing about a manifest whose membership changed by 93%.
+    #
+    #   ⑴ RETIRED WITH THEIR SUBJECT — 13, the only sanctioned kind of fall. Every one of them
+    #     mutated the ALLOCATOR for a namespace derived from `--out`'s basename: `run_token` and
+    #     its three inputs, `TOKEN_HEX`'s width, `verdict_collision` in three directions,
+    #     `path_is_tracked`'s fail-open, `refusal_verdict_path`, and `build_probe_repo`, which
+    #     existed only to build the world `path_is_tracked`'s cases needed. That namespace is
+    #     GONE — the caller supplies the review's identity — so the code the anchors name does not
+    #     exist and the entries are retired with it rather than orphaned. ⚠ The four entries
+    #     recorded immediately above (2026-09-23, "THE VERDICT-PATH COLLISION") are among them:
+    #     they were correct about the instance in front of them and the architecture review
+    #     convened on THRASHING found the root one layer down.
+    #
+    #   ⑵ ADDED FOR THE NEW BEHAVIOUR — 14, and they are not a translation of the old ones. Three
+    #     hold the IMPORTED filing grammar (a private suffix rule, a defaulted writer, the
+    #     coordinator counted as a half); two hold the CI JOIN KEY, which is the whole point of
+    #     #176 and whose killing case is driven through the shipped `check-review-rounds.
+    #     verdict_problems` rather than a copy of it; two hold the PROMOTION's destination; three
+    #     hold the one overwrite policy in its three directions; one holds the second call site
+    #     asking the filesystem again; one holds the promoted file's CONTENT; and two hold the CLI
+    #     — the retired `--verdict` naming its retirement, and `--review-id` staying REQUIRED.
+    # Every anchor was verified to resolve exactly once AFTER the code was final, and all 29 were
+    # driven against a green control: 29 killed, 29 attributed via the case each names.
+    "scripts/codex-review.py": 29,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
@@ -3608,9 +3633,17 @@ def _self_test() -> int:
     # literal constant in BOTH touched files was perturbed and re-run — `codex-review.py` 0
     # survivors (MIN_REVIEW_CHARS, ACCOUNT_FAULT_STATUSES, TOKEN_HEX, VERDICT_SCHEMA all killed),
     # `check-plan-code.py` this one alone (DIAGNOSTIC_WINDOW, PROGRESS_WIDTH killed).
+    # ⚠ `TOKEN_HEX` IS GONE — backlog #176 deleted the run token with the derived namespace it
+    # allocated names in. The sentence above is kept as the RECORD of what was swept on that day
+    # rather than edited into a claim about today's constants, which would be a different
+    # measurement wearing an old date.
     case("SUITE_TIMEOUT is pinned — the budget every spawned suite runs under cannot drift silently",
          SUITE_TIMEOUT, 120)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 994)
+    # ⟳ 994 -> 995, backlog #176: `codex-review.py` 28 -> 29. THIRTEEN entries retired with their
+    # subject (the `--out`-derived verdict namespace and its allocator, deleted) and FOURTEEN added
+    # for the supplied identity, the promotion and the one overwrite policy. The split, and why the
+    # +1 is the least informative thing about it, is on `EXPECTED_MUTATIONS["scripts/codex-review.py"]`.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 995)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

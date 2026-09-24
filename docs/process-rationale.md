@@ -718,3 +718,64 @@ work with nothing armed and no banner is `check-banner-armed.py`'s `unheralded` 
 thread A, in the same session, for exactly this shape. It would have flagged thread B; it was not
 merged yet. That is the ordinary way round here: the guard gets built because the failure happened,
 and the prose exists to say which failure.
+
+---
+
+## The testimony that named a scratch file
+
+**Backlog #176, 2026-09-23.** Referenced from [`plugins.md`](plugins.md)'s call shape for
+`scripts/codex-review.py`, where the rule is stated in five lines and the argument is here.
+
+**What the mechanism is for.** Every Codex review run writes a verdict —
+`docs/reviews/verdicts/<name>.verdict.json`, carrying `gate_ran` — and `check-review-rounds.py`
+reads it **in CI**. The consumer is deliberately not the caller, because the caller is what loses
+exit codes. It fires on one shape: *the gate did not run, and an artifact bearing its name was
+filed anyway*. The join is a string comparison — the record's `review` field against the filenames
+actually present in `docs/reviews/`.
+
+**Why that join could not work.** `--out` is a scratch path and must stay one: the reviewing agent
+runs under `-s danger-full-access`, so the documented shape puts the capture outside the repository
+where a stray write cannot reach an artifact. `docs/plugins.md` prescribed
+`--out "$(mktemp -d)/r.md"`. The wrapper then derived **both** the verdict's filename and the
+`review` field from that basename — so every review in the repository was testimony about `r.md`, a
+file that has never existed in `docs/reviews/`. **Measured**, driving the shipped
+`verdict_problems` both ways: the identical failed gate reports **0** problems under the scratch
+name and **1** under the review's real name. Corpus: 183 verdicts, **58 (32%)** naming a review
+that is not filed.
+
+**Why four correct fixes could not terminate.** The namespace was patched four times in two rounds —
+a refusal when the derived path was already tracked; a run token over the dispatch HEAD; the tree
+added to that token; the token's width. Each was right about the failure in front of it, and none
+could work, because *the name was being derived from something that is not the review's name*. The
+review's identity — `<subject>-r<N>-<writer>.md` — did not exist at dispatch. It was assigned
+afterwards by whoever promoted the capture, and **no code implemented the promotion**:
+`docs/plugins.md` said `# then promote` and that comment was the entire mechanism. A derivation
+cannot be correct about an identity that is assigned later. That is why the architecture review was
+convened on THRASHING rather than another fix being written.
+
+**The two decisions, and what each rules out.**
+
+1. **`--review-id` is REQUIRED, and basename derivation is DELETED.** An optional id would keep two
+   mechanisms for one concern, and the fallback would be the exact path every document steers
+   callers into — the defect, still reachable, now behind a flag that looks like a fix. Old
+   invocations get a refusal sentence rather than argparse's "unrecognized arguments"; the
+   precedent is `check-plan-code.py`'s retired plan-mode flags.
+2. **The wrapper performs the promotion**, so one module owns both artifacts of a run and the join
+   holds by construction instead of by convention. Feasibility was checked, not assumed: the
+   intrusion snapshot of `docs/reviews` is NON-RECURSIVE, so writing into `docs/reviews/<writer>/`
+   cannot register as an agent guessing its way into the artifact root, and `quarantine()` on the
+   failure path cannot reach it.
+
+⛔ **`--verdict` was the cheaper fix, and it provably could not close the join.** It named the
+verdict FILE. The derivation happened TWICE, independently, from the same scratch path, and this
+flag reached only one of them — the record's `review` field was built from
+`os.path.basename(out_path)` and `args.verdict` was never passed to `verdict_record` at all. A
+caller doing everything right, deliberately naming their testimony, still wrote a record keyed by
+scratch. It is retired with rc=2.
+
+⚠ **The 183 existing verdicts are left untouched** (user decision). They are committed testimony
+about runs nobody can re-observe, and rewriting their `review` field would be inventing a name for
+a file that may never have existed — the same ground on which `read_verdicts` refuses to back-fill
+history. The cost is carried as an **era caveat** in the consumer instead: `check-review-rounds.py`
+states it beside `VERDICT_DIRNAME` and **prints it on every run**, because "none contradicted" is
+exactly the sentence that limit would otherwise hide behind.

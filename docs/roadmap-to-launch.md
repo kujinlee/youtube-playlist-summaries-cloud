@@ -2038,11 +2038,14 @@ taken on, and the weaker original argument is kept on the record rather than rew
       successive fixes were each locally correct and none could terminate: the signature of a wrong
       seam rather than a wrong line. Same shape `coverage_verdict.py` already recorded after seven
       rounds one module over.
-- [ ] **backlog #176 — give the testimony a real identity.** 🟠 OPEN, NOT STARTED. `--review-id`
-      REQUIRED, basename-derivation DELETED, and the wrapper OWNS the promotion so one module writes
-      both artifacts of a run. Deletes `run_token`, `verdict_collision`, `path_is_tracked`,
-      `refusal_verdict_path` and 9 mutation entries. ⚠ **PR #342 must land first** — it is the
-      branch these findings were raised against.
+- [ ] **backlog #176 — give the testimony a real identity.** 🏗 IN PROGRESS on `review-identity-176`.
+      `--review-id` REQUIRED, basename-derivation DELETED, and the wrapper OWNS the promotion so one
+      module writes both artifacts of a run. Deletes `run_token`, `verdict_collision`,
+      `path_is_tracked`, `refusal_verdict_path` and **12 of 28** mutation entries (13 counting
+      `build_probe_repo`, whose only consumer is `path_is_tracked`'s test world).
+      ⟳ **Corrected from "9"** — that was the count PR #342 ADDED, not the count this removes.
+      ✅ **Its gate is satisfied: PR #342 MERGED 2026-09-24 as `b2e10e39`** — five review rounds,
+      both halves each, final tree 994/994 mutations killed with 0 survivors.
 - [x] **`CONTEXT.md` gained the two missing words** — **Testimony** and **Review identity**. The
       component had been argued for four rounds in vocabulary the glossary did not contain, which is
       the same failure Architecture Review #7 recorded; "verdict" was silently naming two concepts.

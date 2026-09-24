@@ -132,149 +132,6 @@
     "expect": "the line keeps the canonical shape the harness documents: got=False"
   },
   {
-    "name": "the collision refusal is dropped, so a DERIVED path overwrites committed testimony",
-    "file": "scripts/codex-review.py",
-    "edits": [
-      [
-        "    if tracked:\n        return (f\"REFUSED",
-        "    if False:\n        return (f\"REFUSED"
-      ]
-    ],
-    "expect": "a DERIVED verdict path over a TRACKED file is refused"
-  },
-  {
-    "name": "an unanswerable git query is read as answerable — the RULE's fail-open direction",
-    "file": "scripts/codex-review.py",
-    "edits": [
-      [
-        "    if tracked is None:",
-        "    if tracked is False:"
-      ]
-    ],
-    "expect": "an UNANSWERABLE git query refuses rather than proceeding"
-  },
-  {
-    "name": "path_is_tracked reports an INVALID git question as 'not tracked' — the FETCH's fail-open",
-    "file": "scripts/codex-review.py",
-    "edits": [
-      [
-        "    if r.returncode == 1:\n        return False\n    return None",
-        "    return False"
-      ]
-    ],
-    "expect": "…and None for a path OUTSIDE that root — git's third answer, never read as False"
-  },
-  {
-    "name": "the explicit --verdict escape is removed, so a deliberate replacement is refused too",
-    "file": "scripts/codex-review.py",
-    "edits": [
-      [
-        "    if override_given:\n        return None",
-        "    if False:\n        return None"
-      ]
-    ],
-    "expect": "an EXPLICIT --verdict over a tracked file is ALLOWED — chosen, not derived"
-  },
-  {
-    "name": "r4 H1: the allocator is dropped, so the documented mktemp call shape collides again",
-    "file": "scripts/codex-review.py",
-    "edits": [
-      [
-        "    if run_id:\n        stem = f\"{stem}.{run_id}\"",
-        "    if False:\n        stem = f\"{stem}.{run_id}\""
-      ]
-    ],
-    "expect": "H1: two DIFFERENT reviews at one HEAD cannot collide, even under the documented `--out \"$(mktemp -d)/r.md\"` shape that names them both `r`"
-  },
-  {
-    "name": "r4 H1: the run token ignores the PROMPT, so two different reviews become one run",
-    "file": "scripts/codex-review.py",
-    "edits": [
-      [
-        "    h.update(prompt_text.encode(\"utf-8\"))",
-        "    pass"
-      ]
-    ],
-    "expect": "the token separates two reviews by PROMPT at one head, at two distinct prompts"
-  },
-  {
-    "name": "r4 H1: the run token ignores the HEAD, which is the r3 incident's own shape",
-    "file": "scripts/codex-review.py",
-    "edits": [
-      [
-        "    h.update((head or \"no-head\").encode(\"utf-8\"))",
-        "    pass"
-      ]
-    ],
-    "expect": "…and by HEAD at one prompt — the r3 incident, where an earlier session's verdict was lost"
-  },
-  {
-    "name": "r4 M5: the refusal testifies to the very path it is protecting, destroying it",
-    "file": "scripts/codex-review.py",
-    "edits": [
-      [
-        "    return f\"{base}.refused.verdict.json\"",
-        "    return vpath"
-      ]
-    ],
-    "expect": "the refusal's testimony is never the path it is protecting"
-  },
-  {
-    "name": "r4 M2: a git that cannot be run is reported as a repository successfully built",
-    "file": "scripts/codex-review.py",
-    "edits": [
-      [
-        "    except OSError:\n        return False",
-        "    except OSError:\n        return True"
-      ]
-    ],
-    "expect": "an ABSENT git binary is REPORTED, not raised — so the guard case below is reached rather than pre-empted by a traceback"
-  },
-  {
-    "name": "r5: the run token ignores the TREE, so one brief over two trees is one run",
-    "file": "scripts/codex-review.py",
-    "edits": [
-      [
-        "    h.update(repr(sorted((dirty or {}).items())).encode(\"utf-8\"))",
-        "    pass"
-      ]
-    ],
-    "expect": "the same brief at the same commit over two DIFFERENT trees is two different runs"
-  },
-  {
-    "name": "r5: 'could not describe the tree' collapses into 'the tree was clean'",
-    "file": "scripts/codex-review.py",
-    "edits": [
-      [
-        "    h.update(b\"no-tree\" if dirty is None else b\"tree\")",
-        "    pass"
-      ]
-    ],
-    "expect": "…and 'the tree could not be described' is not the same answer as 'it was clean'"
-  },
-  {
-    "name": "r5: the tree is hashed in dict order, so one tree can split into two runs",
-    "file": "scripts/codex-review.py",
-    "edits": [
-      [
-        "repr(sorted((dirty or {}).items()))",
-        "repr(list((dirty or {}).items()))"
-      ]
-    ],
-    "expect": "the tree is order-insensitive, so two descriptions of one tree cannot split a run"
-  },
-  {
-    "name": "r5: the run token narrows back to the 32-bit namespace a collision was found over",
-    "file": "scripts/codex-review.py",
-    "edits": [
-      [
-        "TOKEN_HEX = 16",
-        "TOKEN_HEX = 8"
-      ]
-    ],
-    "expect": "…and by HEAD at one prompt — the r3 incident, where an earlier session's verdict was lost"
-  },
-  {
     "name": "r5 M1: testimony is written into docs/reviews itself, where halves are scanned",
     "file": "scripts/codex-review.py",
     "edits": [
@@ -306,5 +163,159 @@
       ]
     ],
     "expect": "the account-fault statuses are the three that mean 'later models will fail too'"
+  },
+  {
+    "name": "#176: an unclassifiable review id is accepted and filed under a DEFAULT writer",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    got = parse_review_name(f\"{review_id}.md\")\n    if got is None:",
+        "    got = parse_review_name(f\"{review_id}.md\") or (review_id, 0, \"codex\")\n    if got is None:"
+      ]
+    ],
+    "expect": "an id with NO round number is REFUSED, never filed under the writer it happens to end in"
+  },
+  {
+    "name": "#176: the filing grammar is re-implemented privately instead of imported",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "parse_review_name = _rounds.parse",
+        "parse_review_name = lambda n: (n[:-3], 0, n[:-3].rsplit(\"-\", 1)[-1])"
+      ]
+    ],
+    "expect": "shape B — `<subject>-<writer>-r<N>` — classifies too, at a DIFFERENT writer, which a private suffix rule cannot do"
+  },
+  {
+    "name": "#176: the coordinator counts as a review HALF, so a round passes with one reviewer and its own summary",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "HALVES = _rounds.HALVES",
+        "HALVES = _rounds.HALF_DIRS"
+      ]
+    ],
+    "expect": "an id naming the COORDINATOR is refused — it adjudicates the halves and is not one"
+  },
+  {
+    "name": "#176: the CI join key drops the extension, so it names no file on disk",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "        \"review\": review_filename(review_id),",
+        "        \"review\": review_id,"
+      ]
+    ],
+    "expect": "⭐ a failed gate whose review IS filed is reported by the real check-review-rounds, whatever --out was called"
+  },
+  {
+    "name": "#176: the filed name and the join key drift apart by one spelling",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    return f\"{review_id}.md\"",
+        "    return f\"{review_id}.markdown\""
+      ]
+    ],
+    "expect": "the verdict names the review it is about, as the filename that review is filed under"
+  },
+  {
+    "name": "#176: the promotion writes into the artifact ROOT, where quarantine() moves it back out",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    return os.path.join(REPO_ROOT, REVIEW_ROOT, who, review_filename(review_id))",
+        "    return os.path.join(REPO_ROOT, REVIEW_ROOT, review_filename(review_id))"
+      ]
+    ],
+    "expect": "the promoted review is filed one level DOWN, under its writer, where the non-recursive intrusion snapshot cannot mistake it for an agent's guess"
+  },
+  {
+    "name": "#176: the writer stops selecting the directory, so a claude half is filed under codex",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "REVIEW_ROOT, who, review_filename(review_id))",
+        "REVIEW_ROOT, \"codex\", review_filename(review_id))"
+      ]
+    ],
+    "expect": "…and the WRITER selects the directory, so a claude half is not filed under codex"
+  },
+  {
+    "name": "#176: promote() never asks the filesystem, so the write-time check is the pre-flight's stale answer",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    refusal = overwrite_refusal(dest, exists=os.path.exists(dest),",
+        "    refusal = overwrite_refusal(dest, exists=False,"
+      ]
+    ],
+    "expect": "promote REFUSES an existing destination rather than replacing it"
+  },
+  {
+    "name": "#176: promotion reports success while filing an empty review",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "        with open(dest, \"w\", encoding=\"utf-8\") as f:\n            f.write(body)",
+        "        with open(dest, \"w\", encoding=\"utf-8\") as f:\n            pass"
+      ]
+    ],
+    "expect": "…and the promoted file holds exactly the captured artifact, byte for byte"
+  },
+  {
+    "name": "#176: the retired --verdict flag dies on argparse instead of naming its retirement",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    if args.verdict:",
+        "    if False:"
+      ]
+    ],
+    "expect": "…and SAYS it was retired, naming --review-id as what owns the identity now"
+  },
+  {
+    "name": "#176: --review-id stops being required, so the identity can go unsupplied again",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    if not args.review_id:",
+        "    if False:"
+      ]
+    ],
+    "expect": "a missing --review-id is a CANNOT RUN (2), never a fallback to deriving one from --out"
+  },
+  {
+    "name": "#176: the overwrite policy stops refusing, so a filed review is replaced silently",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    if allow_overwrite:\n        return None",
+        "    if True:\n        return None"
+      ]
+    ],
+    "expect": "an existing artifact is REFUSED by default"
+  },
+  {
+    "name": "#176: the overwrite policy refuses a path that is not there, blocking every first run",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    if not exists:\n        return None",
+        "    if False:\n        return None"
+      ]
+    ],
+    "expect": "…and a path that does not exist is never a refusal"
+  },
+  {
+    "name": "#176: the --allow-overwrite escape is inverted, so the deliberate replacement is the one refused",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    if allow_overwrite:",
+        "    if not allow_overwrite:"
+      ]
+    ],
+    "expect": "…and --allow-overwrite is honoured, so a deliberate replacement is not blocked"
   }
 ]

@@ -136,10 +136,9 @@ python3 scripts/codex-frontier-model.py            # e.g. gpt-5.5 today
 python3 scripts/codex-frontier-model.py --write-config   # also syncs ~/.codex/config.toml
 ```
 
-Run `--write-config` to keep `~/.codex/config.toml`'s `model` in sync (it writes a managed,
-auto-derived block — do not hand-edit the slug). When dispatching the Codex review you may also
-pass it explicitly: `codex … -m "$(python3 scripts/codex-frontier-model.py)"`. Either way the
-model is derived from OpenAI's live model list, so it tracks new frontier releases automatically.
+Run `--write-config` to keep `~/.codex/config.toml`'s `model` in sync (a managed, auto-derived
+block — do not hand-edit the slug); or pass it explicitly, `codex … -m "$(python3 scripts/codex-frontier-model.py)"`.
+Either way the model comes from OpenAI's live list, so it tracks new frontier releases automatically.
 
 **Fallback — Codex unavailable for ANY reason → never block; auto-fall back to a Claude adversarial review.**
 "Unavailable" covers: not installed, **usage/rate limit**, auth failure, HTTP 400/5xx, a hung run, or
@@ -154,31 +153,32 @@ re-run) is fine; beyond that, fall back. The Claude adversarial review satisfies
 **USE `scripts/codex-review.py` — it makes failure-mode 1 below impossible (added 2026-07-19).**
 
 ```bash
-# PREFERRED — always for a real review prompt. See the backtick footgun below.
-python3 scripts/codex-review.py --prompt-file <path> --out "$(mktemp -d)/r.md"  # then promote
-#   exit 0 = review written   exit 1 = gate did NOT run → fall back   exit 2 = REFUSED / CANNOT RUN
+# PREFERRED — always for a real review prompt. See the backtick footgun below. ⛔ --review-id is
+# REQUIRED (#176) and is what NAMES the review: --out is SCRATCH, the wrapper FILES the half itself
+# at docs/reviews/<writer>/<id>.md and stamps that name into the verdict CI joins on, and it refuses
+# an existing one without --allow-overwrite. --verdict is RETIRED (rc=2) — it never reached the join
+# key. `# then promote` is no longer a step you do. → process-rationale.md, *The testimony that…*
+python3 scripts/codex-review.py --prompt-file <path> --review-id <subject>-r<N>-codex --out "$(mktemp -d)/r.md"
+#   exit 0 = review written AND FILED  exit 1 = gate did NOT run → fall back  exit 2 = REFUSED / CANNOT RUN
 ```
 
 > ### ⛔ OUTPUT CONTRACT IS PER HALF — Claude writes a file; **Codex must not**. Its brief says
 > *"your final message IS the review; write no file"*: the capture IS that message, so "write"
 > yields a *report* — rejected, gate silently not run. Enforcement, the overwritten committed
-> review, and **#68(d) — CLOSED 2026-09-01**: each run writes `docs/reviews/verdicts/<stem>.verdict.json` stating `gate_ran`, read **in CI** by `check-review-rounds.py`, never by the caller who loses it. [`process-rationale.md`](process-rationale.md) → *The review gate that wrote over its own evidence*.
+> review, and **#68(d) — CLOSED 2026-09-01**: each run writes `docs/reviews/verdicts/<review-id>.verdict.json` stating `gate_ran`, read **in CI** by `check-review-rounds.py`, never by the caller who loses it. [`process-rationale.md`](process-rationale.md) → *The review gate that wrote over its own evidence*.
 > **⛔ AND EACH HALF IS FILED UNDER `docs/reviews/<writer>/`, NEVER THE TOP LEVEL** (#92, 2026-09-04) — `claude/<stem>.md`, `coordinator/<stem>.md`; the `<subject>-r<N>-<who>.md` grammar is unchanged. The top level is a **no-legitimate-writes zone while a Codex run is in flight**: the wrapper snapshots it NON-RECURSIVELY and, on the FAILURE path, `quarantine()` MOVED a concurrent half out of the repo — measured, and that is the *fallback* path, so the victim was the replacement review. `check-review-rounds.py` reads BOTH layouts and refuses a basename filed in both. ⚠ Making that snapshot recursive brings the hazard straight back. → *The reviewer blamed for its partner's work*.
 
 **Pass the prompt in a FILE, not as a shell argument (added 2026-08-04).** A review prompt is full of
 identifiers, and any **backtick** inside a double-quoted bash string is **command substitution** — the
-shell silently rewrites the prompt before Codex ever sees it. Measured 2026-08-04: a round-3 prompt
-containing `` `key` `` produced `bash: key: command not found`, the prompt arrived mangled, and no
-review was written. `--prompt-file` avoids the shell entirely.
+shell silently rewrites the prompt before Codex sees it. Measured 2026-08-04: a round-3 prompt containing
+`` `key` `` produced `bash: key: command not found`, the prompt arrived mangled, no review was written.
 
-This is the **same root cause** as the `gh --body-file` rule in `docs/dev-process.md` Phase 5, and it
-is not a `gh` problem — it applies to **every** double-quoted bash string, including
-`git commit -m "$(cat <<'EOF' …)"`, which broke on an apostrophe in the same session. The general rule:
-**anything longer than a line goes in a file** (`--prompt-file`, `--body-file`, `git commit -F`).
-
-The wrapper behaved correctly here and that is the point: it refused to write a review file rather than
-writing an empty one, so the mangled run failed **loud**. A caller checking only the exit code of a raw
-`codex exec` would have recorded a completed gate.
+This is the **same root cause** as the `gh --body-file` rule in `docs/dev-process.md` Phase 5, not a `gh`
+problem — it applies to **every** double-quoted bash string, including `git commit -m "$(cat <<'EOF' …)"`,
+which broke on an apostrophe in the same session. **Anything longer than a line goes in a file**
+(`--prompt-file`, `--body-file`, `git commit -F`). ⚠ The wrapper behaved correctly here and that is the
+point: it refused to write a review file rather than an empty one, so the mangled run failed **loud** —
+a caller checking only a raw `codex exec`'s exit code would have recorded a completed gate.
 
 It walks every candidate model in priority order, and decides success **solely** by whether
 `codex exec -o/--output-last-message` wrote a substantive final-message file — never the exit code,

@@ -31,6 +31,11 @@ For each (subject, round) it can parse:
   * one half + a GAP LINE in any of its files -> pass  (this is the Codex-down path)
   * one half, no gap line                   -> FAIL, unless the round is in KNOWN below
 
+⛔ AND THE VERDICT HALF HAS AN ERA BOUNDARY — see the block above `VERDICT_DIRNAME`. Verdicts
+written before 2026-09-23 named their review from the dispatching wrapper's SCRATCH `--out`, so
+they join to nothing here; this check's silence about them is not evidence. It is reported on every
+run rather than left to a commit message.
+
 The gap line is deliberately `REVIEW GAP:` rather than "unavailable" — because the M4 case was not
 unavailability, it was **not invoked**, and a marker that only admits one of those would have
 tempted a false reason. The check forces a reason to be STATED; judging it is a human's job.
@@ -135,6 +140,26 @@ def has_gap_line(text: str) -> str | None:
 # cannot delete a file. A determined caller can still defeat this; a distracted one cannot, and
 # every occurrence so far has been the distracted kind. Claiming more would be the "green check
 # over the wrong subject" this project keeps measuring.
+#
+# ⛔⛔ THE ERA CAVEAT — A VERDICT WRITTEN BEFORE 2026-09-23 CANNOT BE TRUSTED TO NAME A FILED
+# REVIEW, AND THIS CHECK'S SILENCE OVER THOSE MEANS NOTHING (backlog #176).
+# Until that cutover, `codex-review.py` built the `review` field below from the BASENAME OF ITS
+# `--out`, which is a scratch path the documented call shape puts outside the repository as
+# `--out "$(mktemp -d)/r.md"`. So the join key of every such run is the string `r.md`, which is
+# not the name of anything in `docs/reviews/` and therefore matches nothing here.
+#
+# MEASURED on the corpus this directory holds: 183 verdicts, of which **58 (32%)** name a review
+# that is not filed; and the identical failed gate, driven through `verdict_problems` below,
+# reports **0** problems under the scratch name against **1** under the review's real name. So a
+# pre-cutover `gate_ran: false` sitting beside the artifact it contradicts is INVISIBLE to this
+# check, and always was. FROM the cutover the identity is supplied by the caller (`--review-id`)
+# and the wrapper files the review itself, so the two names are the same string by construction.
+#
+# ⚠ THE 183 ARE LEFT UNTOUCHED, DELIBERATELY (user decision). They are committed testimony about
+# runs nobody can re-observe, and rewriting their `review` field would be inventing a name for a
+# file that may never have existed — the same ground on which `read_verdicts` below refuses to
+# back-fill history. The honest remedy is this paragraph, in the consumer, where a reader meets
+# the limit at the moment they would otherwise trust the green line.
 VERDICT_DIRNAME = "verdicts"
 
 
@@ -429,6 +454,14 @@ def main() -> int:
           f"0 silent gaps; {stats['verdicts']} codex-review verdict(s) read, none contradicted")
     print(f"  ⚠ {stats['unparsed']} files in docs/reviews/ carry no round number and are NOT "
           f"covered by this check")
+    # THE ERA CAVEAT, printed where the green line is read. See the block above VERDICT_DIRNAME:
+    # a verdict written before the 2026-09-23 cutover names its review with the basename of the
+    # wrapper's SCRATCH `--out`, so it joins to nothing here and this check's silence about it is
+    # not evidence. Said out loud rather than left to a commit message, because "none contradicted"
+    # is exactly the sentence that limit would otherwise be hiding behind.
+    print("  ⚠ verdicts written BEFORE 2026-09-23 (backlog #176) named their review from the "
+          "wrapper's scratch --out, so they cannot be trusted to name a filed review and are NOT "
+          "meaningfully checked above")
     return 0
 
 

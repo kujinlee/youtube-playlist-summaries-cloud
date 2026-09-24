@@ -222,6 +222,12 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
         'compare.actual', 'load_results.path',),
     'check-theme-token-coverage.py': (
         'palette_tokens.name',),
+    # ⟳ 2026-09-23, backlog #176 — `verdict_record.out_path` LEAVES THIS DICT, and it is the
+    # OTHER direction of the guard's own warning: not debt paid, but a SUBJECT DELETED. The
+    # parameter is gone because the record's `review` field stopped being derived from the
+    # scratch `--out` basename and is now built from the supplied `--review-id`. Its replacement
+    # `verdict_record.review_id` is NOT added here: it is varied by five call sites at five
+    # distinct review names, so it carries no debt to freeze.
     'codex-review.py': (
         'classify.exit_code', 'classify.message', 'classify.min_chars',
         'classify.out_path', 'classify.stdout', 'classify.timed_out',
@@ -230,7 +236,7 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
         'unexpected_writes.before', 'verdict_record.attempts',
         'verdict_record.exit_code',
         'verdict_record.intrusions_seen', 'verdict_record.model',
-        'verdict_record.out_path', 'verdict_record.reason', 'write_verdict.record',),
+        'verdict_record.reason', 'write_verdict.record',),
     'explainer-serve.py': (
         # ⟳ 2026-09-16 — `safe_path.root` LEAVES this pin, and the gate asked for it by name:
         # *"`safe_path.root` now varies — delete it from KNOWN_UNVARIED"*. It began varying when
@@ -578,17 +584,32 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'palette_tokens.text', 'shim_tokens.text',),
     'check-vocabulary-collisions.py': (
         'evaluate.allowed', 'evaluate.cols', 'evaluate.stems',),
+    # ⟳ 2026-09-23, backlog #176 — RE-DERIVED by running `analyse()` over the frozen source, not
+    # edited by hand, and it grew 28 -> 49. THREE pins left for cause and the guard named all three
+    # by refusing: `verdict_path.out_path`, `verdict_path.override` and `verdict_record.out_path`
+    # are gone because the review's identity stopped being derived from the scratch `--out` and is
+    # now SUPPLIED (`--review-id`). That is a subject deleted, not coverage quietly dropped — the
+    # distinction this dict exists to force someone to state. What arrived with it: the promotion
+    # (`promotion_path`, `promote`), the one overwrite policy (`overwrite_refusal`), the id's
+    # validation (`review_identity`), and the pure helpers this file already had cases for but had
+    # never pinned (`case_line`, `timeout_advice`, `unredirected`, `reviewed_state.repo_root`).
     'codex-review.py': (
-        'classify.exit_code', 'classify.message', 'classify.min_chars',
+        'case_line.got', 'case_line.name', 'case_line.ok', 'case_line.reason',
+        'case_line.want', 'classify.exit_code', 'classify.message', 'classify.min_chars',
         'classify.out_path', 'classify.stdout', 'classify.timed_out',
-        'dir_snapshot.directory', 'intrusions.after', 'intrusions.before',
-        'intrusions.ours', 'prompt_demands_a_file.text', 'quarantine.created',
-        'quarantine.dest', 'unexpected_writes.after', 'unexpected_writes.before',
-        'unexpected_writes.written_by_us', 'verdict_path.out_path',
-        'verdict_path.override', 'verdict_record.attempts', 'verdict_record.exit_code',
-        'verdict_record.gate_ran', 'verdict_record.intrusions_seen',
-        'verdict_record.model', 'verdict_record.out_path', 'verdict_record.reason',
-        'watched_dirs.out_path', 'write_verdict.path', 'write_verdict.record',),
+        'dir_snapshot.directory', 'intrusions.after', 'intrusions.before', 'intrusions.ours',
+        'overwrite_refusal.allow_overwrite', 'overwrite_refusal.exists',
+        'overwrite_refusal.path', 'overwrite_refusal.what', 'promote.allow_overwrite',
+        'promote.body', 'promote.dest', 'promotion_path.review_id', 'promotion_path.who',
+        'prompt_demands_a_file.text', 'quarantine.created', 'quarantine.dest',
+        'review_identity.review_id', 'reviewed_state.repo_root', 'timeout_advice.attempts',
+        'timeout_advice.timeout', 'unexpected_writes.after', 'unexpected_writes.before',
+        'unexpected_writes.written_by_us', 'unredirected.env', 'verdict_path.review_id',
+        'verdict_record.attempts', 'verdict_record.dirty', 'verdict_record.exit_code',
+        'verdict_record.gate_ran', 'verdict_record.head', 'verdict_record.intrusions_seen',
+        'verdict_record.model', 'verdict_record.prompt', 'verdict_record.reason',
+        'verdict_record.review_id', 'watched_dirs.out_path', 'write_verdict.path',
+        'write_verdict.record',),
     'coverage_verdict.py': (
         'not_measured_reason.cause', 'not_measured_reason.declared',
         'not_measured_reason.entries',),
