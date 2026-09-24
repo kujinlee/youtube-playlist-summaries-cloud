@@ -2061,8 +2061,12 @@ hand with command and output recorded, so nothing rests on agent output.
 
 **The analysis is the deliverable and it is complete:** [`docs/development-velocity.md`](development-velocity.md).
 Written 2026-09-24 at the user's request, out of the session that merged PR #342 (five adversarial
-rounds), held the Phase 6 verdict-path review and implemented #176. ⛔ **Nothing in it governs until
-it lands in a process doc or a script** — the document says so in its own first line.
+rounds), held the Phase 6 verdict-path review and implemented #176. ⟳ **2026-09-24: §6 and §7 NOW
+GOVERN**, from `docs/process-checklists.md`; the rest of the document is still proposal, and its
+own banner carries the section-by-section status. ⛔ **Cite an adopted rule from the checklists
+doc, never from here** — citing a rule from its rationale is how two copies start. (Both halves of
+r1 caught this sentence still saying *nothing* governs, four lines above a heading this same change
+had updated to say otherwise.)
 
 - [x] **The analysis.** Central finding: `review-method.md` §0 asks HOW MUCH adversarial review to
       run and never asks WHETHER adversarial review is the right instrument. Proposed as a new Q0.
@@ -2075,9 +2079,12 @@ it lands in a process doc or a script** — the document says so in its own firs
       step 5, not a restatement: that step binds the reviewer, and the gap was that nothing bound
       the author. ⛔ The literal *"side job re-asks Q0"* wording was NOT adopted — Q0 does not exist,
       and a rule pointing at nothing cannot run; the attachment point is marked instead.
-- [x] **The draft-PR pattern — adopted as PRACTICE, deliberately not automated.** It caught #176 r2's
-      Blocking on its first use. The CI-minutes worry did not bind: `cancel-in-progress` makes
-      repeated pushes cost ONE run, and `verify` is ~2× faster than the local sweep.
+- [x] **The draft-PR pattern — adopted as PRACTICE, deliberately not automated.** The case for it is
+      a SPEED measurement, not a caught defect: `cancel-in-progress` makes repeated pushes cost ONE
+      run, and `verify` is ~2× faster than the local sweep. ⟳ **r1 High:** an earlier version said it
+      *"caught #176 r2's Blocking on its first use"* — **false**, and that Blocking's own review doc
+      says so (`review-identity-176-r2-claude.md:156-158`: the sweep was `pending`, and the finding
+      *"rests on the anchor measurement above, not on a CI verdict"*).
 - [x] **All five §9 questions ANSWERED** in the doc, with their evidence, so none is re-opened from
       scratch. Two were the user's decisions; three were settled from measurement.
 - [ ] **Q0 itself — DESIGNED IN FORM, NOT BUILT.** 🟠 The user decided it is **HYBRID**: judgement at

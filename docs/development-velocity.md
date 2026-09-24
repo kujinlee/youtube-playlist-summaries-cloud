@@ -176,15 +176,18 @@ each costing a full round to surface:
 | r5 M1, r5 Codex Medium | "the class is closed" — asserted twice, both times an instance fix |
 | #176 r1 M3 | `183 verdicts` — wrong (184), and copied into three further places |
 
-**Proposed rules, all free:**
-- **No number in a commit message, comment or doc unless it was measured in this session.**
-- **Fix the sentence IN PLACE.** An appended correction is not a fix: the reader meets the wrong
-  sentence first.
-- **A class claim requires a class sweep.** "Closed" means every member was enumerated and tested,
-  not that the named instance was fixed. (Worked example: perturbing every module-level constant in
-  both touched files — 1 survivor found, then 0.)
-- **Derive gate lists from `ci.yml`, never from memory.** A hand-written list of 5 cost a full CI
-  round-trip; the file names 33.
+**Four rules came out of this, all free. ⛔ THEY ARE NOT RESTATED HERE** — they govern from
+`docs/process-checklists.md` → *Reduce defect INJECTION, not just detection*. In outline only, so
+you know what this measurement bought: provenance of numbers, fixing a sentence in place, a class
+claim requiring a class sweep, and deriving gate lists rather than recalling them.
+
+⛔ **THIS PARAGRAPH REPLACED A FULL COPY OF THE RULES, AND THE COPY HAD ALREADY GONE WRONG —
+r1 Medium.** It still said *"derive gate lists from `ci.yml`"*, which r1 established is the wrong
+scope (`schema-gates` is the other required context; `check-merge-ready.py:52-55` records the repo
+learning this once already), and it carried a survivor count the underlying measurement disagrees
+with. **Both were fixed in the adopted text and both survived here**, which is the whole argument
+against a rationale that also carries the rule: the copy nobody is looking at is the one that keeps
+the refuted version.
 
 ---
 
@@ -198,8 +201,13 @@ each costing a full round to surface:
 The repo already has the rule — *a side job gets a NAME first: slug + branch BEFORE the first edit* —
 and not applying it is what pulled an entire un-designed component into PR #342.
 
-**Proposed addition:** naming a side job also **re-asks Q0**. An opportunistic fix arrives wearing
-the branch's existing approval, and nothing currently checks whether it has a design of its own.
+**The measured reason** (the controlled comparison in §4): an opportunistic fix arrives wearing the
+branch's existing approval, and nothing checked whether it had a design of its own.
+
+⛔ **THE RULE TEXT IS NOT RESTATED HERE.** What landed is in `process-checklists.md`; read it there.
+An earlier version of this section kept its *"re-asks Q0"* proposal wording below the adoption
+banner, so the document simultaneously said the wording was not adopted and stated it as the
+proposal — r1 Medium. A rationale that also carries the rule is two copies, and two copies drift.
 
 ---
 
@@ -229,13 +237,22 @@ nothing; it already points at `review-method.md`, and a pointer row would be a s
 at the entry, mechanical for escalation. Full statement and the two warnings that go with it are in
 §2 above — read it there, it is the design session's brief.
 
-**3 · Should the draft PR be automatic? → NO. Adopt the practice, do not build the hook.** It is
-already carrying its weight by hand: it caught backlog #176 r2's Blocking on its first use. A hook
+**3 · Should the draft PR be automatic? → NO. Adopt the practice, do not build the hook.** A hook
 that opens a draft PR on branch creation is a separate build with its own failure modes — an
 unwanted PR on every throwaway branch, and a hook that must know which branches are slices. ⚠ The
 CI-minutes question that framed this turned out not to bind: `concurrency: cancel-in-progress`
 means repeated pushes cost **one** run, and the measured `verify` job is roughly twice as fast as
-the local sweep it replaces.
+the local sweep it replaces. **That speed measurement is the whole case for the practice** — there
+is no caught-defect evidence for it yet, and §5's *what is lost* stands against it.
+
+⟳ **CORRECTED IN REVIEW r1 (High).** An earlier draft of this answer said the draft PR *"caught
+backlog #176 r2's Blocking on its first use."* **False, and the source says so itself** —
+`docs/reviews/claude/review-identity-176-r2-claude.md:156-158` records `verify pending` at the time
+and states *"the sweep result is **not yet observed** — my Blocking rests on the anchor measurement
+above, not on a CI verdict."* The claim was carried from a session note and never checked against
+the document it named. ⛔ It is corrected **in place** rather than appended, per the rule this very
+document adopts — and it is exactly the defect class §6 was written about, committed by the change
+that adopts §6.
 
 **4 · Can "no unmeasured number" be a gate? → NO, and the repo already proved why.** The rule at
 `process-checklists.md` → *Qualify every number in prose* records the identical question being

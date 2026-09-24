@@ -461,6 +461,22 @@ was exactly that.
 ⛔ **The corrections fail too.** Re-deriving a remembered number from memory a second time is the
 same act. Cite the **symbol or the command**, not the recollection.
 
+### 1b · Say WHAT YOU COUNTED, not just that you counted
+
+⟳ **Added 2026-09-24 from this rule's own first review round, which found three instances of it in
+the change that introduced the rule.** A number can be honestly measured and still be false,
+because the label names a different population from the command:
+
+| Written | Measured | The gap |
+|---|---|---|
+| *"28 gates named"* | distinct `scripts/check-*.py` in one workflow | the regex excluded `.sh`; "gates" names steps (54), scripts (34) or workflows — not this |
+| *"the draft PR caught #176 r2's Blocking"* | a Blocking that states it rests on an anchor measurement, **not** a CI verdict | the claim named a cause the source explicitly disclaims |
+| *"derive from `ci.yml`"* | one of two required workflows | the scope was the hand-written part |
+
+**So a number carries its population or it is not a measurement.** Write *"34 distinct scripts
+invoked by `ci.yml`"*, never *"34 gates"*. ⚠ This is the failure mode that survives rule 1: rule 1
+asks *did you measure it*, and all three answered **yes**.
+
 ### 2 · Fix the sentence IN PLACE
 
 An appended correction is not a fix. The reader meets the wrong sentence first and may stop there.
@@ -478,20 +494,37 @@ else, in place.
 instance was fixed and the others look fine. If you cannot state how the members were enumerated,
 you do not have a class claim — you have an instance fix, and saying so costs nothing.
 
-**Worked example from the source session:** perturbing every module-level constant in both touched
-files — 1 survivor found, then 0. That is an enumeration. Reading the file and concluding it looks
-complete is not.
+**Worked example from the source session:** perturbing **every** module-level constant in both
+touched files, then re-running until none survived. That is an enumeration. Reading the file and
+concluding it looks complete is not.
+
+⚠ **The survivor COUNT is deliberately not quoted here.** It was carried into an earlier draft from
+the rationale document and r1 found the underlying measurement disagreed with it. The method is
+what this rule teaches; the number belongs to the measurement that produced it, where it can be
+checked. Quoting it here would break rule 1 inside the section that argues for rule 1.
 
 ⟳ **This is the AUTHOR-side twin of `review-method.md` §0 Q2 step 5** (*every finding names a
 sample, not a scope*). That step binds the reviewer; nothing bound the author, and the two findings
 above are what that gap produced. Do not restate the reviewer rule here — read it there.
 
-### 4 · Derive gate lists from `ci.yml`, never from memory
+### 4 · Derive gate lists from the WORKFLOWS, never from memory — and never from one workflow
 
-Before claiming the gates pass, read `.github/workflows/ci.yml` and run what it names. A
-hand-written list of five gates cost a full CI round-trip in the source session; the file named
-thirty-three. `scripts/check-merge-ready.py` already derives its own list this way — prefer running
-it over assembling one.
+Before claiming the gates pass, read what `.github/workflows/` actually invokes and run that. A
+hand-written list of five gates cost a full CI round-trip in the source session.
+
+⛔ **NOT `ci.yml` ALONE.** `scripts/check-merge-ready.py:52-55` already carries this defect and its
+correction, in its own words: *"EVERY WORKFLOW, NOT `ci.yml` ALONE … The first version parsed one
+file and claimed the pull-request-only list was 'derived, never hand-written'; the FILE SCOPE was
+the hand-written part."* `schema-gates` is the other required context on every PR, so a derivation
+that reads `ci.yml` only omits the fifteen schema gates entirely — while congratulating itself on
+being immune to exactly that.
+
+⚠ **AND SAY WHICH POPULATION YOU COUNTED** — see rule 1's second clause. Measured 2026-09-24:
+`ci.yml` invokes **34** distinct `scripts/*.py|sh` and `schema-gates.yml` a further **4**, while
+`ci.yml` carries **54** `run:` steps. "The gates" names none of those three on its own.
+
+**Prefer running `scripts/check-merge-ready.py` over assembling a list at all** — it derives its
+own, and it reaches the pull-request-only gates a local run cannot.
 
 ---
 
