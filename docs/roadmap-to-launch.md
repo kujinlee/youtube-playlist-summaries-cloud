@@ -2024,10 +2024,13 @@ measurement that had chosen its own corpus.
 
 **The Phase 6 review is the deliverable and it is complete.**
 `docs/reviews/architecture-review-2026-09-23-review-verdict-path.md`. ⭐ It fired from **THRASHING**
-— a defect inside the component's own fix twice running — not from a round count, and the arming
-argument is a causal chain, not a total. ⚠ The literal trigger reads *two consecutive ROUNDS* and
-these were two halves of ONE round; the document says so rather than quietly widening the rule, and
-the user decided it on the evidence.
+— a defect inside the component's own fix **three times running** — not from a round count, and the
+arming argument is a causal chain, not a total. ⟳ **Corrected 2026-09-24 from "twice":** `c3ad7727`
+presented itself as the allocator fix and so read as the baseline rather than as a fix that already
+contained the next defect. ⚠ At decision time the review argued the LITERAL trigger (*two consecutive
+ROUNDS*) had not fired and that the spirit had; the user convened it on that. The corrected chain
+satisfies the literal wording too — so the decision stands on stronger evidence than the one it was
+taken on, and the weaker original argument is kept on the record rather than rewritten.
 
 - [x] **The architecture review itself.** Verdict: the **review identity** is assigned AFTER
       dispatch by a promotion step **no code implements**, so no derivation from `--out` — which is

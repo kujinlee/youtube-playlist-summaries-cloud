@@ -13,15 +13,28 @@ and the convention in `docs/plugins.md` that joins them.
 
 ## The arming condition, stated with its evidence
 
-| Round | Finding | Caused by |
-|---|---|---|
-| r4 Claude, H1 | the allocator never allocated — a refusal, not an allocation | `c3ad7727`'s own verdict-path fix |
-| r4 Codex, High | the allocator named the COMMIT and not the TREE | round 4's own fold |
+| # | Fix | The defect inside it | Found by |
+|---|---|---|---|
+| 1 | `c3ad7727` — **titled** *"the verdict path had no allocator"* | shipped **no allocator**: a refusal for one collision shape, namespace still unallocated | r4 Claude, H1 |
+| 2 | `63093d7f` — r4's fold, added the allocator | it named the **COMMIT** and not the **TREE** | r4 Codex, High |
+| 3 | `6cfae34a` — r5's fold, added the tree | its own width case **agreed with the constant it checked**, so the mutation survived | the sweep |
 
-⚠ **The literal trigger did not fire and the document says so.** `dev-process.md` writes the
-condition as *two consecutive **ROUNDS***; these are two halves of **one** round (4). The SPIRIT
-fired plainly: one component, defect-inside-its-own-fix twice running. The redesign test — *can a
-redesign remove this class?* — answers **yes**, which is what decided it. This is the
+⟳ **CORRECTED 2026-09-24 — THIS SAID "TWICE RUNNING" AND IT IS THREE.** The first link was missed
+because `c3ad7727` *presented* itself as the allocator fix, so it read as the baseline rather than as
+a fix that already contained the next defect. Verified from its own title against the code it
+shipped, not from recall. ⚠ The correction STRENGTHENS the arming argument, which is precisely why it
+had to be checked rather than left: with three links spanning rounds 4 and 5, the *literal* wording
+(*two consecutive **ROUNDS***) is satisfied too, and the review no longer rests on the spirit alone.
+⚠ Link 3 was caught by the mutation sweep rather than a reviewer — still a defect inside a fix, and
+recorded as such rather than quietly dropped for having a different finder.
+
+⚠ **What was put to the user, and how it changed.** At decision time this review argued the
+*literal* trigger had NOT fired — *two consecutive **ROUNDS***, against what looked like two halves of
+one round — and said the SPIRIT had. The user convened it on that basis. The corrected chain above
+makes the literal trigger fire as well, so the decision stands on stronger evidence than the one it
+was taken on. The record is kept in this order deliberately: the weaker argument is what was actually
+put, and rewriting history to look prescient is the failure this document is about. The redesign
+test — *can a redesign remove this class?* — answers **yes**, which is what decided it. This is the
 *thrashing or prose floor?* question answered as **THRASHING**, on code findings rather than prose.
 
 ⛔ **Not a count.** Round totals were not consulted; the arming argument is the causal chain above.
@@ -112,7 +125,31 @@ five sites, **all inside `codex-review.py`**. The fix is local; there is no cros
    trusted to name a filed review, or the caveat becomes another undocumented thing.
 
 **What this deletes:** `run_token`, `verdict_collision`, `path_is_tracked`, `refusal_verdict_path`
-and their 9 mutation entries exist solely to manage a namespace that would no longer exist.
+and **12 of the 25** mutation entries (13 counting `build_probe_repo`, whose only consumer is
+`path_is_tracked`'s own test world) exist solely to manage a namespace that would no longer exist.
+⟳ **CORRECTED — this first said 9, which was the number of entries THIS BRANCH ADDED, not the number
+the fix removes.** Derived by reading all 25 entry names and selecting those targeting the token, the
+collision rule, the tracked-file fetch or the refusal path: entries 13–20 and 22–25.
+
+### ⭐ AND THE ESCAPE DOES NOT REACH THE JOIN KEY — added 2026-09-24
+
+The derivation happens **twice, independently, from the same scratch path**, and `--verdict`
+overrides only one of them:
+
+```
+codex-review.py:306   stem = os.path.basename(out_path)      <- the verdict FILENAME  (--verdict CAN override, :302)
+codex-review.py:470   "review": os.path.basename(out_path),  <- the CI JOIN KEY       (--verdict CANNOT reach it)
+```
+
+`verdict_record` is called with `out_path=args.out` at `:955` and `:967`; `args.verdict` is passed to
+`verdict_path` and **never** to `verdict_record`. So a caller doing everything right — deliberately
+naming the testimony with `--verdict` — still writes a record whose `review` field is the scratch
+basename, and `check-review-rounds.py:151` joins on exactly that field.
+
+**This retires the cheapest option outright.** "Just make `--verdict` required" was offered during the
+grilling as the minimal fix and rejected on the argument that it would leave the join untouched; that
+argument is now measured rather than asserted. It is also the strongest single piece of evidence that
+the seam is wrong: the escape hatch built for this exact problem cannot reach half of it.
 
 ---
 
@@ -138,10 +175,15 @@ it changes who writes the repo, and a future architecture review would otherwise
 
 ## Limits of this review — stated, not implied
 
-- **The `Explore` agent dispatched for this review did not return within the session. Treat its
-  contribution as NOT RUN.** Every claim above was verified by hand, with the command and output
-  recorded; none rests on agent output. The Phase 6 rule that agent output is a *lead, not a
-  finding* is satisfied vacuously here.
+- **The `Explore` agent returned AFTER this document was first committed and pushed.** Its report is
+  the source of two corrections above (the three-link chain; the split derivation), both of which
+  were **verified by hand before being folded** — the Phase 6 rule that agent output is a *lead, not
+  a finding* was applied, not assumed. ⛔ **One of its claims did NOT reproduce and is recorded here
+  rather than dropped:** it reported *"10 of 25 mutations"* depend on the derivation; deriving it
+  from the entry names gives **12** (13 with the probe helper). Neither its number nor my earlier 9
+  was right. ⚠ It also cited this file's own docstring as evidence for the historical three-link
+  claim — text I wrote in the r4 fold, so circular as provenance; the claim was re-established from
+  `c3ad7727`'s title against the code it shipped.
 - **No implementation was attempted.** This review produces a decision and a backlog row; the work
   is a separate slice with its own review rounds.
 - **`check-guard-coverage.py`, the schema gates, `test:integration` and `test:e2e` were not run** —
