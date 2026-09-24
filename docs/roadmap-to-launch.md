@@ -2020,7 +2020,7 @@ the 912-mutation sweep, and never ran the *other* guard over the file it had jus
 this project's recorded *a check result is not the claim*, inside a commit whose whole subject was a
 measurement that had chosen its own corpus.
 
-## Review-verdict path — backlog #176 — anchor `review-decides-itself` — ✅ REVIEW DONE 2026-09-23; #176 OPEN
+## Review-verdict path — backlog #176 — anchor `review-decides-itself` — ✅ REVIEW DONE 2026-09-23; ✅ #176 MERGED 2026-09-24
 
 **The Phase 6 review is the deliverable and it is complete.**
 `docs/reviews/architecture-review-2026-09-23-review-verdict-path.md`. ⭐ It fired from **THRASHING**
@@ -2038,7 +2038,7 @@ taken on, and the weaker original argument is kept on the record rather than rew
       successive fixes were each locally correct and none could terminate: the signature of a wrong
       seam rather than a wrong line. Same shape `coverage_verdict.py` already recorded after seven
       rounds one module over.
-- [ ] **backlog #176 — give the testimony a real identity.** 🏗 IN PROGRESS on `review-identity-176`.
+- [x] **backlog #176 — give the testimony a real identity.** ✅ **MERGED 2026-09-24 as `45b65cb7` (PR #343)** — three rounds, both halves each, r3 Codex CONVERGED.
       `--review-id` REQUIRED, basename-derivation DELETED, and the wrapper OWNS the promotion so one
       module writes both artifacts of a run. Deletes `run_token`, `verdict_collision`,
       `path_is_tracked`, `refusal_verdict_path` and **12 of 28** mutation entries (13 counting
@@ -2049,8 +2049,9 @@ taken on, and the weaker original argument is kept on the record rather than rew
 - [x] **`CONTEXT.md` gained the two missing words** — **Testimony** and **Review identity**. The
       component had been argued for four rounds in vocabulary the glossary did not contain, which is
       the same failure Architecture Review #7 recorded; "verdict" was silently naming two concepts.
-- [ ] **ADR candidate when #176 lands** — decision ⑵ changes who writes committed review files.
-      Recorded so a future architecture review does not re-open it from scratch.
+- [ ] **ADR candidate — ⟳ NOW DUE, the condition fired: #176 landed 2026-09-24.** Decision ⑵
+      changes who writes committed review files. Recorded so a future architecture review does not
+      re-open it from scratch; it is the only part of #176 still outstanding.
 
 ⚠ **Evidence bound, stated rather than implied:** the `Explore` agent dispatched for this review did
 not return within the session — **treat it as NOT RUN**. Every claim in the document was verified by
