@@ -1063,7 +1063,7 @@ EXPECTED_MUTATIONS = {
     #     being a git repository: this very harness stages a `copytree` with no `.git`.
     #   * the explicit `--verdict` escape removed — the OVER-refusal direction, which would
     #     break the legitimate replacement and teach callers to route around the guard.
-    "scripts/codex-review.py": 25,
+    "scripts/codex-review.py": 28,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
@@ -3590,7 +3590,7 @@ def _self_test() -> int:
     # entirely, its None/{} marker collapsed, and its order made significant) and one for the token
     # WIDTH, which named `TOKEN_HEX` so the 32-bit namespace a birthday collision was demonstrated
     # over cannot come back as a literal in a slice.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 990)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 993)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

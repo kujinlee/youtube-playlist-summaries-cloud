@@ -273,5 +273,38 @@
       ]
     ],
     "expect": "…and by HEAD at one prompt — the r3 incident, where an earlier session's verdict was lost"
+  },
+  {
+    "name": "r5 M1: testimony is written into docs/reviews itself, where halves are scanned",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "VERDICT_DIR = os.path.join(\"docs\", \"reviews\", \"verdicts\")",
+        "VERDICT_DIR = os.path.join(\"docs\", \"reviews\")"
+      ]
+    ],
+    "expect": "VERDICT_DIR is a SUBdirectory of docs/reviews, which the non-recursive intrusion snapshot and the review-half scan both depend on"
+  },
+  {
+    "name": "r5 M3: the floor deciding whether a gate RAN drops to three characters",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "MIN_REVIEW_CHARS = 200",
+        "MIN_REVIEW_CHARS = 3"
+      ]
+    ],
+    "expect": "MIN_REVIEW_CHARS is pinned — the floor that decides whether a gate RAN cannot drift silently"
+  },
+  {
+    "name": "r5 L1: the rate limit stops counting as an account-level fault",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "ACCOUNT_FAULT_STATUSES = {401, 403, 429}",
+        "ACCOUNT_FAULT_STATUSES = {401, 403}"
+      ]
+    ],
+    "expect": "the account-fault statuses are the three that mean 'later models will fail too'"
   }
 ]

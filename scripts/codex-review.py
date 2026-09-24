@@ -42,7 +42,7 @@ candidate yields a message ends in a loud non-zero exit.
 Usage:
   scripts/codex-review.py --out docs/reviews/task-N-foo-codex.md "<review prompt>"
   scripts/codex-review.py --out <file> --prompt-file <file> [--timeout 900] [--model <slug>]
-  scripts/codex-review.py --self-test  # 119 cases
+  scripts/codex-review.py --self-test  # 125 cases
 
 Exit codes:  0 = a real review was written   |   1 = no candidate produced one (gate did NOT run)
 """
@@ -222,7 +222,7 @@ VERDICT_SCHEMA = 2
 
 
 def run_token(head: "str | None", prompt_text: str,
-              dirty: "dict[str, str] | None" = None) -> str:
+              dirty: "dict[str, str] | None") -> str:
     """A short, deterministic name for THIS run. PURE — no clock, no filesystem, no git call.
 
     ⭐ **THIS IS THE ALLOCATOR, AND ITS ABSENCE WAS r4 H1.** `c3ad7727` was titled *"the verdict
@@ -237,24 +237,47 @@ def run_token(head: "str | None", prompt_text: str,
     and run B destroyed run A's testimony exactly as before. The fix that was shipped protected
     against the instance that had already happened and not against the path everyone is told to use.
 
+    ⛔ **r5 M4 — `dirty` HAS NO DEFAULT, DELIBERATELY.** `= None` relocated the very conflation
+    this function exists to prevent into the signature: a caller who forgot the tree got "the tree
+    could not be described" silently, which is a real answer rather than an error. It was ALREADY
+    load-bearing — the case asserting "the SAME review re-run lands on its own testimony" passed
+    only because both sides defaulted to no-tree, a world the production caller never inhabits.
+    Every call site now STATES the tree, including `{}` for "looked, it was clean".
+
     ⚠ **PURE ON PURPOSE, AND THAT IS WHY IT TAKES `head` RATHER THAN ASKING GIT.** The two
     alternatives considered both fuse the rule to a fetch: scanning `VERDICT_DIR` for a free `-NN`
     suffix needs the filesystem (and races), and reading HEAD here needs git. This repo has paid for
     that fusion — it is why `verdict_collision` takes `tracked` as an argument and `path_is_tracked`
     does the asking. The caller gathers `head` from `reviewed_state()`, which it already calls.
 
-    **What the identity is, stated so a reader can predict it:** the same HEAD and the same prompt
-    text yield the SAME token. That is deliberate — re-running one review is the same run and should
-    land on its own testimony rather than accumulating debris. Two DIFFERENT reviews, which is the
-    H1 scenario, differ in prompt text and so cannot collide however `--out` is named. A review of a
-    different commit differs in HEAD, which is the r3 incident that cost a restore.
+    **What the identity is, stated so a reader can predict it:** the same HEAD, the same TREE and
+    the same prompt text yield the same token. Re-running one review over an unchanged tree is the
+    same run and lands on its own testimony. Two reviews differing in any of the three get different
+    tokens, however `--out` is named.
 
-    ⚠ `head is None` (git could not answer) does not make two runs the same run: the prompt still
-    separates them. It is folded in as a literal rather than dropped so the token is always defined.
+    ⚠ `head is None` (git could not answer) does not make two runs the same run: the prompt and the
+    tree still separate them. It is folded in as a literal rather than dropped so the token is
+    always defined.
 
-    ⛔ **r5 (Codex half) — THE FIRST VERSION OF THIS SAID "cannot collide" AND THAT WAS AN
-    OVERCLAIM, IN TWO DIFFERENT WAYS. Both are fixed here; the claim is now bounded rather than
-    absolute.**
+    ⛔ **r5 CLAUDE HALF, H1 — THIS PARAGRAPH WAS LEFT FALSE BY THE COMMIT THAT CLAIMED TO FIX IT,
+    AND THAT IS THIS BRANCH'S OWN SIGNATURE DEFECT COMMITTED ONE MORE TIME.** `6cfae34a` added the
+    tree to the token and appended a correction note BELOW this text instead of editing the text —
+    so it went on saying *"the same HEAD and the same prompt text yield the SAME token"* (false once
+    the tree is in) and still contained the literal phrase *"cannot collide"* twenty-five lines above
+    a note announcing that phrase's removal. Its commit message stated *"The docstring no longer
+    claims 'cannot collide'"*, which was false when written. **An appended correction is not a fix:
+    the reader meets the wrong sentence first.**
+
+    ⛔ **r5 M2 — THE BOUND BELOW IS A BOUND, NOT A GUARANTEE, and the earlier wording overstated it.**
+    It said two dispatches agreeing on head, tree and prompt are "the same run by every property this
+    wrapper can observe". FALSE: `--model`, `--timeout` and `--min-chars` are observed and
+    deliberately excluded. The consequence is real and documented — `docs/plugins.md` prescribes a
+    DOUBLED-TIMEOUT RE-RUN after a timeout, which is a same-identity re-dispatch that replaces the
+    earlier (untracked) verdict rather than sitting beside it. That is the intended behaviour for a
+    retry, but it must be stated rather than discovered.
+
+    ⚠ **THE ORIGINAL OVERCLAIM, kept because the history is the argument:** the first version said
+    "cannot collide" flatly, in two ways —
 
       ⑴ **DETERMINISTIC, and the real defect: it ignored the TREE.** `reviewed_state()` returns
         `(head, dirty)` and this took only `head`, so the same brief re-dispatched at the same
@@ -272,8 +295,9 @@ def run_token(head: "str | None", prompt_text: str,
         it to ≈ 3e-14 at a thousand, so there is no reason to keep arguing about the exponent.
 
     ⚠ **WHAT THIS STILL CANNOT DO, said out loud instead of being discovered later:** it is a pure
-    function of `(head, tree, prompt)`. Two dispatches agreeing on all three ARE the same run by
-    every property this wrapper can observe, and they share a path deliberately. A caller who needs
+    function of `(head, tree, prompt)` — three of the inputs a dispatch has, NOT all of them. Two
+    dispatches agreeing on those three share a path deliberately, even when they differ in `--model`,
+    `--timeout` or `--min-chars`. A caller who needs
     two distinct verdicts from one identity must pass `--verdict`. An EMPTY prompt cannot reach
     here at all — `main` refuses one — so the reviewer's empty-prompt case is not a live path.
     """
@@ -1399,6 +1423,29 @@ def self_test() -> int:
         chk("…and still exists in quarantine, never deleted",
             os.path.exists(os.path.join(td, "q", "guessed.md")), True)
 
+    # ── r5 M1/M3: THE CONSTANTS THEMSELVES, PINNED BY LITERALS THAT ARE NOT THEM ────────────────
+    # ⛔ **THE WIDTH FIX WAS APPLIED AS AN INSTANCE AND THE CLASS IS WIDER (r5 M1).** `6cfae34a`
+    # learned that a case comparing against the constant it checks agrees with any value that
+    # constant takes — and fixed exactly the one case that had just failed. Driven at r5:
+    # `VERDICT_DIR` -> `docs/reviews` SURVIVES 119/119, because `:1422` and `:1485` both build their
+    # expectation from `VERDICT_DIR`. That mutant writes testimony straight into `docs/reviews/`,
+    # where review halves are scanned and where the intrusion snapshot is deliberately
+    # NON-recursive — so it breaks a live invariant while every case agrees with it.
+    # ⚠ These three literals are OUTSIDE OBSERVERS, the role `check-plan-code`'s declared-sum
+    # literal plays. Writing them as the constant would restore exactly the hole being closed.
+    chk("VERDICT_DIR is a SUBdirectory of docs/reviews, which the non-recursive intrusion "
+        "snapshot and the review-half scan both depend on",
+        VERDICT_DIR, os.path.join("docs", "reviews", "verdicts"))
+    # r5 M3: MIN_REVIEW_CHARS decides whether the gate RAN — the single most load-bearing number in
+    # the file — and was unpinned over [3, >=300]: binary-searched at r5, green at 3. A three-
+    # character final message would have counted as a review.
+    chk("MIN_REVIEW_CHARS is pinned — the floor that decides whether a gate RAN cannot drift "
+        "silently", MIN_REVIEW_CHARS, 200)
+    # r5 L1: membership was unasserted — dropping 429 left the suite green, and 429 is the rate
+    # limit, the one status the fallback rule in docs/plugins.md names first.
+    chk("the account-fault statuses are the three that mean 'later models will fail too'",
+        sorted(ACCOUNT_FAULT_STATUSES), [401, 403, 429])
+
     # ── backlog #68 (d): the verdict ──
     chk("the default verdict lands INSIDE the repo, not beside --out",
         verdict_path("/tmp/anywhere/plan-x-r3-codex.md").startswith(
@@ -1416,10 +1463,10 @@ def self_test() -> int:
     # from `verdict_path` makes these two paths equal again and reds this case.
     # ⚠ TWO DISTINCT INPUTS on every property below: a token compared against ONE other value cannot
     # tell a real digest from a constant.
-    _tokA = run_token("abc123", "review prompt A")
-    _tokB = run_token("abc123", "review prompt B")
-    _tokA2 = run_token("abc123", "review prompt A")
-    _tokC = run_token("deadbee", "review prompt A")
+    _tokA = run_token("abc123", "review prompt A", {})
+    _tokB = run_token("abc123", "review prompt B", {})
+    _tokA2 = run_token("abc123", "review prompt A", {})
+    _tokC = run_token("deadbee", "review prompt A", {})
     chk("H1: two DIFFERENT reviews at one HEAD cannot collide, even under the documented "
         "`--out \"$(mktemp -d)/r.md\"` shape that names them both `r`",
         verdict_path("/tmp/one/r.md", run_id=_tokA) == verdict_path("/tmp/two/r.md", run_id=_tokB),
@@ -1454,9 +1501,9 @@ def self_test() -> int:
         run_token("abc123", "b", {"a.py": "M", "b.py": "D"}),
         run_token("abc123", "b", {"b.py": "D", "a.py": "M"}))
     chk("a head that git could not answer for still separates runs by prompt, never fusing them",
-        run_token(None, "p1") == run_token(None, "p2"), False)
+        run_token(None, "p1", {}) == run_token(None, "p2", {}), False)
     chk("…and is stable for one run, so an unanswerable head is not a random name",
-        run_token(None, "p1"), run_token(None, "p1"))
+        run_token(None, "p1", {}), run_token(None, "p1", {}))
     chk("the allocated name still carries the review stem, so a human can read it",
         os.path.basename(verdict_path("/tmp/a/plan-x-r3-codex.md", run_id="0f0f0f0f")),
         "plan-x-r3-codex.0f0f0f0f.verdict.json")
@@ -1551,6 +1598,23 @@ def self_test() -> int:
         # root this block BUILT makes the cause the one the name claims.
         chk("…and None for a path OUTSIDE that root — git's third answer, never read as False",
             path_is_tracked(os.path.join(td, "elsewhere.txt"), _repo), None)
+        # ⛔ **A SECOND ROOT, BECAUSE ONE VALUE AT EVERY CALL SITE GUARDS NOTHING (r5, found by
+        # `check-fixture-variation`).** Every call above passed `_repo`, so no case could tell the
+        # parameter from that constant and any clause reading it was unguarded — `or` versus
+        # `is not None`, say, which differ only on a falsy root. ⚠ PRE-EXISTING since `7840a3be`,
+        # the commit whose whole subject was *build the world instead of borrowing it*: it built
+        # ONE world and handed it to all three calls. The gate was invisible because CI's `verify`
+        # died at an earlier step, which is the second-failure-behind-the-first shape again.
+        # ⚠ The two answers below are DIFFERENT KINDS on purpose: the root selects WHICH repository
+        # answers, so the same file is tracked from its own root and unanswerable from the other's.
+        _repo2 = os.path.join(td, "r2"); os.makedirs(_repo2)
+        _ok2 = build_probe_repo(_repo2)
+        chk("a SECOND throwaway repository was built, so the two-root cases below are not void",
+            _ok2, True)
+        chk("the root SELECTS the repository: a file tracked in the second is True from its own "
+            "root…", path_is_tracked(os.path.join(_repo2, "tracked.txt"), _repo2), True)
+        chk("…and None when asked from the FIRST repository's root, which cannot see it at all",
+            path_is_tracked(os.path.join(_repo2, "tracked.txt"), _repo), None)
     # gate_ran is STATED, not derived. This case exists so that a later "simplification" which
     # computes it from exit_code fails here rather than in production: the two are independent
     # fields on purpose, and a reader must never have to infer one from the other.
