@@ -313,7 +313,7 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "    if not rec.get(\"gate_ran\"):\n        return None, SKIP",
+        "    if rec.get(\"gate_ran\") is not True:\n        return None, SKIP",
         "    if False:\n        return None, SKIP"
       ]
     ],
@@ -324,7 +324,7 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "    if \"dirty\" in rec and rec[\"dirty\"] is None:\n        return None, UNUSABLE",
+        "    if \"dirty\" in rec and not isinstance(rec[\"dirty\"], dict):\n        return None, UNUSABLE",
         "    if False:\n        return None, UNUSABLE"
       ]
     ],
@@ -758,5 +758,33 @@
       ]
     ],
     "expect": "the pr_body is a real PARAMETER: a NO-REVIEW marker in it waives the round"
+  },
+  {
+    "name": "r3 Claude H2: `gate_ran` is read for TRUTHINESS again, so a verdict recording the string \"false\" is credited with having seen the final tree",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "rec.get(\"gate_ran\") is not True",
+        "not rec.get(\"gate_ran\")"
+      ]
+    ],
+    "expect": [
+      "a TRUTHY NON-BOOL `gate_ran` does NOT read as `the gate ran` \u2014 the string \"false\" is truthy, and reading it that way credited a gate that never ran with the final tree",
+      "...at a second distinct truthy non-bool, so this is not a special case for one value"
+    ]
+  },
+  {
+    "name": "r3 Claude H2: `dirty` is tested by IDENTITY again, so a list or a scalar reads as a real head with an empty overlay \u2014 the vacuous comparison r11 closed for null",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "not isinstance(rec[\"dirty\"], dict)",
+        "rec[\"dirty\"] is None"
+      ]
+    ],
+    "expect": [
+      "a LIST dirty is unusable too \u2014 a real head with an overlay nothing can read is the same vacuous comparison a NULL one is, and one record on disk actually carries it",
+      "...as is a STRING dirty, so the rule is the TYPE and not a list of bad values"
+    ]
   }
 ]

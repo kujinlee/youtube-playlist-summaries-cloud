@@ -822,7 +822,48 @@ EXPECTED_MUTATIONS = {
     # straight back in at the next opportunity. Derive it:
     #     git log -S'[FAIL] ' --reverse --format='%h %as %s' -- scripts/<file>
     "scripts/check-ratchet-contract.py": 10,
-    "scripts/check-review-rounds.py": 12,
+    # ⟳ 2026-09-23, folding review-identity-176 round 1: 12 -> 17, AND ONE EXISTING ENTRY WAS
+    # RETARGETED — its anchor `if rec.get("gate_ran"):` was unbound by the restructure that added
+    # the reverse clause, the exact *an anchor is unbound by ANY nearby edit* shape this repo has
+    # paid for seven times in one session. Found by sweeping every manifest anchor against the
+    # tree, NOT by `--self-test`, which loads the manifests without resolving them. The consumer
+    # also gained the
+    # three rules r1 found missing from it, and each entry names the case that reds for it:
+    # a REFUSAL is not testimony about a gate (B1 — without it a re-dispatch that touched
+    # nothing makes CI tell the reader to delete a real review); the ERA BOUNDARY is a
+    # number in the record rather than a date in a comment (M2 — the prose caveat had no
+    # falsifier and deleting it went green everywhere); the REVERSE direction of the join,
+    # `gate_ran: true` naming a review that is not filed (M1 — the shape #176 was convened
+    # over, `continue`d until the era gate made it safe to read); and two on the derived
+    # era counts (M3 — the figure that stood in prose was wrong at the denominator).
+    # ⟳ 2026-09-24, folding round 2: 19 -> 24, AND SIX EXISTING ENTRIES WERE RETARGETED — five of
+    # them because the round-2 fix moved the line they named, which is the finding that convened
+    # this fold. TWO of the five had already gone silently orphaned on the previous fold and were
+    # caught by CI, not by `--self-test`, which loads the manifests without resolving them.
+    #   ⑴ RETARGETED — 6. `r1 B1` and `r1 M3 (refusals)` moved when `refused` became `is True` at
+    #     both sites; `r1 M2` and `r1 M3 (era counts)` moved when the era gate became `schema_of`;
+    #     the two `gate_ran` entries moved when H1's fix made that field `is not True` as well.
+    #     ⚠ The re-derivation entry was retargeted to a DIFFERENT text from its neighbour on
+    #     purpose: a bare `rec.get("gate_ran")` anchor now survives the fix while measuring
+    #     something the case it names cannot see, and identical anchor tuples are refused.
+    #   ⑵ ADDED — 5. TWO hold H1 (`gate_ran` read by identity in the join, and refused as a
+    #     non-bool on the read side); ONE holds M1, the third site of the same idiom, whose
+    #     hardening left the suite at 49/49 until the case beside it existed; TWO hold L1's
+    #     `schema_of` in both directions — a field that is not a version is unreadable, and an
+    #     ABSENT field is the oldest era rather than unreadable, which is the direction that would
+    #     turn the whole 184-record pre-cutover corpus into a CANNOT RUN.
+    # ⟳ 2026-09-24, backlog #176 round 3 fold, 25 -> 29. FOUR entries, and none of them is the
+    #   fifth patch's own line twice: H1 splits into the TYPE clause (an unhashable `review` raised
+    #   out of the check as rc 1 with stdout empty) and the BLANK clause (an empty string is a key
+    #   nothing on disk matches), attributed to different cases; L1 restores the `(unnamed)`
+    #   sentinel, which made a record CARRYING it indistinguishable from one with no field; M2
+    #   collapses the new `unreadable` era bucket back into `pre_cutover`, which is what
+    #   `(schema_of(rec) or 0)` did silently. ⚠ The `verdict_problems` arm of M2 carries NO entry
+    #   on purpose: both answers skip there, so a mutation of it would survive, and shipping an
+    #   unkillable entry to make the count look fuller is the shape this table exists to refuse.
+    #   SIX anchors in these two files were RE-TARGETED in the same commit because the fix moved
+    #   their text; the sweep is what found them, and it is still in no local suite.
+    "scripts/check-review-rounds.py": 29,
     # ⟳ 2026-09-08, R4 manifest debt 3 -> 2. ⚠ ONE MUTATION SURVIVED FIRST: I removed the words
     # "Produce one with" from the absent-results refusal, but the case asserts that `--outputFile=`
     # appears in the message and that token is on the NEXT fragment. The mutation READ like the one
@@ -1033,7 +1074,13 @@ EXPECTED_MUTATIONS = {
     # `verdict.pr_body` (Low 1 — the SAME "constant wearing a signature" shape this branch closed
     # for `prose_exceptions_cover.declared`, still live in the same file: closing one instance and
     # leaving the only other one is instance-not-class).
-    "scripts/check-review-recorded.py": 66,
+    # ⟳ 2026-09-24, backlog #176 round 3 fold, 66 -> 68. The r3 H2 pair, both on rules this file
+    #   already had and read by truthiness or identity: `gate_ran` read with `not`, which credited
+    #   `"gate_ran": "false"` with having seen the final tree, and `dirty` tested by `is None`,
+    #   which let `[]` — a shape a COMMITTED verdict actually carries — classify as a real head
+    #   with an empty overlay. Distinct from the two `if False:` entries already on those lines:
+    #   those delete the rule, these weaken it, and the four are attributed to disjoint cases.
+    "scripts/check-review-recorded.py": 68,
     # ⟳ 2026-09-14, r11: this file JOINS the manifest — R4 widened-debt 8 -> 7, removed from
     # `WIDENED_MANIFEST_DEBT` in this same commit, which that rule requires as an identity and not
     # a ceiling. It is the producer half of the mechanism the file above consumes, and it had gone
@@ -1063,7 +1110,71 @@ EXPECTED_MUTATIONS = {
     #     being a git repository: this very harness stages a `copytree` with no `.git`.
     #   * the explicit `--verdict` escape removed — the OVER-refusal direction, which would
     #     break the legitimate replacement and teach callers to route around the guard.
-    "scripts/codex-review.py": 28,
+    # ⟳ 2026-09-23, backlog #176: 28 -> 29, AND THE CARDINALITY IS THE LEAST INTERESTING PART OF
+    # THIS MOVE — THIRTEEN ENTRIES WERE RETIRED AND FOURTEEN ADDED. A pin that only counted would
+    # have read +1 and said nothing about a manifest whose membership changed by 93%.
+    #
+    #   ⑴ RETIRED WITH THEIR SUBJECT — 13, the only sanctioned kind of fall. Every one of them
+    #     mutated the ALLOCATOR for a namespace derived from `--out`'s basename: `run_token` and
+    #     its three inputs, `TOKEN_HEX`'s width, `verdict_collision` in three directions,
+    #     `path_is_tracked`'s fail-open, `refusal_verdict_path`, and `build_probe_repo`, which
+    #     existed only to build the world `path_is_tracked`'s cases needed. That namespace is
+    #     GONE — the caller supplies the review's identity — so the code the anchors name does not
+    #     exist and the entries are retired with it rather than orphaned. ⚠ The four entries
+    #     recorded immediately above (2026-09-23, "THE VERDICT-PATH COLLISION") are among them:
+    #     they were correct about the instance in front of them and the architecture review
+    #     convened on THRASHING found the root one layer down.
+    #
+    #   ⑵ ADDED FOR THE NEW BEHAVIOUR — 14, and they are not a translation of the old ones. Three
+    #     hold the IMPORTED filing grammar (a private suffix rule, a defaulted writer, the
+    #     coordinator counted as a half); two hold the CI JOIN KEY, which is the whole point of
+    #     #176 and whose killing case is driven through the shipped `check-review-rounds.
+    #     verdict_problems` rather than a copy of it; two hold the PROMOTION's destination; three
+    #     hold the one overwrite policy in its three directions; one holds the second call site
+    #     asking the filesystem again; one holds the promoted file's CONTENT; and two hold the CLI
+    #     — the retired `--verdict` naming its retirement, and `--review-id` staying REQUIRED.
+    # Every anchor was verified to resolve exactly once AFTER the code was final, and all 29 were
+    # driven against a green control: 29 killed, 29 attributed via the case each names.
+    # ⟳ 2026-09-23, folding review-identity-176 round 1: 29 -> 40. ELEVEN added, none retired.
+    # FOUR restore r4 M5, whose entry this slice retired under an argument that covered the
+    # deleted ALLOCATOR and not the invariant — *a refusal must not write to the path it is
+    # protecting* — which the slice then violated with a new refusal: the refusal namespace
+    # collapsing onto the protected path, the selection ignoring `refused`, the record
+    # dropping the field the consumer reads, and `main`'s refusal branch dropping the flag
+    # (that last one killed through a SANDBOXED end-to-end drive, because a call site is
+    # exactly what pure cases cannot reach). THREE hold the one-segment rule on --review-id
+    # (H1) at the predicate, its two clauses, and the gate that applies it. THREE hold the
+    # --out location refusal (M5) in both directions plus its wiring — the condition three
+    # texts asserted the quarantine safety on and nothing enforced. ONE holds the exit code
+    # that separates "the gate ran and the review is not filed" from CANNOT RUN (M4).
+    #   ⚠ THE TWO --out ENTRIES OVERLAP THEIR ANCHORS ON PURPOSE, and they are different
+    #     behaviours verified by ATTRIBUTION rather than by assertion: one DROPS the
+    #     subdirectory arm (under-refusal — 2 red cases) and one refuses the COMPLEMENT
+    #     (over-refusal — 9, including the documented scratch shape, which is the direction
+    #     that would teach callers to route around the guard). The r11 `tail_candidates`
+    #     split is the precedent for clearing the duplicate-anchor rule this way.
+    # ⟳ 2026-09-24, folding round 2: 42 -> 45. FOUR ADDED, ONE RETIRED WITH ITS SUBJECT, AND THREE
+    # RETARGETED — one of which had gone orphaned on the previous fold and was caught by CI.
+    #   ⑴ RETIRED — 1, A SANCTIONED RATCHET FALL. `r2: reserved device names stop disqualifying an
+    #     id` is gone because the RULE is gone (r2 Claude half, M2). It was wrong in both
+    #     directions — measured, `aux-tokens-r1-codex`, `com1-migration-r1-codex` and
+    #     `prn-cache-r1-claude` were REFUSED while the genuinely reserved `CON.md-r1-codex` and
+    #     `NUL.json-r1-codex` were ADMITTED, because `split("-")[0]` is not the Windows rule, which
+    #     keys on the base before the first PERIOD — and its stated justification was false: all
+    #     three `runs-on` lines in `.github/workflows/` are `ubuntu-latest`. ⚠ The entry was KILLED
+    #     THROUGH THE CASE THAT ENCODED THE ERROR, so it was a green guard over a property the code
+    #     did not have; repairing the token would have kept a rule protecting nothing measured. The
+    #     same reason is written above `MAX_ID_LEN` in `scripts/codex-review.py`, at the code.
+    #   ⑵ RETARGETED — 3. `r1 H1: the relative components` and `r2: whitespace` moved when the
+    #     predicate became `segment_problem`, which RETURNS THE RULE IT BROKE (M3); `r1 H1:
+    #     review_identity stops applying the one-segment rule` moved with its call site.
+    #   ⑶ ADDED — 4. TWO hold M4's boundary, which the previous fold stated as VERIFIED and was
+    #     not: its "AT the cap" case was 199 against a cap of 200, and the reviewer drove
+    #     `> 200 -> >= 200` SURVIVING at 162/162 — one entry mutates the comparison, the other
+    #     moves `MAX_ID_LEN` so the two cases cannot silently agree with a cap that shifted. TWO
+    #     hold M3: the reason returning the WRONG rule, and the reason being computed and dropped,
+    #     which is the state the message was in before this fold.
+    "scripts/codex-review.py": 45,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
@@ -3608,9 +3719,29 @@ def _self_test() -> int:
     # literal constant in BOTH touched files was perturbed and re-run — `codex-review.py` 0
     # survivors (MIN_REVIEW_CHARS, ACCOUNT_FAULT_STATUSES, TOKEN_HEX, VERDICT_SCHEMA all killed),
     # `check-plan-code.py` this one alone (DIAGNOSTIC_WINDOW, PROGRESS_WIDTH killed).
+    # ⚠ `TOKEN_HEX` IS GONE — backlog #176 deleted the run token with the derived namespace it
+    # allocated names in. The sentence above is kept as the RECORD of what was swept on that day
+    # rather than edited into a claim about today's constants, which would be a different
+    # measurement wearing an old date.
     case("SUITE_TIMEOUT is pinned — the budget every spawned suite runs under cannot drift silently",
          SUITE_TIMEOUT, 120)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 994)
+    # ⟳ 994 -> 995, backlog #176: `codex-review.py` 28 -> 29. THIRTEEN entries retired with their
+    # subject (the `--out`-derived verdict namespace and its allocator, deleted) and FOURTEEN added
+    # for the supplied identity, the promotion and the one overwrite policy. The split, and why the
+    # +1 is the least informative thing about it, is on `EXPECTED_MUTATIONS["scripts/codex-review.py"]`.
+    # ⟳ 995 -> 1011, folding review-identity-176 round 1: `codex-review.py` 29 -> 40 and
+    # `check-review-rounds.py` 12 -> 17. NOTHING RETIRED — this fold adds guards for a
+    # Blocking, a High and four Mediums, and four of the sixteen are the r4 M5 entry this
+    # slice retired with the wrong subject. The split is on each file's own entry above.
+    # ⟳ 1015 -> 1023, folding round 2: `codex-review.py` 42 -> 45 and `check-review-rounds.py`
+    # 19 -> 24. NINE ADDED, ONE RETIRED WITH ITS SUBJECT (the reserved-device-name rule, wrong in
+    # both directions and guarding a platform this repo's CI never runs — the only sanctioned kind
+    # of fall), and NINE EXISTING ENTRIES RETARGETED. ⚠ THE RETARGETS ARE THE POINT OF THIS FOLD,
+    # not the +8: two anchors had gone silently orphaned on the PREVIOUS fold — for round 1's own
+    # Blocking and High — and the sum stayed at 1015 throughout, because an orphan keeps the count
+    # while removing the coverage. CI caught it; `--self-test` cannot, because it loads the
+    # manifests without resolving them. The split is on each file's own entry above.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1030)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

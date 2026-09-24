@@ -2,7 +2,7 @@
 """A review round has TWO halves, or a written reason why it does not — a RATCHET on silent gaps.
 
     python3 scripts/check-review-rounds.py             # audit docs/reviews/
-    python3 scripts/check-review-rounds.py --self-test # 29 cases
+    python3 scripts/check-review-rounds.py --self-test # 77 cases
 
 WHY THIS EXISTS
 ---------------
@@ -30,6 +30,11 @@ For each (subject, round) it can parse:
   * two distinct reviewer halves            -> pass
   * one half + a GAP LINE in any of its files -> pass  (this is the Codex-down path)
   * one half, no gap line                   -> FAIL, unless the round is in KNOWN below
+
+⛔ AND THE VERDICT HALF HAS AN ERA BOUNDARY — see the block above `VERDICT_DIRNAME`. Verdicts
+written before 2026-09-23 named their review from the dispatching wrapper's SCRATCH `--out`, so
+they join to nothing here; this check's silence about them is not evidence. It is reported on every
+run rather than left to a commit message.
 
 The gap line is deliberately `REVIEW GAP:` rather than "unavailable" — because the M4 case was not
 unavailability, it was **not invoked**, and a marker that only admits one of those would have
@@ -135,7 +140,125 @@ def has_gap_line(text: str) -> str | None:
 # cannot delete a file. A determined caller can still defeat this; a distracted one cannot, and
 # every occurrence so far has been the distracted kind. Claiming more would be the "green check
 # over the wrong subject" this project keeps measuring.
+#
+# ⛔⛔ THE ERA BOUNDARY — A PRE-CUTOVER VERDICT CANNOT BE TRUSTED TO NAME A FILED REVIEW, AND THIS
+# CHECK'S SILENCE OVER THOSE MEANS NOTHING (backlog #176).
+# Before the cutover, `codex-review.py` built the `review` field below from the BASENAME OF ITS
+# `--out`, which is a scratch path the documented call shape puts outside the repository as
+# `--out "$(mktemp -d)/r.md"`. So the join key of every such run is the string `r.md`, which is
+# not the name of anything in `docs/reviews/` and therefore matches nothing here. Driven through
+# `verdict_problems` below, the identical failed gate reports **0** problems under the scratch
+# name against **1** under the review's real name. FROM the cutover the identity is supplied by
+# the caller (`--review-id`) and the wrapper files the review itself, so the two names are the
+# same string by construction.
+#
+# ⛔ **IT IS A NUMBER IN THE DATA NOW, NOT A DATE IN A COMMENT (r1 M2).** The caveat used to be
+# this paragraph plus one `print`, with nothing in any record marking which era it belonged to:
+# deleting both went green everywhere, and `VERDICT_SCHEMA` sat at `2` on both sides of the
+# boundary, so 99 pre-cutover records were byte-indistinguishable from post-cutover ones. The
+# producer now stamps `schema: 3` — the field whose MEANING changed is exactly what a schema
+# version is for — and this check reads that number rather than trusting prose. `TRUSTED_SCHEMA`
+# is the consumer's OWN threshold and is deliberately not imported from the producer: a later
+# bump to 4 must not silently stop trusting 3, and the import would be circular anyway
+# (`codex-review.py` imports this module for the filing grammar).
+#
+# ⚠ THE PRE-CUTOVER RECORDS ARE LEFT UNTOUCHED, DELIBERATELY (user decision). They are committed
+# testimony about runs nobody can re-observe, and rewriting their `review` field would be
+# inventing a name for a file that may never have existed — the same ground on which
+# `read_verdicts` below refuses to back-fill history.
+#
+# ⚠ AND THE COUNTS ARE DERIVED, NEVER QUOTED (r1 M3). This paragraph used to state *"183 verdicts,
+# 58 (32%)"*; the true figure was **184** at both base and head, it was wrong when it was written,
+# and it was copied into three further places rather than re-derived. The denominator moves every
+# run, so any frozen copy is stale by construction — `main` prints both counts live instead.
 VERDICT_DIRNAME = "verdicts"
+# The first `schema` whose `review` field is the review's DURABLE filename. Below it the join key
+# is a scratch basename and a silence here is not evidence. A record with no `schema` at all is
+# older still, and reads as 0.
+TRUSTED_SCHEMA = 3
+
+
+def schema_of(rec: dict) -> "int | None":
+    """The record's schema version as an int, or None when the field is not a version. PURE.
+
+    ⚠ **r2 Claude half, L1 — ONE RULE, THREE CALL SITES.** `(rec.get("schema") or 0)` was written
+    three times, the third by the commit whose stated purpose was that malformed testimony must be
+    refused LOUDLY: a record carrying `{"schema": "3"}` raised an unhandled `TypeError` out of
+    `read_verdicts`, and `main` reports an uncaught exception as rc 1 (contradictions were FOUND)
+    rather than rc 2 (this check CANNOT RUN) — inverting the one distinction this guard maintains
+    deliberately, and contradicting `read_verdicts`'s own docstring one line above the raise.
+
+    ⚠ AN ABSENT FIELD IS 0, NOT None. A record written before the field existed belongs to the
+    oldest era, which is a readable answer; only a field that is PRESENT and is not a version is
+    unreadable. And a `bool` is rejected on its own line because `True` IS an `int` in Python —
+    `isinstance(True, int)` is True — and a schema version is not a flag.
+
+    ⛔ **AND A PRESENT VERSION MUST BE POSITIVE — r2 Codex half, High.** The first version of this
+    helper rejected bools and non-ints and then returned whatever integer it found, so
+    `{"schema": -1}` was accepted AS A VERSION, compared as `-1 < TRUSTED_SCHEMA`, and read as
+    pre-cutover. Measured on the delivered code: a record with `schema: -1`, `gate_ran: true` and a
+    `review` naming a file that does not exist produced `bad=0`, `pre_cutover=1`, `problems=0` — the
+    exact join contradiction this guard exists to report, silenced by a malformed field it had just
+    promised to refuse. **That is the fourth shape in this slice by which malformed testimony
+    switched the check off** (`refused` truthy, `gate_ran` truthy, `schema` non-int, now `schema`
+    negative), which is why the rule is stated as a RANGE rather than patched value by value.
+    ⚠ An explicit `0` is refused too, deliberately: 0 is this function's answer for ABSENT, so a
+    record carrying it would be indistinguishable from one written before the field existed. The
+    sentinel must not be expressible as a real value.
+    """
+    if "schema" not in rec:
+        return 0
+    v = rec["schema"]
+    if isinstance(v, bool) or not isinstance(v, int):
+        return None
+    if v < 1:
+        return None
+    return v
+
+
+def era_split(records: "list[tuple[str, dict]]") -> "dict[str, int]":
+    """How many records this check can MEAN anything about, derived. PURE.
+
+    ⛔ r1 M3: the alternative is a number typed into a comment, and the one that was there was
+    wrong at the denominator from the day it was written. This is computed from the records in
+    hand, so the caveat printed below cannot go stale.
+    ⟳ **THIS DOCSTRING NAMED A KEY THIS FUNCTION HAS NEVER RETURNED** — found while folding r3's
+    M1, which is the same shape one function over. It said *"`unnamed` counts the post-cutover
+    records naming a review that is not on disk"*; `out` below has never had an `unnamed` key, and
+    a paragraph about not leaving things to be inferred from silence was itself inferred. Deleted
+    rather than implemented: those records are what `verdict_problems` REPORTS, one line each, and
+    a count beside it would be a second reading of one join.
+
+    ⛔ **AN UNREADABLE VERSION IS ITS OWN CLASS, NOT THE OLDEST ERA — r3 Claude half, M2.** This
+    read `(schema_of(rec) or 0) < TRUSTED_SCHEMA`, and `None or 0` is `0`, so a record whose
+    version nobody can read was COUNTED AS PRE-CUTOVER in the caveat whose entire job is a
+    partition the reader can trust — erasing the one distinction `schema_of`'s docstring insists
+    on. It is the truthiness idiom this slice has now removed from `refused` at two sites and
+    from `gate_ran` at two more, applied one level up — to the RETURN of the function written to
+    end truthiness on this field. `read_verdicts` refuses such a record before `main` can reach
+    here, so the bucket is 0 on every real run and non-zero only when a caller drives this pure
+    function directly — which is the only reason r2's `refused` mis-count was demonstrable at all.
+
+    ⛔ **`is True`, NOT TRUTHINESS — r2 Claude half, M1, AND THE SAME LINE AS `verdict_problems`.**
+    The r2 Codex High was fixed at ONE of the three sites reading `refused`, and this is the one
+    whose whole job is that the caveat printed to the reader is DERIVED rather than guessed.
+    Measured on the delivered functions: a record carrying `"refused": "false"` was counted HERE as
+    a refusal and skipped THERE as pre-cutover — one file, two partitions, from the function that
+    exists so the partition is not a guess. `read_verdicts` now refuses a non-bool outright, so no
+    such record reaches either site; this is the CLASS being closed, not a reachable mis-count.
+    """
+    out = {"total": len(records), "refused": 0, "unreadable": 0, "pre_cutover": 0, "checked": 0}
+    for _src, rec in records:
+        _schema = schema_of(rec)
+        if rec.get("refused") is True:
+            out["refused"] += 1
+        elif _schema is None:
+            out["unreadable"] += 1
+        elif _schema < TRUSTED_SCHEMA:
+            out["pre_cutover"] += 1
+        else:
+            out["checked"] += 1
+    return out
 
 
 def verdict_problems(records: "list[tuple[str, dict]]", review_names: "set[str]") -> list[str]:
@@ -143,18 +266,89 @@ def verdict_problems(records: "list[tuple[str, dict]]", review_names: "set[str]"
 
     `gate_ran` is READ, never re-derived from `exit_code`. Deriving it here would be a second
     implementation of the wrapper's rule, and the two would drift — this project has measured that.
+
+    ⛔ **A REFUSAL IS NOT TESTIMONY ABOUT A GATE (r1 B1).** `refused: true` marks a run that
+    declined to start because the artifact was already there. It carries `gate_ran: false` because
+    that is true OF THE RUN, and it names the review because that is what it is about — but the
+    sentence this check makes out of those two facts, *a filed review with no gate behind it*, is
+    the opposite of what a refusal means: the review exists BECAUSE an earlier run produced it.
+    Read without this clause, every re-dispatch would accuse a real review. The refusal's own
+    testimony also lives at a different path (`codex-review.refusal_verdict_path`) so it cannot
+    overwrite the record it is about; that is the write-side half of the same finding, and it is
+    deliberately a different mechanism — keying this clause on the FILENAME instead would be a
+    second implementation of the naming rule.
+
+    ⛔ **AND BOTH DIRECTIONS OF THE JOIN ARE READ, NOT ONE (r1 M1).** `gate_ran: true` naming a
+    review that is NOT filed is the mirror contradiction, and it is the one backlog #176 was
+    convened over: a coordinator citing a verdict for a round whose half never reached
+    `docs/reviews/`. The wrapper produces exactly that state on its `exit 3` path — a real review
+    captured at `--out`, the promotion refused — and prints how to resolve it. It was `continue`d
+    before this change because under scratch naming the key matched nothing, so it would have
+    fired on almost everything; the era gate below is what makes it safe to read now.
+
+    ⚠ THE ERA GATE IS A NUMBER IN THE RECORD, NOT A DATE. Below `TRUSTED_SCHEMA` the `review`
+    field is the basename of a scratch path and neither direction means anything. Measured at the
+    cutover: 53 of the pre-cutover records are `gate_ran: true` with the named review not on disk,
+    and every one of them is an artefact of the naming, not a missing review.
     """
     out = []
     for src, rec in records:
-        if rec.get("gate_ran"):
+        # ⛔ **`is True`, NOT TRUTHINESS — r2 Codex half, High.** `rec.get("refused")` accepted any
+        # truthy value, so a CURRENT-ERA record carrying `"refused": "false"` — a string, which is
+        # truthy — was silently skipped in BOTH join directions. Measured: `"false"`, `"no"` and `1`
+        # all suppressed the check; only `0`, `False` and absence reported. The field was added to
+        # stop the read side falsely accusing a genuine review (r1 B1); truthiness turned it into a
+        # way for malformed testimony to switch the whole CI join off without being reported as
+        # unreadable. `read_verdicts` now refuses a non-bool `refused` outright, so the two form
+        # one rule: the value must BE a boolean, and it must be True.
+        #   ⟳ **r2 CLAUDE HALF, M1 — THIS COMMENT SAID "two halves" AND THERE ARE THREE SITES.**
+        #   `era_split` reads the same field and was left on truthiness, so one record was counted
+        #   there as a refusal and skipped here as pre-cutover. A comment asserting a completeness
+        #   the file does not have is this branch's signature defect; the third site is fixed and
+        #   the sentence is corrected in place rather than annotated.
+        if rec.get("refused") is True:
             continue
-        review = rec.get("review") or "(unnamed)"
-        if review in review_names:
+        # ⚠ **UNREADABLE IS NOT THE OLDEST ERA, AND `or 0` SAID IT WAS — r3 Claude half, M2.**
+        # `schema_of` answers `0` for ABSENT and `None` for UNREADABLE and its docstring insists
+        # they are different answers; `None or 0` is `0`, so a record whose version nobody can read
+        # was `continue`d here as merely pre-cutover. Both still skip — neither can be judged — but
+        # they skip for different reasons and the code now says which. `read_verdicts` refuses a
+        # `None` before `main` reaches this, so this is the CLASS being closed, not a reachable
+        # mis-count: the same footing r2 Claude M1 was accepted on, in this same file.
+        _schema = schema_of(rec)
+        if _schema is None or _schema < TRUSTED_SCHEMA:
+            continue
+        # ⚠ **NO `or "(unnamed)"` SENTINEL — r3 Claude half, L1.** It used to read
+        # `rec.get("review") or "(unnamed)"`, so a record carrying `{"review": "(unnamed)"}` was
+        # byte-indistinguishable from one with no `review` field at all — the rule the commit one
+        # era back wrote for `{"schema": 0}`: *the sentinel must not be expressible as a real
+        # value.* `read_verdicts` now guarantees a non-empty `str` (H1), so the fallback was dead
+        # code that only made a hole; a record reaching this pure site without one names `None`,
+        # which no filename matches and no record can carry.
+        review = rec.get("review")
+        # ⛔ **`is not True`, FOR THE SAME REASON, ON THE FIELD THE WHOLE JOIN TURNS ON — r2 Claude
+        # half, H1.** The truthiness fix above was applied to `refused` and not to `gate_ran` five
+        # lines below it, which `verdict_record`'s docstring calls *the load-bearing field*.
+        # Measured on the delivered function against a FILED review: `gate_ran` of `False`, `0` and
+        # `None` were each reported, while `"false"`, `"no"` and `"0"` — all truthy strings — read
+        # as *the gate RAN* and silenced the r1 B1 direction entirely, without being reported as
+        # unreadable, because the refusal in `read_verdicts` named only `refused`. Identical shape,
+        # one field over; closing it at one site is what produced this finding.
+        if rec.get("gate_ran") is not True:
+            if review in review_names:
+                out.append(
+                    f"{src}: the Codex gate did NOT run "
+                    f"({rec.get('reason', 'no reason recorded')}), "
+                    f"yet `{review}` is filed in docs/reviews/. A failed gate must not leave an "
+                    f"artifact that reads as a completed one — delete it, or if it is a Claude "
+                    f"review, name it as one and record a `REVIEW GAP:` line")
+        elif review not in review_names:
             out.append(
-                f"{src}: the Codex gate did NOT run ({rec.get('reason', 'no reason recorded')}), "
-                f"yet `{review}` is filed in docs/reviews/. A failed gate must not leave an "
-                f"artifact that reads as a completed one — delete it, or if it is a Claude "
-                f"review, name it as one and record a `REVIEW GAP:` line")
+                f"{src}: the Codex gate RAN ({rec.get('reason', 'no reason recorded')}), but "
+                f"`{review}` is NOT filed in docs/reviews/. Testimony that a review exists under "
+                f"a name nothing on disk carries is the false green this join was built to close "
+                f"— file the capture under that name (codex-review.py exits 3 and prints where it "
+                f"left it), or if the review is genuinely gone, remove its testimony too")
     return out
 
 
@@ -175,6 +369,90 @@ def read_verdicts(directory: pathlib.Path) -> "tuple[list[tuple[str, dict]], lis
             continue
         if not isinstance(rec, dict) or "gate_ran" not in rec:
             bad.append(f"{p.name}: no `gate_ran` field — cannot tell whether the gate ran")
+            continue
+        # ⚠ A malformed `schema` is a CANNOT RUN, not a TRACEBACK (r2 Claude half, L1). The era
+        # gate is an arithmetic comparison, so a non-numeric version raised out of this function
+        # and `main` reported it as rc 1 — *contradictions were found* — which is the opposite of
+        # what a record nobody can read means. `schema_of` owns the rule; it is asked here and
+        # merely READ at the two pure sites, so there is one answer to what a version is.
+        # ⚠ BOUND ONCE, NOT RE-ASKED — r3 Claude half, M2. The refusal below and the era test
+        # further down are two questions about ONE value; asking `schema_of` twice let the second
+        # reading be written as `(schema_of(rec) or 0) >= TRUSTED_SCHEMA`, which is the truthiness
+        # idiom removed from `refused` at two sites and `gate_ran` at two more in this slice,
+        # applied to the RETURN of the function written to end it. `None` cannot reach the
+        # comparison now because the name holds the answer the refusal already made.
+        _schema = schema_of(rec)
+        if _schema is None:
+            bad.append(f"{p.name}: `schema` is {type(rec.get('schema')).__name__}, not a version "
+                       f"number — the era gate cannot say whether this record can be judged")
+            continue
+        # ⚠ A malformed `gate_ran` is a CANNOT RUN too (r2 Claude half, H1), and it is held to a
+        # boolean at EVERY era rather than only above the cutover, because unlike `refused` — which
+        # the pre-cutover era predates and carries `None` throughout — no record at any era carries
+        # a non-bool here. The field is already REQUIRED present two lines up; requiring it to be a
+        # boolean is the same clause finished.
+        #   ⟳ **r3 CLAUDE HALF, M1 — A FROZEN COUNT STOOD HERE AND IT NEVER ADDED UP.** It read
+        #   *"185 of 185 records carry a real bool (179 True, 5 False pre-cutover, 1 True after)"*:
+        #   179 + 5 is 184, so the parenthetical contradicted its own total on the day it was
+        #   written, and the corpus has grown since. It sat ~160 lines below this file's own
+        #   `COUNTS ARE DERIVED, NEVER QUOTED` block (r1 M3) — the *document inside the corpus it
+        #   measures* shape, in the file that memorialises it. The sentence is REPLACED rather than
+        #   annotated, and by a property instead of a number: the denominator moves on every run,
+        #   so the only honest frozen form is the one with no count in it. `era_split` derives the
+        #   live figures and `main` prints them on every path.
+        #   ⚠ `.get`, NOT `rec["gate_ran"]`, EVEN THOUGH THE PRESENCE CHECK IS TWO LINES UP. The
+        #   mutation that deletes that check is in the manifest, and a subscript here would turn
+        #   its kill into a KeyError traceback — a suite that CRASHES prints no `[FAIL] <case>`
+        #   line, which this harness reports as unattributable rather than as a kill. Sibling of
+        #   the `_first()` rule in the suite below.
+        _gr = rec.get("gate_ran")
+        if not isinstance(_gr, bool):
+            bad.append(f"{p.name}: `gate_ran` is {type(_gr).__name__}, not a boolean — a truthy "
+                       f"non-bool reads as `the gate ran` and switches the failed-gate direction "
+                       f"off for that record")
+            continue
+        # ⛔ **AND THE JOIN KEY ITSELF — r3 Claude half, H1, THE FIFTH SHAPE.** `review` is what
+        # `verdict_problems` uses as a SET MEMBERSHIP key, and it was the one field this reader
+        # never looked at. Measured on the delivered code with a record dropped into a scratch
+        # `docs/reviews/`: `review: ["…"]` and `review: {…}` raised `TypeError: unhashable type`
+        # out of `audit()`, which `main` reports as rc 1 — *contradictions were FOUND* — with
+        # stdout EMPTY, inverting the rc-2 CANNOT RUN distinction AND the r1 L2 fix that moved the
+        # era caveat above the early returns so a RED run could not miss it. And the quiet
+        # direction is worse: `review: 3`, `review: null` and `review: ""` beside
+        # `gate_ran: false` each produced ZERO problems and were not reported as unreadable — the
+        # r1 B1 direction switched off by malformed testimony, which is the r2 Codex High's
+        # sentence about `refused`, one field over.
+        #   ⚠ Held at EVERY era, like `gate_ran` and unlike `refused`: derived over the whole
+        #   verdict corpus at the commit that wrote this clause, no record at any era carries a
+        #   non-`str` or blank `review`, so there is no history to exempt. The count is
+        #   deliberately not written down — see M1 four lines up, which is what a written one did.
+        #   ⤳ **THIS IS ANOTHER PATCH OF ONE CLASS AND IT IS NOT CLAIMED TO BE THE LAST.** The
+        #   review states the tally and it is reproduced rather than recounted here: four rounds
+        #   have closed four values on three fields — `refused`, `gate_ran`, `schema`'s type and
+        #   `schema`'s range — one at a time. The review that produced this finding
+        #   (`docs/reviews/claude/review-identity-176-r3-claude.md`) enumerates every field a
+        #   consumer reads and answers that the set closes in ONE move, not a sixth patch: a
+        #   validating reader here that states the type of every field it hands on, which
+        #   `check-review-recorded` could then import. That is a SEAM change with no design, so it
+        #   is filed as its own backlog row rather than started in round 3 of this slice.
+        _rev = rec.get("review")
+        if not isinstance(_rev, str) or not _rev.strip():
+            # ⚠ THE TWO REFUSALS SAY DIFFERENT THINGS, because they are different mistakes: a
+            # wrong TYPE is a producer writing the wrong shape, a BLANK is a producer writing an
+            # empty name. `is str, not a review filename` over an empty string reads as a lie.
+            _why = ("blank" if isinstance(_rev, str)
+                    else f"{type(_rev).__name__}, not a review filename")
+            bad.append(f"{p.name}: `review` is {_why} — the join key is unreadable, so neither "
+                       f"direction of the contradiction can be decided for this record")
+            continue
+        # ⚠ A malformed `refused` is a CANNOT RUN, never a quiet skip (r2 Codex High). Only records
+        # at or above the trusted schema are held to it: the pre-cutover corpus predates the field
+        # and carries `None` throughout (measured: 184 records, all `refused=None`), so demanding a
+        # boolean there would fail 184 files about runs nobody can re-observe.
+        _ref = rec.get("refused")
+        if _schema >= TRUSTED_SCHEMA and _ref is not None and not isinstance(_ref, bool):
+            bad.append(f"{p.name}: `refused` is {type(_ref).__name__}, not a boolean — a truthy "
+                       f"non-bool would switch this check off for that record")
             continue
         records.append((p.name, rec))
     return records, bad
@@ -267,7 +545,7 @@ def audit(reviews: pathlib.Path, known: set[tuple[str, int]] = KNOWN) -> tuple[l
     problems.extend(verdict_problems(vrecs, review_names))
 
     return problems, {"rounds": len(rounds), "unparsed": unparsed, "exempt": len(exempt_used),
-                      "verdicts": len(vrecs), "verdicts_bad": vbad}
+                      "verdicts": len(vrecs), "verdicts_bad": vbad, "era": era_split(vrecs)}
 
 
 # ---------------------------------------------------------------- self-test
@@ -363,24 +641,304 @@ def self_test() -> int:
     # That is what actually happened — four models each overwrote a committed review while the
     # wrapper wrote nothing — and no check could see it, because the only signal was an exit code
     # the caller had already discarded.
+    # ⚠ EVERY FIXTURE CARRIES `schema` FROM r1 M2 ON. The era gate reads a number in the record,
+    # so a fixture without one is PRE-CUTOVER and would be skipped — a case that passes because
+    # nothing was examined is the "test that cannot fail" shape this repo keeps paying for.
     _filed = {"plan-x-r3-codex.md"}
     _did_not_run = ("plan-x-r3-codex.verdict.json",
-                    {"gate_ran": False, "review": "plan-x-r3-codex.md", "reason": "no candidate"})
+                    {"schema": TRUSTED_SCHEMA, "gate_ran": False,
+                     "review": "plan-x-r3-codex.md", "reason": "no candidate"})
     _ran = ("plan-x-r3-codex.verdict.json",
-            {"gate_ran": True, "review": "plan-x-r3-codex.md", "reason": "ok"})
+            {"schema": TRUSTED_SCHEMA, "gate_ran": True,
+             "review": "plan-x-r3-codex.md", "reason": "ok"})
+    # ⚠ NEVER `[0]` ON A LIST A MUTATION CAN EMPTY. Measured while writing r1 M1's entry: the
+    # unguarded form raised IndexError, so the suite CRASHED after its first red case and printed
+    # no further `[FAIL] <case>` line — which the harness reports as unattributable, not as a kill.
+    # A case must FAIL readably; this is the sibling of the `.get`-not-`[...]` rule next door.
+    def _first(problems: list[str]) -> str:
+        return problems[0] if problems else ""
+
     check("a failed gate with its artifact filed anyway is caught",
           len(verdict_problems([_did_not_run], _filed)) == 1, True)
     check("…and the message names the review",
-          "plan-x-r3-codex.md" in verdict_problems([_did_not_run], _filed)[0], True)
+          "plan-x-r3-codex.md" in _first(verdict_problems([_did_not_run], _filed)), True)
     check("a failed gate that left NO artifact is not a contradiction",
           verdict_problems([_did_not_run], set()) == [], True)
     check("a gate that RAN is never a problem", verdict_problems([_ran], _filed) == [], True)
+    # ⛔ **`TRUSTED_SCHEMA` HAD NO FALSIFIER, AND THAT IS THE ONE SHAPE THIS REPO SAYS IS WORSE THAN
+    # NO GUARD AT ALL.** Found by the coordinator before round 2, by perturbing it: `3 -> 99` passed
+    # **40/40**. That mutant reclassifies EVERY record as pre-cutover, so `era_split` reports the
+    # whole corpus as unmeanable and every clause below it goes vacuous — the check keeps printing
+    # and stops checking. ⚠ The literal 3 is the OUTSIDE OBSERVER; writing `TRUSTED_SCHEMA` here
+    # would agree with whatever value the constant took, which is exactly the hole being closed.
+    # ── r2 Codex half, High: `refused` must BE a boolean, and only True suppresses ──────────────
+    # ⚠ THE TRUTHY VALUES ARE THE CASE. Asserting only `True` suppresses and `False` does not would
+    # pass under the defect, because both are bools; what defeated the join was a truthy NON-bool.
+    _rf = lambda v: {"schema": TRUSTED_SCHEMA, "gate_ran": False, "review": "x-r1-codex.md",
+                     "reason": "r", "refused": v}
+    _filed_x = {"x-r1-codex.md"}
+    check("a genuine refusal (refused is True) is skipped, so the read side cannot accuse the "
+          "review it protected", verdict_problems([("v.json", _rf(True))], _filed_x) == [], True)
+    check("…but a TRUTHY NON-BOOL `refused` does NOT suppress the check — the string \"false\" is "
+          "truthy, and accepting it let malformed testimony switch the CI join off",
+          len(verdict_problems([("v.json", _rf("false"))], _filed_x)), 1)
+    check("…at a second distinct truthy non-bool, so this is not a special case for one value",
+          len(verdict_problems([("v.json", _rf(1))], _filed_x)), 1)
+    # ── r2 Claude half, H1: THE SAME RULE ON `gate_ran`, WHICH IS THE FIELD THE JOIN TURNS ON ──
+    # ⛔ THE FIX WITHOUT THESE CASES IS NOT A FIX. Measured by the reviewer: hardening `:245` to
+    # `is not True` in a staged copy left the suite at 49/49 — no case could tell the defect from
+    # its repair, which is this repo's *a test that cannot fail* shape applied to a High's own fix.
+    # ⚠ AND THE TRUTHY VALUES ARE THE CASE, for the reason recorded above: `True`/`False` are both
+    # bools and pass under the defect. What silenced the failed-gate direction was a truthy STRING.
+    _gr = lambda v: {"schema": TRUSTED_SCHEMA, "gate_ran": v, "review": "x-r1-codex.md",
+                     "reason": "r"}
+    check("a filed review whose verdict says the gate did NOT run is reported — the r1 B1 "
+          "direction, and the baseline the truthy cases below are measured against",
+          len(verdict_problems([("v.json", _gr(False))], _filed_x)), 1)
+    check("…and a TRUTHY NON-BOOL `gate_ran` does NOT read as `the gate ran` — the string "
+          "\"false\" is truthy, and accepting it silenced that direction entirely",
+          len(verdict_problems([("v.json", _gr("false"))], _filed_x)), 1)
+    check("…at a second distinct truthy non-bool, so this is not a special case for one value "
+          "either", len(verdict_problems([("v.json", _gr("no"))], _filed_x)), 1)
+    check("…while a real `gate_ran: True` beside its filed review is still silent, so reading it "
+          "by identity did not turn the honest case into a finding",
+          verdict_problems([("v.json", _gr(True))], _filed_x), [])
+    with tempfile.TemporaryDirectory() as _td:
+        _vd = pathlib.Path(_td)
+        (_vd / "bad.json").write_text(json.dumps(_rf("false")), encoding="utf-8")
+        _recs, _bad = read_verdicts(_vd)
+        check("a non-bool `refused` in the trusted era is a CANNOT RUN, not a quiet skip",
+              (len(_recs), len(_bad)), (0, 1))
+        check("…and the refusal SAYS what was wrong, so a reader is not left guessing",
+              "not a boolean" in (_bad[0] if _bad else ""), True)
+        # ⚠ The pre-cutover corpus predates the field and carries None throughout — measured, 184
+        # records. Holding it to a boolean would fail 184 files about runs nobody can re-observe.
+        (_vd / "old.json").write_text(
+            json.dumps({"schema": 2, "gate_ran": True, "review": "y.md"}), encoding="utf-8")
+        _recs2, _bad2 = read_verdicts(_vd)
+        check("…while a PRE-CUTOVER record with no `refused` at all is still read, not condemned",
+              any(n == "old.json" for n, _ in _recs2), True)
+    # ── r2 Claude half, H1 + L1: THE READ SIDE OF THE SAME TWO FIELDS ──────────────────────────
+    # ⚠ `gate_ran` is held to a boolean at EVERY era, not only above the cutover, and that is a
+    # MEASUREMENT rather than a preference: no record at any era carries a non-bool there, while
+    # the `refused` rule needs its era gate because the pre-cutover corpus predates that field.
+    #   ⟳ **A SECOND FROZEN COUNT STOOD HERE — the r3 M1 defect, one copy over in the same file,
+    #   found by sweeping for the class after fixing the instance.** It read *"all 185 records in
+    #   the corpus carry a real bool"*; the corpus was 186 when this was written. Replaced by the
+    #   property, not corrected to 186, for the reason M1 gives: the denominator moves every run.
+    with tempfile.TemporaryDirectory() as _td2:
+        _vd2 = pathlib.Path(_td2)
+        (_vd2 / "gr.json").write_text(
+            json.dumps({"schema": TRUSTED_SCHEMA, "gate_ran": "false", "review": "y.md"}),
+            encoding="utf-8")
+        _r3, _b3 = read_verdicts(_vd2)
+        check("a non-bool `gate_ran` is a CANNOT RUN, not a record read as `the gate ran`",
+              (len(_r3), len(_b3)), (0, 1))
+        check("…and the refusal names the FIELD, so a reader is not sent to the wrong one",
+              "`gate_ran` is str" in (_b3[0] if _b3 else ""), True)
+        (_vd2 / "gr.json").unlink()
+        # ⛔ L1: the docstring promises a malformed verdict is a CANNOT-RUN. `{"schema": "3"}` met
+        # an arithmetic comparison and raised, and `main` reports an uncaught exception as rc 1 —
+        # *contradictions found* — which is the one distinction this guard exists to keep.
+        (_vd2 / "sch.json").write_text(
+            json.dumps({"schema": "3", "gate_ran": True, "review": "y.md"}), encoding="utf-8")
+        _r4, _b4 = read_verdicts(_vd2)
+        check("a NON-NUMERIC `schema` is a CANNOT RUN too, not a TypeError out of the era gate",
+              (len(_r4), len(_b4)), (0, 1))
+        (_vd2 / "sch.json").unlink()
+        # ⚠ A SECOND, DISTINCT malformed shape: `True` IS an `int` in Python, so a rule written as
+        # `isinstance(v, int)` alone would read a flag as version 1 and judge the record.
+        (_vd2 / "boolsch.json").write_text(
+            json.dumps({"schema": True, "gate_ran": True, "review": "y.md"}), encoding="utf-8")
+        _r5, _b5 = read_verdicts(_vd2)
+        check("…and so is a BOOLEAN schema, which `isinstance(v, int)` alone would call version 1",
+              (len(_r5), len(_b5)), (0, 1))
+        (_vd2 / "boolsch.json").unlink()
+        # …and the honest shapes still pass, so the three refusals above are not simply a closed
+        # door: a record with no `schema` at all is the oldest era, which is a readable answer.
+        (_vd2 / "ok.json").write_text(
+            json.dumps({"gate_ran": False, "review": "y.md"}), encoding="utf-8")
+        _r6, _b6 = read_verdicts(_vd2)
+        check("…while a record with NO `schema` field is still read — absent is the oldest era, "
+              "not unreadable", (len(_r6), len(_b6)), (1, 0))
+    # ── r3 Claude half, H1: THE JOIN KEY, THE FIFTH FIELD AND THE ONE NOBODY TYPE-CHECKED ────
+    # ⛔ BOTH DIRECTIONS ARE THE CASE, and they fail differently. An unhashable `review` RAISED out
+    # of `verdict_problems` (rc 1, stdout empty — the rc-2 distinction and the r1 L2 caveat both
+    # inverted); a wrong-typed SCALAR was silent, producing 0 problems for a record saying the gate
+    # did not run. A suite asserting only the crash would pass under a fix that closed the loud half.
+    _ABSENT = object()          # "no field at all", which `None` cannot express here
+
+    with tempfile.TemporaryDirectory() as _td3:
+        _vd3 = pathlib.Path(_td3)
+
+        def _rv(value, *, schema=TRUSTED_SCHEMA):
+            rec = {"schema": schema, "gate_ran": True}
+            if value is not _ABSENT:
+                rec["review"] = value
+            (_vd3 / "r.json").write_text(json.dumps(rec), encoding="utf-8")
+            recs, bad = read_verdicts(_vd3)
+            return len(recs), len(bad), (bad[0] if bad else "")
+
+        check("an UNHASHABLE `review` (a list) is a CANNOT RUN — it used to raise out of the set "
+              "membership test as rc 1 with stdout empty, which is the opposite of what a record "
+              "nobody can read means", _rv(["x.md"])[:2], (0, 1))
+        check("…and the refusal names the FIELD and its type, so the reader is not sent hunting",
+              "`review` is list" in _rv(["x.md"])[2], True)
+        check("…a dict `review` too, so this is not a special case for one unhashable type",
+              _rv({"a": 1})[:2], (0, 1))
+        check("a WRONG-TYPED SCALAR `review` is refused as well — this is the SILENT direction, "
+              "which reported 0 problems rather than crashing and is the worse of the two",
+              _rv(3)[:2], (0, 1))
+        check("…a null `review` is refused at the reader, not turned into a sentinel downstream",
+              _rv(None)[:2], (0, 1))
+        check("…and a BLANK `review` is refused: an empty string is a key nothing on disk can "
+              "match, so it silences the join exactly as a null does", _rv("   ")[:2], (0, 1))
+        check("…while a real review filename is still read, so the five refusals above are not "
+              "simply a closed door", _rv("plan-x-r3-codex.md")[:2], (1, 0))
+        check("…and the rule holds at EVERY era, not only above the cutover — a PRE-CUTOVER record "
+              "with a list `review` is refused too, because no era's corpus carries one",
+              _rv(["x.md"], schema=2)[:2], (0, 1))
+        check("…and an ABSENT `review` is refused, not read as a record with no join key",
+              _rv(_ABSENT)[:2], (0, 1))
+    # ── r3 Claude half, L1: the sentinel must not be expressible as a real value ──────────────
+    # ⛔ `rec.get("review") or "(unnamed)"` made `{"review": "(unnamed)"}` byte-indistinguishable
+    # from a record with no `review` field: both produced the identical problem line. That is the
+    # rule the commit one era back wrote for `{"schema": 0}`, broken one field over in the same
+    # file. The case compares the two MESSAGES, because identical output is the defect itself.
+    check("a record naming the old `(unnamed)` sentinel and a record with no `review` field no "
+          "longer produce the same problem line — a sentinel a record can carry is not a sentinel",
+          _first(verdict_problems([("v.json", {"schema": TRUSTED_SCHEMA, "gate_ran": True,
+                                               "review": "(unnamed)", "reason": "r"})], set()))
+          == _first(verdict_problems([("v.json", {"schema": TRUSTED_SCHEMA, "gate_ran": True,
+                                                  "reason": "r"})], set())), False)
+    # ── r3 Claude half, M2: unreadable is not the oldest era ──────────────────────────────────
+    # ⛔ `(schema_of(rec) or 0)` made `None` — UNREADABLE — arithmetic 0, the answer for ABSENT, so
+    # the derived caveat counted a record nobody can read among the pre-cutover ones it tells the
+    # reader to discount. ⚠ `era_split` is the site with a FALSIFIER: at `verdict_problems` both
+    # answers skip, so that arm's repair is explicitness and carries no mutation of its own.
+    _era_bad = era_split([("v.json", {"schema": "3", "gate_ran": True, "review": "y.md"})])
+    check("an UNREADABLE schema is counted as its own class, never as the oldest era — the "
+          "distinction `schema_of` exists to make, erased by `or 0` in the caveat that reports it",
+          (_era_bad["unreadable"], _era_bad["pre_cutover"]), (1, 0))
+    check("…and an ABSENT schema is still the oldest era, so the new class did not swallow the "
+          "one it was split from",
+          (lambda e: (e["pre_cutover"], e["unreadable"]))(
+              era_split([("v.json", {"gate_ran": True, "review": "y.md"})])), (1, 0))
+    check("…and every record still lands in exactly ONE class, so the partition the caveat prints "
+          "still adds up to the corpus it read",
+          (lambda e: e["total"] == e["refused"] + e["unreadable"] + e["pre_cutover"] + e["checked"])(
+              era_split([("a.json", {"schema": "3", "gate_ran": True, "review": "y.md"}),
+                         ("b.json", {"gate_ran": True, "review": "y.md"}),
+                         ("c.json", {"schema": TRUSTED_SCHEMA, "gate_ran": True, "review": "y.md"}),
+                         ("d.json", {"schema": TRUSTED_SCHEMA, "gate_ran": False, "review": "y.md",
+                                     "refused": True})])), True)
+    check("schema_of answers the era gate's question and nothing else: a version, 0 for absent, "
+          "None for a field that is not a version",
+          (schema_of({"schema": 3}), schema_of({}), schema_of({"schema": "3"}),
+           schema_of({"schema": True})), (3, 0, None, None))
+    # ⛔ r2 Codex half, High: a PRESENT version must be positive. `{"schema": -1}` was accepted AS a
+    # version, compared `-1 < TRUSTED_SCHEMA`, and read as pre-cutover — silencing the join
+    # contradiction this guard exists to report. ⚠ Explicit 0 is refused with it, because 0 is this
+    # function's answer for ABSENT and the sentinel must not be expressible as a real value.
+    check("a NEGATIVE schema is unreadable, not an old era — it is malformed testimony carrying the "
+          "field, and reading it as legacy silences the join",
+          schema_of({"schema": -1}), None)
+    check("…and an EXPLICIT 0 is unreadable too, because 0 is the answer for ABSENT and the two "
+          "must not be indistinguishable", schema_of({"schema": 0}), None)
+    check("…while 1 — the oldest REAL version — is still read, so the floor is a floor and not an "
+          "off-by-one that condemns the earliest corpus", schema_of({"schema": 1}), 1)
+    check("TRUSTED_SCHEMA is pinned — the threshold that decides which records this check can mean "
+          "anything about cannot drift silently", TRUSTED_SCHEMA, 3)
+    # ⚠ **AND THE PRODUCER'S STAMP MUST CLEAR IT — READ FROM SOURCE, NEVER IMPORTED.** The
+    # not-importing is deliberate and stays (a later bump to 4 must not silently stop trusting 3,
+    # and `codex-review.py` imports THIS module for the filing grammar, so the import is circular).
+    # But "deliberately independent" is not the same as "unchecked": two constants that must agree,
+    # in two files, with no shared owner, is the defined-not-derived shape. This case reads the
+    # producer's literal rather than its module, so the rule stays pure and the fetch is local.
+    _prod_schema = re.search(r"^VERDICT_SCHEMA = (\d+)",
+                             (ROOT / "scripts" / "codex-review.py").read_text(encoding="utf-8"),
+                             re.M)
+    check("the producer's current schema is READABLE at all — otherwise the next case is vacuous",
+          _prod_schema is not None, True)
+    check("…and it CLEARS this consumer's threshold, so a producer bump that outpaces this file is "
+          "visible here rather than silently untrusting every record",
+          int(_prod_schema.group(1)) >= TRUSTED_SCHEMA if _prod_schema else False, True)
     # gate_ran is READ, not re-derived. A verdict claiming the gate ran while exiting 1 is
     # self-inconsistent, but it is the WRAPPER's job to be consistent; re-deriving here would be a
     # second implementation of that rule, and the two copies would drift.
     check("exit_code is not consulted",
-          verdict_problems([("v.json", {"gate_ran": True, "exit_code": 1,
+          verdict_problems([("v.json", {"schema": TRUSTED_SCHEMA, "gate_ran": True,
+                                        "exit_code": 1,
                                         "review": "plan-x-r3-codex.md"})], _filed) == [], True)
+
+    # ── r1 M1: THE REVERSE DIRECTION OF THE JOIN, which is what #176 was convened over ──
+    # `gate_ran: true` naming a review nothing on disk carries is a coordinator citing a gate for
+    # a half that was never filed. The wrapper produces exactly this on its `exit 3` path.
+    check("⭐ a gate that RAN whose review is NOT filed is reported — the mirror contradiction",
+          len(verdict_problems([_ran], set())), 1)
+    check("…and the message names the review that is missing, not merely that one is",
+          "plan-x-r3-codex.md" in _first(verdict_problems([_ran], set())), True)
+    # ⚠ A SECOND, DISTINCT review name. With one fixture the clause could compare the record to
+    # itself and still pass; two prove the membership test is against the disk set.
+    _ran_b = ("spec-y-claude-r2.verdict.json",
+              {"schema": TRUSTED_SCHEMA, "gate_ran": True, "review": "spec-y-claude-r2.md",
+               "reason": "ok"})
+    check("…at a different id too, so the join reads the name in the record",
+          len(verdict_problems([_ran_b], _filed)), 1)
+    check("…and it stays silent once that review IS on disk",
+          verdict_problems([_ran_b], {"spec-y-claude-r2.md"}), [])
+
+    # ── r1 B1: A REFUSAL IS NOT TESTIMONY ABOUT A GATE ──
+    # Without this clause a re-dispatch that touched nothing would make CI tell the reader to
+    # DELETE the genuine review it declined to overwrite. `refused` is READ from the record, not
+    # inferred from the filename — the filename rule belongs to the producer.
+    _refusal = ("plan-x-r3-codex.refused.verdict.json",
+                {"schema": TRUSTED_SCHEMA, "gate_ran": False, "refused": True,
+                 "review": "plan-x-r3-codex.md",
+                 "reason": "refused: the promoted review already exists"})
+    check("⭐ a REFUSAL beside the filed review it declined to overwrite is not a problem",
+          verdict_problems([_refusal], _filed), [])
+    check("…and the refusal does not fire the reverse clause either, when nothing is filed",
+          verdict_problems([_refusal], set()), [])
+
+    # ── r1 M2: THE ERA BOUNDARY IS A NUMBER IN THE RECORD ──
+    # Pre-cutover the `review` field is a scratch basename, so neither direction means anything.
+    # ⚠ THE LITERAL 2, not `TRUSTED_SCHEMA - 1`: an expectation written through the constant moves
+    # with it, which is the self-agreeing-constant hole this repo has paid for twice.
+    _old = ("legacy.verdict.json",
+            {"schema": 2, "gate_ran": False, "review": "plan-x-r3-codex.md", "reason": "old"})
+    check("a PRE-CUTOVER verdict is not judged — its join key is a scratch basename",
+          verdict_problems([_old], _filed), [])
+    _oldest = ("oldest.verdict.json",
+               {"gate_ran": True, "review": "nothing-on-disk.md", "reason": "older still"})
+    check("…and a record with no schema at all reads as older still, not as trusted",
+          verdict_problems([_oldest], set()), [])
+    check("the boundary is the CURRENT schema, so today's records ARE judged",
+          len(verdict_problems([_did_not_run], _filed)), 1)
+
+    # ── r1 M3: THE CAVEAT'S NUMBERS ARE DERIVED ──
+    # The figure that used to be typed into the comment above was wrong at the denominator from
+    # the day it was written, and the denominator moves on every run.
+    check("era_split counts each record exactly once, in the class it belongs to",
+          era_split([_did_not_run, _ran, _old, _oldest, _refusal]),
+          {"total": 5, "refused": 1, "unreadable": 0, "pre_cutover": 2, "checked": 2})
+    check("…and an empty corpus is zeros, never a crash",
+          era_split([]), {"total": 0, "refused": 0, "unreadable": 0, "pre_cutover": 0, "checked": 0})
+    # ── r2 Claude half, M1: era_split IS THE THIRD SITE, AND IT PARTITIONED THE SAME RECORD ────
+    # ⛔ Measured on the delivered functions before the fix: `{"schema": 2, "refused": "false"}`
+    # came out of `era_split` as a REFUSAL — printed to the reader as *deliberately excluded* —
+    # while `verdict_problems` skipped it as PRE-CUTOVER. Two partitions of one file, from the
+    # function whose entire purpose (r1 M3) is that the caveat is derived rather than guessed.
+    # Hardening the line in a staged copy left the suite at 49/49, so this is the falsifier the
+    # fix did not have. ⚠ The fixture is PRE-CUTOVER on purpose: above the cutover `read_verdicts`
+    # now refuses the record first, and a case that passes because nothing was examined is the
+    # shape this repo keeps paying for.
+    _tnb = lambda v: [("v.json", {"schema": 2, "gate_ran": True, "review": "y.md", "refused": v})]
+    check("a truthy NON-BOOL `refused` is not counted as a refusal in the derived caveat either — "
+          "the two readers of this field must not partition one record two ways",
+          era_split(_tnb("false")), {"total": 1, "refused": 0, "unreadable": 0, "pre_cutover": 1, "checked": 0})
+    check("…at a second distinct truthy non-bool, so era_split is not a special case for one value",
+          era_split(_tnb(1)), {"total": 1, "refused": 0, "unreadable": 0, "pre_cutover": 1, "checked": 0})
 
     with tempfile.TemporaryDirectory() as td:
         vd = pathlib.Path(td) / "verdicts"
@@ -392,7 +950,12 @@ def self_test() -> int:
         check("a readable verdict is collected", len(recs) == 1, True)
         # A verdict that cannot be parsed must be a CANNOT RUN, never a silent skip: "unreadable"
         # and "the gate ran" are indistinguishable to a check that drops it.
-        check("malformed and field-less verdicts are reported, not skipped", len(bad) == 2, True)
+        # ⚠ THE MESSAGE, NOT ONLY THE COUNT — r2 Claude half, H1's second effect. The `gate_ran`
+        # type check added above ALSO refuses a record with no `gate_ran` at all (absent is not a
+        # bool), so deleting the presence check left this tally at 2 and the mutation for it
+        # survived. A count is satisfied by any two refusals; the reason is what this case is for.
+        check("malformed and field-less verdicts are reported, not skipped",
+              (len(bad), any("no `gate_ran` field" in b for b in bad)), (2, True))
         check("an absent verdict directory is not an error",
               read_verdicts(pathlib.Path(td) / "nope") == ([], []), True)
 
@@ -410,6 +973,21 @@ def main() -> int:
         return 2
 
     problems, stats = audit(REVIEWS)
+    # ⛔ THE ERA CAVEAT, ON EVERY PATH THAT READ THE CORPUS — r1 L2. It used to sit after both
+    # early returns, so the commit message and `docs/process-rationale.md` both claimed it printed
+    # "on every run" while it printed on the rc=0 path alone. The reader hitting a RED run is
+    # exactly the reader about to re-read the verdict corpus, and the claim was load-bearing for
+    # the argument that the caveat could not be missed.
+    # ⚠ The numbers are DERIVED from the records just read (r1 M3), never quoted: the denominator
+    # moves on every run, and the figure that used to be typed into a comment here was wrong.
+    _era = stats["era"]
+    print(f"  ⚠ verdict corpus: {_era['total']} read — {_era['checked']} meaningfully checked "
+          f"below, {_era['pre_cutover']} PRE-CUTOVER (schema < {TRUSTED_SCHEMA}: the `review` "
+          f"field is the basename of the wrapper's scratch --out, so it names nothing here and "
+          f"this check's silence about them is NOT evidence), {_era['refused']} refusal record(s) "
+          f"(a run that declined to start; not testimony about a gate), {_era['unreadable']} whose "
+          f"`schema` is not a version at all (read_verdicts refuses those, so this is 0 unless a "
+          f"caller reached era_split directly)")
     if problems:
         print(f"FAILED — {len(problems)} review round(s) with one half and no stated reason:\n")
         for p in problems:
@@ -429,6 +1007,8 @@ def main() -> int:
           f"0 silent gaps; {stats['verdicts']} codex-review verdict(s) read, none contradicted")
     print(f"  ⚠ {stats['unparsed']} files in docs/reviews/ carry no round number and are NOT "
           f"covered by this check")
+    # The era caveat is printed ABOVE, before the early returns — see the comment there. It is not
+    # repeated here: a second copy would be a second sentence to keep true.
     return 0
 
 

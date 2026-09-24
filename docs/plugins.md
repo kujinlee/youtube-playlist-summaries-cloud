@@ -136,10 +136,9 @@ python3 scripts/codex-frontier-model.py            # e.g. gpt-5.5 today
 python3 scripts/codex-frontier-model.py --write-config   # also syncs ~/.codex/config.toml
 ```
 
-Run `--write-config` to keep `~/.codex/config.toml`'s `model` in sync (it writes a managed,
-auto-derived block — do not hand-edit the slug). When dispatching the Codex review you may also
-pass it explicitly: `codex … -m "$(python3 scripts/codex-frontier-model.py)"`. Either way the
-model is derived from OpenAI's live model list, so it tracks new frontier releases automatically.
+Run `--write-config` to keep `~/.codex/config.toml`'s `model` in sync (a managed, auto-derived
+block — do not hand-edit the slug); or pass it explicitly, `codex … -m "$(python3 scripts/codex-frontier-model.py)"`.
+Either way the model comes from OpenAI's live list, so it tracks new frontier releases automatically.
 
 **Fallback — Codex unavailable for ANY reason → never block; auto-fall back to a Claude adversarial review.**
 "Unavailable" covers: not installed, **usage/rate limit**, auth failure, HTTP 400/5xx, a hung run, or
@@ -154,74 +153,63 @@ re-run) is fine; beyond that, fall back. The Claude adversarial review satisfies
 **USE `scripts/codex-review.py` — it makes failure-mode 1 below impossible (added 2026-07-19).**
 
 ```bash
-# PREFERRED — always for a real review prompt. See the backtick footgun below.
-python3 scripts/codex-review.py --prompt-file <path> --out "$(mktemp -d)/r.md"  # then promote
-#   exit 0 = review written   exit 1 = gate did NOT run → fall back   exit 2 = REFUSED / CANNOT RUN
+# PREFERRED — always for a real review prompt. See the backtick footgun below. ⛔ --review-id is
+# REQUIRED (#176) and is what NAMES the review: --out is SCRATCH, the wrapper FILES the half itself
+# at docs/reviews/<writer>/<id>.md and stamps that name into the verdict CI joins on, and it refuses
+# an existing one without --allow-overwrite. --verdict is RETIRED (rc=2) — it never reached the join
+# key. `# then promote` is no longer a step you do. → process-rationale.md, *The testimony that…*
+# ⛔ --review-id is ONE PATH SEGMENT, --out must be OUTSIDE docs/reviews/ — both REFUSED (#176 r1).
+python3 scripts/codex-review.py --prompt-file <path> --review-id <subject>-r<N>-codex --out "$(mktemp -d)/r.md"
+#   0 = review written AND FILED   1 = gate did NOT run → fall back   2 = CANNOT RUN → fall back
+#   3 = THE GATE RAN, THE REVIEW IS NOT FILED → ⛔ DO NOT FALL BACK, see below
 ```
+
+> ### ⛔ **rc=3 IS NOT A FALLBACK — A REAL REVIEW EXISTS** at `--out` (verdict `gate_ran: true`); only
+> the FILING failed and the wrapper prints where the capture is, so falling back discards a review
+> that was paid for and files a `REVIEW GAP:` that did not happen. Move it, or re-run with
+> `--allow-overwrite`. ⟳ 2026-09-23 (#176 r1 M4): it exited **2**, so the contract could not tell
+> *a review exists* from *nothing was measured*. ⛔ **AND A REFUSAL NEVER OVERWRITES THE TESTIMONY
+> IT PROTECTS:** it writes `verdicts/<review-id>.refused.verdict.json` (`refused: true`), never
+> `<review-id>.verdict.json` — measured before the fix, one re-dispatch flipped a committed
+> `gate_ran: true` to `false` and made CI tell the reader to DELETE a genuine review.
+> ⚠ `check-review-recorded.py` cannot see it: `--diff-filter=A`, and an overwrite is **M**.
 
 > ### ⛔ OUTPUT CONTRACT IS PER HALF — Claude writes a file; **Codex must not**. Its brief says
 > *"your final message IS the review; write no file"*: the capture IS that message, so "write"
 > yields a *report* — rejected, gate silently not run. Enforcement, the overwritten committed
-> review, and **#68(d) — CLOSED 2026-09-01**: each run writes `docs/reviews/verdicts/<stem>.verdict.json` stating `gate_ran`, read **in CI** by `check-review-rounds.py`, never by the caller who loses it. [`process-rationale.md`](process-rationale.md) → *The review gate that wrote over its own evidence*.
-> **⛔ AND EACH HALF IS FILED UNDER `docs/reviews/<writer>/`, NEVER THE TOP LEVEL** (#92, 2026-09-04) — `claude/<stem>.md`, `coordinator/<stem>.md`; the `<subject>-r<N>-<who>.md` grammar is unchanged. The top level is a **no-legitimate-writes zone while a Codex run is in flight**: the wrapper snapshots it NON-RECURSIVELY and, on the FAILURE path, `quarantine()` MOVED a concurrent half out of the repo — measured, and that is the *fallback* path, so the victim was the replacement review. `check-review-rounds.py` reads BOTH layouts and refuses a basename filed in both. ⚠ Making that snapshot recursive brings the hazard straight back. → *The reviewer blamed for its partner's work*.
+> review, and **#68(d) — CLOSED 2026-09-01**: each run writes `docs/reviews/verdicts/<review-id>.verdict.json` stating `gate_ran`, read **in CI** by `check-review-rounds.py`, never by the caller who loses it. [`process-rationale.md`](process-rationale.md) → *The review gate that wrote over its own evidence*.
+> **⛔ AND EACH HALF IS FILED UNDER `docs/reviews/<writer>/`, NEVER THE TOP LEVEL** (#92, 2026-09-04) — `claude/<stem>.md`, `coordinator/<stem>.md`; the `<subject>-r<N>-<who>.md` grammar is unchanged. The top level is a **no-legitimate-writes zone while a Codex run is in flight**: the wrapper snapshots it NON-RECURSIVELY and, on the FAILURE path, `quarantine()` MOVED a concurrent half out of the repo — measured, and that is the *fallback* path, so the victim was the replacement review. `check-review-rounds.py` reads BOTH layouts and refuses a basename filed in both. ⚠ Making that snapshot recursive brings the hazard straight back — ⟳ **and so does an `--out` inside `docs/reviews/` (2026-09-23, #176 r1 M5): `watched_dirs` STARTS with `--out`'s own directory, so recursion is not what protects the writer subdirectories.** Reproduced against the new layout; the wrapper refuses such an `--out` now. → *The reviewer blamed for its partner's work*.
 
 **Pass the prompt in a FILE, not as a shell argument (added 2026-08-04).** A review prompt is full of
 identifiers, and any **backtick** inside a double-quoted bash string is **command substitution** — the
-shell silently rewrites the prompt before Codex ever sees it. Measured 2026-08-04: a round-3 prompt
-containing `` `key` `` produced `bash: key: command not found`, the prompt arrived mangled, and no
-review was written. `--prompt-file` avoids the shell entirely.
+shell silently rewrites the prompt before Codex sees it. Measured 2026-08-04: a round-3 prompt containing
+`` `key` `` produced `bash: key: command not found`, the prompt arrived mangled, no review was written.
 
-This is the **same root cause** as the `gh --body-file` rule in `docs/dev-process.md` Phase 5, and it
-is not a `gh` problem — it applies to **every** double-quoted bash string, including
-`git commit -m "$(cat <<'EOF' …)"`, which broke on an apostrophe in the same session. The general rule:
-**anything longer than a line goes in a file** (`--prompt-file`, `--body-file`, `git commit -F`).
-
-The wrapper behaved correctly here and that is the point: it refused to write a review file rather than
-writing an empty one, so the mangled run failed **loud**. A caller checking only the exit code of a raw
-`codex exec` would have recorded a completed gate.
+**Anything longer than a line goes in a file** (`--prompt-file`, `--body-file`, `git commit -F`)
+— the same root cause as the `gh --body-file` rule in `docs/dev-process.md` Phase 5, and not a
+`gh` problem. → [`process-rationale.md`](process-rationale.md) → *Every double-quoted bash string*.
 
 It walks every candidate model in priority order, and decides success **solely** by whether
 `codex exec -o/--output-last-message` wrote a substantive final-message file — never the exit code,
-never stdout text. Run `--self-test` after touching it — **the count is declared in the script's own docstring and verified by running it**, and is deliberately not repeated here. ⟳ 2026-09-04: this said **35** while the suite ran **51** — measured, not noticed, for an unknown span, so the count was moved into the script and pinned in `check-selftest-counts.POPULATION`. ⟳⟳ 2026-09-14, r13 Medium: **that fix did not hold, and this sentence was the proof.** The pin stops the SCRIPT drifting; it cannot see a second copy in prose, and `check-selftest-counts.py` reads only `scripts/*.py`. This line went on saying **63** while the suite ran **85**, inside the very sentence promising *"the next drift fails a gate instead of sitting in prose"* — and `CLAUDE.md` imports this file, so the wrong number was loaded into every session. The number is now gone rather than corrected: a count with no owner drifts again, and the only durable fix is to have one copy, in the place a gate can run. Prefer it over raw `codex exec`
+never stdout text. Run `--self-test` after touching it — **the count is declared in the script's own docstring and verified by running it**, and is deliberately not repeated here. Why no number appears here: → [`process-rationale.md`](process-rationale.md) → *A count with no owner*. Prefer it over raw `codex exec`
 for anything that must actually produce a review; `scripts/codex-frontier-model.py` alone cannot
 guarantee a runnable model and says so in its docstring.
 
-**THERE ARE TWO SANDBOXES, AND DISABLING THE OUTER ONE DOES NOTHING TO THE INNER ONE (added 2026-08-07).**
-
-| Layer | Controlled by | What it governs |
-|---|---|---|
-| Outer | Claude Code's `dangerouslyDisableSandbox` on the Bash call | whether *we* may launch the process |
-| **Inner** | **`codex exec -s <mode>`**, default `workspace-write` | what **Codex** may do to the machine |
-
-MEASURED in round 7 of the blob-addressing review: the wrapper passed no `-s`, so Codex sandboxed
-*itself*, could not open the Docker socket
-(`dial unix …/docker.sock: connect: operation not permitted`), and reported
-`0/35 mutations … SQL did not run`. It reviewed by **reading**. Its findings happened to be right,
-but the whole reason that artifact was moved out of prose into executable SQL is that reading is the
-most expensive way to find defects — **a reviewer that cannot execute is a downgraded gate that still
-reports success.** Note the shape: this is the *same class* as the fail-open cases below, one layer
-out, and the existing memory note ("run Codex from the coordinator with `dangerouslyDisableSandbox`")
-covered the **outer** sandbox only — solving one instance and reading as if it covered the class.
-
-`scripts/codex-review.py` now passes `-s danger-full-access`. `trust_level = "trusted"` in
-`~/.codex/config.toml` does **not** substitute — it governs approval prompts, not socket access — and
-no narrower mode works, because the verifier needs a unix socket outside every workspace root.
-If a review ever reports that it could not run the suite, **treat the gate as not having run.**
-
+**THERE ARE TWO SANDBOXES, AND DISABLING THE OUTER ONE DOES NOTHING TO THE INNER ONE.**
+Outer = Claude Code's `dangerouslyDisableSandbox` on the Bash call (may *we* launch it).
+**Inner = `codex exec -s <mode>`, default `workspace-write`** (what **Codex** may do). The wrapper
+passes `-s danger-full-access`; `trust_level = "trusted"` does NOT substitute — it governs approval
+prompts, not socket access. ⛔ **If a review reports it could not run the suite, treat the gate as
+NOT HAVING RUN** — a reviewer that cannot execute is a downgraded gate that still reports success.
+Measured (round 7, blob addressing): → [`process-rationale.md`](process-rationale.md) → *The
+reviewer that was sandboxed out of its own evidence*.
 **The gate can FAIL OPEN — verify it actually ran (added 2026-07-18).**
 
-1. **Wrong model slug → HTTP 400, empty review. ✅ SOLVED by the wrapper above.**
-   `scripts/codex-frontier-model.py` ranks by `priority` without filtering on what the pinned CLI
-   supports — it cannot, as the cache has no minimum-client-version field (re-verified 2026-07-19
-   across every key of all 7 cached models). It still returns `gpt-5.6-sol`, which CLI 0.142.5
-   rejects with *"requires a newer version of Codex"*. The wrapper now falls through
-   `gpt-5.6-sol → -terra → -luna → gpt-5.5` automatically.
-   **Correction to what this doc previously claimed:** it said such runs exit **0**. Measured
-   2026-07-19 — a direct `codex exec` exits **1**. The exit-0 report comes from the plugin's
-   background-task path, not the CLI. Because the two disagree, trust *neither* as proof of success:
-   **read the output FILE.** A review doc with no findings section is a failed run, not a clean
-   review. (Manual fallback if you bypass the wrapper: `codex exec -m gpt-5.5`.)
-2. **A confident but wrong CONVERGED.** The fallback rule handles an *absent* reviewer; nothing handles
+1. **Wrong model slug → HTTP 400, empty review. ✅ SOLVED by the wrapper above**, which falls
+   through the candidate list automatically. ⛔ **Trust NEITHER exit code as proof of success —
+   read the output FILE.** A review doc with no findings section is a failed run, not a clean
+   review. Why the two disagree: → [`process-rationale.md`](process-rationale.md) → *The reviewer
+   that was sandboxed out of its own evidence*.
    a reviewer that completes successfully and clears a live defect. In Stage 3 cloud-sync this happened
    **twice** — see "Reviewer disagreement is the signal" in `docs/dev-process.md`. Never treat a single
    CONVERGED as proof; ask what that reviewer would have had to check to find the class of bug you most

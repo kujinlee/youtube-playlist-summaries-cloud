@@ -11962,3 +11962,47 @@ to satisfy it. Corrected in all three places rather than dropped.
 ⟳ r2 H2: `observer_log`'s docstring called `VERSION` "the load-bearing part". Demoted to what ships
 — nothing reads it, nothing bumps it, and the two generations that actually inverted are both
 pre-v1. What catches a reorder today is the adapters' own cases (measured: 7 of 157 kills).
+
+## 2026-09-23
+The observer-log slice is merged, and the review harness now names its own evidence instead of guessing.
+
+PR #342 merged after five adversarial review rounds — every single one of them found a fault inside
+the previous round's repair. That pattern is not a run of bad luck; it is what happens when the
+design is wrong in a way each individual fix can look correct against. So the rounds were stopped
+and an architecture review was held instead, which found the actual cause in one sitting.
+
+The cause: when a review is dispatched, the file it will eventually be saved under does not exist
+yet — a person chooses that name afterwards, by hand, in a step no code performed. The harness had
+been guessing that future name from a temporary scratch file. It could never have been right, and
+four separate repairs had each tried to guess better.
+
+Now the caller states the name up front and the harness files the review itself. One measurable
+consequence: a review that FAILED to run, but whose file was saved anyway, used to be invisible to
+the check that exists to catch exactly that. It is now reported.
+
+<!--tech-->
+**PR #342 MERGED as `b2e10e39`** (squash). Five rounds, both halves each, 10 review documents.
+Final tree: 995 mutations, 995 killed, 995 attributed, 0 survivors. Closed #166, #168, #169, #170.
+⚠ It merged on a `NO-REVIEW:` waiver for one pinned constant, granted by the owner with the
+counter-argument stated in the PR body.
+
+**Phase 6** — `docs/reviews/architecture-review-2026-09-23-review-verdict-path.md`. Armed by
+THRASHING, not a round count: `c3ad7727` (titled *"had no allocator"*, shipped none) → `63093d7f`
+(allocator named the COMMIT not the TREE) → `6cfae34a` (its own width case agreed with the constant
+it checked). ⚠ The literal trigger reads *two consecutive ROUNDS*; the review recorded that it was
+arguing from the spirit, and the chain was later corrected to three links — which satisfies the
+literal wording too. The weaker original argument is kept in place rather than rewritten.
+
+**backlog #176, on `review-identity-176`** — `--review-id` REQUIRED, basename-derivation DELETED,
+wrapper performs the promotion. `check-review-rounds.parse` is IMPORTED, not re-implemented.
+Deleted `run_token`, `TOKEN_HEX`, `verdict_collision`, `path_is_tracked`, `refusal_verdict_path`,
+`build_probe_repo`. Three pre-committed falsifiers driven against the shipped functions:
+two reviews under the documented `$(mktemp -d)/r.md` shape no longer share a testimony path; a
+`gate_ran=false` verdict whose review WAS filed now reports **1** problem where master reported
+**0**; an id ending in neither `codex` nor `claude` is refused rather than defaulted.
+⭐ Found in passing: `classify` was being handed `--out`, so under the documented shape the r7
+self-reference guard was matching on the literal string `r.md` and had gone blind to the message
+shape it exists for. It now receives the promotion path.
+Gates: `codex-review` 124/124, `check-plan-code` 131/131, every `check-*` in `ci.yml` rc=0
+(including the two Postgres-backed ones, run for real), `--mutate .` 995/995/0.
+NOT reviewed yet — round 1 is next.
