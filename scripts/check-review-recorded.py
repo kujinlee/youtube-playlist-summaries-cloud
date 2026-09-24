@@ -2,7 +2,7 @@
 """A branch that changes CODE records a review round, or says in writing why it did not.
 
     python3 scripts/check-review-recorded.py --base origin/master --pr-body-file /tmp/pr-body.md
-    python3 scripts/check-review-recorded.py --self-test  # 187 cases
+    python3 scripts/check-review-recorded.py --self-test  # 194 cases
 
 WHY THIS EXISTS
 ---------------
@@ -763,12 +763,43 @@ def classify_verdict(rec: "object | None") -> "tuple[str | None, str]":
         return None, UNUSABLE
     # A gate that did not run reviewed nothing. The CONTRADICTION of filing its artifact anyway
     # belongs to check-review-rounds.py and is not re-decided here.
-    if not rec.get("gate_ran"):
+    #   ⛔ **`is not True`, NOT TRUTHINESS — backlog #176, r3 Claude half, H2.** This read
+    #   `if not rec.get("gate_ran")`, so `"false"`, `"no"`, `"0"` and `1` — every truthy non-bool —
+    #   returned `(head, USABLE)`, CREDITING A GATE THAT DID NOT RUN WITH HAVING SEEN THE FINAL
+    #   TREE. Measured by driving this function: `True`/`False` classified correctly, all four of
+    #   those read as usable. That is the fail-open this function's own docstring says was worth
+    #   extracting it for. The sibling `check-review-rounds` removed the identical idiom in round
+    #   2, from `refused` at two sites and from `gate_ran` at one; this is the fourth and last
+    #   site of that one rule, and the only one outside that file — in the other consumer of the
+    #   same records. The two scripts already share a grammar (`_load_gap_line_parser` below
+    #   imports `has_gap_line`), so the seam exists and this rule is the one not on it. ⚠ The mitigation that a non-bool `gate_ran` makes `check-review-rounds`
+    #   exit 2 anyway is an UNDECLARED CROSS-FILE INVARIANT — that script is not PR-only while this
+    #   one is (`ci.yml`) — and is not relied on here.
+    #   ⚠ SKIP, not UNUSABLE, deliberately: an unreadable field is not testimony that a round saw
+    #   the tree, and with no usable round `tail_verdict` returns CANNOT RUN (2), never a pass, so
+    #   skipping does not reopen the hole in the aggregate.
+    #   ⤳ **AND THIS IS A PATCH OF A CLASS, NOT THE END OF IT.** The review that found
+    #   it (`docs/reviews/claude/review-identity-176-r3-claude.md`) answers that the set closes in
+    #   ONE move — a validating reader in `check-review-rounds.read_verdicts` that states the type
+    #   of every field, which this file would import the way it already imports `has_gap_line`.
+    #   That is a seam change with no design and is filed as its own backlog row.
+    if rec.get("gate_ran") is not True:
         return None, SKIP
     head = rec.get("head")
     if not isinstance(head, str) or not head.strip():
         return None, UNUSABLE           # schema 1: no commit recorded at all
-    if "dirty" in rec and rec["dirty"] is None:
+    # ⛔ **ANY NON-`dict`, NOT JUST `None` — r3 Claude half, H2, AND THIS ONE IS REACHABLE ON
+    # DISK.** `rec["dirty"] is None` let `"oops"`, `[]` and `42` through as USABLE while
+    # `reviewed_map` below independently returns `{}` for them — a real head with an empty overlay,
+    # which is byte-identical to a round dispatched against a clean tree and is exactly the vacuous
+    # comparison r11 Medium closed for the `{}`-vs-`None` pair. Unlike every other shape this slice
+    # has closed, this one is NOT hypothetical: derived over the committed verdict corpus,
+    # `docs/reviews/verdicts/record-review-topology-r1-codex.verdict.json` carries `"dirty": []`
+    # with `gate_ran: true` — a schema-2 record from before the producer wrote `dict(dirty)`. It is
+    # not in this branch's added set, so nothing changes for this run; it is what makes the class
+    # a fact rather than an argument. `isinstance` is also the same question `reviewed_map` asks,
+    # so the two ends now agree instead of one passing what the other empties.
+    if "dirty" in rec and not isinstance(rec["dirty"], dict):
         return None, UNUSABLE           # the wrapper could not describe the tree; NOT a clean tree
     return head.strip(), USABLE
 
@@ -1795,6 +1826,19 @@ def self_test() -> int:
          classify_verdict({"gate_ran": False, "head": "abc123"}), (None, SKIP))
     case("...and that rule is the one whose deletion turned exit 2 into exit 0",
          classify_verdict({"gate_ran": False, "head": "abc123"})[1] == USABLE, False)
+    # ⛔ **r3 Claude half, H2 — AND THE TRUTHY VALUES ARE THE CASE.** The two above are both bools
+    # and PASSED under the defect: `if not rec.get("gate_ran")` classified `"false"`, `"no"`, `"0"`
+    # and `1` as USABLE, crediting a gate that did not run with having seen the final tree. A suite
+    # asserting only True/False cannot tell `not x` from `x is not True`, which is this repo's
+    # *a test that cannot fail* shape applied to a High's own fix — measured twice in this slice.
+    case("a TRUTHY NON-BOOL `gate_ran` does NOT read as `the gate ran` — the string \"false\" is "
+         "truthy, and reading it that way credited a gate that never ran with the final tree",
+         classify_verdict({"gate_ran": "false", "head": "abc123"}), (None, SKIP))
+    case("...at a second distinct truthy non-bool, so this is not a special case for one value",
+         classify_verdict({"gate_ran": 1, "head": "abc123"}), (None, SKIP))
+    case("...and a real `gate_ran: True` is still usable, so reading it by identity did not turn "
+         "the honest record into a skip", classify_verdict({"gate_ran": True, "head": "abc123"}),
+         ("abc123", USABLE))
     case("a schema-1 verdict carries no head: UNUSABLE, not skipped",
          classify_verdict({"gate_ran": True}), (None, UNUSABLE))
     case("...as is one whose head is blank",
@@ -1805,6 +1849,18 @@ def self_test() -> int:
          classify_verdict({"gate_ran": True, "head": "abc", "dirty": None}), (None, UNUSABLE))
     case("...while an EMPTY map is a real answer: the tree WAS clean",
          classify_verdict({"gate_ran": True, "head": "abc", "dirty": {}}), ("abc", USABLE))
+    # ⛔ **r3 Claude half, H2 — `is None` WAS NOT THE RULE, `isinstance(dict)` IS.** A non-dict
+    # `dirty` classified USABLE while `reviewed_map` returned `{}` for it: a real head with an
+    # empty overlay, byte-identical to the clean tree r11 Medium closed for the `{}`/`None` pair.
+    # ⚠ The `[]` case is not hypothetical — a committed schema-2 verdict carries it; see the
+    # comment on the rule. `{}` above is the control that keeps these three from passing vacuously.
+    case("a LIST dirty is unusable too — a real head with an overlay nothing can read is the same "
+         "vacuous comparison a NULL one is, and one record on disk actually carries it",
+         classify_verdict({"gate_ran": True, "head": "abc", "dirty": []}), (None, UNUSABLE))
+    case("...as is a STRING dirty, so the rule is the TYPE and not a list of bad values",
+         classify_verdict({"gate_ran": True, "head": "abc", "dirty": "oops"}), (None, UNUSABLE))
+    case("...and a NUMBER, at a second scalar, so it is not a special case for one of them",
+         classify_verdict({"gate_ran": True, "head": "abc", "dirty": 42}), (None, UNUSABLE))
     case("a verdict added in the range and deleted again cannot testify",
          classify_verdict(None), (None, UNUSABLE))
     case("...and neither can a record that is not an object at all",
@@ -1817,6 +1873,9 @@ def self_test() -> int:
          reviewed_map({"dirty": {"a": 1, "c": "100644 cc"}}), {"c": "100644 cc"})
     case("a null dirty map reads as empty HERE; classify_verdict is what refuses it",
          reviewed_map({"dirty": None}), {})
+    case("...and so does a LIST one — the shape that makes the overlay vacuous, which is why "
+         "classify_verdict now asks the same isinstance question this end already asked",
+         reviewed_map({"dirty": []}), {})
     # ── r11: the second question is a rule, not a line. `if True:` in its place left the suite at
     # 77/77 — the entire subsystem detachable with no red anywhere. ──
     case("guarded code and no waiver: the question is asked",

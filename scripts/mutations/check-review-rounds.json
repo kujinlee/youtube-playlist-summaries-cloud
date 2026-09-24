@@ -174,7 +174,7 @@
     "file": "scripts/check-review-rounds.py",
     "edits": [
       [
-        "        if (schema_of(rec) or 0) < TRUSTED_SCHEMA:\n            continue",
+        "        if _schema is None or _schema < TRUSTED_SCHEMA:\n            continue",
         "        if False:\n            continue"
       ]
     ],
@@ -203,7 +203,7 @@
     "file": "scripts/check-review-rounds.py",
     "edits": [
       [
-        "        elif (schema_of(rec) or 0) < TRUSTED_SCHEMA:\n            out[\"pre_cutover\"] += 1",
+        "        elif _schema < TRUSTED_SCHEMA:\n            out[\"pre_cutover\"] += 1",
         "        elif False:\n            out[\"pre_cutover\"] += 1"
       ]
     ],
@@ -236,8 +236,8 @@
     "file": "scripts/check-review-rounds.py",
     "edits": [
       [
-        "if rec.get(\"refused\") is True:\n            continue\n        if (schema_of(rec) or 0)",
-        "if rec.get(\"refused\"):\n            continue\n        if (schema_of(rec) or 0)"
+        "if rec.get(\"refused\") is True:\n            continue",
+        "if rec.get(\"refused\"):\n            continue"
       ]
     ],
     "expect": "…but a TRUTHY NON-BOOL `refused` does NOT suppress the check — the string \"false\" is truthy, and accepting it let malformed testimony switch the CI join off"
@@ -275,8 +275,8 @@
     "file": "scripts/check-review-rounds.py",
     "edits": [
       [
-        "records:\n        if rec.get(\"refused\") is True:",
-        "records:\n        if rec.get(\"refused\"):"
+        "        _schema = schema_of(rec)\n        if rec.get(\"refused\") is True:",
+        "        _schema = schema_of(rec)\n        if rec.get(\"refused\"):"
       ]
     ],
     "expect": [
@@ -323,5 +323,58 @@
       ]
     ],
     "expect": "a NEGATIVE schema is unreadable, not an old era — it is malformed testimony carrying the field, and reading it as legacy silences the join"
-  }
+  },
+    {
+      "name": "r3 Claude H1: the join key is no longer type-checked, so an unhashable `review` raises out of the set membership test as rc 1 and a wrong-typed scalar silences the join",
+      "file": "scripts/check-review-rounds.py",
+      "edits": [
+        [
+          "        if not isinstance(_rev, str) or not _rev.strip():",
+          "        if False:"
+        ]
+      ],
+      "expect": [
+        "an UNHASHABLE `review` (a list) is a CANNOT RUN — it used to raise out of the set membership test as rc 1 with stdout empty, which is the opposite of what a record nobody can read means",
+        "a WRONG-TYPED SCALAR `review` is refused as well — this is the SILENT direction, which reported 0 problems rather than crashing and is the worse of the two"
+      ]
+    },
+    {
+      "name": "r3 Claude H1: a BLANK `review` passes the reader, so an empty string — a key nothing on disk can match — silences the join exactly as a null did",
+      "file": "scripts/check-review-rounds.py",
+      "edits": [
+        [
+          "not isinstance(_rev, str) or not _rev.strip():",
+          "not isinstance(_rev, str):"
+        ]
+      ],
+      "expect": [
+        "…and a BLANK `review` is refused: an empty string is a key nothing on disk can match, so it silences the join exactly as a null does"
+      ]
+    },
+    {
+      "name": "r3 Claude L1: the `(unnamed)` sentinel returns, so a record CARRYING it is indistinguishable from one with no `review` field at all",
+      "file": "scripts/check-review-rounds.py",
+      "edits": [
+        [
+          "        review = rec.get(\"review\")\n",
+          "        review = rec.get(\"review\") or \"(unnamed)\"\n"
+        ]
+      ],
+      "expect": [
+        "a record naming the old `(unnamed)` sentinel and a record with no `review` field no longer produce the same problem line — a sentinel a record can carry is not a sentinel"
+      ]
+    },
+    {
+      "name": "r3 Claude M2: an unreadable version is bucketed as the oldest era again, so the derived caveat counts a record nobody can read among the ones it tells the reader to discount",
+      "file": "scripts/check-review-rounds.py",
+      "edits": [
+        [
+          "        elif _schema is None:\n            out[\"unreadable\"] += 1\n        elif _schema < TRUSTED_SCHEMA:",
+          "        elif False:\n            out[\"unreadable\"] += 1\n        elif _schema is None or _schema < TRUSTED_SCHEMA:"
+        ]
+      ],
+      "expect": [
+        "an UNREADABLE schema is counted as its own class, never as the oldest era — the distinction `schema_of` exists to make, erased by `or 0` in the caveat that reports it"
+      ]
+    }
 ]

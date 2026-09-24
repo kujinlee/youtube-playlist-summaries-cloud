@@ -852,7 +852,18 @@ EXPECTED_MUTATIONS = {
     #     `schema_of` in both directions — a field that is not a version is unreadable, and an
     #     ABSENT field is the oldest era rather than unreadable, which is the direction that would
     #     turn the whole 184-record pre-cutover corpus into a CANNOT RUN.
-    "scripts/check-review-rounds.py": 25,
+    # ⟳ 2026-09-24, backlog #176 round 3 fold, 25 -> 29. FOUR entries, and none of them is the
+    #   fifth patch's own line twice: H1 splits into the TYPE clause (an unhashable `review` raised
+    #   out of the check as rc 1 with stdout empty) and the BLANK clause (an empty string is a key
+    #   nothing on disk matches), attributed to different cases; L1 restores the `(unnamed)`
+    #   sentinel, which made a record CARRYING it indistinguishable from one with no field; M2
+    #   collapses the new `unreadable` era bucket back into `pre_cutover`, which is what
+    #   `(schema_of(rec) or 0)` did silently. ⚠ The `verdict_problems` arm of M2 carries NO entry
+    #   on purpose: both answers skip there, so a mutation of it would survive, and shipping an
+    #   unkillable entry to make the count look fuller is the shape this table exists to refuse.
+    #   SIX anchors in these two files were RE-TARGETED in the same commit because the fix moved
+    #   their text; the sweep is what found them, and it is still in no local suite.
+    "scripts/check-review-rounds.py": 29,
     # ⟳ 2026-09-08, R4 manifest debt 3 -> 2. ⚠ ONE MUTATION SURVIVED FIRST: I removed the words
     # "Produce one with" from the absent-results refusal, but the case asserts that `--outputFile=`
     # appears in the message and that token is on the NEXT fragment. The mutation READ like the one
@@ -1063,7 +1074,13 @@ EXPECTED_MUTATIONS = {
     # `verdict.pr_body` (Low 1 — the SAME "constant wearing a signature" shape this branch closed
     # for `prose_exceptions_cover.declared`, still live in the same file: closing one instance and
     # leaving the only other one is instance-not-class).
-    "scripts/check-review-recorded.py": 66,
+    # ⟳ 2026-09-24, backlog #176 round 3 fold, 66 -> 68. The r3 H2 pair, both on rules this file
+    #   already had and read by truthiness or identity: `gate_ran` read with `not`, which credited
+    #   `"gate_ran": "false"` with having seen the final tree, and `dirty` tested by `is None`,
+    #   which let `[]` — a shape a COMMITTED verdict actually carries — classify as a real head
+    #   with an empty overlay. Distinct from the two `if False:` entries already on those lines:
+    #   those delete the rule, these weaken it, and the four are attributed to disjoint cases.
+    "scripts/check-review-recorded.py": 68,
     # ⟳ 2026-09-14, r11: this file JOINS the manifest — R4 widened-debt 8 -> 7, removed from
     # `WIDENED_MANIFEST_DEBT` in this same commit, which that rule requires as an identity and not
     # a ceiling. It is the producer half of the mechanism the file above consumes, and it had gone
@@ -3724,7 +3741,7 @@ def _self_test() -> int:
     # Blocking and High — and the sum stayed at 1015 throughout, because an orphan keeps the count
     # while removing the coverage. CI caught it; `--self-test` cannot, because it loads the
     # manifests without resolving them. The split is on each file's own entry above.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1024)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1030)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
