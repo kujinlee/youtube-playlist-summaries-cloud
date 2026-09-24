@@ -12106,3 +12106,129 @@ for a filing decision, not filed.
 ⚠ **The store's append-only rule was knowingly set aside for this**, with the user's decision on the
 record. Its stated reason is that positional ids silently rebind a standing `[resolved:]`; measured
 above, no pre-existing id moves, so that specific hazard was verified absent before the edit.
+
+## 2026-09-24
+The review process now has rules about what the author writes down, not just about what reviewers look for.
+
+A study written earlier today asked where the time actually goes on this project. Its most useful
+finding was not about reviewing at all. A large share of the problems reviewers were spending whole
+rounds catching were not faults in the code — they were claims the author had written and never
+checked. A line count that was asserted and had gone the other way. A count of files that was wrong
+and then copied into three more places. Twice, a claim that a whole category of problem had been
+dealt with when only the one example in front of us had been.
+
+Four rules now cover that, and all four are free — they cost nothing but attention:
+
+- Do not write a number unless you measured it in the session you are writing in.
+- If a sentence turns out to be wrong, fix that sentence. Do not add a correction underneath it,
+  because the reader meets the wrong one first.
+- Saying "this whole category is handled" requires actually listing the category and checking each
+  one. Otherwise say you fixed the example, which costs nothing to admit.
+- Before claiming the automated checks pass, read the file that lists them rather than remembering
+  which ones there are.
+
+A fifth rule was added about work that turns up mid-way through something else. The study compared
+two pieces of work on the same branch, with the same reviewers: the one that had been designed in
+advance settled after three rounds; the one that was picked up opportunistically part-way through
+needed three further rounds and then a review of its own. The rule now says that work arriving
+mid-stream does not inherit the approval the surrounding work had.
+
+One larger idea from the study is deliberately not built yet: a question to ask before any review
+starts, about whether reviewing is even the right tool for this particular change. Its shape was
+decided today and written down. Building it is its own job.
+
+<!--tech-->
+**PR #345**, backlog #177. Adopts `docs/development-velocity.md` §6 and §7 into
+`docs/process-checklists.md`; both now govern from there. All five §9 open questions ANSWERED in
+the doc; §10 added as the design session's brief.
+
+⚠ **Rule 1 is NOT the neighbouring rule it sits beside.** *Qualify every number in prose* is about
+RESOLVABILITY — write `backlog #39`, not a bare `#39`. The new rule is about PROVENANCE — whether
+the number is true. A number can be perfectly qualified and entirely invented; one of the four
+cited findings was exactly that.
+
+⚠ **Rule 3 landed as a CROSS-REFERENCE**, not a restatement, to `review-method.md` §0 Q2 step 5.
+That step binds the REVIEWER to name a sample rather than a scope; nothing bound the AUTHOR, and
+two of the four findings are what that gap produced. A second copy is a copy that drifts.
+
+⚠ **Rule 2 carries its own exception:** an append-only store requires a correction to be a NEW
+entry, because ids there are positional and editing rebinds a standing `[resolved:]`.
+
+⛔ **The literal *"side job re-asks Q0"* wording was NOT adopted.** Q0 does not exist yet; a rule
+pointing at nothing is a rule that cannot run. What landed is the part true without it — a side job
+inherits no design approval — with the attachment point marked.
+
+⭐ **Q0's FORM, decided by the user: HYBRID.** Judgement at the entry, because no definition of
+*seam* exists that a script can read and three hand-kept path lists each scored something dangerous
+as one-round. Mechanical for ESCALATION, because §3 records all four seam signals present in the
+2026-09-23 thrashing and it was **still called three rounds late** — a human misjudging a card is a
+detection failure prose does not fix. ⛔ Two constraints on the designer: Q0 must declare itself the
+EXCEPTION to §0's *keyed on paths, not judgement* stance and say why, and the mechanical half must
+be calibrated against a corpus of past rounds or it is an assertion with a script around it.
+
+⚠ §9 Q3/Q4/Q5 settled from evidence, not opinion: the draft PR stays a practice (the CI-minutes
+worry did not bind — `cancel-in-progress` makes repeated pushes cost one run); the number rule
+cannot be a gate (the repo already rejected the syntactic proxy at three scopes, and provenance is
+strictly harder than resolvability); the side-job hook is blocked on Q0's escalation half.
+
+## 2026-09-24
+A small rule about writing down numbers took four rounds of review, and the reason turned out to be a decision we had already made and then could not find.
+
+The change itself is modest: four rules about what an author writes down, because a study earlier
+today found that a large share of what reviewers were catching were not faults in the code but
+claims the author had never checked.
+
+Reviewing it went badly in an interesting way. Each round found a wrong number inside the rule
+about numbers, and each fix was correct and still did not finish the job — because each fix looked
+for the form of mistake it had just been shown. First numbers in bold, then any digits, then
+numbers written as words, then references to line numbers in other files. Five attempts, each
+outrun by the next spelling.
+
+That pattern triggers an automatic rule here: when two rounds in a row find problems caused by the
+previous round's own repair, the work stops and gets an architecture review instead. It fired by
+itself, from the review records, and we ran it.
+
+What the review found is the useful part. Three days ago this project decided that a document which
+describes the project should not quote counts about the project, because such a number is out of
+date the moment it is written — it should point at the thing that can count. That decision was
+correct and it was recorded. It was recorded in a parenthesis, inside a glossary entry about
+something else, in a file nobody writing a number has any reason to open. So the rounds were not
+being careless. They were rediscovering, one example at a time, something already settled.
+
+Three follow-ups are now filed so the next person meets that decision instead of rediscovering it.
+The rule itself was rewritten to make no claims about the project at all — it gives instructions and
+names the tool to run, and there is nothing left in it that can go stale.
+
+<!--tech-->
+**PR #345**, backlog #177. Four review rounds, both halves across them, plus a Phase 6 architecture
+review at `docs/reviews/architecture-review-2026-09-24-number-populations.md`.
+
+⭐ **The trigger fired MECHANICALLY.** `check-review-decision.py` returned `ARCHITECTURE_REVIEW —
+thrashing: 'number-populations' carried fix-induced findings in r2 and r3`, derived from the
+coordinator round headers rather than asserted. Convening it anyway, given the redesign was already
+applied, was the user's call.
+
+⭐ **Root cause INVERTS Phase 6's standing question.** *"What did we decide this milestone that
+isn't written down?"* — it **was** written down: `CONTEXT.md` → Verification Stack, `5ffe6017`,
+2026-09-21, backlog #153. *"The number is removed rather than corrected — it had no owner, and this
+file is inside the corpus it describes, so any figure here is stale at the commit that writes it."*
+**The gap is between RECORDED and FINDABLE.**
+
+⚠ **r4 (High) refuted the architecture review's own wording** — the decision has **two** homes, not
+one; the second was found by a grep I did not run. An asserted claim inside a review about asserted
+claims. Corrected **in place**; the narrower version survives.
+
+⛔ **THE TERMINATING MOVE WAS A SHAPE, NOT A WIDER PATTERN** — the resolution backlog #154 already
+recorded for this signature (*refuse, don't widen*): *a governing rule's body may contain
+instructions and the name of a producer to run, and makes no claim about the repository's contents —
+no count in digits or words, no `file:line` locator, no "N lines below".* Measured while writing it:
+a numeric sweep over the section flags most of its lines (dates, PR ids, rule numbers, the word
+*one* as a pronoun) against four genuine hits — reproducing the false-positive result this repo
+measured and rejected at three scopes.
+
+**Filed, at the user's decision:** #179 (an ADR for the principle — the one that reaches Phase 6's
+own required reading), #180 (a pointer from the section an author writing a number already opens),
+#181 (a named term, since Verification Stack has now answered three thrashing reviews).
+
+⚠ Round 5 is the verifying round on the shape invariant, which is the one fix that differs in KIND
+from the four that failed and has not been reviewed even once.

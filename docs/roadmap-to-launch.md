@@ -2057,12 +2057,16 @@ taken on, and the weaker original argument is kept on the record rather than rew
 not return within the session — **treat it as NOT RUN**. Every claim in the document was verified by
 hand with command and output recorded, so nothing rests on agent output.
 
-## Development velocity — backlog #177 — anchor `review-decides-itself` — 🟠 ANALYSIS DONE, NOTHING ADOPTED
+## Development velocity — backlog #177 — anchor `review-decides-itself` — 🟠 §6+§7 ADOPTED 2026-09-24; Q0 DESIGNED-IN-FORM, NOT BUILT
 
 **The analysis is the deliverable and it is complete:** [`docs/development-velocity.md`](development-velocity.md).
 Written 2026-09-24 at the user's request, out of the session that merged PR #342 (five adversarial
-rounds), held the Phase 6 verdict-path review and implemented #176. ⛔ **Nothing in it governs until
-it lands in a process doc or a script** — the document says so in its own first line.
+rounds), held the Phase 6 verdict-path review and implemented #176. ⟳ **2026-09-24: §6 and §7 NOW
+GOVERN**, from `docs/process-checklists.md`; the rest of the document is still proposal, and its
+own banner carries the section-by-section status. ⛔ **Cite an adopted rule from the checklists
+doc, never from here** — citing a rule from its rationale is how two copies start. (Both halves of
+r1 caught this sentence still saying *nothing* governs, four lines above a heading this same change
+had updated to say otherwise.)
 
 - [x] **The analysis.** Central finding: `review-method.md` §0 asks HOW MUCH adversarial review to
       run and never asks WHETHER adversarial review is the right instrument. Proposed as a new Q0.
@@ -2070,12 +2074,58 @@ it lands in a process doc or a script** — the document says so in its own firs
       work had an upfront architecture review and CONVERGED by round 3; the verdict-path work
       entered as an un-designed side job and thrashed three more rounds. ⚠ An upfront review would
       NOT have caught the second — it was out of scope. The gap is work entering AFTER a review.
-- [ ] **#177 — adopt it.** 🟠 OPEN, NOT STARTED, and **to be worked in its OWN session at the user's
-      request**. Five strands: Q0 into `review-method.md`; the draft-PR pattern so sweeps run on
-      GitHub; the injection rules; the side-job trigger; de-escalation.
-- [ ] **Five open questions** are listed in §9, the sharpest being whether Q0 is mechanisable at all
-      or is irreducibly a judgement. A guard asking *"does this change move a seam?"* needs a
-      definition of seam a script can read.
+- [x] **The injection rules (§6) and the side-job rule (§7) — ADOPTED, PR #345.** They govern from
+      `docs/process-checklists.md`. ⚠ Rule 3 landed as a CROSS-REFERENCE to `review-method.md` §0 Q2
+      step 5, not a restatement: that step binds the reviewer, and the gap was that nothing bound
+      the author. ⛔ The literal *"side job re-asks Q0"* wording was NOT adopted — Q0 does not exist,
+      and a rule pointing at nothing cannot run; the attachment point is marked instead.
+- [x] **The draft-PR pattern — adopted as PRACTICE, deliberately not automated.** The case for it is
+      a SPEED measurement, not a caught defect: `cancel-in-progress` makes repeated pushes cost ONE
+      run, and `verify` is ~2× faster than the local sweep. ⟳ **r1 High:** an earlier version said it
+      *"caught #176 r2's Blocking on its first use"* — **false**, and that Blocking's own review doc
+      says so (`review-identity-176-r2-claude.md:156-158`: the sweep was `pending`, and the finding
+      *"rests on the anchor measurement above, not on a CI verdict"*).
+- [x] **All five §9 questions ANSWERED** in the doc, with their evidence, so none is re-opened from
+      scratch. Two were the user's decisions; three were settled from measurement.
+- [ ] **Q0 itself — DESIGNED IN FORM, NOT BUILT.** 🟠 The user decided it is **HYBRID**: judgement at
+      the entry, mechanical for escalation. `docs/development-velocity.md` §10 is the design
+      session's brief. ⛔ Two constraints that are not optional — Q0 must declare itself the
+      EXCEPTION to §0's *keyed on paths, not judgement* design and say why, and the mechanical half
+      must be calibrated against a corpus of past rounds before it ships.
+- [ ] **Side-job hook (§9 Q5)** — ⏸ blocked on Q0's escalation half. A hook now could only nag, and
+      `unheralded` already occupies that moment.
+
+- [x] **⭐ Phase 6 architecture review — `number-populations`, 2026-09-24.**
+      `docs/reviews/architecture-review-2026-09-24-number-populations.md`. Convened **mechanically**:
+      `check-review-decision.py` returned `ARCHITECTURE_REVIEW` from the coordinator round headers,
+      not from anyone's judgement, and the user chose to convene despite the redesign being applied.
+      ⭐ **Root cause, and it INVERTS Phase 6's standing question.** *"What did we decide this
+      milestone that isn't written down?"* — it **was** written down, on 2026-09-21 in `5ffe6017`
+      (backlog #153): *a figure in a document inside the corpus it describes is stale at the commit
+      that writes it — remove it, point at the live producer.* Three days later three consecutive
+      rounds re-derived it one instance at a time. **The gap is between RECORDED and FINDABLE.**
+      ⚠ r4 (High) refuted the review's own first wording — the decision has **two** homes, not one;
+      corrected in place. The claim that survives is that neither home is a document an author
+      writing a number would open, and no process doc points at either.
+- [ ] **backlog #179 — an ADR for the principle.** ⭐ The one that would have prevented the episode:
+      Phase 6's gate obliges a reviewer to read `docs/adr/`, so an ADR is read by exactly the process
+      that re-derived the decision. ⛔ **Not a guard** — the syntactic hunt is refuted at three
+      scopes and was reproduced once more on this section.
+- [ ] **backlog #180 — a pointer from *Qualify every number in prose*.** The only one of the three
+      that reaches the moment the figure is typed. ⚠ Its own weakness stated: a pointer is easy to
+      stop reading.
+- [ ] **backlog #181 — a named term in `CONTEXT.md` → Verification Stack.** That section exists
+      because seven rounds were once argued in words the file did not contain, and it has now
+      answered three thrashing reviews. ⚠ The most speculative of the three: a term with no rule
+      behind it is vocabulary.
+- [ ] **🔴 backlog #182 — two grammars for one review-gap concern.** Following
+      `docs/round-header-template.md` puts a branch in violation of a REQUIRED CI gate. Measured on
+      this branch: red `verify` for FOUR rounds, unnoticed because the gate's rc=0 from r1 was
+      carried forward. ⛔ One grammar wins and the loser is **deleted, not deprecated**.
+- [ ] **backlog #183 — `dev-process.md` says thirteen schema gates in one row and fifteen in
+      another.** Pre-existing on master. ⭐ A live instance of #179's principle in the spine itself,
+      and the evidence that separates the three candidates: **#180's pointer would not reach it.**
+      ⛔ Remove the count, do not correct it.
 
 ⚠ **Measured, so the priority is not guessed:** 7 sweeps ≈ 100 min but ~0 tokens; 3 of 5 review
 rounds were rework; GitHub runs the sweep ~2× faster than this machine (8m08s for the whole `verify`

@@ -425,6 +425,194 @@ above. Widen the scope there rather than filing a second row.
 
 ---
 
+## Reduce defect INJECTION, not just detection (added 2026-09-24)
+
+**Read when:** writing a commit message, a **code comment**, a review document, a PR body, or a
+claim about what a change does. Not when reviewing — this is about what the AUTHOR puts on the page
+for a reviewer to find.
+
+⟳ **`code comment` restored in r1 (Low).** The proposal's scope was *"a commit message, comment or
+doc"* and the first adopted draft silently dropped comments — the surface where a stale count is
+hardest to notice, because nothing re-reads a comment.
+
+**The measurement that produced it (backlog #177, `docs/development-velocity.md` §6).** Over the
+session that merged PR #342 and implemented backlog #176, a large share of review findings were not
+defects in the code at all. They were **the author's own unverified claims**, and each one cost a
+full review round to surface:
+
+| Finding | What it actually was |
+|---|---|
+| PR #342 r5 H1 | a correction **appended below** a false paragraph; the commit message said it was fixed |
+| backlog #176 r1 L1 | commit message said `1858 → 1755` lines; measured `1858 → 1869` — the file **GREW** |
+| PR #342 r5 M1 + r5 Codex Medium | *"the class is closed"* — asserted twice, both times an instance fix |
+| backlog #176 r1 M3 | `183 verdicts` — wrong (184), and copied into three further places |
+
+⭐ **These are the cheapest findings in the repo to prevent and the most expensive to catch.** A
+defect in code needs a reviewer who understands the code; an invented number needs only a reviewer
+who checks, which is why they survive to round 5. Every rule below costs nothing to follow. ⚠ **They are numbered 1, 1b, 2, 3 and 4 — listed, not counted, and that is deliberate.** Two earlier versions carried a count here: *"all four"* went stale the moment 1b was added (r3, Low), and the repair **re-pinned** it as *"five of them"* (r5, Medium) — the precise move the shape below exists to prevent, made inside the section that states it. **A list cannot disagree with its own contents.**
+
+### 1 · No number unless it was measured in THIS session
+
+Not recalled, not carried from a previous document, not inferred from a diff you did not run. If you
+did not produce it with a command in this session, either **derive it now** or write what you
+actually know without the number.
+
+⚠ **This is NOT the rule at *Qualify every number in prose*** above. That one is about
+**resolvability** — `backlog #39`, not a bare `#39`. This one is about **provenance** — whether the
+number is true. A number can be perfectly qualified and entirely invented, and `backlog #176 r1 M3`
+was exactly that.
+
+⛔ **The corrections fail too.** Re-deriving a remembered number from memory a second time is the
+same act. Cite the **symbol or the command**, not the recollection.
+
+### 1b · Say WHAT YOU COUNTED, not just that you counted
+
+⟳ **Added 2026-09-24, then REDESIGNED in the same slice's round 3.** A number can be honestly
+measured and still be false, because the label names a different population from the command.
+
+⛔ **THIS RULE QUOTES NO LIVE FIGURE, AND THAT IS THE RULE'S OWN DESIGN — NOT AN OVERSIGHT.**
+Three consecutive review rounds found a wrong number *inside this rule*, each introduced by the
+previous round's fix, and every one of them was a figure the text had to keep in sync with the
+repository. Rule 3, below, had already solved this — *"the survivor COUNT is
+deliberately not quoted here"* — and this rule was written doing the opposite. So: **the examples
+below are SHAPES. Where a count would go, they say `N`.** A rule that must be re-measured whenever
+the repo changes is a rule that goes stale silently, which is the defect it was written to prevent.
+
+| Written | What the command actually answered | The gap |
+|---|---|---|
+| *"N gates named"* | distinct `scripts/check-*.py` matched in one workflow | the regex excluded `.sh`, and *gates* could equally mean `run:` steps, all invoked scripts, or workflows |
+| *"the draft PR caught that Blocking"* | nothing — the cited review states it rested on a different measurement | the claim named a cause its own source disclaims |
+| *"derive from `ci.yml`"* | one required workflow, not all of them | the scope was the hand-written part |
+| *"N distinct scripts invoked by `ci.yml`"* | a `grep` over the file's **text**, not what it runs | a script mentioned only in a comment is counted |
+
+**So a number carries its population, or it is not a measurement.** Write *"N distinct scripts
+**invoked by** `ci.yml`, counted by parsing its `run:` blocks"* — the population and the method —
+never *"N gates"*.
+
+⚠ **AND THE POPULATION SLIP IS NOT ONE MISTAKE REPEATED.** Rows 1 and 4 are the same shape: a
+command answered a question that *sounded* identical to the intended one. Row 3 is a **scope**
+error — the right question asked of too few files. Row 2 is neither; it is a claim with no
+measurement behind it at all, and rule 1 already catches that one. **The table is kept whole
+because the differences are the point**: only rows 1 and 4 support *"the slip is in how measuring
+works"*, and r3 (Medium) found the first version of this paragraph generalising from all four. Two
+rows are enough to justify the clause; claiming four was the same defect one level up.
+
+### 2 · Fix the sentence IN PLACE
+
+An appended correction is not a fix. The reader meets the wrong sentence first and may stop there.
+Edit the claim where it stands; if the history matters, keep the original **as a marked strikethrough
+or a ⟳ note attached to the corrected sentence**, never as a later paragraph that argues with an
+earlier one.
+
+⚠ The exception is an **append-only store** (`docs/dashboard-entries.md`), where a correction is
+required to be a new entry — because there, ids are positional and editing rebinds them. Everywhere
+else, in place.
+
+### 3 · A class claim requires a class SWEEP
+
+*"The class is closed"* means every member was **enumerated and tested**. It does not mean the named
+instance was fixed and the others look fine. If you cannot state how the members were enumerated,
+you do not have a class claim — you have an instance fix, and saying so costs nothing.
+
+**Worked example from the source session:** perturbing **every** module-level constant in both
+touched files, then re-running until none survived. That is an enumeration. Reading the file and
+concluding it looks complete is not.
+
+⚠ **The survivor COUNT is deliberately not quoted here.** It was carried into an earlier draft from
+the rationale document and r1 found the underlying measurement disagreed with it. The method is
+what this rule teaches; the number belongs to the measurement that produced it, where it can be
+checked. Quoting it here would break rule 1 inside the section that argues for rule 1.
+
+⟳ **This is the AUTHOR-side twin of `review-method.md` §0 Q2 step 5** (*every finding names a
+sample, not a scope*). That step binds the reviewer; nothing bound the author, and the two findings
+above are what that gap produced.
+
+⚠ **"Do not restate" applies to THAT step, not to this rule** — r1 Low. The paragraphs above state
+the author rule in full on purpose, because this is where it governs. What must not be copied here
+is the reviewer's step; read that one at its own site.
+
+### 4 · Derive gate lists from the WORKFLOWS, never from memory — and never from one workflow
+
+Before claiming the gates pass, read what `.github/workflows/` actually invokes and run that. A
+hand-written list of five gates cost a full CI round-trip in the source session.
+
+⛔ **NOT `ci.yml` ALONE.** `scripts/check-merge-ready.py` already carries this defect and its
+correction, in the comment above its `WORKFLOW` constant: *"EVERY WORKFLOW, NOT `ci.yml` ALONE … The first version parsed one
+file and claimed the pull-request-only list was 'derived, never hand-written'; the FILE SCOPE was
+the hand-written part."* `schema-gates` is the other required context on every PR, so a derivation
+that reads `ci.yml` only omits **the schema gates** entirely — while congratulating itself on being
+immune to exactly that. (⟳ r4 Blocking: this said *"the fifteen schema gates"*. A count spelled as a
+word is still a count, and the check that had just removed the digits looked only for digits.)
+
+⚠ **AND SAY WHICH POPULATION YOU COUNTED** — see rule 1b. *"The gates"* can mean at least four
+different sets, and they are different sizes: the workflows' `run:` **steps**; the distinct
+**scripts** those steps invoke; the **`check-*`** subset of those; and the **workflows** themselves.
+Name which, and name the method — **parse `run:` blocks, do not grep the file.**
+
+⛔ **NO COUNT IS QUOTED HERE, BY AN EXISTING DECISION THIS RULE WAS WRITTEN IN VIOLATION OF.**
+`CONTEXT.md` → *Verification Stack* settled it on **2026-09-21** (`5ffe6017`), after that glossary
+said one number while the live guard printed another: *"the number is removed rather than corrected
+— it had no owner, and this file is inside the corpus it describes, so any figure here is stale at
+the commit that writes it."* A process document is inside that corpus too. **Re-derive, or run the
+producer; do not read a count out of prose.**
+
+⛔ **AND A GREP OVER THE WORKFLOW IS THE WRONG POPULATION — this rule shipped with its own proof.**
+Its first version counted with `grep -oE 'scripts/…' ci.yml | sort -u` and was one too high. The
+extra entry was `scripts/check-schema-gates.sh`, which `ci.yml` **mentions only inside comments** —
+the exact fact this rule's own correction rests on. A text match counts what a file MENTIONS; the
+question is what it RUNS. Three consecutive review rounds corrected a figure in this section before
+the decision above was found; that history is why the figures are gone rather than fixed.
+
+**Prefer running `scripts/check-merge-ready.py` over assembling a list at all** — it derives its
+own, and it reaches the pull-request-only gates a local run cannot.
+
+### ⛔ The shape THIS SECTION keeps, and why it is a SHAPE and not a pattern
+
+> **Scope: this section — its preamble and the bodies of rules 1, 1b, 2, 3 and 4.** Within it, three
+> forms are refused:
+>
+> 1. a **count of anything in this repository**, in digits or in words — including a count of this
+>    section's own contents;
+> 2. a **`file:line` locator** where the name of the symbol, constant or comment would serve;
+> 3. a **document-relative position** — *"twenty lines below"*, *"the section above"*.
+>
+> Everything else stays, including quotations of code and cross-references by name.
+
+⚠ **THE ENUMERATION IS THE TEST. The sentence that follows is its reason, not its criterion** —
+r5 (Medium). An earlier version led with *"makes no claim about the repository's contents"*, and
+that clause, read as the test, forbids three load-bearing expressions these rules need: rule 4's
+verbatim quotation of `check-merge-ready.py`'s `WORKFLOW` comment, its observation that `ci.yml`
+mentions `check-schema-gates.sh` only inside comments, and rule 3's cross-reference to
+`review-method.md` §0 Q2 step 5. All three are true, all three are the rules' best evidence, and
+`review-method.md` itself makes quoting-with-a-locator a **requirement** rather than a hazard. A
+criterion that condemns the repo's own standing rule is the wrong criterion.
+
+⚠ **AND THE SCOPE IS THIS SECTION, NOT THE REPOSITORY** — r5 (High). The first version said *"a
+governing rule's body"*, which reads either as this section (no reach beyond it) or as every rule in
+the repo — and the wide reading condemns `docs/review-method.md`, which carries many bare `:NNN`
+locators in governing rule bodies and, at *"must paste the relevant lines, with a `file:line`"*,
+**mandates the form**. Widening this invariant is a real question and it needs an audit of what it
+would condemn; that audit is **backlog #181's** work, not a sentence written here. Claiming
+repo-wide reach without it would be the over-claim this section is about. Those belong in review and rationale documents, which are dated and expected to
+> go stale.
+
+⟳ **FIVE consecutive attempts narrowed to the form just seen** — bolded digits, then any digits,
+then number-words, then locators. Each fix was correct and none terminated, because each was a
+*pattern* and the next instance wore a different spelling.
+
+⛔ **And a wider pattern is already refuted, twice.** *Qualify every number in prose* above records
+the syntactic hunt being measured and rejected at three scopes. Re-run over this section while
+writing this paragraph: a numeric sweep flags **most of it** — dates, PR ids, rule numbers, row
+references, and the word *one* used as a pronoun — while the genuinely repo-tracking expressions
+were a handful. That is the same false-positive result one more time.
+
+**So the terminating move is the invariant above, checked by reading, not by matching** — the shape
+`check-merge-ready`'s own soundness check argues for: *a hand-rolled parser cannot be made correct;
+it can be made unable to be silently wrong.* Here the equivalent is that there is nothing to parse:
+the rule simply does not make claims that can rot.
+
+---
+
 ## Presenting a DECISION to the human (added 2026-09-04)
 
 **Read when:** you are about to ask the human to choose. Not when you are discussing a design —
@@ -570,6 +758,34 @@ a file, answering a question, a one-line correction: naming these costs more tha
 | 1 | a **plan slug** — `scripts/begin-plan.py <slug> …` | banners derive their thread name from the slug. With nothing armed there is no name to print, and the measured outcome is that bannering stops altogether rather than the gap being noticed |
 | 2 | a **branch** | `dev-process.md` Phase 5 already requires branch + PR for any `lib/ app/ scripts/ tests/` or config change. A side job is not an exception to it |
 | 3 | a **backlog row** — ONLY if you are deferring it | filing what you are about to do in the next ten minutes is bookkeeping. Filing what you are NOT going to do is the point. ⚠ Filing is the user's step — agree before filing |
+
+### ⛔ A side job inherits NO design approval from the slice it arrived in (added 2026-09-24)
+
+The name gets it a thread. It does **not** get it the review the parent work had.
+
+**Measured, one branch, same reviewers, same gates — the only variable was whether the work had a
+design** (backlog #177, `docs/development-velocity.md` §4):
+
+| Work on PR #342 | Had a design? | Outcome |
+|---|---|---|
+| observer-log record | ✅ an architecture review filed beforehand | **CONVERGED by round 3** |
+| verdict path | ❌ opportunistic side job, entered mid-round-3 | **thrashed 3 rounds**, then needed its own architecture review |
+
+⚠ **The fix is NOT more upfront review.** The verdict path was out of scope and untouched when the
+first review ran, so no amount of reviewing at the start would have covered it — and reviewing
+everything upfront to catch what you might stumble into is waterfall. **The gap is that work
+entering AFTER the review inherits none of it**, while arriving on a branch that already looks
+approved.
+
+So when a side job is sized YES, ask of the side job itself: *does this move a seam — a new module,
+a change to who owns what, a new protocol or vocabulary — or is it logic inside an existing one?*
+Seam work wants its design settled before it is built, on a branch of its own.
+
+⟳ **When backlog #177's Q0 lands in `review-method.md` §0, this is the moment that re-asks it** —
+decided 2026-09-24 with the user, form recorded in that row. Until then the question above is asked
+by hand, and the four signals that say *seam* are in `development-velocity.md` §3 — **which are
+OBSERVATIONS, usable now.** That document's banner marks §3 *not built*, meaning not mechanised;
+it does not mean not applicable, and r1 (Low) found that reading available.
 
 ### Switching, and what is actually supervised
 
