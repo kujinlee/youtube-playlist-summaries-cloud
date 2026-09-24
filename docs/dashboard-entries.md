@@ -12006,3 +12006,52 @@ shape it exists for. It now receives the promotion path.
 Gates: `codex-review` 124/124, `check-plan-code` 131/131, every `check-*` in `ci.yml` rc=0
 (including the two Postgres-backed ones, run for real), `--mutate .` 995/995/0.
 NOT reviewed yet — round 1 is next.
+
+## 2026-09-24
+The review-identity work is merged, and the backlog row describing it was wrong until now.
+
+PR #343 is on master. It finishes the repair the architecture review called for: a review now states
+its own name when it is dispatched, instead of the harness trying to guess that name from a
+temporary file. Three adversarial rounds, both reviewers each time, and the third round came back
+with nothing — which is the outcome the process is aiming for.
+
+Something worth knowing came out of tidying up afterwards. The merged work did not carry its own
+closing tick, so for a while master held a backlog row that said this work was "not started" while
+the work was sitting a few commits above it. The check built precisely to catch that kind of stale
+row stayed silent, and not by accident: it only recognises a closing note written in one exact
+shape, and the merge commit wrote it a slightly different way. So the check being quiet about a row
+is not the same as the row being right — which is worth remembering, because it is the only check
+that compares the backlog against what actually happened rather than against itself.
+
+The same check flagged two other rows as finished. Both were wrong. It cannot tell the commit that
+CREATED a row from the commit that closed one, and in both cases it had found the commit that
+created it. Those two rows are untouched and stay open.
+
+One piece of this work is still outstanding: a written architecture decision about who is allowed to
+write review files. It had been recorded as something to do "if this lands". It has landed, so it is
+now simply due.
+
+<!--tech-->
+**PR #343 MERGED as `45b65cb7`** (squash), backlog #176. Three rounds, both halves each, r3 Codex
+CONVERGED with no findings. `check-merge-ready.py` READY; `verify` 9m35s and `schema-gates` 1m43s
+both green. Branch `review-identity-176` deleted local and remote.
+
+**`tick-176`** — `docs/backlog.md` row 176 and three `docs/roadmap-to-launch.md` lines. Every
+replacement asserted `src.count(old) == 1` before applying.
+
+⭐ **`check-backlog-closure.py` was silent about #176 by design.** It keys on `(backlog #N)` at the
+subject TAIL; #343's squash subject carried the token unparenthesised — `… names itself — backlog
+#176 (#343)` — so no closing token was seen at all. The tail rule is the right trade-off (measured:
+ANY-occurrence matched 18 ids and would have fired on 10; the tail rule matched 7 and fired on 1, a
+true positive) but the consequence is that its silence is not evidence.
+
+⚠ **Its two WARN rows, #117 and #159, are FALSE POSITIVES.** `git show 939c97b4 -- docs/backlog.md`
+and `git show b184bbbc -- docs/backlog.md` each show the cited commit ADDING the row it is credited
+with closing. The grammar cannot separate "filed" from "closed". Not fixed and not filed — filing is
+the user's step; surfaced for a decision.
+
+⚠ **`check-dashboard-entry.py` returned rc=0 on this very change before it was committed** and rc=1
+after. Its subject is a git range, so an uncommitted tree gives it an empty set and a vacuous pass.
+
+`check-docs.py` supplied the closed-row convention: the leading marker becomes `✅ (was 🟠)`, so a
+severity scan cannot still count the row open.
