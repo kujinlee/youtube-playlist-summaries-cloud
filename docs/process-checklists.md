@@ -449,7 +449,7 @@ full review round to surface:
 
 ⭐ **These are the cheapest findings in the repo to prevent and the most expensive to catch.** A
 defect in code needs a reviewer who understands the code; an invented number needs only a reviewer
-who checks, which is why they survive to round 5. All four rules below cost nothing to follow.
+who checks, which is why they survive to round 5. Every rule below costs nothing to follow. ⚠ **They are numbered 1, 1b, 2, 3, 4 — five of them.** An earlier version said *"all four"* and did not move when 1b was added (r3, Low): a count of the rules, inside the rules about counts.
 
 ### 1 · No number unless it was measured in THIS session
 
@@ -467,26 +467,35 @@ same act. Cite the **symbol or the command**, not the recollection.
 
 ### 1b · Say WHAT YOU COUNTED, not just that you counted
 
-⟳ **Added 2026-09-24 from this rule's own first review round, which found three instances of it in
-the change that introduced the rule.** A number can be honestly measured and still be false,
-because the label names a different population from the command:
+⟳ **Added 2026-09-24, then REDESIGNED in the same slice's round 3.** A number can be honestly
+measured and still be false, because the label names a different population from the command.
 
-| Written | Measured | The gap |
+⛔ **THIS RULE QUOTES NO LIVE FIGURE, AND THAT IS THE RULE'S OWN DESIGN — NOT AN OVERSIGHT.**
+Three consecutive review rounds found a wrong number *inside this rule*, each introduced by the
+previous round's fix, and every one of them was a figure the text had to keep in sync with the
+repository. Rule 3 twenty lines below had already solved this — *"the survivor COUNT is
+deliberately not quoted here"* — and this rule was written doing the opposite. So: **the examples
+below are SHAPES. Where a count would go, they say `N`.** A rule that must be re-measured whenever
+the repo changes is a rule that goes stale silently, which is the defect it was written to prevent.
+
+| Written | What the command actually answered | The gap |
 |---|---|---|
-| *"28 gates named"* | distinct `scripts/check-*.py` in one workflow | the regex excluded `.sh`; "gates" names steps (54), scripts (34) or workflows — not this |
-| *"the draft PR caught #176 r2's Blocking"* | a Blocking that states it rests on an anchor measurement, **not** a CI verdict | the claim named a cause the source explicitly disclaims |
+| *"N gates named"* | distinct `scripts/check-*.py` matched in one workflow | the regex excluded `.sh`, and *gates* could equally mean `run:` steps, all invoked scripts, or workflows |
+| *"the draft PR caught that Blocking"* | nothing — the cited review states it rested on a different measurement | the claim named a cause its own source disclaims |
 | *"derive from `ci.yml`"* | one of two required workflows | the scope was the hand-written part |
-| *"34 distinct scripts invoked by `ci.yml`"* | `grep` over the file's **text** — 33 are invoked | ⟳ **r2 Medium: this table's own row, written to illustrate the rule, committed the defect.** The 34th is mentioned only in a comment |
+| *"N distinct scripts invoked by `ci.yml`"* | a `grep` over the file's **text**, not what it runs | a script mentioned only in a comment is counted |
 
-**So a number carries its population or it is not a measurement.**
+**So a number carries its population, or it is not a measurement.** Write *"N distinct scripts
+**invoked by** `ci.yml`, counted by parsing its `run:` blocks"* — the population and the method —
+never *"N gates"*.
 
-⛔ **THE FOURTH ROW IS THE STRONGEST ONE, AND IT WAS NOT PLANNED.** Rule 1b was written in the r1
-fold from the three rows above; writing it produced the fourth, in the same paragraph, and review
-round 2 found it. A rule that catches its own author while he is writing it down is not a rule
-about carelessness — **the slip is in how measuring works**, because `grep` answers a question that
-sounds identical to the one you meant and is not. Write *"34 distinct scripts
-invoked by `ci.yml`"*, never *"34 gates"*. ⚠ This is the failure mode that survives rule 1: rule 1
-asks *did you measure it*, and all three answered **yes**.
+⚠ **AND THE POPULATION SLIP IS NOT ONE MISTAKE REPEATED.** Rows 1 and 4 are the same shape: a
+command answered a question that *sounded* identical to the intended one. Row 3 is a **scope**
+error — the right question asked of too few files. Row 2 is neither; it is a claim with no
+measurement behind it at all, and rule 1 already catches that one. **The table is kept whole
+because the differences are the point**: only rows 1 and 4 support *"the slip is in how measuring
+works"*, and r3 (Medium) found the first version of this paragraph generalising from all four. Two
+rows are enough to justify the clause; claiming four was the same defect one level up.
 
 ### 2 · Fix the sentence IN PLACE
 

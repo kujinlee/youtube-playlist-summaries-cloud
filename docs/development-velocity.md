@@ -190,8 +190,13 @@ each costing a full round to surface:
 
 **Four rules came out of this, all free. ⛔ THEY ARE NOT RESTATED HERE** — they govern from
 `docs/process-checklists.md` → *Reduce defect INJECTION, not just detection*. In outline only, so
-you know what this measurement bought: provenance of numbers, fixing a sentence in place, a class
-claim requiring a class sweep, and deriving gate lists rather than recalling them.
+you know what this measurement bought: provenance of numbers (rule 1), **the population a number
+names** (rule 1b), fixing a sentence in place, a class claim requiring a class sweep, and deriving
+gate lists rather than recalling them — **five rules, not four.**
+
+⟳ **r3 Low: this outline said four and omitted 1b**, which rule 1's own ⚠ insists is a *different*
+rule from rule 1 — so folding it in was not available as a defence. 1b did not exist when §6 was
+written; it was produced by §6's own first review round.
 
 ⛔ **THIS PARAGRAPH REPLACED A FULL COPY OF THE RULES, AND THE COPY HAD ALREADY GONE WRONG —
 r1 Medium.** It still said *"derive gate lists from `ci.yml`"*, which r1 established is the wrong
