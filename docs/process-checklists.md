@@ -425,6 +425,76 @@ above. Widen the scope there rather than filing a second row.
 
 ---
 
+## Reduce defect INJECTION, not just detection (added 2026-09-24)
+
+**Read when:** writing a commit message, a review document, a PR body, or a claim about what a
+change does. Not when reviewing — this is about what the AUTHOR puts on the page for a reviewer to
+find.
+
+**The measurement that produced it (backlog #177, `docs/development-velocity.md` §6).** Over the
+session that merged PR #342 and implemented backlog #176, a large share of review findings were not
+defects in the code at all. They were **the author's own unverified claims**, and each one cost a
+full review round to surface:
+
+| Finding | What it actually was |
+|---|---|
+| PR #342 r5 H1 | a correction **appended below** a false paragraph; the commit message said it was fixed |
+| backlog #176 r1 L1 | commit message said `1858 → 1755` lines; measured `1858 → 1869` — the file **GREW** |
+| PR #342 r5 M1 + r5 Codex Medium | *"the class is closed"* — asserted twice, both times an instance fix |
+| backlog #176 r1 M3 | `183 verdicts` — wrong (184), and copied into three further places |
+
+⭐ **These are the cheapest findings in the repo to prevent and the most expensive to catch.** A
+defect in code needs a reviewer who understands the code; an invented number needs only a reviewer
+who checks, which is why they survive to round 5. All four rules below cost nothing to follow.
+
+### 1 · No number unless it was measured in THIS session
+
+Not recalled, not carried from a previous document, not inferred from a diff you did not run. If you
+did not produce it with a command in this session, either **derive it now** or write what you
+actually know without the number.
+
+⚠ **This is NOT the rule at *Qualify every number in prose*** above. That one is about
+**resolvability** — `backlog #39`, not a bare `#39`. This one is about **provenance** — whether the
+number is true. A number can be perfectly qualified and entirely invented, and `backlog #176 r1 M3`
+was exactly that.
+
+⛔ **The corrections fail too.** Re-deriving a remembered number from memory a second time is the
+same act. Cite the **symbol or the command**, not the recollection.
+
+### 2 · Fix the sentence IN PLACE
+
+An appended correction is not a fix. The reader meets the wrong sentence first and may stop there.
+Edit the claim where it stands; if the history matters, keep the original **as a marked strikethrough
+or a ⟳ note attached to the corrected sentence**, never as a later paragraph that argues with an
+earlier one.
+
+⚠ The exception is an **append-only store** (`docs/dashboard-entries.md`), where a correction is
+required to be a new entry — because there, ids are positional and editing rebinds them. Everywhere
+else, in place.
+
+### 3 · A class claim requires a class SWEEP
+
+*"The class is closed"* means every member was **enumerated and tested**. It does not mean the named
+instance was fixed and the others look fine. If you cannot state how the members were enumerated,
+you do not have a class claim — you have an instance fix, and saying so costs nothing.
+
+**Worked example from the source session:** perturbing every module-level constant in both touched
+files — 1 survivor found, then 0. That is an enumeration. Reading the file and concluding it looks
+complete is not.
+
+⟳ **This is the AUTHOR-side twin of `review-method.md` §0 Q2 step 5** (*every finding names a
+sample, not a scope*). That step binds the reviewer; nothing bound the author, and the two findings
+above are what that gap produced. Do not restate the reviewer rule here — read it there.
+
+### 4 · Derive gate lists from `ci.yml`, never from memory
+
+Before claiming the gates pass, read `.github/workflows/ci.yml` and run what it names. A
+hand-written list of five gates cost a full CI round-trip in the source session; the file named
+thirty-three. `scripts/check-merge-ready.py` already derives its own list this way — prefer running
+it over assembling one.
+
+---
+
 ## Presenting a DECISION to the human (added 2026-09-04)
 
 **Read when:** you are about to ask the human to choose. Not when you are discussing a design —
@@ -570,6 +640,32 @@ a file, answering a question, a one-line correction: naming these costs more tha
 | 1 | a **plan slug** — `scripts/begin-plan.py <slug> …` | banners derive their thread name from the slug. With nothing armed there is no name to print, and the measured outcome is that bannering stops altogether rather than the gap being noticed |
 | 2 | a **branch** | `dev-process.md` Phase 5 already requires branch + PR for any `lib/ app/ scripts/ tests/` or config change. A side job is not an exception to it |
 | 3 | a **backlog row** — ONLY if you are deferring it | filing what you are about to do in the next ten minutes is bookkeeping. Filing what you are NOT going to do is the point. ⚠ Filing is the user's step — agree before filing |
+
+### ⛔ A side job inherits NO design approval from the slice it arrived in (added 2026-09-24)
+
+The name gets it a thread. It does **not** get it the review the parent work had.
+
+**Measured, one branch, same reviewers, same gates — the only variable was whether the work had a
+design** (backlog #177, `docs/development-velocity.md` §4):
+
+| Work on PR #342 | Had a design? | Outcome |
+|---|---|---|
+| observer-log record | ✅ an architecture review filed beforehand | **CONVERGED by round 3** |
+| verdict path | ❌ opportunistic side job, entered mid-round-3 | **thrashed 3 rounds**, then needed its own architecture review |
+
+⚠ **The fix is NOT more upfront review.** The verdict path was out of scope and untouched when the
+first review ran, so no amount of reviewing at the start would have covered it — and reviewing
+everything upfront to catch what you might stumble into is waterfall. **The gap is that work
+entering AFTER the review inherits none of it**, while arriving on a branch that already looks
+approved.
+
+So when a side job is sized YES, ask of the side job itself: *does this move a seam — a new module,
+a change to who owns what, a new protocol or vocabulary — or is it logic inside an existing one?*
+Seam work wants its design settled before it is built, on a branch of its own.
+
+⟳ **When backlog #177's Q0 lands in `review-method.md` §0, this is the moment that re-asks it** —
+decided 2026-09-24 with the user, form recorded in that row. Until then the question above is asked
+by hand, and the four signals that say *seam* are in `development-velocity.md` §3.
 
 ### Switching, and what is actually supervised
 
