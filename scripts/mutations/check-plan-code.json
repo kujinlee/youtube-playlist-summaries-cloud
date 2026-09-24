@@ -4,8 +4,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        return 2, \"\", (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \"",
-        "        return 1, \"\", (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \""
+        "        return 2, \"\", (f\"CANNOT RUN — {name} --self-test did not finish in \"",
+        "        return 1, \"\", (f\"CANNOT RUN — {name} --self-test did not finish in \""
       ]
     ],
     "expect": "a hung suite is rc 2, distinct from both pass and fail"
@@ -73,8 +73,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            if not control_is_green(rc, out):\n                report.append(f\"CANNOT RUN \u2014 control run of ",
-        "            if False:\n                report.append(f\"CANNOT RUN \u2014 control run of "
+        "            if not control_is_green(rc, out):\n                report.append(f\"CANNOT RUN — control run of ",
+        "            if False:\n                report.append(f\"CANNOT RUN — control run of "
       ]
     ],
     "expect": "a RED control is refused, not reported as catches"
@@ -99,7 +99,7 @@
         "        if isinstance(want, list) and not want and False:"
       ]
     ],
-    "expect": "run_mutations refuses an EMPTY expect list \u2014 a declared-but-empty set"
+    "expect": "run_mutations refuses an EMPTY expect list — a declared-but-empty set"
   },
   {
     "name": "a repeated edit anchor measures nothing twice",
@@ -117,7 +117,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        return \"CANNOT RUN \u2014 the docstring no longer declares a case count.\"",
+        "        return \"CANNOT RUN — the docstring no longer declares a case count.\"",
         "        return None"
       ]
     ],
@@ -288,7 +288,7 @@
         "        if got < want:\n            drift.append(f\"{target}: manifest holds {got} mutation(s), expected {want}. \""
       ]
     ],
-    "expect": "a GROWN manifest is refused too \u2014 the count is exact, not a floor"
+    "expect": "a GROWN manifest is refused too — the count is exact, not a floor"
   },
   {
     "name": "the duplicate mutation NAME refusal stops firing (r1 F5a)",
@@ -306,7 +306,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        except json.JSONDecodeError as exc:\n            problems.append(f\"{man.name}: not valid JSON \u2014 {exc}\")\n            continue",
+        "        except json.JSONDecodeError as exc:\n            problems.append(f\"{man.name}: not valid JSON — {exc}\")\n            continue",
         "        except json.JSONDecodeError:\n            continue"
       ]
     ],
@@ -500,7 +500,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "mutate_delivered keeps the reporter to itself instead of passing it down, so the 434-mutation phase \u2014 the long one \u2014 is the one with no progress",
+    "name": "mutate_delivered keeps the reporter to itself instead of passing it down, so the 434-mutation phase — the long one — is the one with no progress",
     "edits": [
       [
         "progress=progress)",
@@ -529,7 +529,7 @@
     "name": "the label is emitted unbounded again, so a 232-char manifest name wraps to three rows and the line that should visibly stop advancing is no longer one line",
     "edits": [
       [
-        "    return head + label[:max(room - 1, 0)] + \"\u2026\"",
+        "    return head + label[:max(room - 1, 0)] + \"…\"",
         "    return head + label"
       ]
     ],
@@ -581,8 +581,8 @@
     "name": "the merged output goes back to stdout-first, so the tail recorded in the durable evidence object is whatever a child last wrote to stderr, not the failure",
     "edits": [
       [
-        "which is also what they want.\n    \u26a0 The DIAGNOSTIC does not ride on this \u2014 see `diagnostic_tail`. Two rounds were spent\n    choosing an order for it; both orders lose, because the order was never the question.\n    \"\"\"\n    return (stderr + stdout).strip()",
-        "which is also what they want.\n    \u26a0 The DIAGNOSTIC does not ride on this \u2014 see `diagnostic_tail`. Two rounds were spent\n    choosing an order for it; both orders lose, because the order was never the question.\n    \"\"\"\n    return (stdout + stderr).strip()"
+        "which is also what they want.\n    ⚠ The DIAGNOSTIC does not ride on this — see `diagnostic_tail`. Two rounds were spent\n    choosing an order for it; both orders lose, because the order was never the question.\n    \"\"\"\n    return (stderr + stdout).strip()",
+        "which is also what they want.\n    ⚠ The DIAGNOSTIC does not ride on this — see `diagnostic_tail`. Two rounds were spent\n    choosing an order for it; both orders lose, because the order was never the question.\n    \"\"\"\n    return (stdout + stderr).strip()"
       ]
     ],
     "expect": [
@@ -617,7 +617,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "a flooded stdout is allowed to starve stderr of its half, so a suite that crashes AFTER printing loses its traceback \u2014 the regression measured across 28 of 38 suites",
+    "name": "a flooded stdout is allowed to starve stderr of its half, so a suite that crashes AFTER printing loses its traceback — the regression measured across 28 of 38 suites",
     "edits": [
       [
         "    err_keep = min(len(err), max(half, window - len(out)))",
@@ -683,7 +683,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "the diagnostic's split point moves, so one stream's guaranteed half is not half \u2014 at one end of the band a real control crash shows stack frames and no exception",
+    "name": "the diagnostic's split point moves, so one stream's guaranteed half is not half — at one end of the band a real control crash shows stack frames and no exception",
     "edits": [
       [
         "    half = window // 2\n    err_keep",
@@ -696,7 +696,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "the split point is pushed to the far end, so stdout is cut to one character and a [FAIL] line \u2014 median 63 characters in this repo \u2014 cannot fit in the report",
+    "name": "the split point is pushed to the far end, so stdout is cut to one character and a [FAIL] line — median 63 characters in this repo — cannot fit in the report",
     "edits": [
       [
         "stderr.strip()\n    half = window // 2",
@@ -735,7 +735,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "the AFTER-control diagnostic goes back to slicing one merged string \u2014 the identical line to the before-control site, in the same function, and it had no entry",
+    "name": "the AFTER-control diagnostic goes back to slicing one merged string — the identical line to the before-control site, in the same function, and it had no entry",
     "edits": [
       [
         "mutation. Treat this run as NOT \"\n                    f\"CHECKED.\\n    {diagnostic_tail(so, se)}\")",
@@ -748,7 +748,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "the diagnostic window itself shrinks, so every CANNOT RUN report is cut without one case or entry noticing the budget moved \u2014 r4 L2's shape, found by the edge sweep",
+    "name": "the diagnostic window itself shrinks, so every CANNOT RUN report is cut without one case or entry noticing the budget moved — r4 L2's shape, found by the edge sweep",
     "edits": [
       [
         "DIAGNOSTIC_WINDOW = 400",
@@ -761,7 +761,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "the stdout half is sliced from the FRONT, so a control's report shows what it printed first and never the [FAIL] line it died on \u2014 no fixture could see this for five rounds",
+    "name": "the stdout half is sliced from the FRONT, so a control's report shows what it printed first and never the [FAIL] line it died on — no fixture could see this for five rounds",
     "edits": [
       [
         "                                 out[-out_keep:] if out_keep else \"\") if p)",
@@ -803,8 +803,8 @@
     "name": "the ellipsis stops paying for its own character, so a truncated line is one column over the row it is bounded to",
     "edits": [
       [
-        "        return head + label\n    return head + label[:max(room - 1, 0)] + \"\u2026\"",
-        "        return head + label\n    return head + label[:max(room, 0)] + \"\u2026\""
+        "        return head + label\n    return head + label[:max(room - 1, 0)] + \"…\"",
+        "        return head + label\n    return head + label[:max(room, 0)] + \"…\""
       ]
     ],
     "expect": [
@@ -878,7 +878,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "the before-control phase reports its position as its own total, so every line reads [n/n] and 'out of how many' \u2014 the third of the three things a reader needs \u2014 is gone",
+    "name": "the before-control phase reports its position as its own total, so every line reads [n/n] and 'out of how many' — the third of the three things a reader needs — is gone",
     "edits": [
       [
         "progress(position, len(targets), f\"control {name}\")",
@@ -917,7 +917,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "the two-target declaration outlives its block again, so the silence case's root fails a count check and mutate_delivered returns BEFORE the control loop \u2014 an empty stream produced by refusing at the door rather than by running quietly",
+    "name": "the two-target declaration outlives its block again, so the silence case's root fails a count check and mutate_delivered returns BEFORE the control loop — an empty stream produced by refusing at the door rather than by running quietly",
     "edits": [
       [
         "        EXPECTED_MUTATIONS.pop(\"scripts/other.py\", None)\n        with tempfile.TemporaryDirectory() as _td:\n            _r = pathlib.Path(_td); _mini(_r)\n            _me = io.StringIO()",
@@ -928,5 +928,16 @@
       "...and the whole path is silent when nobody asked"
     ],
     "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "r5 codex: the budget every spawned suite runs under drifts with nothing to catch it",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "SUITE_TIMEOUT = 120",
+        "SUITE_TIMEOUT = 3"
+      ]
+    ],
+    "expect": "SUITE_TIMEOUT is pinned — the budget every spawned suite runs under cannot drift silently"
   }
 ]

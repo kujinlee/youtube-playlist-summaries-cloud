@@ -2,7 +2,7 @@
 """A plan that contains code must ASSEMBLE into that code, and its evidence must be RUN.
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
-    python3 scripts/check-plan-code.py --self-test          # 130 cases
+    python3 scripts/check-plan-code.py --self-test          # 131 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -937,7 +937,7 @@ EXPECTED_MUTATIONS = {
     # Low 2: three clauses of `pin_took_effect` were undriven and the first is FAIL-OPEN — an
     # EMPTY `pythonLocation` makes `startswith("/")` true for every absolute path on earth.
     "scripts/check-python-pin.py": 52,
-    "scripts/check-plan-code.py": 76,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 77,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -3590,7 +3590,27 @@ def _self_test() -> int:
     # entirely, its None/{} marker collapsed, and its order made significant) and one for the token
     # WIDTH, which named `TOKEN_HEX` so the 32-bit namespace a birthday collision was demonstrated
     # over cannot come back as a literal in a slice.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 993)
+    # ⛔ **r5 CODEX HALF — THE LAST SELF-AGREEING CONSTANT, AND MY FIX FOR THAT CLASS HAD BEEN AN
+    # INSTANCE FIX OF AN INSTANCE FIX.** `27db82a8` pinned three constants in `codex-review.py` and
+    # declared the class closed; the Claude half had ALREADY named this one, inside its M3, and I
+    # folded only the half of M3 that lived in the other file. Measured: `SUITE_TIMEOUT 120 -> 3`
+    # passes 130/130 — a mutation that changes the operational budget of every suite this harness
+    # runs, invisible to the suite.
+    # ⚠ **THE LITERAL IS THE POINT, AND IT IS NOT `SUITE_TIMEOUT`.** Comparing against the constant
+    # agrees with whatever value it takes; that is the exact hole this case exists to close, and
+    # writing it the other way is how the width case survived at r5.
+    # ⚠ A stronger BEHAVIOURAL form was offered by the reviewer — stub `subprocess.run` and assert
+    # the `timeout` kwarg is exactly 120, which also proves the constant is USED. Not taken here:
+    # it would stub the one call this file makes to run a real suite, and a stub in front of the
+    # harness's only execution path buys a stronger assertion at the cost of the thing it measures.
+    # Recorded so the choice is visible rather than looking like an oversight.
+    # ⭐ THE CLASS IS NOW CLOSED, AND THAT IS MEASURED RATHER THAN ASSERTED: every module-level
+    # literal constant in BOTH touched files was perturbed and re-run — `codex-review.py` 0
+    # survivors (MIN_REVIEW_CHARS, ACCOUNT_FAULT_STATUSES, TOKEN_HEX, VERDICT_SCHEMA all killed),
+    # `check-plan-code.py` this one alone (DIAGNOSTIC_WINDOW, PROGRESS_WIDTH killed).
+    case("SUITE_TIMEOUT is pinned — the budget every spawned suite runs under cannot drift silently",
+         SUITE_TIMEOUT, 120)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 994)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
