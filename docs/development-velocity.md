@@ -5,9 +5,16 @@
 > | Section | Status |
 > |---|---|
 > | **§6 injection rules**, **§7 side jobs** | ✅ **ADOPTED** — they now live in `docs/process-checklists.md` and govern. **Read them there, not here** |
-> | **§2 Q0**, §3 signals, §4 timing rules | 🟠 **DECIDED IN FORM, NOT BUILT** — see §9 Q2 |
-> | **§5 sweep policy** | ✅ draft-PR-at-slice-start adopted as practice; **not** automated |
-> | everything else | proposal |
+> | **§2 Q0**, §4 timing rules | 🟠 **DECIDED IN FORM, NOT BUILT** — see §9 Q2 |
+> | **§3 seam signals** | 🟠 not MECHANISED — but they are **observations you can apply by hand today**, and the governing side-job rule in `process-checklists.md` sends you here for them (r1 Low: *"not built"* read as *"not usable"*) |
+> | **§5 sweep policy** | ⚠ **item 1 ONLY** (draft PR at slice start) adopted as PRACTICE, not automated. Items 2–4 are still proposal, and §5's body still says *"Proposed:"* — that label is correct for them |
+> | **§9 answers**, **§10 brief** | ✅ **DECISIONS, not proposals.** §9 records what was settled and by whom; §10 is the design session's brief |
+> | §1, §3, §4, §8 | measurement and rationale — proposal |
+
+> ⟳ **r1 Low: the three rows above were wrong in the first version of this banner** — it claimed §5
+> wholesale, and bucketed §9 and §10 under *"everything else | proposal"* when they are the
+> settled decisions. A banner that says *read this before citing anything below* is load-bearing,
+> so its own rows are a place a defect hides in plain sight.
 >
 > ⛔ **An adopted rule is not cited from here.** This document is the measurement that justified the
 > rules; `process-checklists.md` is where they govern. Citing a rule from its rationale is how two
@@ -141,7 +148,12 @@ sweep alone takes **~14 minutes**.
 branch with **no PR open** triggers nothing, which is why local sweeping felt necessary.
 
 **Proposed:**
-1. **Open the PR as a DRAFT at the start of a slice.** Every push then sweeps on GitHub.
+1. **Open the PR as a DRAFT at the start of a slice.** Every push then **triggers** a sweep on
+   GitHub. ⟳ **r1 Low — NOT *"every push then sweeps"*, which is what this line used to say and
+   item 3 already contradicted.** With `cancel-in-progress: true` a rapid burst collapses to the
+   latest run, so **the branch TIP is always swept and intermediate commits may not be.** That is
+   the desired behaviour and it is the same *coarser locus* this section already admits below —
+   but the two sentences have to agree, and they did not.
 2. **Sweep locally only before a push**, never per commit — and once (1) is in place, rarely at all.
 3. `concurrency: cancel-in-progress: true` means three quick pushes cost **one** sweep, not three —
    the opposite of the local pattern.

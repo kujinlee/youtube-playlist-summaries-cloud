@@ -427,9 +427,13 @@ above. Widen the scope there rather than filing a second row.
 
 ## Reduce defect INJECTION, not just detection (added 2026-09-24)
 
-**Read when:** writing a commit message, a review document, a PR body, or a claim about what a
-change does. Not when reviewing — this is about what the AUTHOR puts on the page for a reviewer to
-find.
+**Read when:** writing a commit message, a **code comment**, a review document, a PR body, or a
+claim about what a change does. Not when reviewing — this is about what the AUTHOR puts on the page
+for a reviewer to find.
+
+⟳ **`code comment` restored in r1 (Low).** The proposal's scope was *"a commit message, comment or
+doc"* and the first adopted draft silently dropped comments — the surface where a stale count is
+hardest to notice, because nothing re-reads a comment.
 
 **The measurement that produced it (backlog #177, `docs/development-velocity.md` §6).** Over the
 session that merged PR #342 and implemented backlog #176, a large share of review findings were not
@@ -505,7 +509,11 @@ checked. Quoting it here would break rule 1 inside the section that argues for r
 
 ⟳ **This is the AUTHOR-side twin of `review-method.md` §0 Q2 step 5** (*every finding names a
 sample, not a scope*). That step binds the reviewer; nothing bound the author, and the two findings
-above are what that gap produced. Do not restate the reviewer rule here — read it there.
+above are what that gap produced.
+
+⚠ **"Do not restate" applies to THAT step, not to this rule** — r1 Low. The paragraphs above state
+the author rule in full on purpose, because this is where it governs. What must not be copied here
+is the reviewer's step; read that one at its own site.
 
 ### 4 · Derive gate lists from the WORKFLOWS, never from memory — and never from one workflow
 
@@ -698,7 +706,9 @@ Seam work wants its design settled before it is built, on a branch of its own.
 
 ⟳ **When backlog #177's Q0 lands in `review-method.md` §0, this is the moment that re-asks it** —
 decided 2026-09-24 with the user, form recorded in that row. Until then the question above is asked
-by hand, and the four signals that say *seam* are in `development-velocity.md` §3.
+by hand, and the four signals that say *seam* are in `development-velocity.md` §3 — **which are
+OBSERVATIONS, usable now.** That document's banner marks §3 *not built*, meaning not mechanised;
+it does not mean not applicable, and r1 (Low) found that reading available.
 
 ### Switching, and what is actually supervised
 
