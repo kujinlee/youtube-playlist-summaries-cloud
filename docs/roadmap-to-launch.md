@@ -2118,6 +2118,14 @@ had updated to say otherwise.)
       because seven rounds were once argued in words the file did not contain, and it has now
       answered three thrashing reviews. ⚠ The most speculative of the three: a term with no rule
       behind it is vocabulary.
+- [ ] **🔴 backlog #182 — two grammars for one review-gap concern.** Following
+      `docs/round-header-template.md` puts a branch in violation of a REQUIRED CI gate. Measured on
+      this branch: red `verify` for FOUR rounds, unnoticed because the gate's rc=0 from r1 was
+      carried forward. ⛔ One grammar wins and the loser is **deleted, not deprecated**.
+- [ ] **backlog #183 — `dev-process.md` says thirteen schema gates in one row and fifteen in
+      another.** Pre-existing on master. ⭐ A live instance of #179's principle in the spine itself,
+      and the evidence that separates the three candidates: **#180's pointer would not reach it.**
+      ⛔ Remove the count, do not correct it.
 
 ⚠ **Measured, so the priority is not guessed:** 7 sweeps ≈ 100 min but ~0 tokens; 3 of 5 review
 rounds were rework; GitHub runs the sweep ~2× faster than this machine (8m08s for the whole `verify`
