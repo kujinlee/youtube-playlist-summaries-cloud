@@ -66,11 +66,22 @@ field), so it was not a cheaper version of this fix.
 Usage:
   scripts/codex-review.py --review-id <subject>-r<N>-codex --out "$(mktemp -d)/r.md" "<prompt>"
   scripts/codex-review.py --review-id <stem> --out <scratch> --prompt-file <file> [--timeout 900]
-  scripts/codex-review.py --self-test  # 124 cases
+  scripts/codex-review.py --self-test  # 155 cases
 
 Exit codes:  0 = a real review was written and promoted
-             1 = no candidate produced one (the gate did NOT run)
-             2 = CANNOT RUN / REFUSED — nothing was measured
+             1 = no candidate produced one (the gate did NOT run) — fall back to a Claude half
+             2 = CANNOT RUN / REFUSED — nothing was measured, nothing was written
+             3 = THE GATE RAN AND THE REVIEW IS NOT FILED — a real review exists at `--out` and
+                 the promotion was refused or failed. ⛔ DO NOT FALL BACK: `docs/plugins.md`'s
+                 fallback rule applies to 1 and 2, and applied here it would discard a Codex
+                 review that was paid for and exists. File the capture, or re-run with
+                 `--allow-overwrite` if replacing the existing one is what you meant. (r1 M4:
+                 this used to exit 2, so the contract could not tell it from "nothing happened".)
+
+⚠ EVERY exit from the moment the id is known writes testimony. A REFUSAL writes its own to
+`<review-id>.refused.verdict.json` and NEVER to `<review-id>.verdict.json` — see
+`refusal_verdict_path`; the refusal that protects an artifact must not destroy the record beside
+it, which is what it did before r1 B1.
 """
 from __future__ import annotations
 
@@ -80,6 +91,7 @@ import inspect
 import json
 import os
 import re
+import shutil
 import subprocess
 import importlib.util
 import sys
@@ -106,6 +118,17 @@ HALVES = _rounds.HALVES
 # Minimum characters in the final message below which we refuse to call it a review. Even a terse
 # "no findings" verdict clears this comfortably; an empty or stub message does not.
 MIN_REVIEW_CHARS = 200
+
+# ⛔ THE GATE RAN AND THE REVIEW IS NOT FILED — r1 M4. Its own code, because `2` already means
+# *CANNOT RUN / REFUSED — nothing was measured*, and `docs/plugins.md` (imported by `CLAUDE.md`)
+# turns that into *"fall back: run a Claude adversarial review in its place and record a REVIEW
+# GAP"*. Applied to this outcome that instruction discards a Codex review that was paid for and
+# EXISTS at `--out`. One exit code cannot mean two opposite things — the contract the rest of the
+# process reads is the number, and this file's whole history is of callers losing stderr.
+# ⚠ A CONSTANT SO IT CAN BE FALSIFIED. The literal at the call site could be reverted with every
+# case still green; a named value can be pinned against a literal, and against `2`, by cases whose
+# subject is the PARTITION rather than the digit.
+RC_NOT_FILED = 3
 
 # Structured HTTP status from the CLI's own `ERROR: {...}` diagnostic. Advisory only (see above).
 ERROR_LINE = re.compile(r'^ERROR:\s*\{.*"status"\s*:\s*(\d+)', re.MULTILINE)
@@ -260,7 +283,47 @@ REVIEW_ROOT = os.path.join("docs", "reviews")
 # ⟳ 2 (2026-09-13): `head` and `dirty`. The verdict could say the gate RAN and not what it ran
 # AGAINST, so nothing downstream could tell a review of the tree that will merge from a review of
 # the tree as it stood before three fixes landed. `check-review-recorded.py` reads both.
-VERDICT_SCHEMA = 2
+# ⟳ 3 (2026-09-23, backlog #176, r1 M2): THE MEANING OF `review` CHANGED, WHICH IS WHAT A SCHEMA
+# VERSION IS FOR. Before the cutover it was the basename of the wrapper's SCRATCH `--out`; from
+# here it is the review's durable filename, the key `check-review-rounds.verdict_problems` joins
+# on. Left at 2 the two eras were indistinguishable to any reader — measured over the corpus at
+# this commit, 99 records already carried `schema: 2` — so the era boundary was prose with nothing
+# in the data behind it, and deleting the prose went green everywhere. The consumer now reads this
+# number instead of a date in a comment. `refused` (below) arrives in the same version.
+VERDICT_SCHEMA = 3
+
+
+def is_single_segment(review_id: str) -> bool:
+    """True when `review_id` is ONE path component and cannot traverse out of it. PURE.
+
+    ⛔ r1 H1. `check-review-rounds.PATTERNS` spells the subject `(?P<subject>.+)`, which matches
+    `/` and `..` — correct for ITS job, which is recognising filenames that already exist, and
+    wrong as the only constraint on a string this wrapper `os.path.join`s into two destinations it
+    then WRITES. Measured at `4c29fe25`, all three accepted with a valid writer:
+
+      `../foo-r1-codex`              -> docs/reviews/foo-r1-codex.md — THE ARTIFACT ROOT, the one
+                                        place `promotion_path`'s docstring calls unreachable and
+                                        `quarantine()` moves files out of, and a verdict outside
+                                        `verdicts/` where `read_verdicts` globs, so CI sees nothing
+      `docs/reviews/codex/foo-…`     -> two levels down, where `review_files` (ONE level) cannot
+                                        see it: the round reads as having one reviewer
+      `../../escape-r1-codex`        -> out of `docs/reviews/` entirely
+
+    ⚠ THE CONSTRAINT BELONGS HERE, NOT IN THE GRAMMAR. Tightening `check-review-rounds.parse`
+    would change what the consumer recognises on disk, which is a different question and is
+    already right. This is the WRAPPER'S INPUT being validated at the one gate every derivation
+    passes through: `main` refuses before `verdict_path` or `promotion_path` is ever called, so
+    neither needs a second containment rule of its own — and a second one is how this repo's
+    most-repeated defect starts.
+
+    ⚠ Both separators, not `os.sep` alone: a `\\` is a separator on one platform and an ordinary
+    character in a filename on the other, and an id is not the place to let that decide.
+    """
+    if not review_id:
+        return False
+    if "/" in review_id or "\\" in review_id:
+        return False
+    return review_id not in (".", "..")
 
 
 def review_identity(review_id: str) -> "tuple[str | None, str | None]":
@@ -281,7 +344,22 @@ def review_identity(review_id: str) -> "tuple[str | None, str | None]":
     real thing filed in `docs/reviews/coordinator/` — but it ADJUDICATES the two halves and is not
     one, which is why `HALVES` excludes it. This wrapper dispatches a review half; promoting one
     under a coordinator name would make a round look complete with one reviewer and its own summary.
+
+    ⚠ THE PATH CHECK COMES FIRST (r1 H1). `docs/reviews/codex/foo-r1-codex.md` is two mistakes at
+    once, and being told about the extension while the wrapper silently files two levels down is
+    the less useful half of the answer.
     """
+    if not is_single_segment(review_id):
+        return None, (
+            f"CANNOT RUN — --review-id {review_id!r} is a NAME, not a path. It must be ONE path "
+            f"segment: no `/`, no `\\`, and not `.` or `..`. The wrapper chooses the directory "
+            f"itself — `docs/reviews/<writer>/` for the review and `docs/reviews/verdicts/` for "
+            f"its testimony — from the WRITER in the id, so a path here does not point the "
+            f"promotion somewhere, it relocates it: `../x-r1-codex` files the half at the artifact "
+            f"ROOT, the no-legitimate-writes zone `quarantine()` moves files out of, and puts the "
+            f"verdict where CI does not look; `docs/reviews/codex/x-r1-codex` files it two levels "
+            f"down, where check-review-rounds.py cannot see it and the round reads as having one "
+            f"reviewer. Pass the stem alone. TREAT THIS AS NOT RUN.")
     if review_id.endswith(".md"):
         return None, (
             f"CANNOT RUN — --review-id is a STEM and must be given without the .md extension: "
@@ -339,6 +417,50 @@ def verdict_path(review_id: str) -> str:
     return os.path.join(REPO_ROOT, VERDICT_DIR, f"{review_id}.verdict.json")
 
 
+def refusal_verdict_path(review_id: str) -> str:
+    """Where a REFUSAL's own testimony goes — NEVER the path it is protecting. PURE.
+
+    ⛔ **r4 M5, RESTORED AFTER BEING RETIRED WITH THE WRONG SUBJECT (r1 B1).** This function existed
+    on master, was deleted by backlog #176 along with the `--out`-derived namespace, and the
+    retirement argument covered the ALLOCATOR while the hazard it guarded was never about
+    allocation. The retired manifest entry states it verbatim: *"the refusal testifies to the very
+    path it is protecting, destroying it"*. That invariant is independent of how the name is
+    derived, so deleting the derivation left it unguarded — and the same commit added a NEW refusal
+    (the promotion target already exists) that violated it.
+
+    MEASURED at `4c29fe25`, driven end to end: re-dispatching an id whose review is already filed
+    took the refusal path, the refusal returned through `emit`, `write_verdict` opened `"w"`, and a
+    committed `{"gate_ran": true, …}` became `{"gate_ran": false, "reason": "refused: …"}`. The
+    refusal changed nothing about the review — and destroyed the only surviving proof that a real
+    gate had ever run over it. `check-review-rounds.verdict_problems` then reported 1 problem
+    telling the reader to DELETE a genuine adversarial review.
+
+    ⚠ `check-review-recorded.py` CANNOT SEE THIS AND MUST NOT BE RELIED ON. It selects a branch's
+    verdicts with `--diff-filter=A`; an overwritten file is **M**, not **A**, so the destruction is
+    invisible to the one guard a reader would expect to notice it.
+
+    ⚠ THE SEPARATE PATH IS ONLY HALF THE FIX, AND THE OTHER HALF IS THE `refused` FIELD, NOT THIS
+    NAME. A refusal record still names the review it is about, so a consumer globbing `*.json`
+    would read it as testimony that the gate did not run and accuse the filed review all over
+    again. Two concerns, two mechanisms, deliberately: this path stops the WRITE destroying
+    evidence; `verdict_record(refused=True)` stops the READ misinterpreting it. Keying the
+    consumer on this filename instead would be a second implementation of the naming rule.
+    """
+    return os.path.join(REPO_ROOT, VERDICT_DIR, f"{review_id}.refused.verdict.json")
+
+
+def testimony_path(review_id: str, *, refused: bool) -> str:
+    """The path THIS RUN's testimony is written to. PURE, and the only place the choice is made.
+
+    ⭐ ONE SELECTION, SO A NEW REFUSAL CANNOT FORGET IT. `emit` is already the single exit from
+    `main`; making it ask this function rather than carry an `if` of its own means the rule lives
+    where a case can drive both directions and a mutation can invert it. The alternative — the
+    branch inline at the one call site — is exactly the shape r4 M5 was filed against the first
+    time, and it survived retirement precisely because nothing held it in place.
+    """
+    return refusal_verdict_path(review_id) if refused else verdict_path(review_id)
+
+
 def promotion_path(review_id: str, who: str) -> str:
     """Where the captured review is FILED, durably: `docs/reviews/<writer>/<review-id>.md`. PURE.
 
@@ -349,6 +471,47 @@ def promotion_path(review_id: str, who: str) -> str:
     `check-review-rounds.review_files` already reads, so nothing downstream changes.
     """
     return os.path.join(REPO_ROOT, REVIEW_ROOT, who, review_filename(review_id))
+
+
+def out_location_refusal(out_path: str) -> "str | None":
+    """Refuse an `--out` inside the artifact tree, or None. PURE — no filesystem, no `realpath`.
+
+    ⛔ **r1 M5: THE SAFETY ARGUMENT WAS TRUE ONLY UNDER A CONDITION NOTHING ENFORCED.** Three texts
+    assert that `quarantine()` cannot reach a promoted half because `dir_snapshot` is
+    NON-RECURSIVE. Non-recursion is not what makes that true: `watched_dirs` starts with
+    `os.path.dirname(--out)`, so an `--out` inside `docs/reviews/codex/` makes that writer
+    directory a WATCHED ROOT and recursion never enters into it.
+
+    MEASURED by the r1 reviewer against this branch: a failing run with `--out` in
+    `docs/reviews/codex/`, beside a concurrently promoted half, reported that half as
+    *"CREATED during the run (writer unattributed)"* and `quarantine()` MOVED IT OUT OF THE
+    REPOSITORY — backlog #92's disaster reproduced against the new layout, on the FALLBACK path,
+    i.e. against the very review being written to replace the failed one. A milder second drive
+    showed the wrapper's own promotion accusing itself.
+
+    So the condition is enforced rather than assumed, and the three claims now name it. ⚠ It
+    refuses nothing legitimate: the documented shape is `--out "$(mktemp -d)/r.md"`, OUTSIDE the
+    repository entirely, and the durable copy is what `--review-id` names.
+
+    ⚠ LEXICAL, ON `abspath`, NOT `realpath`. `realpath` resolves symlinks, which asks the
+    filesystem a question about a path that need not exist yet; the check must give the same
+    answer before the file does. A symlinked route around it is a determined caller, and this
+    guards the distracted one — the same bound `dir_snapshot`'s own comment states.
+    """
+    tree = os.path.join(REPO_ROOT, REVIEW_ROOT)
+    here = os.path.dirname(os.path.abspath(out_path)) or "."
+    if here != tree and not here.startswith(tree + os.sep):
+        return None
+    return (f"CANNOT RUN — --out is inside the artifact tree: {out_path}\n"
+            f"  --out is a SCRATCH path and the documented shape puts it outside the repository "
+            f"(`--out \"$(mktemp -d)/r.md\"`).\n"
+            f"  Its directory becomes a WATCHED root, so on the failure path quarantine() would "
+            f"move a concurrent\n"
+            f"  review half out of the repository — measured, backlog #92 — and on the success "
+            f"path the wrapper\n"
+            f"  accuses itself of its own promotion. The durable copy is what --review-id names; "
+            f"--out never needs\n"
+            f"  to be in {REVIEW_ROOT}. TREAT THIS AS NOT RUN.")
 
 
 def overwrite_refusal(path: str, *, exists: bool, allow_overwrite: bool,
@@ -414,7 +577,7 @@ def verdict_record(*, gate_ran: bool, exit_code: int, review_id: str, reason: st
                    model: "str | None" = None, attempts: "list[str] | None" = None,
                    intrusions_seen: "list[str] | None" = None,
                    head: "str | None" = None, dirty: "dict[str, str] | None" = None,
-                   prompt: "str | None" = None) -> dict:
+                   prompt: "str | None" = None, refused: bool = False) -> dict:
     """The testimony, as data. PURE — no clock, no filesystem, so a case can assert every field.
 
     `gate_ran` is the load-bearing field and is stated SEPARATELY from `exit_code`, not derived
@@ -426,8 +589,13 @@ def verdict_record(*, gate_ran: bool, exit_code: int, review_id: str, reason: st
     `check-review-rounds.verdict_problems` joins it against the review filenames actually on disk.
     Under the documented `--out "$(mktemp -d)/r.md"` shape that key was the string `r.md` for every
     review in the repository, so a testimony saying the gate did not run could sit beside the review
-    it is about and match nothing: measured, 0 problems reported where the real name reports 1, over
-    a corpus of 183 verdicts of which 58 name a review that is not filed. ⚠ `--verdict` could NOT
+    it is about and match nothing: measured, 0 problems reported where the real name reports 1.
+    ⚠ THE CORPUS FIGURE THAT STOOD HERE IS DELETED RATHER THAN CORRECTED (r1 M3). It read
+    *"183 verdicts, 58 not filed"*; the count was **184** at base and at head, so it was wrong when
+    it was written and it was copied rather than re-derived into three further places. And the
+    denominator moves on every run, so a frozen copy inside a shipped script is stale by
+    construction — the *document inside the corpus it measures* shape. `check-review-rounds.py`
+    PRINTS both counts live on every run; read them there. ⚠ `--verdict` could NOT
     fix that and is retired — it overrode the verdict's own FILENAME and was never passed here at
     all, so a caller naming their testimony deliberately still wrote a record keyed by scratch.
     The spelling is `review_filename`'s, shared with the promotion, so the two cannot drift.
@@ -448,11 +616,21 @@ def verdict_record(*, gate_ran: bool, exit_code: int, review_id: str, reason: st
     credited by every reviewer dispatched against that tree. The wrapper cannot know what a reviewer
     READ — no representation can — so the honest move is to record the prompt the run was dispatched
     with and let a human see the scope those entries were taken under.
+
+    ⛔ `refused` IS WHAT SEPARATES "THIS RUN DID NOT RUN THE GATE" FROM "NO GATE RAN FOR THIS
+    REVIEW" (r1 B1). A refusal — the artifact already exists, so nothing was attempted — carries
+    `gate_ran: false` because that is true of the run, and names the review because that is what it
+    is about. Read without this field the two sentences are one, and a consumer joining on `review`
+    concludes that a filed review has no gate behind it, which is the opposite of what a refusal
+    means: the artifact exists *because* an earlier run produced it. It is a FIELD rather than a
+    filename rule so the evidence carries its own meaning; `refusal_verdict_path` is the separate
+    concern of not destroying the record next door.
     """
     return {
         "schema": VERDICT_SCHEMA,
         "tool": "codex-review",
         "gate_ran": bool(gate_ran),
+        "refused": bool(refused),
         "exit_code": int(exit_code),
         "review": review_filename(review_id),
         "model": model,
@@ -688,12 +866,15 @@ def unexpected_writes(before: "dict[str, str]", after: "dict[str, str]",
     Everything else in the review directory changing during a review run means the agent reached
     past `-o <tempfile>` — the round-3 failure, which nothing detected at the time.
 
-    ⚠ THE PROMOTION IS NOT EXCUSED BY THAT SET, AND DOES NOT NEED TO BE. It lands in
-    `docs/reviews/<writer>/`, one level below the watched root, and `dir_snapshot` lists a single
-    directory and keeps only regular files — so neither the promoted review nor the directory
-    created for it can appear here at all. Saying which mechanism actually covers it matters: if
-    the snapshot is ever made recursive, this stops being true and the wrapper starts accusing
-    itself, one step before it starts accusing a concurrent Claude half again (backlog #92).
+    ⚠ THE PROMOTION IS NOT EXCUSED BY THAT SET, AND DOES NOT NEED TO BE — **ON TWO CONDITIONS,
+    BOTH NOW ENFORCED, WHERE THIS USED TO NAME ONLY ONE (r1 M5).** It lands in
+    `docs/reviews/<writer>/`, one level below the watched root, and (a) `dir_snapshot` lists a
+    single directory and keeps only regular files, AND (b) `out_location_refusal` refuses an
+    `--out` inside `docs/reviews/`, so no writer subdirectory can become a watched root through
+    `watched_dirs`. Stating (a) alone was the defect: `watched_dirs` begins with `--out`'s own
+    directory, so an `--out` beside the promotion watched it regardless of recursion — measured,
+    and it quarantined a concurrent half. If either condition is ever removed, the wrapper starts
+    accusing itself, one step before it starts accusing a concurrent Claude half again (#92).
 
     ⛔ IT CANNOT NAME THE WRITER, AND MUST NOT PRETEND TO (backlog #92). The evidence is a
     before/after digest map for a directory. That supports exactly one claim — *this file changed
@@ -867,7 +1048,10 @@ def main() -> int:
     ap.add_argument("--out", help="capture the review here FIRST — a SCRATCH path, and the "
                                   "documented shape puts it outside the repository so a stray "
                                   "agent write cannot reach an artifact. Required unless "
-                                  "--self-test. The durable copy comes from --review-id.")
+                                  "--self-test. The durable copy comes from --review-id. "
+                                  "⛔ REFUSED if it points inside docs/reviews/: its directory "
+                                  "becomes a WATCHED root, and on the failure path that "
+                                  "quarantined a concurrent review half out of the repository.")
     ap.add_argument("--model", help="force a single slug; disables fallback")
     ap.add_argument("--timeout", type=int, default=900,
                     help="per-attempt timeout in seconds. The 900s default suits a SMALL "
@@ -920,13 +1104,23 @@ def main() -> int:
               "assigned by whoever files the review. Pass it: "
               "--review-id <subject>-r<N>-codex. Treat this as NOT RUN.", file=sys.stderr)
         return 2
-    # ⚠ THESE THREE REFUSALS LEAVE NO TESTIMONY, AND THAT IS NOT THE r4 M5 HOLE REOPENED. A verdict
-    # is filed UNDER the review id; when the id is missing, retired-flagged or unclassifiable there
-    # is no name to file it under, and inventing one would put a record in the corpus naming a
-    # review that can never exist. Every exit that HAS an id testifies — see `emit` below.
+    # ⚠ THESE REFUSALS LEAVE NO TESTIMONY, AND THAT IS NOT THE r4 M5 HOLE REOPENED. A verdict is
+    # filed UNDER the review id; when the id is missing, retired-flagged, unclassifiable or not a
+    # single path segment there is no name to file it under, and inventing one would put a record
+    # in the corpus naming a review that can never exist. Every exit that HAS a usable id
+    # testifies — see `emit` below, and `refusal_verdict_path` for where a refusal's own testimony
+    # goes once there IS a name, which is the r4 M5 invariant restored (r1 B1).
     who, id_refusal = review_identity(args.review_id)
     if id_refusal:
         print(f"[codex-review] {id_refusal}", file=sys.stderr)
+        return 2
+    # ⚠ r1 M5, and it is a FOURTH refusal with no testimony for the same reason as the three
+    # above: an `--out` inside `docs/reviews/` would make the artifact tree a watched root, and
+    # the run must not start at all. It refuses before the snapshot is taken, so the hazard it
+    # names — a quarantine of whatever is in that directory — cannot be reached.
+    out_refusal = out_location_refusal(args.out)
+    if out_refusal:
+        print("[codex-review] " + out_refusal.replace("\n", "\n[codex-review] "), file=sys.stderr)
         return 2
     prompt = args.prompt
     if args.prompt_file:
@@ -974,24 +1168,33 @@ def main() -> int:
     # never the reviews' names. The token, its width constant, the tracked-file refusal and the
     # git query behind it are all deleted: an id the caller supplies needs no allocator, because
     # two different reviews are two different ids and the same review re-run is the same run.
-    vpath = verdict_path(args.review_id)
+    # ⚠ The testimony's path is chosen inside `emit`, by `testimony_path`, because a REFUSAL goes
+    # somewhere else (r1 B1) and a name computed here would have to be overridden there.
     dest = promotion_path(args.review_id, who)
 
-    def emit(rc: int, *, gate_ran: bool, reason: str, model=None, attempts=None, hits=None) -> int:
+    # ⛔ `refused=True` ROUTES THE TESTIMONY AWAY FROM THE PATH IT IS PROTECTING — r4 M5, deleted
+    # by this slice's first commit and restored by r1 B1. Without it the one path that exists to
+    # touch NOTHING opened the committed verdict with `"w"` and replaced a `gate_ran: true` record
+    # with `gate_ran: false`, then let the new join key accuse the review it had just destroyed the
+    # evidence for. The choice is made by `testimony_path`, not by an `if` here, so a case can
+    # drive both directions and a mutation can invert it.
+    def emit(rc: int, *, gate_ran: bool, reason: str, model=None, attempts=None, hits=None,
+             refused: bool = False) -> int:
         rec = verdict_record(gate_ran=gate_ran, exit_code=rc, review_id=args.review_id,
-                             reason=reason,
+                             reason=reason, refused=refused,
                              model=model, attempts=attempts,
                              head=head_at_dispatch, dirty=dirty_at_dispatch,
                              prompt=getattr(args, "prompt_file", None),
                              intrusions_seen=[f"{os.path.join(d, n)}: {w}" for d, n, w in (hits or [])])
-        err = write_verdict(vpath, rec)
+        where = testimony_path(args.review_id, refused=refused)
+        err = write_verdict(where, rec)
         if err:
-            print(f"[codex-review] CANNOT RUN — the verdict could not be written to {vpath}: {err}.\n"
+            print(f"[codex-review] CANNOT RUN — the verdict could not be written to {where}: {err}.\n"
                   f"[codex-review]   Nothing outside this process can now establish whether the gate\n"
                   f"[codex-review]   ran, which is the very condition the verdict exists to abolish.\n"
                   f"[codex-review]   Treat this run as NOT RUN.", file=sys.stderr)
             return 2
-        print(f"[codex-review] verdict: gate_ran={str(gate_ran).lower()} -> {vpath}", file=sys.stderr)
+        print(f"[codex-review] verdict: gate_ran={str(gate_ran).lower()} -> {where}", file=sys.stderr)
         return rc
 
     # ⭐ BOTH ARTIFACTS, ONE POLICY, AND BEFORE A MODEL IS PAID FOR. `overwrite_refusal` owns the
@@ -1008,7 +1211,11 @@ def main() -> int:
                                      allow_overwrite=args.allow_overwrite, what=_what)
         if _refusal:
             print("[codex-review] " + _refusal.replace("\n", "\n[codex-review] "), file=sys.stderr)
-            return emit(2, gate_ran=False,
+            # ⛔ `refused=True` — THE ONE FLAG THAT KEEPS THIS PATH FROM DESTROYING WHAT IT IS
+            # DEFENDING (r1 B1). Dropping it sends the record back to `<id>.verdict.json`, which
+            # for the `dest` branch is by construction the testimony of the run that FILED the
+            # review being protected.
+            return emit(2, gate_ran=False, refused=True,
                         reason=f"refused: {_what} already exists and --allow-overwrite "
                                f"was not given")
 
@@ -1063,16 +1270,22 @@ def main() -> int:
             if perr:
                 # ⛔ THE GATE RAN AND THE ARTIFACT IS NOT FILED — TWO FACTS, RECORDED AS TWO FIELDS.
                 # `gate_ran` stays TRUE because it is true: a real review was captured and is at
-                # `--out`. What failed is the filing, so the exit code is 2 (CANNOT RUN) and the
-                # capture's location is printed, because the one thing that must not happen here is
-                # a caller believing the review is in `docs/reviews/` when it is in a temp dir.
+                # `--out`. What failed is the filing.
+                # ⛔ **AND IT EXITS 3, NOT 2 — r1 M4.** `2` is the code `docs/plugins.md` documents
+                # as *REFUSED / CANNOT RUN*, and its fallback rule turns that into *"discard it and
+                # run a Claude adversarial review in its place, recording a REVIEW GAP"*. Applied
+                # here that instruction throws away a Codex review that was PAID FOR, EXISTS and is
+                # intact, and files a gap that did not happen. Two opposite outcomes under one code
+                # is not a partition, and the contract the rest of the process reads is the exit
+                # code — this file's whole history is of callers losing stderr.
                 print("[codex-review] " + perr.replace("\n", "\n[codex-review] "), file=sys.stderr)
-                print(f"[codex-review] ⚠ THE GATE RAN AND THE REVIEW IS NOT FILED. The capture is "
-                      f"intact at\n[codex-review]   {args.out}\n"
+                print(f"[codex-review] ⚠ THE GATE RAN AND THE REVIEW IS NOT FILED (exit 3, NOT 2 "
+                      f"— do NOT fall back:\n[codex-review]   a real review exists). The capture "
+                      f"is intact at\n[codex-review]   {args.out}\n"
                       f"[codex-review]   Move it to {dest} yourself, or re-run with "
                       f"--allow-overwrite if replacing is what you meant.", file=sys.stderr)
-                return emit(2, gate_ran=True, reason=f"{reason}; NOT PROMOTED: "
-                                                     f"{perr.splitlines()[0]}",
+                return emit(RC_NOT_FILED, gate_ran=True,
+                            reason=f"{reason}; NOT PROMOTED: {perr.splitlines()[0]}",
                             model=slug, attempts=attempts, hits=hits)
             print(f"[codex-review] OK via {slug} -> {dest} (captured at {args.out}; {reason})",
                   file=sys.stderr)
@@ -1100,8 +1313,14 @@ def main() -> int:
         # `docs/reviews/<writer>/`, which this NON-RECURSIVE snapshot cannot see. Nothing legitimate
         # is written to the top level during a run, so anything appearing there IS unexpected and
         # moving it is right. `check-review-rounds.py` reads both layouts and refuses a basename
-        # filed in both. ⚠ IF YOU EVER MAKE THE SNAPSHOT RECURSIVE, this reasoning dies with it and
-        # the concurrent-half hazard comes straight back.
+        # filed in both.
+        # ⚠ AND THE LAYOUT ONLY HOLDS WHILE `--out` IS OUTSIDE THE ARTIFACT TREE, which is a
+        # SECOND condition and was stated nowhere until r1 M5 drove it: `watched_dirs` starts with
+        # `--out`'s own directory, so an `--out` in `docs/reviews/<writer>/` makes that directory
+        # watched and this block quarantined a concurrent half out of the repository — #92,
+        # reproduced against the new layout, on the fallback path. `out_location_refusal` now
+        # refuses such an `--out` before anything runs. ⚠ IF YOU EVER MAKE THE SNAPSHOT RECURSIVE,
+        # OR REMOVE THAT REFUSAL, this reasoning dies and the concurrent-half hazard comes back.
         print("[codex-review] ⚠ AND WATCHED FILES CHANGED DESPITE THE FAILURE "
               "(writer NOT identified — see backlog #92):", file=sys.stderr)
         for d, name, what in hits:
@@ -1514,6 +1733,38 @@ def self_test() -> int:
     chk("an id carrying `.md` is refused as a STEM error, not as an unknown shape",
         (_idE, "without the .md extension" in (_errE or "")), (None, True))
 
+    # ── r1 H1: THE ID IS ONE PATH SEGMENT, BECAUSE TWO DESTINATIONS ARE JOINED FROM IT ─────────
+    # `check-review-rounds.PATTERNS` spells the subject `.+`, which matches `/` and `..` — correct
+    # for recognising filenames that already exist, and not a constraint on a string this wrapper
+    # WRITES to. Measured at 4c29fe25, all three accepted with a valid writer.
+    chk("a plain stem is one path segment", is_single_segment("plan-x-r3-codex"), True)
+    chk("…and so is one with dots inside it, which must NOT be mistaken for traversal",
+        is_single_segment("plan-v1.2-r3-codex"), True)
+    chk("a TRAVERSING id is not — `../x` files the half at the artifact ROOT, the zone "
+        "quarantine() empties", is_single_segment("../plan-x-r3-codex"), False)
+    chk("…nor is a NESTED one — `docs/reviews/codex/x` files it two levels down, where "
+        "check-review-rounds.review_files (ONE level) cannot see it",
+        is_single_segment("docs/reviews/codex/plan-x-r3-codex"), False)
+    # ⚠ BOTH SEPARATORS. A `\` is a separator on one platform and an ordinary character on the
+    # other; an id is not the place to let the platform decide where a file lands.
+    chk("…nor one carrying a backslash", is_single_segment("docs\\plan-x-r3-codex"), False)
+    chk("…nor the relative components themselves",
+        (is_single_segment("."), is_single_segment(""), is_single_segment("..")),
+        (False, False, False))
+    # THE REFUSAL, driven through the real entry point rather than the predicate alone: a correct
+    # predicate nothing calls is the shape this repo keeps measuring.
+    _idP, _errP = review_identity("../plan-x-r3-codex")
+    chk("a traversing id is REFUSED by review_identity, not merely recognised",
+        (_idP, "is a NAME, not a path" in (_errP or "")), (None, True))
+    _idQ, _errQ = review_identity("docs/reviews/codex/plan-x-r3-codex")
+    chk("…and so is a nested one, with CANNOT RUN so it is not read as a clean review",
+        (_idQ, "CANNOT RUN" in (_errQ or "")), (None, True))
+    # ⚠ ORDER: a path that ALSO carries `.md` must be told about the path. Being told about the
+    # extension while the wrapper silently files two levels down is the less useful half.
+    chk("…and the path check runs FIRST, so `docs/…/x.md` is not answered as a stem error",
+        "is a NAME, not a path" in (review_identity("docs/reviews/codex/x-r1-codex.md")[1] or ""),
+        True)
+
     # ── the testimony path: a function of the SUPPLIED id and nothing else ─────────────────────
     chk("the verdict lands INSIDE the repo, not beside --out",
         verdict_path("plan-x-r3-codex").startswith(os.path.join(REPO_ROOT, VERDICT_DIR)), True)
@@ -1532,6 +1783,38 @@ def self_test() -> int:
         (sorted(inspect.signature(verdict_path).parameters),
          verdict_path("a-r1-codex") == verdict_path("b-r1-codex")),
         (["review_id"], False))
+
+    # ── r1 B1: A REFUSAL NEVER TESTIFIES TO THE PATH IT IS PROTECTING ──────────────────────────
+    # ⛔ r4 M5, RETIRED WITH THE WRONG SUBJECT AND RESTORED HERE. The retirement argument covered
+    # the `--out`-derived ALLOCATOR; the hazard was never allocation. Measured at 4c29fe25: a
+    # re-dispatch whose review already existed took the refusal path, `emit` opened the committed
+    # verdict with `"w"`, and `{"gate_ran": true}` became `{"gate_ran": false}` — then the new join
+    # key told CI to DELETE the genuine review it had just destroyed the evidence for.
+    # ⚠ `check-review-recorded.py` CANNOT SEE AN OVERWRITE: it selects with `--diff-filter=A`, and
+    # an overwritten file is M, not A. Nothing else was watching.
+    chk("⭐ the refusal's testimony is NEVER the path it is protecting",
+        refusal_verdict_path("plan-x-r3-codex") == verdict_path("plan-x-r3-codex"), False)
+    chk("…and it is named for the review it declined to disturb, so the record is findable",
+        os.path.basename(refusal_verdict_path("plan-x-r3-codex")),
+        "plan-x-r3-codex.refused.verdict.json")
+    # ⚠ A SECOND, DISTINCT id. With one fixture the name could be a constant and every case above
+    # would still pass — the shape this repo has measured nine survivors from.
+    chk("…at a second id, so the refusal namespace is derived and not a constant",
+        os.path.basename(refusal_verdict_path("observer-log-owner-r5-codex")),
+        "observer-log-owner-r5-codex.refused.verdict.json")
+    # THE SELECTION, which is where a new refusal would forget the rule. It lives in one pure
+    # function rather than as an `if` at `emit`'s one call site, so both directions are drivable.
+    chk("a refused run testifies to the refusal path",
+        testimony_path("plan-x-r3-codex", refused=True),
+        refusal_verdict_path("plan-x-r3-codex"))
+    chk("…and every other run testifies to the verdict path, which is the one CI reads",
+        testimony_path("plan-x-r3-codex", refused=False), verdict_path("plan-x-r3-codex"))
+    # ⚠ A SECOND, DISTINCT id here too. With one value the selection could ignore its first
+    # argument entirely and both cases above would still pass — `check-fixture-variation.py`
+    # measures exactly that, and it refused this suite until this case existed.
+    chk("…and the id is really read, not merely accepted beside the flag",
+        testimony_path("observer-log-owner-r5-codex", refused=True),
+        refusal_verdict_path("observer-log-owner-r5-codex"))
 
     # ── the JOIN KEY, which is the whole point of backlog #176 ─────────────────────────────────
     _r = verdict_record(gate_ran=False, exit_code=0, review_id="plan-x-r3-codex", reason="r")
@@ -1556,6 +1839,18 @@ def self_test() -> int:
         _rounds.verdict_problems([("v.json", _r)], set()), [])
     chk("the record is built from the ID, so no scratch path can reach the field CI joins on",
         "out_path" in inspect.signature(verdict_record).parameters, False)
+    # ⛔ r1 B1, THE READ-SIDE HALF. A refusal carries `gate_ran: false` truthfully — of the RUN —
+    # and names the review it is about. Without a field saying which it is, a consumer joining on
+    # `review` turns those two facts into *a filed review with no gate behind it*, which is the
+    # opposite of what a refusal means: the review exists because an earlier run produced it.
+    _rf = verdict_record(gate_ran=False, exit_code=2, review_id="plan-x-r3-codex",
+                         reason="refused: the promoted review already exists", refused=True)
+    chk("a refusal record SAYS it is a refusal, rather than leaving it to be inferred",
+        (_rf["refused"], _rf["gate_ran"]), (True, False))
+    chk("…and an ordinary run says so too, explicitly, so absence is never the signal",
+        _r["refused"], False)
+    chk("…and the shipped consumer therefore reports NOTHING over a refusal beside its review",
+        _rounds.verdict_problems([("v.json", _rf)], {"plan-x-r3-codex.md"}), [])
 
     # ── the PROMOTION, which used to be a comment in docs/plugins.md ───────────────────────────
     chk("the promoted review is filed one level DOWN, under its writer, where the non-recursive "
@@ -1582,6 +1877,39 @@ def self_test() -> int:
         overwrite_refusal("/r/y.md", exists=False, allow_overwrite=False, what="w"), None)
     chk("…nor when both are false — a second distinct input, so the rule is not a constant",
         overwrite_refusal("/r/z.md", exists=False, allow_overwrite=True, what="w"), None)
+
+    # ── r1 M5: `--out` STAYS OUT OF THE ARTIFACT TREE, AND IT IS ENFORCED, NOT ASSUMED ─────────
+    # Three texts asserted that quarantine() cannot reach a promoted half "because the snapshot is
+    # non-recursive". Non-recursion is not what makes that true: `watched_dirs` STARTS with
+    # `--out`'s own directory, so an `--out` in `docs/reviews/codex/` makes that directory a
+    # watched root. DRIVEN by the r1 reviewer: a failing run there quarantined a CONCURRENT half
+    # out of the repository — backlog #92 reproduced against the new layout, on the fallback path.
+    _art = os.path.join(REPO_ROOT, REVIEW_ROOT)
+    chk("an --out inside a writer subdirectory is REFUSED — it would make that directory watched",
+        bool(out_location_refusal(os.path.join(_art, "codex", "r.md"))), True)
+    chk("…and so is one at the artifact root itself",
+        bool(out_location_refusal(os.path.join(_art, "r.md"))), True)
+    chk("…and the refusal says CANNOT RUN and names the documented scratch shape",
+        all(t in (out_location_refusal(os.path.join(_art, "r.md")) or "")
+            for t in ("CANNOT RUN", "mktemp -d")), True)
+    chk("the documented shape — a scratch path outside the repository — is NOT refused",
+        out_location_refusal(os.path.join(tempfile.gettempdir(), "codexrev", "r.md")), None)
+    # ⚠ THE PREFIX NEAR-MISS, which a bare `startswith` gets wrong. `docs/reviews-archive/` is a
+    # different directory and refusing it would be the over-refusal direction of the same bug.
+    chk("…nor is a sibling whose name merely STARTS with the artifact tree's",
+        out_location_refusal(os.path.join(REPO_ROOT, "docs", "reviews-archive", "r.md")), None)
+    chk("…nor anything outside the repository at all",
+        out_location_refusal(os.path.join(os.path.dirname(REPO_ROOT), "elsewhere", "r.md")), None)
+
+    # ── r1 M4: TWO OPPOSITE OUTCOMES CANNOT SHARE ONE EXIT CODE ────────────────────────────────
+    # `2` is documented in `docs/plugins.md` — imported by `CLAUDE.md` — as *REFUSED / CANNOT RUN*,
+    # and the fallback rule turns that into *discard it and run a Claude review*. A run whose gate
+    # RAN, whose review exists at `--out` and whose filing was refused must not read as that.
+    # ⚠ THE LITERAL, and separately the INEQUALITY. Comparing against the constant would agree
+    # with whatever value it took; asserting only the digit would not say what the digit is FOR.
+    chk("the gate-ran-but-not-filed outcome has its own exit code", RC_NOT_FILED, 3)
+    chk("…and it is NOT the CANNOT-RUN code, so a caller following the fallback rule cannot "
+        "discard a review that exists", RC_NOT_FILED == 2, False)
 
     with tempfile.TemporaryDirectory() as td:
         _dest = os.path.join(td, "reviews", "codex", "p-r1-codex.md")
@@ -1628,16 +1956,105 @@ def self_test() -> int:
     chk("…and SAYS it was retired, naming --review-id as what owns the identity now",
         ("RETIRED" in _msg_v, "--review-id" in _msg_v), (True, True))
     _rc_i, _msg_i = _cli("--out", "/tmp/nowhere-out.md", "a prompt")
+    # ⛔ THE SENTENCE, NOT THE EXIT CODE — AND NOT MERELY THE FLAG NAME EITHER. Measured while
+    # folding r1 H1: with the REQUIRED check removed, the new one-segment rule refuses an empty id
+    # too (`is_single_segment("")` is False), with `rc=2` and a message that also mentions
+    # `--review-id` — so the entry that guards "the identity can go unsupplied again" SURVIVED
+    # against both of the assertions that used to stand here. Two refusals answering one input is
+    # not a defect; a case that cannot tell them apart is.
     chk("a missing --review-id is a CANNOT RUN (2), never a fallback to deriving one from --out",
-        _rc_i, 2)
-    chk("…and the message names the flag that supplies the identity",
-        "--review-id" in _msg_i, True)
+        (_rc_i, "--review-id is required" in _msg_i), (2, True))
+    chk("…and it is the MISSING-id sentence, not the one-segment refusal that also fires on ''",
+        "is a NAME, not a path" in _msg_i, False)
+
+    # ── r1 B1 + M5, DRIVEN END TO END THROUGH `main` IN A SANDBOXED COPY ───────────────────────
+    # ⛔ THE PURE CASES ABOVE CANNOT REACH THE ROUTING, AND THE ROUTING IS WHERE r4 M5 DIED. The
+    # selection lives in `testimony_path`; whether `main`'s refusal branch ASKS for it is a call
+    # site, and a call site reverted with every pure case still green is this project's recorded
+    # `Mutate the CALL SITE` shape. So the wrapper is copied to a scratch tree — `REPO_ROOT` is
+    # derived from `__file__`, so the copy's repo IS the scratch tree — and driven for real.
+    # ⚠ NO MODEL IS CONTACTED AND NONE COULD BE: every refusal below returns before
+    # `resolve_candidates()`. That is a property of where the checks sit, not luck, and a case
+    # whose failure mode is "pay for a Codex run during --self-test" would be worse than no case.
+    with tempfile.TemporaryDirectory() as _sb:
+        _sbs = os.path.join(_sb, "scripts")
+        os.makedirs(_sbs)
+        for _n in ("codex-review.py", "check-review-rounds.py", "codex-frontier-model.py"):
+            shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), _n),
+                        os.path.join(_sbs, _n))
+        _sbv = os.path.join(_sb, "docs", "reviews", "verdicts")
+        os.makedirs(_sbv)
+        os.makedirs(os.path.join(_sb, "docs", "reviews", "codex"))
+        os.makedirs(os.path.join(_sb, "scratch"))
+        # THE PRE-STATE OF THE MEASUREMENT: a real review, filed, and the committed testimony that
+        # a real gate produced it. This is what a re-dispatch used to destroy.
+        _committed = os.path.join(_sbv, "sandbox-r1-codex.verdict.json")
+        with open(_committed, "w", encoding="utf-8") as f:
+            json.dump({"schema": VERDICT_SCHEMA, "gate_ran": True, "exit_code": 0,
+                       "refused": False, "review": "sandbox-r1-codex.md",
+                       "reason": "final message is a real review"}, f)
+        with open(os.path.join(_sb, "docs", "reviews", "codex", "sandbox-r1-codex.md"),
+                  "w", encoding="utf-8") as f:
+            f.write("<!-- codex-review: model=gpt-5.5 -->\n\nthe filed review\n")
+
+        # ⛔ A STUB `codex` ON THE SANDBOX'S PATH, AND IT IS A CONTAINMENT BOUNDARY, NOT TIDINESS.
+        # Every drive below refuses before `resolve_candidates()` — but a MUTATION of any of those
+        # refusals makes the run fall through to a real dispatch, and `--mutate .` applies exactly
+        # such mutations. Measured while writing this block: under the inverted `--out` rule the
+        # second drive reached `run_codex`. `run_codex` spawns `["codex", …]`, resolved through
+        # PATH, so a stub that exits immediately makes a model unreachable by construction rather
+        # than by the control flow a mutant is free to change. `--timeout 5` bounds it twice over.
+        _bin = os.path.join(_sb, "bin")
+        os.makedirs(_bin)
+        _stub = os.path.join(_bin, "codex")
+        with open(_stub, "w", encoding="utf-8") as f:
+            f.write("#!/bin/sh\nexit 97\n")
+        os.chmod(_stub, 0o755)
+        # PREPENDED, not replacing: `reviewed_state` shells out to `git`, and a PATH with only the
+        # stub would turn a case about refusals into a case about a missing git.
+        _sbenv = dict(os.environ, PATH=_bin + os.pathsep + os.environ.get("PATH", ""))
+
+        def _sbrun(*a: str) -> "tuple[int, str]":
+            r = subprocess.run([sys.executable, os.path.join(_sbs, "codex-review.py"),
+                                "--timeout", "5", *a],
+                               capture_output=True, text=True, env=_sbenv)
+            return r.returncode, r.stdout + r.stderr
+
+        _rc_d, _msg_d = _sbrun("--review-id", "sandbox-r1-codex",
+                               "--out", os.path.join(_sb, "scratch", "r.md"), "a prompt")
+        chk("a re-dispatch whose review is already filed REFUSES, reaching no model", _rc_d, 2)
+        with open(_committed, encoding="utf-8") as f:
+            _post = json.load(f)
+        chk("⭐ r4 M5 RESTORED: the refusal leaves the committed testimony it is protecting "
+            "EXACTLY as it found it", _post["gate_ran"], True)
+        _refused_at = os.path.join(_sbv, "sandbox-r1-codex.refused.verdict.json")
+        chk("…and still files its OWN testimony, so a refusal is on the record rather than silent",
+            os.path.isfile(_refused_at), True)
+        # ⚠ `.get`, NOT `[...]`, and not an `open` outside the guard: under the mutation this case
+        # exists for, the file is not there. A case must FAIL readably, never crash — a crash
+        # prints no `[FAIL] <case>` line and every entry for this file becomes unattributable.
+        _rr = {}
+        if os.path.isfile(_refused_at):
+            with open(_refused_at, encoding="utf-8") as f:
+                _rr = json.load(f)
+        chk("…marked `refused`, which is what stops the consumer accusing the review it spared",
+            (_rr.get("refused"), _rr.get("gate_ran")), (True, False))
+        # r1 M5's wiring: the predicate is asserted above, and this is whether `main` asks it.
+        # ⚠ THE `--out` ALREADY EXISTS, deliberately: with the location rule mutated away the run
+        # then meets the OVERWRITE refusal instead, so it still cannot reach a dispatch, and the
+        # case discriminates on the MESSAGE rather than on the exit code the two share.
+        _cap = os.path.join(_sb, "docs", "reviews", "codex", "cap.md")
+        with open(_cap, "w", encoding="utf-8") as f:
+            f.write("a capture already here\n")
+        _rc_o, _msg_o = _sbrun("--review-id", "sandbox-r2-codex", "--out", _cap, "a prompt")
+        chk("an --out inside the artifact tree is refused by the real CLI, before any snapshot",
+            (_rc_o, "inside the artifact tree" in _msg_o), (2, True))
     # ⚠ r11 Low: `VERDICT_SCHEMA` was stamped into every record and asserted by nothing — deleting
     # the field changed no case and no gate outcome, so it was an unfalsifiable constant. The
     # LITERAL is the point: comparing against `VERDICT_SCHEMA` would agree with any value it took.
     # (Full schema VALIDATION stays deferred by r5's and r6's explicit agreement; this is only the
     # narrower claim that the field is really written.)
-    chk("the record states which schema it is, as a number a reader can check", _r["schema"], 2)
+    chk("the record states which schema it is, as a number a reader can check", _r["schema"], 3)
     with tempfile.TemporaryDirectory() as td:
         vp = os.path.join(td, "deep", "v.json")
         chk("write_verdict creates its directory and returns no error",

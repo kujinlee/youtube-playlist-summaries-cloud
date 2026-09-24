@@ -822,7 +822,21 @@ EXPECTED_MUTATIONS = {
     # straight back in at the next opportunity. Derive it:
     #     git log -S'[FAIL] ' --reverse --format='%h %as %s' -- scripts/<file>
     "scripts/check-ratchet-contract.py": 10,
-    "scripts/check-review-rounds.py": 12,
+    # ⟳ 2026-09-23, folding review-identity-176 round 1: 12 -> 17, AND ONE EXISTING ENTRY WAS
+    # RETARGETED — its anchor `if rec.get("gate_ran"):` was unbound by the restructure that added
+    # the reverse clause, the exact *an anchor is unbound by ANY nearby edit* shape this repo has
+    # paid for seven times in one session. Found by sweeping every manifest anchor against the
+    # tree, NOT by `--self-test`, which loads the manifests without resolving them. The consumer
+    # also gained the
+    # three rules r1 found missing from it, and each entry names the case that reds for it:
+    # a REFUSAL is not testimony about a gate (B1 — without it a re-dispatch that touched
+    # nothing makes CI tell the reader to delete a real review); the ERA BOUNDARY is a
+    # number in the record rather than a date in a comment (M2 — the prose caveat had no
+    # falsifier and deleting it went green everywhere); the REVERSE direction of the join,
+    # `gate_ran: true` naming a review that is not filed (M1 — the shape #176 was convened
+    # over, `continue`d until the era gate made it safe to read); and two on the derived
+    # era counts (M3 — the figure that stood in prose was wrong at the denominator).
+    "scripts/check-review-rounds.py": 18,
     # ⟳ 2026-09-08, R4 manifest debt 3 -> 2. ⚠ ONE MUTATION SURVIVED FIRST: I removed the words
     # "Produce one with" from the absent-results refusal, but the case asserts that `--outputFile=`
     # appears in the message and that token is on the NEXT fragment. The mutation READ like the one
@@ -1088,7 +1102,25 @@ EXPECTED_MUTATIONS = {
     #     — the retired `--verdict` naming its retirement, and `--review-id` staying REQUIRED.
     # Every anchor was verified to resolve exactly once AFTER the code was final, and all 29 were
     # driven against a green control: 29 killed, 29 attributed via the case each names.
-    "scripts/codex-review.py": 29,
+    # ⟳ 2026-09-23, folding review-identity-176 round 1: 29 -> 40. ELEVEN added, none retired.
+    # FOUR restore r4 M5, whose entry this slice retired under an argument that covered the
+    # deleted ALLOCATOR and not the invariant — *a refusal must not write to the path it is
+    # protecting* — which the slice then violated with a new refusal: the refusal namespace
+    # collapsing onto the protected path, the selection ignoring `refused`, the record
+    # dropping the field the consumer reads, and `main`'s refusal branch dropping the flag
+    # (that last one killed through a SANDBOXED end-to-end drive, because a call site is
+    # exactly what pure cases cannot reach). THREE hold the one-segment rule on --review-id
+    # (H1) at the predicate, its two clauses, and the gate that applies it. THREE hold the
+    # --out location refusal (M5) in both directions plus its wiring — the condition three
+    # texts asserted the quarantine safety on and nothing enforced. ONE holds the exit code
+    # that separates "the gate ran and the review is not filed" from CANNOT RUN (M4).
+    #   ⚠ THE TWO --out ENTRIES OVERLAP THEIR ANCHORS ON PURPOSE, and they are different
+    #     behaviours verified by ATTRIBUTION rather than by assertion: one DROPS the
+    #     subdirectory arm (under-refusal — 2 red cases) and one refuses the COMPLEMENT
+    #     (over-refusal — 9, including the documented scratch shape, which is the direction
+    #     that would teach callers to route around the guard). The r11 `tail_candidates`
+    #     split is the precedent for clearing the duplicate-anchor rule this way.
+    "scripts/codex-review.py": 40,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
@@ -3643,7 +3675,11 @@ def _self_test() -> int:
     # subject (the `--out`-derived verdict namespace and its allocator, deleted) and FOURTEEN added
     # for the supplied identity, the promotion and the one overwrite policy. The split, and why the
     # +1 is the least informative thing about it, is on `EXPECTED_MUTATIONS["scripts/codex-review.py"]`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 995)
+    # ⟳ 995 -> 1011, folding review-identity-176 round 1: `codex-review.py` 29 -> 40 and
+    # `check-review-rounds.py` 12 -> 17. NOTHING RETIRED — this fold adds guards for a
+    # Blocking, a High and four Mediums, and four of the sixteen are the r4 M5 entry this
+    # slice retired with the wrong subject. The split is on each file's own entry above.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1012)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

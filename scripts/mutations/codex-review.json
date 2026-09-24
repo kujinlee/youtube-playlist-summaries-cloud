@@ -283,7 +283,10 @@
         "    if False:"
       ]
     ],
-    "expect": "a missing --review-id is a CANNOT RUN (2), never a fallback to deriving one from --out"
+    "expect": [
+      "a missing --review-id is a CANNOT RUN (2), never a fallback to deriving one from --out",
+      "…and it is the MISSING-id sentence, not the one-segment refusal that also fires on ''"
+    ]
   },
   {
     "name": "#176: the overwrite policy stops refusing, so a filed review is replaced silently",
@@ -317,5 +320,174 @@
       ]
     ],
     "expect": "…and --allow-overwrite is honoured, so a deliberate replacement is not blocked"
+  },
+  {
+    "name": "r1 B1: the refusal testifies to the very path it is protecting, destroying it",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "f\"{review_id}.refused.verdict.json\"",
+        "f\"{review_id}.verdict.json\""
+      ]
+    ],
+    "expect": [
+      "⭐ the refusal's testimony is NEVER the path it is protecting",
+      "…and it is named for the review it declined to disturb, so the record is findable",
+      "…at a second id, so the refusal namespace is derived and not a constant",
+      "⭐ r4 M5 RESTORED: the refusal leaves the committed testimony it is protecting EXACTLY as it found it",
+      "…and still files its OWN testimony, so a refusal is on the record rather than silent",
+      "…marked `refused`, which is what stops the consumer accusing the review it spared"
+    ]
+  },
+  {
+    "name": "r1 B1: the testimony selection ignores whether the run was a refusal",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "return refusal_verdict_path(review_id) if refused else verdict_path(review_id)",
+        "return refusal_verdict_path(review_id) if not refused else verdict_path(review_id)"
+      ]
+    ],
+    "expect": [
+      "a refused run testifies to the refusal path",
+      "…and every other run testifies to the verdict path, which is the one CI reads",
+      "…and the id is really read, not merely accepted beside the flag",
+      "⭐ r4 M5 RESTORED: the refusal leaves the committed testimony it is protecting EXACTLY as it found it",
+      "…and still files its OWN testimony, so a refusal is on the record rather than silent",
+      "…marked `refused`, which is what stops the consumer accusing the review it spared"
+    ]
+  },
+  {
+    "name": "r1 B1: the record stops saying it is a refusal, so a refusal reads as a failed gate",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "        \"refused\": bool(refused),",
+        "        \"refused\": False,"
+      ]
+    ],
+    "expect": [
+      "a refusal record SAYS it is a refusal, rather than leaving it to be inferred",
+      "…and the shipped consumer therefore reports NOTHING over a refusal beside its review",
+      "…marked `refused`, which is what stops the consumer accusing the review it spared"
+    ]
+  },
+  {
+    "name": "r1 B1: main's refusal stops asking for the refusal path, overwriting committed testimony",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "            return emit(2, gate_ran=False, refused=True,",
+        "            return emit(2, gate_ran=False, refused=False,"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 M5 RESTORED: the refusal leaves the committed testimony it is protecting EXACTLY as it found it",
+      "…and still files its OWN testimony, so a refusal is on the record rather than silent",
+      "…marked `refused`, which is what stops the consumer accusing the review it spared"
+    ]
+  },
+  {
+    "name": "r1 H1: a forward slash stops disqualifying an id, so it can file outside its directory",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    if \"/\" in review_id or \"\\\\\" in review_id:",
+        "    if \"\\\\\" in review_id:"
+      ]
+    ],
+    "expect": [
+      "a TRAVERSING id is not — `../x` files the half at the artifact ROOT, the zone quarantine() empties",
+      "…nor is a NESTED one — `docs/reviews/codex/x` files it two levels down, where check-review-rounds.review_files (ONE level) cannot see it",
+      "a traversing id is REFUSED by review_identity, not merely recognised",
+      "…and so is a nested one, with CANNOT RUN so it is not read as a clean review",
+      "…and the path check runs FIRST, so `docs/…/x.md` is not answered as a stem error"
+    ]
+  },
+  {
+    "name": "r1 H1: the relative components stop disqualifying an id",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    return review_id not in (\".\", \"..\")",
+        "    return True"
+      ]
+    ],
+    "expect": "…nor the relative components themselves"
+  },
+  {
+    "name": "r1 H1: review_identity stops applying the one-segment rule it is the gate for",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    if not is_single_segment(review_id):",
+        "    if False and not is_single_segment(review_id):"
+      ]
+    ],
+    "expect": [
+      "a traversing id is REFUSED by review_identity, not merely recognised",
+      "…and so is a nested one, with CANNOT RUN so it is not read as a clean review",
+      "…and the path check runs FIRST, so `docs/…/x.md` is not answered as a stem error"
+    ]
+  },
+  {
+    "name": "r1 M5: only the artifact ROOT is refused, so an --out in a writer directory is allowed",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    if here != tree and not here.startswith(tree + os.sep):",
+        "    if here != tree:"
+      ]
+    ],
+    "expect": [
+      "an --out inside a writer subdirectory is REFUSED — it would make that directory watched",
+      "an --out inside the artifact tree is refused by the real CLI, before any snapshot"
+    ]
+  },
+  {
+    "name": "r1 M5: the --out rule is inverted, refusing every scratch path and allowing the tree",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    if here != tree and not here.startswith(tree + os.sep):\n        return None",
+        "    if here == tree or here.startswith(tree + os.sep):\n        return None"
+      ]
+    ],
+    "expect": [
+      "an --out inside a writer subdirectory is REFUSED — it would make that directory watched",
+      "…and so is one at the artifact root itself",
+      "…and the refusal says CANNOT RUN and names the documented scratch shape",
+      "the documented shape — a scratch path outside the repository — is NOT refused",
+      "…nor is a sibling whose name merely STARTS with the artifact tree's",
+      "…nor anything outside the repository at all",
+      "…and still files its OWN testimony, so a refusal is on the record rather than silent",
+      "…marked `refused`, which is what stops the consumer accusing the review it spared",
+      "an --out inside the artifact tree is refused by the real CLI, before any snapshot"
+    ]
+  },
+  {
+    "name": "r1 M5: main stops asking where --out points",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    out_refusal = out_location_refusal(args.out)",
+        "    out_refusal = None"
+      ]
+    ],
+    "expect": "an --out inside the artifact tree is refused by the real CLI, before any snapshot"
+  },
+  {
+    "name": "r1 M4: the gate-ran-but-not-filed outcome collapses back onto CANNOT RUN",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "RC_NOT_FILED = 3",
+        "RC_NOT_FILED = 2"
+      ]
+    ],
+    "expect": [
+      "the gate-ran-but-not-filed outcome has its own exit code",
+      "…and it is NOT the CANNOT-RUN code, so a caller following the fallback rule cannot discard a review that exists"
+    ]
   }
 ]

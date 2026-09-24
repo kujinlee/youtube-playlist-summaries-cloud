@@ -43,12 +43,15 @@
     "file": "scripts/check-review-rounds.py",
     "edits": [
       [
-        "        if rec.get(\"gate_ran\"):\n            continue",
-        "        if True:\n            continue"
+        "        if not rec.get(\"gate_ran\"):",
+        "        if False:"
       ]
     ],
     "expect": [
-      "a failed gate with its artifact filed anyway is caught"
+      "a failed gate with its artifact filed anyway is caught",
+      "…and the message names the review",
+      "a failed gate that left NO artifact is not a contradiction",
+      "the boundary is the CURRENT schema, so today's records ARE judged"
     ]
   },
   {
@@ -154,5 +157,78 @@
     "expect": [
       "…and the flat pair was actually SEEN, not merely un-complained-about"
     ]
+  },
+  {
+    "name": "r1 B1: a refusal record is read as testimony that the gate did not run",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "        if rec.get(\"refused\"):\n            continue",
+        "        if False:\n            continue"
+      ]
+    ],
+    "expect": "⭐ a REFUSAL beside the filed review it declined to overwrite is not a problem"
+  },
+  {
+    "name": "r1 M2: the era boundary is ignored, so pre-cutover scratch names are judged",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "        if (rec.get(\"schema\") or 0) < TRUSTED_SCHEMA:\n            continue",
+        "        if False:\n            continue"
+      ]
+    ],
+    "expect": [
+      "a PRE-CUTOVER verdict is not judged — its join key is a scratch basename",
+      "…and a record with no schema at all reads as older still, not as trusted"
+    ]
+  },
+  {
+    "name": "r1 M1: the reverse direction of the join is dropped again",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "        elif review not in review_names:",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a gate that RAN whose review is NOT filed is reported — the mirror contradiction",
+      "…and the message names the review that is missing, not merely that one is",
+      "…at a different id too, so the join reads the name in the record"
+    ]
+  },
+  {
+    "name": "r1 M3: the era counts stop separating the pre-cutover records they exist to report",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "        elif (rec.get(\"schema\") or 0) < TRUSTED_SCHEMA:\n            out[\"pre_cutover\"] += 1",
+        "        elif False:\n            out[\"pre_cutover\"] += 1"
+      ]
+    ],
+    "expect": "era_split counts each record exactly once, in the class it belongs to"
+  },
+  {
+    "name": "r1 M3: the refusal records are counted as ordinary testimony in the caveat",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "        if rec.get(\"refused\"):\n            out[\"refused\"] += 1",
+        "        if False:\n            out[\"refused\"] += 1"
+      ]
+    ],
+    "expect": "era_split counts each record exactly once, in the class it belongs to"
+  },
+  {
+    "name": "r2: the consumer's schema threshold drifts above the producer, untrusting every record",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "TRUSTED_SCHEMA = 3",
+        "TRUSTED_SCHEMA = 99"
+      ]
+    ],
+    "expect": "TRUSTED_SCHEMA is pinned — the threshold that decides which records this check can mean anything about cannot drift silently"
   }
 ]

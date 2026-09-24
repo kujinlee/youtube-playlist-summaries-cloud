@@ -2056,6 +2056,30 @@ taken on, and the weaker original argument is kept on the record rather than rew
 not return within the session — **treat it as NOT RUN**. Every claim in the document was verified by
 hand with command and output recorded, so nothing rests on agent output.
 
+## Development velocity — backlog #177 — anchor `review-decides-itself` — 🟠 ANALYSIS DONE, NOTHING ADOPTED
+
+**The analysis is the deliverable and it is complete:** [`docs/development-velocity.md`](development-velocity.md).
+Written 2026-09-24 at the user's request, out of the session that merged PR #342 (five adversarial
+rounds), held the Phase 6 verdict-path review and implemented #176. ⛔ **Nothing in it governs until
+it lands in a process doc or a script** — the document says so in its own first line.
+
+- [x] **The analysis.** Central finding: `review-method.md` §0 asks HOW MUCH adversarial review to
+      run and never asks WHETHER adversarial review is the right instrument. Proposed as a new Q0.
+- [x] **The controlled experiment that supports it**, one branch and one variable: the observer-log
+      work had an upfront architecture review and CONVERGED by round 3; the verdict-path work
+      entered as an un-designed side job and thrashed three more rounds. ⚠ An upfront review would
+      NOT have caught the second — it was out of scope. The gap is work entering AFTER a review.
+- [ ] **#177 — adopt it.** 🟠 OPEN, NOT STARTED, and **to be worked in its OWN session at the user's
+      request**. Five strands: Q0 into `review-method.md`; the draft-PR pattern so sweeps run on
+      GitHub; the injection rules; the side-job trigger; de-escalation.
+- [ ] **Five open questions** are listed in §9, the sharpest being whether Q0 is mechanisable at all
+      or is irreducibly a judgement. A guard asking *"does this change move a seam?"* needs a
+      definition of seam a script can read.
+
+⚠ **Measured, so the priority is not guessed:** 7 sweeps ≈ 100 min but ~0 tokens; 3 of 5 review
+rounds were rework; GitHub runs the sweep ~2× faster than this machine (8m08s for the whole `verify`
+job vs ~14 min for the local sweep alone). **The sweep is the most VISIBLE cost and not the largest.**
+
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all
 three. **M2 Sync is COMPLETE (PR #23 + #24, 2026-07-19).** **M1.1 is now DONE (2026-07-19).**

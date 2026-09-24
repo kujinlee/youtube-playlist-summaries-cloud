@@ -234,9 +234,14 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
         'dir_snapshot.directory', 'intrusions.after', 'intrusions.before',
         'intrusions.ours', 'quarantine.created', 'quarantine.dest',
         'unexpected_writes.before', 'verdict_record.attempts',
-        'verdict_record.exit_code',
+        # ⟳ 2026-09-23, folding review-identity-176 r1: `verdict_record.exit_code` and
+        # `verdict_record.reason` LEAVE this pin, and the guard asked for both by name
+        # (*"now varies — delete it from KNOWN_UNVARIED"*). They began varying because r1 B1's
+        # fold added a REFUSAL record — `exit_code=2`, a refusal reason — beside the existing
+        # `exit_code=0` cases. Debt that has become payable and is not paid is what
+        # `widened_debt_drift` refuses in the other direction.
         'verdict_record.intrusions_seen', 'verdict_record.model',
-        'verdict_record.reason', 'write_verdict.record',),
+        'write_verdict.record',),
     'explainer-serve.py': (
         # ⟳ 2026-09-16 — `safe_path.root` LEAVES this pin, and the gate asked for it by name:
         # *"`safe_path.root` now varies — delete it from KNOWN_UNVARIED"*. It began varying when

@@ -740,8 +740,12 @@ where a stray write cannot reach an artifact. `docs/plugins.md` prescribed
 `review` field from that basename — so every review in the repository was testimony about `r.md`, a
 file that has never existed in `docs/reviews/`. **Measured**, driving the shipped
 `verdict_problems` both ways: the identical failed gate reports **0** problems under the scratch
-name and **1** under the review's real name. Corpus: 183 verdicts, **58 (32%)** naming a review
-that is not filed.
+name and **1** under the review's real name. ⟳ **The corpus figure that stood here — "183
+verdicts, 58 (32%)" — is REMOVED rather than corrected** (r1 M3): the count was **184** at both
+base and head, so it was wrong when written, and it was propagated to three further sites, two of
+them shipped scripts, instead of being re-derived. The denominator also moves on every run, so any
+frozen copy is stale by construction. `check-review-rounds.py` now PRINTS the live counts — total
+read, meaningfully checked, pre-cutover, refusals — on every run.
 
 **Why four correct fixes could not terminate.** The namespace was patched four times in two rounds —
 a refusal when the derived path was already tracked; a run token over the dispatch HEAD; the tree
@@ -764,7 +768,14 @@ convened on THRASHING rather than another fix being written.
    holds by construction instead of by convention. Feasibility was checked, not assumed: the
    intrusion snapshot of `docs/reviews` is NON-RECURSIVE, so writing into `docs/reviews/<writer>/`
    cannot register as an agent guessing its way into the artifact root, and `quarantine()` on the
-   failure path cannot reach it.
+   failure path cannot reach it — ⟳ **on a SECOND condition this paragraph originally left
+   unstated** (r1 M5). `watched_dirs` begins with `--out`'s own directory, so an `--out` inside
+   `docs/reviews/<writer>/` makes that directory a watched root and recursion never enters into
+   it. The r1 reviewer DROVE it: a failing run with `--out` there quarantined a concurrent half
+   out of the repository — backlog #92 reproduced against the new layout, on the FALLBACK path,
+   i.e. against the review being written to replace the failed one. `out_location_refusal` now
+   refuses an `--out` inside `docs/reviews/`, which refuses nothing legitimate because the
+   documented shape is outside the repository entirely.
 
 ⛔ **`--verdict` was the cheaper fix, and it provably could not close the join.** It named the
 verdict FILE. The derivation happened TWICE, independently, from the same scratch path, and this
@@ -773,9 +784,112 @@ flag reached only one of them — the record's `review` field was built from
 caller doing everything right, deliberately naming their testimony, still wrote a record keyed by
 scratch. It is retired with rc=2.
 
-⚠ **The 183 existing verdicts are left untouched** (user decision). They are committed testimony
+⚠ **The pre-cutover verdicts are left untouched** (user decision). They are committed testimony
 about runs nobody can re-observe, and rewriting their `review` field would be inventing a name for
 a file that may never have existed — the same ground on which `read_verdicts` refuses to back-fill
-history. The cost is carried as an **era caveat** in the consumer instead: `check-review-rounds.py`
-states it beside `VERDICT_DIRNAME` and **prints it on every run**, because "none contradicted" is
-exactly the sentence that limit would otherwise hide behind.
+history. The cost is carried as an **era boundary** in the consumer instead, and it is a NUMBER IN
+THE DATA: `VERDICT_SCHEMA` moved to **3** — the `review` field's meaning changed, which is what a
+schema version is for — and `check-review-rounds.TRUSTED_SCHEMA` skips anything below it, counting
+what it skipped. ⟳ **It was prose with no falsifier until r1 M2**: a comment plus one `print`,
+with `VERDICT_SCHEMA` sitting at `2` on both sides of the boundary, so 99 pre-cutover records were
+indistinguishable from post-cutover ones and deleting both sentences went green everywhere.
+⟳ **And it now really does print on every run** (r1 L2): the `print` sat after both of `main`'s
+early returns, so the claim "prints it on every run" was false for the rc=1 and rc=2 paths — and a
+reader hitting a RED run is exactly the reader about to re-read the verdict corpus. It is emitted
+before the early returns, with counts derived from the records just read.
+
+⛔ **AND THE REFUSAL MUST NOT DESTROY WHAT IT IS PROTECTING — r4 M5, RETIRED WITH THE WRONG
+SUBJECT AND RESTORED (r1 B1).** The slice deleted `refusal_verdict_path` along with the
+`--out`-derived namespace, on the argument that the entries "mutated the ALLOCATOR for a namespace
+that is GONE". True of the allocator; the invariant it guarded was never about allocation. Measured
+at `4c29fe25`: re-dispatching an id whose review is already filed took the new refusal path, which
+returned through `emit`, whose `write_verdict` opens `"w"` — so a committed `gate_ran: true` record
+became `gate_ran: false`, and the join key this very slice built then told CI to **delete a genuine
+adversarial review**. `check-review-recorded.py` could not have caught it either: it selects with
+`--diff-filter=A`, and an overwritten file is M, not A. The fix is two mechanisms for two concerns
+— `refusal_verdict_path` stops the WRITE destroying the record next door, and a `refused` field in
+the testimony stops the READ misinterpreting it — because keying the consumer on the filename would
+be a second implementation of the naming rule.
+
+⚠ **`rc=2` no longer covers two opposite outcomes** (r1 M4). A run whose gate RAN, whose review
+exists at `--out`, and whose promotion was refused used to exit **2** — the code `docs/plugins.md`
+documents as *CANNOT RUN*, whose fallback rule says to discard the result and run a Claude review
+in its place. That instruction applied here throws away a Codex review that was paid for and
+exists. It exits **3**, and the legend says so.
+
+## The reviewer that was sandboxed out of its own evidence
+
+*Moved here 2026-09-23 from [`docs/plugins.md`](plugins.md), which holds the RULE and is imported
+by `CLAUDE.md` into every session. The rule is short; this is the measurement behind it, which a
+reader needs only when asking "why". The eviction was the human's call when folding
+`review-identity-176` round 1: the file sat at its 260-line budget and a corrected exit-code
+contract had to go in, and raising the budget to fit new content is how a budget stops meaning
+anything.*
+
+**THERE ARE TWO SANDBOXES, AND DISABLING THE OUTER ONE DOES NOTHING TO THE INNER ONE**
+(added 2026-08-07).
+
+| Layer | Controlled by | What it governs |
+|---|---|---|
+| Outer | Claude Code's `dangerouslyDisableSandbox` on the Bash call | whether *we* may launch the process |
+| **Inner** | **`codex exec -s <mode>`**, default `workspace-write` | what **Codex** may do to the machine |
+
+**MEASURED in round 7 of the blob-addressing review:** the wrapper passed no `-s`, so Codex
+sandboxed *itself*, could not open the Docker socket
+(`dial unix …/docker.sock: connect: operation not permitted`), and reported
+`0/35 mutations … SQL did not run`. **It reviewed by reading.** Its findings happened to be right,
+but the whole reason that artifact was moved out of prose into executable SQL is that reading is
+the most expensive way to find defects — **a reviewer that cannot execute is a downgraded gate that
+still reports success.**
+
+⭐ **Note the shape, which is the transferable part:** this is the *same class* as the fail-open
+cases, one layer out. The existing memory note — *"run Codex from the coordinator with
+`dangerouslyDisableSandbox`"* — covered the **outer** sandbox only, solving one instance and reading
+as if it covered the class. `scripts/codex-review.py` now passes `-s danger-full-access`.
+`trust_level = "trusted"` in `~/.codex/config.toml` does **not** substitute: it governs approval
+prompts, not socket access, and no narrower mode works because the verifier needs a unix socket
+outside every workspace root.
+
+### Why neither exit code proves a Codex run succeeded
+
+`scripts/codex-frontier-model.py` ranks by `priority` without filtering on what the pinned CLI
+supports — it cannot, as the cache has no minimum-client-version field (re-verified 2026-07-19
+across every key of all 7 cached models). It still returns `gpt-5.6-sol`, which CLI 0.142.5 rejects
+with *"requires a newer version of Codex"*. The wrapper falls through
+`gpt-5.6-sol → -terra → -luna → gpt-5.5` automatically.
+
+⚠ **Correction to what `plugins.md` previously claimed:** it said such runs exit **0**. Measured
+2026-07-19 — a direct `codex exec` exits **1**. The exit-0 report comes from the plugin's
+background-task path, not the CLI. Because the two disagree, trust *neither* as proof of success:
+**read the output FILE.** (Manual fallback if you bypass the wrapper: `codex exec -m gpt-5.5`.)
+
+## Every double-quoted bash string
+
+*Moved here 2026-09-23 from [`docs/plugins.md`](plugins.md), which keeps the RULE — anything longer
+than a line goes in a file. This is the measurement behind it.*
+
+It applies to **every** double-quoted bash string, not just `gh`. Measured 2026-08-04: a round-3
+review prompt containing `` `key` `` produced `bash: key: command not found` — the backtick was
+**command substitution**, the shell silently rewrote the prompt before Codex ever saw it, and no
+review was written. In the same session `git commit -m "$(cat <<'EOF' …)"` broke on an apostrophe.
+
+⚠ **The wrapper behaved correctly here and that is the point:** it refused to write a review file
+rather than writing an empty one, so the mangled run failed **loud**. A caller checking only a raw
+`codex exec`'s exit code would have recorded a completed gate.
+
+## A count with no owner
+
+*Moved here 2026-09-23 from [`docs/plugins.md`](plugins.md), which keeps the RULE — the count is
+declared in the script's own docstring, verified by running it, and deliberately not repeated.*
+
+⟳ **2026-09-04:** `plugins.md` said **35** while the suite ran **51** — measured, not noticed, for
+an unknown span. The count was moved into the script and pinned in `check-selftest-counts.POPULATION`.
+
+⟳⟳ **2026-09-14, r13 Medium — that fix did not hold, and the sentence describing it was the proof.**
+The pin stops the SCRIPT drifting; it cannot see a second copy in prose, and
+`check-selftest-counts.py` reads only `scripts/*.py`. The line went on saying **63** while the suite
+ran **85** — inside the very sentence promising *"the next drift fails a gate instead of sitting in
+prose"* — and `CLAUDE.md` imports that file, so the wrong number was loaded into every session.
+
+⭐ **The number was removed rather than corrected.** A count with no owner drifts again; the only
+durable fix is to have ONE copy, in the place a gate can run.
