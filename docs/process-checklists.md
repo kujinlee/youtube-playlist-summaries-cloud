@@ -449,7 +449,7 @@ full review round to surface:
 
 ⭐ **These are the cheapest findings in the repo to prevent and the most expensive to catch.** A
 defect in code needs a reviewer who understands the code; an invented number needs only a reviewer
-who checks, which is why they survive to round 5. Every rule below costs nothing to follow. ⚠ **They are numbered 1, 1b, 2, 3, 4 — five of them.** An earlier version said *"all four"* and did not move when 1b was added (r3, Low): a count of the rules, inside the rules about counts.
+who checks, which is why they survive to round 5. Every rule below costs nothing to follow. ⚠ **They are numbered 1, 1b, 2, 3 and 4 — listed, not counted, and that is deliberate.** Two earlier versions carried a count here: *"all four"* went stale the moment 1b was added (r3, Low), and the repair **re-pinned** it as *"five of them"* (r5, Medium) — the precise move the shape below exists to prevent, made inside the section that states it. **A list cannot disagree with its own contents.**
 
 ### 1 · No number unless it was measured in THIS session
 
@@ -566,11 +566,34 @@ the decision above was found; that history is why the figures are gone rather th
 **Prefer running `scripts/check-merge-ready.py` over assembling a list at all** — it derives its
 own, and it reaches the pull-request-only gates a local run cannot.
 
-### ⛔ The shape these rules keep, and why it is a SHAPE and not a pattern
+### ⛔ The shape THIS SECTION keeps, and why it is a SHAPE and not a pattern
 
-> **A governing rule's body may contain instructions and the name of a producer to run. It makes no
-> claim about the repository's contents — no count in digits or in words, no `file:line` locator, no
-> "N lines below".** Those belong in review and rationale documents, which are dated and expected to
+> **Scope: this section — its preamble and the bodies of rules 1, 1b, 2, 3 and 4.** Within it, three
+> forms are refused:
+>
+> 1. a **count of anything in this repository**, in digits or in words — including a count of this
+>    section's own contents;
+> 2. a **`file:line` locator** where the name of the symbol, constant or comment would serve;
+> 3. a **document-relative position** — *"twenty lines below"*, *"the section above"*.
+>
+> Everything else stays, including quotations of code and cross-references by name.
+
+⚠ **THE ENUMERATION IS THE TEST. The sentence that follows is its reason, not its criterion** —
+r5 (Medium). An earlier version led with *"makes no claim about the repository's contents"*, and
+that clause, read as the test, forbids three load-bearing expressions these rules need: rule 4's
+verbatim quotation of `check-merge-ready.py`'s `WORKFLOW` comment, its observation that `ci.yml`
+mentions `check-schema-gates.sh` only inside comments, and rule 3's cross-reference to
+`review-method.md` §0 Q2 step 5. All three are true, all three are the rules' best evidence, and
+`review-method.md` itself makes quoting-with-a-locator a **requirement** rather than a hazard. A
+criterion that condemns the repo's own standing rule is the wrong criterion.
+
+⚠ **AND THE SCOPE IS THIS SECTION, NOT THE REPOSITORY** — r5 (High). The first version said *"a
+governing rule's body"*, which reads either as this section (no reach beyond it) or as every rule in
+the repo — and the wide reading condemns `docs/review-method.md`, which carries many bare `:NNN`
+locators in governing rule bodies and, at *"must paste the relevant lines, with a `file:line`"*,
+**mandates the form**. Widening this invariant is a real question and it needs an audit of what it
+would condemn; that audit is **backlog #181's** work, not a sentence written here. Claiming
+repo-wide reach without it would be the over-claim this section is about. Those belong in review and rationale documents, which are dated and expected to
 > go stale.
 
 ⟳ **FIVE consecutive attempts narrowed to the form just seen** — bolded digits, then any digits,

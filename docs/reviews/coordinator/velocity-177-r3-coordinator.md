@@ -13,6 +13,9 @@ findings:
   - {id: L1, severity: Low, aim: deliverable, fix_induced: true, component: number-populations, disposition: fixed}
 ```
 
+REVIEW GAP: codex — alternation, same rule: Codex took r2, so r3 is the Claude half. Not a failure to run.
+
+
 ## ⛔ THE THRASHING TRIGGER FIRED. This is link two in `number-populations`.
 
 `dev-process.md`: *"It fires when **two consecutive rounds carry findings caused by the previous

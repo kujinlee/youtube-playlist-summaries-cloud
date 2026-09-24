@@ -12,6 +12,9 @@ findings:
   - {id: H1, severity: High, aim: instrument, fix_induced: true, component: architecture-review-claims, disposition: fixed}
 ```
 
+REVIEW GAP: claude — alternation, same rule: Claude took r3, and r4's risk was verifying an architecture review's factual claims, which `review-method.md` routes to Codex. Not a failure to run.
+
+
 ## ⛔ LINK THREE. The architecture review's remedy did not terminate it either.
 
 **B1 (Blocking).** Rule 4 still said a `ci.yml`-only derivation *"omits the **fifteen** schema

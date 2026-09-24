@@ -11,6 +11,9 @@ findings:
   - {id: M1, severity: Medium, aim: deliverable, fix_induced: true, component: number-populations, disposition: fixed}
 ```
 
+REVIEW GAP: claude — rounds 2+ alternate to the half that did NOT author the fix (`review-method.md` -> Round topology, step 4). The coordinator authored the r1 fold and the risk was reproduction, which that step routes to Codex. Not a failure to run: a deliberate, rule-directed single-half round.
+
+
 **Subject:** the r1 fold (`git diff 229be47a..HEAD`), not the original change.
 **Half:** `codex/velocity-177-r2-codex.md` — `gate_ran=true`, model `gpt-5.5`, **NOT CONVERGED, 1 Medium**.
 **Why r2 existed:** r1 produced two High, and `check-review-decision.py` returned `ROUND_OWED`. This
