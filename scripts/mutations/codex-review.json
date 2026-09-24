@@ -229,5 +229,49 @@
       ]
     ],
     "expect": "an ABSENT git binary is REPORTED, not raised — so the guard case below is reached rather than pre-empted by a traceback"
+  },
+  {
+    "name": "r5: the run token ignores the TREE, so one brief over two trees is one run",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    h.update(repr(sorted((dirty or {}).items())).encode(\"utf-8\"))",
+        "    pass"
+      ]
+    ],
+    "expect": "the same brief at the same commit over two DIFFERENT trees is two different runs"
+  },
+  {
+    "name": "r5: 'could not describe the tree' collapses into 'the tree was clean'",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    h.update(b\"no-tree\" if dirty is None else b\"tree\")",
+        "    pass"
+      ]
+    ],
+    "expect": "…and 'the tree could not be described' is not the same answer as 'it was clean'"
+  },
+  {
+    "name": "r5: the tree is hashed in dict order, so one tree can split into two runs",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "repr(sorted((dirty or {}).items()))",
+        "repr(list((dirty or {}).items()))"
+      ]
+    ],
+    "expect": "the tree is order-insensitive, so two descriptions of one tree cannot split a run"
+  },
+  {
+    "name": "r5: the run token narrows back to the 32-bit namespace a collision was found over",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "TOKEN_HEX = 16",
+        "TOKEN_HEX = 8"
+      ]
+    ],
+    "expect": "…and by HEAD at one prompt — the r3 incident, where an earlier session's verdict was lost"
   }
 ]

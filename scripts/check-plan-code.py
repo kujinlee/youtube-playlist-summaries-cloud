@@ -1063,7 +1063,7 @@ EXPECTED_MUTATIONS = {
     #     being a git repository: this very harness stages a `copytree` with no `.git`.
     #   * the explicit `--verdict` escape removed — the OVER-refusal direction, which would
     #     break the legitimate replacement and teach callers to route around the guard.
-    "scripts/codex-review.py": 21,
+    "scripts/codex-review.py": 25,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
@@ -3582,7 +3582,15 @@ def _self_test() -> int:
     # repository successfully built (M2). ⚠ The M2 entry exists because a `try/except` alone left
     # the `False` branch unreachable from any case; the builder takes the executable's NAME so a
     # case can drive it, which is what gave the mutation something to go red on.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 986)
+    # ⟳ 2026-09-23, round 5 (the Codex half, on round 4's OWN fix): 986 -> 990. All +4 on
+    # `codex-review.py`, and they are the fifth consecutive round to find a defect inside the
+    # previous round's fold. r4 added an allocator; r5 showed its identity function was a pure
+    # function of `(head, prompt)` while `reviewed_state` hands it the TREE as well — so one brief
+    # at one commit over two different trees was one run. Three entries for the tree (dropped
+    # entirely, its None/{} marker collapsed, and its order made significant) and one for the token
+    # WIDTH, which named `TOKEN_HEX` so the 32-bit namespace a birthday collision was demonstrated
+    # over cannot come back as a literal in a slice.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 990)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

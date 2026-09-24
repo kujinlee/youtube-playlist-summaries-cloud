@@ -42,7 +42,7 @@ candidate yields a message ends in a loud non-zero exit.
 Usage:
   scripts/codex-review.py --out docs/reviews/task-N-foo-codex.md "<review prompt>"
   scripts/codex-review.py --out <file> --prompt-file <file> [--timeout 900] [--model <slug>]
-  scripts/codex-review.py --self-test  # 115 cases
+  scripts/codex-review.py --self-test  # 119 cases
 
 Exit codes:  0 = a real review was written   |   1 = no candidate produced one (gate did NOT run)
 """
@@ -209,13 +209,20 @@ def _digest(path: str) -> str:
 # It is a subdirectory of `docs/reviews/` on purpose: `dir_snapshot` is non-recursive, so the
 # wrapper's own verdict writes cannot register as agent intrusions into the artifact root.
 VERDICT_DIR = os.path.join("docs", "reviews", "verdicts")
+# Hex digits kept from the run token. ⟳ r5: 8 -> 16. Eight is a 32-bit namespace, and a reviewer
+# produced a birthday collision over it in seconds. At the real population (183 verdicts) that was
+# P ≈ 4e-06 rather than a live hazard — the defect was the sentence claiming it "cannot collide" —
+# but sixteen costs nothing and ends the argument at P ≈ 3e-14 for a thousand runs. A NAMED
+# constant, not a literal in the slice, so the width is one decision with one place to change it.
+TOKEN_HEX = 16
 # ⟳ 2 (2026-09-13): `head` and `dirty`. The verdict could say the gate RAN and not what it ran
 # AGAINST, so nothing downstream could tell a review of the tree that will merge from a review of
 # the tree as it stood before three fixes landed. `check-review-recorded.py` reads both.
 VERDICT_SCHEMA = 2
 
 
-def run_token(head: "str | None", prompt_text: str) -> str:
+def run_token(head: "str | None", prompt_text: str,
+              dirty: "dict[str, str] | None" = None) -> str:
     """A short, deterministic name for THIS run. PURE — no clock, no filesystem, no git call.
 
     ⭐ **THIS IS THE ALLOCATOR, AND ITS ABSENCE WAS r4 H1.** `c3ad7727` was titled *"the verdict
@@ -244,12 +251,41 @@ def run_token(head: "str | None", prompt_text: str) -> str:
 
     ⚠ `head is None` (git could not answer) does not make two runs the same run: the prompt still
     separates them. It is folded in as a literal rather than dropped so the token is always defined.
+
+    ⛔ **r5 (Codex half) — THE FIRST VERSION OF THIS SAID "cannot collide" AND THAT WAS AN
+    OVERCLAIM, IN TWO DIFFERENT WAYS. Both are fixed here; the claim is now bounded rather than
+    absolute.**
+
+      ⑴ **DETERMINISTIC, and the real defect: it ignored the TREE.** `reviewed_state()` returns
+        `(head, dirty)` and this took only `head`, so the same brief re-dispatched at the same
+        commit against a DIFFERENT working tree produced the same token — two genuinely different
+        reviews, one verdict path. `dirty` was sitting right there, already gathered, already
+        stored in `verdict_record` precisely because a review describes a TREE and not just a
+        commit. `dirty is None` (the tree could not be described) and `dirty == {}` (it was looked
+        at and was clean) are DIFFERENT answers and are fed in as different bytes — collapsing them
+        is a defect this file has already paid for once.
+
+      ⑵ **PROBABILISTIC: 8 hex is a 32-bit namespace.** The reviewer found a birthday collision in
+        seconds over ~188k random prompts. ⚠ Stated honestly rather than inflated: at the real
+        population — 183 verdicts on disk — that is P ≈ 4e-06, and ≈ 1.2e-04 at a thousand. It was
+        never the live hazard; the WRONG SENTENCE was. Widening to 16 hex costs nothing and takes
+        it to ≈ 3e-14 at a thousand, so there is no reason to keep arguing about the exponent.
+
+    ⚠ **WHAT THIS STILL CANNOT DO, said out loud instead of being discovered later:** it is a pure
+    function of `(head, tree, prompt)`. Two dispatches agreeing on all three ARE the same run by
+    every property this wrapper can observe, and they share a path deliberately. A caller who needs
+    two distinct verdicts from one identity must pass `--verdict`. An EMPTY prompt cannot reach
+    here at all — `main` refuses one — so the reviewer's empty-prompt case is not a live path.
     """
     h = hashlib.sha256()
     h.update((head or "no-head").encode("utf-8"))
     h.update(b"\x00")
+    # ⑴ THE TREE. The marker distinguishes "could not describe it" from "described it, it was clean".
+    h.update(b"no-tree" if dirty is None else b"tree")
+    h.update(repr(sorted((dirty or {}).items())).encode("utf-8"))
+    h.update(b"\x01")
     h.update(prompt_text.encode("utf-8"))
-    return h.hexdigest()[:8]
+    return h.hexdigest()[:TOKEN_HEX]
 
 
 def verdict_path(out_path: str, override: "str | None" = None,
@@ -896,8 +932,11 @@ def main() -> int:
     # ⟳ **r4 H1: THIS MOVED ABOVE `vpath`, AND THE ORDER IS NOW LOAD-BEARING.** The allocator names
     # the run from the dispatch HEAD, so the state has to be gathered before the path is derived.
     head_at_dispatch, dirty_at_dispatch = reviewed_state()
+    # ⟳ r5: `dirty_at_dispatch` is passed too. A review describes a TREE, not just a commit — which
+    # is why `reviewed_state` gathers it and `verdict_record` stores it — and naming the run from
+    # the commit alone gave two different reviews of two different trees one verdict path.
     vpath = verdict_path(args.out, args.verdict,
-                         run_id=run_token(head_at_dispatch, prompt))
+                         run_id=run_token(head_at_dispatch, prompt, dirty_at_dispatch))
     # ⛔ BEFORE ANY TESTIMONY IS WRITTEN, and before `emit` exists — because `emit` WRITES to `vpath`,
     # so a refusal discovered inside it would have to destroy the thing it is protecting in order to
     # report that it was protecting it.
@@ -1391,7 +1430,29 @@ def self_test() -> int:
     chk("the token separates two reviews by PROMPT at one head, at two distinct prompts",
         (_tokA == _tokB, _tokA == _tokA2), (False, True))
     chk("…and by HEAD at one prompt — the r3 incident, where an earlier session's verdict was lost",
-        (_tokA == _tokC, len(_tokC)), (False, 8))
+        # ⛔ **A LITERAL 16, NOT `TOKEN_HEX` — AND THE SWEEP IS WHAT CAUGHT IT.** Written first as
+        # `(False, TOKEN_HEX)`, the width mutation SURVIVED: narrowing the constant moved the
+        # produced value and the expectation together, so the case agreed with whatever width it
+        # took and defended only the constant's deletion. This literal is the OUTSIDE OBSERVER of
+        # the width, the same role the declared-sum literal plays in `check-plan-code`.
+        (_tokA == _tokC, len(_tokC)), (False, 16))
+    # ── r5 (Codex half): THE TOKEN IGNORED THE TREE, which was the deterministic half of its High ──
+    # ⚠ TWO DISTINCT TREES, and the two that a `dict(dirty or {})` collapse would fuse: None (the
+    # tree could not be described) against {} (it was described and was clean). Both directions are
+    # asserted because the dangerous mistake here is fusing two answers, not separating two runs.
+    _clean = run_token("abc123", "same brief", {})
+    _dirtyA = run_token("abc123", "same brief", {"scripts/x.py": "M"})
+    _dirtyB = run_token("abc123", "same brief", {"scripts/y.py": "M"})
+    _nodesc = run_token("abc123", "same brief", None)
+    chk("the same brief at the same commit over two DIFFERENT trees is two different runs",
+        (_dirtyA == _dirtyB, _dirtyA == _clean), (False, False))
+    chk("…and 'the tree could not be described' is not the same answer as 'it was clean'",
+        _nodesc == _clean, False)
+    chk("…while one tree described twice is still ONE run, so the tree is read and not just hashed",
+        run_token("abc123", "same brief", {"scripts/x.py": "M"}), _dirtyA)
+    chk("the tree is order-insensitive, so two descriptions of one tree cannot split a run",
+        run_token("abc123", "b", {"a.py": "M", "b.py": "D"}),
+        run_token("abc123", "b", {"b.py": "D", "a.py": "M"}))
     chk("a head that git could not answer for still separates runs by prompt, never fusing them",
         run_token(None, "p1") == run_token(None, "p2"), False)
     chk("…and is stable for one run, so an unanswerable head is not a random name",
