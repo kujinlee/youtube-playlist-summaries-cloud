@@ -12360,3 +12360,50 @@ measurable"* is a **finding** — §2 names the two signals. *"All five were set
 the document's own contents and is gone. A wider sweep confirms the remainder are measurements and
 findings (*14 minutes*, *three path lists*, *six functions*, *13 mutation entries*), not tallies.
 **The defect was never numbers; it was numbers that must be maintained.**
+
+## 2026-09-24
+The correction chain gets one more link, and this time the wrong number was about our own history.
+
+The entry above said this was the fourth time a check had been narrower than the claim it was
+certifying. It was the sixth. A document written yesterday lists five earlier attempts individually,
+and the commit message from that day says so too. The count was written from memory of a long day
+rather than looked up — inside the correction for numbers written from memory.
+
+The way it was caught is the useful part: two documents written in the same sitting both said
+"fourth" while listing different sets of predecessors. Two roads to one number, from different
+starting points, is not agreement — it is the signature of a number nobody derived.
+
+The fix is to stop stating a total anywhere and point at the document that enumerates them, which a
+reader can check in one step.
+
+A second correction: the rule offered earlier for why one number was allowed to stay — that it was a
+"finding" rather than a "tally" — does not survive scrutiny. Both are findings about the document.
+The property that actually separates them is whether the number can be recovered from somewhere
+else: the one that stays is resolvable because the two things it counts are named by name a few
+sections earlier. That test a reader can apply; the previous one needed the author's intent.
+
+<!--tech-->
+Corrects `2026-09-24/4`. **r3 (High):** *"fourth pattern today"* appears at `dashboard-entries.md`
+`:12335` and `:12350`, `velocity-doc-consistency-r1-coordinator.md:60`, and
+`...-r2-coordinator.md:27, :34, :42` — six sites, all `+` lines in `362667be..HEAD`.
+`velocity-177-r4-coordinator.md:25-27` enumerates **five** predecessors individually and commit
+`2d4d874c`'s subject says *"the fifth fix"*. This one is the **sixth**.
+
+⭐ **The tell: the r1 and r2 coordinator documents, from one fold, reached "fourth" from DIFFERENT
+predecessor lists** — one omitting `file:line` locators, the other merging them with number-words.
+Convergence on a number from incompatible premises is the signature of a count nobody derived.
+
+⛔ **Fixed by stating no total at all** in the non-append-only documents, pointing instead at the
+document that enumerates them — **recoverable in one jump**. The two dashboard sites stand, corrected
+by this entry, because the store is append-only.
+
+⭐ **r3 also replaced the rule this branch was using**, and the replacement is better:
+*tally vs finding* is unapplicable by a reader (both survivors are findings *about* the document).
+**RECOVERABILITY — is the number named elsewhere? — sorts both correctly and a reader can run it.**
+`:310` is resolvable because `:58-59` names the two signals; *"All five were settled"* was resolvable
+from nothing.
+
+⚠ **r3 also answered the question this branch could not answer about itself:** withdrawing the
+exhaustiveness claim is a **fix, not a self-authored retreat** — the terminating evidence is
+`process-checklists.md:394` (the syntactic hunt rejected at three scopes, 2026-08-27), independent of
+this branch, and the claim now asserts *less*, not more.

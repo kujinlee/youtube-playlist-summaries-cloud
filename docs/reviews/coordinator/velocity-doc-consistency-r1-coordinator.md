@@ -57,7 +57,7 @@ in the banner note itself. Removed, and the sections now **list** rather than co
 ⛔ **The first version of this line said "ALL removed" and r2 refuted it (High).** Two survived —
 `"All five were settled"` and `"two of them look measurable"` — because the sweep that certified
 the claim required a noun from a fixed list, and those say *settled* and *them*. **That is the
-fourth pattern today that was narrower than the claim it certified** (bolded digits → any digits →
+another pattern narrower than the claim it certified** — `velocity-177-r4-coordinator.md` enumerates the predecessors (bolded digits → any digits →
 number-words → a noun list), so the fix is not a fifth pattern: **this document no longer claims
 exhaustiveness for this class**, because no exhaustive instrument exists — the syntactic proxy is
 refuted at three scopes by *Qualify every number in prose*.

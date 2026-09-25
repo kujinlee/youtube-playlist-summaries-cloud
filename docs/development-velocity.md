@@ -22,7 +22,9 @@
 > copies start.
 
 **Written 2026-09-24**, out of a session that merged PR #342 (five adversarial review rounds), held
-a Phase 6 architecture review, and implemented backlog #176. Every number below was measured in
+a Phase 6 architecture review, and implemented backlog #176. ⟳ *r3 (Low): this line used to claim
+every number below was measured in that session — a standing exhaustiveness claim this branch
+falsified repeatedly. What is true is narrower:* the numbers below were measured in
 that session, not recalled.
 
 ---
@@ -259,8 +261,11 @@ proposal — r1 Medium. A rationale that also carries the rule is two copies, an
 
 ## 9. The open questions — ALL ANSWERED 2026-09-24
 
-Every one was settled in the implementing session. Q2 and the scope were the user's decisions; the
-other three were settled from evidence and are recorded so they are not re-opened from scratch.
+Every one was settled in the implementing session. Q2 was the user's decision, as was the session's
+scope; the rest were settled from evidence and are recorded so they are not re-opened from scratch.
+⟳ *r3 (Medium): this said "the other three" over five questions, and the arithmetic closed under no
+reading — "the scope" is not one of the five. The r2 fold repaired the previous clause of this same
+sentence and left this one, which is rule 2's failure one more time.*
 
 **1 · Where does Q0 live? → `review-method.md` §0.** Measured, not argued: `check-docs.LINE_BUDGETS`
 covers exactly two files — `dev-process.md` at 220 and `plugins.md` at 260. `review-method.md` is
