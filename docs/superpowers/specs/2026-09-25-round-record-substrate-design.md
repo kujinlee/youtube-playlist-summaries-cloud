@@ -4,7 +4,13 @@
 > **Goal:** A review loop decides its own next step — run, stop, or escalate — from recorded
 > evidence rather than recall.
 
-**Status:** ⏳ **DESIGN — Phase 1, awaiting the human gate. Nothing implemented.**
+**Status:** ⛔ **DESIGN — r1 RAN BOTH HALVES AND DID NOT CONVERGE. r1 FOLDED HERE; r2 OWED.
+Nothing implemented. NOT YET AT THE HUMAN GATE.** Round 1 returned **4 Blocking, 6 High, 8 Medium,
+4 Low** across the two halves, and **both halves independently found the same Blocking**: the first
+draft's two-way split of *structure vs values* had no place for **schema**, so deleting the parser
+deleted the refusal of an absent `findings:` key and `{"round": 1, "fixes_nontrivial": false}`
+reached `STOP` — r3's Blocking restored verbatim. **The design as first written fired its own
+falsifier.** The substrate choice survives; the framing around it did not.
 **Date:** 2026-09-25. **Discharges:** backlog **#117**, whose `ARCHITECTURE_REVIEW — REDESIGN`
 verdict has been armed since 2026-09-15. **Unblocks:** backlog **#185**, **#188**, and the parked
 spec `2026-09-25-decision-card-soundness-design.md`.
@@ -24,8 +30,11 @@ $ python3 scripts/check-review-decision.py        # on review-decision-procedure
 ARCHITECTURE_REVIEW — thrashing: 'parse-header' carried fix-induced findings in r6 and r7
 ```
 
-⭐ **SIX RECORDED DEFECTS, ONE SHAPE — and the shape is the point.** Every one is
-*absence reads as a pass*, and every one was found by a reviewer rather than by a test
+⭐ **SEVEN RECORDED DEFECTS ACROSS TWO SHAPES — ⟳ r1 corrected both the count and the claim.**
+The first draft said *"six … every one is absence reads as a pass"*, **contradicted by its own table
+two rows below**: r2 M and r6 M are false `CANNOT_RUN`, the opposite direction. And #117's own row
+cites a **seventh**, r7 L1, which this table omitted. Every one was found by a reviewer rather than
+by a test
 (`scripts/check-review-decision.py`, comments at `:212`, `:219`, `:224`, `:228`, `:254`, `:260`):
 
 | # | what happened | what it read as |
@@ -36,6 +45,11 @@ ARCHITECTURE_REVIEW — thrashing: 'parse-header' carried fix-induced findings i
 | r3 B | `_findings_span` returned `""` for an **absent** key | *"a missing key is a silence"* — clean round |
 | r6 M | braces in ordinary prose counted as findings | a false CANNOT RUN |
 | r6 H | `fixes_nontrivial` was unreadable, so a stated CONTINUE rule could not be enforced | convergence |
+| r7 L1 | malformed block-scalar text under `halves` (`claude: \` with nothing indented) was accepted and read | a valid half-record |
+
+⛔ **FIVE read as a PASS; TWO (r2 M, r6 M) read as a FALSE REFUSAL.** Both directions are defects and
+they need different fixes — a parser that raises kills the first shape and can *worsen* the second.
+⚠ **And r7 L1 lives in `halves`, the field §3 calls untouched documentation.**
 
 ⛔ **A wrong parse here does not fail loudly — it yields a confident wrong DECISION**, and two of the
 six reached `CONVERGED` on a branch that had not converged. ⚠ **Bounded today only because the script
@@ -54,7 +68,7 @@ all three because it was adding another hand-rolled reader to this same componen
 |---|---|
 | `parse_header` itself | ⛔ **No — it IS the subject.** 121 lines, 6 recorded fail-opens |
 | `check-anchors.parse_header`, `gen-goals-page.parse_header` | **No, and they are NOT this function** — they parse a spec's `> **Anchor:**` line. ⚠ Measured: a **name collision**, three functions, three jobs. Out of scope, noted so a reader does not think the blast radius is three files |
-| `check-review-rounds.py` | **No** — it answers *did both halves run*, from **file existence** under `docs/reviews/<writer>/`, never from this header. Confirmed: it contains no reference to `halves` |
+| `check-review-rounds.py` | **No** — it answers *did both halves run* from **file existence** under `docs/reviews/<writer>/`, never from this header. ⟳ *r1 Medium: the first draft's stated evidence — "it contains no reference to `halves`" — is **false**; it defines `HALVES = ("codex", "claude")` at `:81` and uses it twice. The first grep was case-sensitive and lowercase. The conclusion holds; the evidence for it did not.* |
 | a YAML library (`pyyaml`) | **Not available, and adopting it is larger than the defect** — see *Rejected* |
 | `json` (stdlib) | ⭐ **Yes.** `json.loads` raises on malformed input; it cannot return a partial mapping |
 
@@ -74,14 +88,48 @@ round document
 **What is deleted:** `parse_header`'s regex body, `_findings_span`, `_scalarise`, `_block_findings`
 — the four functions that exist only to recover structure from text. **121 lines.**
 
-**What is kept, unchanged:** `_validate`, `REQUIRED`, `ROUND_REQUIRED` — these are **rules about
-values**, not parsing, and they are not the defect. A finding with `severity: "Wrong"` must still
-raise; JSON will happily carry it.
+⛔⛔ **THE FIRST DRAFT SPLIT THIS TWO WAYS AND THERE ARE THREE. BOTH r1 HALVES FOUND IT
+INDEPENDENTLY, AS A BLOCKING.** It said the deleted regexes were *parsing* and everything surviving
+was *values*. But the checks that refuse an **absent or wrong-typed top-level key** are neither —
+they are **schema**, they live inside `parse_header`'s deleted region, and nothing in the "kept" list
+replaces them:
 
-⛔ **THIS IS THE LOAD-BEARING DISTINCTION AND IT MUST NOT BE BLURRED:** `json.loads` removes the
-*structural* failure class. It does **nothing** about a well-formed header stating a false judgement.
-⭐ **Anyone reading this as "the header is now validated" will delete `_validate` and reopen r2's
-Blocking.**
+| check | where it lives today | survives the deletion? |
+|---|---|---|
+| `round:` present and an int | `:203-205` — **inside the deleted region** | ⛔ **no** |
+| `findings:` key present at all | `:232` — the explicit repair for **r3's Blocking** | ⛔ **no** |
+| `ROUND_REQUIRED` enforcement loop | `:245-251` — **inside the deleted region** (`ROUND_REQUIRED` at `:263` is only a constant) | ⛔ **no** |
+| `_validate` on each finding | `:273-284` — **per-finding only, never sees a top-level key** | ✅ yes |
+
+**Measured, applying only what the first draft said survives:**
+
+```
+absent `findings` key        -> _validate raises? no  |  decide() = STOP
+absent `fixes_nontrivial`    -> _validate raises? no  |  decide() = STOP
+findings not a list          -> _validate raises? no  |  decide() = STOP
+fixes_nontrivial as a string -> _validate raises? no  |  decide() = ROUND_OWED
+```
+
+⛔ **`{"round": 1, "fixes_nontrivial": false}` is well-formed JSON and reaches `STOP`.** That is r3's
+Blocking restored verbatim — *"a missing key is a silence"* — and `{"round": 1, "findings": []}`
+reaching `STOP` is r6's High restored. **The design as first written fired its own falsifier.**
+
+### The three layers, named so they cannot be merged again
+
+| layer | mechanism | status |
+|---|---|---|
+| **1 · syntax** | `json.loads` — malformed text raises | ⭐ **replaces** the regex body |
+| **2 · schema** | ⛔ **NEW, AND IT IS BUILT, NOT KEPT** — required top-level keys `round` (int), `fixes_nontrivial` (bool), `findings` (list), each refusing on **absence** and on **wrong type** | ⛔ **must be written** |
+| **3 · values** | `_validate` + `REQUIRED` — a finding with `severity: "Wrong"` still raises | ✅ kept, unchanged |
+
+⚠ **The first draft warned that a reader would delete `_validate`. The real hazard is believing
+`_validate` was ever enough** — the convening architecture review says the reshaping *"reduces
+`_validate` to a schema check"* (`architecture-review-2026-09-25-decision-family.md:180`), i.e.
+**changed**, not *kept unchanged*. The spec and the review disagreed about the one function both call
+load-bearing, and the review was right.
+
+⭐ **Layer 2 is backlog #185's seam falling out of the redesign** — the rules stop being reachable
+only through the reader.
 
 ### What the header looks like
 
@@ -103,8 +151,18 @@ findings:
 }
 ```
 
-**14 lines today, 13 as JSON** — one line shorter, at the same density. One finding per line, which
-is how the record already reads.
+⛔ **"14 today, 13 as JSON — one line shorter" WAS WRONG IN SIGN, AND THIS IS THE ONE PLACE THE SPEC
+ANSWERS #117's ACTUAL QUESTION (r1, both halves).** The 13 was JSON of `parse_header`'s *projection*,
+which drops `subject` and `halves` — it compared a full YAML header against a JSON rendering of part
+of one.
+
+**Measured faithfully over every parseable header — JSON is LONGER in 33 of 33, median +1 line**
+(the Claude half measures +4 on the worked example under a more expansive formatting). **The
+authoring cost is real and it is positive.**
+
+⭐ **The case for this substrate does not rest on density and must not be written as if it does.** It
+rests on malformed input becoming *impossible to misread as valid* — and on layer 2 above, which any
+substrate would need equally.
 
 ## §2 — Migration
 
@@ -115,16 +173,22 @@ deleted in that PR.**
 is not deleted, the six fail-open shapes remain reachable, and #117's REDESIGN is **not discharged** —
 only postponed behind a flag. A migration that leaves the subject alive is not a migration.
 
-**Measured feasibility, by running it** *(import `check-review-decision`, `parse_header` each
-document, `json.dumps`, `json.loads`, compare)*:
+⛔ **THE FIRST DRAFT'S FEASIBILITY EVIDENCE MEASURED THE WRONG OBJECT (r1, both halves).** It ran
+`parse_header` over each document and round-tripped **its return value** through JSON — but that
+return value is only `round`, `fixes_nontrivial` and `findings`. **It is a tautology over an `int`, a
+`bool` and a `list`**, and it says nothing about converting a *document*.
 
-```
-round-tripped cleanly through json: 30   failed: 0
-headers with a YAML comment: 0
-headers with a block scalar:  0
-```
+**What the corpus actually contains** *(regex over every `yaml` block, not through the parser)*:
 
-So nothing in the corpus uses a YAML feature JSON lacks, and the conversion is mechanical.
+| | |
+|---|---|
+| top-level keys in use | ⛔ **9**, not 3 — `round`, `fixes_nontrivial`, `subject`, `halves`, `findings`, **`architecture_review`**, **`deliverable_findings`**, **`deliverable_code_findings`**, **`stopping_rule`**. The last four the first draft never mentioned |
+| headers with a YAML comment | ⛔ **1**, not 0 — `seed-explainer-serve-manifest-r2-coordinator.md:9` carries an inline `#` comment explaining a REVIEW GAP. ⚠ **The first measurement used `^\s*#`, which sees only line-start comments**; this one is inline. JSON would delete it silently |
+| headers with a block scalar | 0 — reproduces |
+
+⭐ **So the conversion is NOT a re-emission of parsed output. It must read the document**, carry all
+nine keys, and make a **stated decision** about the one comment: move it into a value, move it to
+prose below the header, or lose it deliberately. **Losing it silently is not available.**
 
 ### ⛔ The residual risk, stated before it is discovered
 
@@ -133,15 +197,48 @@ preserves the misreading faithfully — *absence reads as a pass*, one last time
 ⚠ **This is the one real hazard in this change and it is not hypothetical**: mis-parsing is the
 documented behaviour of the thing doing the reading.
 
-**Two falsifiers, pre-committed:**
+⛔⛔ **THE FIRST DRAFT'S TWO FALSIFIERS COULD NOT FIRE. r1 (both halves, Blocking) — and one of them
+was a TEST THAT CANNOT FAIL, written in the paragraph that was being careful about exactly that.**
 
-1. **Verdict invariance.** `decide()` must return an **identical** `(decision, reason)` for **every**
-   subject before and after conversion. A differing verdict is a misread caught.
-2. **Per-document finding-count parity against the SOURCE TEXT, not against the parser.** For each
-   document, count `findings:` list markers in the original YAML by an independent count and compare
-   to the JSON array length. ⭐ **This is the one that can catch what (1) cannot** — a misread that
-   happens not to change a verdict. Checking only (1) would be *fixing a premise rather than covering
-   the branch*.
+- **The parity check was vacuous by construction.** `parse_header:243-246` *already* refuses unless
+  the list-marker count equals the parsed finding count, so for every document that parses today the
+  parity holds necessarily. **Measured: 0 disagreements across all 30.**
+- **And it could not be made independent without reintroducing a fixed defect** — counting markers
+  over the whole header is **r2's Medium** (a bullet inside a `halves` block scalar counted as a
+  finding). *A second implementation of one rule drifts*, arriving in the falsifier rather than the code.
+- **Verdict invariance is a five-value collapse.** `decide()` reduces a whole record to one of five
+  strings, and the corpus currently produces **two** across **8** subjects. A misread must flip one of
+  eight coarse labels to be seen.
+- ⛔ **And a real misread passes both.** `_scalarise` splits flow mappings on `,` (`:302-311`), so a
+  comma inside a quoted `component` silently truncates it — parity passes `1 == 1`, the verdict is
+  unchanged, and the conversion writes the **truncated** value in permanently. ⚠ `component` is the
+  thrashing axis, so a truncation inert today can arm or disarm `ARCHITECTURE_REVIEW` in a later
+  round. ⚠ **Honest bound: 0 live instances of this shape in the 30** — a hole in the falsifier, not a
+  live corruption.
+
+### The falsifier that actually covers the class
+
+⭐ **A FIELD-LEVEL TEXT DIFF of the source header against the converted JSON** — every top-level key
+and every finding's every field, compared as text. It is cheap, it is **not** a second implementation
+of anybody's rule, and it catches the comma case, the dropped `subject`/`halves`, the four unmentioned
+keys and the deleted comment.
+
+**Verdict invariance is kept as a cheap smoke test, demoted and labelled as one.** The parity check
+is **dropped**: it is a regression guard on an invariant the old parser enforces, not a misread
+detector, and calling it a falsifier was the defect.
+
+### ⛔ Cutover — branches in flight, which the first draft did not mention at all
+
+`rounds_for()` globs coordinator documents for **the current branch's** subject. So a branch already
+in flight whose round documents are YAML moves from *decidable* to `CANNOT_RUN` the moment this
+merges. ⚠ **Measured: 4 of the 8 subjects are mid-flight**, and *this* round adds to the corpus it
+converts — **30 is counted inside the set it measures**, the same shape that went stale five times in
+the spec this one unblocks.
+
+**So the cutover is stated rather than discovered:** the conversion runs over whatever exists at merge
+time (not a number pinned now), and a branch carrying YAML round documents after the merge converts
+its own with the same one-shot converter. ⛔ **This is the cost of no-fallback and it is accepted, not
+waved away** — the alternative keeps the parser alive, which is the thing being removed.
 
 ⚠ **Neither falsifier can see a document the old parser rejected outright.** The 42 round-shaped
 documents that do not parse today (39 with no header block at all) are **untouched and remain
@@ -183,8 +280,13 @@ demote them.
   lesson: *do not build the caller in the same breath as changing the script it calls.*
 - **It does not split the rules from the reader** — backlog #185, which is blocked on this and
   becomes easy after it.
-- **It does not widen `disposition`** — backlog #187. Four out-of-set values exist in the record
-  (`retreat`, `refuted`, `redesigned`, `moot`) and will still be refused after this change.
+- ⛔ **`disposition` is NOT cleanly out of scope — #187 is ENTANGLED, and r1 (High) was right.**
+  The three `ship-src-root-alone` documents fail on **nothing but** `disposition`, and all three are
+  recoverable **today** by widening the set — through the reader this change deletes. ⚠ **And the
+  convening architecture review already said so**: the call *"must be made before #117's schema pins
+  the enum"* (`architecture-review-2026-09-25-decision-family.md:337`). **Layer 2 pins the enum.**
+  So #187 is either settled first, or this spec's schema deliberately carries today's narrower set
+  and says why. ⭐ **Declaring it out of scope was the error; it is now a stated dependency.**
 - **It does not rescue the 42 unreadable documents.**
 - **It does not change any decision rule** — `scope_for`, `thrashing_component`, `converged`,
   `sequence_error`, `decide` and `exit_code_for` are untouched. ⭐ **A verdict that changes is a
@@ -204,11 +306,12 @@ demote them.
 
 | Piece | Cost |
 |---|---|
-| swap the reader | **small, and NET NEGATIVE** — 121 lines deleted, ~5 added |
+| swap the reader | **small, and net negative** — ⟳ *r1: **109** lines, not 121; the first measurement included `_validate` (12 lines), the function this spec explicitly **keeps**. A measurement of one set reported as a measurement of another.* Plus layer 2, which is new code |
 | convert 30 documents + both falsifiers | small; the conversion is mechanical, the falsifiers are the real work |
 | `round-header-template.md` | small |
-| `--self-test` | ⭐ **the real work** — 61 declared cases today, many of which exist **only to exercise malformed YAML**. Those cases lose their subject and must be **retired with it and recorded as such**, not orphaned. `check-selftest-counts.py` verifies the declared count by running it |
-| mutation manifest | entries anchored in deleted code must be retired at both sites with the count and reason |
+| `--self-test` | ⛔ **the count may RISE, not fall — r1 (Medium) counted them.** Of 61 cases, **16** touch the record: ~**5** genuinely retire, **8** must be **rewritten** against JSON rather than deleted, and **3 would go RED** against the design as first written (absent `round`, absent `findings`, `fixes_nontrivial`) — which is B1 seen from the suite's side. ⚠ **A case that tested a RULE through a malformed header is not a case that tested the PARSER**, and only the latter may retire |
+| ⛔ `_validate` needs cases it does not have | **r1 (High), measured: gutting `_validate`'s missing-field refusal leaves `61/61` GREEN** — its branch is satisfied by an ambient missing `component`. The one function this spec calls "kept, unchanged" and load-bearing is pinned by **zero** cases, so "unchanged" is currently unfalsifiable |
+| mutation manifest | ⟳ **re-anchor, do NOT retire (r1 Medium).** 2 of 10 entries anchor in deleted code, and one of them is *"an absent `findings` key stops being refused"* — **the guard for the very defect B1 reopens.** Retiring it would remove the alarm at the moment the risk is highest |
 
 ⚠ **The `--self-test` count will FALL.** That is the one sanctioned kind of ratchet fall — cases
 retired *with their subject* — and it is recorded at both sites with the count and the reason, as
