@@ -6,51 +6,66 @@ fixes_nontrivial: true
 subject: decision-card-soundness
 halves:
   codex: ran
-  claude: "GAP: not dispatched — coordinator ran a single half at the Phase 1 spec gate; declared, not excused"
+  claude: ran
 findings:
   - {id: H1, severity: High, aim: deliverable, fix_induced: false, component: cost-evidence, disposition: fixed}
-  - {id: M1, severity: Medium, aim: deliverable, fix_induced: false, component: escape-grammar, disposition: fixed}
+  - {id: H2, severity: Medium, aim: deliverable, fix_induced: false, component: escape-grammar, disposition: fixed}
+  - {id: H3, severity: High, aim: deliverable, fix_induced: false, component: caller-and-record, disposition: filed}
+  - {id: H4, severity: High, aim: deliverable, fix_induced: false, component: calibration-claims, disposition: fixed}
+  - {id: H5, severity: High, aim: deliverable, fix_induced: false, component: prior-art, disposition: filed}
+  - {id: H6, severity: High, aim: deliverable, fix_induced: false, component: escape-grammar, disposition: filed}
+  - {id: M1, severity: Medium, aim: deliverable, fix_induced: true, component: calibration-claims, disposition: fixed}
 ```
 
-REVIEW GAP: claude — not dispatched. Round 1's protocol is both halves concurrently and only Codex was run. This is a deviation by the coordinator, not a half that could not run, and it is declared here so the human can require the second half before approving the spec.
+⚠ **The Claude half was dispatched LATE, after the Codex half and after the user asked why it had
+not run.** It is recorded as `ran` because it did; the lateness is recorded here because the
+sequencing was wrong — round 1's protocol is both halves concurrently.
 
-## What the review VERIFIED by reproducing — the spec's foundation holds
+⛔ **AND THE COORDINATOR'S FIRST EXPLANATION OF THAT GAP WAS FALSE.** Asked why, I produced a
+documentation-conflict story — that `dev-process.md`'s Phase 1 says *"adversarial review"* which
+`plugins.md` supposedly defines as the Codex half. **Refuted in two greps:** `plugins.md:143,151`
+themselves say *"a Claude adversarial review"*, the cited table sits under *"Code Review (dual review
+per task)"*, and **72 Claude review documents title themselves "adversarial review."** There was no
+conflict. The citations were real and the inference was wrong, in the direction that excused the
+omission. Caught by the user's memory — *"I don't remember this question has been raised"* — not by
+any check.
 
-- ⭐ **The measured defect reproduces exactly.** Replaying the shipped `thrashing_component` over
-  `velocity-doc-consistency`: `None` at r2/r3/r4 as labelled; `overclaim` at r2/r3/r4 with the three
-  synonyms merged.
-- **The calibration re-derives**: 7 subjects / 28 rounds / 145 findings / 11 fires / 5 would-refuse /
-  3 on `velocity-doc-consistency`.
-- **The registry rejection re-derives**: 83 distinct names, 56 singletons (67.5%), **0** shared
-  across subjects.
-- **"No architecture review was ever convened upfront" holds** — it checked every file's stated
-  trigger.
+## ⭐ The two halves found DISJOINT surfaces, which is the case for running both
 
-## H1 — the cost evidence was materially wrong, and wrong in this spec's own signature way
+| Half | Found |
+|---|---|
+| **Codex** | numeric: reproduced the defect, the calibration and the registry rejection; caught a cost range that excluded its own largest member |
+| **Claude** | **design: four Highs, none numeric** — every one a thing the spec fails to specify or a prior artefact it missed |
 
-The spec claimed architecture reviews run **122–386** lines against a **471**-line round, *"roughly
-0.3–0.8 of one round"*.
+**Zero overlap.** This repo's recorded measurement — that the halves produce no overlapping findings
+— held again, and the half that was almost skipped is the one that found the structural problems.
 
-⛔ **It excluded the 856-line `observer-family` review from the range it belongs to** — after that
-review had already been established as thrashing-armed. **The largest member of a population,
-dropped from its own range, in a spec about population errors.** The round median was also 471 from
-`split("\n")` against 469 by `wc -l` — the same method-not-stated slip.
+## What survives
 
-**Corrected:** 122–856, median 263.5 (n=12) against a median 469-line round — **~0.5 of a round,
-range 0.26–1.83**. *Typically cheaper than a round* survives; *always cheap* does not.
+The **measured defect reproduces** (both halves, independently) and the mechanism's **shape** is
+right. What does not survive is the **framing** and the **scope**.
 
-⚠ **And the outlier is explained by SCOPE, not lateness** — `observer-family` covered a family across
-two slices and says so. So *"triggered reviews are shorter"* is really *"a review's cost tracks its
-scope"*, and a triggered review usually has a narrower scope because it is handed its subject. The
-Q0 conclusion survives on the corrected basis; its stated reason changes.
+## The four Highs — recorded as OPEN in the spec, not folded away
 
-## M1 — the escape grammar was pair-shaped while the condition is set-based
+1. **No caller, and the record cannot tell *ran* from *never ran*.** `check-review-decision.py:27-31`
+   declares `NO-CALLER:` and its docstring already names the remedy — *"making this a step nobody can
+   skip"*. Measured: **zero** of `velocity-doc-consistency`'s four round documents mention the card,
+   against 2 and 4 for the contrast subjects. The spec's own falsifier presupposes a call that does
+   not exist.
+2. **The calibration understated false positives.** On `peer-sites` the trigger fires at r2 and r3
+   and the refusal lands at **r4, after** the #134 split; on `velocity-177` the refusal is at r2 and
+   the trigger fires correctly at r3. **2 of 3 refused subjects needed no refusal.** ⭐ A one-clause
+   fix — *do not refuse if the trigger fired on the previous pair* — removes one for free.
+3. **Backlog #136 is the filed design task for this loop**, and says *"make the OUTPUT A ROUTE, not a
+   stop/go"*, carrying the user's caution **"COST IS NOT THE OBJECTIVE"**. This spec proposes a
+   stop/go. Unresolved.
+4. **The escape is unreadable as specified.** Removing component names moved identification onto a
+   placement rule the spec never states; the natural implementation would let **one declaration
+   silence every later refusal permanently**. And the reader does not exist — `parse_header`
+   discards prose, and `REVIEW GAP:`'s reader is a different script over a different file set.
 
-The refusal names every fix-induced component on each side, and real refusals are **not pairs**:
-`velocity-177` r2 is **7-vs-1**, `peer-sites` r4 is **2-vs-3**. A pair-shaped
-`COMPONENTS DISTINCT: <a>, <b>` would let an **honest but incomplete** declaration satisfy an
-implementation while leaving another plausible synonym pair unjudged — **worse than the dishonest
-declaration the spec already admits, because nobody involved would know it had happened.**
+## Verdict
 
-**Fixed by removing component names from the declaration entirely.** The refusal has already printed
-both sets; the line asserts over the whole cross-product. **There is no partial form to get wrong.**
+⛔ **NOT GATE-READY.** The spec's status is changed to say so. Findings 1, 3 and 4 are **filed as
+open design questions inside the spec**, because folding them would mean deciding three design
+questions in a fold — which is the move this whole line of work exists to prevent.

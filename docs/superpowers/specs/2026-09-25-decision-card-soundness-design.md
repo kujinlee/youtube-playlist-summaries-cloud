@@ -4,7 +4,10 @@
 > **Goal:** A review loop decides its own next step — run, stop, or escalate — from recorded
 > evidence rather than recall.
 
-**Status:** DESIGN — awaiting the human gate. Nothing implemented.
+**Status:** ⛔ **DESIGN — NOT GATE-READY.** Round 1 ran both halves; the Claude half returned **four
+High findings, all design-level**, and two of them change what this spec should be rather than what
+it says. The measured defect and the mechanism's shape survive; the framing and the scope do not.
+**Nothing implemented. Do not plan from this file until the open questions below are settled.**
 **Date:** 2026-09-25. **Precedent:** `2026-09-14-review-decision-procedure-design.md`, which built
 the card this spec repairs.
 
@@ -46,6 +49,8 @@ for that class, but its subject is the database schema, so it cannot see review 
 | `check-merge-ready.unaccounted_mentions` | ⭐ **Yes, in shape** — the soundness-check pattern this spec copies: *"a hand-rolled parser CANNOT be made correct. It CAN be made unable to be silently wrong."* |
 | `REVIEW GAP:` convention | ⭐ **Yes, in shape** — the escape-hatch grammar this spec copies. |
 | backlog #154 | *"the terminating move is not a wider pattern but a soundness check — refuse what cannot be classified."* |
+| ⛔ **backlog #136** | **MISSED IN ROUND 1 (r1 High).** The filed `L` design task for **this same decision loop**. Its stated work: *"make the OUTPUT A ROUTE, not a stop/go"* — routes being continue / **split** / redesign / defer — and it carries the user's caution **"COST IS NOT THE OBJECTIVE AND MUST NOT BE THE TERM BEING MINIMISED"**. ⚠ **This spec's `CANNOT_RUN` is a stop/go.** The 83-names / 67%-singleton measurement argues *for* #136's direction (derive the partition from the file or symbol a finding names), not merely against a registry. |
+| backlog #117, #118, #119 | Also unmentioned in round 1. **#118 in particular:** this spec moves 5 cases from exit 1 to exit 2, which silently settles #118's open question about exit semantics. |
 
 ---
 
@@ -126,11 +131,15 @@ Replaying the condition over every subject with parseable round records
 
 | | |
 |---|---|
-| subjects / rounds / findings | 7 / 28 / 145 |
+| subjects / rounds / findings | **8 / 29 / 147** — ⟳ *r1 Medium: the spec shipped 7/28/145, stale in its own commit, because `f34d16a9` added a round while the spec was being written. A document inside the corpus it measures.* |
 | trigger fires normally | 11 |
 | **would refuse** | **5** |
 | …on `velocity-doc-consistency` | **3** — the subject independently established as thrashing |
-| …debatable | 2 — `peer-sites` r4, `velocity-177` r2 |
+| …on subjects where **doing nothing already reached the right answer** | ⛔ **2 — and round 1 (High) found the spec understated this.** On `peer-sites` the trigger **fires at r2 and r3**, and the refusal lands at **r4 — after** the split backlog #134 records. On `velocity-177` the refusal is at **r2** and the trigger then fires correctly at **r3**, producing a real architecture review. Calling these merely *"debatable"* hid that 2 of 3 refused subjects needed no refusal. |
+
+⭐ **An unconsidered one-clause fix removes one of them for free** (r1): *do not refuse if the
+trigger fired on the previous pair.* `peer-sites` r4 disappears. This belongs in the design, not in
+a footnote.
 
 **This corpus is committed as a fixture in `--self-test`**, so the calibration is a case that fails
 when the behaviour changes rather than a number in prose.
@@ -216,6 +225,40 @@ decision nobody can find is the root cause this whole line of work uncovered.**
 **Also out:** deriving `fix_induced` from git (real, but does not close the measured hole); a
 component registry (**refuted below**); `aim` honesty (same class, no measured instance);
 Q2/Q6's convention gaps (declared unenforced deliberately).
+
+## ⛔ OPEN — round 1's four High findings, and why they are not folded away
+
+**These change what the spec should be. They are recorded, not resolved.**
+
+**1 · The subject has no caller, and the record cannot tell *ran* from *never ran*.**
+`scripts/check-review-decision.py:27-31` declares `NO-CALLER:` and has none. Its own docstring
+already names this failure and its remedy: *"If it is skipped again, the remedy is not better prose;
+it is making this a step nobody can skip."* ⚠ **Measured: zero of `velocity-doc-consistency`'s four
+coordinator documents mention the card, thrashing or `ARCHITECTURE_REVIEW`**, while
+`velocity-177-r2` and `peer-sites-r2` do. The card *was* run in-session and never recorded — so the
+record conflates two different failures with different remedies, and **this spec's own falsifier
+("the check's call is removed") presupposes a call that does not exist.**
+
+**2 · The calibration understated false positives** — see §3 above, corrected.
+
+**3 · Backlog #136 is the filed design task for this loop and says *route, not stop/go*.** This spec
+proposes a stop/go. Either it is a deliberate narrowing of #136 with a stated reason, or it is
+duplicating a filed task in a direction its owner cautioned against. **Unresolved.**
+
+**4 · The escape is unreadable as specified.** Round 1's fold removed component names, which moved
+all identification onto a **placement rule this spec never states**. ⛔ The natural implementation
+greps the subject's round documents — `rounds_for()` already globs them — so **one declaration would
+silence every later refusal permanently**, which is the backlog #56 outcome §2 invokes against
+itself. ⚠ And the reader does not exist: `decide()` is pure over headers and `parse_header`
+**discards prose**. *"`REVIEW GAP:` supplies the grammar"* understates the gap — that reader is
+`check-review-rounds.py:83-88`, **a different script over a different file set.**
+
+### Also open (Medium)
+
+- Freezing the calibration as a fixture leaves the **sensitivity** claim with no falsifier.
+- An unanswered refusal **expires at the next round** while the escape **persists** — asymmetric.
+- Header coverage is **29 of 134** documents in `docs/reviews/coordinator/`, so the corpus is a
+  minority of the record and the spec never says so.
 
 ## Rejected, with reasons
 
