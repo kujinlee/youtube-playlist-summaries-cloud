@@ -4,7 +4,7 @@
 > **Goal:** A review loop decides its own next step — run, stop, or escalate — from recorded
 > evidence rather than recall.
 
-**Status:** ⛔ **DESIGN — r1 RAN BOTH HALVES AND DID NOT CONVERGE. r1 FOLDED HERE; r2 OWED.
+**Status:** ⛔ **DESIGN — TWO ROUNDS, FOUR HALVES, NEITHER ROUND CONVERGED. r3 OWED.
 Nothing implemented. NOT YET AT THE HUMAN GATE.** Round 1 returned **4 Blocking, 6 High, 8 Medium,
 4 Low** across the two halves, and **both halves independently found the same Blocking**: the first
 draft's two-way split of *structure vs values* had no place for **schema**, so deleting the parser
@@ -118,9 +118,20 @@ reaching `STOP` is r6's High restored. **The design as first written fired its o
 
 | layer | mechanism | status |
 |---|---|---|
+| **0 · presence** | ⛔ **r2 (Claude, Medium): NO LAYER OWNED THIS.** A document with **no fenced `json` block at all** must raise — the exact shape of r3's Blocking one level up, and `json.loads` is never reached to refuse it | ⛔ **must be written** |
 | **1 · syntax** | `json.loads` — malformed text raises | ⭐ **replaces** the regex body |
 | **2 · schema** | ⛔ **NEW, AND IT IS BUILT, NOT KEPT** — required top-level keys `round` (int), `fixes_nontrivial` (bool), `findings` (list), each refusing on **absence** and on **wrong type** | ⛔ **must be written** |
-| **3 · values** | `_validate` + `REQUIRED` — a finding with `severity: "Wrong"` still raises | ✅ kept, unchanged |
+| **3 · values** | `_validate` + `REQUIRED` — a finding with `severity: "Wrong"` still raises | ⛔ **NOT "unchanged" — r2 (Claude, High)** |
+
+⛔ **`_validate` CANNOT BE CARRIED OVER UNTOUCHED, AND CALLING IT "KEPT, UNCHANGED" WAS WRONG IN
+EVERY DRAFT SO FAR.** It was written against a reader that could only ever hand it `str` and `bool`,
+because `_scalarise` produced nothing else. **JSON hands it `int`, `list`, `dict` and `null`.** A
+membership test against a set of strings behaves differently for each — and an unhashable value makes
+`f[key] not in allowed` raise `TypeError` rather than the intended `ValueError`, which is a refusal
+with the wrong diagnosis. ⭐ **So layer 3 gains type assertions of its own**, and the spec stops
+claiming this function survives the substrate change untouched. ⚠ **This is the third time a draft
+has asserted `_validate` is fine and been wrong** — r1 found it unfalsified (gutting it leaves
+61/61 green), r2 finds it mistyped. **It is the least-examined load-bearing thing in this design.**
 
 ⚠ **The first draft warned that a reader would delete `_validate`. The real hazard is believing
 `_validate` was ever enough** — the convening architecture review says the reshaping *"reduces
@@ -180,9 +191,12 @@ numbers because they are three distinct questions:
 | of those, carrying a `yaml` block | **34** |
 | of those, **parseable** by `parse_header` | **31** (42 not) |
 
-**JSON is longer in 31 of 31 parseable headers, median +1 line.** ⚠ **And every one of these numbers
-moved during this review, because recording these rounds moved them** — the same structural staleness
-that cost the spec this one unblocks five corrections. They are snapshots at a named commit.
+**JSON is longer in every parseable header measured, median +1 line.** ⛔ **r2 (Claude, High): the
+first version of this table reintroduced the very confusion it was written to fix** — it restated
+`31` as a fixed fact four paragraphs after declaring counts unpinnable, and `31` had already moved
+because **this branch's own round records are inside the set**. ⭐ **The rule replaces the number:
+every figure over `docs/reviews/coordinator/` is derived by `--calibrate` at read time, and the
+snapshot above is stamped `bef49007` and is not authority for any later claim.**
 
 ⭐ **The case for this substrate does not rest on density and must not be written as if it does.** It
 rests on malformed input becoming *impossible to misread as valid* — and on layer 2 above, which any
@@ -250,19 +264,51 @@ replaced a falsifier that could not fire with one that could not be built.
 
 ### The resolution: the converter MAY parse, because the converter is DELETED
 
-⭐ **#117 forbids a STANDING hand-rolled parser in the decision path. A one-shot migration script is a
-different object** — written once, reviewed once, run once, deleted with the migration, and never
-consulted by `decide()`. Conflating the two is what made the first two falsifier attempts fail in
-opposite directions.
+⛔ **r2 (Claude, Blocking): THE WARRANT AND THE CUTOVER MECHANISM CONTRADICTED EACH OTHER IN THE SAME
+COMMIT.** §2 said the converter may parse *because it is deleted*; the cutover section said
+`scripts/migrate-round-headers.py` **survives the migration** so branches in flight can run it. Both
+cannot be true, and the surviving one is the fact the design was authorised on.
 
-**So the falsifier is human review at a size that makes it honest:**
+**DECIDED: the converter SURVIVES, and the warrant is corrected — it was never "deleted", it is
+"never in the decision path".**
 
 | | |
 |---|---|
-| **the check** | the converter emits, per document, a **side-by-side field table** — source text vs converted JSON, every top-level key and every finding field |
-| **the falsifier** | ⭐ **a human reads all of them.** At **31** documents that is a bounded, one-time read, not a standing cost |
-| **why not automate it** | any automated comparator must itself decide what a field *is*, which is the parser question again. **A reviewer reading 31 tables does not.** |
+| what #117 forbids | a **standing hand-rolled parser that `decide()` consults** |
+| what the converter is | a **migration tool** with its own entry point, imported by nothing in the decision path |
+| why it may parse | because a wrong parse there produces **a bad conversion caught by the field table**, not a confident wrong *verdict* |
+| ⛔ what it therefore owes | **the full ratchet** — `--self-test`, a declared count verified by running it, mutation entries, and a `NO-CALLER:` reason or a caller. **A surviving script with a parser in it is exactly the population `check-ratchet-contract.py` exists to police**, and the first draft would have smuggled one past by calling it temporary |
+
+**So the falsifier is human review at a size that makes it honest:**
+
+⛔⛔ **r2 (Claude, Blocking) BROKE THE FIRST VERSION OF THIS TABLE TOO — THE THIRD FALSIFIER TO FAIL,
+IN THE SAME COMPONENT.** It said *"source text vs converted JSON"* while §2's own residual-risk
+paragraph says the converter **reads through the broken parser**. So the *source* column was the
+broken reading, and the table is **self-consistent by construction on exactly the case it exists to
+catch**:
+
+```
+source header, verbatim:
+  - {id: H1, ..., component: "check-docs, check-backlog", disposition: fixed}
+
+a table whose SOURCE column comes from the same reader:
+  component | source: 'check-docs' | json: 'check-docs'  -> MATCH        ← truncated in BOTH
+```
+
+### The contract, stated so the table cannot audit itself
+
+| | |
+|---|---|
+| **the left column** | ⛔ **THE VERBATIM SOURCE TEXT of the header — raw bytes, not any parse of it.** This is the one sentence that makes the check real, and its absence is what failed |
+| **the right column** | the converted JSON, rendered field by field |
+| **what a reader is doing** | comparing *text a machine did not interpret* against *text a machine produced*. **That is a job a human can do and a comparator cannot** — the comparator would have to decide what a field is |
+| **the record** | ⛔ **r2 (Claude, High): a read with no output cannot be observed not to have happened.** The converter writes the tables to a **committed artifact**, and the PR states **who** read all of them at **which commit** — this repository's own standard for a manual check |
 | **verdict invariance** | kept, **demoted to a cheap smoke test** and labelled as one |
+
+⚠ **And no count is pinned here.** An earlier draft said *"31 documents is a bounded read"* four
+times while §2 above declares counts unpinnable — `round-record-substrate-r1-coordinator.md` is
+**already inside the set**, and r2's and r3's records join it before merge. **The bound is "every
+parseable document at merge time", and the artifact records what that was.**
 
 ⚠ **The parity check is DROPPED and must not reappear.** It is a regression guard on an invariant the
 old parser enforces, not a misread detector.
@@ -342,13 +388,19 @@ demote them.
   recoverable **today** by widening the set — through the reader this change deletes. ⚠ **And the
   convening architecture review already said so**: the call *"must be made before #117's schema pins
   the enum"* (`architecture-review-2026-09-25-decision-family.md:337`). **Layer 2 pins the enum.**
-  ⛔ **r2 (Codex, High) is right that "settled first, or narrower and say why" is a FORK, not a
-  decision, and Phase 1 must not ship a fork. DECIDED: the schema carries TODAY'S NARROWER SET, and
-  #187 widens it afterwards.** Reasons: widening the enum inside this change would **enlarge the
-  migration corpus mid-migration** (the three `ship-src-root-alone` documents become convertible, so
-  the set being converted changes while it is being converted); and it couples two backlog rows whose
-  falsifiers are unrelated. ⚠ **The cost is stated:** those three documents stay unreadable one row
-  longer, which is the status quo, not a regression. **Verified for #187's benefit:** widening
+  ⟳⟳ **DECIDED TWICE, AND THE FIRST DECISION WAS WRONG (r2 Claude, Blocking).** r2's Codex fold said
+  *carry today's narrower set and let #187 widen it later*, on the grounds that widening would enlarge
+  the migration corpus mid-migration. **The same commit also added a CI refusal against any coordinator
+  document still carrying a `yaml` header — and those two folds priced their costs against worlds that
+  exclude each other.** Under both, the documents that cannot be converted *because* the enum is narrow
+  become **permanently red in CI**: unconvertible by the migration and refused for still being YAML,
+  with no action available to anyone. ⛔ **A gate that no action can satisfy gets switched off — #56.**
+
+  ⭐ **DECIDED: `REQUIRED["disposition"]` is widened IN THIS PR** — four strings, measured: `refuted`,
+  `redesigned`, `retreat`, `moot`. Verified: all three `ship-src-root-alone` documents then parse (10,
+  9 and 7 findings), so they fail on **nothing but** `disposition`. The migration corpus growing by
+  three **before** conversion starts is a smaller cost than a permanently unsatisfiable CI gate, and
+  #187 closes as a side effect rather than waiting. **Verified for #187's benefit:** widening
   `REQUIRED["disposition"]` with `refuted`, `redesigned`, `retreat`, `moot` makes all three parse —
   10, 9 and 7 findings — so they fail on **nothing but** `disposition`.
 - **It does not rescue the 42 unreadable documents.**
@@ -438,3 +490,25 @@ premise its own correction removed, and a reader who lands on the downstream cop
 live claim four lines below the table that corrects it. It was caught by re-grepping the corrected
 strings rather than by re-reading. ⭐ **A sweep is a claim like any other and needs its own check:
 grep for the OLD value, not for the new one.**
+
+
+---
+
+## ⛔ THRASHING WATCH — `conversion-falsifiers`, three rounds, three failures
+
+**Recorded by r2's Claude half, and recorded here rather than left in a review document.**
+
+| round | falsifier proposed | how it failed |
+|---|---|---|
+| spec | verdict invariance + finding-count parity | **could not fire** — parity is enforced by the parser already, 0 disagreements across the corpus |
+| r1 fold | a field-level text diff | **could not be built** — telling one field from two needs the parser being deleted |
+| r2 fold | converter emits tables, a human reads them | **audited itself** — the source column was the broken reading, so it matches on the one case it exists to catch |
+
+⛔ **`docs/review-method.md`'s arming condition is MET** — three consecutive rounds, one component,
+each defect created by the previous round's fix. **It is not convened, and the reason is stated so it
+can be disagreed with:** the method's own test is *can a redesign remove it?*, and here it can, in one
+sentence — **the left column is raw source text**. That is a fix, not a prose floor.
+
+⛔⛔ **PRE-COMMITTED, SO IT CANNOT BE ARGUED AWAY LATER: if r3's fold produces a FOURTH falsifier
+design that fails a fourth way, the architecture review is convened unconditionally.** No further
+argument, no re-reading this paragraph.
