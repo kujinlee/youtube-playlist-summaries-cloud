@@ -52,7 +52,20 @@ reviewer's instructions**, which is worth more than the finding it declined to i
 Codex (Low) and Claude (Medium) converged from different directions on the same thing: surviving
 counts of the file's own contents — `§3` headed *Four signals* plus *"all four"*, `§9` headed *The
 five open questions*, `§10`'s *"two of four"*, two more in §2's Q0 block, and a *"three rows above"*
-in the banner note itself. All removed; the sections now **list** rather than count.
+in the banner note itself. Removed, and the sections now **list** rather than count.
+
+⛔ **The first version of this line said "ALL removed" and r2 refuted it (High).** Two survived —
+`"All five were settled"` and `"two of them look measurable"` — because the sweep that certified
+the claim required a noun from a fixed list, and those say *settled* and *them*. **That is the
+fourth pattern today that was narrower than the claim it certified** (bolded digits → any digits →
+number-words → a noun list), so the fix is not a fifth pattern: **this document no longer claims
+exhaustiveness for this class**, because no exhaustive instrument exists — the syntactic proxy is
+refuted at three scopes by *Qualify every number in prose*.
+
+⚠ **AND ONE SURVIVOR IS KEPT ON PURPOSE.** *"two of them look measurable"* is a **finding** — two
+specific signals are mechanisable, and §2 names them — not a tally of the document's own contents.
+*"All five were settled"* was a tally and is gone. The defect was never *numbers*; it was numbers
+that must be maintained to stay true.
 
 ⚠ Claude's M1 is the sharper form: the dashboard entry's *"no count-of-rules survives"* is refuted by
 the **immediately preceding entry**, which opens *"four rules about what an author writes down"*.

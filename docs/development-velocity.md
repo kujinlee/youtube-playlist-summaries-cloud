@@ -259,7 +259,7 @@ proposal — r1 Medium. A rationale that also carries the rule is two copies, an
 
 ## 9. The open questions — ALL ANSWERED 2026-09-24
 
-All five were settled in the implementing session. Q2 and the scope were the user's decisions; the
+Every one was settled in the implementing session. Q2 and the scope were the user's decisions; the
 other three were settled from evidence and are recorded so they are not re-opened from scratch.
 
 **1 · Where does Q0 live? → `review-method.md` §0.** Measured, not argued: `check-docs.LINE_BUDGETS`

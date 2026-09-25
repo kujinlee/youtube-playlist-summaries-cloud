@@ -12324,3 +12324,39 @@ count. The two survivors are inside **quotations** of the original defect, which
 
 ⚠ The claim *"no count-of-rules survives"* was scoped to one file but read as absolute, and the
 preceding dashboard entry refutes the absolute reading. The narrower claim is what this entry states.
+
+## 2026-09-24
+The correction above also claimed too much, so this one stops claiming it.
+
+The entry above said every count had been removed. Two were still there. The check that certified
+the claim was looking for numbers followed by particular words, and the two survivors used different
+words — one said "five were settled", the other "two of them".
+
+That is the fourth time today a check has been narrower than the claim it was certifying, each time
+a little wider than the last and each time missed by whatever came next. So the fix this time is not
+a wider check. It is to stop claiming that every one has been found, because there is no reliable way
+to find them all — the project measured that years' worth of attempts ago and wrote down why.
+
+One of the two is staying, deliberately. "Two of them look measurable" says something real about
+which signals could be automated. The problem was never numbers; it was numbers that have to be kept
+up to date to stay true, and a document describing a moving project cannot keep those correct.
+
+<!--tech-->
+Corrects `2026-09-24/3`. r2 (Codex, High): `docs/development-velocity.md:262` *"All five were
+settled"* and `:310` *"two of them look measurable"* survived a claim of *"All removed"*.
+
+⭐ **Why the sweep missed them, measured:** the pattern required a noun from
+`[rules, signals, questions, sections, rows, items]`. Line 262 says *five were **settled***; line 310
+says *two of **them***. A verb and a pronoun — outside the list. **Fourth pattern today narrower than
+its claim**: bolded digits → any digits → number-words/locators → a noun list.
+
+⛔ **So the fix is NOT a fifth pattern.** The exhaustiveness claim is **withdrawn** from the
+coordinator document. `process-checklists.md` → *Qualify every number in prose* already records the
+syntactic hunt measured and rejected at three scopes; there is no exhaustive instrument, so no
+document here may assert exhaustiveness for this class.
+
+⚠ **`:310` is KEPT on purpose and the distinction is stated rather than assumed.** *"two of them look
+measurable"* is a **finding** — §2 names the two signals. *"All five were settled"* was a **tally** of
+the document's own contents and is gone. A wider sweep confirms the remainder are measurements and
+findings (*14 minutes*, *three path lists*, *six functions*, *13 mutation entries*), not tallies.
+**The defect was never numbers; it was numbers that must be maintained.**
