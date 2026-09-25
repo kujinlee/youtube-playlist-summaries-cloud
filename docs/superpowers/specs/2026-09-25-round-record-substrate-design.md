@@ -4,8 +4,14 @@
 > **Goal:** A review loop decides its own next step — run, stop, or escalate — from recorded
 > evidence rather than recall.
 
-**Status:** ⛔⛔ **DESIGN — THE PRE-COMMITTED ARCHITECTURE REVIEW HAS FIRED. THREE ROUNDS, FIVE
-HALVES, NONE CONVERGED.
+**Status:** ⟳ **DESIGN — NARROWED BY ARCHITECTURE REVIEW, 2026-09-25. §2 REPLACED IN FULL; r4 OWED.**
+Three rounds, five halves, none converged — and the review convened by this branch's own
+pre-commitment found the reason: ⛔ **the falsifier could not be built well because the operation it
+guarded was never owed.** #117's WORK names three reshapings and no corpus, and the corpus question
+is **#119**, decided 2026-09-15 as *"none required if old branches simply drain"*. **The spec
+re-opened a closed question under a different word and spent three rounds guarding it.** The
+substrate choice and §1's layer model survive; the migration does not. Verdict:
+`docs/reviews/architecture-review-2026-09-25-conversion-falsifier.md`.
 Nothing implemented. NOT YET AT THE HUMAN GATE.** Round 1 returned **4 Blocking, 6 High, 8 Medium,
 4 Low** across the two halves, and **both halves independently found the same Blocking**: the first
 draft's two-way split of *structure vs values* had no place for **schema**, so deleting the parser
@@ -212,157 +218,67 @@ the set.**
 rests on malformed input becoming *impossible to misread as valid* — and on layer 2 above, which any
 substrate would need equally.
 
-## §2 — Migration
+## §2 — There is NO migration. The old records drain.
 
-**Every round document that is parseable at merge time is converted in the same PR, and the old
-parser is deleted in that PR.** ⚠ **No count is pinned here on purpose** — it was 28, then 30, then
-**31**, moving each time a round was recorded.
+⛔⛔ **REPLACED IN FULL BY THE ARCHITECTURE REVIEW, 2026-09-25.** Everything that stood here — a
+converter, a field-level table, a human-read artifact, `--calibrate`, a nine-key carry-through, an
+in-PR `disposition` widening — existed to guard **an operation this change never owed**. Three rounds
+and four falsifier designs were spent protecting it.
 
-⛔ **A FALLBACK YAML READER IS REFUSED, AND THIS IS THE WHOLE POINT.** Keeping one means the parser
-is not deleted, the six fail-open shapes remain reachable, and #117's REDESIGN is **not discharged** —
-only postponed behind a flag. A migration that leaves the subject alive is not a migration.
+### ⭐ The policy was already decided, ten days earlier, and I never cited it
 
-⛔ **THE FIRST DRAFT'S FEASIBILITY EVIDENCE MEASURED THE WRONG OBJECT (r1, both halves).** It ran
-`parse_header` over each document and round-tripped **its return value** through JSON — but that
-return value is only `round`, `fixes_nontrivial` and `findings`. **It is a tautology over an `int`, a
-`bool` and a `list`**, and it says nothing about converting a *document*.
+**Backlog #119, 2026-09-15, verbatim:** *"**WORK:** none required if old branches simply drain."*
+And, in the same row: ⛔ *"**BACKFILLING WAS CONSIDERED AND REJECTED BY THE USER** … the reason is
+filed here **so it is not re-proposed as an obvious cleanup**."*
 
-**What the corpus actually contains** *(regex over every `yaml` block, not through the parser)*:
+⚠ **Conversion is not literally backfilling** — it rewrites claims already made rather than inventing
+claims never made, and that distinction is real. **It does not rescue the design**, because the
+second half of #119 disposes of it independently: the corpus question was **asked and answered**, and
+this spec re-opened it under a different word without citing the row that closed it.
 
-| | |
-|---|---|
-| top-level keys in use | ⛔ **9**, not 3 — `round`, `fixes_nontrivial`, `subject`, `halves`, `findings`, **`architecture_review`**, **`deliverable_findings`**, **`deliverable_code_findings`**, **`stopping_rule`**. The last four the first draft never mentioned |
-| headers with a YAML comment | ⛔ **1**, not 0 — `seed-explainer-serve-manifest-r2-coordinator.md:9` carries an inline `#` comment explaining a REVIEW GAP. ⚠ **The first measurement used `^\s*#`, which sees only line-start comments**; this one is inline. JSON would delete it silently |
-| headers with a block scalar | 0 — reproduces |
+### And what the migration was protecting has almost no reader
 
-⭐ **So the conversion is NOT a re-emission of parsed output. It must read the document**, carry all
-nine keys, and make a **stated decision** about the one comment: move it into a value, move it to
-prose below the header, or lose it deliberately. **Losing it silently is not available.**
-
-### ⛔ The residual risk, stated before it is discovered
-
-**The converter reads through the BROKEN parser.** If that parser misread a document, the conversion
-preserves the misreading faithfully — *absence reads as a pass*, one last time, on the way out.
-⚠ **This is the one real hazard in this change and it is not hypothetical**: mis-parsing is the
-documented behaviour of the thing doing the reading.
-
-⛔⛔ **THE FIRST DRAFT'S TWO FALSIFIERS COULD NOT FIRE. r1 (both halves, Blocking) — and one of them
-was a TEST THAT CANNOT FAIL, written in the paragraph that was being careful about exactly that.**
-
-- **The parity check was vacuous by construction.** `parse_header:235-236` *already* refuses unless
-  the list-marker count equals the parsed finding count, so for every document that parses today the
-  parity holds necessarily. **Measured: 0 disagreements across all 30.**
-- **And it could not be made independent without reintroducing a fixed defect** — counting markers
-  over the whole header is **r2's Medium** (a bullet inside a `halves` block scalar counted as a
-  finding). *A second implementation of one rule drifts*, arriving in the falsifier rather than the code.
-- **Verdict invariance is a five-value collapse.** `decide()` reduces a whole record to one of five
-  strings, and the corpus currently produces **two** across **8** subjects. A misread must flip one of
-  eight coarse labels to be seen.
-- ⛔ **And a real misread passes both.** `_scalarise` splits flow mappings on `,` (`:302-311`), so a
-  comma inside a quoted `component` silently truncates it — parity passes `1 == 1`, the verdict is
-  unchanged, and the conversion writes the **truncated** value in permanently. ⚠ `component` is the
-  thrashing axis, so a truncation inert today can arm or disarm `ARCHITECTURE_REVIEW` in a later
-  round. ⚠ **Honest bound: 0 live instances of this shape in the corpus** — a hole in the falsifier, not a
-  live corruption.
-
-### The falsifier that actually covers the class
-
-⛔ **r2 (Codex, Blocking) REFUTED THE FIRST VERSION OF THIS FIX: a field-level diff CANNOT catch the
-comma case without knowing that `component: "check-docs, check-backlog"` is ONE field — which is a
-YAML-subset parser, i.e. the thing being deleted, reintroduced inside the falsifier.** The r1 fold
-replaced a falsifier that could not fire with one that could not be built.
-
-### The resolution: the converter MAY parse, because the converter is DELETED
-
-⛔ **r2 (Claude, Blocking): THE WARRANT AND THE CUTOVER MECHANISM CONTRADICTED EACH OTHER IN THE SAME
-COMMIT.** §2 said the converter may parse *because it is deleted*; the cutover section said
-`scripts/migrate-round-headers.py` **survives the migration** so branches in flight can run it. Both
-cannot be true, and the surviving one is the fact the design was authorised on.
-
-**DECIDED: the converter SURVIVES, and the warrant is corrected — it was never "deleted", it is
-"never in the decision path".**
+`main()` calls `rounds_for(git rev-parse --abbrev-ref HEAD)`, so a round document is decision-relevant
+**only while a branch of exactly its subject name is checked out.** Measured at `4118a592`:
 
 | | |
 |---|---|
-| what #117 forbids | a **standing hand-rolled parser that `decide()` consults** |
-| what the converter is | a **migration tool** with its own entry point, imported by nothing in the decision path |
-| why it may parse | because a wrong parse there produces **a bad conversion caught by the field table**, not a confident wrong *verdict* |
-| ⛔ what it therefore owes | **the full ratchet** — `--self-test`, a declared count verified by running it, mutation entries, a `NO-CALLER:` reason or a caller. ⛔⛔ **r3 (Codex, Blocking): THIS IS UNENFORCEABLE AS NAMED.** `check-ratchet-contract.GUARD_PATH_RE` is `scripts/check-[\w.-]+\.py` matched with `fullmatch` (`:113`, `:164`), so **`scripts/migrate-round-headers.py` is outside the population** — measured. It would owe nothing, and *"never in the decision path"* would rest on discipline. **Either the converter is named `scripts/check-…` so the ratchet can see it, or the population is widened. Stating the obligation does not create it.** |
+| parseable coordinator documents | **32** |
+| of those, reachable by `rounds_for` | ⛔ **4** |
+| unreachable | **28** |
 
-**So the falsifier is human review at a size that makes it honest:**
+⭐ **This branch is the proof.** It is called `backlog-117-parser-substrate`; its own records are
+`round-record-substrate-*`. `rounds_for` returns **0 rounds** for the branch that produced them — so
+the decision card has been blind to this entire review loop the whole time.
 
-⛔⛔ **r2 (Claude, Blocking) BROKE THE FIRST VERSION OF THIS TABLE TOO — THE THIRD FALSIFIER TO FAIL,
-IN THE SAME COMPONENT.** It said *"source text vs converted JSON"* while §2's own residual-risk
-paragraph says the converter **reads through the broken parser**. So the *source* column was the
-broken reading, and the table is **self-consistent by construction on exactly the case it exists to
-catch**:
+### Therefore
 
-```
-source header, verbatim:
-  - {id: H1, ..., component: "check-docs, check-backlog", disposition: fixed}
+1. **Nothing is converted.** Round documents written from here on carry a `json` header. Existing
+   YAML-headered documents join the 42 that already do not parse, and **drain** — #119's policy,
+   applied rather than re-litigated.
+2. **No converter exists**, so there is no `migrate-round-headers.py`, no ratchet obligation that
+   `GUARD_PATH_RE` cannot enforce, no attestation nothing validates, and **no falsifier for any of
+   it.** The four failed designs are not replaced; their subject is removed.
+3. ⛔ **The CI refusal is scoped to the DIFF, not the directory** — a round document *added or
+   modified in this branch* must carry a `json` header. It never fires on history, so it cannot
+   become the unsatisfiable gate that forced #187's enum into this PR.
+4. **`disposition` is NOT widened here.** With no migration there is no corpus to enlarge, so the
+   r2 reversal is itself reversed and **#187 goes back to being independent work** — which is where
+   r2's Codex half put it before the CI refusal created a false coupling.
 
-a table whose SOURCE column comes from the same reader:
-  component | source: 'check-docs' | json: 'check-docs'  -> MATCH        ← truncated in BOTH
-```
+### The one check that remains, and it is an INVARIANT
 
-### The contract, stated so the table cannot audit itself
+⭐ **A ~20-line projection comparator, as a committed fixture pair** — a source header and its
+expected JSON, both in the repository. The test asserts that reading each yields the same projection:
+`round`, `fixes_nontrivial`, and the finding list.
 
-| | |
-|---|---|
-| **the left column** | ⛔ **THE VERBATIM SOURCE TEXT of the header — raw bytes, not any parse of it.** This is the one sentence that makes the check real, and its absence is what failed |
-| **the right column** | the converted JSON, rendered field by field |
-| **what a reader is doing** | comparing *text a machine did not interpret* against *text a machine produced*. **That is a job a human can do and a comparator cannot** — the comparator would have to decide what a field is |
-| ⚠ **the cost this fix carries, stated** | ⛔ **r2 (Claude): raw source text makes it a WHOLE-HEADER read, not the FIELD-LEVEL one this section advertises.** The reader performs the field alignment themselves — which is precisely the work the r2 fold argued a human should not have to do. **It is the right trade and it is not free**, and a later draft must not quietly re-describe this as field-level |
-| **the record** | ⛔ **r2 (Claude, High): a read with no output cannot be observed not to have happened.** The converter writes the tables to a **committed artifact**, and the PR states **who** read all of them at **which commit** — this repository's own standard for a manual check |
-| **verdict invariance** | kept, **demoted to a cheap smoke test** and labelled as one |
+⚠ **This is the only shape that survives `portable-practices` §26**: fixed input, fixed output,
+nothing outside the test can move it. Every one of the four dead designs asserted something about a
+**live corpus** — which is why each failed differently and why a fifth would have too.
 
-⚠ **And no count is pinned here.** An earlier draft said *"31 documents is a bounded read"* four
-times while §2 above declares counts unpinnable — `round-record-substrate-r1-coordinator.md` is
-**already inside the set**, and r2's and r3's records join it before merge. **The bound is "every
-parseable document at merge time", and the artifact records what that was.**
-
-⚠ **The parity check is DROPPED and must not reappear.** It is a regression guard on an invariant the
-old parser enforces, not a misread detector.
-
-**Verdict invariance is kept as a cheap smoke test, demoted and labelled as one.** The parity check
-is **dropped**: it is a regression guard on an invariant the old parser enforces, not a misread
-detector, and calling it a falsifier was the defect.
-
-### ⛔ Cutover — branches in flight, which the first draft did not mention at all
-
-`rounds_for()` globs coordinator documents for **the current branch's** subject. So a branch already
-in flight whose round documents are YAML moves from *decidable* to `CANNOT_RUN` the moment this
-merges. ⚠ **Measured: 4 of the 8 subjects are mid-flight**, and *this* round adds to the corpus it
-converts — **any count here is taken inside the set it measures**, the same shape that went stale
-five times in the spec this one unblocks.
-
-⛔ **r2 (Codex, High): THE FIRST VERSION OF THIS PARAGRAPH WAS A SENTENCE, NOT A MECHANISM.** It said
-*"a branch carrying YAML converts its own"* and named no gate, command or check that makes it happen.
-**A stated intention is not a scheduler** — the failure this repository has recorded five times.
-
-**The mechanism, so it can be pointed at:**
-
-1. **The converter ships as a script that survives the migration** — `scripts/migrate-round-headers.py`,
-   idempotent, safe to run on a branch that is already converted. It is the *reader* that is deleted,
-   not the converter.
-2. **`check-review-rounds.py` gains a refusal:** a round document under `docs/reviews/coordinator/`
-   carrying a `yaml` header after the cutover **fails**, naming the converter in its message. That is
-   the forcing function, it runs in CI, and it is the one thing a branch in flight cannot miss.
-   ⚠ ⟳ **r2 (Claude, Medium): it must key on the FILENAME, not the directory.** Every existing
-   mechanism in this family keys on the `<subject>-r<N>-<who>.md` grammar; a directory-keyed refusal
-   would catch **two misfiled `merge-ready-r*-codex.md` documents** that are inert today and have no
-   remedy inside this spec — a gate firing on something nobody can fix, which is #56's outcome.
-3. **The conversion runs over whatever exists at merge time** — no count is pinned now, because every
-   count in this document has moved while it was being written.
-
-⛔ **This is the cost of no-fallback and it is accepted, not waved away** — the alternative keeps the
-parser alive, which is the thing being removed.
-
-⚠ **Neither falsifier can see a document the old parser rejected outright.** The 42 round-shaped
-documents that do not parse today (39 with no header block at all) are **untouched and remain
-unreadable** — no regression, no improvement. Stated so a reader does not read *the parseable set
-was converted* as *the corpus is now readable*.
-
+**Prototyped by the architecture review at `4118a592`** against a real header: a correct conversion
+agrees; **a key omitted, a value altered, and a finding dropped are all three caught** — including the
+omission class design 4 was blind to.
 ## §3 — The template moves with the mechanism
 
 `docs/round-header-template.md` is the authoring contract; it changes in the same PR or the record
@@ -381,8 +297,8 @@ demote them.
 |---|---|---|
 | a malformed record must not read as a clean round | `json.loads` (syntax) **+ layer 2 schema validation** — see §1; `json.loads` alone does **not** do this | 7 recorded defects: **5** read as a pass, **2** as a false refusal |
 | a well-formed record stating an out-of-range value must be refused | `_validate` + `REQUIRED` + `ROUND_REQUIRED` — **unchanged** | r2 Blocking: *"validate the VALUES, not the shape that carried them"* |
-| the existing record must remain decidable after the change | one-shot conversion of every parseable document, old reader deleted | ⟳ *the original evidence here — "30/30 round-trip" — was refuted in r1 as a tautology over the parser's projection; the evidence is now §2's field-level table* |
-| a conversion must not silently alter the record | a per-document side-by-side table whose **left column is verbatim source text**, written to a committed artifact and read by a named reviewer; verdict invariance as a smoke test | §2 — ⟳ *r2: the first three answers here were a vacuous check, an unbuildable one, and one that audited itself* |
+| existing records must not silently become wrong | ⟳ **the concern itself was retired by the architecture review** — nothing is converted, so nothing can be altered. Old records **drain**, per backlog #119 | §2 |
+| the new reader must agree with the old one on a known input | a **committed fixture pair** — source header beside expected JSON — compared as a projection | ⟳ *four previous answers here all asserted something about a LIVE corpus and each failed differently; `portable-practices` §26 is why* |
 | the authoring contract must match the substrate | `round-header-template.md` changes in the same PR | §3 |
 
 **One mechanism per concern; no mechanism appears twice.**
