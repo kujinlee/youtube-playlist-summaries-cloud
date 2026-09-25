@@ -92,12 +92,24 @@ common, so thrashing cannot be ruled out:
     r2: exhaustiveness-claim
     r3: round-attribution, self-counts
 Are any of these one component under two names? Relabel them, or declare them
-distinct:  COMPONENTS DISTINCT: exhaustiveness-claim, self-counts — <reason>
+distinct:  COMPONENTS DISTINCT: <reason>   (covers every pair across both sets)
 ```
 
 ## §2 — The escape hatch
 
-`COMPONENTS DISTINCT: <a>, <b> — <reason>`, in the round document, satisfies the check.
+`COMPONENTS DISTINCT: <reason>`, in the round document, satisfies the check.
+
+⛔ **IT IS ONE DECLARATION PER REFUSAL, COVERING BOTH SETS — NOT A PAIR (r1 Medium).** The condition
+is **set-based**: the refusal names every fix-induced component on each side, and real refusals are
+not pairs — in the measured corpus `velocity-177` r2 is **7-vs-1** and `peer-sites` r4 is
+**2-vs-3**. A pair-shaped escape (`COMPONENTS DISTINCT: <a>, <b>`) would let an **honest but
+incomplete** declaration satisfy an implementation while leaving another plausible synonym pair
+unjudged — a failure worse than the dishonest-declaration one this spec already admits, because
+nobody involved would know it had happened.
+
+So the declaration carries **no component names at all**. The refusal has already printed both sets;
+the line asserts, over the whole cross-product, that no component on one side is the same concept as
+any on the other. **There is no partial form to get wrong.**
 
 It **mirrors `REVIEW GAP:`** deliberately: a declared reason that satisfies a gate and leaves a
 record. It is not a suppression flag — it is **testimony**, and a wrong one is visible in the round
@@ -179,9 +191,21 @@ decision nobody can find is the root cause this whole line of work uncovered.**
 - ⛔ **Zero of the architecture reviews here were ever convened upfront.** Every one names a
   retrospective trigger — thrashing or milestone cadence. *(Population: `docs/reviews/architecture-review-*.md`; each states its trigger in its own opening lines.)* **The upfront instrument is unevidenced
   because it has never been used.**
-- **Measured factors:** an architecture review runs 122–386 lines post-thrashing against a median
-  **471**-line review round — roughly **0.3–0.8 of one round**. *(Round cost: the sum of both halves' line counts over the rounds in `docs/reviews/{claude,codex}/` that have both, median taken.)* Triggered reviews are **shorter**,
-  because the thrashing tells them where to look; an upfront review must survey everything.
+- **Measured factors** *(all counts `wc -l`; rounds = both halves summed, over the 53 rounds in
+  `docs/reviews/{claude,codex}/` that have both)*: architecture reviews run **122–856 lines, median
+  263.5** (n=12); a review round's median is **469**. So a review is typically **~0.5 of one round**,
+  with a range of **0.26–1.83**.
+
+  ⛔ **CORRECTED IN REVIEW (r1 High).** The first version of this line said *"122–386 … roughly
+  0.3–0.8 of one round"* — it **excluded the 856-line `observer-family` review from the very range it
+  belongs to**, after that review had already been established as thrashing-armed. The largest member
+  of a population, dropped from its own range, in a spec about population errors.
+
+  ⚠ **What the corrected numbers do and do not support.** *Typically cheaper than a round* survives
+  on the median. *Always cheap* does not. And the outlier is explained by **scope, not lateness**:
+  `observer-family` covered a family across **two slices**, and says so — so "triggered reviews are
+  shorter" is really "**a review's cost tracks its scope**", and a triggered review usually has a
+  narrower scope because it is handed its subject.
 - **Therefore:** a cheap, better-informed, repeatable *late* review beats an expensive, ill-informed
   *early* one — so the lever is making the trigger fire early and reliably, which is this spec.
 - ⚠ **RE-OPEN CONDITION, pre-committed:** revisit upfront review when three quantities exist —
