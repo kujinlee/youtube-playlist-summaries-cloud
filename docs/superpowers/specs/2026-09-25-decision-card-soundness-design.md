@@ -4,10 +4,14 @@
 > **Goal:** A review loop decides its own next step — run, stop, or escalate — from recorded
 > evidence rather than recall.
 
-**Status:** ⛔ **DESIGN — NOT GATE-READY.** Round 1 ran both halves; the Claude half returned **four
-High findings, all design-level**, and two of them change what this spec should be rather than what
-it says. The measured defect and the mechanism's shape survive; the framing and the scope do not.
-**Nothing implemented. Do not plan from this file until the open questions below are settled.**
+**Status:** ⏳ **DESIGN — r1 FOLDED, ONE QUESTION OPEN, r2 OWED.** Round 1 ran both halves; the
+Claude half returned four design-level Highs. **Three are now closed in the text** — the escape hatch
+became a header key with a derived placement rule (§2), the relationship to backlog #136 is stated as
+a narrowing with its reason (*Scope*), and the calibration is corrected with r1's one-clause fix
+folded into the condition itself (§1, §3). **One is open and is a SEQUENCING question, not a content
+one:** the subject has no caller (backlog **#184**). ⛔ **Nothing implemented.** `check-review-decision.py`
+run on this branch 2026-09-25 returns `ROUND_OWED — r1 produced a High`, so **r2 is owed before the
+Phase 1 gate**, independently of how #184's ordering is decided.
 **Date:** 2026-09-25. **Precedent:** `2026-09-14-review-decision-procedure-design.md`, which built
 the card this spec repairs.
 
@@ -47,9 +51,10 @@ for that class, but its subject is the database schema, so it cannot see review 
 | `check-vocabulary-collisions.py` | **No** — one mechanism per concern, but its subject is the Postgres catalog, not `docs/reviews/`. This is backlog **#167**. |
 | `docs/anchors.md` + `check-anchors.py` | A registry precedent, but **measured not to transfer** — see *Rejected* below. |
 | `check-merge-ready.unaccounted_mentions` | ⭐ **Yes, in shape** — the soundness-check pattern this spec copies: *"a hand-rolled parser CANNOT be made correct. It CAN be made unable to be silently wrong."* |
-| `REVIEW GAP:` convention | ⭐ **Yes, in shape** — the escape-hatch grammar this spec copies. |
+| `REVIEW GAP:` convention | ⚠ **In shape only, and r1 showed that is not enough** — a declared reason that satisfies a gate and leaves a record. But its **reader** is `check-review-rounds.py:83-88`, a different script over a different file set, so it supplies no mechanism here. §2 now takes `fixes_nontrivial` as its precedent instead. |
+| ⭐ `ROUND_REQUIRED` / `fixes_nontrivial` | ⭐ **Yes, and it is the one this spec builds on** — the existing per-round judgement key in the header, added because (`check-review-decision.py:258-261`) *"it is a per-round JUDGEMENT like `aim`, so it belongs in the header."* |
 | backlog #154 | *"the terminating move is not a wider pattern but a soundness check — refuse what cannot be classified."* |
-| ⛔ **backlog #136** | **MISSED IN ROUND 1 (r1 High).** The filed `L` design task for **this same decision loop**. Its stated work: *"make the OUTPUT A ROUTE, not a stop/go"* — routes being continue / **split** / redesign / defer — and it carries the user's caution **"COST IS NOT THE OBJECTIVE AND MUST NOT BE THE TERM BEING MINIMISED"**. ⚠ **This spec's `CANNOT_RUN` is a stop/go.** The 83-names / 67%-singleton measurement argues *for* #136's direction (derive the partition from the file or symbol a finding names), not merely against a registry. |
+| ⛔ **backlog #136** | **MISSED IN ROUND 1 (r1 High) — now answered in *A deliberate narrowing of #136* below.** The filed `L` design task for **this same decision loop**: *"make the OUTPUT A ROUTE, not a stop/go"* (continue / **split** / redesign / defer), carrying the user's caution **"COST IS NOT THE OBJECTIVE AND MUST NOT BE THE TERM BEING MINIMISED"**. **Verdict: prerequisite, not duplicate** — this spec changes no output value; it makes an existing one reachable. |
 | backlog #117, #118, #119 | Also unmentioned in round 1. **#118 in particular:** this spec moves 5 cases from exit 1 to exit 2, which silently settles #118's open question about exit semantics. |
 
 ---
@@ -84,7 +89,13 @@ thrashing_component(rounds) → a component  →  ARCHITECTURE_REVIEW      (unch
 **The condition, stated so it can be argued with:**
 
 > The last two rounds **both** carry fix-induced findings, and the sets of components they name have
-> an **empty intersection**.
+> an **empty intersection**, **and the trigger did not already fire on the previous pair.**
+
+⭐ **The third clause is r1's, folded here rather than left in a footnote.** If
+`thrashing_component` returned a component for (r_{n-2}, r_{n-1}), an architecture review is
+**already owed** and a refusal adds nothing but noise — `peer-sites` r4 is exactly that shape. ⚠ It
+is stated as a clause of the condition, not an implementation detail, because it is the difference
+between a check that fires after the answer is known and one that does not.
 
 `CANNOT_RUN` and its exit 2 **already exist** and already mean *"the guard could not reach what it
 measures — treat as NOT RUN, a failure never a pass"*. No new decision value is introduced.
@@ -96,18 +107,44 @@ CANNOT RUN — r2 and r3 both carry fix-induced findings but name no component i
 common, so thrashing cannot be ruled out:
     r2: exhaustiveness-claim
     r3: round-attribution, self-counts
-Are any of these one component under two names? Relabel them, or declare them
-distinct:  COMPONENTS DISTINCT: <reason>   (covers every pair across both sets)
+Are any of these one component under two names? Relabel them, or add to r3's
+header:  components_distinct: <reason>    (covers every pair across both sets)
 ```
 
 ## §2 — The escape hatch
 
-`COMPONENTS DISTINCT: <reason>`, in the round document, satisfies the check.
+`components_distinct: <reason>` — **a key in the round document's `yaml` header block**, not prose in
+its body. ⟳ **CHANGED by r1's fourth High, which is hereby CLOSED.**
+
+⛔ **THE PRECEDENT IS `fixes_nontrivial`, NOT `REVIEW GAP:` — and r1 was right that the spec had the
+wrong one.** `REVIEW GAP:`'s reader is `check-review-rounds.py:83-88`, a different script over a
+different file set; citing it supplied a grammar and no reader, since `parse_header` discards prose.
+`ROUND_REQUIRED` is the reader that exists, and the comment above it (`check-review-decision.py:258-261`)
+states the rule this declaration satisfies verbatim: a per-round **judgement**, like `aim`, *"belongs
+in the header"*.
+
+⭐ **AND THE PLACEMENT RULE IS DERIVED, NOT INVENTED — this is what closes r1's finding 4.** The
+refusal is computed over `rounds[-2]` and `rounds[-1]`, so **the declaration lives in the LATER round
+of the pair it answers**, and covers that pair only. The failure r1 predicted — *one declaration
+greps out of `rounds_for()` and silences every later refusal permanently* — **cannot be expressed**:
+a declaration in r3 is not in r4's header, so the (r3, r4) refusal still lands. There is nothing to
+grep, because nothing reads the body.
+
+⚠ **IT IS OPTIONAL, AND THAT IS LOAD-BEARING.** `ROUND_REQUIRED` **raises** when its key is absent —
+correctly, for a key the card makes a CONTINUE condition. `components_distinct` must be read
+**separately and optionally**, because every round document already committed lacks it, and making it
+required would refuse the entire existing corpus: a guard red from birth, which backlog #56 measured
+gets switched off. **The committed corpus fixture is the falsifier for exactly this** — all 29
+existing rounds must still parse.
+
+⭐ **It also fixes the asymmetry r1 filed as a Medium.** The refusal expires at the next round because
+it is computed over the last pair; the declaration now expires the same way, because it is scoped to
+the same pair. Both halves move together instead of one persisting forever.
 
 ⛔ **IT IS ONE DECLARATION PER REFUSAL, COVERING BOTH SETS — NOT A PAIR (r1 Medium).** The condition
 is **set-based**: the refusal names every fix-induced component on each side, and real refusals are
 not pairs — in the measured corpus `velocity-177` r2 is **7-vs-1** and `peer-sites` r4 is
-**2-vs-3**. A pair-shaped escape (`COMPONENTS DISTINCT: <a>, <b>`) would let an **honest but
+**2-vs-3**. A pair-shaped escape (`components_distinct: <a>, <b>`) would let an **honest but
 incomplete** declaration satisfy an implementation while leaving another plausible synonym pair
 unjudged — a failure worse than the dishonest-declaration one this spec already admits, because
 nobody involved would know it had happened.
@@ -124,6 +161,52 @@ document where someone can later find it wrong.
 switched off*. An escape that bends is worth more than a gate that breaks. And even an abused escape
 improves on the present state, where the trigger returns `None` and **nothing is recorded at all**.
 
+## Scope — a deliberate narrowing of backlog #136, with the reason stated
+
+⟳ **r1's third High, CLOSED.** #136 asks that the loop's output become a **route** — continue /
+split / redesign / defer — instead of a stop/go. This spec proposes no new output value at all, so
+the charge that it is *"a stop/go where a route was asked for"* needs answering precisely rather
+than dismissing.
+
+**Three things, kept apart:**
+
+| | question | this spec |
+|---|---|---|
+| **the answer space** | continue / split / redesign / defer — #136's subject | ⛔ **untouched.** No value added, none removed |
+| **the evidence the answer is read from** | `fix_induced` + `component` across rounds | ⭐ **the subject here** — that key can be silenced by a synonym |
+| **refusing to answer** | `CANNOT_RUN`, which already exists | the mechanism, and it is **not a route** |
+
+⭐ **`CANNOT_RUN` IS NOT A STOP/GO — IT IS THE ABSENCE OF ONE.** A route says *do this next*. This
+says *I cannot classify this input; someone must judge it before I can answer.* Backlog #154's
+lesson, quoted in *Prior art* above, is that the terminating move for a classifier that cannot cover
+its input is **refusal, not a wider pattern**. Adding a route here would be the widening #154 warns
+against.
+
+⛔ **AND IT IS #136's PREREQUISITE, WHICH IS THE PART THAT MATTERS.** #136's own worked example is
+route **(b) SPLIT** on `peer-sites`, chosen because *"one component kept producing findings across
+every round"*. That sentence names `component` — the same free-text field this spec shows can be
+silenced by a choice of words. **Whatever route space #136 lands on, it reads this key.** Fixing the
+key is upstream of the rubric and does not constrain it.
+
+⚠ **The user's caution, checked against this spec rather than waved at.** *"COST IS NOT THE
+OBJECTIVE AND MUST NOT BE THE TERM BEING MINIMISED."* This spec minimises nothing: it converts
+silent `None`s into refusals, which **adds** work — a judgement someone must make, and sometimes an
+architecture review that would not have been convened. If it had been designed to save rounds it
+would have been built to fire less, not more.
+
+**Filed consequence:** #136 stays open and unclaimed by this work. Its (1) — decompose severity into
+measured axes — is untouched here.
+
+### What this settles about exit codes (backlog #118)
+
+#118 asks whether the exit-code space encodes *what to do* or *whether the tool could answer*, and
+says settling that is what stops its two-line fix being relitigated. ⭐ **This spec answers it by
+use:** exit 2 is *the tool could not answer*, which is what `CANNOT_RUN` already means and what the
+5 refused cases become. Under that reading #118's unknown decision string is a **refusal (2)**, not
+a fourth kind of action (1). ⛔ **Stated, not done** — the two-line change belongs to #118.
+
+---
+
 ## §3 — Calibration
 
 Replaying the condition over every subject with parseable round records
@@ -137,9 +220,21 @@ Replaying the condition over every subject with parseable round records
 | …on `velocity-doc-consistency` | **3** — the subject independently established as thrashing |
 | …on subjects where **doing nothing already reached the right answer** | ⛔ **2 — and round 1 (High) found the spec understated this.** On `peer-sites` the trigger **fires at r2 and r3**, and the refusal lands at **r4 — after** the split backlog #134 records. On `velocity-177` the refusal is at **r2** and the trigger then fires correctly at **r3**, producing a real architecture review. Calling these merely *"debatable"* hid that 2 of 3 refused subjects needed no refusal. |
 
-⭐ **An unconsidered one-clause fix removes one of them for free** (r1): *do not refuse if the
-trigger fired on the previous pair.* `peer-sites` r4 disappears. This belongs in the design, not in
-a footnote.
+⛔ **THESE NUMBERS PREDATE THE CONDITION'S THIRD CLAUSE AND ARE LEFT UNADJUSTED ON PURPOSE.** r1
+measured them against the two-clause condition. Folding *"the trigger did not already fire on the
+previous pair"* into §1 should remove the `peer-sites` r4 refusal — **should**, on r1's reading of
+the same replay; **nobody has re-run it.** The fixture is what produces the post-clause figure, and
+writing a number here that no run produced is the failure this repository keeps recording.
+
+⚠ **The corpus is a MINORITY of the record, which the spec previously did not say (r1 Medium).**
+`docs/reviews/coordinator/` holds **134** documents; **29** carry a parseable header. The
+calibration therefore describes the headered subset, not review history.
+
+⭐ **The sensitivity claim gets a falsifier that the frozen fixture cannot give it (r1 Medium):** a
+`--calibrate` invocation re-runs the condition over the **live** corpus and prints the counts, so
+*"would refuse: N"* is re-derivable on demand rather than frozen. The fixture pins the **verdict on
+fixed input**; `--calibrate` answers *does the live record still look like this?* Two questions, two
+mechanisms — never one number doing both jobs.
 
 **This corpus is committed as a fixture in `--self-test`**, so the calibration is a case that fails
 when the behaviour changes rather than a number in prose.
@@ -158,7 +253,7 @@ against stale data is this repo's recorded mocked-boundary failure. The fixture 
   distinct components in consecutive rounds **will** fire. The escape exists because of this, not
   despite it. ⛔ **Anyone reading this as a synonym detector will call those firings bugs and weaken
   it.**
-- **It does not detect a dishonest `COMPONENTS DISTINCT:`.** Same limitation the precedent spec
+- **It does not detect a dishonest `components_distinct:`.** Same limitation the precedent spec
   states about `fix_induced`.
 - **It does not touch `aim` or `fix_induced` honesty** — the other two judgement inputs.
 - **It does not change Q1–Q4, Q6, or the concurrency table.**
@@ -169,18 +264,24 @@ against stale data is this repo's recorded mocked-boundary failure. The fixture 
 
 - A subject thrashes under synonymous names and the script still returns `STOP` or `ROUND_OWED` →
   **the check is not firing**; this is the defect it exists for, restated as an observation.
-- `COMPONENTS DISTINCT:` appears in most round documents → **too sensitive**, and the escape has
+- `components_distinct:` appears in most round documents → **too sensitive**, and the escape has
   become a formality rather than a judgement.
-- A `COMPONENTS DISTINCT:` reason, read later, is wrong → the escape is **suppressing rather than
+- A `components_distinct:` reason, read later, is wrong → the escape is **suppressing rather than
   judging**. ⚠ Nothing detects this.
-- The check's call is removed → backlog #56's outcome. **The check cannot see its own deletion.**
+- ⛔ **The check is never consulted at all** → the failure this spec CANNOT observe, because
+  `check-review-decision.py` has no caller (backlog **#184**). A removed call and a call that never
+  existed are the same silence. The observable proxy, and the only one available today: a subject
+  with fix-induced findings in consecutive rounds whose coordinator documents mention neither the
+  card nor `components_distinct:` — **measured to be the present state on `velocity-doc-consistency`,
+  all four rounds.**
+- The check's condition is loosened until it stops firing → backlog #56's outcome by a slower route.
 
 ## Sizing
 
 | Piece | Cost |
 |---|---|
 | the pure function | small — mirrors an existing 12-line function |
-| refusal message + escape parsing | small — `REVIEW GAP:` supplies the grammar |
+| refusal message + escape parsing | small — an **optional** sibling of the existing `ROUND_REQUIRED` read in `parse_header`; ⚠ **not** `REVIEW GAP:`, whose reader is a different script |
 | `review-method.md` §0 Q5 + `round-header-template.md` | small; **both unbudgeted** |
 | **ratchet compliance** | ⭐ **the real work** — `--self-test` cases, mutation entries, and `check-selftest-counts` verifying the declared count *by running it* |
 
@@ -226,39 +327,52 @@ decision nobody can find is the root cause this whole line of work uncovered.**
 component registry (**refuted below**); `aim` honesty (same class, no measured instance);
 Q2/Q6's convention gaps (declared unenforced deliberately).
 
-## ⛔ OPEN — round 1's four High findings, and why they are not folded away
+## Round 1's four High findings — three closed, one open
 
-**These change what the spec should be. They are recorded, not resolved.**
+| # | Finding | State |
+|---|---|---|
+| 1 | The subject has **no caller**, and the record cannot tell *ran* from *never ran* | ⛔ **OPEN — and it is a SEQUENCING question, not a spec-content one.** Filed as backlog **#184** |
+| 2 | The calibration **understated false positives** | ✅ corrected in §3; r1's one-clause fix is now a clause of the condition in §1 |
+| 3 | **Backlog #136** says *route, not stop/go* | ✅ answered in *Scope — a deliberate narrowing of backlog #136* |
+| 4 | The escape is **unreadable as specified** | ✅ answered in §2 — it is a header key with a derived placement rule, and `ROUND_REQUIRED` is the reader |
 
-**1 · The subject has no caller, and the record cannot tell *ran* from *never ran*.** ⭐ **FILED AS BACKLOG #184** (sibling of #134), so this question has a home outside this spec.
-`scripts/check-review-decision.py:27-31` declares `NO-CALLER:` and has none. Its own docstring
-already names this failure and its remedy: *"If it is skipped again, the remedy is not better prose;
-it is making this a step nobody can skip."* ⚠ **Measured: zero of `velocity-doc-consistency`'s four
-coordinator documents mention the card, thrashing or `ARCHITECTURE_REVIEW`**, while
-`velocity-177-r2` and `peer-sites-r2` do. The card *was* run in-session and never recorded — so the
-record conflates two different failures with different remedies, and **this spec's own falsifier
-("the check's call is removed") presupposes a call that does not exist.**
+### ⛔ 1 is open, and here is exactly what is undecided
 
-**2 · The calibration understated false positives** — see §3 above, corrected.
+`scripts/check-review-decision.py:27-31` declares `NO-CALLER:` and has none. Its own docstring names
+the failure and the remedy: *"If it is skipped again, the remedy is not better prose; it is making
+this a step nobody can skip."* **Measured: zero of `velocity-doc-consistency`'s four coordinator
+documents mention the card, thrashing or `ARCHITECTURE_REVIEW`**, while `velocity-177-r2` and
+`peer-sites-r2` do. The card *was* run in-session and never recorded — so the record conflates two
+failures with opposite remedies.
 
-**3 · Backlog #136 is the filed design task for this loop and says *route, not stop/go*.** This spec
-proposes a stop/go. Either it is a deliberate narrowing of #136 with a stated reason, or it is
-duplicating a filed task in a direction its owner cautioned against. **Unresolved.**
+⛔ **WHAT IS NOT IN QUESTION: this spec must not build the caller.** #184 inherits #134's measured
+lesson — *"what did NOT work was building the caller in the same breath as fixing the thing it
+calls; the caller never got its own experiment and out-found its subject in every round."* Bundling
+them is the one option ruled out.
 
-**4 · The escape is unreadable as specified.** Round 1's fold removed component names, which moved
-all identification onto a **placement rule this spec never states**. ⛔ The natural implementation
-greps the subject's round documents — `rounds_for()` already globs them — so **one declaration would
-silence every later refusal permanently**, which is the backlog #56 outcome §2 invokes against
-itself. ⚠ And the reader does not exist: `decide()` is pure over headers and `parse_header`
-**discards prose**. *"`REVIEW GAP:` supplies the grammar"* understates the gap — that reader is
-`check-review-rounds.py:83-88`, **a different script over a different file set.**
+⚠ **WHAT IS IN QUESTION: order.** The soundness check's own effect is **unobservable** while nothing
+invokes the card and nothing records that it ran — every falsifier above except the escape-frequency
+one depends on someone running it. #184 names a remedy **cheaper than a caller**: Q6 recording, a
+line in the round document stating what the card returned, which closes *ran vs never-ran* with no
+caller at all. Doing that first would make this spec's calibration observable in the live record
+instead of only in a fixture.
 
-### Also open (Medium)
+**The two orders, with what each costs:**
 
-- Freezing the calibration as a fixture leaves the **sensitivity** claim with no falsifier.
-- An unanswered refusal **expires at the next round** while the escape **persists** — asymmetric.
-- Header coverage is **29 of 134** documents in `docs/reviews/coordinator/`, so the corpus is a
-  minority of the record and the spec never says so.
+- **This spec first** — the mechanism exists and is fixture-verified, but its real-world firing rate
+  stays unmeasurable until #184 lands. Risk: a second correct-and-uninvoked thing, which is the
+  state #134 was reopened over.
+- **#184's recording half first** — the record starts distinguishing *ran* from *never ran*, so this
+  spec ships into a loop that can see it work. Risk: Q6 is a **convention** (`review-method.md` §0
+  marks it ❌), and *"better prose"* is precisely what the docstring says already failed once.
+
+### Also open (Medium) — both now answered above
+
+- ~~Freezing the calibration as a fixture leaves the **sensitivity** claim with no falsifier.~~ →
+  `--calibrate` over the live corpus, §3.
+- ~~An unanswered refusal **expires at the next round** while the escape **persists** — asymmetric.~~
+  → the declaration is scoped to the pair it answers, §2.
+- ~~Header coverage is **29 of 134**, and the spec never says so.~~ → stated in §3.
 
 ## Rejected, with reasons
 
