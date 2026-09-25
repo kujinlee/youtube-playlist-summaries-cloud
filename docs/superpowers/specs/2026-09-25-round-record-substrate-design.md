@@ -451,6 +451,45 @@ count and the reason.** Whether the net moves up or down is an outcome of the wo
 
 ---
 
+## ⛔ What the tests may and may not assert — raised by the user, 2026-09-25
+
+**The user generalised this branch's recurring defect past documents:** *"if a document cannot hold a
+derived value honestly, trying to match an exact number in tests may not be the right criteria to
+pass."* ⭐ **It is right, and it decides how this change is tested — so it is a design constraint, not
+a note.**
+
+This branch found the same defect through four surfaces — corpus counts, line counts, the
+`--self-test` total, citations — and every one was **a value derived from something that moves,
+written down as though it were fixed.** A test is a document that executes. It inherits the defect.
+
+**Three kinds of number, and only one of them is safe to pin:**
+
+| kind | example here | pin it? |
+|---|---|---|
+| **observation** — derived from a world that moves | *"31 documents parse"*, *"109 lines"*, *"9 top-level keys"* | ⛔ **never.** It fails for reasons unrelated to the code, so it gets deleted or the number gets bumped until nobody reads it |
+| **invariant** — fixed input, fixed output | *"this exact header converts to this exact JSON"*; *"verdict is unchanged for a given record"* | ✅ **yes.** The number is the function's contract, and nothing outside the test can move it |
+| **policy / ratchet** — a decision, deliberately edited | `EXPECTED_MUTATIONS`; *"coverage may not shrink"* | ✅ **yes, and the edit must be conscious** — that IS the mechanism |
+
+⭐ **THE REPOSITORY ALREADY DRAWS THIS LINE AND DOES NOT NAME IT.**
+`scripts/check-selftest-counts.py` compares *"the declared count against the number of cases that
+actually ran"* — **two derived values, never a literal.** It holds the **rule**, which is why it has
+not rotted. `EXPECTED_MUTATIONS` pins a literal on purpose, because *coverage cannot shrink silently*
+is a policy and a silent fall is the thing being caught.
+
+### Binding on this change
+
+- ⛔ **No test may assert a count over `docs/reviews/coordinator/`.** Not 31, not 73, not 34. Those
+  move every time a round is recorded — **including by the round that records the test.**
+- ✅ **The conversion fixture is a fixed pair**: committed source header → committed expected JSON.
+  Byte-exact, and safe, because both sides are in the repository and neither is an observation.
+- ✅ **The corpus check is a RULE, quantified over whatever exists**: *for every parseable document,
+  convert, re-read, and the verdict is unchanged.* It passes on 31 documents and on 300.
+- ⚠ **The `--self-test` count stays declared-and-verified-by-running**, which is the safe pattern
+  already: nothing compares it to a literal written in prose.
+
+⚠ **And this is why §3's `--calibrate` exists rather than a number.** The same rule, applied to the
+document instead of the suite.
+
 ## Rejected, with reasons
 
 **Vendor a minimal YAML-subset parser** (#117's reshaping 2). Keeps authoring identical and requires
