@@ -458,6 +458,9 @@ count and the reason.** Whether the net moves up or down is an outcome of the wo
 
 ## ⛔ What the tests may and may not assert — raised by the user, 2026-09-25
 
+⭐ **FILED AS `docs/portable-practices.md` §26 at the user's instruction, 2026-09-25** — this
+section states what binds *this* change; §26 states the portable rule and is the owner.
+
 **The user generalised this branch's recurring defect past documents:** *"if a document cannot hold a
 derived value honestly, trying to match an exact number in tests may not be the right criteria to
 pass."* ⭐ **It is right, and it decides how this change is tested — so it is a design constraint, not
