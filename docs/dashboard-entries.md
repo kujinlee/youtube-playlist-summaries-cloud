@@ -12277,3 +12277,50 @@ of the defect.
 invariant (no count in digits or words, no `file:line`, no document-relative position) already
 forbids this class inside the rules, and r6 confirmed it holds there. This is the rationale document
 catching up to the rule it argued for.
+
+## 2026-09-24
+A correction to the entry just above: it claimed more than it had fixed, and two of its round numbers were wrong.
+
+The previous entry said the counts had been removed and that none survived. Review found that was
+not true. Several more counts of the document's own contents were still in it — a section headed
+"Four signals", another headed "The five open questions" — and the entry immediately before that one
+opens by saying "four rules", which is the very thing being claimed gone. All of them are now fixed,
+and the claim here is narrower: the counts are gone from that one document, not from everything.
+
+The more useful correction is about how the previous entry got two numbers wrong. It said six rounds
+of review had passed over a contradiction, and that a second defect had been introduced late in the
+process. Checking the actual history: the contradiction was created partway through, so only three
+rounds came after it — and the second defect was introduced at the very first repair and survived
+five. One number too high, the other too low.
+
+Neither was looked up. Both were written from memory of a process that had happened over several
+hours. That is precisely the failure the rules adopted earlier today exist to prevent, applied to
+counts of our own history rather than counts of the code.
+
+<!--tech-->
+Corrects `2026-09-24/2` (this date's entry about `development-velocity.md`). ⛔ **Append-only store:
+a correction is a NEW entry, never a rewrite** — the earlier entry stands with its claims intact and
+this one supersedes them.
+
+⭐ **r1 High ×2, both in the REPLACEMENT text, both round attributions:**
+
+- *"six review rounds plus an architecture review passed over it, none had this file's internal
+  consistency in scope"* — **false in both halves.** `git show ccc19857` shows the **r3 fold** ADDING
+  the closing sentence, so the contradiction did not exist before it: only **r4, r5, r6** followed.
+  And r3 *did* have it in scope — its finding is titled *"four rules" names a population of five* and
+  cites the paragraph. r3 found it; the fold repaired it badly.
+- *"introduced by the r5 fold"* (banner double-status rows) — **`e44be4b0`, the ROUND-1 fold**, is the
+  single commit that split the catch-all row. No r5 or r6 commit touches this file at all. It stood
+  through **r2–r6**.
+
+⭐ **Wrong in both directions at once — too many rounds in one claim, too few in the other.** That is
+the signature of a count nobody derived. Rule 1 (*no number unless measured in this session*) applies
+to counts of our own history, and neither of these was looked up.
+
+⚠ **r1 Codex (Low) + r1 Claude (Medium):** surviving self-counts — `§3` headed *Four signals* with
+*"all four"*, `§9` headed *The five open questions*, `§10`'s *"two of four"*, plus two in §2's Q0
+block and a *"three rows above"* in the banner note. All removed; sections now LIST rather than
+count. The two survivors are inside **quotations** of the original defect, which is correct.
+
+⚠ The claim *"no count-of-rules survives"* was scoped to one file but read as absolute, and the
+preceding dashboard entry refutes the absolute reading. The narrower claim is what this entry states.

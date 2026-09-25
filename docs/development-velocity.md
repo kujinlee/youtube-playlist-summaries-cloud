@@ -10,9 +10,9 @@
 > | **§5 sweep policy** | ⚠ **item 1 ONLY** (draft PR at slice start) adopted as PRACTICE, not automated. Items 2–4 are still proposal, and §5's body still says *"Proposed:"* — that label is correct for them |
 > | **§9 answers**, **§10 brief** | ✅ **DECISIONS, not proposals.** §9 records what was settled and by whom; §10 is the design session's brief |
 > | §1, §8 | measurement and rationale — proposal |
-> | | ⟳ **§3 and §4 were in this row AND in their own rows above — two statuses each**, in a banner whose first line says to read it before citing anything below. Removed here, r5-fold defect found 2026-09-24 |
+> | | ⟳ **§3 and §4 were in this row AND in their own rows above — two statuses each**, in a banner whose first line says to read it before citing anything below. Introduced by `e44be4b0`, the **round-1 fold** (r1 High: the first version of this note said *r5*, asserted, not derived — no r5 or r6 commit touches this file). It therefore stood through **r2–r6**. Removed 2026-09-24 |
 
-> ⟳ **r1 Low: the three rows above were wrong in the first version of this banner** — it claimed §5
+> ⟳ **r1 Low: rows above were wrong in the first version of this banner** — it claimed §5
 > wholesale, and bucketed §9 and §10 under *"everything else | proposal"* when they are the
 > settled decisions. A banner that says *read this before citing anything below* is load-bearing,
 > so its own rows are a place a defect hides in plain sight.
@@ -55,10 +55,10 @@ asks **whether adversarial review is the right instrument**. Proposed as a new *
 > exists that a script can read, and three hand-kept path lists have already each scored something
 > dangerous as one-round (`review-method.md` §0 Q1).
 >
-> Q0's **escalation** is mechanical where it can be. Of §3's four signals, *fixes do not terminate*
+> Q0's **escalation** is mechanical where it can be. Of §3's signals, *fixes do not terminate*
 > and *each fix ADDS code* are both measurable from the round documents and the diff.
 >
-> ⛔ **The reason the escalation half is the load-bearing one:** §3 records that all four signals
+> ⛔ **The reason the escalation half is the load-bearing one:** §3 records that all signals
 > were present in the 2026-09-23 thrashing and it was **still called three rounds late**. A card
 > that a human reads and then misjudges is a detection failure a machine fixes and prose does not.
 >
@@ -88,9 +88,9 @@ asks **whether adversarial review is the right instrument**. Proposed as a new *
 
 ---
 
-## 3. Four signals that say SEAM, not LOGIC — escalate on these
+## 3. The signals that say SEAM, not LOGIC — escalate on these
 
-All four were present in the 2026-09-23 verdict-path thrashing and it was still called three rounds
+Every one of them was present in the 2026-09-23 verdict-path thrashing and it was still called three rounds
 late, so they are written as observations rather than judgements:
 
 1. **Fixes are locally correct but do not terminate.** The strongest signal. Four rounds, every
@@ -195,13 +195,21 @@ you know what this measurement bought — **listed, never counted**: provenance 
 **the population a number names** (rule 1b), fixing a sentence in place (rule 2), a class claim
 requiring a class sweep (rule 3), and deriving gate lists rather than recalling them (rule 4).
 
-⟳ **THIS PARAGRAPH CONTRADICTED ITSELF FOR HOURS, AND THE WAY IT DID IS THE POINT.** It opened
-*"Four rules came out of this"* and closed *"five rules, not four"* — because r3 (Low) found the
-count stale after rule 1b was added and **appended the correction to the end instead of editing the
-opening sentence.** That is precisely what rule 2 forbids: *an appended correction is not a fix; the
-reader meets the wrong sentence first.* The fix for one rule's defect broke another rule, in the
-paragraph that introduces both, and six review rounds plus an architecture review passed over it —
-none of them had this file's internal consistency in scope.
+⟳ **THIS PARAGRAPH CONTRADICTED ITSELF, AND THE WAY IT DID IS THE POINT.** It opened *"Four rules
+came out of this"* and closed *"five rules, not four"* — because r3 (Low) found the count stale once
+rule 1b existed and the fold **appended** the correction instead of editing the opening sentence.
+That is exactly what rule 2 forbids: *an appended correction is not a fix; the reader meets the wrong
+sentence first.* **The fix for rule 1b's count violated rule 2, in the paragraph introducing both.**
+
+⛔ **AND THE FIRST VERSION OF THIS NOTE GOT ITS OWN ROUND COUNT WRONG — r1 High, derived from git
+rather than asserted.** It said *"six review rounds plus an architecture review passed over it, none
+of them had this file's internal consistency in scope."* **Both halves are false.** `git show
+ccc19857` shows the r3 fold ADDING the closing sentence, so the contradiction did not exist before
+it — only **r4, r5 and r6** ran afterwards. And r3 plainly *did* have it in scope: its own finding is
+titled *"four rules" names a population of five* and cites this paragraph. r3 found the defect; the
+fold repaired it badly. ⭐ **The tell is that the claim was wrong in both directions at once** — too
+many rounds here, too few in the banner note below — which is what a round count nobody derived looks
+like. Rule 1 applies to counts of our own history too.
 
 ⚠ **1b did not exist when §6 was written**; it was produced by §6's own first review round, which is
 why every count of these rules has been wrong at some point. The outline now lists them, and a list
@@ -249,7 +257,7 @@ proposal — r1 Medium. A rationale that also carries the rule is two copies, an
 
 ---
 
-## 9. The five open questions — ANSWERED 2026-09-24
+## 9. The open questions — ALL ANSWERED 2026-09-24
 
 All five were settled in the implementing session. Q2 and the scope were the user's decisions; the
 other three were settled from evidence and are recorded so they are not re-opened from scratch.
@@ -299,7 +307,7 @@ moment is the duplicate-mechanism shape `check-vocabulary-collisions.py` exists 
 | Item | State |
 |---|---|
 | **Q0 itself** — the card in `review-method.md` §0 | 🟠 form decided (§2), not designed, not built |
-| **§3's four signals as mechanical tests** | 🟠 two of four look measurable; none is specified |
+| **§3's seam signals as mechanical tests** | 🟠 two of them look measurable; none is specified |
 | **Calibration corpus** for the mechanical half | 🟠 not started — ⛔ ship nothing without it |
 | **§5's "what is lost"** — a red CI sweep no longer names which commit broke coverage | 🟠 accepted, unmitigated |
 | **Side-job hook** (Q5) | ⏸ blocked on Q0's escalation half |
