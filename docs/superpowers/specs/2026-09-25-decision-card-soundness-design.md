@@ -4,18 +4,21 @@
 > **Goal:** A review loop decides its own next step — run, stop, or escalate — from recorded
 > evidence rather than recall.
 
-**Status:** ⏳ **DESIGN — r2 CODEX HALF FOLDED, r2 CLAUDE HALF OWED, PHASE 1 GATE NOT TAKEN.** Round 1 ran both halves; the
+**Status:** ⛔ **DESIGN — r2 COMPLETE AND NOT CONVERGED. AN ARCHITECTURE REVIEW IS CONVENED, BY THIS
+BRANCH'S OWN PRE-COMMITMENT. PHASE 1 GATE NOT TAKEN.** Round 1 ran both halves; the
 Claude half returned four design-level Highs. **Three are now closed in the text** — the escape hatch
 became a header key with a derived placement rule (§2), the relationship to backlog #136 is stated as
 a narrowing with its reason (*Scope*), and the calibration is corrected with r1's one-clause fix
 folded into the condition itself (§1, §3). **The fourth was a SEQUENCING question, not a content one** — the
 subject has no caller (backlog **#184**) — **and the user answered it 2026-09-25: this spec first,
 #184 filed and unclaimed, with the cost of that order written down below rather than discovered.** ⛔ **Nothing implemented.** `check-review-decision.py`
-run on this branch 2026-09-25 returned `ROUND_OWED — r1 produced a High`, so r2 was owed. **Round 2's
-Codex half returned one Blocking and two Highs and is folded here** — the Blocking **withdrew a fix
-made in round 1** (§1's third clause), and one High found that *Rejected* had never evaluated the
-alternative this repository had already filed (§ *Scope*). **The Claude half of r2 has not run**;
-rounds 2+ alternate so that the second half reviews the first half's fixes.
+returns `ARCHITECTURE_REVIEW — thrashing: 'calibration-claims' carried fix-induced findings in r1
+and r2`. ⛔ **Round 2 ran both halves and returned 2 Blocking, 7 High, 5 Medium, 2 Low — all folded
+here.** The Codex Blocking **withdrew a fix made in round 1** (§1's third clause); the Claude
+Blocking found that the fix for *that* round's High **names a reader which structurally cannot read
+the key it proposes** (§2). ⛔ **And round 2's own pre-committed falsifier fired inside round 2**, on
+the sentence that wrote it, so **the architecture review is convened** — see
+`docs/reviews/coordinator/decision-card-soundness-r2-coordinator.md`.
 **Date:** 2026-09-25. **Precedent:** `2026-09-14-review-decision-procedure-design.md`, which built
 the card this spec repairs.
 
@@ -38,6 +41,12 @@ only as *"string … must be non-empty"*.
 The three findings were labelled `self-counts`, `exhaustiveness-claim` and `overclaimed-scope`. They
 are one concept. **The branch ran four rounds where an architecture review was arguably owed after
 two, and the trigger was silenced by a choice of words rather than by the evidence.**
+
+⚠ **"AFTER TWO" DEPENDS ON ROUND-1 `fix_induced` FLAGS THAT THE TEMPLATE'S OWN PRIMARY DEFINITION
+LEAVES UNDEFINED — see *The input both halves inherited* below.** Replayed with r1's three flags
+zeroed, the merged labelling fires at **r3 and r4**, not r2. Still a defect, still two rounds too
+many; **not the number this sentence states.** The measured hole survives either reading; its size
+does not.
 
 ⛔ **The failure is silent and runs in the unsafe direction.** A synonym does not produce a wrong
 verdict that can be argued with; it produces `None`, which is indistinguishable from *no thrashing*.
@@ -116,9 +125,17 @@ fix.**
 
 ⚠ **The cost of withdrawing it is known and accepted:** the `peer-sites` r3/r4 false positive comes
 back and refusals return to **5**. A false positive costs one declared line; a suppressed refusal
-costs the thing the spec is for. ⭐ **The useful half of r1's idea survives without suppressing
-anything** — the refusal message *names* a prior firing (*"r1/r2 already armed a review on `A`"*) so
-the reader can dismiss it in one line. **Additive, not suppressive.**
+costs the thing the spec is for. ⭐ **The useful half of r1's idea survives without suppressing anything** — the refusal message
+*names* a prior firing (*"r1/r2 already armed a review on `A`"*) so the reader can dismiss it in one
+line. **Additive, not suppressive.**
+
+⚠ **TWO THINGS THAT SENTENCE OWES, BOTH RAISED IN r2 (Claude, Medium).** *(a)* The note needs
+`thrashing_component(rounds[:-1])` — **three rounds, and a second call** — so the refusal message is
+composed where the whole list is visible, not inside a two-round pure function. *(b)* **Expired is a
+claim about SEMANTICS, not about AVAILABILITY.** The arming must not persist as a *verdict*; the fact
+that it happened is still derivable from the record. Both are true and the page must say so, or a
+reader resolves the apparent contradiction by dropping the note — which is the whole compensation for
+withdrawing r1's clause.
 
 ⭐ **AND THIS IS THE RECORDED LESSON, NOT AN INCIDENT:** *a finding's proposed fix is a hypothesis.*
 r1's clause read as obviously right, was folded in one commit, and took a constructed three-round
@@ -138,27 +155,72 @@ common, so thrashing cannot be ruled out:
  because thrashing is judged on the last two rounds only)
 
 Are any of these one component under two names? Relabel them, or paste this
-into r3's header verbatim and fill in the reason:
-
-    components_distinct:
-      covers: {r2: [exhaustiveness-claim], r3: [round-attribution, self-counts]}
-      reason: <why no component on one side is the same concept as any on the other>
+into r3's header AT TOP LEVEL (never indented under `findings:`) and fill in
+the reason:
+```
+```yaml
+components_distinct:
+  covers: {r2: [exhaustiveness-claim], r3: [round-attribution, self-counts]}
+  reason: <why no component on one side is the same concept as any on the other>
 ```
 
-⚠ **The `covers` block is printed, not composed.** The declarer supplies only `reason`. Anything
-they could get wrong by retyping is something the refusal already knows.
+⚠ **The `covers` block is printed, not composed.** The declarer supplies only `reason`.
+
+⛔ **AND IT IS PRINTED UNINDENTED, WHICH IS A CORRECTNESS RULE AND NOT A STYLE ONE (r2 Claude,
+Medium).** The first draft rendered it indented inside the message. Pasted as printed it lands inside
+`_findings_span`, `FINDING_RE` matches the flow mapping, and `parse_header` raises *"declares 1
+finding item(s) but 3 parsed"* — a diagnosis pointing at the findings list, which is the wrong
+object. ⛔ **And `rounds_for` propagates it, so one mispaste makes EVERY decision for that subject
+`CANNOT_RUN`** — Q1 and Q4 included. An escape whose purpose is to let a round proceed would instead
+stop the subject.
 
 ## §2 — The escape hatch
 
 `components_distinct: <reason>` — **a key in the round document's `yaml` header block**, not prose in
 its body. ⟳ **CHANGED by r1's fourth High, which is hereby CLOSED.**
 
-⛔ **THE PRECEDENT IS `fixes_nontrivial`, NOT `REVIEW GAP:` — and r1 was right that the spec had the
-wrong one.** `REVIEW GAP:`'s reader is `check-review-rounds.py:83-88`, a different script over a
-different file set; citing it supplied a grammar and no reader, since `parse_header` discards prose.
-`ROUND_REQUIRED` is the reader that exists, and the comment above it (`check-review-decision.py:258-261`)
-states the rule this declaration satisfies verbatim: a per-round **judgement**, like `aim`, *"belongs
-in the header"*.
+⛔⛔ **THE READER IS NEW. `ROUND_REQUIRED` CANNOT READ THIS KEY, AND SAYING IT COULD WAS r1's FINDING
+4 REINTRODUCED ONE LAYER DOWN (r2 Claude, Blocking).** `ROUND_REQUIRED`'s read is
+
+```python
+mm = re.search(rf"^{key}:\s*(\S+)\s*$", body, re.M)   # check-review-decision.py:246
+```
+
+— a **scalar on the same line**. `components_distinct:` is a nested block, so `(\S+)` matches
+nothing and the key is simply never seen. r1's finding was *a grammar with no reader*; the r2 fold
+replaced it with **a placement with no reader**. ⭐ `fixes_nontrivial` remains the right precedent
+for *where a per-round judgement lives* (`check-review-decision.py:258-261` — *"it is a per-round
+JUDGEMENT like `aim`, so it belongs in the header"*). It is **not** the precedent for how this key is
+read, and the sizing table is corrected accordingly.
+
+⛔ **THE FOUR SHAPES, MEASURED AGAINST THE SHIPPED `parse_header` — three of them are silent:**
+
+| shape | what the live parser does |
+|---|---|
+| A — correct block, header top level | parses; `components_distinct` **absent from the returned dict** |
+| B — pasted **indented**, as the refusal message printed it | raises `declares 1 finding item(s) but 3 parsed` |
+| C — key present, **`covers:` omitted** | **parses silently, indistinguishable from A** |
+| D — the pre-r2 scalar form | **parses silently, indistinguishable from A and C** |
+
+**C is the Blocking.** The natural reading of an *optional* key is *present → satisfied*, which is
+exactly the pair-scoped semantics this section removed. And it is the fifth instance of the class
+`parse_header`'s own comments record paying for four times — **absence reads as a pass**.
+
+### ⛔ The contract, stated where it is binding
+
+1. `components_distinct` is read by a **new optional block reader**, not by `ROUND_REQUIRED`.
+2. **Absent key → no declaration.** The refusal stands. This is the only silent case, and it fails
+   in the safe direction.
+3. ⛔ **Present key with a missing, malformed, or non-matching `covers:` → RAISE.** Not *escaped*,
+   not *ignored* — `CANNOT_RUN`, because a declaration nobody can read is a declaration nobody made.
+4. **The block sits at header TOP LEVEL, never indented under `findings:`** — shape B is not a
+   cosmetic error. `_findings_span` swallows an indented block, `FINDING_RE` matches its flow
+   mapping, and `rounds_for` propagates the raise to **every round of that subject**, so one
+   mispaste turns Q1 and Q4 into `CANNOT_RUN` as well. The refusal message must therefore render the
+   block **unindented**, and §1's does.
+
+⭐ **A misspelled key was measured and fails CLOSED** — not found, escape not honoured, refusal
+stands. The hazard is one level in, on `covers:` under a correctly-spelled key.
 
 ⭐ **AND THE PLACEMENT RULE IS DERIVED, NOT INVENTED — this is what closes r1's finding 4.** The
 refusal is computed over `rounds[-2]` and `rounds[-1]`, so **the declaration lives in the LATER round
@@ -171,8 +233,9 @@ grep, because nothing reads the body.
 correctly, for a key the card makes a CONTINUE condition. `components_distinct` must be read
 **separately and optionally**, because every round document already committed lacks it, and making it
 required would refuse the entire existing corpus: a guard red from birth, which backlog #56 measured
-gets switched off. **The committed corpus fixture is the falsifier for exactly this** — all 29
-existing rounds must still parse.
+gets switched off. **The committed corpus fixture is the falsifier for exactly this** — every round
+record in the fixture must still parse (**30** at `dd7757e9`; the fixture pins the set it was built
+from, and `--calibrate` is what reports today's).
 
 ⭐ **It also fixes the asymmetry r1 filed as a Medium.** The refusal expires at the next round because
 it is computed over the last pair; the declaration now expires the same way, because it is scoped to
@@ -254,19 +317,37 @@ the spec merely sat upstream of #136 was a rationalisation that let it proceed u
 
 ### Derivation, measured rather than argued
 
-**The input does not exist.** Over all **152** findings the parser reads from
-`docs/reviews/coordinator/*-r*-coordinator.md` at `9d1987ca`, the keys present are exactly
-`id severity aim fix_induced component disposition` — **every one on 100% of findings, and no
-`file`, `symbol`, `path` or `location` key on any of them.** `docs/round-header-template.md` defines
-no such field. *(Command: import `check-review-decision`, `parse_header` each round document, union
-the key sets.)*
+⛔ **THE FIRST VERSION OF THIS MEASUREMENT WAS OVER THE WRONG CORPUS, AND THE CORRECTION MATTERS
+(r2 Claude, High).** It said *"0 of 152 findings carry the input"* — measured over the **coordinator
+header**, a six-field summary. #136 asks for the file *"a finding names"*, and a finding names its
+file in the **half document**, not in the header. Measured there: **242 of 246 documents under
+`docs/reviews/{claude,codex}/` (98%) contain at least one file path.** ⚠ **Bounded honestly: no
+per-finding rate is derivable**, because the half documents have no machine-readable finding
+boundary — which is itself part of #136's problem.
+
+**So the accurate statement is narrower:** the input is **absent from the header** (at `dd7757e9`,
+the key union over all 158 findings is exactly `id severity aim fix_induced component disposition`,
+each on 100%, with no `file`/`symbol`/`path`/`location`), and **near-universal in the prose the
+header summarises**. Derivation needs the header to carry it; nothing else about the record says it
+cannot.
+
+⛔ **AND THE ARGUMENT AS FIRST WRITTEN PROVED TOO MUCH — APPLIED TO ITSELF IT REFUTES THIS SPEC.**
+
+| | the fact | the conclusion drawn |
+|---|---|---|
+| `components_distinct` (§2) | 0 of 30 round documents carry it | *therefore read it optionally and ship* |
+| a derived file/symbol key (here) | 0 of 158 findings carry it | *therefore derivation "starts empty" and is not runnable* |
+
+**The same fact, opposite conclusions, in one document.** It would equally have refuted `fix_induced`
+and `aim` before they were added. A field's absence is **the state a design task starts from**, not a
+verdict against it — and #136 is explicitly a design task. The comparison below therefore states
+cost, and **does not pretend the cost is an argument**:
 
 | | refusal — this spec | derivation — #136's other half |
 |---|---|---|
-| runs on the record **as it exists** | ✅ 29 rounds, 152 findings | ⛔ **0 findings carry the input** |
-| removes the author from the loop | ❌ no — `component` stays free text | ✅ yes, and that is the stronger property |
-| needs a new required field | no | yes, plus a partition rule over it |
-| corpus available to calibrate against | the existing 29 rounds | **starts empty** |
+| runs on the header **as it exists** | ✅ 30 rounds, 158 findings at `dd7757e9` | ⛔ needs a header field that does not exist yet |
+| removes the author from the loop | ❌ no — `component` stays free text | ✅ **yes, and that is the stronger property** |
+| what it costs to start | nothing | a new field, a partition rule, and a corpus that accumulates |
 
 ⚠ **And on the measured subject it is not obviously better.** `velocity-doc-consistency`'s four
 rounds are edits to one document, so a file-derived partition collapses every finding to one
@@ -288,8 +369,26 @@ silent `None`s into refusals, which **adds** work — a judgement someone must m
 architecture review that would not have been convened. If it had been designed to save rounds it
 would have been built to fire less, not more.
 
-**Filed consequence:** #136 stays open and unclaimed by this work. Its (1) — decompose severity into
-measured axes — is untouched here.
+⛔ **WHAT THIS SECTION DOES NOT ANSWER, ENUMERATED SO IT CANNOT READ AS EXHAUSTIVE (r2 Claude,
+High).** The first version answered #136's route half and its derivation sentence and then wrote a
+*Filed consequence* line naming one untouched item — which reads as a complete account and is not.
+#136 also carries:
+
+- **(1) decompose severity into measured axes** (`reach`, alongside `aim`) — untouched here.
+- **(3) ask the root-cause question routinely**, because *"`Can a redesign remove it?` exists in
+  `review-method.md` but **fires only when thrashing is already armed**"*. ⚠ **This spec adds a new
+  arming path, so it is squarely inside (3)'s subject** and does not say so.
+- **(4) a fix that introduces a NEW ARTIFACT restarts that artifact's clock** rather than riding the
+  current round — a candidate policy that changes what a *round* is, which is the unit both
+  `thrashing_component` and this refusal are computed over.
+- ⛔⛔ **#136's round-granularity defect, which this mechanism INHERITS WHOLE:** *"it is sensitive to
+  round granularity, since the same defects folded into one round would not fire."* The refusal
+  needs fix-induced findings in **both** of the last two rounds, so **folding one round's work into
+  its predecessor suppresses the refusal exactly as it suppresses the trigger** — and §2's escape is
+  scoped per-pair, inheriting the same sensitivity a second time. **Accepted, not overlooked**, and
+  now listed in *What this does not do* so a reader can tell which.
+
+**Filed consequence:** #136 stays open and unclaimed by this work.
 
 ### What this settles about exit codes (backlog #118)
 
@@ -314,33 +413,72 @@ Replaying the condition over every subject with parseable round records
 
 | | |
 |---|---|
-| subjects / rounds / findings | **8 / 29 / 152**, measured at `9d1987ca` — ⛔ **STALE TWICE, AND THE SECOND TIME PROVES THE FIRST REMEDY WAS WRONG (r2 Medium, Codex).** The spec shipped **145**, was corrected to **147** with a note reading *"a document inside the corpus it measures"* — and **147 went stale at the very next commit.** Trace: `3242b017` 7/28/**145** → `f34d16a9` 8/29/**147** → `ebd982d2` 8/29/**152**, the whole jump being this branch's own r1 record going **2 findings → 7** when the Claude half was recorded. ⭐ **The diagnosis was right and the remedy was not: a fresher number cannot fix a number that goes stale by being written down.** Hence `--calibrate` below, and hence every figure in this table carries the commit it was taken at. |
-| trigger fires normally | **11** at `9d1987ca` |
-| **would refuse** | **5** at `9d1987ca` — re-derived independently of round 1, and the pair-by-pair breakdown matches its account exactly |
+### ⛔ EVERY FIGURE BELOW IS A DATED SNAPSHOT, NOT A CLAIM ABOUT NOW
+
+**Taken at `dd7757e9`.** This is the third framing of these numbers and the first that can survive
+the next commit, because it no longer asserts anything about the present.
+
+⟳ **THE CORRECTIONS WENT STALE THREE TIMES, AND THE THIRD ONE IS WHY THE FORM CHANGED.** `3242b017`
+said **145**; r1 corrected it to **147** with a note reading *"a document inside the corpus it
+measures"*; r2 corrected it to **152** and added *"every figure in this table carries the commit it
+was taken at"* — **and that sentence was false when written** (5 stamps in the whole document, 3 of
+them here) while the corpus had already moved to **158**, because recording round 2 moved it.
+⭐ **Three remedies, each a better number. The defect was never the number.** A document inside the
+corpus it measures cannot hold a live count, so it must stop trying: what follows is **an
+observation with a date**, and `--calibrate` is how a reader gets today's.
+
+| at `dd7757e9` | |
+|---|---|
+| coordinator documents / round-shaped by name | **135 / 72** |
+| of those 72: parse / refuse to parse | **30 / 42** — header coverage is **42% of actual round records** |
+| subjects / rounds / findings | **8 / 30 / 158** |
+| trigger fires normally | **11** |
+| **would refuse** | **5** |
 | …on `velocity-doc-consistency` | **3** — the subject independently established as thrashing |
-| …on subjects where **doing nothing already reached the right answer** | ⛔ **2 — and round 1 (High) found the spec understated this.** On `peer-sites` the trigger **fires at r2 and r3**, and the refusal lands at **r4 — after** the split backlog #134 records. On `velocity-177` the refusal is at **r2** and the trigger then fires correctly at **r3**, producing a real architecture review. Calling these merely *"debatable"* hid that 2 of 3 refused subjects needed no refusal. |
+| …on subjects where **doing nothing already reached the right answer** | ⛔ **2 — round 1 (High) found the spec understated this.** On `peer-sites` the trigger **fires at r2 and r3** and the refusal lands at **r4 — after** the split backlog #134 records. On `velocity-177` the refusal is at **r2** and the trigger then fires correctly at **r3**. Calling these merely *"debatable"* hid that 2 of 3 refused subjects needed no refusal. |
 
-⟳ **THESE NUMBERS ARE THE TWO-CLAUSE CONDITION, WHICH IS AGAIN THE ONLY CONDITION** — §1's third
-clause was folded in and then withdrawn as unsound in the same round. The replay confirms both
-halves of that story: with the clause, refusals fall **5 → 4** and the one removed is exactly
-`peer-sites` r3/r4, so r1's *prediction* was accurate; it was the *reasoning* that was wrong. ⭐ **A
-correct prediction is not a correct rule** — the clause did the right thing on the one case r1
-looked at and the wrong thing on a case nobody had constructed.
+⭐ **THE STRONGEST CALIBRATION DATUM IS THIS BRANCH, AND IT WAS NEARLY LOST IN A MERGE NOTE (r2
+Claude, High).** Round 2's coordinator merged two of Codex's component labels, and the shipped
+trigger then fired `ARCHITECTURE_REVIEW`. Replayed with **Codex's six labels verbatim**, the shipped
+card returns `ROUND_OWED` — **and the refusal this spec proposes FIRES**, because r1 and r2 both
+carry fix-induced findings and their component sets are disjoint. ⛔ **That is the only case in the
+corpus where the proposed refusal and the existing trigger disagree on a live branch**, and it is the
+branch demonstrating its own mechanism on itself. The relabelling episode is also the spec's
+motivating defect **run in reverse** — six findings relabelled into four names made the trigger fire,
+decided by one person with a stake in the answer.
 
-⚠ **The corpus is a MINORITY of the record, and the sharper denominator is not 134.**
-`docs/reviews/coordinator/` holds **134** documents, but only **71** are round records by name
-(`*-r*-coordinator.md`). Of those **71**, **29 parse and 42 do not** — so header coverage is **41%
-of actual round records**, not 22% of a mixed directory. ⛔ **39 of the 42 have no `yaml` header at
-all. The other 3 fail on a VALUE:** `ship-src-root-alone` r1–r3 record `disposition: refuted`,
+⟳ **THESE ARE THE TWO-CLAUSE CONDITION, WHICH IS AGAIN THE ONLY CONDITION** — §1's third clause was
+folded in and withdrawn as unsound in the same round. The replay confirms both halves of that story:
+with the clause, refusals fall **5 → 4**, the one removed being exactly `peer-sites` r3/r4, so r1's
+*prediction* was accurate and its *reasoning* was not. ⭐ **A correct prediction is not a correct
+rule** — the clause did the right thing on the one case r1 examined and the wrong thing on a case
+nobody had constructed. *(Independently re-derived by both r2 halves.)*
+
+⚠ **The corpus is a MINORITY of the record, and the flattering denominator is the whole directory.**
+Coverage is **42% of actual round records** (30 of 72), not 22% of a mixed directory of 135.
+⛔ **39 of the 42 failures have no `yaml` header at all. The other 3 fail on a VALUE:** `ship-src-root-alone` r1–r3 record `disposition: refuted`,
 `redesigned` and `retreat`, and `REQUIRED` allows only `fixed` `filed` `declined`. ⭐ **That is this
 spec's own defect class in the field next door** — a judgement field whose vocabulary does not cover
 what reviewers actually produce — and it is **out of scope here, not resolved.**
 
-⭐ **The sensitivity claim gets a falsifier that the frozen fixture cannot give it (r1 Medium):** a
-`--calibrate` invocation re-runs the condition over the **live** corpus and prints the counts, so
-*"would refuse: N"* is re-derivable on demand rather than frozen. The fixture pins the **verdict on
-fixed input**; `--calibrate` answers *does the live record still look like this?* Two questions, two
-mechanisms — never one number doing both jobs.
+⭐ **`--calibrate` re-derives the live counts** so *"would refuse: N"* is a command rather than a
+sentence. The fixture pins the **verdict on fixed input**; `--calibrate` answers *does the live
+record still look like this?*
+
+⛔ **TWO THINGS IT OWES, AND THE FIRST IS A FAIL-OPEN (r2 Claude, Medium).**
+
+1. **It must skip unreadable documents to run at all** — **42 of 72** round-shaped files raise in
+   `parse_header`, and `rounds_for` propagates. So `--calibrate` needs a `try/except` over the same
+   corpus this script refuses everywhere else, in a tool whose posture is *"cannot parse is a
+   failure, never a pass"*. ⛔ **It must therefore print the SKIPPED COUNT beside every figure**, or
+   it reports a number over a corpus it silently chose. A bare *"would refuse: 5"* with 42 documents
+   dropped is the shape this repository has already paid for.
+2. ⛔ **It does NOT falsify the sensitivity claim, and offering it as that falsifier was wrong.**
+   *How we would know it failed* says *"`components_distinct:` appears in most round documents → too
+   sensitive"*. `--calibrate` counts **refusals**; an escaped refusal is still a refusal unless the
+   condition reads the escape, so the number can never fall and *"the escape has become a formality"*
+   stays unfalsifiable. **Declarations are a different count and need their own one** — two
+   questions, two mechanisms, which is this section's own rule applied to itself.
 
 **This corpus is committed as a fixture in `--self-test`**, so the calibration is a case that fails
 when the behaviour changes rather than a number in prose.
@@ -361,10 +499,17 @@ against stale data is this repo's recorded mocked-boundary failure. The fixture 
   it.**
 - **It does not detect a dishonest `components_distinct:`.** Same limitation the precedent spec
   states about `fix_induced`.
-- **It does not touch `aim` or `fix_induced` honesty** — the other two judgement inputs.
+- **It does not touch `aim` or `fix_induced` honesty** — the other two judgement inputs. ⚠ **That is
+  about HONESTY. `fix_induced`'s DEFINITION is a separate problem and it now has a measured
+  instance** — see below; it is out of scope here, but no longer for the reason originally given.
 - **It does not change Q1–Q4, Q6, or the concurrency table.**
 - **It does not fire on a single round** carrying fix-induced findings — correctly: no pair, no
   thrashing.
+- ⛔ **It is SENSITIVE TO ROUND GRANULARITY, and this is accepted rather than solved** — backlog
+  #136's third mechanical defect, inherited whole. The same findings folded into one round produce no
+  pair, so neither the trigger nor this refusal fires; §2's escape, being pair-scoped, inherits it
+  again. **Anyone who can choose where a round boundary falls can silence this check without
+  touching a component name.**
 
 ## How we would know it failed
 
@@ -386,8 +531,9 @@ against stale data is this repo's recorded mocked-boundary failure. The fixture 
 
 | Piece | Cost |
 |---|---|
-| the pure function | small — mirrors an existing 12-line function |
-| refusal message + escape parsing | small — an **optional** sibling of the existing `ROUND_REQUIRED` read in `parse_header`; ⚠ **not** `REVIEW GAP:`, whose reader is a different script |
+| the pure function | ⟳ **no longer "mirrors an existing 12-line function" (r2 Claude, Medium).** `thrashing_component` sees **two** rounds; this needs **three** — the condition over the last pair, plus `thrashing_component(rounds[:-1])` for the prior-firing note — so it takes the whole list and is composed where three rounds are visible |
+| escape reader | ⛔ **NOT small, and NOT `ROUND_REQUIRED`.** That read is `^{key}:\s*(\S+)\s*$` — a scalar on one line, structurally unable to see a nested block. This is a **new optional block reader** that must RAISE on a present key with a missing or malformed `covers:`, which is the Blocking of round 2 |
+| refusal message | small, but it composes the pasteable `covers:` block **unindented** — a correctness requirement, not formatting |
 | `review-method.md` §0 Q5 + `round-header-template.md` | small; **both unbudgeted** |
 | **ratchet compliance** | ⭐ **the real work** — `--self-test` cases, mutation entries, and `check-selftest-counts` verifying the declared count *by running it* |
 
@@ -429,9 +575,40 @@ decision nobody can find is the root cause this whole line of work uncovered.**
   (3) the actual cost of one upfront review. **(3) cannot be obtained without doing one**, and that
   is the honest catch in this deferral.
 
+## ⛔ The input both halves inherited, and neither had looked at — `fix_induced` at round 1
+
+⟳ **r2 (Claude, High). New component `fix-induced-input`; not merged into any existing name, because
+it is about the VALIDITY OF THE INPUT the trigger and this refusal both consume.**
+
+`docs/round-header-template.md` defines the field twice, and the two disagree **exactly at round 1**:
+
+| where | wording | at r1 |
+|---|---|---|
+| `:32` (the field table) | *"was the defect introduced by a fix written **after a previous round**?"* | **undefined** — there is no previous round |
+| `:45` (the prose gloss) | *"answers **did we make this?**"* | defined, and answerable |
+
+**Measured at `dd7757e9`: 8 round-1 documents parse, and 6 of them set `fix_induced: true`** —
+`decision-card-soundness`, `fix-src-viewer-escaping`, `peer-sites`, `seed-explainer-serve-manifest`,
+`velocity-177`, `velocity-doc-consistency`. Filled in sincerely, under the looser gloss.
+
+⛔ **TWO LOAD-BEARING CONSEQUENCES, BOTH REPLAYED THROUGH THE SHIPPED FUNCTIONS:**
+
+1. **This branch's own verdict rests on a single such label.** `decide(rounds_for("decision-card-soundness"), "one-round", True)`
+   returns `ARCHITECTURE_REVIEW — thrashing: 'calibration-claims'`. Flip **r1's M1 alone** to
+   `fix_induced: false` and it returns `ROUND_OWED — r2 produced a Blocking`. r1's induced set has
+   exactly one member.
+2. **The spec's headline moves by a round** — *Why this exists*, above.
+
+⚠ **AND THE OLD OUT-OF-SCOPE LINE RESTED ON A PREMISE THAT NO LONGER HOLDS.** It read *"`aim` honesty
+— same class, **no measured instance**"*. This is not an honesty problem; it is a **definition**
+problem, in the field the template itself calls *"the arming condition for the architecture review"*
+(`:46-47`), and it now has a measured instance in **6 of 8** documents. ⛔ **An out-of-scope
+declaration whose stated reason was *no measured instance* must be re-stated once one exists** —
+which is what this section is. It remains out of scope for this spec; it is not out of mind, and it
+is not unmeasured.
+
 **Also out:** deriving `fix_induced` from git (real, but does not close the measured hole); a
-component registry (**refuted below**); `aim` honesty (same class, no measured instance);
-Q2/Q6's convention gaps (declared unenforced deliberately).
+component registry (**refuted below**); Q2/Q6's convention gaps (declared unenforced deliberately).
 
 ## Round 1's four High findings — three closed, one open
 
@@ -471,7 +648,9 @@ finished design does not wait on an unstarted one.
 real firing rate is unmeasurable outside the fixture, and the repository gains **a second
 correct-but-uninvoked instrument** — precisely the state #134 was reopened over. ⚠ **Measured, so the
 size of the admission is known:** **14 of 134** documents in `docs/reviews/coordinator/` mention the
-card at all, and **8 of those are the two subjects that are ABOUT the card** — ⟳ *r2 Low (Codex):
+card at all *(at `9d1987ca`; **15 and 9** at `dd7757e9`, because recording round 2 added one —
+⚠ and the metric is a literal grep, so a document that quotes the card's verdict without naming the
+script does not count)*, and **8 of those are the two subjects that are ABOUT the card** — ⟳ *r2 Low (Codex):
 this said 7; `review-decision-procedure` contributes r1–r7 and `decision-card-soundness` r1, which
 is 8. Independent use is therefore **6** documents, not 7.*
 (`review-decision-procedure` r1–r7, `decision-card-soundness` r1). Independent use is **6
@@ -496,8 +675,12 @@ partition from the file or symbol a finding names — #136's other half — is t
 section should have contained. It is now measured in *Scope* above, where the finding is that **0 of
 152 findings carry that input**. This entry stands as written; it was never the only competitor.
 
-**A controlled vocabulary for `component`.** Measured: **83 distinct names across 145 findings, 67%
-used exactly once, and ZERO shared across more than one subject.** The `anchors.md` precedent does
+**A controlled vocabulary for `component`.** Measured **at `dd7757e9`**: **89 distinct names across
+158 findings, 66% used exactly once, and ZERO shared across more than one subject** — the last
+re-tested exactly, component → set of subjects, and it holds. ⟳ *This cell read "83 across 145" until
+r2 (Claude, High): `145` is the number §3 above traces as wrong twice, and it survived here,
+unstamped, in the section r2's own High had reopened — the remedy applied to the instance that was
+pointed at rather than to the class.* The `anchors.md` precedent does
 not transfer — 13 anchors serve the whole repo; components are subject-local with no reuse, so a
 registry would be a log. ⛔ **And it would not close the measured hole:** all three synonyms are
 plausible, well-formed names that a registry would have accepted.

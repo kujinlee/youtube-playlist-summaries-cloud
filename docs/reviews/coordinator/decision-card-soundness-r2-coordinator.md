@@ -6,7 +6,7 @@ fixes_nontrivial: true
 subject: decision-card-soundness
 halves:
   codex: ran
-  claude: "GAP: not yet dispatched — rounds 2+ ALTERNATE, so it reviews this round's fixes"
+  claude: ran
 findings:
   - {id: B1, severity: Blocking, aim: deliverable, fix_induced: true, component: hidden-thrashing-condition, disposition: fixed}
   - {id: H1, severity: High, aim: deliverable, fix_induced: true, component: prior-art, disposition: fixed}
@@ -14,7 +14,21 @@ findings:
   - {id: M1, severity: Medium, aim: deliverable, fix_induced: true, component: calibration-claims, disposition: fixed}
   - {id: M2, severity: Medium, aim: deliverable, fix_induced: true, component: prior-art, disposition: fixed}
   - {id: L1, severity: Low, aim: deliverable, fix_induced: true, component: calibration-claims, disposition: fixed}
+  - {id: B2, severity: Blocking, aim: deliverable, fix_induced: true, component: escape-grammar, disposition: fixed}
+  - {id: H3, severity: High, aim: deliverable, fix_induced: true, component: calibration-claims, disposition: fixed}
+  - {id: H4, severity: High, aim: deliverable, fix_induced: true, component: prior-art, disposition: fixed}
+  - {id: H5, severity: High, aim: deliverable, fix_induced: true, component: prior-art, disposition: fixed}
+  - {id: H6, severity: High, aim: deliverable, fix_induced: false, component: fix-induced-input, disposition: fixed}
+  - {id: H7, severity: High, aim: instrument, fix_induced: true, component: round-record-labelling, disposition: fixed}
+  - {id: M3, severity: Medium, aim: deliverable, fix_induced: true, component: escape-grammar, disposition: fixed}
+  - {id: M4, severity: Medium, aim: deliverable, fix_induced: true, component: hidden-thrashing-condition, disposition: fixed}
+  - {id: M5, severity: Medium, aim: deliverable, fix_induced: true, component: calibration-claims, disposition: fixed}
+  - {id: L2, severity: Low, aim: deliverable, fix_induced: false, component: calibration-claims, disposition: declined}
 ```
+
+⚠ **`B2`–`L2` are the Claude half, folded after the Codex half per the alternating protocol.** `L2`
+is `declined` because it is a **clean** result — every commit-stamped figure reproduced — recorded
+because the brief asked for re-derivation and a clean re-derivation is a fact about the round.
 
 ## ⛔ The Blocking WITHDREW A FIX MADE IN ROUND 1
 
@@ -41,6 +55,38 @@ proposed fix is a hypothesis.**
 ⚠ **That last merge is the coordinator judging its own subject.** Recorded explicitly so a later
 reader can disagree with it; splitting them back out would silence the trigger below, which is
 precisely the defect this branch is about.
+
+## ⛔⛔ THAT LAST CLAUSE IS FALSE — the Claude half refuted it by replay (H7)
+
+**The alternative to the merge was never silence.** Replayed with **Codex's six labels and its own
+`fix_induced` values verbatim**:
+
+```
+CODEX LABELS VERBATIM for r2: ('ROUND_OWED', 'r2 produced a Blocking')
+   r1 induced: {'calibration-claims'}
+   r2 induced: {'backlog-136 scope', 'components-distinct scope', 'card-mention measurement',
+                'hidden-thrashing condition', 'exit-code settlement'}
+   would the PROPOSED refusal fire? True
+```
+
+`thrashing_component` returns `None` — **and both rounds carry fix-induced findings whose component
+sets are disjoint, which is exactly the condition §1 proposes.** The shipped card says `ROUND_OWED`;
+this spec's card says `CANNOT_RUN`. ⭐ **That is the branch demonstrating its own mechanism on
+itself, and it is a better datum than the merged firing.** It is now recorded in the spec's §3 as the
+only case in the corpus where the proposed refusal and the existing trigger disagree on a live branch.
+
+**Three things follow, and the record carries all three:**
+
+- **The merge's DIRECTION stays.** #136 carries the standing instruction *"treat any proposal that
+  makes a gate fire LESS with suspicion"*; choosing the heavier verdict and disclosing the conflict of
+  interest is the right posture, and the Claude half says so explicitly.
+- ⛔ **The stated REASON was wrong, in the direction that made the merge look forced.** *"The
+  alternative is silence"* is what removes the choice. There was a choice.
+- ⛔ **And the episode is this spec's motivating defect RUN IN REVERSE.** *Why this exists* is built on
+  *three findings relabelled into one name made the trigger fire*. Here: **six findings relabelled
+  into four names made the trigger fire**, on the branch about that lever, by the same free-text
+  mechanism, decided by one person with a stake in the answer. That is the measured cost of *"it does
+  not make `component` mechanical"*, produced by the branch itself.
 
 ## What the halves found
 
@@ -90,8 +136,45 @@ does.
 the architecture review is convened unconditionally** — no further argument, no re-litigating this
 paragraph. Writing the escape before the next round is what stops it being written afterwards.
 
-### ⛔ r2 IS NOT COMPLETE
+## ⛔⛔ IT FIRED IN THE SAME ROUND THAT WROTE IT, ON THE SENTENCE THAT WROTE IT
 
-The Claude half has not run. This verdict is computed over a round whose `halves.claude` is a
-declared `GAP:`. Rounds 2+ alternate deliberately, so the Claude half reviews the fixes recorded
-above — including the withdrawal of r1's clause, which is the change most likely to be wrong.
+The Claude half's **H3** is a fix-induced `calibration-claims` finding, and its subject is the
+redesign's own completeness claim. The fold had written *"every figure in this table carries the
+commit it was taken at"*; **that sentence was false as written** — 5 stamps in the document, 3 of
+them in the table — and the corpus had **already moved to 158 findings** because recording this very
+round moved it. The number `145` also survived, unstamped, in *Rejected, with reasons*: the section
+r2's own High had just reopened.
+
+⛔ **The pre-commitment said "in r3". It fired in r2. That is EARLIER, not different, and the
+escape does not apply.** ⭐ **I am not arguing it away** — a retreat authored for oneself after the
+fact is not a gate, and this repository has already paid for that exact move.
+
+**THE ARCHITECTURE REVIEW IS CONVENED.** The redesign has been applied again (§3 no longer asserts
+anything about the present: every corpus figure is now a dated snapshot, and `--calibrate` is how a
+reader gets today's). **That is the third remedy for this defect, which is itself the argument for
+the review rather than against it.**
+
+## What r2 cost, stated plainly
+
+| | Codex half | Claude half |
+|---|---|---|
+| Blocking | 1 | 1 |
+| High | 2 | 5 |
+| Medium | 2 | 3 |
+| Low | 1 | 1 (clean re-derivation) |
+
+⭐ **The Claude half's Blocking is r1's finding 4 for the THIRD time, one layer down each round:**
+r1 — the escape has no reader (prose); r2 Codex — the escape is scoped to the wrong thing (a round
+number); r2 Claude — **the reader the fix names structurally cannot read the key it proposes**, and
+three of its four malformed shapes parse silently.
+
+⛔ **AND A SENTENCE HERE CLAIMED THAT ARMS THE TRIGGER TOO. IT DOES NOT, AND THE DRAFT WAS WRONG.**
+Replayed: `r1` fix-induced components are `['calibration-claims']` — **only**. r1's two
+`escape-grammar` findings (H2, H6) are both `fix_induced: false`, so `escape-grammar` recurs across
+three rounds **without arming anything**. ⚠ **Recurrence is not thrashing under the recorded flags**,
+and writing otherwise inside the round that folded H3 would have been that same defect a fourth
+time. `calibration-claims` is the **only** armed component; the answer above stands on it alone.
+
+⭐ **That `escape-grammar` can recur three times, each time one layer deeper, and arm nothing is
+itself a datum about `fix_induced`** — and it belongs with H6's finding that the field is undefined
+at round 1, not with a claim this record can make on its own.
