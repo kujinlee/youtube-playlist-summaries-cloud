@@ -22,10 +22,18 @@
 > copies start.
 
 **Written 2026-09-24**, out of a session that merged PR #342 (five adversarial review rounds), held
-a Phase 6 architecture review, and implemented backlog #176. ⟳ *r3 (Low): this line used to claim
-every number below was measured in that session — a standing exhaustiveness claim this branch
-falsified repeatedly. What is true is narrower:* the numbers below were measured in
-that session, not recalled.
+a Phase 6 architecture review, and implemented backlog #176.
+
+⛔ **NO BLANKET CLAIM IS MADE ABOUT THE NUMBERS BELOW.** Each carries its own provenance where it
+matters, and every `⟳` note is dated to the review round that produced it.
+
+⟳ *r3 (Low) found this line claiming **every** number below was measured in the source session — a
+standing exhaustiveness claim this branch falsified repeatedly. ⛔ **r4 (High) then found the repair
+was a REWORDING, NOT A NARROWING**: it changed "every number" to "the numbers", which still reads as
+a claim over everything below, and everything below now includes `⟳` notes carrying commit SHAs from
+days after that session. A sentence that announces it is narrower has to be narrower. The claim is
+withdrawn rather than softened — the same move this branch made for the sweep, for the same reason:
+nothing supports it.*
 
 ---
 
