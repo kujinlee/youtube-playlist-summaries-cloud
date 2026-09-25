@@ -4,12 +4,13 @@
 > **Goal:** A review loop decides its own next step — run, stop, or escalate — from recorded
 > evidence rather than recall.
 
-**Status:** ⏳ **DESIGN — r1 FOLDED, ONE QUESTION OPEN, r2 OWED.** Round 1 ran both halves; the
+**Status:** ⏳ **DESIGN — r1 FULLY ANSWERED, r2 OWED, PHASE 1 GATE NOT TAKEN.** Round 1 ran both halves; the
 Claude half returned four design-level Highs. **Three are now closed in the text** — the escape hatch
 became a header key with a derived placement rule (§2), the relationship to backlog #136 is stated as
 a narrowing with its reason (*Scope*), and the calibration is corrected with r1's one-clause fix
-folded into the condition itself (§1, §3). **One is open and is a SEQUENCING question, not a content
-one:** the subject has no caller (backlog **#184**). ⛔ **Nothing implemented.** `check-review-decision.py`
+folded into the condition itself (§1, §3). **The fourth was a SEQUENCING question, not a content one** — the
+subject has no caller (backlog **#184**) — **and the user answered it 2026-09-25: this spec first,
+#184 filed and unclaimed, with the cost of that order written down below rather than discovered.** ⛔ **Nothing implemented.** `check-review-decision.py`
 run on this branch 2026-09-25 returns `ROUND_OWED — r1 produced a High`, so **r2 is owed before the
 Phase 1 gate**, independently of how #184's ordering is decided.
 **Date:** 2026-09-25. **Precedent:** `2026-09-14-review-decision-procedure-design.md`, which built
@@ -331,12 +332,12 @@ Q2/Q6's convention gaps (declared unenforced deliberately).
 
 | # | Finding | State |
 |---|---|---|
-| 1 | The subject has **no caller**, and the record cannot tell *ran* from *never ran* | ⛔ **OPEN — and it is a SEQUENCING question, not a spec-content one.** Filed as backlog **#184** |
+| 1 | The subject has **no caller**, and the record cannot tell *ran* from *never ran* | ✅ **ANSWERED 2026-09-25 by the user as an ORDER, not a fold** — this spec proceeds, backlog **#184** stays filed and unclaimed. Reason and admitted cost below |
 | 2 | The calibration **understated false positives** | ✅ corrected in §3; r1's one-clause fix is now a clause of the condition in §1 |
 | 3 | **Backlog #136** says *route, not stop/go* | ✅ answered in *Scope — a deliberate narrowing of backlog #136* |
 | 4 | The escape is **unreadable as specified** | ✅ answered in §2 — it is a header key with a derived placement rule, and `ROUND_REQUIRED` is the reader |
 
-### ⛔ 1 is open, and here is exactly what is undecided
+### 1 — decided: this spec first, #184 filed and unclaimed
 
 `scripts/check-review-decision.py:27-31` declares `NO-CALLER:` and has none. Its own docstring names
 the failure and the remedy: *"If it is skipped again, the remedy is not better prose; it is making
@@ -350,21 +351,28 @@ lesson — *"what did NOT work was building the caller in the same breath as fix
 calls; the caller never got its own experiment and out-found its subject in every round."* Bundling
 them is the one option ruled out.
 
-⚠ **WHAT IS IN QUESTION: order.** The soundness check's own effect is **unobservable** while nothing
-invokes the card and nothing records that it ran — every falsifier above except the escape-frequency
-one depends on someone running it. #184 names a remedy **cheaper than a caller**: Q6 recording, a
-line in the round document stating what the card returned, which closes *ran vs never-ran* with no
-caller at all. Doing that first would make this spec's calibration observable in the live record
-instead of only in a fixture.
+⚠ **WHAT WAS IN QUESTION: order.** The soundness check's own effect is **unobservable** while
+nothing invokes the card and nothing records that it ran — every falsifier above except the
+escape-frequency one depends on someone running it. #184 names a remedy **cheaper than a caller**:
+Q6 recording, a line in the round document stating what the card returned, which closes *ran vs
+never-ran* with no caller at all.
 
-**The two orders, with what each costs:**
+⭐ **DECIDED: this spec first.** The two are independent — this fixes what the card **answers**
+whenever it is run; #184 fixes **how often** it runs. Neither constrains the other's design, and
+#184's remedy is not designed at all: it is a discovery problem across Q1/Q4/Q5, not just Q5. A
+finished design does not wait on an unstarted one.
 
-- **This spec first** — the mechanism exists and is fixture-verified, but its real-world firing rate
-  stays unmeasurable until #184 lands. Risk: a second correct-and-uninvoked thing, which is the
-  state #134 was reopened over.
-- **#184's recording half first** — the record starts distinguishing *ran* from *never ran*, so this
-  spec ships into a loop that can see it work. Risk: Q6 is a **convention** (`review-method.md` §0
-  marks it ❌), and *"better prose"* is precisely what the docstring says already failed once.
+⛔ **THE COST OF THAT ORDER, ADMITTED RATHER THAN DISCOVERED LATER.** Until #184 lands, this check's
+real firing rate is unmeasurable outside the fixture, and the repository gains **a second
+correct-but-uninvoked instrument** — precisely the state #134 was reopened over. ⚠ **Measured, so the
+size of the admission is known:** **14 of 134** documents in `docs/reviews/coordinator/` mention the
+card at all, and **7 of those are the two subjects that are ABOUT the card**
+(`review-decision-procedure`, `decision-card-soundness`). Independent use is **two subjects** —
+`peer-sites` and `velocity-177`. `velocity-doc-consistency`, the subject this spec's measured defect
+comes from, is **0 of 4**.
+
+⚠ **This is a claim about RECORDING, not about RUNNING, and the difference is #184's whole point.**
+Nothing here shows the card was not consulted on those subjects; it shows the record cannot say.
 
 ### Also open (Medium) — both now answered above
 
