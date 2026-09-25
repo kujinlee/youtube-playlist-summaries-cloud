@@ -96,7 +96,7 @@ replaces them:
 
 | check | where it lives today | survives the deletion? |
 |---|---|---|
-| `round:` present and an int | `:203-205` — **inside the deleted region** | ⛔ **no** |
+| `round:` present and an int | `:209` — **inside the deleted region** | ⛔ **no** |
 | `findings:` key present at all | `:232` — the explicit repair for **r3's Blocking** | ⛔ **no** |
 | `ROUND_REQUIRED` enforcement loop | `:245-251` — **inside the deleted region** (`ROUND_REQUIRED` at `:263` is only a constant) | ⛔ **no** |
 | `_validate` on each finding | `:273-284` — **per-finding only, never sees a top-level key** | ✅ yes |
@@ -189,7 +189,12 @@ numbers because they are three distinct questions:
 |---|---|
 | round-shaped files by name | **73** |
 | of those, carrying a `yaml` block | **34** |
-| of those, **parseable** by `parse_header` | **31** (42 not) |
+| of those, **parseable** by `parse_header` | **31** — so **3** of the 34 carry a block the parser rejects |
+| round-shaped but carrying no block at all | **39** |
+
+⛔ ⟳ *r2 (Claude, High): the first version of this row read "**31** (42 not)" — and **42 is of 73, not
+of 34**. A denominator error inside the table written to fix denominator confusion. The three
+populations are now each stated against their own base.*
 
 **JSON is longer in every parseable header measured, median +1 line.** ⛔ **r2 (Claude, High): the
 first version of this table reintroduced the very confusion it was written to fix** — it restated
@@ -239,7 +244,7 @@ documented behaviour of the thing doing the reading.
 ⛔⛔ **THE FIRST DRAFT'S TWO FALSIFIERS COULD NOT FIRE. r1 (both halves, Blocking) — and one of them
 was a TEST THAT CANNOT FAIL, written in the paragraph that was being careful about exactly that.**
 
-- **The parity check was vacuous by construction.** `parse_header:243-246` *already* refuses unless
+- **The parity check was vacuous by construction.** `parse_header:235-236` *already* refuses unless
   the list-marker count equals the parsed finding count, so for every document that parses today the
   parity holds necessarily. **Measured: 0 disagreements across all 30.**
 - **And it could not be made independent without reintroducing a fixed defect** — counting markers
@@ -302,6 +307,7 @@ a table whose SOURCE column comes from the same reader:
 | **the left column** | ⛔ **THE VERBATIM SOURCE TEXT of the header — raw bytes, not any parse of it.** This is the one sentence that makes the check real, and its absence is what failed |
 | **the right column** | the converted JSON, rendered field by field |
 | **what a reader is doing** | comparing *text a machine did not interpret* against *text a machine produced*. **That is a job a human can do and a comparator cannot** — the comparator would have to decide what a field is |
+| ⚠ **the cost this fix carries, stated** | ⛔ **r2 (Claude): raw source text makes it a WHOLE-HEADER read, not the FIELD-LEVEL one this section advertises.** The reader performs the field alignment themselves — which is precisely the work the r2 fold argued a human should not have to do. **It is the right trade and it is not free**, and a later draft must not quietly re-describe this as field-level |
 | **the record** | ⛔ **r2 (Claude, High): a read with no output cannot be observed not to have happened.** The converter writes the tables to a **committed artifact**, and the PR states **who** read all of them at **which commit** — this repository's own standard for a manual check |
 | **verdict invariance** | kept, **demoted to a cheap smoke test** and labelled as one |
 
@@ -337,6 +343,10 @@ five times in the spec this one unblocks.
 2. **`check-review-rounds.py` gains a refusal:** a round document under `docs/reviews/coordinator/`
    carrying a `yaml` header after the cutover **fails**, naming the converter in its message. That is
    the forcing function, it runs in CI, and it is the one thing a branch in flight cannot miss.
+   ⚠ ⟳ **r2 (Claude, Medium): it must key on the FILENAME, not the directory.** Every existing
+   mechanism in this family keys on the `<subject>-r<N>-<who>.md` grammar; a directory-keyed refusal
+   would catch **two misfiled `merge-ready-r*-codex.md` documents** that are inert today and have no
+   remedy inside this spec — a gate firing on something nobody can fix, which is #56's outcome.
 3. **The conversion runs over whatever exists at merge time** — no count is pinned now, because every
    count in this document has moved while it was being written.
 
@@ -367,7 +377,7 @@ demote them.
 | a malformed record must not read as a clean round | `json.loads` (syntax) **+ layer 2 schema validation** — see §1; `json.loads` alone does **not** do this | 7 recorded defects: **5** read as a pass, **2** as a false refusal |
 | a well-formed record stating an out-of-range value must be refused | `_validate` + `REQUIRED` + `ROUND_REQUIRED` — **unchanged** | r2 Blocking: *"validate the VALUES, not the shape that carried them"* |
 | the existing record must remain decidable after the change | one-shot conversion of every parseable document, old reader deleted | ⟳ *the original evidence here — "30/30 round-trip" — was refuted in r1 as a tautology over the parser's projection; the evidence is now §2's field-level table* |
-| a conversion must not silently alter the record | a per-document **field-level side-by-side table, read by a human**, over 31 documents; verdict invariance as a smoke test | §2 — ⟳ *r2: the first two answers here were a vacuous check and an unbuildable one* |
+| a conversion must not silently alter the record | a per-document side-by-side table whose **left column is verbatim source text**, written to a committed artifact and read by a named reviewer; verdict invariance as a smoke test | §2 — ⟳ *r2: the first three answers here were a vacuous check, an unbuildable one, and one that audited itself* |
 | the authoring contract must match the substrate | `round-header-template.md` changes in the same PR | §3 |
 
 **One mechanism per concern; no mechanism appears twice.**
@@ -425,7 +435,7 @@ demote them.
 | Piece | Cost |
 |---|---|
 | swap the reader | **small, and net negative** — ⟳ *r1: **109** lines, not 121; the first measurement included `_validate` (12 lines), the function this spec explicitly **keeps**. A measurement of one set reported as a measurement of another.* Plus layer 2, which is new code |
-| convert the parseable documents + the field table | ⟳ **not "mechanical" — r1 and r2 both refuted that.** The converter must read the DOCUMENT (nine keys, one inline comment), and the falsifier is a human reading ~31 side-by-side tables |
+| convert the parseable documents + the field table | ⟳ **not "mechanical" — r1 and r2 both refuted that.** The converter must read the DOCUMENT (nine keys, one inline comment), and the falsifier is a human reading **one table per parseable document at merge time** — ⟳ *r2: this line pinned `~31`, which §2 forbids four paragraphs earlier* |
 | `round-header-template.md` | small |
 | `--self-test` | ⛔ **the count may RISE, not fall — r1 (Medium) counted them.** Of 61 cases, **16** touch the record: ~**5** genuinely retire, **8** must be **rewritten** against JSON rather than deleted, and **3 would go RED** against the design as first written (absent `round`, absent `findings`, `fixes_nontrivial`) — which is B1 seen from the suite's side. ⚠ **A case that tested a RULE through a malformed header is not a case that tested the PARSER**, and only the latter may retire |
 | ⛔ `_validate` needs cases it does not have | **r1 (High), measured: gutting `_validate`'s missing-field refusal leaves `61/61` GREEN** — its branch is satisfied by an ambient missing `component`. The one function this spec calls "kept, unchanged" and load-bearing is pinned by **zero** cases, so "unchanged" is currently unfalsifiable |
@@ -485,7 +495,7 @@ recorded *after fixing, SEARCH for the class* — an instance-fix leaves the doc
 premise its own correction removed, and a reader who lands on the downstream copy has no way to know.
 **Every count that moved is now either restated at a named commit or removed in favour of a rule.**
 
-⛔ **AND THE SWEEP ITSELF MISSED ONE, WHICH IS THE POINT.** After eight sites were fixed, §1's
+⛔⛔ **THE SWEEP MISSED ONE, AND THEN r2 FOUND THREE MORE. IT HAS NOW FAILED TWICE.** After eight sites were fixed, §1's
 *"What is deleted"* still read **121 lines** — the very number r1 corrected to 109, standing as a
 live claim four lines below the table that corrects it. It was caught by re-grepping the corrected
 strings rather than by re-reading. ⭐ **A sweep is a claim like any other and needs its own check:
@@ -512,3 +522,16 @@ sentence — **the left column is raw source text**. That is a fix, not a prose 
 ⛔⛔ **PRE-COMMITTED, SO IT CANNOT BE ARGUED AWAY LATER: if r3's fold produces a FOURTH falsifier
 design that fails a fourth way, the architecture review is convened unconditionally.** No further
 argument, no re-reading this paragraph.
+
+
+⟳ **r2 (Claude, Medium) — the sweep's second failure, recorded rather than quietly patched.** After
+declaring itself complete it had left a `(42 not)` hanging off the wrong denominator *inside the
+table written to fix denominator confusion*, two sites still pinning `~31` four paragraphs after §2
+forbids pinning a count, and two `file:line` citations naming the wrong statement (`:203-205` for a
+check that is at `:209`; `:243-246` for one at `:235-236`).
+
+⭐ **The lesson is not "sweep harder".** Three of those four are **derived** claims — a denominator, a
+pinned count, a line number — and every one of them is a value that moves when its source moves. **A
+document cannot hold a derived value honestly; it can only hold the rule that produces it.** That is
+the same finding this branch has now made about corpus counts, about line counts, and about the
+`--self-test` total, arriving a fourth time through a fourth surface.
