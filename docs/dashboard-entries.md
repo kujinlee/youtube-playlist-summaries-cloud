@@ -12232,3 +12232,48 @@ own required reading), #180 (a pointer from the section an author writing a numb
 
 ⚠ Round 5 is the verifying round on the shape invariant, which is the one fix that differs in KIND
 from the four that failed and has not been reviewed even once.
+
+## 2026-09-24
+The document that explains today's new rules was quietly disagreeing with itself, in the paragraph that introduces them.
+
+Three small contradictions, all in the analysis document rather than in the rules themselves, so
+nothing that governs was wrong. But it is the document a reader is told to consult first, and its
+opening line says to read its summary before relying on anything below it.
+
+One paragraph opened by saying four rules came out of the work and closed, four lines later, by
+saying there were five. That happened because an earlier review round noticed the count was stale
+and wrote the correction at the end of the paragraph instead of editing the sentence that was wrong.
+One of the rules adopted today says exactly why that does not work: a reader meets the wrong
+sentence first. So the fix for one rule broke another rule, in the paragraph that introduces both.
+
+The summary table also filed two sections under two different statuses each, which makes it
+impossible to use for the one thing it exists for.
+
+All three are fixed by removing the counts rather than correcting them, which is the same decision
+this whole week has been circling: a document that describes the project should not try to keep a
+tally of it. The rules are now listed instead of counted, and a list cannot disagree with itself.
+
+<!--tech-->
+Found by the fork building the second explainer page, not by a review round — and that is the point:
+**six review rounds and a Phase 6 architecture review passed over all three**, because every round's
+scope was `docs/process-checklists.md` (the governing text) or the branch diff. This file's internal
+consistency was in no round's subject.
+
+⭐ **The paragraph at `:192` contradicted itself**: opened *"Four rules came out of this"*, closed
+*"five rules, not four"*. Cause: r3 (Low) found the count stale after rule 1b was added and
+**appended** the correction — the exact move **rule 2** forbids (*an appended correction is not a
+fix*). The fix for rule 1b's count violated rule 2, in the paragraph introducing both.
+
+⚠ **The banner listed §3 and §4 twice each** — §3 in its own row *and* in `| §1, §3, §4, §8 |`; §4
+in the Q0 row *and* in the same catch-all. In a banner headed *"Read this line before citing
+anything below."* Both introduced by the r5 fold, which added the new rows and left the old one.
+
+**Fixes:** the §6 banner no longer states a count; the outline **lists** the rules (1, 1b, 2, 3, 4)
+with no total; the catch-all banner row is now `| §1, §8 |` with a `⟳` note recording why. Verified:
+no section appears in two banner rows, and no count-of-rules survives outside the quoted description
+of the defect.
+
+⛔ **Not a governing-document change.** `docs/process-checklists.md` is untouched; its own shape
+invariant (no count in digits or words, no `file:line`, no document-relative position) already
+forbids this class inside the rules, and r6 confirmed it holds there. This is the rationale document
+catching up to the rule it argued for.

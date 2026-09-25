@@ -9,7 +9,8 @@
 > | **§3 seam signals** | 🟠 not MECHANISED — but they are **observations you can apply by hand today**, and the governing side-job rule in `process-checklists.md` sends you here for them (r1 Low: *"not built"* read as *"not usable"*) |
 > | **§5 sweep policy** | ⚠ **item 1 ONLY** (draft PR at slice start) adopted as PRACTICE, not automated. Items 2–4 are still proposal, and §5's body still says *"Proposed:"* — that label is correct for them |
 > | **§9 answers**, **§10 brief** | ✅ **DECISIONS, not proposals.** §9 records what was settled and by whom; §10 is the design session's brief |
-> | §1, §3, §4, §8 | measurement and rationale — proposal |
+> | §1, §8 | measurement and rationale — proposal |
+> | | ⟳ **§3 and §4 were in this row AND in their own rows above — two statuses each**, in a banner whose first line says to read it before citing anything below. Removed here, r5-fold defect found 2026-09-24 |
 
 > ⟳ **r1 Low: the three rows above were wrong in the first version of this banner** — it claimed §5
 > wholesale, and bucketed §9 and §10 under *"everything else | proposal"* when they are the
@@ -172,7 +173,7 @@ needing one.
 
 ## 6. Reduce defect INJECTION, not just detection — ✅ ADOPTED 2026-09-24
 
-> ✅ **These four rules now live in `docs/process-checklists.md` → *Reduce defect INJECTION, not
+> ✅ **These rules now live in `docs/process-checklists.md` → *Reduce defect INJECTION, not
 > just detection*, and they govern from there.** What follows is the measurement that justified
 > them, kept because a rule without its evidence gets argued away. ⚠ Rule 3 landed as a
 > **cross-reference** to `review-method.md` §0 Q2 step 5, not a restatement — that step binds the
@@ -188,15 +189,23 @@ each costing a full round to surface:
 | r5 M1, r5 Codex Medium | "the class is closed" — asserted twice, both times an instance fix |
 | #176 r1 M3 | `183 verdicts` — wrong (184), and copied into three further places |
 
-**Four rules came out of this, all free. ⛔ THEY ARE NOT RESTATED HERE** — they govern from
+**The rules that came out of this are all free. ⛔ THEY ARE NOT RESTATED HERE** — they govern from
 `docs/process-checklists.md` → *Reduce defect INJECTION, not just detection*. In outline only, so
-you know what this measurement bought: provenance of numbers (rule 1), **the population a number
-names** (rule 1b), fixing a sentence in place, a class claim requiring a class sweep, and deriving
-gate lists rather than recalling them — **five rules, not four.**
+you know what this measurement bought — **listed, never counted**: provenance of numbers (rule 1),
+**the population a number names** (rule 1b), fixing a sentence in place (rule 2), a class claim
+requiring a class sweep (rule 3), and deriving gate lists rather than recalling them (rule 4).
 
-⟳ **r3 Low: this outline said four and omitted 1b**, which rule 1's own ⚠ insists is a *different*
-rule from rule 1 — so folding it in was not available as a defence. 1b did not exist when §6 was
-written; it was produced by §6's own first review round.
+⟳ **THIS PARAGRAPH CONTRADICTED ITSELF FOR HOURS, AND THE WAY IT DID IS THE POINT.** It opened
+*"Four rules came out of this"* and closed *"five rules, not four"* — because r3 (Low) found the
+count stale after rule 1b was added and **appended the correction to the end instead of editing the
+opening sentence.** That is precisely what rule 2 forbids: *an appended correction is not a fix; the
+reader meets the wrong sentence first.* The fix for one rule's defect broke another rule, in the
+paragraph that introduces both, and six review rounds plus an architecture review passed over it —
+none of them had this file's internal consistency in scope.
+
+⚠ **1b did not exist when §6 was written**; it was produced by §6's own first review round, which is
+why every count of these rules has been wrong at some point. The outline now lists them, and a list
+cannot disagree with its own contents.
 
 ⛔ **THIS PARAGRAPH REPLACED A FULL COPY OF THE RULES, AND THE COPY HAD ALREADY GONE WRONG —
 r1 Medium.** It still said *"derive gate lists from `ci.yml`"*, which r1 established is the wrong
