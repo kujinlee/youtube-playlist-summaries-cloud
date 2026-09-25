@@ -9,9 +9,10 @@
 > | **§3 seam signals** | 🟠 not MECHANISED — but they are **observations you can apply by hand today**, and the governing side-job rule in `process-checklists.md` sends you here for them (r1 Low: *"not built"* read as *"not usable"*) |
 > | **§5 sweep policy** | ⚠ **item 1 ONLY** (draft PR at slice start) adopted as PRACTICE, not automated. Items 2–4 are still proposal, and §5's body still says *"Proposed:"* — that label is correct for them |
 > | **§9 answers**, **§10 brief** | ✅ **DECISIONS, not proposals.** §9 records what was settled and by whom; §10 is the design session's brief |
-> | §1, §3, §4, §8 | measurement and rationale — proposal |
+> | §1, §8 | measurement and rationale — proposal |
+> | | ⟳ **§3 and §4 were in this row AND in their own rows above — two statuses each**, in a banner whose first line says to read it before citing anything below. Introduced by `e44be4b0`, the **round-1 fold** (r1 High: the first version of this note said *r5*, asserted, not derived — no r5 or r6 commit touches this file). It therefore stood through **r2–r6**. Removed 2026-09-24 |
 
-> ⟳ **r1 Low: the three rows above were wrong in the first version of this banner** — it claimed §5
+> ⟳ **r1 Low: rows above were wrong in the first version of this banner** — it claimed §5
 > wholesale, and bucketed §9 and §10 under *"everything else | proposal"* when they are the
 > settled decisions. A banner that says *read this before citing anything below* is load-bearing,
 > so its own rows are a place a defect hides in plain sight.
@@ -21,8 +22,18 @@
 > copies start.
 
 **Written 2026-09-24**, out of a session that merged PR #342 (five adversarial review rounds), held
-a Phase 6 architecture review, and implemented backlog #176. Every number below was measured in
-that session, not recalled.
+a Phase 6 architecture review, and implemented backlog #176.
+
+⛔ **NO BLANKET CLAIM IS MADE ABOUT THE NUMBERS BELOW.** Each carries its own provenance where it
+matters, and every `⟳` note is dated to the review round that produced it.
+
+⟳ *r3 (Low) found this line claiming **every** number below was measured in the source session — a
+standing exhaustiveness claim this branch falsified repeatedly. ⛔ **r4 (High) then found the repair
+was a REWORDING, NOT A NARROWING**: it changed "every number" to "the numbers", which still reads as
+a claim over everything below, and everything below now includes `⟳` notes carrying commit SHAs from
+days after that session. A sentence that announces it is narrower has to be narrower. The claim is
+withdrawn rather than softened — the same move this branch made for the sweep, for the same reason:
+nothing supports it.*
 
 ---
 
@@ -54,10 +65,10 @@ asks **whether adversarial review is the right instrument**. Proposed as a new *
 > exists that a script can read, and three hand-kept path lists have already each scored something
 > dangerous as one-round (`review-method.md` §0 Q1).
 >
-> Q0's **escalation** is mechanical where it can be. Of §3's four signals, *fixes do not terminate*
+> Q0's **escalation** is mechanical where it can be. Of §3's signals, *fixes do not terminate*
 > and *each fix ADDS code* are both measurable from the round documents and the diff.
 >
-> ⛔ **The reason the escalation half is the load-bearing one:** §3 records that all four signals
+> ⛔ **The reason the escalation half is the load-bearing one:** §3 records that all signals
 > were present in the 2026-09-23 thrashing and it was **still called three rounds late**. A card
 > that a human reads and then misjudges is a detection failure a machine fixes and prose does not.
 >
@@ -87,9 +98,9 @@ asks **whether adversarial review is the right instrument**. Proposed as a new *
 
 ---
 
-## 3. Four signals that say SEAM, not LOGIC — escalate on these
+## 3. The signals that say SEAM, not LOGIC — escalate on these
 
-All four were present in the 2026-09-23 verdict-path thrashing and it was still called three rounds
+Every one of them was present in the 2026-09-23 verdict-path thrashing and it was still called three rounds
 late, so they are written as observations rather than judgements:
 
 1. **Fixes are locally correct but do not terminate.** The strongest signal. Four rounds, every
@@ -172,7 +183,7 @@ needing one.
 
 ## 6. Reduce defect INJECTION, not just detection — ✅ ADOPTED 2026-09-24
 
-> ✅ **These four rules now live in `docs/process-checklists.md` → *Reduce defect INJECTION, not
+> ✅ **These rules now live in `docs/process-checklists.md` → *Reduce defect INJECTION, not
 > just detection*, and they govern from there.** What follows is the measurement that justified
 > them, kept because a rule without its evidence gets argued away. ⚠ Rule 3 landed as a
 > **cross-reference** to `review-method.md` §0 Q2 step 5, not a restatement — that step binds the
@@ -188,15 +199,31 @@ each costing a full round to surface:
 | r5 M1, r5 Codex Medium | "the class is closed" — asserted twice, both times an instance fix |
 | #176 r1 M3 | `183 verdicts` — wrong (184), and copied into three further places |
 
-**Four rules came out of this, all free. ⛔ THEY ARE NOT RESTATED HERE** — they govern from
+**The rules that came out of this are all free. ⛔ THEY ARE NOT RESTATED HERE** — they govern from
 `docs/process-checklists.md` → *Reduce defect INJECTION, not just detection*. In outline only, so
-you know what this measurement bought: provenance of numbers (rule 1), **the population a number
-names** (rule 1b), fixing a sentence in place, a class claim requiring a class sweep, and deriving
-gate lists rather than recalling them — **five rules, not four.**
+you know what this measurement bought — **listed, never counted**: provenance of numbers (rule 1),
+**the population a number names** (rule 1b), fixing a sentence in place (rule 2), a class claim
+requiring a class sweep (rule 3), and deriving gate lists rather than recalling them (rule 4).
 
-⟳ **r3 Low: this outline said four and omitted 1b**, which rule 1's own ⚠ insists is a *different*
-rule from rule 1 — so folding it in was not available as a defence. 1b did not exist when §6 was
-written; it was produced by §6's own first review round.
+⟳ **THIS PARAGRAPH CONTRADICTED ITSELF, AND THE WAY IT DID IS THE POINT.** It opened *"Four rules
+came out of this"* and closed *"five rules, not four"* — because r3 (Low) found the count stale once
+rule 1b existed and the fold **appended** the correction instead of editing the opening sentence.
+That is exactly what rule 2 forbids: *an appended correction is not a fix; the reader meets the wrong
+sentence first.* **The fix for rule 1b's count violated rule 2, in the paragraph introducing both.**
+
+⛔ **AND THE FIRST VERSION OF THIS NOTE GOT ITS OWN ROUND COUNT WRONG — r1 High, derived from git
+rather than asserted.** It said *"six review rounds plus an architecture review passed over it, none
+of them had this file's internal consistency in scope."* **Both halves are false.** `git show
+ccc19857` shows the r3 fold ADDING the closing sentence, so the contradiction did not exist before
+it — only **r4, r5 and r6** ran afterwards. And r3 plainly *did* have it in scope: its own finding is
+titled *"four rules" names a population of five* and cites this paragraph. r3 found the defect; the
+fold repaired it badly. ⭐ **The tell is that the claim was wrong in both directions at once** — too
+many rounds here, too few in the banner note below — which is what a round count nobody derived looks
+like. Rule 1 applies to counts of our own history too.
+
+⚠ **1b did not exist when §6 was written**; it was produced by §6's own first review round, which is
+why every count of these rules has been wrong at some point. The outline now lists them, and a list
+cannot disagree with its own contents.
 
 ⛔ **THIS PARAGRAPH REPLACED A FULL COPY OF THE RULES, AND THE COPY HAD ALREADY GONE WRONG —
 r1 Medium.** It still said *"derive gate lists from `ci.yml`"*, which r1 established is the wrong
@@ -240,10 +267,13 @@ proposal — r1 Medium. A rationale that also carries the rule is two copies, an
 
 ---
 
-## 9. The five open questions — ANSWERED 2026-09-24
+## 9. The open questions — ALL ANSWERED 2026-09-24
 
-All five were settled in the implementing session. Q2 and the scope were the user's decisions; the
-other three were settled from evidence and are recorded so they are not re-opened from scratch.
+Every one was settled in the implementing session. Q2 was the user's decision, as was the session's
+scope; the rest were settled from evidence and are recorded so they are not re-opened from scratch.
+⟳ *r3 (Medium): this said "the other three" over five questions, and the arithmetic closed under no
+reading — "the scope" is not one of the five. The r2 fold repaired the previous clause of this same
+sentence and left this one, which is rule 2's failure one more time.*
 
 **1 · Where does Q0 live? → `review-method.md` §0.** Measured, not argued: `check-docs.LINE_BUDGETS`
 covers exactly two files — `dev-process.md` at 220 and `plugins.md` at 260. `review-method.md` is
@@ -290,7 +320,7 @@ moment is the duplicate-mechanism shape `check-vocabulary-collisions.py` exists 
 | Item | State |
 |---|---|
 | **Q0 itself** — the card in `review-method.md` §0 | 🟠 form decided (§2), not designed, not built |
-| **§3's four signals as mechanical tests** | 🟠 two of four look measurable; none is specified |
+| **§3's seam signals as mechanical tests** | 🟠 two of them look measurable; none is specified |
 | **Calibration corpus** for the mechanical half | 🟠 not started — ⛔ ship nothing without it |
 | **§5's "what is lost"** — a red CI sweep no longer names which commit broke coverage | 🟠 accepted, unmitigated |
 | **Side-job hook** (Q5) | ⏸ blocked on Q0's escalation half |

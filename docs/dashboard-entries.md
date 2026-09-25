@@ -12232,3 +12232,178 @@ own required reading), #180 (a pointer from the section an author writing a numb
 
 ⚠ Round 5 is the verifying round on the shape invariant, which is the one fix that differs in KIND
 from the four that failed and has not been reviewed even once.
+
+## 2026-09-24
+The document that explains today's new rules was quietly disagreeing with itself, in the paragraph that introduces them.
+
+Three small contradictions, all in the analysis document rather than in the rules themselves, so
+nothing that governs was wrong. But it is the document a reader is told to consult first, and its
+opening line says to read its summary before relying on anything below it.
+
+One paragraph opened by saying four rules came out of the work and closed, four lines later, by
+saying there were five. That happened because an earlier review round noticed the count was stale
+and wrote the correction at the end of the paragraph instead of editing the sentence that was wrong.
+One of the rules adopted today says exactly why that does not work: a reader meets the wrong
+sentence first. So the fix for one rule broke another rule, in the paragraph that introduces both.
+
+The summary table also filed two sections under two different statuses each, which makes it
+impossible to use for the one thing it exists for.
+
+All three are fixed by removing the counts rather than correcting them, which is the same decision
+this whole week has been circling: a document that describes the project should not try to keep a
+tally of it. The rules are now listed instead of counted, and a list cannot disagree with itself.
+
+<!--tech-->
+Found by the fork building the second explainer page, not by a review round — and that is the point:
+**six review rounds and a Phase 6 architecture review passed over all three**, because every round's
+scope was `docs/process-checklists.md` (the governing text) or the branch diff. This file's internal
+consistency was in no round's subject.
+
+⭐ **The paragraph at `:192` contradicted itself**: opened *"Four rules came out of this"*, closed
+*"five rules, not four"*. Cause: r3 (Low) found the count stale after rule 1b was added and
+**appended** the correction — the exact move **rule 2** forbids (*an appended correction is not a
+fix*). The fix for rule 1b's count violated rule 2, in the paragraph introducing both.
+
+⚠ **The banner listed §3 and §4 twice each** — §3 in its own row *and* in `| §1, §3, §4, §8 |`; §4
+in the Q0 row *and* in the same catch-all. In a banner headed *"Read this line before citing
+anything below."* Both introduced by the r5 fold, which added the new rows and left the old one.
+
+**Fixes:** the §6 banner no longer states a count; the outline **lists** the rules (1, 1b, 2, 3, 4)
+with no total; the catch-all banner row is now `| §1, §8 |` with a `⟳` note recording why. Verified:
+no section appears in two banner rows, and no count-of-rules survives outside the quoted description
+of the defect.
+
+⛔ **Not a governing-document change.** `docs/process-checklists.md` is untouched; its own shape
+invariant (no count in digits or words, no `file:line`, no document-relative position) already
+forbids this class inside the rules, and r6 confirmed it holds there. This is the rationale document
+catching up to the rule it argued for.
+
+## 2026-09-24
+A correction to the entry just above: it claimed more than it had fixed, and two of its round numbers were wrong.
+
+The previous entry said the counts had been removed and that none survived. Review found that was
+not true. Several more counts of the document's own contents were still in it — a section headed
+"Four signals", another headed "The five open questions" — and the entry immediately before that one
+opens by saying "four rules", which is the very thing being claimed gone. All of them are now fixed,
+and the claim here is narrower: the counts are gone from that one document, not from everything.
+
+The more useful correction is about how the previous entry got two numbers wrong. It said six rounds
+of review had passed over a contradiction, and that a second defect had been introduced late in the
+process. Checking the actual history: the contradiction was created partway through, so only three
+rounds came after it — and the second defect was introduced at the very first repair and survived
+five. One number too high, the other too low.
+
+Neither was looked up. Both were written from memory of a process that had happened over several
+hours. That is precisely the failure the rules adopted earlier today exist to prevent, applied to
+counts of our own history rather than counts of the code.
+
+<!--tech-->
+Corrects `2026-09-24/2` (this date's entry about `development-velocity.md`). ⛔ **Append-only store:
+a correction is a NEW entry, never a rewrite** — the earlier entry stands with its claims intact and
+this one supersedes them.
+
+⭐ **r1 High ×2, both in the REPLACEMENT text, both round attributions:**
+
+- *"six review rounds plus an architecture review passed over it, none had this file's internal
+  consistency in scope"* — **false in both halves.** `git show ccc19857` shows the **r3 fold** ADDING
+  the closing sentence, so the contradiction did not exist before it: only **r4, r5, r6** followed.
+  And r3 *did* have it in scope — its finding is titled *"four rules" names a population of five* and
+  cites the paragraph. r3 found it; the fold repaired it badly.
+- *"introduced by the r5 fold"* (banner double-status rows) — **`e44be4b0`, the ROUND-1 fold**, is the
+  single commit that split the catch-all row. No r5 or r6 commit touches this file at all. It stood
+  through **r2–r6**.
+
+⭐ **Wrong in both directions at once — too many rounds in one claim, too few in the other.** That is
+the signature of a count nobody derived. Rule 1 (*no number unless measured in this session*) applies
+to counts of our own history, and neither of these was looked up.
+
+⚠ **r1 Codex (Low) + r1 Claude (Medium):** surviving self-counts — `§3` headed *Four signals* with
+*"all four"*, `§9` headed *The five open questions*, `§10`'s *"two of four"*, plus two in §2's Q0
+block and a *"three rows above"* in the banner note. All removed; sections now LIST rather than
+count. The two survivors are inside **quotations** of the original defect, which is correct.
+
+⚠ The claim *"no count-of-rules survives"* was scoped to one file but read as absolute, and the
+preceding dashboard entry refutes the absolute reading. The narrower claim is what this entry states.
+
+## 2026-09-24
+The correction above also claimed too much, so this one stops claiming it.
+
+The entry above said every count had been removed. Two were still there. The check that certified
+the claim was looking for numbers followed by particular words, and the two survivors used different
+words — one said "five were settled", the other "two of them".
+
+That is the fourth time today a check has been narrower than the claim it was certifying, each time
+a little wider than the last and each time missed by whatever came next. So the fix this time is not
+a wider check. It is to stop claiming that every one has been found, because there is no reliable way
+to find them all — the project measured that years' worth of attempts ago and wrote down why.
+
+One of the two is staying, deliberately. "Two of them look measurable" says something real about
+which signals could be automated. The problem was never numbers; it was numbers that have to be kept
+up to date to stay true, and a document describing a moving project cannot keep those correct.
+
+<!--tech-->
+Corrects `2026-09-24/3`. r2 (Codex, High): `docs/development-velocity.md:262` *"All five were
+settled"* and `:310` *"two of them look measurable"* survived a claim of *"All removed"*.
+
+⭐ **Why the sweep missed them, measured:** the pattern required a noun from
+`[rules, signals, questions, sections, rows, items]`. Line 262 says *five were **settled***; line 310
+says *two of **them***. A verb and a pronoun — outside the list. **Fourth pattern today narrower than
+its claim**: bolded digits → any digits → number-words/locators → a noun list.
+
+⛔ **So the fix is NOT a fifth pattern.** The exhaustiveness claim is **withdrawn** from the
+coordinator document. `process-checklists.md` → *Qualify every number in prose* already records the
+syntactic hunt measured and rejected at three scopes; there is no exhaustive instrument, so no
+document here may assert exhaustiveness for this class.
+
+⚠ **`:310` is KEPT on purpose and the distinction is stated rather than assumed.** *"two of them look
+measurable"* is a **finding** — §2 names the two signals. *"All five were settled"* was a **tally** of
+the document's own contents and is gone. A wider sweep confirms the remainder are measurements and
+findings (*14 minutes*, *three path lists*, *six functions*, *13 mutation entries*), not tallies.
+**The defect was never numbers; it was numbers that must be maintained.**
+
+## 2026-09-24
+The correction chain gets one more link, and this time the wrong number was about our own history.
+
+The entry above said this was the fourth time a check had been narrower than the claim it was
+certifying. It was the sixth. A document written yesterday lists five earlier attempts individually,
+and the commit message from that day says so too. The count was written from memory of a long day
+rather than looked up — inside the correction for numbers written from memory.
+
+The way it was caught is the useful part: two documents written in the same sitting both said
+"fourth" while listing different sets of predecessors. Two roads to one number, from different
+starting points, is not agreement — it is the signature of a number nobody derived.
+
+The fix is to stop stating a total anywhere and point at the document that enumerates them, which a
+reader can check in one step.
+
+A second correction: the rule offered earlier for why one number was allowed to stay — that it was a
+"finding" rather than a "tally" — does not survive scrutiny. Both are findings about the document.
+The property that actually separates them is whether the number can be recovered from somewhere
+else: the one that stays is resolvable because the two things it counts are named by name a few
+sections earlier. That test a reader can apply; the previous one needed the author's intent.
+
+<!--tech-->
+Corrects `2026-09-24/4`. **r3 (High):** *"fourth pattern today"* appears at `dashboard-entries.md`
+`:12335` and `:12350`, `velocity-doc-consistency-r1-coordinator.md:60`, and
+`...-r2-coordinator.md:27, :34, :42` — six sites, all `+` lines in `362667be..HEAD`.
+`velocity-177-r4-coordinator.md:25-27` enumerates **five** predecessors individually and commit
+`2d4d874c`'s subject says *"the fifth fix"*. This one is the **sixth**.
+
+⭐ **The tell: the r1 and r2 coordinator documents, from one fold, reached "fourth" from DIFFERENT
+predecessor lists** — one omitting `file:line` locators, the other merging them with number-words.
+Convergence on a number from incompatible premises is the signature of a count nobody derived.
+
+⛔ **Fixed by stating no total at all** in the non-append-only documents, pointing instead at the
+document that enumerates them — **recoverable in one jump**. The two dashboard sites stand, corrected
+by this entry, because the store is append-only.
+
+⭐ **r3 also replaced the rule this branch was using**, and the replacement is better:
+*tally vs finding* is unapplicable by a reader (both survivors are findings *about* the document).
+**RECOVERABILITY — is the number named elsewhere? — sorts both correctly and a reader can run it.**
+`:310` is resolvable because `:58-59` names the two signals; *"All five were settled"* was resolvable
+from nothing.
+
+⚠ **r3 also answered the question this branch could not answer about itself:** withdrawing the
+exhaustiveness claim is a **fix, not a self-authored retreat** — the terminating evidence is
+`process-checklists.md:394` (the syntactic hunt rejected at three scopes, 2026-08-27), independent of
+this branch, and the claim now asserts *less*, not more.
