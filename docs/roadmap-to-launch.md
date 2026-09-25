@@ -2126,6 +2126,13 @@ had updated to say otherwise.)
       another.** Pre-existing on master. ⭐ A live instance of #179's principle in the spine itself,
       and the evidence that separates the three candidates: **#180's pointer would not reach it.**
       ⛔ Remove the count, do not correct it.
+- [ ] **backlog #184 — `check-review-decision.py` has no caller and nothing brings it to the moment.**
+      Sibling of #134, filed 2026-09-25 from the `decision-card-soundness` r1 Claude half. ⛔ Measured:
+      the entire discovery mechanism is **one sentence at `review-method.md:20`**, and **zero** of
+      `velocity-doc-consistency`'s four round documents mention the card against 2 and 4 in the
+      contrast subjects. ⚠ **Consider Q6 recording FIRST** — it closes the *ran vs never-ran*
+      ambiguity without any caller. ⛔ Inherit #134's lesson: **do not build the caller in the same
+      breath as changing the script it calls.**
 
 ⚠ **Measured, so the priority is not guessed:** 7 sweeps ≈ 100 min but ~0 tokens; 3 of 5 review
 rounds were rework; GitHub runs the sweep ~2× faster than this machine (8m08s for the whole `verify`

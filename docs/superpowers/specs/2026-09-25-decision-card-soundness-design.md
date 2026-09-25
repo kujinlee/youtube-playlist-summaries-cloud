@@ -230,7 +230,7 @@ Q2/Q6's convention gaps (declared unenforced deliberately).
 
 **These change what the spec should be. They are recorded, not resolved.**
 
-**1 · The subject has no caller, and the record cannot tell *ran* from *never ran*.**
+**1 · The subject has no caller, and the record cannot tell *ran* from *never ran*.** ⭐ **FILED AS BACKLOG #184** (sibling of #134), so this question has a home outside this spec.
 `scripts/check-review-decision.py:27-31` declares `NO-CALLER:` and has none. Its own docstring
 already names this failure and its remedy: *"If it is skipped again, the remedy is not better prose;
 it is making this a step nobody can skip."* ⚠ **Measured: zero of `velocity-doc-consistency`'s four
