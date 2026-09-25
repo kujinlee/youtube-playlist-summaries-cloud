@@ -12407,3 +12407,60 @@ from nothing.
 exhaustiveness claim is a **fix, not a self-authored retreat** — the terminating evidence is
 `process-checklists.md:394` (the syntactic hunt rejected at three scopes, 2026-08-27), independent of
 this branch, and the claim now asserts *less*, not more.
+
+## 2026-09-25
+A piece of design work was stopped on purpose, because a review found it was building on a
+foundation this project had already decided to replace ten days ago and then forgotten about.
+
+The work was a safeguard for the tool that decides whether a review has gone in circles. That tool
+can currently be fooled by wording: if the same underlying problem is described in three different
+ways across three rounds, the tool sees three different problems and stays quiet. The safeguard
+would make it refuse to answer in that situation rather than answer wrongly.
+
+Two rounds of adversarial review ran, each with both reviewers. Neither round agreed with the
+design. Each time the same part broke — the mechanism for a person to say "no, these really are
+different problems" — and each time the fix moved the break one layer deeper rather than removing
+it. On the third time, a wider review was convened automatically by a rule this same branch had
+written down in advance.
+
+That wider review found the real problem. The tool reads its records with a small hand-written
+parser, and **that parser already has a standing decision to replace it, recorded on 15 September,
+never actioned.** Everything still to build here would have added more hand-written parsing on top
+of it. So the design is paused until the foundation is fixed — not cancelled: the core idea
+survived both reviews intact, and afterwards it becomes a much smaller job.
+
+The review also explained why nobody noticed: every task filed against that file was missing from
+the project roadmap. Five of them. They are on it now.
+<!--tech-->
+Branch `decision-card-soundness`, HEAD `7cb6a174`, **no PR yet**. Spec
+`docs/superpowers/specs/2026-09-25-decision-card-soundness-design.md`, anchor `review-decides-itself`.
+
+⛔ **PARKED BEHIND BACKLOG #117.** `python3 scripts/check-review-decision.py` run on
+`review-decision-procedure` still returns `ARCHITECTURE_REVIEW — thrashing: 'parse-header' carried
+fix-induced findings in r6 and r7` — #117's own arming, filed 2026-09-15, status `pending`. #117's
+text: *"the decision is which authoring cost to pay, not whether the parser is wrong."* Its cheapest
+reshaping (fenced `json` + `json.loads`) makes 8 of the 9 silently-parsing escape shapes
+inexpressible with no new reader.
+
+**Rounds:** r1 — 4 High (Claude), 1 High (Codex). r2 — Codex 1 Blocking / 2 High / 2 Medium / 1 Low;
+Claude 1 Blocking / 5 High / 3 Medium / 1 Low. ⭐ **All three Blockings are one defect one layer
+deeper each time:** the escape had a grammar with no reader → was scoped to a round number instead of
+the sets it judged → named `ROUND_REQUIRED` as its reader, whose `^{key}:\s*(\S+)\s*$` structurally
+cannot see a nested block, with 3 of 4 malformed shapes parsing silently.
+
+⛔ **The branch's own pre-committed falsifier fired one round early, on the sentence that wrote it** —
+a corpus count written into a document inside that corpus went stale five times (145→147→152→158→168),
+the third remedy asserting *"every figure carries the commit it was taken at"* while 5 of ~12 did.
+Now dated snapshots plus a `--calibrate` command. Architecture review convened rather than argued away.
+
+⭐ **The branch demonstrated its own mechanism on itself:** replayed with the Codex half's six
+component labels verbatim, the shipped card returns `ROUND_OWED` and **the proposed refusal fires** —
+the only case in the corpus where the two disagree on a live branch. The coordinator's merge of those
+labels is what produced the `ARCHITECTURE_REVIEW` instead; recorded, and filed as #188.
+
+**Filed:** #185 (rules/parser composition — blocked on #117), #186 (`fix_induced` defined twice,
+disagreeing at r1; 6 of 8 r1 documents set it), #187 (`disposition` admits 3 values, record contains
+4 others incl. `moot`), #188 (coordinator relabelling decides verdicts, governed by nothing).
+Roadmap updated with the ordering: **#117 → #186/#187 → #185/#188 → resume this spec at r3.**
+Reviews: `docs/reviews/architecture-review-2026-09-25-decision-family.md` and
+`docs/reviews/{claude,codex,coordinator}/decision-card-soundness-r{1,2}-*.md`.

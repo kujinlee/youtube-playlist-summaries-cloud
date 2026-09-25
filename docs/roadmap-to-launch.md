@@ -2134,6 +2134,45 @@ had updated to say otherwise.)
       ambiguity without any caller. ⛔ Inherit #134's lesson: **do not build the caller in the same
       breath as changing the script it calls.**
 
+### ⛔ `decision-card-soundness` is PARKED BEHIND #117 — architecture review, 2026-09-25
+
+**Anchor `review-decides-itself`.** The spec ran two rounds, both halves each time, and produced
+**2 Blocking, 7 High, 5 Medium, 2 Low** without converging. An architecture review was convened by
+the branch's own pre-committed falsifier and returned: **narrow and re-order, do not replace.**
+Evidence in `docs/reviews/architecture-review-2026-09-25-decision-family.md`.
+
+⭐ **THE FINDING THAT REORDERS EVERYTHING — AND THE REASON IT WAS MISSED IS ON THIS PAGE.**
+`scripts/check-review-decision.py` has carried its **own** armed `ARCHITECTURE_REVIEW — REDESIGN`
+verdict on `parse_header` since **2026-09-15** (backlog **#117**). It is still `pending`, and running
+the card today still prints `thrashing: 'parse-header' carried fix-induced findings in r6 and r7`.
+**This spec proposes a new hand-rolled reader on exactly that component**, and #117 does not leave
+the question open: *"the decision is which authoring cost to pay, **not whether the parser is
+wrong**."* ⛔ **Nobody decided to proceed over #117 — it was never asked**, and the measured cause is
+that **all five backlog rows on this file (#117, #118, #119, #134, #136) were absent from this
+roadmap** while #167 and #184 were on it. That is what this section exists to stop repeating.
+
+- [ ] ⭐ **backlog #117 — redesign `parse_header`'s substrate. DO THIS FIRST; everything below waits
+      on it.** Three reshapings are already enumerated in the row; the cheapest is a fenced `json`
+      block parsed by `json.loads`, which makes eight of the nine silently-parsing escape shapes
+      **inexpressible** with no new reader at all. ⚠ It parses a **safety record**, so a misparse
+      yields a confident wrong *decision*, not a loud failure.
+- [ ] **backlog #186 — `fix_induced` is defined twice and the readings disagree at round 1.**
+      Measured: 6 of 8 round-1 documents set it; flipping this branch's single r1 label turns
+      `ARCHITECTURE_REVIEW` into `ROUND_OWED`. Small, and independent of #117.
+- [ ] **backlog #187 — `disposition` admits three values; the live record contains four others**
+      (`retreat`, `refuted`, `redesigned`, `moot`), so four real round documents are unreadable and
+      read as *absent*. Small, and independent of #117.
+- [ ] **backlog #185 — split the pure rules from the hand-rolled reader.** ⛔ **BLOCKED ON #117** —
+      extracting a seam around a parser about to be replaced is work done twice.
+- [ ] **backlog #188 — coordinator relabelling decides mechanical verdicts and is governed by
+      nothing.** ⛔ **BLOCKED ON #117 and #186.**
+- [ ] **THEN resume `decision-card-soundness`.** What survived two rounds intact: the two-clause
+      condition, the withdrawal of r1's third clause, and the `covers:` binding. After #117 the spec
+      is small — `components_distinct` becomes a typed key. **r3 is owed, and §2 must be re-argued
+      against whatever substrate #117 chooses.**
+- [ ] **backlog #184 stays filed and unclaimed** — the user's 2026-09-25 ordering decision, taken
+      before the architecture review and unchanged by it.
+
 ⚠ **Measured, so the priority is not guessed:** 7 sweeps ≈ 100 min but ~0 tokens; 3 of 5 review
 rounds were rework; GitHub runs the sweep ~2× faster than this machine (8m08s for the whole `verify`
 job vs ~14 min for the local sweep alone). **The sweep is the most VISIBLE cost and not the largest.**
