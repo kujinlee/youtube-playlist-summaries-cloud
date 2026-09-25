@@ -4,8 +4,17 @@
 > **Goal:** A review loop decides its own next step — run, stop, or escalate — from recorded
 > evidence rather than recall.
 
-**Status:** ⛔ **DESIGN — r2 COMPLETE AND NOT CONVERGED. AN ARCHITECTURE REVIEW IS CONVENED, BY THIS
-BRANCH'S OWN PRE-COMMITMENT. PHASE 1 GATE NOT TAKEN.** Round 1 ran both halves; the
+**Status:** ⛔⛔ **PARKED BEHIND BACKLOG #117 — the architecture review's verdict, 2026-09-25.**
+**Not replaced, and not proceeding as written.** The two-clause condition survived both halves of two
+rounds, the withdrawal of r1's third clause is correct, and the `covers:` binding is right. But
+**every remaining piece of work in *Sizing* is a new hand-rolled reader over `parse_header`** — a
+component that has carried its **own** undischarged `ARCHITECTURE_REVIEW — REDESIGN` verdict since
+**2026-09-15** (backlog **#117**, still `pending`, and still firing today). ⛔ **This spec's three
+Blockings across two rounds are one mechanism defect, not three mistakes**, and #117 already names
+the fix: *"the decision is which authoring cost to pay, **not whether the parser is wrong**."* After
+#117 lands, this spec is small — `components_distinct` becomes a typed key and most of its silent
+shapes stop being expressible. **Phase 1 gate not taken.** Full verdict and evidence:
+`docs/reviews/architecture-review-2026-09-25-decision-family.md`. Round 1 ran both halves; the
 Claude half returned four design-level Highs. **Three are now closed in the text** — the escape hatch
 became a header key with a derived placement rule (§2), the relationship to backlog #136 is stated as
 a narrowing with its reason (*Scope*), and the calibration is corrected with r1's one-clause fix
@@ -336,7 +345,7 @@ cannot.
 | | the fact | the conclusion drawn |
 |---|---|---|
 | `components_distinct` (§2) | 0 of 30 round documents carry it | *therefore read it optionally and ship* |
-| a derived file/symbol key (here) | 0 of 158 findings carry it | *therefore derivation "starts empty" and is not runnable* |
+| a derived file/symbol key (here) | 0 of **168** findings carry it *(at `3ee48cb0`)* | *therefore derivation "starts empty" and is not runnable* |
 
 **The same fact, opposite conclusions, in one document.** It would equally have refuted `fix_induced`
 and `aim` before they were added. A field's absence is **the state a design task starts from**, not a
@@ -456,8 +465,10 @@ nobody had constructed. *(Independently re-derived by both r2 halves.)*
 
 ⚠ **The corpus is a MINORITY of the record, and the flattering denominator is the whole directory.**
 Coverage is **42% of actual round records** (30 of 72), not 22% of a mixed directory of 135.
-⛔ **39 of the 42 failures have no `yaml` header at all. The other 3 fail on a VALUE:** `ship-src-root-alone` r1–r3 record `disposition: refuted`,
-`redesigned` and `retreat`, and `REQUIRED` allows only `fixed` `filed` `declined`. ⭐ **That is this
+⛔ **39 of the 42 failures have no `yaml` header at all. The others fail on a VALUE.** ⟳ *This said
+"the other 3 … `refuted`, `redesigned`, `retreat`". The architecture review counted the live record:
+**four** out-of-set values — `retreat` ×2, `refuted` ×2, `redesigned` ×1 and **`moot` ×1, which this
+spec named nowhere** — against `REQUIRED`'s `fixed` `filed` `declined` (166/19/4).* ⭐ **That is this
 spec's own defect class in the field next door** — a judgement field whose vocabulary does not cover
 what reviewers actually produce — and it is **out of scope here, not resolved.**
 
