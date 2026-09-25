@@ -4,7 +4,8 @@
 > **Goal:** A review loop decides its own next step — run, stop, or escalate — from recorded
 > evidence rather than recall.
 
-**Status:** ⛔ **DESIGN — TWO ROUNDS, FOUR HALVES, NEITHER ROUND CONVERGED. r3 OWED.
+**Status:** ⛔⛔ **DESIGN — THE PRE-COMMITTED ARCHITECTURE REVIEW HAS FIRED. THREE ROUNDS, FIVE
+HALVES, NONE CONVERGED.
 Nothing implemented. NOT YET AT THE HUMAN GATE.** Round 1 returned **4 Blocking, 6 High, 8 Medium,
 4 Low** across the two halves, and **both halves independently found the same Blocking**: the first
 draft's two-way split of *structure vs values* had no place for **schema**, so deleting the parser
@@ -128,7 +129,7 @@ EVERY DRAFT SO FAR.** It was written against a reader that could only ever hand 
 because `_scalarise` produced nothing else. **JSON hands it `int`, `list`, `dict` and `null`.** A
 membership test against a set of strings behaves differently for each — and an unhashable value makes
 `f[key] not in allowed` raise `TypeError` rather than the intended `ValueError`, which is a refusal
-with the wrong diagnosis. ⭐ **So layer 3 gains type assertions of its own**, and the spec stops
+with the wrong diagnosis. ⛔ **r3 (Codex, High): THE TYPE ASSERTIONS AS STATED ARE INCOMPLETE, IN THREE MEASURED WAYS.** *(a)* `isinstance(True, int)` is **`True`**, so `round: true` passes an int check — a trap `check-review-rounds.py:191-194` already documents. *(b)* Layer 2 says `findings` is a *list*, not a list of **objects**, so `json.loads` can hand `_validate` a `1`, a `[]` or a `null`, which raise `TypeError`/`AttributeError` rather than the intended `ValueError` — a refusal with the wrong diagnosis. *(c)* `_validate` accepts `component: []`, `{}` and `null` today because it only tests `str(f.get("component", "")).strip()`. ⭐ **So layer 3 gains type assertions of its own**, and the spec stops
 claiming this function survives the substrate change untouched. ⚠ **This is the third time a draft
 has asserted `_validate` is fine and been wrong** — r1 found it unfalsified (gutting it leaves
 61/61 green), r2 finds it mistyped. **It is the least-examined load-bearing thing in this design.**
@@ -200,8 +201,12 @@ populations are now each stated against their own base.*
 first version of this table reintroduced the very confusion it was written to fix** — it restated
 `31` as a fixed fact four paragraphs after declaring counts unpinnable, and `31` had already moved
 because **this branch's own round records are inside the set**. ⭐ **The rule replaces the number:
-every figure over `docs/reviews/coordinator/` is derived by `--calibrate` at read time, and the
-snapshot above is stamped `bef49007` and is not authority for any later claim.**
+every figure over `docs/reviews/coordinator/` is derived at read time by a `--calibrate` mode that
+⛔ **DOES NOT EXIST YET — r3 (Codex, High) grepped for it and found zero occurrences in either
+script. It is proposed work, and this document was writing as though it were built.** The snapshot
+above is stamped `bef49007`, is not authority for any later claim, and has **already moved**: at
+`54176525` the same derivation gives **74 / 35 / 32 / 39**, because this round's own records joined
+the set.**
 
 ⭐ **The case for this substrate does not rest on density and must not be written as if it does.** It
 rests on malformed input becoming *impossible to misread as valid* — and on layer 2 above, which any
@@ -282,7 +287,7 @@ cannot be true, and the surviving one is the fact the design was authorised on.
 | what #117 forbids | a **standing hand-rolled parser that `decide()` consults** |
 | what the converter is | a **migration tool** with its own entry point, imported by nothing in the decision path |
 | why it may parse | because a wrong parse there produces **a bad conversion caught by the field table**, not a confident wrong *verdict* |
-| ⛔ what it therefore owes | **the full ratchet** — `--self-test`, a declared count verified by running it, mutation entries, and a `NO-CALLER:` reason or a caller. **A surviving script with a parser in it is exactly the population `check-ratchet-contract.py` exists to police**, and the first draft would have smuggled one past by calling it temporary |
+| ⛔ what it therefore owes | **the full ratchet** — `--self-test`, a declared count verified by running it, mutation entries, a `NO-CALLER:` reason or a caller. ⛔⛔ **r3 (Codex, Blocking): THIS IS UNENFORCEABLE AS NAMED.** `check-ratchet-contract.GUARD_PATH_RE` is `scripts/check-[\w.-]+\.py` matched with `fullmatch` (`:113`, `:164`), so **`scripts/migrate-round-headers.py` is outside the population** — measured. It would owe nothing, and *"never in the decision path"* would rest on discipline. **Either the converter is named `scripts/check-…` so the ratchet can see it, or the population is widened. Stating the obligation does not create it.** |
 
 **So the falsifier is human review at a size that makes it honest:**
 
@@ -561,6 +566,27 @@ sentence — **the left column is raw source text**. That is a fix, not a prose 
 ⛔⛔ **PRE-COMMITTED, SO IT CANNOT BE ARGUED AWAY LATER: if r3's fold produces a FOURTH falsifier
 design that fails a fourth way, the architecture review is convened unconditionally.** No further
 argument, no re-reading this paragraph.
+
+## ⛔⛔ IT FIRED. r3, CODEX HALF, 2026-09-25 — AND THE FALSIFIER IS NOT BEING PATCHED AGAIN
+
+| round | falsifier | how it failed |
+|---|---|---|
+| spec | verdict invariance + count parity | **could not fire** |
+| r1 fold | field-level text diff | **could not be built** |
+| r2 fold | table read by a human | **audited itself** |
+| **r3 fold** | **left column is raw source text** | ⛔ **NO SIGNAL FOR AN OMISSION** |
+
+**The fourth failure is a NEW class, not a repeat** — which is the distinction the pre-commitment
+turns on, and the reviewer was asked to be precise about it. The left column is *whole raw text*; the
+right renders *only the fields the converter produced*. **A dropped key therefore produces no
+mismatch row at all** — there is nothing to line it up against. The design catches a value that
+*changed* and is blind to one that *vanished*, which is this component's founding defect
+(*absence reads as a pass*) arriving inside the check built to detect it.
+
+⛔ **FOUR DESIGNS, FOUR DISTINCT FAILURE MODES, ONE COMPONENT. That is no longer a sequence of
+mistakes; it is evidence that the thing is being approached wrongly.** Per the pre-commitment, the
+architecture review is **convened, not re-argued** — and the falsifier is deliberately **left
+unfixed in this document** so the review examines the approach rather than a fifth patch.
 
 
 ⟳ **r2 (Claude, Medium) — the sweep's second failure, recorded rather than quietly patched.** After
