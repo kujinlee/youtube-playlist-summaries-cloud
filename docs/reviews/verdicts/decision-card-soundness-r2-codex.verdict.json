@@ -1,0 +1,22 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 4953 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "9d1987ca016bee8531a93d581e4668a97d0d948e",
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/1e3f81fb-0947-4bcb-8aac-4219e1d96379/scratchpad/atcommit.py: CREATED during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/1e3f81fb-0947-4bcb-8aac-4219e1d96379/scratchpad/r2-codex-run.log: OVERWRITTEN during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/1e3f81fb-0947-4bcb-8aac-4219e1d96379/scratchpad/replay.py: CREATED during the run (writer unattributed)",
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/1e3f81fb-0947-4bcb-8aac-4219e1d96379/scratchpad/why.py: CREATED during the run (writer unattributed)"
+  ],
+  "model": "gpt-5.5",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/1e3f81fb-0947-4bcb-8aac-4219e1d96379/scratchpad/r2-codex-prompt.md",
+  "reason": "4953 chars",
+  "refused": false,
+  "review": "decision-card-soundness-r2-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}
