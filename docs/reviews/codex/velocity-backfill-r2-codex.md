@@ -1,3 +1,13 @@
+# velocity-backfill — round 2, Codex half
+
+REVIEW GAP: claude — rounds 2+ ALTERNATE by design (`docs/review-method.md` step 4). Both halves
+ran concurrently as round 1; this round is scoped to the FOLD of round 1's sixteen findings, and a
+concurrent pair never reviews the repair. The Claude half follows as round 3 on this round's fold.
+
+⚠ **Claude half absent BY PROTOCOL, not by failure.** The delta under review is execution-shaped —
+an inbound-link corpus sweep, a page regeneration, a parser re-run and a `gh` query against PR #345
+— which `review-method.md` step 4 routes to Codex.
+
 <!-- codex-review: model=gpt-5.5 -->
 
 **Blocking**
