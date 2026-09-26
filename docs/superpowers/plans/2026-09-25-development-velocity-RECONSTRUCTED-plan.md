@@ -105,5 +105,8 @@ without it."*
   motivated it.
 - **Dropping a review half** — the two halves produced **zero overlapping findings**.
 - **Routine waivers.**
-- **Rewriting `development-velocity.md`** — it keeps the measurements and the history; this plan and
-  its spec own the design.
+- ⟳ **Rewriting `development-velocity.md`'s BODY** — it keeps the measurements, the controlled
+  experiment, the rejections and the record of what was settled; this plan and its spec own the
+  design. ⚠ **Its HEAD was rewritten on 2026-09-25**: the user retired the document, so it now
+  carries a SUPERSEDED banner and §4's timing rules are labelled historical. *That is a change of
+  authority, not of content — no measurement moved.*

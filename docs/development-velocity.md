@@ -1,6 +1,45 @@
 # Development Velocity — what actually costs time here, and what to do about it
 
-> ⟳ **2026-09-24 — PARTLY ADOPTED. Read this line before citing anything below.**
+> # ⛔ SUPERSEDED — HISTORICAL RECORD ONLY
+>
+> **Retired 2026-09-25 by the user's decision.** This document's design was moved out of it and it
+> is kept as the **record of the 2026-09-24 measurement session**, not as a live surface.
+>
+> | | |
+> |---|---|
+> | **The live design is** | [`docs/superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md`](superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md) and its [plan](superpowers/plans/2026-09-25-development-velocity-RECONSTRUCTED-plan.md) |
+> | **The live RULES are** | [`docs/process-checklists.md`](process-checklists.md) §6 and §7 — adopted in PR #345 |
+> | **This document is** | dated measurements, the controlled experiment, the rejections with their reasons, and the record of what was settled and when |
+>
+> ⛔ **NO RULE, DESIGN OR DECISION IS CITED FROM HERE.** Every section below that reads as a rule is
+> a record of *what was proposed on 2026-09-24*, not of what governs. If you are looking for what to
+> do, you are in the wrong file — and citing a rule from its own rationale is how two copies start.
+>
+> ✅ **What this file IS still legitimately cited for: a dated measurement.** A measurement is an
+> observation with a time on it, so a historical record is its correct home — that is why the spec
+> points here for figures instead of copying them (`portable-practices.md` §26).
+>
+> ### Why this is preserved rather than deleted
+>
+> Deleting it was considered and rejected 2026-09-25. **PRs #342 and #345 and five-plus review rounds
+> cite it by section number**, so it is the record those reviews were written against; the spec's
+> measurement pointers resolve here, and removing it would strip the provenance §26 exists to
+> protect. ⚠ **The deletion condition, stated so it can actually be reached:** once #177's forward
+> work has landed and nothing cites its sections as live, this file can go in one change.
+>
+> ⟳ **Round 2 (Codex, High) is why this banner replaced the old one.** The previous status table
+> routed readers to §2, §3 and §10 as live content *after* those sections had become pointers, and
+> still claimed the governing side-job rule "sends you here" for the seam signals — a table whose
+> first line was *"read this before citing anything below"*. The single-owner cut went stale in the
+> one place most likely to be read first.
+
+---
+
+> ### ⟳ The status table below is HISTORICAL — it describes this file as of 2026-09-24
+>
+> Kept because four review rounds cite it. It is **superseded by the banner above**, which governs.
+
+> ⟳ **2026-09-24 — PARTLY ADOPTED.** ⛔ *Historical. The banner above governs; this table does not.*
 >
 > | Section | Status |
 > |---|---|
@@ -77,7 +116,18 @@ unavailable, and r1 of the earlier round already recorded that *"not built"* mus
 ⚠ **`decision-card-soundness`'s spec cites "§3's own signal 4 — two names for one concept".** That
 citation still resolves: the signal is unchanged, and the spec is where it lives.
 
-## 4. The timing rules
+## 4. The timing rules — ⟳ HISTORICAL; THE RULES ARE NOT LIVE HERE
+
+⛔ **These five bullets are a record of what was PROPOSED on 2026-09-24, not rules in force.**
+The live design is [the spec](superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md)
+§2; the live side-job rule is [`process-checklists.md`](process-checklists.md) §7.
+
+⟳ **Round 2 (Codex, Medium) found this section as a SECOND DESIGN OWNER** — the spec claimed
+*"disjoint jobs: this spec owns the design, `development-velocity.md` owns measurements and
+history"* while these timing rules, which are design, sat here. ⭐ **It is closed by the user's
+retirement decision, NOT by a fix** — the same way round 1's H1 was closed by the single-owner
+decision. Nothing moved; the document stopped claiming authority. **The subsection below is a
+measurement and stays**, and `process-checklists.md:767` correctly cites it as one.
 
 - **Seam work → review BEFORE.** Asymmetric cost: a wrong seam cost 3 extra rounds; the
   architecture review that resolved it took one sitting.

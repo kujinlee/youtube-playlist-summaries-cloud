@@ -76,13 +76,21 @@ with who owns it.** Everything else is a pointer.
 |---|---|
 | sweeps, rework rounds, the lost CI round-trip | *(owned by `development-velocity.md` §1 — not restated here)* |
 | ⭐ sweep token cost | **~0** — the sweep's output goes to a file and only the tail is read. *(Figures: `development-velocity.md` §1, which owns them.)* **Load-bearing**: it is why §5 optimises *frequency* and not *token cost* |
-| ⛔ GitHub vs this machine | **DO NOT CITE THIS COMPARISON — IT IS CRACKED.** `development-velocity.md:142` sets PR #342's whole `verify` job (8m08s) against the **local sweep alone** (~14 min): *different populations*, with the CI side doing strictly more work. ⛔ ⟳ **AND THE FIRST REPLACEMENT FOR IT WAS CRACKED THE SAME WAY (r1 Claude, High).** This row briefly said *"`verify` was 488s and is 673–680s, ~39% slower"* — **a second cross-run comparison, built exactly like the one it was retracting.** Measured: two successful full-sweep runs **six minutes apart** on 2026-09-24 gave `verify` **709s** (master) and **419s** (`velocity-177`) — a **1.76× spread**, and 488s is the *minimum* of its own day. **The claimed effect is smaller than the within-day spread.** Deleted. ⚠ **The corrected sweep-to-sweep ratio is NOT KNOWN** |
+| ⛔ GitHub vs this machine | **DO NOT CITE THIS COMPARISON — IT IS CRACKED.** `development-velocity.md:142` sets PR #342's whole `verify` job (8m08s) against the **local sweep alone** (~14 min): *different populations*, with the CI side doing strictly more work. ⛔ ⟳ **AND THE FIRST REPLACEMENT FOR IT WAS CRACKED THE SAME WAY (r1 Claude, High).** This row briefly said *"`verify` was 488s and is 673–680s, ~39% slower"* — **a second cross-run comparison, built exactly like the one it was retracting.** Measured: two successful full-sweep runs **six minutes apart** on 2026-09-24 gave `verify` **709s** (master) and **419s** (`velocity-177`) — a **1.69× spread** ⟳ *(r2 fold: this row said **1.76×**, which is not derivable from its own two
+numbers — 709/419 = 1.6921, and 1.76× against 419s would need 737s. The THIRD wrong figure in the
+one row that exists to retract a wrong figure. Found while verifying r2's Medium, not reported by
+it. The conclusion is unchanged and slightly weaker: the spread still exceeds every effect this
+document has claimed.)*, and 488s is the *minimum* of its own day. **The claimed effect is smaller than the within-day spread.** Deleted. ⚠ **The corrected sweep-to-sweep ratio is NOT KNOWN** |
 
 ⚠ **The sweep is the most VISIBLE cost and not the largest.** Rework is.
 
 ### ⭐ Where CI time actually goes — measured, unlike the row above
 
-*(GitHub Actions API, two successful runs. Source: the velocity-ledger page, §6.)*
+*(GitHub Actions API. ⟳ **r2 Medium: the source was `velocity-ledger` §6, which is not in the
+repository and cannot be reached from a clone** — r1 asked for the run ids inline and that repair
+did not land in the deliverable. The two runs are `36072747242` (job `107877398501`) and
+`36070971836` (job `107871582122`), both `velocity-177`, both green. Re-derive with
+`gh run view <id> --json jobs`; the sweep is the step named* `Mutation manifest against the delivered scripts`.)
 
 | Step | Time | Share |
 |---|---|---|
@@ -92,7 +100,23 @@ with who owns it.** Everything else is a pointer.
 | `verify` total | **680s / 673s** | |
 
 ⭐ **WHY THE ~81% SHARE SURVIVES WHERE THE RATIOS DID NOT:** it is a **within-run** ratio, so runner
-variance cancels. Measured across five runs at **78 / 79 / 81 / 83 / 83%**. ⚠ **Any figure comparing
+variance cancels. ⟳ **r2 Medium: the previous figures here — *78 / 79 / 81 / 83 / 83%* — are NOT REPRODUCIBLE** from
+anything reachable from a clone, and re-deriving them by hand did not return that set. Six runs,
+each named so the next reader re-derives rather than trusts:
+
+| run | job | branch | `verify` | sweep | share |
+|---|---|---|---|---|---|
+| `36048654618` | `107798389570` | master | 709s | 587s | **82.8%** |
+| `36072747242` | `107877398501` | `velocity-177` | 680s | 554s | **81.5%** |
+| `36051552339` | `107808281969` | `velocity-177` | 674s | 548s | **81.3%** |
+| `36070971836` | `107871582122` | `velocity-177` | 673s | 542s | **80.5%** |
+| `36073928900` | `107880816870` | master | 667s | 541s | **81.1%** |
+| `36049305547` | `107800846170` | `velocity-177` | **419s** | 333s | **79.5%** |
+
+⭐ **THE LAST ROW IS THE ARGUMENT.** `verify` totals span **419s → 709s, a 1.69× spread**, while
+the share stays inside **79.5–82.8%** — a 3.3-point band. Runner variance moves the total and
+cancels in the ratio. That is the whole distinction, and it is now measurable from this table
+instead of asserted. ⚠ **Any figure comparing
 one run to another on this infrastructure is unusable** — the spread between two runs minutes apart
 is larger than every effect this document has tried to claim.
 
@@ -108,7 +132,7 @@ mutation's verdict honest** — so it is a cost, not waste, and §5's four items
 | Thing | Does it cover this concern? |
 |---|---|
 | `docs/review-method.md` §0 | ⛔ **No — it IS the subject.** It starts at dosage |
-| `docs/development-velocity.md` | ⭐ **The measurements and the adopted-elsewhere history.** 326 lines, **ten** adversarial rounds. ⚠ **It is not a spec and never was** — no single goal, no concern→mechanism table, no falsifier, no gate. **It keeps that job; this document does not duplicate it** |
+| `docs/development-velocity.md` | ⛔ **SUPERSEDED 2026-09-25 — a historical record only** (the user's decision; the banner at its head governs). ⭐ **What it still holds: the dated measurements, the controlled experiment, the rejections with reasons, and the record of what was settled and when.** **Ten** adversarial rounds. ⟳ *This cell said "326 lines" — correct at `master`, stale at 335 by the time this branch edited the file. A count of a file, written into a document, going stale inside one branch: `portable-practices` §26. The count is REMOVED rather than corrected, per backlog #183 — correcting it re-pins a figure that rots again.* ⚠ **It is not a spec and never was** — no single goal, no concern→mechanism table, no falsifier, no gate. **It keeps that job; this document does not duplicate it** |
 | `process-checklists.md` | ✅ **Owns ⑶ and ⑷ today** — they graduated there in PR #345 and **govern from there**. Reading them in the velocity doc is reading a copy |
 | `check-vocabulary-collisions.py` | Supplies the justification quoted above; its subject is the database schema |
 | backlog **#174** | Scoping the sweep to changed files — ⛔ **REJECTED as unsound**, fails silently in the unsafe direction |
@@ -210,7 +234,7 @@ one outcome this section exists to prevent.**
 | work entering after a review inherits none of it | ⑷ *inherits NO design approval* — **shipped**, and completed by Q0's entry half | the controlled experiment above |
 | a branch that starts behaving like a seam problem is not noticed | Q0's **escalation** half, over §3's four signals | `decision-card-soundness` is a labelled positive |
 | a mechanical signal may not be trustworthy | **retrospective calibration** over finished branches, with a negative result pre-accepted | §3 |
-| the design and the measurements must not drift apart | **disjoint jobs** — this spec owns the design, `development-velocity.md` owns measurements and history | *Prior art* |
+| the design and the measurements must not drift apart | ⟳ **SINGLE OWNER, not disjoint jobs** — this spec owns the design; `development-velocity.md` is a SUPERSEDED historical record that the spec cites for dated measurements. *Round 1's H1 and round 2's M1 both falsified the disjoint-jobs wording (§2/§3 first, then §4's timing rules); both were closed by a USER DECISION rather than a fix, and the second decision retired the document outright. A claim that needed narrowing twice was the wrong claim.* | *Prior art* |
 
 ⟳ **r1 (Codex, Medium): an earlier version of this line claimed *no mechanism appears twice* while
 Q0 appeared in three rows — whole, entry half, escalation half. The invariant was false on its face.**
@@ -223,8 +247,12 @@ has exactly one owner, and no concern is served by two independent mechanisms.**
 ## What this does not do
 
 - ⛔ **It does not claim ⑵⑶⑷ were designed before they were built.** They were not.
-- **It does not move or rewrite `development-velocity.md`** — that file is referenced by
-  `process-checklists.md`, by backlog #177 and by another spec; moving it breaks those.
+- ⟳ **It does not MOVE `development-velocity.md`, and it now DOES retire it.** That file is cited by
+  `process-checklists.md`, by backlog #177, by another spec and by five-plus review rounds, so moving
+  or deleting it breaks those — *which is why the 2026-09-25 decision marks it superseded and keeps
+  it as evidence rather than deleting it.* ⚠ **This bullet previously said the spec does not rewrite
+  it at all; that became false when the retirement banner was written**, so it is corrected here
+  rather than left to read as a scope boundary the work has already crossed.
 - **It does not build the side-job hook** — deferred, and dependent on Q0's escalation half landing.
 - **It does not re-open §9's five settled answers**, nor §8's four rejections.
 - **It does not make the sweep cheaper.** The sweep was measured as **not** the largest cost.
@@ -236,7 +264,10 @@ has exactly one owner, and no concern is served by two independent mechanisms.**
 - The four signals are run retrospectively and **do not separate** thrashing branches from clean ones
   → the mechanical half is unbuildable; Q0 ships judgement-only. **A result, not a failure.**
 - Q0 ships and ⑷'s *"re-asks Q0"* clause is still absent → the hole this was built to close is open.
-- `development-velocity.md` and this spec both describe the same mechanism → the disjoint-jobs split
+- ⟳ **the retired document is cited for a RULE rather than a measurement** → the retirement is
+  decorative. *(This falsifier replaced *"both describe the same mechanism → the disjoint-jobs
+  split"*, which tested a claim the spec no longer makes. A falsifier that outlives its claim
+  passes forever.)*
   failed and there are now two owners.
 
 ## Sizing
