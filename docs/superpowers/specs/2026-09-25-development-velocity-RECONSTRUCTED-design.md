@@ -6,6 +6,12 @@
 
 **Status:** ⏳ **DESIGN — Phase 1, awaiting the human gate.** Backlog **#177**.
 
+⟳ **RENAMED `…-RECONSTRUCTED-design.md` after r1 (Codex, High).** The goals page renders a document's
+**filename**, its `Goal:` line, its dates and its milestones — **and nothing else**. So a warning in
+the body reached the registry and the goals page as an ordinary spec link, on the exact surface these
+files were created to reach. ⛔ **The filename is the only channel that travels**, so it carries the
+word.
+
 ⛔⛔ **THIS DOCUMENT IS PARTLY RETROSPECTIVE, AND THAT IS STATED HERE BECAUSE A READER CANNOT
 OTHERWISE TELL.** Written **2026-09-25**, after four of its five strands had already shipped in
 **PR #345** on 2026-09-24. **Strands ⑵⑶⑷ are RECONSTRUCTED from the decisions, reviews and commits
@@ -56,14 +62,18 @@ review inherits none of it.**"*
 ⭐ **So the subject is INHERITANCE, not dosage.** A spec that optimises how much review to run is
 solving the wrong problem, and this paragraph exists to stop the next reader doing that.
 
-### Measured costs
+### Measured costs — ⛔ POINTERS, NOT COPIES
+
+⟳ **r1 (Codex, Medium): the first draft re-copied live derived values here** — sweep minutes, rework
+rounds, token estimates, CI timings — which both duplicates `docs/development-velocity.md` and breaks
+`portable-practices` §26, in a spec whose own *Prior art* says that file owns the measurements.
+**The figures below are retained ONLY where they are load-bearing for a design decision, each marked
+with who owns it.** Everything else is a pointer.
 
 | | |
 |---|---|
-| sweeps | 7 × ~14 min ≈ **100 min** |
-| rounds that were rework | **3 of 5** |
-| CI round-trip lost | 1, to a hand-written gate list of **5** where `ci.yml` names **33** |
-| ⭐ sweep token cost | **~0** — 547 KB generated, **~900 tokens** actually read, because output went to a file and only the tail was read. Reading it all would have been ~137,000 |
+| sweeps, rework rounds, the lost CI round-trip | *(owned by `development-velocity.md` §1 — not restated here)* |
+| ⭐ sweep token cost | **~0** — the sweep's output goes to a file and only the tail is read. *(Figures: `development-velocity.md` §1, which owns them.)* **Load-bearing**: it is why §5 optimises *frequency* and not *token cost* |
 | ⛔ GitHub vs this machine | **DO NOT CITE THIS COMPARISON — IT IS CRACKED.** `development-velocity.md:142` sets PR #342's whole `verify` job (8m08s) against the **local sweep alone** (~14 min): *different populations*, with the CI side doing strictly more work. **And the denominator moved** — `verify` was **488s** on #342 and is **673–680s** now, ~39% slower in three days. ⚠ **The corrected sweep-to-sweep ratio is NOT KNOWN**; the local sweep was never re-run on this tree |
 
 ⚠ **The sweep is the most VISIBLE cost and not the largest.** Rework is.
@@ -104,7 +114,11 @@ mutation's verdict honest** — so it is a cost, not waste, and §5's four items
 |---|---|---|
 | ⑴ | **Q0** — choose the instrument before the dosage, in `review-method.md` §0 | 🟠 **home settled (PR #345); NOT designed, NOT built.** This spec's real subject |
 | ⑵ | **draft-PR pattern** | ✅ shipped — adopted as **practice**, deliberately not automated |
-| ⑶ | **injection rules** | ✅ shipped — four clauses, **plus two that were never proposed**: rule **1b** *say what you counted* (produced by §6's own first review round) and the **shape invariant** — a scope plus three refused forms, written at round 4 after four pattern-shaped fixes each failed to terminate |
+| ⑶ | **injection rules** | ✅ shipped — four clauses, **plus two that were never proposed**: rule **1b** *say what you counted* (produced by §6's own first review round) and the **shape invariant** — a scope plus three refused forms. ⟳ *r1 (Codex, Medium): this said "round 4
+after **four** pattern-shaped fixes"; the governing text at `process-checklists.md:599-601` says
+**FIVE consecutive attempts** and lists them, and a **Phase 6 architecture review between rounds 3 and
+4** was the root-cause step this omitted (`velocity-177-r6-coordinator.md:53-58`). The governing text
+owns this history; do not restate it here* |
 | ⑷ | **side job** — *inherits NO design approval* | ✅ shipped |
 | ⑸ | **de-escalation** — when findings shift to wording, stop | 🟠 **open** |
 
@@ -183,7 +197,11 @@ one outcome this section exists to prevent.**
 | a mechanical signal may not be trustworthy | **retrospective calibration** over finished branches, with a negative result pre-accepted | §3 |
 | the design and the measurements must not drift apart | **disjoint jobs** — this spec owns the design, `development-velocity.md` owns measurements and history | *Prior art* |
 
-**One mechanism per concern; no mechanism appears twice.**
+⟳ **r1 (Codex, Medium): an earlier version of this line claimed *no mechanism appears twice* while
+Q0 appeared in three rows — whole, entry half, escalation half. The invariant was false on its face.**
+**Restated honestly: Q0 is ONE mechanism with two halves, and the halves are listed separately because
+they have different natures and different readiness.** The invariant that does hold: **every concern
+has exactly one owner, and no concern is served by two independent mechanisms.**
 
 ---
 
