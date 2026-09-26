@@ -4,7 +4,19 @@
 > **Goal:** A review loop decides its own next step — run, stop, or escalate — from recorded
 > evidence rather than recall.
 
-**Status:** ⟳ **DESIGN — NARROWED BY ARCHITECTURE REVIEW, 2026-09-25. §2 REPLACED IN FULL; r4 OWED.**
+**Status:** ✅ **PHASE 1 GATE PASSED — approved by the user 2026-09-25. The goal is now fixed;
+Phase 2 (plan) and Phase 3 (implementation) proceed autonomously.**
+
+⚠ **WHAT THE APPROVAL DOES AND DOES NOT COVER, stated rather than assumed.** Three rounds ran and
+none converged; the architecture review then **replaced §2 in full**, and ⛔ **that replacement has
+not itself been through a review round** — r3's Claude half is a declared `REVIEW GAP:` because the
+review superseded the section it would have reviewed. **The approved text is therefore the narrowed
+spec, not a converged one.** The process's own answer to that is Phase 2: the implementation plan
+gets **dual adversarial review to convergence**, which is where the unreviewed §2 gets attacked. If
+that review finds §2 unsound, it comes back to the user rather than being fixed quietly — a plan
+cannot re-open an approved goal on its own.
+
+⟳ **NARROWED BY ARCHITECTURE REVIEW, 2026-09-25. §2 REPLACED IN FULL.**
 Three rounds, five halves, none converged — and the review convened by this branch's own
 pre-commitment found the reason: ⛔ **the falsifier could not be built well because the operation it
 guarded was never owed.** #117's WORK names three reshapings and no corpus, and the corpus question
