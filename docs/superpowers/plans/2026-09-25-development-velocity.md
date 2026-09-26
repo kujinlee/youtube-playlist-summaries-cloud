@@ -57,7 +57,13 @@ label is ever removed, the document becomes the thing #119 refused.**
 - [x] A class claim requires a class sweep.
 - [x] Derive gate lists from the **workflows** — ⚠ the proposal said `ci.yml`; **round 1 established
       that is the wrong scope**, `schema-gates` being the other required context.
-- [x] ⭐ A **fifth** clause round 1 forced: **say what you counted.**
+- [x] ⭐ A **fifth** clause round 1 forced — rule **1b**: **say what you counted.** ⚠ It was **not in
+      the proposal**; §6's own first review round produced it, from three defects in the change that
+      adopted §6.
+- [x] ⭐ The **shape invariant** — a scope plus three refused forms. **Also not proposed.** Written at
+      round 4, after four pattern-shaped fixes each failed to terminate.
+- ⭐ **Both of the most load-bearing rules here arrived from review, not from the proposal.** Review
+  was a **generator**, not a sieve — worth expecting when Task 5 is reviewed.
 
 ## Task 3 — side job inherits NO design approval *(strand ⑷)*
 
@@ -96,6 +102,9 @@ without it."*
 - [ ] Close Task 3's hole: the side-job rule gains its *"re-asks Q0"* clause **once Q0 exists.**
 - [ ] **Falsifier:** a slice that moves a seam and gets only per-task review is refusable, or at
       minimum visible.
+- ⛔ **Do not justify any of this with the "GitHub is 2× faster" figure.** It compares CI's whole
+      `verify` against the local sweep alone — unlike populations — and `verify` has since grown
+      488s → 673–680s. **The corrected ratio is NOT KNOWN.**
 
 ## Task 6 — De-escalation *(FORWARD — strand ⑸)*
 
