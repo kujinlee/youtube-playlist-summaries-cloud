@@ -1259,3 +1259,74 @@ still unverified, and the green you get back will say otherwise.
 ⚠ **And write the falsifier next to the delegation.** The only reason this was caught at all is that
 the plan named, in advance, the observation that would prove its own argument wrong. It cost one
 sentence and it was the sentence that worked.
+
+---
+
+## 26. A document cannot hold a derived value honestly — and a test is a document that executes
+
+**Raised by the user, 2026-09-25, as a generalisation of a defect that had already appeared five
+times on one branch:**
+
+> *"If a document cannot hold a derived value honestly, trying to match an exact number in tests may
+> not be the right criteria to pass."*
+
+**It is right, and the second half is the part that costs money.** A prose number that goes stale is
+embarrassing. A *test* that pins the same kind of number goes red for reasons unrelated to the code,
+and then somebody bumps it until nobody reads it.
+
+### The measured run that produced it
+
+One branch, one design document, six instances of one shape — **a value derived from something that
+moves, written down as though it were fixed:**
+
+| surface | what it did |
+|---|---|
+| corpus finding count | `145 → 147 → 152 → 158 → 168`; **each correction went stale within one or two commits** |
+| corpus population counts | `73 / 34 / 31` stamped at a commit, already `74 / 35 / 32` two commits later |
+| a line count | `121` → `109` — the first figure measured a set that included a function the design explicitly **kept** |
+| a denominator | `31 (42 not)` — where `42` was of a **different base**, inside the table written to fix denominator confusion |
+| a `--self-test` total | asserted to fall in one paragraph and rise in another, in the same document |
+| `file:line` citations | two named the wrong statement after the source moved |
+
+⛔ **The cause is structural, not carelessness.** The document was **inside the corpus it measured**:
+recording a review round changed the number the document stated about review rounds. Every correction
+was accurate when written and false shortly after, *because writing it down was itself an event in
+the measured set.*
+
+### The distinction that makes this actionable — three kinds of number
+
+| kind | what it is | pin it? |
+|---|---|---|
+| **observation** | derived from a world that moves — a corpus count, a line count, a denominator, a line number | ⛔ **never.** It fails for reasons unrelated to the code |
+| **invariant** | fixed input → fixed output; the function's contract | ✅ **yes.** Nothing outside the test can move it |
+| **policy / ratchet** | a decision, deliberately edited — *"coverage may not shrink below N"* | ✅ **yes, and the deliberate edit IS the mechanism** |
+
+⭐ **The failure mode is an OBSERVATION wearing an INVARIANT's clothes.** All six instances above are
+that, and so is every test that asserts how many things are in a directory.
+
+### The two shapes that survive, from this repository's own guards
+
+- **Compare two derived values, never a literal.** `check-selftest-counts.py` checks *"the declared
+  count against the number of cases that actually ran"*. It holds the **rule**, so it has never
+  rotted — while every prose count on that branch did.
+- **Pin a literal only as policy.** `EXPECTED_MUTATIONS` pins a number on purpose, because *coverage
+  cannot shrink silently* is a decision and a silent fall is the thing being caught. Editing it is
+  supposed to be conscious.
+
+### How to apply
+
+1. **Before asserting a number, ask what moves it.** If the answer is *"anything outside this test"*,
+   it is an observation — assert the **rule** instead, quantified over whatever exists.
+   *For every parseable document, convert, re-read, the verdict is unchanged* passes on 31 and on 300.
+2. **Prefer a fixed pair to a measured one.** A committed input beside its committed expected output
+   is safe, because neither side is an observation.
+3. ⛔ **Never let a document state a count over a set its own commits join.** Derive it at read time,
+   or state the rule and the command. ⚠ **Nothing in this entry survives being turned into a number.**
+4. **Ask the killer question of any suspicious assertion:** *would this test have gone red the moment
+   it was committed?* On the branch above, the answer was yes — the corpus check would have broken as
+   soon as the round record proposing it landed. **A test that fails because it was written.**
+
+⚠ **NOT THE SAME AS §21, and a future reader must not merge them.** §21 is about *which set* a rule
+runs over — the rule can be right and the population wrong. This is about *what kind of value* an
+assertion may pin at all, and it bites even when the population is exactly correct. **Two concerns,
+two entries.**
