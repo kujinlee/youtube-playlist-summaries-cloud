@@ -64,9 +64,25 @@ solving the wrong problem, and this paragraph exists to stop the next reader doi
 | rounds that were rework | **3 of 5** |
 | CI round-trip lost | 1, to a hand-written gate list of **5** where `ci.yml` names **33** |
 | ⭐ sweep token cost | **~0** — 547 KB generated, **~900 tokens** actually read, because output went to a file and only the tail was read. Reading it all would have been ~137,000 |
-| GitHub vs this machine | PR #342's `verify` took **8m08s** *including* the sweep, `tsc`, the unit suite and ~30 gates — against **~14 min for the local sweep alone** |
+| ⛔ GitHub vs this machine | **DO NOT CITE THIS COMPARISON — IT IS CRACKED.** `development-velocity.md:142` sets PR #342's whole `verify` job (8m08s) against the **local sweep alone** (~14 min): *different populations*, with the CI side doing strictly more work. **And the denominator moved** — `verify` was **488s** on #342 and is **673–680s** now, ~39% slower in three days. ⚠ **The corrected sweep-to-sweep ratio is NOT KNOWN**; the local sweep was never re-run on this tree |
 
 ⚠ **The sweep is the most VISIBLE cost and not the largest.** Rework is.
+
+### ⭐ Where CI time actually goes — measured, unlike the row above
+
+*(GitHub Actions API, two successful runs. Source: the velocity-ledger page, §6.)*
+
+| Step | Time | Share |
+|---|---|---|
+| mutation sweep (`--mutate .`) | 554s / 542s | **~81%** |
+| unit + component tests (2,892) | 27s / 26s | ~4% |
+| everything else — `tsc`, installs, ~30 guards | ~95s | ~15% |
+| `verify` total | **680s / 673s** | |
+
+⭐ **The sweep re-runs its target's entire `--self-test` in a fresh interpreter, 1,030 times**
+(`check-plan-code.py:501`). **That isolation is why it is slow, and it is also what keeps a
+mutation's verdict honest** — so it is a cost, not waste, and §5's four items all optimise
+*frequency* rather than trying to make it cheaper.
 
 ---
 
@@ -88,9 +104,15 @@ solving the wrong problem, and this paragraph exists to stop the next reader doi
 |---|---|---|
 | ⑴ | **Q0** — choose the instrument before the dosage, in `review-method.md` §0 | 🟠 **home settled (PR #345); NOT designed, NOT built.** This spec's real subject |
 | ⑵ | **draft-PR pattern** | ✅ shipped — adopted as **practice**, deliberately not automated |
-| ⑶ | **injection rules** | ✅ shipped — four clauses, plus a fifth round 1 forced: *say what you counted* |
+| ⑶ | **injection rules** | ✅ shipped — four clauses, **plus two that were never proposed**: rule **1b** *say what you counted* (produced by §6's own first review round) and the **shape invariant** — a scope plus three refused forms, written at round 4 after four pattern-shaped fixes each failed to terminate |
 | ⑷ | **side job** — *inherits NO design approval* | ✅ shipped |
 | ⑸ | **de-escalation** — when findings shift to wording, stop | 🟠 **open** |
+
+⭐ **AND REVIEW WAS A GENERATOR, NOT A SIEVE — the ledger's own finding, and it matters for ⑴.**
+PR #345 moved in **both** directions: it DROPPED the literal *"a side job re-asks Q0"* wording, and it
+ADDED two rules **that were not in the proposal at all** — rule 1b and the shape invariant. **Those
+two are the most load-bearing of the set.** So a spec for ⑴ should expect its review rounds to
+*produce* mechanism, not merely prune it.
 
 ⛔ **⑵⑶⑷ ARE RECORDED HERE, NOT DESIGNED HERE** — see the status banner. Their design is in
 `development-velocity.md` §9 and PR #345.
