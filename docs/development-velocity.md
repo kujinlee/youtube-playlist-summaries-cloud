@@ -53,68 +53,29 @@ round costs a model dispatch, a fold, and a sweep.
 
 ---
 
-## 2. The instrument question — which review, for which code
+## 2. The instrument question — ⟳ MOVED TO THE SPEC
 
-⛔ **THE GAP THIS DOCUMENT EXISTS FOR.** `docs/review-method.md` §0 is a decision procedure that
-starts at *"full loop, or one round?"* — it asks **how much** adversarial review to run and never
-asks **whether adversarial review is the right instrument**. Proposed as a new **Q0**, before Q1.
+⛔ **THE DESIGN THAT WAS HERE IS NOW IN THE SPEC, AND THIS SECTION IS A POINTER.**
+→ [the spec](superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md) §1–§2.
 
-> ✅ **FORM DECIDED 2026-09-24 by the user — HYBRID. Not built; this is the design session's input.**
->
-> Q0's **entry** is a judgement — *does this change move a seam?* — because no definition of "seam"
-> exists that a script can read, and three hand-kept path lists have already each scored something
-> dangerous as one-round (`review-method.md` §0 Q1).
->
-> Q0's **escalation** is mechanical where it can be. Of §3's signals, *fixes do not terminate*
-> and *each fix ADDS code* are both measurable from the round documents and the diff.
->
-> ⛔ **The reason the escalation half is the load-bearing one:** §3 records that all signals
-> were present in the 2026-09-23 thrashing and it was **still called three rounds late**. A card
-> that a human reads and then misjudges is a detection failure a machine fixes and prose does not.
->
-> ⚠ **And the thing the design session must answer first:** §0's own banner is *"read this, do not
-> recall it"*, and its Q1 is explicitly keyed on the changed path set **rather than judgement**. A
-> judgement question sitting at the top of that card is in tension with the card's own claim. Q0
-> has to say out loud that it is the exception, and why — or it weakens everything under it.
->
-> ⚠ **Calibrate the mechanical half against a corpus of past rounds before shipping it.** Untested,
-> it is an assertion with a script around it. Ask which past slices it would have fired on, and
-> whether it fires on the verdict-path thrashing it was designed from.
+**Decided 2026-09-25 by the user**, on r1's finding that this document's §2 and §3 *were* the design
+while the spec carried a second copy — **two owners for one concern**, which is the defect this whole
+line of work exists to find. **The spec is the single owner.** What stays here is what this document
+is actually for: **the measurements, and the record of what was decided and when.**
 
-| Characteristic of the code | Primary instrument | Timing |
-|---|---|---|
-| Creates or **moves a seam** — new module, changes who owns what, new protocol or vocabulary | **Architecture review** | **BEFORE building** |
-| Logic **inside** an existing seam | Adversarial review (the normal loop) | During, per task |
-| A **surface** — parser, matcher, many similar inputs | **Corpus run**, then review only the residue | Before review |
-| A **guard or ratchet** | **Mutation sweep is primary**; review secondary | Before claiming coverage |
-| Prose / docs | Adversarial review, **round-capped** | Cap early |
+⚠ **Q0's form — hybrid, judgement at the entry and mechanical for escalation — remains a DECISION
+recorded in §9 answer 2.** The decision stays here; its *design* is in the spec.
 
-**Why row 1, in this repo's own words** (`scripts/check-vocabulary-collisions.py`):
+## 3. The signals that say SEAM, not LOGIC — ⟳ MOVED TO THE SPEC
 
-> *"every gate this project owns asks 'is this correct?', which is a LOCAL question and can always
-> be answered yes by patching. A duplicated mechanism is never locally incorrect."*
+⛔ **THE FOUR SIGNALS NOW LIVE IN THE SPEC** → [§2, *The escalation half*](superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md).
 
-**Why row 3:** measured previously — *6 review rounds ≈ 7 edge cases; one corpus run ≈ 5,287.*
+⚠ **They are still observations you can apply BY HAND today** — moving them did not make them
+unavailable, and r1 of the earlier round already recorded that *"not built"* must not be read as
+*"not usable"*. `process-checklists.md`'s side-job rule points at the spec now.
 
----
-
-## 3. The signals that say SEAM, not LOGIC — escalate on these
-
-Every one of them was present in the 2026-09-23 verdict-path thrashing and it was still called three rounds
-late, so they are written as observations rather than judgements:
-
-1. **Fixes are locally correct but do not terminate.** The strongest signal. Four rounds, every
-   finding correct, every fix correct, no convergence.
-2. **Each fix ADDS code.** A correct fix at the right seam usually deletes: the eventual redesign
-   removed six functions and 13 mutation entries.
-3. **The machinery manages a problem rather than doing work.** `run_token`, `verdict_collision`,
-   `path_is_tracked`, `refusal_verdict_path` all existed to manage a *namespace*, not to review
-   anything.
-4. **Two names for one concept.** "Verdict" silently meant both the coverage verdict and the review
-   testimony — invisible to `check-vocabulary-collisions`, whose subject is the database schema.
-   That is backlog **#167**.
-
----
+⚠ **`decision-card-soundness`'s spec cites "§3's own signal 4 — two names for one concept".** That
+citation still resolves: the signal is unchanged, and the spec is where it lives.
 
 ## 4. The timing rules
 
@@ -315,12 +276,10 @@ moment is the duplicate-mechanism shape `check-vocabulary-collisions.py` exists 
 
 ---
 
-## 10. What is left — the design session's brief
+## 10. What is left — ⟳ SUPERSEDED BY THE SPEC AND ITS PLAN
 
-| Item | State |
-|---|---|
-| **Q0 itself** — the card in `review-method.md` §0 | 🟠 form decided (§2), not designed, not built |
-| **§3's seam signals as mechanical tests** | 🟠 two of them look measurable; none is specified |
-| **Calibration corpus** for the mechanical half | 🟠 not started — ⛔ ship nothing without it |
-| **§5's "what is lost"** — a red CI sweep no longer names which commit broke coverage | 🟠 accepted, unmitigated |
-| **Side-job hook** (Q5) | ⏸ blocked on Q0's escalation half |
+⛔ **The design brief that was here is now the spec and its plan**, which state the same remaining
+work — ⑴ Q0 and ⑸ de-escalation, with **calibration as the gate on everything mechanical**:
+→ [spec](superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md) · [plan](superpowers/plans/2026-09-25-development-velocity-RECONSTRUCTED-plan.md).
+
+⚠ **`roadmap-to-launch.md` cited "§10 is the design brief".** It now cites the spec.
