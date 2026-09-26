@@ -12545,3 +12545,35 @@ PR on `backlog-177-velocity-backfill`. Gates: `check-docs`, `check-anchors`, `ch
 `check-backlog-closure`, `check-test-counts`, `check-dashboard-entry` — all rc=0. The arming condition
 and the reason for not convening are recorded in `docs/reviews/claude/velocity-backfill-r3-claude.md`
 (its `## Verdict`) rather than left implicit.
+
+## 2026-09-26 [resolved: 2026-09-26/2]
+Both decisions answered: no architecture review, and PR #348 is merged.
+
+You agreed the architecture review was not needed — the reviewer's own recommended fix was already
+the change you had asked for, so holding one would have re-derived a conclusion twice. And you gave
+the merge. **The velocity migration is on `master`.**
+
+What is live now: the design and the five settled decisions in the spec; the dated measurements in
+`velocity-evidence-2026-09-24.md`; the rules still in `process-checklists.md`; and the old filename
+surviving as a tombstone that routes each old section and lists every document pointing at it.
+
+⚠ **Backlog #177 stays open, and that is correct** — the migration reorganised the work, it did not
+finish it. Q0 is designed and not built, de-escalation is open, and calibration has not started and
+gates everything mechanical.
+
+<!--tech-->
+**Merged** `054b676e` (squash of `1195f6af`, branch deleted). `check-merge-ready.py --pr 348` returned
+**READY** with all five gates rc=0; `verify` and `schema-gates` both green on the exact head SHA
+(`prod-drift` skipped — scheduled-only). Nothing was stacked on the branch, checked before
+`--delete-branch`.
+
+⛔ **Follow-up, not yet done:** `backlog-117-parser-substrate` still carries #177's five original
+commits, because the two bodies of work shared that branch by mistake. Now that #177 is on `master`,
+that branch must be rebased onto `origin/master` (or reset to `88fb5d60`) **before** it opens a PR, or
+its PR will present #177's work a second time. Backlog #117's Phase 2 plan is separately blocked on
+questions the user said they would ask.
+
+**Decisions recorded, not just done:** the architecture-review arming condition WAS met (two
+consecutive rounds, one component, each finding caused by the previous round's repair) and the
+decision not to convene is in `docs/reviews/claude/velocity-backfill-r3-claude.md`'s verdict plus this
+entry — so a future reader finds a judgement with a reason, not a silent skip.
