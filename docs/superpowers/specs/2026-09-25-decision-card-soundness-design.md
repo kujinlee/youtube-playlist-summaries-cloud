@@ -60,7 +60,7 @@ does not.
 ⛔ **The failure is silent and runs in the unsafe direction.** A synonym does not produce a wrong
 verdict that can be argued with; it produces `None`, which is indistinguishable from *no thrashing*.
 
-⭐ **And it is `development-velocity.md` §3's own signal 4 — *two names for one concept* — occurring
+⭐ **And it is signal 4 of the four SEAM-not-LOGIC signals — ⟳ *now owned by the development-velocity spec, `2026-09-25-development-velocity-RECONSTRUCTED-design.md` §2; they lived in `development-velocity.md` §3 until 2026-09-25* — *two names for one concept* — occurring
 inside the mechanism that detects seam problems.** `scripts/check-vocabulary-collisions.py` exists
 for that class, but its subject is the database schema, so it cannot see review headers.
 
@@ -559,7 +559,7 @@ The precedent spec's `⟳` correction identified exactly this as the real constr
 decision nobody can find is the root cause this whole line of work uncovered.**
 
 - **Q0 asks *"does this change have a design yet?"*** — not *"architecture review upfront, or not?"*
-  `development-velocity.md` §4's experiment column reads literally **"Had a design?"**, and the ✅
+  `development-velocity.md` §4's experiment column reads literally **"Had a design?"** *(§4 stays in that document — it is measurement, not design)*, and the ✅
   cell points at a review **armed by thrashing on other slices** whose findings became the work.
 - ⛔ **Zero of the architecture reviews here were ever convened upfront.** Every one names a
   retrospective trigger — thrashing or milestone cadence. *(Population: `docs/reviews/architecture-review-*.md`; each states its trigger in its own opening lines.)* **The upfront instrument is unevidenced

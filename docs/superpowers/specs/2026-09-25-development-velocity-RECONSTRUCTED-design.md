@@ -184,7 +184,7 @@ remove.
 
 ## §3 — Calibration, which gates everything mechanical
 
-⛔ **`development-velocity.md` §10: "ship nothing without it", and it is not started.**
+⛔ **"SHIP NOTHING WITHOUT IT" — and this spec now OWNS that constraint.** ⟳ *It was quoted from `development-velocity.md` §10 until 2026-09-25; §10 became a pointer when this spec became the single owner, so citing it there would now dangle.* **Calibration is not started.**
 
 ⭐ **#177 already states the runnable form**, and it is cheaper than building a corpus from nothing:
 

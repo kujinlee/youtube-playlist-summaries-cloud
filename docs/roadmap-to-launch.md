@@ -2088,7 +2088,7 @@ had updated to say otherwise.)
 - [x] **All five §9 questions ANSWERED** in the doc, with their evidence, so none is re-opened from
       scratch. Two were the user's decisions; three were settled from measurement.
 - [ ] **Q0 itself — DESIGNED IN FORM, NOT BUILT.** 🟠 The user decided it is **HYBRID**: judgement at
-      the entry, mechanical for escalation. `docs/development-velocity.md` §10 is the design
+      the entry, mechanical for escalation. ⟳ the design brief moved 2026-09-25: [`docs/superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md`](superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md) and its plan are now the design
       session's brief. ⛔ Two constraints that are not optional — Q0 must declare itself the
       EXCEPTION to §0's *keyed on paths, not judgement* design and say why, and the mechanical half
       must be calibrated against a corpus of past rounds before it ships.

@@ -783,7 +783,7 @@ Seam work wants its design settled before it is built, on a branch of its own.
 
 ⟳ **When backlog #177's Q0 lands in `review-method.md` §0, this is the moment that re-asks it** —
 decided 2026-09-24 with the user, form recorded in that row. Until then the question above is asked
-by hand, and the four signals that say *seam* are in `development-velocity.md` §3 — **which are
+by hand, and the four signals that say *seam* are in [`docs/superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md`](superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md) §2 — ⟳ *moved there 2026-09-25 when the spec became their single owner; they are unchanged* — **which are
 OBSERVATIONS, usable now.** That document's banner marks §3 *not built*, meaning not mechanised;
 it does not mean not applicable, and r1 (Low) found that reading available.
 

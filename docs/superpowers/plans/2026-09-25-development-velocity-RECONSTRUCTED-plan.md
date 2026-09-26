@@ -57,7 +57,7 @@ this table is an index over them.*
 
 ### Task 4 — Retrospective calibration *(FORWARD — and it goes FIRST)*
 
-⛔ **NOTHING MECHANICAL IS BUILT UNTIL THIS REPORTS.** `development-velocity.md` §10: *"ship nothing
+⛔ **NOTHING MECHANICAL IS BUILT UNTIL THIS REPORTS** — *"ship nothing without it"*. ⟳ *Quoted from `development-velocity.md` §10 until 2026-09-25; the spec owns the constraint now, §10 is a pointer, so citing it there would dangle.*
 without it."*
 
 - [ ] Apply §3's four signals — *non-terminating locally-correct fixes* · *each fix ADDS code* ·
