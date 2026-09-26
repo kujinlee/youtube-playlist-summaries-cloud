@@ -20,7 +20,9 @@ de-escalation** are forward design.
 
 ⚠ **Backfilling was rejected once in this repository, deliberately** — backlog **#119**, 2026-09-15:
 *"writing machine-readable claims into a review record after the fact, reconstructed rather than
-recorded, manufactures evidence."* ⭐ **THE DISTINCTION THAT MAKES THIS DIFFERENT, AND THE READER
+recorded, **manufactures evidence about review coverage**."* ⟳ *r1 (Claude, Medium): an earlier
+version of this quotation stopped at "manufactures evidence" — trimming the very clause the
+distinction below turns on.* ⭐ **THE DISTINCTION THAT MAKES THIS DIFFERENT, AND THE READER
 SHOULD JUDGE IT RATHER THAN TAKE IT:** #119 concerned a **review record**, which asserts *a review
 happened*. This asserts *a design exists* — and for ⑵⑶⑷ the design decisions genuinely exist, dated,
 in `docs/development-velocity.md` §9 and in PR #345. **Written at the user's explicit instruction
@@ -74,7 +76,7 @@ with who owns it.** Everything else is a pointer.
 |---|---|
 | sweeps, rework rounds, the lost CI round-trip | *(owned by `development-velocity.md` §1 — not restated here)* |
 | ⭐ sweep token cost | **~0** — the sweep's output goes to a file and only the tail is read. *(Figures: `development-velocity.md` §1, which owns them.)* **Load-bearing**: it is why §5 optimises *frequency* and not *token cost* |
-| ⛔ GitHub vs this machine | **DO NOT CITE THIS COMPARISON — IT IS CRACKED.** `development-velocity.md:142` sets PR #342's whole `verify` job (8m08s) against the **local sweep alone** (~14 min): *different populations*, with the CI side doing strictly more work. **And the denominator moved** — `verify` was **488s** on #342 and is **673–680s** now, ~39% slower in three days. ⚠ **The corrected sweep-to-sweep ratio is NOT KNOWN**; the local sweep was never re-run on this tree |
+| ⛔ GitHub vs this machine | **DO NOT CITE THIS COMPARISON — IT IS CRACKED.** `development-velocity.md:142` sets PR #342's whole `verify` job (8m08s) against the **local sweep alone** (~14 min): *different populations*, with the CI side doing strictly more work. ⛔ ⟳ **AND THE FIRST REPLACEMENT FOR IT WAS CRACKED THE SAME WAY (r1 Claude, High).** This row briefly said *"`verify` was 488s and is 673–680s, ~39% slower"* — **a second cross-run comparison, built exactly like the one it was retracting.** Measured: two successful full-sweep runs **six minutes apart** on 2026-09-24 gave `verify` **709s** (master) and **419s** (`velocity-177`) — a **1.76× spread**, and 488s is the *minimum* of its own day. **The claimed effect is smaller than the within-day spread.** Deleted. ⚠ **The corrected sweep-to-sweep ratio is NOT KNOWN** |
 
 ⚠ **The sweep is the most VISIBLE cost and not the largest.** Rework is.
 
@@ -88,6 +90,11 @@ with who owns it.** Everything else is a pointer.
 | unit + component tests (2,892) | 27s / 26s | ~4% |
 | everything else — `tsc`, installs, ~30 guards | ~95s | ~15% |
 | `verify` total | **680s / 673s** | |
+
+⭐ **WHY THE ~81% SHARE SURVIVES WHERE THE RATIOS DID NOT:** it is a **within-run** ratio, so runner
+variance cancels. Measured across five runs at **78 / 79 / 81 / 83 / 83%**. ⚠ **Any figure comparing
+one run to another on this infrastructure is unusable** — the spread between two runs minutes apart
+is larger than every effect this document has tried to claim.
 
 ⭐ **The sweep re-runs its target's entire `--self-test` in a fresh interpreter, 1,030 times**
 (`check-plan-code.py:501`). **That isolation is why it is slow, and it is also what keeps a
@@ -141,6 +148,14 @@ above, because it is a defect in shipped process rather than a projected saving.
 ## §2 — Q0, the design
 
 **A question placed BEFORE §0's Q1, keyed on what kind of wrongness the code can have:**
+
+⛔ **AND Q0 MUST DECLARE ITSELF THE EXCEPTION TO Q1'S STANCE — r1 (Claude, High) found this absent
+from both documents.** `review-method.md` §0's Q1 is deliberately keyed on **the changed path set,
+not judgement** — that is its stated protection. **Q0 is a judgement question placed in front of it**,
+so it inverts that stance at the entry, and a procedure that does so without saying it will read as
+an inconsistency and get "fixed" by someone restoring the path-keyed order. **The spec must state the
+exception and why it is one: paths can say WHAT changed and cannot say WHAT KIND OF WRONGNESS it can
+have.**
 
 | the change… | wants |
 |---|---|

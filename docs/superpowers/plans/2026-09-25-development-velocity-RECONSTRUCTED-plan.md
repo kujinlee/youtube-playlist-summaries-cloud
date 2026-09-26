@@ -35,58 +35,27 @@ label is ever removed, the document becomes the thing #119 refused.**
 
 ---
 
-## Task 1 — draft-PR pattern *(strand ⑵)* · ⛔ RECONSTRUCTED
+## M1 — strands ⑵⑶⑷, shipped in PR #345 ✅
 
-> ⛔ **Every `[x]` in this task means "this shipped", not "this was planned then shipped."**
-> *(r1 Codex, Medium: the global banner did not travel with the individual boxes, so a reader who
-> scans checkboxes still read them as planned-and-executed.)*
+⛔⛔ **THESE ARE NOT PLAN STEPS AND THEY ARE DELIBERATELY NOT CHECKBOXES.**
+r1 (Claude, **Blocking**) measured that `check-plan-progress.count_steps` reads `- [x]` at line start
+and returns **integers** — it saw `(12, 25)` here. **No prose banner can reach that parse.** The
+previous fold answered a machine-readable claim with a human-readable caveat, which is #119's concern
+exactly. **So the reconstructed work leaves the checkbox grammar entirely.** `count_steps` now sees
+only genuine forward work.
 
-- [x] **SHIPPED 2026-09-24, PR #345. RECONSTRUCTED — not planned here.**
-- [x] Adopted as **practice**, deliberately **not** automated.
-- [x] Reason recorded: a hook opening a draft PR on branch creation is a separate build with its own
-      failure modes — an unwanted PR on every throwaway branch, and a hook that must know which
-      branches are slices.
-- [x] The framing worry was measured away: `concurrency: cancel-in-progress` means repeated pushes
-      cost **one** run.
-- ⚠ **`on:` covers `pull_request → master` and `push → master` only, so a feature branch with no PR
-  triggers nothing.** This is the limitation, and it is why the practice matters.
-- ⛔ **There is no caught-defect evidence for it** — the case rests entirely on the speed measurement,
-  and §5's *what is lost* stands against it.
+*Shipped 2026-09-24 in PR #345, **without this plan**. The commits and reviews are the evidence;
+this table is an index over them.*
 
-## Task 2 — injection rules *(strand ⑶)* · ⛔ RECONSTRUCTED
+| Strand | What shipped | Notes the record owns |
+|---|---|---|
+| ⑵ draft-PR pattern | adopted as **practice**, deliberately not automated | ⚠ `on:` covers `pull_request → master` and `push → master` only, so a feature branch with no PR triggers nothing. ⛔ **No caught-defect evidence exists for it** |
+| ⑶ injection rules | four clauses, **plus two never proposed** — rule **1b** *say what you counted*, and the **shape invariant** | Both arrived from review, not from the proposal. History owned by `process-checklists.md:599-601` |
+| ⑷ side job | *inherits NO design approval* | ⛔ **Incomplete on purpose:** the literal *"re-asks Q0"* wording was not adopted, *"because Q0 does not exist and a rule pointing at nothing cannot run."* **Task 5 closes this**, not Task 4 |
 
-> ⛔ **Every `[x]` below means "this shipped", not "this was planned then shipped."**
+## M2 — Q0, forward work ◀
 
-- [x] **SHIPPED 2026-09-24, PR #345. RECONSTRUCTED — not planned here.** They govern from
-      `docs/process-checklists.md`, not from `development-velocity.md`.
-- [x] No number in a commit message unless measured this session.
-- [x] Fix the sentence **in place** rather than appending a correction.
-- [x] A class claim requires a class sweep.
-- [x] Derive gate lists from the **workflows** — ⚠ the proposal said `ci.yml`; **round 1 established
-      that is the wrong scope**, `schema-gates` being the other required context.
-- [x] ⭐ A **fifth** clause round 1 forced — rule **1b**: **say what you counted.** ⚠ It was **not in
-      the proposal**; §6's own first review round produced it, from three defects in the change that
-      adopted §6.
-- [x] ⭐ The **shape invariant** — a scope plus three refused forms. **Also not proposed.**
-      ⟳ *r1 (Codex, Medium): this said "round 4, after **four** pattern-shaped fixes". The governing
-      text (`process-checklists.md:599-601`) says **FIVE consecutive attempts**, and a **Phase 6
-      architecture review between rounds 3 and 4** was the root-cause step. That text owns the
-      history; this is a pointer to it.*
-- ⭐ **Both of the most load-bearing rules here arrived from review, not from the proposal.** Review
-  was a **generator**, not a sieve — worth expecting when Task 5 is reviewed.
-
-## Task 3 — side job inherits NO design approval *(strand ⑷)* · ⛔ RECONSTRUCTED
-
-> ⛔ **The `[x]` below means "this shipped", not "this was planned then shipped."**
-
-- [x] **SHIPPED 2026-09-24, PR #345. RECONSTRUCTED — not planned here.**
-- [ ] ⛔ **INCOMPLETE ON PURPOSE, AND THIS IS THE HOLE TASK 5 CLOSES** *(r1 Codex, Medium: this said Task 4, which is only calibration — a misroute inside the plan).* The literal *"re-asks Q0"*
-      wording was **not** adopted, *"because Q0 does not exist and a rule pointing at nothing cannot
-      run."* **A live process rule currently has a Q0-shaped gap in it.**
-
----
-
-## Task 4 — Retrospective calibration *(FORWARD — and it goes FIRST)*
+### Task 4 — Retrospective calibration *(FORWARD — and it goes FIRST)*
 
 ⛔ **NOTHING MECHANICAL IS BUILT UNTIL THIS REPORTS.** `development-velocity.md` §10: *"ship nothing
 without it."*
@@ -103,7 +72,7 @@ without it."*
 - [ ] ⚠ **A NEGATIVE RESULT IS A RESULT.** If the signals do not separate thrashing branches from
       clean ones, **Task 5's escalation half is not built** and Q0 ships judgement-only.
 
-## Task 5 — Q0 into `review-method.md` §0 *(FORWARD — strand ⑴)*
+### Task 5 — Q0 into `review-method.md` §0 *(FORWARD — strand ⑴)*
 
 - [ ] **Entry half (judgement):** the kind-of-wrongness table — seam / logic-in-seam / surface / guard
       / prose — placed **before** Q1.
@@ -118,7 +87,7 @@ without it."*
       `verify` against the local sweep alone — unlike populations — and `verify` has since grown
       488s → 673–680s. **The corrected ratio is NOT KNOWN.**
 
-## Task 6 — De-escalation *(FORWARD — strand ⑸)*
+### Task 6 — De-escalation *(FORWARD — strand ⑸)*
 
 - [ ] When findings shift to wording, **stop.**
 - [ ] ⚠ Must not collide with *Iterative Re-Review* — `dev-process.md`'s rule is **notify and
