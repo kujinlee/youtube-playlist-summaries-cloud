@@ -50,7 +50,7 @@ this table is an index over them.*
 | Strand | What shipped | Notes the record owns |
 |---|---|---|
 | ⑵ draft-PR pattern | adopted as **practice**, deliberately not automated | ⚠ `on:` covers `pull_request → master` and `push → master` only, so a feature branch with no PR triggers nothing. ⛔ **No caught-defect evidence exists for it** |
-| ⑶ injection rules | four clauses, **plus two never proposed** — rule **1b** *say what you counted*, and the **shape invariant** | Both arrived from review, not from the proposal. History owned by `process-checklists.md:599-601` |
+| ⑶ injection rules | four clauses, **plus two never proposed** — rule **1b** *say what you counted*, and the **shape invariant** | Both arrived from review, not from the proposal. History owned by `process-checklists.md` → *The shape THIS SECTION keeps, and why it is a SHAPE and not a pattern* |
 | ⑷ side job | *inherits NO design approval* | ⛔ **Incomplete on purpose:** the literal *"re-asks Q0"* wording was not adopted, *"because Q0 does not exist and a rule pointing at nothing cannot run."* **Task 5 closes this**, not Task 4 |
 
 ## M2 — Q0, forward work ◀

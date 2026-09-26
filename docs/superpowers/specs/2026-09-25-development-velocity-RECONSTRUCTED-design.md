@@ -191,7 +191,7 @@ direction from the claim, and no round noticed.* ⚠ **It is not a spec and neve
 | ⑴ | **Q0** — choose the instrument before the dosage, in `review-method.md` §0 | 🟠 **home settled (PR #345); NOT designed, NOT built.** This spec's real subject |
 | ⑵ | **draft-PR pattern** | ✅ shipped — adopted as **practice**, deliberately not automated |
 | ⑶ | **injection rules** | ✅ shipped — four clauses, **plus two that were never proposed**: rule **1b** *say what you counted* (produced by §6's own first review round) and the **shape invariant** — a scope plus three refused forms. ⟳ *r1 (Codex, Medium): this said "round 4
-after **four** pattern-shaped fixes"; the governing text at `process-checklists.md:599-601` says
+after **four** pattern-shaped fixes"; the governing text at `process-checklists.md` → *The shape THIS SECTION keeps, and why it is a SHAPE and not a pattern* says
 **FIVE consecutive attempts** and lists them, and a **Phase 6 architecture review between rounds 3 and
 4** was the root-cause step this omitted (`velocity-177-r6-coordinator.md:53-58`). The governing text
 owns this history; do not restate it here* |

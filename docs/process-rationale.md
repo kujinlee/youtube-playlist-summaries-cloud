@@ -901,3 +901,32 @@ prose"* — and `CLAUDE.md` imports that file, so the wrong number was loaded in
 
 ⭐ **The number was removed rather than corrected.** A count with no owner drifts again; the only
 durable fix is to have ONE copy, in the place a gate can run.
+
+---
+
+## Where development time actually went — backlog #177, measured 2026-09-24
+
+⛔ **A POINTER, NOT A SUMMARY.** → **[`docs/velocity-evidence-2026-09-24.md`](velocity-evidence-2026-09-24.md)**
+
+Measurements from the session that merged PR #342, held a Phase 6 architecture review and implemented
+backlog #176: where the time went, the controlled experiment on *designed vs un-designed work*, what CI
+actually costs, and the evidence behind the two rule sets `process-checklists.md` §6 and §7 now govern.
+
+⚠ **The rules are NOT there and the design is NOT there** — the rules are in
+[`process-checklists.md`](process-checklists.md), and the design and the settled decisions are in
+[the spec](superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md). That file holds
+only dated measurement.
+
+⭐ **Why this row exists at all, and why it stays one line.** This document is read by its *index* —
+header, then the section titles — and bodies are opened only when a title or a grep hit implicates them.
+So a document with no row here has **no read-trigger**: nothing routes a reader to it. ⛔ **And a row
+that summarised the findings would be worse than none**, because the index would then satisfy the
+reader and the target would never be opened — leaving two copies to drift, with the unread one keeping
+the refuted version. That is the failure recorded throughout this file; the row is a pointer so it
+cannot become the second copy.
+
+⟳ **Added 2026-09-26, a day after the migration it describes, because it was MISSED.** The migration
+plan listed this row and the commit did not contain it: `grep -n "velocity" docs/process-rationale.md`
+returned nothing, so the evidence file was reachable only from its tombstone and the spec — not from
+the one index that routes readers here. Found by asking how this file is actually read, not by a gate.
+⚠ **Nothing mechanises it:** no check requires a relocated document to acquire a read-trigger.
