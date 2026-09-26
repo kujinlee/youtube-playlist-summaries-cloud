@@ -2059,7 +2059,7 @@ hand with command and output recorded, so nothing rests on agent output.
 
 ## Development velocity — backlog #177 — anchor `review-decides-itself` — 🟠 §6+§7 ADOPTED 2026-09-24; Q0 DESIGNED-IN-FORM, NOT BUILT
 
-**The analysis is the deliverable and it is complete:** [`docs/development-velocity.md`](development-velocity.md).
+**The analysis is complete; it is now three documents.** Design and decisions: [the spec](superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md). Forward work: [the plan](superpowers/plans/2026-09-25-development-velocity-RECONSTRUCTED-plan.md). Measurements: [`docs/velocity-evidence-2026-09-24.md`](velocity-evidence-2026-09-24.md). ⟳ *`development-velocity.md` is a tombstone that routes each old §N (migrated 2026-09-26).*
 Written 2026-09-24 at the user's request, out of the session that merged PR #342 (five adversarial
 rounds), held the Phase 6 verdict-path review and implemented #176. ⟳ **2026-09-24: §6 and §7 NOW
 GOVERN**, from `docs/process-checklists.md`; the rest of the document is still proposal, and its

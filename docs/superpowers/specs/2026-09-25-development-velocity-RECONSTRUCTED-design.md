@@ -25,14 +25,22 @@ version of this quotation stopped at "manufactures evidence" — trimming the ve
 distinction below turns on.* ⭐ **THE DISTINCTION THAT MAKES THIS DIFFERENT, AND THE READER
 SHOULD JUDGE IT RATHER THAN TAKE IT:** #119 concerned a **review record**, which asserts *a review
 happened*. This asserts *a design exists* — and for ⑵⑶⑷ the design decisions genuinely exist, dated,
-in `docs/development-velocity.md` §9 and in PR #345. **Written at the user's explicit instruction
+in **this spec's own *Decisions of record*** (moved here from `development-velocity.md` §9 on
+2026-09-26) and in PR #345. **Written at the user's explicit instruction
 after the hazard was put to them.** ⛔ **Nothing here may be cited as evidence that ⑵⑶⑷ were designed
 before they were built. They were not.**
 
 **Why it exists at all:** both `scripts/check-anchors.py:54` and `scripts/gen-goals-page.py:61` walk
 exactly `("superpowers/specs", "superpowers/plans")`. `docs/development-velocity.md` is in neither,
-so #177 is **structurally invisible** to the anchor registry and the goals page. Measured on the live
-page: it carries `review-decides-itself` and **no mention of development-velocity or #177**.
+so #177 was **structurally invisible** to the anchor registry and the goals page. ⟳ **r3 (Medium): this
+was written in the present tense and THIS DOCUMENT'S OWN LANDING falsified half of it.** Re-measured at
+2026-09-26 by regenerating the page: the document half now holds — `…-RECONSTRUCTED-design` and `-plan`
+appear **7 times** — and `check-anchors.py` reports *13 registered, all claimed*. ⛔ **But `177` appears
+ZERO times**, while the page carries `#104 #117 #119 #125 #126 #131 #133 #134 #141 #146` for other goals.
+So the page HAS a backlog-identity channel and this goal is absent from it: `ROOTS` in
+`scripts/gen-backlog-page.py` has exactly one key (`stable-blob-addressing`) and `review-decides-itself`
+appears in neither generator. **That half of the purpose is still unmet, and it is now the measurable
+one.**
 
 ---
 
@@ -67,20 +75,22 @@ solving the wrong problem, and this paragraph exists to stop the next reader doi
 ### Measured costs — ⛔ POINTERS, NOT COPIES
 
 ⟳ **r1 (Codex, Medium): the first draft re-copied live derived values here** — sweep minutes, rework
-rounds, token estimates, CI timings — which both duplicates `docs/development-velocity.md` and breaks
+rounds, token estimates, CI timings — which both duplicates the evidence document and breaks
 `portable-practices` §26, in a spec whose own *Prior art* says that file owns the measurements.
 **The figures below are retained ONLY where they are load-bearing for a design decision, each marked
 with who owns it.** Everything else is a pointer.
 
 | | |
 |---|---|
-| sweeps, rework rounds, the lost CI round-trip | *(owned by `development-velocity.md` §1 — not restated here)* |
-| ⭐ sweep token cost | **~0** — the sweep's output goes to a file and only the tail is read. *(Figures: `development-velocity.md` §1, which owns them.)* **Load-bearing**: it is why §5 optimises *frequency* and not *token cost* |
-| ⛔ GitHub vs this machine | **DO NOT CITE THIS COMPARISON — IT IS CRACKED.** `development-velocity.md:142` sets PR #342's whole `verify` job (8m08s) against the **local sweep alone** (~14 min): *different populations*, with the CI side doing strictly more work. ⛔ ⟳ **AND THE FIRST REPLACEMENT FOR IT WAS CRACKED THE SAME WAY (r1 Claude, High).** This row briefly said *"`verify` was 488s and is 673–680s, ~39% slower"* — **a second cross-run comparison, built exactly like the one it was retracting.** Measured: two successful full-sweep runs **six minutes apart** on 2026-09-24 gave `verify` **709s** (master) and **419s** (`velocity-177`) — a **1.69× spread** ⟳ *(r2 fold: this row said **1.76×**, which is not derivable from its own two
-numbers — 709/419 = 1.6921, and 1.76× against 419s would need 737s. The THIRD wrong figure in the
-one row that exists to retract a wrong figure. Found while verifying r2's Medium, not reported by
-it. The conclusion is unchanged and slightly weaker: the spread still exceeds every effect this
-document has claimed.)*, and 488s is the *minimum* of its own day. **The claimed effect is smaller than the within-day spread.** Deleted. ⚠ **The corrected sweep-to-sweep ratio is NOT KNOWN** |
+| sweeps, rework rounds, the lost CI round-trip | *(owned by [`velocity-evidence-2026-09-24.md`](../../velocity-evidence-2026-09-24.md) §1 — not restated here)* |
+| ⭐ sweep token cost | **~0** — the sweep's output goes to a file and only the tail is read. *(Figures: [`velocity-evidence-2026-09-24.md`](../../velocity-evidence-2026-09-24.md) §1, which owns them.)* **Load-bearing**: it is why §5 optimises *frequency* and not *token cost* |
+| ⛔ GitHub vs this machine | **DO NOT CITE THIS COMPARISON — IT IS CRACKED.** [`velocity-evidence-2026-09-24.md`](../../velocity-evidence-2026-09-24.md) §5's *"GitHub is roughly TWICE as fast as this machine"* sets PR #342's whole `verify` job (8m08s) against the **local sweep alone** (~14 min) — ⟳ *cited by heading, not by line: this was `development-velocity.md:142` until a 50-line banner shifted it to a blank line, which is §26's own named instance*: *different populations*, with the CI side doing strictly more work. ⛔ ⟳ **AND THE FIRST REPLACEMENT FOR IT WAS CRACKED THE SAME WAY (r1 Claude, High).** This row briefly said *"`verify` was 488s and is 673–680s, ~39% slower"* — **a second cross-run comparison, built exactly like the one it was retracting.** Measured: two successful full-sweep runs **six minutes apart** on 2026-09-24 gave `verify` **709s** (master) and **419s** (`velocity-177`) — a **1.69× spread** ⟳ *(r2 fold said **1.76×**; the `verify` totals give 709/419 = **1.6921**, so the figure quoted here is
+now 1.69×. ⛔ **But the r2 fold's DIAGNOSIS was wrong and r3 (Low) derived the source it asserted did not
+exist:** 587/333 = **1.7628** — the SWEEP-STEP spread between the very same two runs, both numbers
+printed in this spec's own table. So 1.76× was a **transposed statistic — the right ratio over the wrong
+pair — not an invented one.** Calling it a fabrication was a diagnosis asserted rather than derived,
+which is the same failure as the figures it was correcting. The arithmetic held; the explanation did
+not.)*, and 488s is the *minimum* of its own day. **The claimed effect is smaller than the within-day spread.** Deleted. ⚠ **The corrected sweep-to-sweep ratio is NOT KNOWN** |
 
 ⚠ **The sweep is the most VISIBLE cost and not the largest.** Rework is.
 
@@ -100,28 +110,53 @@ did not land in the deliverable. The two runs are `36072747242` (job `1078773985
 | `verify` total | **680s / 673s** | |
 
 ⭐ **WHY THE ~81% SHARE SURVIVES WHERE THE RATIOS DID NOT:** it is a **within-run** ratio, so runner
-variance cancels. ⟳ **r2 Medium: the previous figures here — *78 / 79 / 81 / 83 / 83%* — are NOT REPRODUCIBLE** from
-anything reachable from a clone, and re-deriving them by hand did not return that set. Six runs,
-each named so the next reader re-derives rather than trusts:
+variance cancels. ⟳ **r3 (High ×2) REPLACED WHAT WAS HERE, AND BOTH OF ITS FINDINGS WERE AGAINST THE PREVIOUS REPAIR.**
 
-| run | job | branch | `verify` | sweep | share |
-|---|---|---|---|---|---|
-| `36048654618` | `107798389570` | master | 709s | 587s | **82.8%** |
-| `36072747242` | `107877398501` | `velocity-177` | 680s | 554s | **81.5%** |
-| `36051552339` | `107808281969` | `velocity-177` | 674s | 548s | **81.3%** |
-| `36070971836` | `107871582122` | `velocity-177` | 673s | 542s | **80.5%** |
-| `36073928900` | `107880816870` | master | 667s | 541s | **81.1%** |
-| `36049305547` | `107800846170` | `velocity-177` | **419s** | 333s | **79.5%** |
+⛔ **What was wrong, first:** r2's repair named **six** runs and concluded *"the share stays inside
+79.5–82.8% — a 3.3-point band."* That band is a property of **the six runs that were picked**, not of the
+infrastructure. It is this repository's own corpus defect — the code did what was measured; the wrong SET
+was measured.
 
-⭐ **THE LAST ROW IS THE ARGUMENT.** `verify` totals span **419s → 709s, a 1.69× spread**, while
-the share stays inside **79.5–82.8%** — a 3.3-point band. Runner variance moves the total and
-cancels in the ratio. That is the whole distinction, and it is now measurable from this table
-instead of asserted. ⚠ **Any figure comparing
-one run to another on this infrastructure is unusable** — the spread between two runs minutes apart
-is larger than every effect this document has tried to claim.
+⛔ **What was wrong, second:** the same repair called the figures it replaced — *78 / 79 / 81 / 83 / 83%*
+— **"NOT REPRODUCIBLE"**. They reproduce. Every member is the rounded sweep share of a real run
+(`78` ← `35947529595` at 77.7%; `83` ← `36094717914` at 82.6%). What those figures lacked was
+**PROVENANCE — no run selection was recorded** — and "not reproducible" reads as *invented*. A sentence
+stronger than its evidence, written inside the table that exists to retract sentences stronger than their
+evidence.
 
-⭐ **The sweep re-runs its target's entire `--self-test` in a fresh interpreter, 1,030 times**
-(`check-plan-code.py:501`). **That isolation is why it is slow, and it is also what keeps a
+### The corpus is now defined by a QUERY, not by a selection
+
+```sh
+gh run list --workflow=ci.yml --limit 120 --json databaseId,conclusion,createdAt
+#   keep: conclusion == success AND createdAt in 2026-09-23 .. 2026-09-26
+gh run view <id> --json jobs
+#   share = step "Mutation manifest against the delivered scripts" ÷ job "verify"
+```
+
+**n = 34.** Every run in that window had a measurable `verify` + sweep pair; none was excluded.
+
+| | value | |
+|---|---|---|
+| sweep share | **73.5% – 82.8%**, median **80.6%** | band **9.3 points**, ratio **1.13×** |
+| `verify` total | **397s – 709s** | ratio **1.79×** |
+| extremes, named | `35882895386` (543s / 399s = 73.5%) · `36048654618` (709s / 587s = 82.8%) | |
+
+⭐ **THE CONCLUSION SURVIVES; THE QUANTIFIED VERSION OF IT DID NOT.** Totals vary by **1.79×** and shares
+by **1.13×** — expressed as dispersion above 1, **79% against 13%, so the within-run ratio is about six
+times less variable.** ⚠ **That "six times" is a stated definition, not a free-floating number:** the raw
+quotient of the two ratios is 1.6×, and the two measure different things. Naming the definition is the
+whole repair.
+
+⛔ **So the sweep IS the dominant share of `verify` — around four fifths — and that is safe to cite. A
+BAND is not.** The retracted 78–83 spread was in fact a *better* sample of the real 73.5–82.8
+distribution than the six-run 3.3-point band that replaced it.
+
+⭐ **The sweep re-runs its target's entire `--self-test` in a fresh interpreter, once per manifest entry**
+(`check-plan-code.py`: the `subprocess.run([sys.executable, name, "--self-test"], …)` call, and
+`EXPECTED_MUTATIONS` for the count). ⟳ *r3 (Low): this cited `:501`, which is a continuation line of
+that call, and the figure it named lives ~3,200 lines away beside `EXPECTED_MUTATIONS`. Cite the
+SYMBOL — a line number above a 3,700-line file's midpoint is unbound by any edit above it (backlog
+#175).* **That isolation is why it is slow, and it is also what keeps a
 mutation's verdict honest** — so it is a cost, not waste, and §5's four items all optimise
 *frequency* rather than trying to make it cheaper.
 
@@ -132,7 +167,17 @@ mutation's verdict honest** — so it is a cost, not waste, and §5's four items
 | Thing | Does it cover this concern? |
 |---|---|
 | `docs/review-method.md` §0 | ⛔ **No — it IS the subject.** It starts at dosage |
-| `docs/development-velocity.md` | ⛔ **SUPERSEDED 2026-09-25 — a historical record only** (the user's decision; the banner at its head governs). ⭐ **What it still holds: the dated measurements, the controlled experiment, the rejections with reasons, and the record of what was settled and when.** **Ten** adversarial rounds. ⟳ *This cell said "326 lines" — correct at `master`, stale at 335 by the time this branch edited the file. A count of a file, written into a document, going stale inside one branch: `portable-practices` §26. The count is REMOVED rather than corrected, per backlog #183 — correcting it re-pins a figure that rots again.* ⚠ **It is not a spec and never was** — no single goal, no concern→mechanism table, no falsifier, no gate. **It keeps that job; this document does not duplicate it** |
+| [`docs/velocity-evidence-2026-09-24.md`](../../velocity-evidence-2026-09-24.md) *(was `development-velocity.md`)* | ⭐ **EVIDENCE ONLY — the dated measurements, the controlled experiment, and the record of what each measurement bought.** ⟳ *Renamed 2026-09-26; `development-velocity.md` is now a tombstone that routes each old §N and enumerates every citing site. The rejections and the settled answers are NOT here any more — they were decisions and moved into this spec, because a decision cited from a retired file is what made the retirement decorative (r3 Blocking).* ⟳ *A round count stood here and is **REMOVED** (r3, Medium). It cannot be right: `§26`'s own rule 3
+forbids a document stating a count over a set its own commits join, and filing each new round moved it.
+It also had two defensible populations — rounds whose subject stem names the document, versus every round
+that reviewed it — so it was wrong under one reading with no population stated. Derive it if you need it:
+`ls docs/reviews/*/ | grep -i velocity`.* ⟳ *This cell said **"326 lines"**, and the count is REMOVED rather than corrected, per backlog #183 —
+correcting it re-pins a figure that rots again. ⛔ **The r2 fold's account of WHEN it went stale was
+itself wrong, and r3 (High) derived the truth:** 326 was correct at `master` and became stale at **285**
+in `e0cb2ca8` — **downward by 41 lines** — and stayed wrong through three commits; **335** is merely the
+count at the moment the correction was written. ⭐ The real history is STRONGER evidence for
+`portable-practices` §26 than the version given: the number was wrong for three commits, in the opposite
+direction from the claim, and no round noticed.* ⚠ **It is not a spec and never was** — no single goal, no concern→mechanism table, no falsifier, no gate. **It keeps that job; this document does not duplicate it** |
 | `process-checklists.md` | ✅ **Owns ⑶ and ⑷ today** — they graduated there in PR #345 and **govern from there**. Reading them in the velocity doc is reading a copy |
 | `check-vocabulary-collisions.py` | Supplies the justification quoted above; its subject is the database schema |
 | backlog **#174** | Scoping the sweep to changed files — ⛔ **REJECTED as unsound**, fails silently in the unsafe direction |
@@ -160,7 +205,7 @@ two are the most load-bearing of the set.** So a spec for ⑴ should expect its 
 *produce* mechanism, not merely prune it.
 
 ⛔ **⑵⑶⑷ ARE RECORDED HERE, NOT DESIGNED HERE** — see the status banner. Their design is in
-`development-velocity.md` §9 and PR #345.
+**this spec's *Decisions of record*** and PR #345.
 
 ### ⭐ One shipped rule has a Q0-shaped hole, and it is the strongest argument for ⑴
 
@@ -206,6 +251,40 @@ remove.
 `decision-card-soundness` branch hit **signal 4** (three synonyms hid a thrashing trigger) and
 **signal 1** (four falsifier designs, each locally correct, none terminating).
 
+### The timing rules — what Q0's answer obliges
+
+⟳ **MOVED from `development-velocity.md` §4 on 2026-09-26, not cited from there.** They are design, and
+the evidence document is forbidden to own design — r2's M1 found them as a second owner, and a pointer
+would have left the retirement decorative (this spec's own falsifier). **The controlled experiment that
+supported them stays behind as a measurement**, in
+[`velocity-evidence-2026-09-24.md`](../../velocity-evidence-2026-09-24.md) §4.
+
+| trigger | instrument | the evidence for it |
+|---|---|---|
+| **seam work** | architecture review **BEFORE building** | asymmetric cost: a wrong seam cost 3 extra rounds; the review that resolved it took one sitting |
+| **logic inside an existing seam** | the normal adversarial loop, unchanged | the *designed* half of PR #342 converged by round 3 with a CONVERGED Codex verdict |
+| **a side job entering mid-slice** | **RE-ASK Q0** | the missing moment, and the cheapest fix available. ⛔ the literal wording was NOT adopted in PR #345 — *"Q0 does not exist and a rule pointing at nothing cannot run"* |
+| **thrashing** | escalate, and **do not litigate the wording** | measured failure: the trigger said *two consecutive ROUNDS*, the situation was two halves of ONE round, and arguing that distinction cost three rounds of being technically right |
+| **findings shifting to wording** | **de-escalate — stop** | a document can be right forever |
+
+### Sweep policy — four items, and they do NOT share a status
+
+⟳ **MOVED from `development-velocity.md` §5.** ⛔ *That section carried one **"Proposed:"** label over a
+mixed set, and r3 (Medium) found the only place recording the difference was the status table a previous
+fold had demoted. Each item now carries its own status.*
+
+| # | item | status |
+|---|---|---|
+| 1 | **Open the PR as a DRAFT at the start of a slice**, so every push triggers a sweep on GitHub | ✅ **ADOPTED as a practice** (PR #345), deliberately **not** automated — see Decision 3 |
+| 2 | **Sweep locally only before a push**, never per commit | ✅ practice in use |
+| 3 | `concurrency: cancel-in-progress: true` means three quick pushes cost **one** sweep | ⚠ **not a proposal at all** — a property of the existing workflow config |
+| 4 | Redirect sweep output to a file and read only the tail | ✅ practice in use |
+
+⚠ **Item 1's consequence, stated because it was once written the other way round** (r1 Low): with
+`cancel-in-progress` a rapid burst collapses to the latest run, so **the branch TIP is always swept and
+intermediate commits may not be.** That is intended, and it is the coarser locus §5's *what is lost*
+records against it.
+
 ## §3 — Calibration, which gates everything mechanical
 
 ⛔ **"SHIP NOTHING WITHOUT IT" — and this spec now OWNS that constraint.** ⟳ *It was quoted from `development-velocity.md` §10 until 2026-09-25; §10 became a pointer when this spec became the single owner, so citing it there would now dangle.* **Calibration is not started.**
@@ -225,6 +304,31 @@ having, and still closes ⑷'s hole. ⛔ **Building the mechanical half on an un
 one outcome this section exists to prevent.**
 
 ---
+
+## Decisions of record — §9's five answers, MOVED here
+
+⟳ **MOVED from `development-velocity.md` §9 on 2026-09-26, not cited from there.** They are DECISIONS,
+and r3's Blocking found the pointer to them among the sites keeping the retirement decorative. Settled
+in the session that merged PR #345; **Q2 and the session's scope were the user's**, the rest were
+settled from evidence, and they are recorded here so they are not re-opened from scratch.
+
+| # | question | answer | how it was settled |
+|---|---|---|---|
+| 1 | Where does Q0 live? | **`review-method.md` §0** | MEASURED, not argued: `check-docs.LINE_BUDGETS` budgets exactly two files (`dev-process.md` 220, `plugins.md` 260); `review-method.md` is unbudgeted and §0 is already the decision-procedure home. `dev-process.md` gets **nothing** — it already points there, so a row would be a second pointer |
+| 2 | Is Q0 mechanisable? | **PARTLY — and that is the shape: HYBRID** | the **user's** decision. Judgement at the entry, mechanical for escalation; both warnings are in §2 |
+| 3 | Should the draft PR be automatic? | **NO — adopt the practice, do not build the hook** | a hook would need to know which branches are slices and would open an unwanted PR on every throwaway branch. The CI-minutes worry did not bind: `concurrency: cancel-in-progress` makes repeated pushes cost one run |
+| 4 | Can *"no unmeasured number"* be a gate? | **NO, and the repo already proved why** | `process-checklists.md` → *Qualify every number in prose* records the same question tried at three scopes and rejected: a **syntactic** proxy for a **semantic** property. Provenance is strictly harder than resolvability — a number's truth is not visible in its spelling. Adopted as a habit; the specific declared counts that CAN be guarded already are (`check-test-counts.py`, `check-selftest-counts.py`) |
+| 5 | Does the side-job trigger belong in a hook? | **DEFERRED — it depends on Q0's form** | until the escalation half lands mechanically a hook could only nag, and `unheralded` already occupies that moment — the duplicate-mechanism shape `check-vocabulary-collisions.py` exists to catch |
+
+⛔ **DECISION 3 CARRIES A RETRACTION AND IT TRAVELS WITH IT** (r1, High). An earlier draft justified the
+draft-PR practice with *"it caught backlog #176 r2's Blocking on its first use."* **False, and its own
+source says so** — `docs/reviews/claude/review-identity-176-r2-claude.md` records `verify pending` at
+that moment and states the sweep result was *not yet observed*. **There is no caught-defect evidence for
+the practice.** Its case rests on the speed measurement alone — and the speed measurement is the
+comparison marked cracked in
+[`velocity-evidence-2026-09-24.md`](../../velocity-evidence-2026-09-24.md) §5. ⚠ **So strand ⑵ shipped on
+a justification this spec forbids citing** (r3, High). That is recorded rather than resolved: the
+practice is cheap and reversible, but it should not be defended with that figure.
 
 ## The concern → mechanism table
 
@@ -254,7 +358,23 @@ has exactly one owner, and no concern is served by two independent mechanisms.**
   it at all; that became false when the retirement banner was written**, so it is corrected here
   rather than left to read as a scope boundary the work has already crossed.
 - **It does not build the side-job hook** — deferred, and dependent on Q0's escalation half landing.
-- **It does not re-open §9's five settled answers**, nor §8's four rejections.
+- **It does not re-open the four rejections below**, which are decisions of record.
+
+### The four rejections — MOVED here, with their reasons
+
+⟳ **MOVED from `development-velocity.md` §8 on 2026-09-26.** ⛔ *This section previously POINTED at §8
+and §9. Both are decisions, the evidence document's banner forbids citing a decision from it, and r3's
+Blocking found that pointer among the sites making the retirement decorative. A decision cited from a
+retired file is the defect; a decision moved is the fix.*
+
+- ⛔ **Scoping the sweep to changed files** — backlog **#174**: unsound, and it fails *silently in the
+  unsafe direction*, because skipping a sweep that was needed looks identical to not needing one.
+- **More upfront architecture review** — would not have caught the verdict path, which was out of scope
+  and untouched when the first review ran; and reviewing everything upfront is waterfall.
+- **Dropping a review half for a faster gate** — the halves are not redundant. Measured: the two halves
+  produced **ZERO** overlapping findings.
+- **Routine review waivers** — one was granted on PR #342, deliberately, with the counter-argument
+  recorded in the PR body. It stays the exception.
 - **It does not make the sweep cheaper.** The sweep was measured as **not** the largest cost.
 
 ## How we would know it failed
@@ -268,7 +388,6 @@ has exactly one owner, and no concern is served by two independent mechanisms.**
   decorative. *(This falsifier replaced *"both describe the same mechanism → the disjoint-jobs
   split"*, which tested a claim the spec no longer makes. A falsifier that outlives its claim
   passes forever.)*
-  failed and there are now two owners.
 
 ## Sizing
 

@@ -1,78 +1,31 @@
-# Development Velocity — what actually costs time here, and what to do about it
+# Velocity evidence — the 2026-09-24 measurement session
 
-> # ⛔ SUPERSEDED — HISTORICAL RECORD ONLY
+> ### This document is EVIDENCE. It holds no rule, no design and no decision.
 >
-> **Retired 2026-09-25 by the user's decision.** This document's design was moved out of it and it
-> is kept as the **record of the 2026-09-24 measurement session**, not as a live surface.
+> **What it is:** the dated measurements taken in the session that merged PR #342, held a Phase 6
+> architecture review and implemented backlog #176 — plus the controlled experiment, and the record of
+> what each measurement bought.
 >
-> | | |
+> | looking for | go to |
 > |---|---|
-> | **The live design is** | [`docs/superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md`](superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md) and its [plan](superpowers/plans/2026-09-25-development-velocity-RECONSTRUCTED-plan.md) |
-> | **The live RULES are** | [`docs/process-checklists.md`](process-checklists.md) §6 and §7 — adopted in PR #345 |
-> | **This document is** | dated measurements, the controlled experiment, the rejections with their reasons, and the record of what was settled and when |
+> | the DESIGN (Q0, the seam signals, the timing rules, sweep policy) | [the spec](superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md) |
+> | the forward WORK | [the plan](superpowers/plans/2026-09-25-development-velocity-RECONSTRUCTED-plan.md) |
+> | the RULES in force | [`process-checklists.md`](process-checklists.md) §6 and §7 |
+> | where a section of the old `development-velocity.md` went | [its tombstone](development-velocity.md) |
 >
-> ⛔ **NO RULE, DESIGN OR DECISION IS CITED FROM HERE.** Every section below that reads as a rule is
-> a record of *what was proposed on 2026-09-24*, not of what governs. If you are looking for what to
-> do, you are in the wrong file — and citing a rule from its own rationale is how two copies start.
+> ⟳ **Renamed from `docs/development-velocity.md` on 2026-09-26** (the user's decision, 2026-09-25).
+> That file had become a parallel authority: it carried measurements, design, rules and decisions at
+> once, and three review rounds in a row found a reader being routed to it for something it no longer
+> owned. Its git history follows this file — `git log --follow`.
 >
-> ✅ **What this file IS still legitimately cited for: a dated measurement.** A measurement is an
-> observation with a time on it, so a historical record is its correct home — that is why the spec
-> points here for figures instead of copying them (`portable-practices.md` §26).
+> ⚠ **THE SECTION NUMBERS HAVE GAPS, DELIBERATELY.** §2, §3, §8, §9 and §10 are absent because their
+> content was design or decisions and moved to the spec. The numbers of what remains are UNCHANGED, so
+> the ~50 existing citations of the form *`development-velocity.md` §6* still resolve to the right
+> section. Renumbering would have broken every one of them.
 >
-> ### Why this is preserved rather than deleted
->
-> Deleting it was considered and rejected 2026-09-25. **PRs #342 and #345 and five-plus review rounds
-> cite it by section number**, so it is the record those reviews were written against; the spec's
-> measurement pointers resolve here, and removing it would strip the provenance §26 exists to
-> protect. ⚠ **The deletion condition, stated so it can actually be reached:** once #177's forward
-> work has landed and nothing cites its sections as live, this file can go in one change.
->
-> ⟳ **Round 2 (Codex, High) is why this banner replaced the old one.** The previous status table
-> routed readers to §2, §3 and §10 as live content *after* those sections had become pointers, and
-> still claimed the governing side-job rule "sends you here" for the seam signals — a table whose
-> first line was *"read this before citing anything below"*. The single-owner cut went stale in the
-> one place most likely to be read first.
-
----
-
-> ### ⟳ The status table below is HISTORICAL — it describes this file as of 2026-09-24
->
-> Kept because four review rounds cite it. It is **superseded by the banner above**, which governs.
-
-> ⟳ **2026-09-24 — PARTLY ADOPTED.** ⛔ *Historical. The banner above governs; this table does not.*
->
-> | Section | Status |
-> |---|---|
-> | **§6 injection rules**, **§7 side jobs** | ✅ **ADOPTED** — they now live in `docs/process-checklists.md` and govern. **Read them there, not here** |
-> | **§2 Q0**, §4 timing rules | 🟠 **DECIDED IN FORM, NOT BUILT** — see §9 Q2 |
-> | **§3 seam signals** | 🟠 not MECHANISED — but they are **observations you can apply by hand today**, and the governing side-job rule in `process-checklists.md` sends you here for them (r1 Low: *"not built"* read as *"not usable"*) |
-> | **§5 sweep policy** | ⚠ **item 1 ONLY** (draft PR at slice start) adopted as PRACTICE, not automated. Items 2–4 are still proposal, and §5's body still says *"Proposed:"* — that label is correct for them |
-> | **§9 answers**, **§10 brief** | ✅ **DECISIONS, not proposals.** §9 records what was settled and by whom; §10 is the design session's brief |
-> | §1, §8 | measurement and rationale — proposal |
-> | | ⟳ **§3 and §4 were in this row AND in their own rows above — two statuses each**, in a banner whose first line says to read it before citing anything below. Introduced by `e44be4b0`, the **round-1 fold** (r1 High: the first version of this note said *r5*, asserted, not derived — no r5 or r6 commit touches this file). It therefore stood through **r2–r6**. Removed 2026-09-24 |
-
-> ⟳ **r1 Low: rows above were wrong in the first version of this banner** — it claimed §5
-> wholesale, and bucketed §9 and §10 under *"everything else | proposal"* when they are the
-> settled decisions. A banner that says *read this before citing anything below* is load-bearing,
-> so its own rows are a place a defect hides in plain sight.
->
-> ⛔ **An adopted rule is not cited from here.** This document is the measurement that justified the
-> rules; `process-checklists.md` is where they govern. Citing a rule from its rationale is how two
-> copies start.
-
-**Written 2026-09-24**, out of a session that merged PR #342 (five adversarial review rounds), held
-a Phase 6 architecture review, and implemented backlog #176.
-
-⛔ **NO BLANKET CLAIM IS MADE ABOUT THE NUMBERS BELOW.** Each carries its own provenance where it
-matters, and every `⟳` note is dated to the review round that produced it.
-
-⟳ *r3 (Low) found this line claiming **every** number below was measured in the source session — a
-standing exhaustiveness claim this branch falsified repeatedly. ⛔ **r4 (High) then found the repair
-was a REWORDING, NOT A NARROWING**: it changed "every number" to "the numbers", which still reads as
-a claim over everything below, and everything below now includes `⟳` notes carrying commit SHAs from
-days after that session. A sentence that announces it is narrower has to be narrower. The claim is
-withdrawn rather than softened — the same move this branch made for the sweep, for the same reason:
-nothing supports it.*
+> ⛔ **ONE CRACKED MEASUREMENT IS RETAINED AND MARKED, not deleted** — §5's *GitHub is roughly twice as
+> fast* comparison. It is kept because four documents still cite it and a reader who follows them must
+> land on the retraction rather than on nothing.
 
 ---
 
@@ -92,55 +45,13 @@ round costs a model dispatch, a fold, and a sweep.
 
 ---
 
-## 2. The instrument question — ⟳ MOVED TO THE SPEC
+## 4. The controlled experiment — one branch, same reviewers, one variable
 
-⛔ **THE DESIGN THAT WAS HERE IS NOW IN THE SPEC, AND THIS SECTION IS A POINTER.**
-→ [the spec](superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md) §1–§2.
-
-**Decided 2026-09-25 by the user**, on r1's finding that this document's §2 and §3 *were* the design
-while the spec carried a second copy — **two owners for one concern**, which is the defect this whole
-line of work exists to find. **The spec is the single owner.** What stays here is what this document
-is actually for: **the measurements, and the record of what was decided and when.**
-
-⚠ **Q0's form — hybrid, judgement at the entry and mechanical for escalation — remains a DECISION
-recorded in §9 answer 2.** The decision stays here; its *design* is in the spec.
-
-## 3. The signals that say SEAM, not LOGIC — ⟳ MOVED TO THE SPEC
-
-⛔ **THE FOUR SIGNALS NOW LIVE IN THE SPEC** → [§2, *The escalation half*](superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md).
-
-⚠ **They are still observations you can apply BY HAND today** — moving them did not make them
-unavailable, and r1 of the earlier round already recorded that *"not built"* must not be read as
-*"not usable"*. `process-checklists.md`'s side-job rule points at the spec now.
-
-⚠ **`decision-card-soundness`'s spec cites "§3's own signal 4 — two names for one concept".** That
-citation still resolves: the signal is unchanged, and the spec is where it lives.
-
-## 4. The timing rules — ⟳ HISTORICAL; THE RULES ARE NOT LIVE HERE
-
-⛔ **These five bullets are a record of what was PROPOSED on 2026-09-24, not rules in force.**
-The live design is [the spec](superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md)
-§2; the live side-job rule is [`process-checklists.md`](process-checklists.md) §7.
-
-⟳ **Round 2 (Codex, Medium) found this section as a SECOND DESIGN OWNER** — the spec claimed
-*"disjoint jobs: this spec owns the design, `development-velocity.md` owns measurements and
-history"* while these timing rules, which are design, sat here. ⭐ **It is closed by the user's
-retirement decision, NOT by a fix** — the same way round 1's H1 was closed by the single-owner
-decision. Nothing moved; the document stopped claiming authority. **The subsection below is a
-measurement and stays**, and `process-checklists.md:767` correctly cites it as one.
-
-- **Seam work → review BEFORE.** Asymmetric cost: a wrong seam cost 3 extra rounds; the
-  architecture review that resolved it took one sitting.
-- **Logic → review DURING**, unchanged. It works: the *designed* half of PR #342 converged by round
-  3 with a CONVERGED Codex verdict.
-- ⭐ **Side job entering mid-slice → RE-ASK Q0.** The missing moment, and the cheapest fix available.
-- **Thrashing → escalate, and do not litigate the wording.** Two consecutive fix-inside-fix in one
-  component. Measured failure: the trigger's literal wording says *two consecutive ROUNDS*, the
-  situation was two halves of ONE round, and arguing that distinction cost three rounds of being
-  technically right.
-- **De-escalate too.** When findings shift to wording, stop: a document can be right forever.
-
-### The controlled experiment that supports all of this
+⛔ **THE FIVE TIMING RULES THAT WERE HERE ARE DESIGN AND HAVE MOVED** to
+[the spec](superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md) §2. What remains
+is the measurement that supported them, which is what
+[`process-checklists.md`](process-checklists.md) → *A side job inherits NO design approval from the
+slice it arrived in* cites this section for.
 
 One branch, same reviewers, same gates. The only variable was whether the work had a design.
 
@@ -156,39 +67,52 @@ inherits none of it.**
 
 ---
 
-## 5. Sweep policy
+## 5. What CI actually costs — ⛔ CONTAINS ONE CRACKED COMPARISON, MARKED
 
-**Nothing mandates a sweep per commit.** `.github/workflows/ci.yml` runs
+⛔ **THE SWEEP POLICY THAT WAS HERE IS DESIGN AND HAS MOVED** to
+[the spec](superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md) §2, where the
+four items carry their real status instead of one *"Proposed:"* label over a mixed set — r3 (Medium)
+found that item 1 had shipped while items 2–4 had not, and that demoting the old status table had
+removed the only place saying so.
+
+**What nothing mandates:** a sweep per commit. `.github/workflows/ci.yml` runs
 `python3 scripts/check-plan-code.py --mutate .` on every `pull_request` event, and PR events fire on
 every push — so once a PR exists, GitHub already re-runs it per push.
-
-⭐ **GitHub is roughly TWICE as fast as this machine:** measured on PR #342, the `verify` job
-completed in **8m08s** *including* the sweep, `tsc`, the unit suite and ~30 other gates. The local
-sweep alone takes **~14 minutes**.
 
 ⚠ **The one real gap:** `on:` covers `pull_request → master` and `push → master` only. A feature
 branch with **no PR open** triggers nothing, which is why local sweeping felt necessary.
 
-**Proposed:**
-1. **Open the PR as a DRAFT at the start of a slice.** Every push then **triggers** a sweep on
-   GitHub. ⟳ **r1 Low — NOT *"every push then sweeps"*, which is what this line used to say and
-   item 3 already contradicted.** With `cancel-in-progress: true` a rapid burst collapses to the
-   latest run, so **the branch TIP is always swept and intermediate commits may not be.** That is
-   the desired behaviour and it is the same *coarser locus* this section already admits below —
-   but the two sentences have to agree, and they did not.
-2. **Sweep locally only before a push**, never per commit — and once (1) is in place, rarely at all.
-3. `concurrency: cancel-in-progress: true` means three quick pushes cost **one** sweep, not three —
-   the opposite of the local pattern.
-4. Keep redirecting sweep output to a file and reading only the tail.
+### ⛔ THE CRACKED COMPARISON — retained so citations land on the retraction
 
-⚠ **What is lost, stated rather than hidden:** a red sweep no longer names *which commit* broke
-coverage. Two sweeps in the source session caught something real (a surviving mutation, an
-unfalsifiable case) — both would still have been caught before push, but with a coarser locus.
+> ⛔ **DO NOT CITE THIS. IT COMPARES UNLIKE POPULATIONS.**
+>
+> The claim was: *"GitHub is roughly TWICE as fast as this machine — measured on PR #342, the `verify`
+> job completed in **8m08s** including the sweep, `tsc`, the unit suite and ~30 other gates. The local
+> sweep alone takes **~14 minutes**."*
+>
+> **Why it is cracked:** it sets CI's WHOLE `verify` job against the LOCAL SWEEP ALONE. The CI side
+> does strictly more work, so the ratio measures the difference in scope as much as the difference in
+> machine. The local *~14 minutes* also has no recorded provenance.
+>
+> ⟳ **AND ITS FIRST REPLACEMENT WAS CRACKED THE SAME WAY** (r1 Claude, High): *"`verify` was 488s and
+> is 673–680s, ~39% slower"* — a second cross-run comparison built identically. Run `35947529595`
+> gives `verify` **488s** and run `36049305547` gives **419s**, so the "grew to 673–680s" trend is not
+> monotone and 488s is not a floor.
+>
+> ⛔ **The corrected LOCAL-vs-CI sweep ratio is NOT KNOWN** — that is a statement about the local
+> figure's missing provenance, and it is *not* a claim about run-to-run spread, which IS known and
+> lives in the spec (r3 Low: the previous wording collided with the spec's own sweep column).
+>
+> ⚠ **It is kept rather than deleted because four documents cited it** (r3 High: the retraction had
+> reached one of five sites). A reader following any of them must arrive at this box.
 
-⛔ **Scoping the sweep to changed files is NOT on this list.** Backlog **#174** already records that
-the naive version is **UNSOUND** and that half the mutations resist it. A wrong path test fails
-**silently in the unsafe direction**: skipping a sweep that was needed looks identical to not
-needing one.
+⚠ **What a coarser sweep locus loses, stated rather than hidden:** a red sweep no longer names *which
+commit* broke coverage. Two sweeps in the source session caught something real — a surviving mutation
+and an unfalsifiable case — and both would still have been caught before push, but less precisely.
+
+⛔ **Scoping the sweep to changed files is NOT a live option.** Backlog **#174** records that the naive
+version is **UNSOUND** and that half the mutations resist it: a wrong path test fails *silently in the
+unsafe direction*, because skipping a sweep that was needed looks identical to not needing one.
 
 ---
 
@@ -266,70 +190,3 @@ proposal — r1 Medium. A rationale that also carries the rule is two copies, an
 
 ---
 
-## 8. Rejected, with reasons
-
-- **Scope the sweep to changed files** — #174: unsound, fails silently in the unsafe direction.
-- **More upfront architecture review** — would not have caught the verdict path (out of scope), and
-  reviewing everything upfront is waterfall.
-- **Drop adversarial review for a faster gate** — the halves are not redundant; measured previously,
-  the two halves produced ZERO overlapping findings.
-- **Waive review rounds routinely** — one waiver was granted on #342, deliberately, with the
-  counter-argument recorded in the PR body. That is the exception it should stay.
-
----
-
-## 9. The open questions — ALL ANSWERED 2026-09-24
-
-Every one was settled in the implementing session. Q2 was the user's decision, as was the session's
-scope; the rest were settled from evidence and are recorded so they are not re-opened from scratch.
-⟳ *r3 (Medium): this said "the other three" over five questions, and the arithmetic closed under no
-reading — "the scope" is not one of the five. The r2 fold repaired the previous clause of this same
-sentence and left this one, which is rule 2's failure one more time.*
-
-**1 · Where does Q0 live? → `review-method.md` §0.** Measured, not argued: `check-docs.LINE_BUDGETS`
-covers exactly two files — `dev-process.md` at 220 and `plugins.md` at 260. `review-method.md` is
-**not budgeted** and §0 is already the decision-procedure home. `dev-process.md` (214/220) gets
-nothing; it already points at `review-method.md`, and a pointer row would be a second pointer.
-
-**2 · Is Q0 mechanisable? → PARTLY, and that is the shape: HYBRID.** Decided by the user. Judgement
-at the entry, mechanical for escalation. Full statement and the two warnings that go with it are in
-§2 above — read it there, it is the design session's brief.
-
-**3 · Should the draft PR be automatic? → NO. Adopt the practice, do not build the hook.** A hook
-that opens a draft PR on branch creation is a separate build with its own failure modes — an
-unwanted PR on every throwaway branch, and a hook that must know which branches are slices. ⚠ The
-CI-minutes question that framed this turned out not to bind: `concurrency: cancel-in-progress`
-means repeated pushes cost **one** run, and the measured `verify` job is roughly twice as fast as
-the local sweep it replaces. **That speed measurement is the whole case for the practice** — there
-is no caught-defect evidence for it yet, and §5's *what is lost* stands against it.
-
-⟳ **CORRECTED IN REVIEW r1 (High).** An earlier draft of this answer said the draft PR *"caught
-backlog #176 r2's Blocking on its first use."* **False, and the source says so itself** —
-`docs/reviews/claude/review-identity-176-r2-claude.md:156-158` records `verify pending` at the time
-and states *"the sweep result is **not yet observed** — my Blocking rests on the anchor measurement
-above, not on a CI verdict."* The claim was carried from a session note and never checked against
-the document it named. ⛔ It is corrected **in place** rather than appended, per the rule this very
-document adopts — and it is exactly the defect class §6 was written about, committed by the change
-that adopts §6.
-
-**4 · Can "no unmeasured number" be a gate? → NO, and the repo already proved why.** The rule at
-`process-checklists.md` → *Qualify every number in prose* records the identical question being
-tried at three scopes and rejected: a syntactic proxy for a **semantic** property. Provenance is
-strictly harder than resolvability — a number's truth is not visible in its spelling at all. The
-specific, declared counts that CAN be guarded already are (`check-test-counts.py`,
-`check-selftest-counts.py`). It is adopted as a habit, in `process-checklists.md`.
-
-**5 · Does the side-job trigger belong in a hook? → DEFERRED, and it depends on Q0's form.** If
-Q0's escalation half lands mechanically, the hook has something real to fire on. Until then a hook
-could only nag, and `unheralded` already occupies that slot — a second nagging hook on the same
-moment is the duplicate-mechanism shape `check-vocabulary-collisions.py` exists to catch.
-
----
-
-## 10. What is left — ⟳ SUPERSEDED BY THE SPEC AND ITS PLAN
-
-⛔ **The design brief that was here is now the spec and its plan**, which state the same remaining
-work — ⑴ Q0 and ⑸ de-escalation, with **calibration as the gate on everything mechanical**:
-→ [spec](superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md) · [plan](superpowers/plans/2026-09-25-development-velocity-RECONSTRUCTED-plan.md).
-
-⚠ **`roadmap-to-launch.md` cited "§10 is the design brief".** It now cites the spec.

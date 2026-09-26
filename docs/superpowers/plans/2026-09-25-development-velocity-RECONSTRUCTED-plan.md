@@ -58,7 +58,7 @@ this table is an index over them.*
 ### Task 4 — Retrospective calibration *(FORWARD — and it goes FIRST)*
 
 ⛔ **NOTHING MECHANICAL IS BUILT UNTIL THIS REPORTS** — *"ship nothing without it"*. ⟳ *Quoted from `development-velocity.md` §10 until 2026-09-25; the spec owns the constraint now, §10 is a pointer, so citing it there would dangle.*
-without it."*
+⟳ *(r3 Medium: an orphaned fragment — `without it."*` — stood here, the tail of a two-line quotation whose first line an earlier fold replaced. The spec owns that constraint now.)*
 
 - [ ] Apply §3's four signals — *non-terminating locally-correct fixes* · *each fix ADDS code* ·
       *machinery that manages a problem* · *two names for one concept* — to branches this repository
@@ -85,7 +85,7 @@ without it."*
       minimum visible.
 - ⛔ **Do not justify any of this with the "GitHub is 2× faster" figure.** It compares CI's whole
       `verify` against the local sweep alone — unlike populations — and `verify` has since grown
-      488s → 673–680s. **The corrected ratio is NOT KNOWN.**
+      488s → 673–680s ⛔ *(r3 High: DELETE THIS FROM ANY ARGUMENT. The spec retracted this very figure as a second cross-run comparison built like the one it replaced, and run `36049305547` gives `verify` **419s**, so it is not a monotone growth at all. The sweep's SHARE of `verify` — about four fifths, over 34 runs — is the citable fact; a run-to-run duration comparison on this infrastructure is not.)*. **The corrected ratio is NOT KNOWN.**
 
 ### Task 6 — De-escalation *(FORWARD — strand ⑸)*
 

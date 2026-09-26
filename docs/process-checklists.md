@@ -435,7 +435,7 @@ for a reviewer to find.
 doc"* and the first adopted draft silently dropped comments — the surface where a stale count is
 hardest to notice, because nothing re-reads a comment.
 
-**The measurement that produced it (backlog #177, `docs/development-velocity.md` §6).** Over the
+**The measurement that produced it (backlog #177, [`docs/velocity-evidence-2026-09-24.md`](velocity-evidence-2026-09-24.md) §6).** Over the
 session that merged PR #342 and implemented backlog #176, a large share of review findings were not
 defects in the code at all. They were **the author's own unverified claims**, and each one cost a
 full review round to surface:
@@ -764,7 +764,7 @@ a file, answering a question, a one-line correction: naming these costs more tha
 The name gets it a thread. It does **not** get it the review the parent work had.
 
 **Measured, one branch, same reviewers, same gates — the only variable was whether the work had a
-design** (backlog #177, `docs/development-velocity.md` §4):
+design** (backlog #177, [`docs/velocity-evidence-2026-09-24.md`](velocity-evidence-2026-09-24.md) §4 — the controlled experiment):
 
 | Work on PR #342 | Had a design? | Outcome |
 |---|---|---|
@@ -784,8 +784,12 @@ Seam work wants its design settled before it is built, on a branch of its own.
 ⟳ **When backlog #177's Q0 lands in `review-method.md` §0, this is the moment that re-asks it** —
 decided 2026-09-24 with the user, form recorded in that row. Until then the question above is asked
 by hand, and the four signals that say *seam* are in [`docs/superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md`](superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md) §2 — ⟳ *moved there 2026-09-25 when the spec became their single owner; they are unchanged* — **which are
-OBSERVATIONS, usable now.** That document's banner marks §3 *not built*, meaning not mechanised;
-it does not mean not applicable, and r1 (Low) found that reading available.
+OBSERVATIONS, usable now** — *not built* meant **not mechanised**, never *not applicable*, and r1 (Low)
+found that misreading available. ⟳ *2026-09-26 (r3, High): this sentence used to begin "That document's
+banner marks §3 not built". The antecedent moved to the spec in an earlier fold and the pronoun did not,
+so it came to point at a document with no such banner — and because the sentence contains no filename, a
+repo-wide grep for `development-velocity` could not see it. The status is stated directly now instead of
+being read out of another document's banner.*
 
 ### Switching, and what is actually supervised
 

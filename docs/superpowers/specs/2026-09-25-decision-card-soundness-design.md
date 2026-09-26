@@ -559,7 +559,7 @@ The precedent spec's `⟳` correction identified exactly this as the real constr
 decision nobody can find is the root cause this whole line of work uncovered.**
 
 - **Q0 asks *"does this change have a design yet?"*** — not *"architecture review upfront, or not?"*
-  `development-velocity.md` §4's experiment column reads literally **"Had a design?"** *(§4 stays in that document — it is measurement, not design)*, and the ✅
+  the controlled experiment's column reads literally **"Had a design?"** ⟳ *(2026-09-26: this said "§4 stays in that document — it is measurement, not design". Half right, and superseded twice over — r2's M1 established that §4 ALSO held five timing rules, which are design and have since moved to the `development-velocity` spec; only the experiment stayed, and it now lives in [`velocity-evidence-2026-09-24.md`](../../velocity-evidence-2026-09-24.md) §4. r3 Medium: this spec was not in that fold's file list, so it asserted a characterisation two later steps had refuted.)*, and the ✅
   cell points at a review **armed by thrashing on other slices** whose findings became the work.
 - ⛔ **Zero of the architecture reviews here were ever convened upfront.** Every one names a
   retrospective trigger — thrashing or milestone cadence. *(Population: `docs/reviews/architecture-review-*.md`; each states its trigger in its own opening lines.)* **The upfront instrument is unevidenced
