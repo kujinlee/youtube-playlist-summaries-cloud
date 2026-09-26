@@ -12520,3 +12520,28 @@ spread of the same pair. Line-count correction misdated: 326 → **285** at `e0c
 pronoun in `process-checklists.md`'s side-job rule; two orphaned half-sentences from earlier folds;
 `check-plan-code.py:501` and `development-velocity.md:142` replaced by symbols. Commits `997431e8`,
 `ce224b44`. Reviews `docs/reviews/{codex/velocity-backfill-r2-codex.md,claude/velocity-backfill-r3-claude.md}`.
+
+## 2026-09-26 [needs-you] [resolved: 2026-09-26/1]
+The two decisions from the entry above, written as actual questions this time.
+
+The previous entry was flagged as needing you and then never asked anything — the page caught it and
+said so. This entry carries the asks and retires that bare flag. ⚠ It is a **new entry rather than an
+edit** because the store is append-only; the temptation was to add two lines to the block I had just
+written, on the reasoning that no entry ids would shift. That reasoning is the kind this project has
+measured itself losing to, so the rule wins.
+
+**Decide:** A rule fired saying this work needs a full architecture review, and I held none
+- agree — the review's own recommended fix was the change you had already asked for, so re-deriving it in a meeting would be process for its own sake [recommended]
+- hold the architecture review anyway, before this merges
+- hold it after merging, as a follow-up item
+
+**Decide:** Merge the #177 migration
+- merge it — 6 documentation gates green, three review rounds folded [recommended]
+- hold it until after tomorrow's walkthrough, so you read the pages before the history settles
+- tell me what to change first
+
+<!--tech-->
+PR on `backlog-177-velocity-backfill`. Gates: `check-docs`, `check-anchors`, `check-review-rounds`,
+`check-backlog-closure`, `check-test-counts`, `check-dashboard-entry` — all rc=0. The arming condition
+and the reason for not convening are recorded in `docs/reviews/claude/velocity-backfill-r3-claude.md`
+(its `## Verdict`) rather than left implicit.
