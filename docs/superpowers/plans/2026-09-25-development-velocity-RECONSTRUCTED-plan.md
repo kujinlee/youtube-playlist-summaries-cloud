@@ -1,6 +1,7 @@
 # Development velocity Implementation Plan — backlog #177
 
 > **Anchor:** `review-decides-itself` — **ADR:** none
+> ⛔ **FILENAME CARRIES `RECONSTRUCTED` DELIBERATELY** — the goals page renders a document's filename and not its body, so that is the only channel a warning travels on (r1 Codex, High).
 > **Goal:** A review loop decides its own next step — run, stop, or escalate — from recorded
 > evidence rather than recall.
 
@@ -34,7 +35,11 @@ label is ever removed, the document becomes the thing #119 refused.**
 
 ---
 
-## Task 1 — draft-PR pattern *(strand ⑵)*
+## Task 1 — draft-PR pattern *(strand ⑵)* · ⛔ RECONSTRUCTED
+
+> ⛔ **Every `[x]` in this task means "this shipped", not "this was planned then shipped."**
+> *(r1 Codex, Medium: the global banner did not travel with the individual boxes, so a reader who
+> scans checkboxes still read them as planned-and-executed.)*
 
 - [x] **SHIPPED 2026-09-24, PR #345. RECONSTRUCTED — not planned here.**
 - [x] Adopted as **practice**, deliberately **not** automated.
@@ -48,7 +53,9 @@ label is ever removed, the document becomes the thing #119 refused.**
 - ⛔ **There is no caught-defect evidence for it** — the case rests entirely on the speed measurement,
   and §5's *what is lost* stands against it.
 
-## Task 2 — injection rules *(strand ⑶)*
+## Task 2 — injection rules *(strand ⑶)* · ⛔ RECONSTRUCTED
+
+> ⛔ **Every `[x]` below means "this shipped", not "this was planned then shipped."**
 
 - [x] **SHIPPED 2026-09-24, PR #345. RECONSTRUCTED — not planned here.** They govern from
       `docs/process-checklists.md`, not from `development-velocity.md`.
@@ -60,15 +67,20 @@ label is ever removed, the document becomes the thing #119 refused.**
 - [x] ⭐ A **fifth** clause round 1 forced — rule **1b**: **say what you counted.** ⚠ It was **not in
       the proposal**; §6's own first review round produced it, from three defects in the change that
       adopted §6.
-- [x] ⭐ The **shape invariant** — a scope plus three refused forms. **Also not proposed.** Written at
-      round 4, after four pattern-shaped fixes each failed to terminate.
+- [x] ⭐ The **shape invariant** — a scope plus three refused forms. **Also not proposed.**
+      ⟳ *r1 (Codex, Medium): this said "round 4, after **four** pattern-shaped fixes". The governing
+      text (`process-checklists.md:599-601`) says **FIVE consecutive attempts**, and a **Phase 6
+      architecture review between rounds 3 and 4** was the root-cause step. That text owns the
+      history; this is a pointer to it.*
 - ⭐ **Both of the most load-bearing rules here arrived from review, not from the proposal.** Review
   was a **generator**, not a sieve — worth expecting when Task 5 is reviewed.
 
-## Task 3 — side job inherits NO design approval *(strand ⑷)*
+## Task 3 — side job inherits NO design approval *(strand ⑷)* · ⛔ RECONSTRUCTED
+
+> ⛔ **The `[x]` below means "this shipped", not "this was planned then shipped."**
 
 - [x] **SHIPPED 2026-09-24, PR #345. RECONSTRUCTED — not planned here.**
-- [ ] ⛔ **INCOMPLETE ON PURPOSE, AND THIS IS THE HOLE TASK 4 CLOSES.** The literal *"re-asks Q0"*
+- [ ] ⛔ **INCOMPLETE ON PURPOSE, AND THIS IS THE HOLE TASK 5 CLOSES** *(r1 Codex, Medium: this said Task 4, which is only calibration — a misroute inside the plan).* The literal *"re-asks Q0"*
       wording was **not** adopted, *"because Q0 does not exist and a rule pointing at nothing cannot
       run."* **A live process rule currently has a Q0-shaped gap in it.**
 
