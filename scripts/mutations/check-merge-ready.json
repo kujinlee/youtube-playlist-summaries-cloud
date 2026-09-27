@@ -140,7 +140,7 @@
     "        if False:\n"
    ]
   ],
-  "expect": "MISDIRECTED: the dashboard gate refused while NO-REVIEW is granted"
+  "expect": "...and does NOT call the other declaration inert, because it was granted"
  },
  {
   "file": "scripts/check-merge-ready.py",
