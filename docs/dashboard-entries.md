@@ -12616,3 +12616,45 @@ dangling pointers.
 ratchet because I ran an ad-hoc gate subset instead of `scripts/check-merge-ready.py`, which exists
 precisely to answer the PR-only checks a local sweep cannot. I also wrote `NO-REVIEW:` where the dashboard
 gate wants `NO-ENTRY:` — two gates, two escapes, one token used for both.
+
+## 2026-09-26 [needs-you]
+A new idea is on the list: make the slow test sweep faster by running it in parallel, not by running less of it.
+
+The mutation sweep takes about fourteen minutes locally and is the part of the process that *feels*
+slowest. An earlier idea — only sweep the files that changed — was refused, because a sweep that was
+skipped but needed looks exactly like one that wasn't needed. **Running the same work in parallel has no
+such problem: every check still runs, only the clock changes.**
+
+⭐ **And most of the hard part is already built**, for an unrelated reason: each check already runs in its
+own private copy of the files, added so a test couldn't reach your real documents. That is exactly the
+isolation parallel work needs.
+
+Two separate problems, which the row now keeps apart because they have different answers: the **local**
+sweep, where you actually wait, and the **CI** sweep, where nobody does. Only five of the checks talk to a
+database, and those are the only ones needing a container each — the rest just need more processes.
+
+⚠ **It makes waiting cheap rather than unnecessary.** The measurements say the sweep is the most *visible*
+cost and not the largest — rework from repeated review rounds is. So this is a real improvement to how the
+work *feels*, and the bigger lever is elsewhere.
+
+**Decide:** Build the sweep speed-up, and in what order?
+- file the idea now, build it later — nothing depends on it and the bigger lever is rework [recommended]
+- do the cheap part only: stop copying the one large read-only folder per check, which may deliver much of the win with no parallelism at all
+- build the full parallel version next
+
+<!--tech-->
+**Backlog #189**, PR **#351**. `docs/backlog.md` only. Sibling of **#174**, which refuses the *scope to
+changed files* approach on soundness grounds that do not transfer to parallelism.
+
+Row records: the isolation already present (`check-plan-code.child_env` + `stage_tree` over
+`HARNESS_TREE`); that `check-plan-code.py` has **no** parallelism primitives; the local-vs-CI split with
+different mechanisms (`ProcessPoolExecutor` vs `strategy.matrix`); that a CI matrix leg gets database
+isolation free via `scripts/ci/start-schema-db.sh`; that `concurrency: cancel-in-progress` is **not** a
+parallelism control; and the **setup floor** — 554s sweep inside a 680s `verify` job leaves ~126s that every
+matrix leg re-pays, so returns die after ~4–8 shards. Counts and sizes are written as derivation commands,
+not pinned figures.
+
+⚠ **This PR was CI-red twice before landing, both my fault and both recorded in its commits:** a `grep`
+with regex alternation whose literal pipes split the markdown row into the wrong number of cells (twice —
+the second time because the first fix was instance-not-class), and then the dashboard-entry ratchet,
+because I ran an ad-hoc gate subset instead of `scripts/check-merge-ready.py`.
