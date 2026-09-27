@@ -107,6 +107,47 @@ unrepresentable.
 | **4** | **One purpose per commit.** | The `reset --hard` that destroyed round 3's testimony was only needed because a rename and content edits were bundled. Committing the rename alone first — which is what eventually happened — removes the need for the destructive repair entirely |
 | **5** | **Make a stale reference unrepresentable** — references that resolve at build time, i.e. a generated index | ⚠ **Named honestly as the expensive one.** It is the only rule here that requires building something, and it is what would retire rule 1's manual discipline |
 
+#### Rule 2 needs a discriminator the repo does not have: WHICH numbers must be exact
+
+**The user's question, 2026-09-26: is an exact number even important, if it is not the core of the
+feature?** The repo has decided half of this and never written the other half. What is decided —
+backlog **#183**: *"**THE FIX IS TO REMOVE THE COUNT, NOT TO CORRECT IT** — correcting it re-pins a
+figure that will rot again"*, and §26: *"Never let a document state a count over a set its own commits
+join."* What is **missing** is any statement of **when exactness is load-bearing**. `process-checklists.md`
+→ *Qualify every number in prose* looks like it would answer this and does not: it governs namespace
+qualification (`backlog #39`, not `#39`).
+
+| class | example | treatment |
+|---|---|---|
+| **ratchet** | `EXPECTED_MUTATIONS`; declared `--self-test` counts | ⛔ **exact, and it MUST have a producer.** Exactness *is* the mechanism — *"about 300 mutations"* cannot detect 299, so coverage shrinks silently. `check-selftest-counts.py` exists for this |
+| **argument** | *"~7 hand-chosen edge cases against 5,287 real calls"* | ⭐ **a magnitude is strictly better.** The order of magnitude carries the argument; ±20% changes nothing, and a magnitude cannot rot |
+| **inventory** | *"13 schema gates"*, *"42 explainer pages"* | **remove it, or point at the producer.** No decision rests on it; it is scene-setting that rots |
+
+⛔ **AND THE COST OF VAGUENESS, STATED BECAUSE IT IS THE REAL OBJECTION.** A ball-park **trades a
+detectable error for an undetectable one.** *"13"* against an actual 15 is comparable — a reader or a
+gate can catch it. *"About a dozen"* when it is 40 is wrong in a way nothing can detect, because the
+claim never committed to anything.
+
+> **So the rule is not *be vague*. It is: state the precision you can defend — and if a decision depends
+> on the exact value, it needs a PRODUCER, not prose.**
+
+⭐ **A live instance, which is better evidence than a cited one.** The user and I spent part of
+2026-09-26 re-deriving the *remove-the-count* decision from first principles, and neither of us found
+#183 or §26 until we went looking. **That is `number-populations`' diagnosis happening in real time** —
+*"re-deriving, one instance at a time, a decision this repo had already made and filed where nothing
+points"* — about numbers, between the two people discussing it.
+
+#### Rules 1 and 3 are one rule seen from two ends
+
+**The user's point, 2026-09-26: a repair should fix ALL instances, not the one the previous round
+named.** Agreed — and note this **is** prevention, not detection: it prevents the *next* round's
+finding even though it does not prevent the original defect.
+
+⭐ **The sharper form:** if you **cannot enumerate** the instances, that is the signal to **de-duplicate
+rather than sweep harder** — because a fact with one owner has exactly one instance. *Fix every
+instance* is what you do when duplication already exists; *one owner per fact* stops it existing. Same
+rule, two ends.
+
 ⛔ **WHAT PREVENTION CANNOT REACH, so the design does not pretend otherwise.** Judging whether work is
 covered by an existing design is irreducibly a judgement, and nothing catches a wrong call *before* the
 fact. **Thrashing-as-detection therefore still has to exist.** Prevention shrinks the surface; it does
@@ -188,6 +229,23 @@ reader can check: **a name and a scope.**
 | wrong **locality** — this function, this branch, this value | the adversarial round | an architecture review does not read every line |
 | wrong **surface** — a rule that holds on the cases a reader thinks of | a corpus run | ⭐ **measured, `closing-table-r5-claude.md`:** six review rounds examined roughly **7** hand-chosen edge cases; one corpus run put the same rule against **5,287** real Bash calls across six transcripts — **456** fires, **1** apparent false positive and **1** apparent miss, and *both* turned out to be defects in the ground-truth rule rather than the guard. ⚠ 5,287 is the CORPUS SIZE, not a count of wrong cases |
 | a guard that **cannot fail** | the mutation sweep | a green suite proves nothing about a hollow falsifier |
+
+### ⭐ The corollary: when a finding might have siblings, CHANGE INSTRUMENT — do not run another round
+
+**The user's point, 2026-09-26: all instances of one class should be found in ONE review, not serially
+across rounds.** The honest constraint is that a class is usually invisible from a single instance — it
+becomes visible at instance two, which is *why* rounds discover it serially.
+
+⛔ **But that is an argument for a different instrument, not for reviewing harder.** Measured: a corpus
+run examined **5,287** real calls where six review rounds had examined ~**7** hand-picked cases. So
+*"find them all in one pass"* is reachable — by switching instrument.
+
+> **When a finding looks like it may have siblings, the next step is a CORPUS RUN, not round N+1.**
+
+⚠ **And consolidation is not missing either — it arrives late by construction.** *"The three Blockings
+are not three mistakes; they are one mechanism defect"* is an architecture review doing exactly the
+N-to-1 consolidation the user asks for. The defect is that it is **convened only on thrashing**, i.e.
+after N rounds have already been paid for.
 
 ---
 
