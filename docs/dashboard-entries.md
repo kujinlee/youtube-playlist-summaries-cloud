@@ -12658,3 +12658,38 @@ not pinned figures.
 with regex alternation whose literal pipes split the markdown row into the wrong number of cells (twice —
 the second time because the first fix was instance-not-class), and then the dashboard-entry ratchet,
 because I ran an ad-hoc gate subset instead of `scripts/check-merge-ready.py`.
+
+## 2026-09-26
+The check that was supposed to notice a missing review cannot see one that disappears entirely — now written down.
+
+Earlier today a review document was destroyed by a mistake of mine. The check whose job is to notice a
+missing review **passed** — twice, and I quoted its green tick as evidence the review was recorded. It
+asks whether a review round has *both halves*; when every document of a round is gone, there is no round
+left to ask about.
+
+⭐ **The part worth reading is that my first two fixes for it are already disproved**, and the row says so
+rather than leaving them for someone to try. The obvious one — cross-check against the machine-written
+verdict files — fails because those are only written for one of the two reviewers, and the lost document
+was the other one. The next one — look for a gap in the round numbering — fails because the lost round was
+the *last* one, so nothing looks missing.
+
+**What survives:** other documents refer to that round by number, nineteen times across two files. A
+reference to a round that has no document is detectable, and that is the same kind of defect as the
+citing-sites work already on the list.
+
+⚠ Not urgent. The lost document has been reconstructed and is clearly labelled as a reconstruction.
+
+<!--tech-->
+**Backlog #190.** The hole is in `scripts/check-review-rounds.py`: it validates the *shape of a round that
+exists*, so a round with zero documents leaves nothing to validate — measured, it returned rc=0 with
+*"0 silent gaps"* on both the branch and `master` while never naming the subject.
+
+Both refuted candidates are recorded with their evidence: the **verdict join** fails because verdicts are
+Codex-only and the lost half was Claude (`git ls-tree` shows `-r1-codex` and `-r2-codex`, no r3); **round
+contiguity** fails because r3 was the highest round, leaving r1, r2 contiguous. The surviving candidate is
+**`rN` citation resolution** — 11 references in the spec plus 8 in the evidence document would all have
+pointed at nothing. Its stated limit: it catches only a vanished round that something cites.
+
+⛔ The row explicitly says **not** to add this to `check-review-rounds.py`, whose subject is different, and
+that work item ⑴ is to decide whether the subject is round citations or dangling internal references
+generally — the second subsumes the first and is a bigger job.
