@@ -248,7 +248,7 @@ reader can check: **a name and a scope.**
 |---|---|
 | rework, not the sweep, is the largest cost | ✅ measured — one branch |
 | ⭐ **rework is caused by hand-maintained prose, not by review process** | ✅ **the strongest claim here — 16 of 19 of round 3's findings, and 0 in tested code.** Stronger than the architecture claim below, and it is what §1's prevention rules attack |
-| designed work converges faster than un-designed | ⚠ **n = 1.** One controlled pair, one branch, one day |
+| designed work converges faster than un-designed | ⛔ **n = 0, and the prior n=1 was WRONG.** See below |
 | *upfront* and *reactive* are relationships, not schedules | ✅ measured — three timestamps, 2026-09-23 |
 | the four signals identify seam problems | ⚠ one labelled positive, **never tested for false positives** |
 | an upfront review **for seam work only** pays for itself | ❌ **not measured at all** |
@@ -256,6 +256,54 @@ reader can check: **a name and a scope.**
 ⛔ **The bottom row is the load-bearing claim of this whole design and it has no evidence.** That is
 what calibration must actually measure — not merely *"do the signals fire on thrashing"* but **"would
 an earlier instrument decision have changed the outcome."**
+
+### ⛔ The controlled experiment's round claim is contradicted by the round documents
+
+**Measured 2026-09-26.** The experiment's *designed* arm is commit `088649a6`, on branch
+`origin/observer-log-owner` — mapping confirmed. Its owner,
+[`velocity-evidence-2026-09-24.md`](../../velocity-evidence-2026-09-24.md) §4, records
+**"CONVERGED by round 3"**.
+
+`docs/reviews/*/observer-log-owner-r*.md` carries rounds **r1–r5**, and the `## Verdict` sections say:
+
+| round | verdict |
+|---|---|
+| r4 | **NOT CONVERGED** |
+| r5 | **NOT CONVERGED** — 0 Blocking, 1 High, 4 Medium, 1 Low |
+
+So the designed arm reached at least five rounds without converging — **on round count it did worse than
+the un-designed arm's claimed "thrashed 3 rounds."** And the un-designed arm has **no review stem at
+all**: the nearest by name, `plan-coverage-verdict-union` (4 rounds), is not established to be the same
+work. **Both arms' round claims are unsupported — one contradicted, one untraceable.**
+
+⚠ **Stated as narrowly as the evidence allows:** what is verified is that `observer-log-owner` reached r5
+NOT CONVERGED. What is *not* verified is whether §4 meant something weaker — e.g. that the architecture
+review's own findings (#166–#170) closed by r3 — which the table's wording does not say.
+
+⛔ **The fix belongs to the OWNER, not here.** By §1's prevention rule 1, §4 of the evidence document is
+the single owner of that measurement; this spec cites it and must not carry a second version. **The
+correction to §4 is owed and not yet made** (user's call, 2026-09-26).
+
+### 🔬 FUTURE EXPERIMENT — deliberately deferred, 2026-09-26 (the user's decision)
+
+**Hypothesis:** an architecture review held *before* building work that moves a seam reduces total
+rework, in some identifiable class of cases.
+
+⛔ **The existing corpus CANNOT answer it, and that is a property of how the data was recorded.** An
+attempt across the 38 subjects reaching r4+ returned `rounds BEFORE=0, AFTER=n` for almost every one,
+because round documents are committed in **batches** — all ten `observer-log-owner` documents share the
+timestamp `2026-09-23 19:39:01`. Neither dates nor commit times can order rounds against a review.
+
+**What the experiment therefore requires, each learned from that failure:**
+
+| requirement | why |
+|---|---|
+| **pre-register the metric and the subject↔work mapping before the work starts** | both arms of the existing experiment are untraceable after the fact |
+| **record a timestamp per round as it happens**, not at commit time | batched commits destroyed the ordering |
+| **compare WITHIN a thrashing subject** — rounds before vs after its own review | architecture reviews are convened *because* of thrashing, so a cross-subject comparison is selection-biased against them |
+
+⚠ **Until it runs, the architecture claim is an instinct with a mechanism and no evidence.** §1's
+prevention rules do not depend on it — they stand on 16-of-19 — so this deferral blocks nothing here.
 
 ### Honesty note on one number above
 
