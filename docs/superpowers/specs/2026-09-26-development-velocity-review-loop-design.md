@@ -66,6 +66,52 @@ and is not established generally.*
 is unsound and *"fails silently in the unsafe direction"* — skipping a sweep that was needed looks
 identical to not needing one. **So the leverage is upstream of the sweep, in whatever causes rework.**
 
+### ⭐⭐ WHAT CAUSES THE REWORK — measured by the KIND of artifact each defect lived in
+
+**This is the design's primary target, and it is the best-evidenced claim in this document.** Round 3's
+twenty findings (`docs/reviews/claude/velocity-backfill-r3-claude.md`), classified by what kind of
+artifact the defect was in:
+
+| count | artifact |
+|---|---|
+| **9** | hand-written prose |
+| **7** | a number written in prose |
+| 2 | a process step |
+| 1 | code — a generator (`ROOTS` in `gen-backlog-page.py` has one key) |
+| ⭐ **0** | **tested code** |
+
+⛔ **Sixteen of nineteen were defects in hand-maintained prose. None were in tested code.** So the
+thrashing this goal exists to reduce is **not a review-process failure.** It is what happens when facts
+are maintained by hand in documents, where no compiler, test or generator can contradict the author.
+
+⭐ **The corroboration is in the same corpus:** `dashboard`, `goals`, `backlog-table` and `features` are
+all **generated** pages, and **not one** of round 3's findings is in them — except the single code
+defect, which has a code fix.
+
+⛔ **AND THE STRUCTURAL ASYMMETRY IS THE CAUSE, STATED PLAINLY.** `dev-process.md` Phase 3 mandates
+test-driven development for code. **A review fold is prose editing and goes through nothing** — no
+test, no falsifier, no generator. That is why code here reaches *0 survivors* over 900-odd mutations
+while prose thrashed for six rounds on one document.
+
+### The prevention rules, ordered by leverage
+
+⚠ **These are PREVENTION, not detection.** An enumerated citing-sites list, a `CLASS SWEPT:` clause and
+an alternating round are all detection — they find the defect after it is made. These aim to make it
+unrepresentable.
+
+| # | rule | why it prevents rather than detects |
+|---|---|---|
+| **1** | **One owner per fact; everything else points.** | The citing-sites problem existed because *"where §N lives"* was written in **seven** places. With one owner there is no class to sweep, so an instance-not-class fix becomes **impossible** rather than discouraged |
+| **2** | **Derive the number; never write it.** Cite a durable identifier — run id, SHA, symbol — or have the producer print it | `portable-practices` §26: a document inside the corpus it describes is stale **at the commit that writes it.** 7 of 19 findings were this, and 4 of the coordinator's own defects on 2026-09-26 were numbers it typed |
+| **3** | **A fact in a document must have a PRODUCER or an OWNER. If it has neither, it is not written.** | This is rules 1 and 2 as one test, applicable at write time by the author, with no tooling |
+| **4** | **One purpose per commit.** | The `reset --hard` that destroyed round 3's testimony was only needed because a rename and content edits were bundled. Committing the rename alone first — which is what eventually happened — removes the need for the destructive repair entirely |
+| **5** | **Make a stale reference unrepresentable** — references that resolve at build time, i.e. a generated index | ⚠ **Named honestly as the expensive one.** It is the only rule here that requires building something, and it is what would retire rule 1's manual discipline |
+
+⛔ **WHAT PREVENTION CANNOT REACH, so the design does not pretend otherwise.** Judging whether work is
+covered by an existing design is irreducibly a judgement, and nothing catches a wrong call *before* the
+fact. **Thrashing-as-detection therefore still has to exist.** Prevention shrinks the surface; it does
+not remove the need for the signal.
+
 ---
 
 ## §2 — THE CENTRAL CLAIM: "upfront" is a relationship, not a schedule
@@ -157,6 +203,9 @@ reader can check: **a name and a scope.**
 | the escalation signal fires on everything, or nothing | **calibration over finished branches, with a negative result pre-accepted** | ⛔ **not started.** It gates everything mechanical |
 | the same instrument is described as two things | **§2's vocabulary** — *upfront* and *reactive* are relationships, not schedules | the three 2026-09-23 timestamps |
 | findings drift into wording and rounds continue | **de-escalation** — stop when findings shift to wording | 🟠 open, strand ⑸ |
+| a fact is maintained by hand and goes stale | **§1's rule 3** — a fact has a PRODUCER or an OWNER, or it is not written | ⭐ **16 of 19** of round 3's findings were hand-maintained prose; **0** were in tested code |
+| a repair covers one site of a duplicated fact | **§1's rule 1** — one owner, everything else points | *"where §N lives"* was written in 7 places; enumerating them is detection, single ownership is prevention |
+| a destructive repair is needed at all | **§1's rule 4** — one purpose per commit | the `reset --hard` that destroyed round 3's testimony was only needed because a rename was bundled with content |
 
 ## What already does this?
 
@@ -198,6 +247,7 @@ reader can check: **a name and a scope.**
 | claim | evidence today |
 |---|---|
 | rework, not the sweep, is the largest cost | ✅ measured — one branch |
+| ⭐ **rework is caused by hand-maintained prose, not by review process** | ✅ **the strongest claim here — 16 of 19 of round 3's findings, and 0 in tested code.** Stronger than the architecture claim below, and it is what §1's prevention rules attack |
 | designed work converges faster than un-designed | ⚠ **n = 1.** One controlled pair, one branch, one day |
 | *upfront* and *reactive* are relationships, not schedules | ✅ measured — three timestamps, 2026-09-23 |
 | the four signals identify seam problems | ⚠ one labelled positive, **never tested for false positives** |
