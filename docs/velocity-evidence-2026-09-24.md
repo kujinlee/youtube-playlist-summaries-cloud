@@ -55,10 +55,45 @@ slice it arrived in* cites this section for.
 
 One branch, same reviewers, same gates. The only variable was whether the work had a design.
 
-| Work | Had a design? | Outcome |
+> ### ⛔ THE ROUND-COUNT CLAIM IN THIS TABLE WAS FALSE, AND IS WITHDRAWN — 2026-09-26
+>
+> This table said the designed arm **"CONVERGED by round 3"**. **The round documents contradict it.**
+> The designed arm is `088649a6`, on branch `origin/observer-log-owner` — mapping confirmed — and
+> `docs/reviews/*/observer-log-owner-r*.md` carries rounds **r1–r5**, whose `## Verdict` sections read:
+>
+> | round | verdict |
+> |---|---|
+> | r4 | **NOT CONVERGED** |
+> | r5 | **NOT CONVERGED** — 0 Blocking, 1 High, 4 Medium, 1 Low |
+>
+> **So the designed arm reached at least five rounds without converging** — on round count it did
+> *worse* than the un-designed arm's claimed *"thrashed 3 rounds"*.
+>
+> ⛔ **And the other arm is not traceable either.** There is **no review stem** for the verdict path;
+> the nearest by name, `plan-coverage-verdict-union` (4 rounds), is not established to be the same work.
+> **Both round claims are unsupported — one contradicted, one untraceable.**
+>
+> ⚠ **Stated as narrowly as the evidence allows:** what is verified is that `observer-log-owner` reached
+> r5 not converged. What is **not** verified is whether this table meant something weaker — for instance
+> that the architecture review's own findings (#166–#170) closed by r3 — which its wording does not say.
+>
+> ⭐ **WHAT SURVIVES, because the experiment is not worthless.** The *designed / un-designed* distinction
+> and the fact that both arms existed on one branch with the same reviewers and gates are intact. What is
+> withdrawn is **round count as the outcome measure.** No replacement figure is offered: round counts
+> cannot be ordered against a review here, because round documents are committed in **batches** — all ten
+> `observer-log-owner` documents share the timestamp `2026-09-23 19:39:01`.
+>
+> **The hypothesis is therefore unmeasured, not refuted**, and is deferred as a future experiment with
+> its requirements recorded in the goal-level design
+> `docs/superpowers/specs/2026-09-26-development-velocity-review-loop-design.md`. ⚠ *Named without a link
+> on purpose: that document is on an unmerged branch, and `check-docs.py` correctly refused a link to a
+> file not on `master` — which is the pointer-to-something-absent class this correction is itself about.*
+> ⚠ **The claim was written into this document by a fold on 2026-09-25 and stood for one day.**
+
+| Work | Had a design? | Outcome — ⛔ round counts WITHDRAWN, see above |
 |---|---|---|
-| Observer-log record (`088649a6`) | ✅ `architecture-review-2026-09-22-observer-family.md` filed #166–#170 | **CONVERGED by round 3** |
-| Verdict path (`c3ad7727` →) | ❌ opportunistic side job, entered mid-round-3 | **thrashed 3 rounds**, needed its own architecture review |
+| Observer-log record (`088649a6`) | ✅ `architecture-review-2026-09-22-observer-family.md` filed #166–#170 | ⛔ *was "CONVERGED by round 3"* — **false; r1–r5, r5 NOT CONVERGED** |
+| Verdict path (`c3ad7727` →) | ❌ opportunistic side job, entered mid-round-3 | ⛔ *was "thrashed 3 rounds"* — **untraceable; no review stem** |
 
 ⚠ **An upfront review would NOT have caught the second one** — the verdict path was out of scope and
 untouched when the first review ran. Reviewing everything upfront to catch what you might stumble

@@ -12577,3 +12577,42 @@ questions the user said they would ask.
 consecutive rounds, one component, each finding caused by the previous round's repair) and the
 decision not to convene is in `docs/reviews/claude/velocity-backfill-r3-claude.md`'s verdict plus this
 entry — so a future reader finds a judgement with a reason, not a silent skip.
+
+## 2026-09-26
+A measurement we had been relying on turned out to be false, and it has been withdrawn.
+
+One claim justified a whole line of design thinking: that work which had an architecture review *before*
+it was built converged faster than work that didn't. The evidence was a pair of tasks on one branch, and
+the record said the designed one **"converged by round 3"**.
+
+It didn't. Its review documents run to **round 5**, and rounds 4 and 5 both say *not converged*. So on
+that measure the designed task did **worse** than the undesigned one it was being compared against. The
+other half of the comparison turns out not to be traceable to any review record at all.
+
+**Nothing downstream collapses**, because the design that leaned on it does not depend on it — its main
+argument rests on a different and much better-evidenced finding. But the claim is gone from the document
+that owned it, and no replacement number is offered: the question cannot be answered from the records we
+keep, because review documents are committed in batches and so cannot be placed in time relative to a
+review. It is now written up as a future experiment instead.
+
+⚠ **I wrote that claim, yesterday, and it stood for a day.** It was caught by re-reading the round
+documents it summarised rather than by any check.
+
+<!--tech-->
+`docs/velocity-evidence-2026-09-24.md` §4. The designed arm is `088649a6` on `origin/observer-log-owner`
+(mapping confirmed); `docs/reviews/*/observer-log-owner-r*.md` carries **r1–r5** with r4 and r5 both
+`NOT CONVERGED` (r5: 0 Blocking, 1 High, 4 Medium, 1 Low). The un-designed arm has no review stem —
+`plan-coverage-verdict-union` (4 rounds) is not established to be the same work. **Round count is
+withdrawn as the outcome measure; the designed/un-designed distinction and the shared-branch control
+survive.** No replacement figure: all ten `observer-log-owner` documents share the commit timestamp
+`2026-09-23 19:39:01`, so rounds cannot be ordered against a review.
+
+Corrected in the **owner** only — the goal-level design cites §4 and carries no second copy, per its own
+*one owner per fact* rule. `check-docs.py` refused the first attempt for linking to a spec that is still
+on an unmerged branch; it is now a named reference, a dangling pointer caught inside a correction about
+dangling pointers.
+
+⚠ **Process failure worth recording:** this PR and its sibling both reached CI red on the dashboard-entry
+ratchet because I ran an ad-hoc gate subset instead of `scripts/check-merge-ready.py`, which exists
+precisely to answer the PR-only checks a local sweep cannot. I also wrote `NO-REVIEW:` where the dashboard
+gate wants `NO-ENTRY:` — two gates, two escapes, one token used for both.
