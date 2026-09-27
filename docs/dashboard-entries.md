@@ -12741,3 +12741,42 @@ next step is a **design discussion, not a build**.
 ⚠ Third pipe defect of the session: the row's own derivation commands first contained `| wc -l`, which
 would have split the table. The no-stray-pipe assertion added earlier **refused the write** — the first
 time tonight a guard I built caught me instead of a reviewer.
+## 2026-09-27
+A confusion that cost two red builds last night now explains itself when it happens.
+
+Two gates each accept an escape hatch in the pull-request description — one says *no dashboard entry
+needed*, the other says *no review needed*. They are different words and I used one for both. The gate I
+had answered passed; the gate I hadn't refused; and because each gate only reports its own verdict, the
+build looked like it was complaining about something I had plainly declared.
+
+The tool that runs both checks before a PR now says which escape answers which gate, and — the part I did
+not expect — **it found that every one of those declarations I wrote was inert anyway.** I had wrapped
+them in backticks for readability, and that stops the gate seeing them at all. They happened not to matter
+because that gate passed for an unrelated reason.
+
+⭐ **Two of my own tests were then shown to be untrustworthy by the testing tool.** A deliberate break to
+the new code changed nothing any test could see, because the tests checked something that stayed true
+either way. Fixed by testing the thing that actually differs between the two situations.
+
+⚠ **It explains, it never accuses.** It only speaks about a check that has already failed, so it cannot
+turn a passing build into a failing one.
+
+<!--tech-->
+`scripts/check-merge-ready.py`: `GATE_ESCAPE`, `granted_escapes()` and the pure `escape_diagnosis()`,
+printed after the gate loop for gates with `rc==1` only. **Three distinguishable states**, each with a
+different repair: **MISDIRECTED** (the other gate's escape is granted), **INVISIBLE** (the exact token is
+present but its placement killed it), **MISSPELLED** (escape-shaped but not the literal). A fourth,
+**INERT-OTHER**, was added *because the falsifier found it*: replaying the real bodies of PRs #351/#352
+showed `NO-REVIEW:` present and **not granted** — backticked, so not line-initial.
+
+⛔ It calls `check-dashboard-entry.exemption_reason(body, marker)` — the gate's own matcher, which is
+already parameterised by marker and declared *"ONE DEFINITION"* — rather than re-deriving the rule, a shape
+this repo has recorded drifting 17 times.
+
+**Verification:** self-test **52 → 74** cases, declared count updated and confirmed by
+`check-selftest-counts`. Four mutations added (`EXPECTED_MUTATIONS` 12 → 16, declared total 1030 → 1034,
+manifests on disk agree). **One mutation initially SURVIVED** — silencing MISDIRECTED fell through to
+INERT-OTHER, whose message also carries both tokens and is also one line, so all three of my assertions
+still passed; two distinguishing cases were added and it is now killed via its own case. ⚠ My first
+mutation harness staged `scripts/` alone and produced a **red control** — the failure this repo has already
+recorded, reproduced verbatim; re-run in place against the real root.
