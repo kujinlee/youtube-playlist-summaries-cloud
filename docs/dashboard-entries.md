@@ -12822,3 +12822,38 @@ Design is a **step-level `if:` inside the always-running `verify` job**, never t
 the latter is #137's deleted `paths:` filter re-created. `docs/roadmap-to-launch.md` among the changed
 paths forces the suite. The classifier must **fail closed** and carry a `--self-test` plus a
 `scripts/mutations/` entry, or it is a guard with no falsifier of its own.
+
+## 2026-09-28
+You told me to stop asking permission to fix things, and the rule that said otherwise is now corrected in both places it was written.
+
+Reading the design page, you asked why I was waiting for your approval to correct a backlog row I had
+just measured to be wrong. Your words: *the human gate should not become a barrier to correct
+something … I cannot read all your chat log and I don't want to accumulate necessary actions to be
+delayed because of my inaction.*
+
+⭐ **The rule you gave replaces permission with alignment.** If we agree on the goal, I act and tell
+you afterwards, and you can ask me to revert. If the goal itself is in question — or if we are still
+working out what a problem even *is* — I wait. That second case is the only one left.
+
+**Why this mattered more than one row:** the old rule was written in two places, and one of them is a
+document loaded into every session, so it would have quietly won the next time. Both now say the same
+thing.
+
+⚠ **It does not erase the incident that created the old rule, and the correction says so.** On
+2026-07-31 I filed three defects while we were still establishing the nature of the issue, and several
+of my framings needed correcting in the discussion that followed. That was filing before we agreed
+what the thing was — which your new rule still forbids. The mistake was never *filing without
+approval*.
+
+**Acted on immediately:** the backlog item about CI wasting eleven minutes on document-only pull
+requests had been sitting ready, waiting on you. It is merged.
+
+<!--tech-->
+Corrected in `docs/process-checklists.md` (side-job checklist, row 3) and in the memory file
+`feedback-agree-before-filing`, whose index line now leads with the reversal. Scope is stated rather
+than left to inference: filing and amending are covered, and so is merging a documentation-only
+backlog filing, because in this repository a backlog row cannot exist without a pull request —
+refusing that merge would re-create the delay being removed. Merging in general stays a human gate per
+`docs/dev-process.md`; outward-facing and irreversible actions were not what was being answered.
+
+PR #356 merged as `4d06370c` (backlog #192).
