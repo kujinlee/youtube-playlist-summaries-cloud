@@ -1320,7 +1320,11 @@ EXPECTED_MUTATIONS = {
     # said so: disabling the dollar-quote branch SURVIVED (that case is actually killed by the
     # STRING branch — its fixture puts the create inside quotes), and dropping "scripts" from
     # PRODUCTION_DIRS CRASHED, because the fixture mkdirs from that same tuple.
-    "scripts/check-merge-ready.py": 12,
+    # ⟳ 2026-09-27: 12 -> 16. Four mutations for the ESCAPE CROSS-CHECK, which explains why a
+    # refusing gate did not see the `NO-ENTRY:`/`NO-REVIEW:` the author believes they wrote. One
+    # per distinguishable state (misdirected, invisible, inert-other) plus one that makes it run
+    # on gates that did NOT refuse — the shape that would turn an explanation into an accusation.
+    "scripts/check-merge-ready.py": 16,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
@@ -3741,7 +3745,7 @@ def _self_test() -> int:
     # Blocking and High — and the sum stayed at 1015 throughout, because an orphan keeps the count
     # while removing the coverage. CI caught it; `--self-test` cannot, because it loads the
     # manifests without resolving them. The split is on each file's own entry above.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1030)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1034)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

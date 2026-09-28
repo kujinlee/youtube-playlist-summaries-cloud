@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 52 cases
+    python3 scripts/check-merge-ready.py --self-test # 74 cases
 
 ⛔ WHY THIS EXISTS, MEASURED 2026-09-20. Twice in one day a branch was declared "ready to merge"
 on the strength of a local gate sweep, and twice CI refused it. Both times the refusal was
@@ -40,6 +40,8 @@ readiness checker that shrugs is worse than none, because its silence reads as a
 from __future__ import annotations
 
 import argparse
+import functools
+import importlib.util
 import json
 import re
 import subprocess
@@ -406,6 +408,94 @@ def _pr_number(explicit: int | None) -> tuple[int | None, str]:
     return int(r.stdout.strip()), ""
 
 
+# ── THE TWO PR-BODY ESCAPES, AND WHICH GATE EACH ANSWERS ──────────────────────
+# ⛔ THEY ARE NOT INTERCHANGEABLE, AND NOTHING SAID SO UNTIL NOW. MEASURED
+# 2026-09-26: PRs #351 and #352 both carried `NO-REVIEW:` and both went CI-red on
+# the dashboard-entry ratchet. `check-review-recorded` duly passed — it had been
+# answered — while `check-dashboard-entry` refused, because nothing had answered
+# IT. Each gate reports only its own verdict, so the reader sees a refusal beside a
+# declaration they believe covers it, and concludes the gate is wrong.
+#
+# This script is the only place that holds BOTH verdicts and the body at once, so
+# it is the only place the confusion is visible. That is why the diagnosis lives
+# here and not in a forty-first guard: one mechanism per concern.
+GATE_ESCAPE = {"dashboard entry": "NO-ENTRY:", "review recorded": "NO-REVIEW:"}
+
+# Anything shaped like an escape but not spelled as one. ⚠ MEASURED against the
+# real matcher, not guessed: `NO_ENTRY:`, `no-entry:`, `NO-ENTRY` without a colon,
+# the token mid-line, indented 4+, or inside a fence ALL grant nothing silently.
+ESCAPE_LOOKALIKE = re.compile(r"(?i)\bno[-_ ]?(?:entry|review)\b")
+
+
+@functools.lru_cache(maxsize=1)
+def _dashboard_gate():
+    """The gate that OWNS the escape grammar, imported rather than re-implemented.
+
+    ⛔ `exemption_reason(body, marker)` is parameterised by marker and is declared
+    "ONE DEFINITION, shared with gen-dashboard.py". Re-deriving the rule here would
+    be a second implementation of it, and this repo has recorded that shape drifting
+    seventeen times — a weaker stand-in passes what the real one refuses.
+    """
+    src = Path(__file__).with_name("check-dashboard-entry.py")
+    spec = importlib.util.spec_from_file_location("_cde_for_merge_ready", src)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def granted_escapes(pr_body: str) -> dict[str, str | None]:
+    """{marker: reason or None}, decided by the gate's own matcher. NOT pure — it imports."""
+    er = _dashboard_gate().exemption_reason
+    return {m: er(pr_body, m) for m in sorted(set(GATE_ESCAPE.values()))}
+
+
+def escape_diagnosis(refused: list[str], granted: dict[str, str | None],
+                     pr_body: str) -> list[str]:
+    """PURE. Why a REFUSING gate did not see the escape its author thinks they wrote.
+
+    Three distinguishable states, and the distinction is the whole point — each has a
+    different repair:
+
+      MISDIRECTED  the other gate's escape is granted and this one's is not. The
+                   author answered the wrong gate. Name the token this gate wants.
+      INVISIBLE    this gate's exact token IS in the body and was not counted, so
+                   its placement killed it: indented 4+, inside a fence, or not at
+                   the start of its own line.
+      MISSPELLED   something escape-shaped is present but is not the literal token.
+
+    ⚠ It runs ONLY on gates that already refused, so it can never turn a pass into a
+    failure and adds no false-positive surface. It explains a verdict; it is not one.
+    ⚠ And it never advises taking the escape. Usually the right answer is the entry
+    or the review — both 2026-09-26 branches genuinely warranted one.
+    """
+    out: list[str] = []
+    for gate in refused:
+        want = GATE_ESCAPE.get(gate)
+        if want is None or granted.get(want):
+            continue
+        other = next((m for g, m in GATE_ESCAPE.items() if g != gate), None)
+        if other is not None and granted.get(other):
+            out.append(f"{gate}: the body declares `{other}`, which answers the OTHER gate. "
+                       f"This one is only answered by `{want}` — or by doing the work.")
+        elif want in pr_body:
+            out.append(f"{gate}: `{want}` IS in the body and was not counted. It must start its "
+                       f"own line, unindented (4+ columns is a code block), outside any fence.")
+        elif other is not None and other in pr_body:
+            # ⭐ FOUND BY THE FALSIFIER, 2026-09-26, and it is the state the incident was
+            # actually in. Both PR bodies wrote `NO-REVIEW:` inside BACKTICKS, so the
+            # matcher granted nothing — and the review gate happened to pass for an
+            # unrelated reason, so nobody learned the declaration was inert. Saying only
+            # "wrong token" would have been true and would have hidden this.
+            out.append(f"{gate}: this gate needs `{want}`, which is absent. ⚠ And `{other}` is "
+                       f"in the body but was NOT granted either — so that declaration is inert "
+                       f"too. Both must start their own line, unindented, outside fences and "
+                       f"NOT wrapped in backticks.")
+        elif (hit := ESCAPE_LOOKALIKE.search(pr_body)) is not None:
+            out.append(f"{gate}: the body contains {hit.group(0)!r}, which is not `{want}`. "
+                       f"The gate matches that literal exactly — case, hyphen and colon.")
+    return out
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--pr", type=int, default=None)
@@ -484,6 +574,20 @@ def main(argv: list[str]) -> int:
         mark = MARK.get(r.returncode, "?? ")
         tail = (r.stdout or r.stderr).strip().split("\n")
         print(f"  {mark} {name:18s} rc={r.returncode}  {tail[0][:88] if tail else ''}")
+
+    # ⛔ THE ESCAPE CROSS-CHECK. Runs only over gates that ALREADY refused, so it
+    # cannot manufacture a failure — it explains one. See escape_diagnosis().
+    _refused = [n for n, rc in results.items() if rc == 1]
+    if _refused:
+        try:
+            _granted = granted_escapes(body_file.read_text())
+        except Exception as exc:                      # a broken import must not hide the verdict
+            print(f"     ⚠ escape cross-check NOT RUN ({exc.__class__.__name__}) — "
+                  f"treat the gate verdicts above as the answer")
+            _granted = None
+        if _granted is not None:
+            for _line in escape_diagnosis(_refused, _granted, body_file.read_text()):
+                print(f"     ⛔ {_line}")
 
     # ⚠ TWICE, deliberately. The first read STARTS GitHub's lazy mergeability computation and
     # returns UNKNOWN; the second usually has the answer. Measured on PR #317: UNKNOWN then DIRTY,
@@ -715,6 +819,61 @@ def _self_test() -> int:
     check("...and names it", "verify" in ci_conclusion([{"name": "verify", "bucket": "fail"}])[1], True)
     check("skipping does not count as failing",
           ci_conclusion([{"name": "a", "bucket": "pass"}, {"name": "b", "bucket": "skipping"}])[0], 0)
+
+    # ── the escape cross-check (2026-09-26) ──────────────────────────────────
+    D, R = "dashboard entry", "review recorded"
+    NE, NR = "NO-ENTRY:", "NO-REVIEW:"
+    none2 = {NE: None, NR: None}
+    check("a refusing gate whose own escape is granted says nothing",
+          escape_diagnosis([D], {NE: "docs only", NR: None}, "NO-ENTRY: docs only"), [])
+    _mis = escape_diagnosis([D], {NE: None, NR: "prose"}, "NO-REVIEW: prose")
+    check("MISDIRECTED: the dashboard gate refused while NO-REVIEW is granted", len(_mis), 1)
+    check("...and it names the token THIS gate wants", NE in _mis[0], True)
+    check("...and names the one that answers the other gate", NR in _mis[0], True)
+    # ⛔ THE CASE THAT DISTINGUISHES MISDIRECTED FROM INERT-OTHER, added because a mutation
+    # silencing MISDIRECTED SURVIVED: control fell through to INERT-OTHER, whose message also
+    # carries both tokens and is also one line, so every assertion above still passed. The
+    # distinguishing PROPERTY is that the other escape WAS granted — so it is not inert, and
+    # saying it is would be false.
+    check("...and does NOT call the other declaration inert, because it was granted",
+          "inert" in _mis[0], False)
+    check("...whereas the INERT case does say so — the two states are distinguishable",
+          "inert" in escape_diagnosis([D], none2, "NO-REVIEW: ungranted")[0], True)
+    check("MISDIRECTED mirrors: the review gate refused while NO-ENTRY is granted",
+          NR in escape_diagnosis([R], {NE: "docs", NR: None}, "NO-ENTRY: docs")[0], True)
+    check("INVISIBLE: the exact token is present but granted nothing",
+          "must start its own line" in
+          escape_diagnosis([D], none2, "    NO-ENTRY: indented four")[0], True)
+    check("MISSPELLED: an underscore lookalike names the literal the gate wants",
+          NE in escape_diagnosis([D], none2, "NO_ENTRY: typo")[0], True)
+    check("MISSPELLED: lowercase is diagnosed too",
+          len(escape_diagnosis([D], none2, "no-entry: lower")), 1)
+    check("...and names the lowercase text it actually found",
+          "no-entry" in escape_diagnosis([D], none2, "no-entry: lower")[0], True)
+    check("a body with no escape at all produces no diagnosis",
+          escape_diagnosis([D], none2, "just a normal PR body"), [])
+    check("a gate with no escape of its own (review rounds) is never diagnosed",
+          escape_diagnosis(["review rounds"], none2, "NO-ENTRY: x"), [])
+    check("NOTHING is said when no gate refused — it explains, never accuses",
+          escape_diagnosis([], none2, "NO_ENTRY: typo"), [])
+    # ⭐ THE STATE THE REAL INCIDENT WAS IN — found by replaying the actual PR bodies.
+    check("INERT OTHER: the other token is present but was granted nothing",
+          "inert" in escape_diagnosis([D], none2, "`NO-REVIEW:` backticked, so no gate sees it")[0],
+          True)
+    check("...and it says backticks are one of the causes",
+          "backticks" in escape_diagnosis([D], none2, "`NO-REVIEW:` backticked")[0], True)
+    check("a MISSPELLED diagnosis names the lookalike it found",
+          "NO_ENTRY" in escape_diagnosis([D], none2, "NO_ENTRY: typo")[0], True)
+    check("both gates refusing can yield two diagnoses",
+          len(escape_diagnosis([D, R], none2, "NO_ENTRY: typo and NO_REVIEW: typo")), 2)
+    # ⛔ THE REAL MATCHER, not a copy of its rule — these assert the imported gate's behaviour.
+    _g = granted_escapes("NO-ENTRY: docs only")
+    check("the imported matcher grants a well-formed NO-ENTRY", _g[NE], "docs only")
+    check("...and grants nothing for the other marker", _g[NR], None)
+    check("the imported matcher refuses a 4-column-indented token",
+          granted_escapes("    NO-ENTRY: x")[NE], None)
+    check("the imported matcher refuses a fenced token",
+          granted_escapes("```\nNO-ENTRY: x\n```")[NE], None)
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
