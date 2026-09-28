@@ -12780,3 +12780,45 @@ INERT-OTHER, whose message also carries both tokens and is also one line, so all
 still passed; two distinguishing cases were added and it is now killed via its own case. ⚠ My first
 mutation harness staged `scripts/` alone and produced a **red control** — the failure this repo has already
 recorded, reproduced verbatim; re-run in place against the real root.
+## 2026-09-28
+Just over a quarter of our pull requests change nothing but documents, and every one of them waits eleven minutes for a test suite that cannot be affected by them.
+
+Opening a pull request here starts a check called **verify**. It installs the project, type-checks it,
+runs two and a half thousand tests and installs a video tool that some of those tests need. It takes
+**eleven minutes**, and it is the thing you wait on before you can merge — the other check finishes in
+under two.
+
+It runs in full even when the only thing that changed is a document. I measured how often that happens
+across every pull request this project has merged: **93 of 344, or 27%**.
+
+⚠ **The honest number is smaller than that, and the reason is interesting.** One of the document checks
+compares the test counts written in the roadmap against what the suite actually reports — so a
+document-only change that edits the roadmap genuinely does need the tests to run. That is a third of
+them. The rest, **17% of all pull requests**, could finish in well under a minute instead of eleven.
+
+⭐ **Why it is worth anything at all**, given that averages out to under two minutes per pull request:
+the two documents changed most often by these pull requests are the backlog and this very log — the
+project's own bookkeeping. The wait falls hardest on the thing we do most, and because merging is your
+decision rather than an automatic one, a person is sitting through it.
+
+⛔ **My first idea for fixing it was wrong, and the item says so.** Splitting the check in two would
+have recreated a problem this project already measured and removed: a required check that never reports
+leaves a pull request waiting forever. Keeping one check and skipping the expensive *work* inside it
+avoids that completely.
+
+Filed, measured, and deliberately not built — and not sequenced behind anything else.
+
+<!--tech-->
+**Backlog #192**, `(process / CI)`. Population: 344 squash-merged commits on `master` matching `(#N)`,
+2026-06-19 to 2026-09-27. Doc-only = every changed path under `docs/` or a root `*.md`; the classifier
+was validated on a known code PR (#317) and known doc PRs (#351, #353) before any count was trusted.
+
+Measured: `verify` **667s median / 692s p90** over 33 successful runs; `schema-gates` 107s in parallel,
+so `verify` is the wall clock. The 20 document guards inside it run in **7.5s locally, all rc=0**.
+Inferred, and labelled as such in the row: **~45s** for a document-only path in CI once runner start,
+`fetch-depth: 0` and `setup-python` are added.
+
+Design is a **step-level `if:` inside the always-running `verify` job**, never two required jobs —
+the latter is #137's deleted `paths:` filter re-created. `docs/roadmap-to-launch.md` among the changed
+paths forces the suite. The classifier must **fail closed** and carry a `--self-test` plus a
+`scripts/mutations/` entry, or it is a guard with no falsifier of its own.
