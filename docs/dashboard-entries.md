@@ -12715,11 +12715,15 @@ single ownership cannot reach: something recorded once, correctly, somewhere not
 guard — works without me remembering anything. The other seven are notes that now compete with ten
 thousand lines.
 
-**Decide:** Which direction for the next session's discussion?
-- start from a taxonomy, with principles as the top level — your framing, and it shrinks the search area before any tool is built [recommended]
-- start from a search tool, which converts remembering into retrieval and does not degrade as the store grows
-- start by merging entries until the index is scannable again
-- something else — the item lists four directions and none is designed
+⟳ **CORRECTED 2026-09-28, before this entry ever shipped.** The item first said the four directions were undesigned. One of them already exists: the memory's index **is** a taxonomy — five sections, 133 rows, every note linked — and it was in place the whole time the mistakes were made. So classifying is not the missing piece. Measuring what the index actually tells you gave the sharper answer: **1 of its 133 rows opens by naming a situation you could be in**, and at the most generous reading only 21 do at all. It says what each lesson is *about*, almost never *when to read it*.
+
+The full argument, the four measurements and the questions it cannot answer are on a page you can ask questions inside: **http://127.0.0.1:7391/latest** (run `python3 scripts/explainer-serve.py` if it does not load).
+
+**Decide:** What should the index be keyed by?
+- by OPERATION — what I am about to do is observable at the moment I do it, and recognising the moment is the step that actually failed [recommended]
+- by PRINCIPLE — your original framing; one principle covers many operations, so it avoids repeating the same pointer under several headings
+- neither — promote the costly lessons into mechanisms that refuse the mistake, since a guard needs no remembering at all
+- something else — the page lists four open questions and I would rather walk them with you
 
 <!--tech-->
 **Backlog #191**, `(process / deliverable #2)` — harness scope, since the memory lives outside this
