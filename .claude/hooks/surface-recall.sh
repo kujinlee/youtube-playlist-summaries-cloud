@@ -41,8 +41,15 @@ INPUT="$(cat 2>/dev/null || true)"
 OUT="$(printf '%s' "$INPUT" \
   | python3 "$MATCHER" --from-stdin --top 2 2>/dev/null || true)"
 
+# ⛔ STRUCTURED JSON, NOT PLAIN STDOUT — measured 2026-09-29, and this is the whole delivery.
+# A PreToolUse hook's plain stdout at exit 0 reaches the USER'S TRANSCRIPT, not the model's context.
+# The matcher's audience is the model, so plain stdout put it in the one place it could not work.
+# `hookSpecificOutput.additionalContext` is the channel that reaches the model without blocking.
+# This repo has a name for the defect: a gate's channel can be weaker than the gate.
 case "$OUT" in
-  *"recall-match —"*) printf '%s\n' "$OUT" ;;
+  *"recall-match —"*)
+    python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":sys.stdin.read()}}))' <<<"$OUT"
+    ;;
   *) : ;;   # "nothing fires", a CANNOT RUN, or an empty payload -> say nothing at all
 esac
 
