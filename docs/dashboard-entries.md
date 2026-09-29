@@ -12857,3 +12857,39 @@ refusing that merge would re-create the delay being removed. Merging in general 
 `docs/dev-process.md`; outward-facing and irreversible actions were not what was being answered.
 
 PR #356 merged as `4d06370c` (backlog #192).
+
+## 2026-09-29
+A file placed in `docs/` now warns about the three things that actually went wrong there — because a nested instruction file turns out to load exactly when you touch that directory.
+
+You asked whether putting a `CLAUDE.md` in subdirectories would help the matching problem. It was worth
+testing rather than arguing about, so I tested it: I put a file with a unique marker in `docs/`, then
+read an unrelated file in the same folder. **The marker appeared.** A nested instruction file loads the
+moment something in its directory is touched, part-way through a session.
+
+⭐ **That makes it the one mechanism in this whole discussion that already exists.** Everything else
+we have talked about — a monitor that watches what I am doing, tags injected as I work — would
+have to be built. This is just a file in a folder, and the system already looks for it.
+
+**I audited it honestly against the six mistakes I made over the previous two days: it would have caught
+four.** The two it misses are the ones where nothing in the repository was touched at all — a note
+written in the wrong place in a pull-request description, and me confusing two different things GitHub
+reports. Those need the other mechanism, and the two turn out to divide the problem cleanly between
+them: one covers work that touches files, the other covers work that touches tools.
+
+⚠ **The obvious danger is a second copy of a rule that then drifts apart from the first**, which is
+the most-repeated failure in this repository. So the file points at where each rule already lives and
+deliberately restates none of them, and it says so at the top along with why it is kept short: it is
+loaded every single time anything in that folder is read.
+
+<!--tech-->
+`docs/CLAUDE.md`, pointer-only. Measured 2026-09-29 with a sentinel string: a nested `CLAUDE.md` is
+injected on read or edit of any file under its directory, mid-session — a **path-keyed lazy matcher**.
+Audit against the 2026-09-27/28 failure set: 4 of 6 would have fired (invented backlog area, doc-guard
+subset, vacuous entry-ratchet `rc=0`, re-derived prior art); 2 would not (a backticked `NO-REVIEW:` in a
+PR body, `mergeable` conflated with merge-ready) — both tool-output signals, which is the
+`PreToolUse`/`PostToolUse` half of backlog #191's design discussion.
+
+Carries three measured items only: run all document guards rather than a subset and that no single
+command exists for them; a new `backlog.md` column value must be claimed by an `areas:` line in
+`features.md` or the row cannot render; and `check-dashboard-entry.py` reads the committed diff, so a
+pre-commit `rc=0` is vacuous.
