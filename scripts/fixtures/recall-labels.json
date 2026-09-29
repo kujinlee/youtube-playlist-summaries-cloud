@@ -1,0 +1,85 @@
+{
+  "_what": "A LABELLED must-fire/must-be-silent set for the recall matcher, over PLAN-STEP situations.",
+  "_why": "Written and committed BEFORE running the matcher against it. Every earlier number in this build was derived from output I looked at first: the 17% fire rate came from 30 commands I chose, and the 'B3 looks promising' claim came from reading 195 matches and noticing the good ones. Reading a list and noticing hits cannot count MISSES, because a miss is invisible without a label. Committing the answers first is the only way this set can falsify anything.",
+  "_method": "Situations are drawn from real `Doing:` lines written during this project's sessions, or are realistic paraphrases of moments that actually occurred. Expected entries were chosen by reading the memory corpus's triggers, NOT by running the matcher. Where more than one entry is genuinely right, `expect_any` lists them and surfacing any one counts as a hit.",
+  "_scoring": "hit = the expected entry appears in the top N. miss = it does not. violation = a `must_be_silent` situation surfaces anything at all.",
+
+  "must_fire": [
+    { "situation": "run check-merge-ready again, merge only if READY",
+      "expect_any": ["merge-ready-slice-merged-324"] },
+
+    { "situation": "running only two of the twenty document guards before the commit",
+      "expect_any": ["merge-ready-slice-merged-324"] },
+
+    { "situation": "about to write a number from this morning into the commit message",
+      "expect_any": ["a-retrospective-number-needs-provenance", "an-inference-stated-as-measured"] },
+
+    { "situation": "stating the fire rate as measured, over thirty commands I picked myself",
+      "expect_any": ["a-measurement-is-only-as-good-as-its-corpus", "an-inference-stated-as-measured"] },
+
+    { "situation": "editing a file that mutation anchors bind to",
+      "expect_any": ["a-mutation-anchor-is-unbound-by-any-edit-nearby", "a-mutation-loses-its-binding"] },
+
+    { "situation": "opening a second branch that touches dashboard-entries.md and the roadmap",
+      "expect_any": ["parallel-branches-append-to-one-log"] },
+
+    { "situation": "about to put a choice to the user about which pull request to merge",
+      "expect_any": ["print-selection-cards-in-chat", "putting-a-choice-to-the-user"] },
+
+    { "situation": "spawning the Claude half of the dual adversarial review",
+      "expect_any": ["dual-review-is-the-process-not-a-request", "agent-tool-restriction-has-no-owner",
+                     "dual-review-what-it-catches"] },
+
+    { "situation": "dispatching Codex and waiting on the output file",
+      "expect_any": ["running-codex"] },
+
+    { "situation": "pushing from the worktree under the scratchpad directory",
+      "expect_any": ["push-from-a-worktree-needs-an-explicit-refspec"] },
+
+    { "situation": "writing a self-test case for the new guard",
+      "expect_any": ["a-test-that-cannot-fail", "assert-the-property-not-the-mechanism",
+                     "exercise-the-producer-at-two-distinct-inputs"] },
+
+    { "situation": "proposing to build a search tool over the memory corpus",
+      "expect_any": ["it-already-exists-under-a-name-i-didnt-search"] },
+
+    { "situation": "merging a pull request with --delete-branch while another is stacked on it",
+      "expect_any": ["a-stacked-pr-dies-with-its-base-branch"] },
+
+    { "situation": "sending the spec to the user for approval",
+      "expect_any": ["document-approval-is-interactive"] },
+
+    { "situation": "the schema gate needs Docker and the daemon is not responding",
+      "expect_any": ["restart-docker-dont-record-cannot-run"] },
+
+    { "situation": "reading the status cell of a backlog row by position",
+      "expect_any": ["a-positional-read-needs-a-verified-shape"] },
+
+    { "situation": "about to end the turn on a summary of what I will do next",
+      "expect_any": ["never-close-with-a-promise", "the-user-does-not-follow-in-real-time"] },
+
+    { "situation": "writing a check that compares two values captured in the same closure",
+      "expect_any": ["guard-operands-from-one-closure"] },
+
+    { "situation": "claiming the guard proves nothing survived, by intercepting every call",
+      "expect_any": ["proving-a-negative-by-interception-cannot-terminate"] },
+
+    { "situation": "about to write C5 in a message without saying what it is",
+      "expect_any": ["name-and-define-every-reference"] }
+  ],
+
+  "must_be_silent": [
+    { "situation": "making a cup of tea" },
+    { "situation": "x" },
+    { "situation": "reading the weather forecast for tomorrow" },
+    { "situation": "listening to a record" },
+    { "situation": "walking to the shops and back" }
+  ],
+
+  "_predictions": {
+    "_note": "Recorded before running, so the result can surprise me. If these are right, the set told me nothing I did not already believe.",
+    "expected_hit_rate": "12-15 of 20 — better than the 1/5 on Bash commands, well short of usable",
+    "expected_violations": "0 of 5 — the silent set is far from the corpus vocabulary",
+    "expected_weakest": "the multi-word abstract ones ('claiming the guard proves nothing', 'about to end the turn') — their triggers share few literal tokens with how I would phrase the moment"
+  }
+}
