@@ -53,7 +53,7 @@ Usage:
     scripts/recall-match.py --from-plan                          # read the armed plan's current step
     scripts/recall-match.py --from-stdin                         # a PreToolUse hook payload (JSON)
     scripts/recall-match.py --list                               # every trigger, for review
-    scripts/recall-match.py --self-test  # 40 cases
+    scripts/recall-match.py --self-test  # 48 cases
 """
 from __future__ import annotations
 
@@ -93,6 +93,22 @@ DEFAULT_THRESHOLD = 0.30
 
 
 # ----------------------------------------------------------------- pure core
+def corpus_verdict(n_entries: int, n_files: int) -> tuple[int, str]:
+    """PURE. -> (rc, message) for a loaded corpus. CANNOT RUN is a distinct outcome, not a pass.
+
+    ⛔ EXTRACTED 2026-09-29 BECAUSE THE MUTATION SURVIVED. This decision lived inline in `main()`,
+    where no pure case could reach it — and the manifest entry for it carried a written excuse
+    (`NO-CASE: exercised by the rc contract`) rather than a test. The sweep did not accept the
+    excuse: flipping the empty-corpus branch to OK left the suite GREEN. An excuse in an `expect`
+    field is the shape this repo calls a gate that cannot fail.
+    """
+    if n_entries == 0:
+        return CANNOT_RUN, (f"CANNOT RUN: {n_files} memory file(s) read, ZERO carry a "
+                            f"'{TRIGGER_PREFIX}' trigger. A zero over an empty corpus is not a "
+                            f"finding.")
+    return OK, ""
+
+
 def stem(word: str) -> str:
     """PURE. Crude suffix strip, guarded so short words survive intact.
 
@@ -102,7 +118,21 @@ def stem(word: str) -> str:
     """
     for suf in _SUFFIXES:
         if word.endswith(suf) and len(word) - len(suf) >= _MIN_STEM:
-            return word[: -len(suf)]
+            word = word[: -len(suf)]
+            break
+    # ⛔ THE ORTHOGRAPHIC `e`, AND IT IS LOAD-BEARING — round 1, M2.
+    # English elides the `e` before `-ing`/`-ed`, so stripping the inflection alone SPLITS every
+    # `-e` verb from its own forms, one-way and silently: `merging` -> `merg` while `merge` -> `merge`,
+    # and the two never meet in either direction. MEASURED over the live 141-trigger vocabulary:
+    # NINE pairs are both present — writ/write, chang/change, propos/propose, serv/serve,
+    # deriv/derive, valu/value, shar/share, slic/slice, stag/stage — so IDF was being computed over a
+    # FRAGMENTED vocabulary and each half carried inflated rarity. `write` scored as 8 of 141 when
+    # the concept appears in 22: a 2.5x overstatement feeding straight into every weight.
+    # ⚠ Why this is fixed FIRST: rewriting a trigger to "merging or checking a PR" — a perfectly
+    # reasonable authoring fix — MISSED, because `merging` never met `merge`. The stemmer silently
+    # voids trigger rewrites, so tuning anything before this means tuning against a moving vocabulary.
+    if word.endswith("e") and len(word) - 1 >= _MIN_STEM:
+        word = word[:-1]
     return word
 
 
@@ -150,32 +180,37 @@ def score(situation: list[str], trigger: list[str], weights: dict[str, float]) -
     return sum(weights.get(t, 0.0) for t in set(situation) & set(trigger))
 
 
-def coverage(situation: list[str], trigger: list[str]) -> float:
-    """PURE. Fraction of the TRIGGER's distinct tokens that the situation shares.
+def weight_fraction(situation: list[str], trigger: list[str],
+                    weights: dict[str, float]) -> float:
+    """PURE. -> the share of the TRIGGER'S OWN TOTAL WEIGHT that the situation matched, in [0,1].
 
-    Asymmetric on purpose: divided by the TRIGGER's length, never the situation's. A long `Doing:`
-    line must not be penalised for being descriptive, but a long trigger matched on one word must be.
+    ⛔ THIS REPLACES `score x coverage`, WHICH WAS DIMENSIONALLY WRONG. Round 1, H2 and the
+    threshold sweep. The old form multiplied a BOUNDED factor (coverage, [0,1]) by an UNBOUNDED one
+    (a SUM of IDF, up to |trigger| * log N) and compared it to `threshold * log(N)` — a fraction of a
+    SINGLE token's maximum weight. Three consequences, all measured over 1,062 real commands:
+
+    * **The threshold controlled nothing.** Fire rate plateaued at ~25% and never fell below it,
+      even at 0.9. A six-token match is already 6x the ceiling before coverage touches it.
+    * **The bar SLID with whatever token happened to match.** For a one-token hit the real
+      requirement was `1.485 / idf(t)`: 0.300 for a df=1 token, 0.386 for `merge`, 0.582 for
+      `review`, and >1.0 — impossible — for `pr` and `about`. The knob meant a different thing for
+      every pair it judged, and nothing said so.
+    * **H2: when every matched token is unique (df=1), IDF CANCELS from both sides** and the test
+      collapsed to bare coverage with no rarity in it. The very failure `x coverage` was added to
+      fix, moved rather than removed.
+
+    Dividing by the trigger's own total weight makes the result a true fraction: bounded [0,1],
+    independent of N and of df, and `threshold` finally means what DEFAULT_THRESHOLD claims.
+
+    ⚠ Still asymmetric — normalised by the TRIGGER, never the situation — and that is deliberate
+    but NOT free: measured, a 36-token heredoc saturates against many triggers while a 6-token
+    command struggles to reach any. That is the remaining known weakness, recorded rather than
+    hidden.
     """
-    tt = set(trigger)
-    return len(set(situation) & tt) / len(tt) if tt else 0.0
-
-
-def relevance(situation: list[str], trigger: list[str], weights: dict[str, float]) -> float:
-    """PURE. rarity (summed IDF) x completeness (coverage). Both, because either alone fails.
-
-    ⛔ MEASURED 2026-09-29 over 30 representative commands, and this is why the function exists:
-    with IDF ALONE the fire rate was **73% at every threshold from 0.30 to 0.70** — completely flat,
-    because one token unique in 141 triggers scores log(141)=4.95 and clears any cutoff by itself.
-    A single coincidental word fired as loudly as a real situational match, so the threshold was
-    controlling nothing.
-
-    Multiplying by coverage damps exactly that case: `npm test` shares one token with *"writing
-    tests that mock a model, API or service boundary"* (1 of 7 -> 0.14) and goes silent, while
-    `gh pr create` shares two with *"using gh pr and unsure which remote it resolves"* (2 of 7)
-    and still fires. Re-measured: **17% at 0.30**, with the must-fire case kept and the
-    must-be-silent case silenced.
-    """
-    return score(situation, trigger, weights) * coverage(situation, trigger)
+    total = sum(weights.get(t, 0.0) for t in set(trigger))
+    if total <= 0.0:
+        return 0.0
+    return sum(weights.get(t, 0.0) for t in set(situation) & set(trigger)) / total
 
 
 def rank(situation: str, entries: list[tuple[str, str]], top: int = DEFAULT_TOP,
@@ -190,12 +225,12 @@ def rank(situation: str, entries: list[tuple[str, str]], top: int = DEFAULT_TOP,
     """
     docs = [tokenise(t) for _, t in entries]
     weights = idf(docs)
-    # Scale to the corpus: see DEFAULT_THRESHOLD. max(len,2) keeps log() positive for a 1-entry
-    # corpus, where no token can be rare relative to anything and nothing should fire.
-    cutoff = threshold * math.log(max(len(docs), 2))
+    # No corpus scaling any more: weight_fraction is already in [0,1], so the threshold IS the
+    # fraction. The old `threshold * log(N)` is the defect H2 and the sweep both diagnosed.
+    cutoff = threshold
     sit = tokenise(situation)
     scored = [
-        (name, trig, relevance(sit, toks, weights))
+        (name, trig, weight_fraction(sit, toks, weights))
         for (name, trig), toks in zip(entries, docs)
     ]
     hits = [s for s in scored if s[2] >= cutoff]
@@ -313,70 +348,96 @@ def report(situation: str, hits: list[tuple[str, str, float]], total: int) -> st
 def _self_test() -> int:
     ok = fail = 0
 
-    def check(label, got, want):
+    def check(label, thunk, want):
+        """⛔ TAKES A CALLABLE, NOT A VALUE — and that is a report-format contract, not a style.
+
+        MEASURED 2026-09-29 by the mutation sweep: with an eager `got`, a mutation that makes the
+        code RAISE blew up the suite before this ran, so it went red with no `[FAIL] <case>` line
+        and `parse_fail_names` could attribute nothing. The harness reported every entry for this
+        file as unattributable. Evaluating inside the try turns a crash into a named failure.
+        """
         nonlocal ok, fail
+        try:
+            got = thunk()
+        except Exception as exc:                      # noqa: BLE001 - a raise IS the failure here
+            fail += 1
+            print(f"[FAIL] {label}\n   raised: {type(exc).__name__}: {exc}")
+            return
         if got == want:
             ok += 1
         else:
             fail += 1
             print(f"[FAIL] {label}\n   got:  {got!r}\n   want: {want!r}")
 
-    # --- stem (5)
-    check("stem strips -ing", stem("indexing"), "index")
-    check("stem strips -ed", stem("merged"), "merg")
-    check("stem keeps short words whole", stem("adds"), "adds")
-    check("stem leaves a bare stem alone", stem("open"), "open")
-    check("stem strips -s on a long word", stem("reviews"), "review")
+    # --- stem (5 + 4 for M2)
+    check("stem strips -ing", lambda: stem("indexing"), "index")
+    check("stem strips -ed", lambda: stem("merged"), "merg")
+    check("stem keeps short words whole", lambda: stem("adds"), "adds")
+    check("stem leaves a bare stem alone", lambda: stem("open"), "open")
+    check("stem strips -s on a long word", lambda: stem("reviews"), "review")
+    # --- M2: the orthographic `e` (4). Each asserts CONVERGENCE, not a spelling.
+    check("M2: merging and merge converge on one token",
+          lambda: stem("merging") == stem("merge"), True)
+    check("M2: writing and write converge", lambda: stem("writing") == stem("write"), True)
+    check("M2: measured and measure converge", lambda: stem("measured") == stem("measure"), True)
+    check("M2: the trailing-e strip respects _MIN_STEM, so short words survive",
+          lambda: stem("code"), "code")
 
     # --- tokenise (6)
-    check("tokenise drops function words but KEEPS 'about' (IDF's job, not the list's)",
-          tokenise("about to open a PR"), ["about", "open", "pr"])
-    check("tokenise keeps dotted names", tokenise("check-merge-ready.py"), ["check-merge-ready.py"])
-    check("tokenise drops leading dashes from a flag", tokenise("run --mutate ."),
-          ["run", "mutate"])
-    check("tokenise degrades a bracketed index to its stem (measured, not assumed)",
-          tokenise("cells[-2]"), ["cell"])
-    check("tokenise lowercases", tokenise("AbortSignal"), ["abortsignal"])
-    check("tokenise drops single chars", tokenise("a b cd"), ["cd"])
-    check("tokenise on empty text", tokenise(""), [])
+    check("tokenise drops function words but KEEPS 'about' (IDF's job, not the list's)", lambda: tokenise("about to open a PR"), ["about", "open", "pr"])
+    check("tokenise keeps dotted names", lambda: tokenise("check-merge-ready.py"), ["check-merge-ready.py"])
+    check("tokenise drops leading dashes from a flag", lambda: tokenise("run --mutate ."),
+          ["run", "mutat"])   # `mutate` -> `mutat` since M2: the trailing `e` is stripped
+    check("tokenise degrades a bracketed index to its stem (measured, not assumed)", lambda: tokenise("cells[-2]"), ["cell"])
+    check("tokenise lowercases", lambda: tokenise("AbortSignal"), ["abortsignal"])
+    check("tokenise drops single chars", lambda: tokenise("a b cd"), ["cd"])
+    check("tokenise on empty text", lambda: tokenise(""), [])
 
     # --- idf (4)
     w = idf([["a"], ["a"], ["b"]])
-    check("idf is 0 for a token in every doc", round(w["a"] - math.log(3 / 2), 6), 0.0)
-    check("idf is higher for a rarer token", w["b"] > w["a"], True)
-    check("idf of an empty corpus is empty", idf([]), {})
-    check("idf of one doc gives weight 0", idf([["x"]])["x"], 0.0)
+    check("idf is 0 for a token in every doc", lambda: round(w["a"] - math.log(3 / 2), 6), 0.0)
+    check("idf is higher for a rarer token", lambda: w["b"] > w["a"], True)
+    check("idf of an empty corpus is empty", lambda: idf([]), {})
+    check("idf of one doc gives weight 0", lambda: idf([["x"]])["x"], 0.0)
 
     # --- score (3)
     weights = {"pr": 2.0, "merge": 3.0, "open": 1.0}
-    check("score sums shared weights", score(["pr", "merge"], ["pr", "merge"], weights), 5.0)
-    check("score ignores unshared tokens", score(["pr"], ["merge"], weights), 0.0)
-    check("score does not double-count a repeat",
-          score(["pr", "pr"], ["pr"], weights), 2.0)
+    check("score sums shared weights", lambda: score(["pr", "merge"], ["pr", "merge"], weights), 5.0)
+    check("score ignores unshared tokens", lambda: score(["pr"], ["merge"], weights), 0.0)
+    check("score does not double-count a repeat", lambda: score(["pr", "pr"], ["pr"], weights), 2.0)
 
     # --- parse_trigger (4)
-    check("parse_trigger takes text up to the em-dash",
-          parse_trigger("FIRES-WHEN: about to open a PR — PR #324 MERGED"), "about to open a PR")
-    check("parse_trigger returns None with no prefix",
-          parse_trigger("PR #324 MERGED (af4d9033)"), None)
-    check("parse_trigger returns None on an empty trigger",
-          parse_trigger("FIRES-WHEN:  — body"), None)
-    check("parse_trigger works with no em-dash at all",
-          parse_trigger("FIRES-WHEN: using .abortSignal()"), "using .abortSignal()")
+    check("parse_trigger takes text up to the em-dash", lambda: parse_trigger("FIRES-WHEN: about to open a PR — PR #324 MERGED"), "about to open a PR")
+    check("parse_trigger returns None with no prefix", lambda: parse_trigger("PR #324 MERGED (af4d9033)"), None)
+    check("parse_trigger returns None on an empty trigger", lambda: parse_trigger("FIRES-WHEN:  — body"), None)
+    check("parse_trigger works with no em-dash at all", lambda: parse_trigger("FIRES-WHEN: using .abortSignal()"), "using .abortSignal()")
 
-    # --- coverage (3)
-    check("coverage divides by the TRIGGER's length",
-          coverage(["a", "b", "c"], ["a", "b"]), 1.0)
-    check("coverage damps one token matched in a long trigger",
-          round(coverage(["a"], ["a", "b", "c", "d"]), 3), 0.25)
-    check("coverage of an empty trigger is 0, never a divide-by-zero",
-          coverage(["a"], []), 0.0)
+    # --- weight_fraction (6): replaces the coverage/relevance cases with the NEW property
+    W = {"pr": 2.0, "merge": 3.0, "gone": 5.0}
+    check("weight_fraction is 1.0 when the whole trigger is matched",
+          lambda: weight_fraction(["pr", "merge"], ["pr", "merge"], W), 1.0)
+    check("weight_fraction is the share of the trigger's WEIGHT, not of its token count",
+          lambda: weight_fraction(["merge"], ["merge", "gone"], W), 0.375)   # 3.0 / 8.0
+    check("weight_fraction of an empty trigger is 0, never a divide-by-zero",
+          lambda: weight_fraction(["pr"], [], W), 0.0)
+    check("weight_fraction is 0 when a trigger's tokens carry no weight at all",
+          lambda: weight_fraction(["pr"], ["unknown"], W), 0.0)
+    # ⛔ THE PROPERTY THE OLD SCORING LACKED, and the reason for the repair: the same match must
+    # score the same whatever the corpus size. `score x coverage` compared against threshold*log(N)
+    # slid with N and with the matched token's df; this cannot.
+    check("weight_fraction is independent of corpus size — the defect H2 named",
+          lambda: (weight_fraction(["merge"], ["merge", "gone"], idf([["merge"], ["gone"], ["x"]]))
+                   == weight_fraction(["merge"], ["merge", "gone"],
+                                      idf([["merge"], ["gone"]] + [["x"]] * 139))), True)
+    check("weight_fraction never exceeds 1.0 however many tokens are shared",
+          lambda: weight_fraction(["pr", "merge", "gone", "extra"], ["pr", "merge", "gone"], W), 1.0)
 
-    # --- relevance (2)
-    check("relevance multiplies rarity by completeness",
-          relevance(["pr", "merge"], ["pr", "merge"], {"pr": 2.0, "merge": 3.0}), 5.0)
-    check("relevance halves a score when half the trigger is matched",
-          relevance(["pr"], ["pr", "gone"], {"pr": 4.0}), 2.0)
+    # --- corpus_verdict (3): the decision the surviving mutation proved was untestable inline
+    check("an empty corpus is CANNOT RUN, never a pass",
+          lambda: corpus_verdict(0, 141)[0], CANNOT_RUN)
+    check("a non-empty corpus is OK", lambda: corpus_verdict(141, 141)[0], OK)
+    check("the CANNOT RUN message reports how many files were read, not just that it failed",
+          lambda: "141 memory file(s) read" in corpus_verdict(0, 141)[1], True)
 
     # --- rank (5)
     corpus = [
@@ -385,15 +446,11 @@ def _self_test() -> int:
         ("abort-returns", "using .abortSignal() with postgrest-js"),
     ]
     top = rank("opening the PR for backlog #192", corpus)
-    check("rank surfaces the PR entry for a PR situation",
-          top[0][0] if top else None, "merge-ready")
-    check("rank does not surface the unrelated entry",
-          "abort-returns" in [h[0] for h in top], False)
-    check("rank surfaces the abort entry for an abortSignal situation",
-          rank("adding .abortSignal() to the query", corpus)[0][0], "abort-returns")
-    check("rank returns nothing for an unrelated situation",
-          rank("cooking dinner tonight", corpus), [])
-    check("rank respects top-N", len(rank("open merge PR indexing position abortsignal",
+    check("rank surfaces the PR entry for a PR situation", lambda: top[0][0] if top else None, "merge-ready")
+    check("rank does not surface the unrelated entry", lambda: "abort-returns" in [h[0] for h in top], False)
+    check("rank surfaces the abort entry for an abortSignal situation", lambda: rank("adding .abortSignal() to the query", corpus)[0][0], "abort-returns")
+    check("rank returns nothing for an unrelated situation", lambda: rank("cooking dinner tonight", corpus), [])
+    check("rank respects top-N", lambda: len(rank("open merge PR indexing position abortsignal",
                                           corpus, top=1)), 1)
 
     # --- the three parameters check-fixture-variation caught as never-varied (3)
@@ -403,27 +460,19 @@ def _self_test() -> int:
         ("docker-restart", "a gate needs Docker and it is unresponsive"),
         ("worktree-push", "pushing from a git worktree"),
     ]
-    check("rank reads `entries` — a different corpus surfaces a different entry",
-          rank("the docker gate is unresponsive", other_corpus)[0][0], "docker-restart")
-    check("rank reads `threshold` — the same hit disappears when it is raised",
-          rank("adding .abortSignal() to the query", corpus, threshold=0.99), [])
-    check("score reads `weights` — a different weighting changes the total",
-          score(["pr"], ["pr"], {"pr": 9.0}), 9.0)
+    check("rank reads `entries` — a different corpus surfaces a different entry", lambda: rank("the docker gate is unresponsive", other_corpus)[0][0], "docker-restart")
+    check("rank reads `threshold` — the same hit disappears when it is raised", lambda: rank("adding .abortSignal() to the query", corpus, threshold=0.99), [])
+    check("score reads `weights` — a different weighting changes the total", lambda: score(["pr"], ["pr"], {"pr": 9.0}), 9.0)
 
     # --- plan_situation (4)
     plan = ("### Task 1: Write it\n\n- [x] **Step 1 of 2** — Write it\n"
             "  - **Doing:** writing the matcher\n  - **Why:** because\n\n"
             "### Task 2: Wire it\n\n- [ ] **Step 2 of 2** — Wire it\n"
             "  - **Doing:** wiring a PreToolUse hook\n  - **Why:** a guard needs a caller\n")
-    check("plan_situation takes the first UNTICKED step",
-          plan_situation("plan: x\n", plan), "wiring a PreToolUse hook")
-    check("plan_situation returns None when paused",
-          plan_situation("plan: x\npaused: waiting on CI\n", plan), None)
-    check("plan_situation returns None when everything is ticked",
-          plan_situation("plan: x\n", plan.replace("- [ ]", "- [x]")), None)
-    check("plan_situation falls back to the task heading with no Doing line",
-          plan_situation("plan: x\n", "### Task 1: Wire it\n\n- [ ] **Step 1 of 1** — Wire it\n"),
-          "Wire it")
+    check("plan_situation takes the first UNTICKED step", lambda: plan_situation("plan: x\n", plan), "wiring a PreToolUse hook")
+    check("plan_situation returns None when paused", lambda: plan_situation("plan: x\npaused: waiting on CI\n", plan), None)
+    check("plan_situation returns None when everything is ticked", lambda: plan_situation("plan: x\n", plan.replace("- [ ]", "- [x]")), None)
+    check("plan_situation falls back to the task heading with no Doing line", lambda: plan_situation("plan: x\n", "### Task 1: Wire it\n\n- [ ] **Step 1 of 1** — Wire it\n"), "Wire it")
 
     print(f"\n{ok}/{ok + fail} self-test cases passed" if not fail
           else f"\n{ok} passed, {fail} FAILED")
@@ -451,10 +500,10 @@ def main() -> int:
               file=sys.stderr)
         return CANNOT_RUN
     entries, seen = load_entries(d)
-    if not entries:
-        print(f"CANNOT RUN: {seen} memory file(s) read, ZERO carry a '{TRIGGER_PREFIX}' trigger. "
-              f"A zero over an empty corpus is not a finding.", file=sys.stderr)
-        return CANNOT_RUN
+    rc, msg = corpus_verdict(len(entries), seen)
+    if rc != OK:
+        print(msg, file=sys.stderr)
+        return rc
 
     if a.list:
         for name, trig in entries:
