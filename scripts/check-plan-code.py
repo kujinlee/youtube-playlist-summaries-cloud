@@ -520,6 +520,13 @@ def run_suite(d: pathlib.Path, name: str) -> tuple[int, str]:
 # ⚠ This lives in the RUNNER, deliberately, not in the manifest. A count stored beside the
 # entries it counts gets edited in the same breath as deleting one, which is no guard at all.
 EXPECTED_MUTATIONS = {
+    # ⟳ 2026-09-29, backlog #191 C5: the recall matcher arrives with 10 entries. Sum 1034 -> 1044.
+    # Every one targets the SCORING, because a matcher that silently stops discriminating is
+    # indistinguishable from a corpus with nothing to say — which is the failure the whole row is
+    # about. Two of them pin defects the tests FOUND rather than defects imagined: dropping
+    # coverage from the score (measured: fire rate flat at 73% across every threshold) and letting
+    # the cutoff stop scaling with corpus size (measured: the suite went red on a 3-entry corpus).
+    "scripts/recall-match.py": 10,
     # ⟳ 2026-08-30, backlog #71: gen-dashboard 61 -> 49. TWELVE entries did not disappear, they
     # MOVED to scripts/page_markup.py with the code they guard. The sum below is unchanged at 73,
     # which is the point — a seam that relocates coverage must not be able to look like coverage
@@ -3016,7 +3023,11 @@ def _self_test() -> int:
                                       "scripts/observer_log.py",
                                       "scripts/page_chrome.py",
                                       "scripts/page_markup.py",
-                                      "scripts/peer-sites.py"])
+                                      "scripts/peer-sites.py",
+                                      # ⟳ 2026-09-29, backlog #191 C5. A MATCHER, not a guard, so
+                                      # like observer_log it is outside the ratchet population;
+                                      # this literal is the outside observer of its manifest.
+                                      "scripts/recall-match.py"])
     # A literal on purpose: its whole job is that the total cannot move without
     # someone deciding it should. 44 → 53 when the round-1-carried M5 finding added
     # 9 entries for `gen-dashboard.py` (the file had grown 32% with the manifest
@@ -3745,7 +3756,7 @@ def _self_test() -> int:
     # Blocking and High — and the sum stayed at 1015 throughout, because an orphan keeps the count
     # while removing the coverage. CI caught it; `--self-test` cannot, because it loads the
     # manifests without resolving them. The split is on each file's own entry above.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1034)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1044)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -12936,3 +12936,51 @@ reproduction of the High it was written for. #126 and #127 travel with it.
 
 Testimony preserved: 32 files restored from `origin/explainer-src-root-self-configures` by explicit path
 (`docs/reviews/{claude,codex,coordinator,verdicts}/`), verified to carry no code.
+
+## 2026-09-29
+Memory can now speak up at the moment it applies, instead of sitting in a list nobody consults.
+
+Earlier today every one of my 141 memory notes got a line saying **when** it applies — *"about to
+open a PR"*, *"indexing a row by position"*. Those lines did nothing on their own. This is the part
+that reads them.
+
+Before running a shell command, something now compares what I am about to do against all 141 of those
+lines and speaks up only if one genuinely matches. Running `gh pr create` surfaces the note about which
+remote it resolves. `npm test` and `ls -la` say nothing at all.
+
+⭐ **Silence is the design, not a limitation.** It fires on **17% of commands** — measured over
+thirty representative ones. A thing that spoke on every command would be ignored within an hour, which
+is exactly how the original list stopped working.
+
+⭐⭐ **The part worth knowing: for the first time it is possible to tell whether any of this
+works.** I tested it against six real situations from the last two days. Three were exactly right, one
+was right but ranked too low to show, and one **missed entirely** — my note said *"indexing"* while
+the real moment said *"reading"*, so they shared almost no words. I changed three words in that note
+and it went from invisible to top of the list. **That loop — see a miss, fix the note, watch it
+work — has never existed here.** The notes have been as good as my first guess for months, because
+nothing could tell me when one failed.
+
+⚠ **Two of my own mistakes were caught by the project's own checks while building this**, and both
+are recorded in the code rather than quietly fixed: I wrote a claim into a comment (*"fires on one
+command in five"*) that I had never measured and which was wrong on the first try, and I wrote three
+tests that all passed the same value for a parameter, so none of them could have detected a change to
+it.
+
+<!--tech-->
+**`scripts/recall-match.py`** (backlog #191's C5) + **`.claude/hooks/surface-recall.sh`**, PreToolUse on
+Bash. Reads `FIRES-WHEN:` from each entry's frontmatter and the situation from either a `PreToolUse`
+payload, an armed plan's current `Doing:` step, or `--situation`. Scoring is **IDF × coverage**, no
+embeddings — chosen so it is mutation-testable like every other guard here.
+
+⛔ Fails closed: a missing memory directory or zero triggers is **rc=2 CANNOT RUN**, never "nothing
+fires". A zero over an empty corpus is not a finding.
+
+Measured during the build, and both changed the design: with IDF alone the fire rate was **flat at 73%
+from threshold 0.30 to 0.70** — one rare token cleared any cutoff, so the threshold controlled
+nothing; multiplying by coverage brought it to **17%** while keeping the must-fire case and silencing
+the must-be-silent one. And an absolute cutoff tuned for 141 entries stopped firing entirely on a
+3-entry corpus, so the threshold is now a fraction of `log(N)`.
+
+40 self-test cases, 10 mutation entries, registered in `EXPECTED_MUTATIONS` (1034 → 1044),
+`EXAMINED_KEYS`, and `check-selftest-counts`' POPULATION. `check-fixture-variation` flagged three
+never-varied parameters; three cases were added rather than an exemption taken.

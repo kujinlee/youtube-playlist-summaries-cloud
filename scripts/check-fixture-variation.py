@@ -300,6 +300,32 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # ⟳ 2026-09-29, backlog #191 C5: the recall matcher, pinned in the commit that adds it.
+    # DERIVED by running analyse() on the FINAL source after the suite was frozen, per the warning
+    # above — not transcribed, and not derived before the last edit.
+    # It reports NO findings: the guard first flagged THREE never-varied parameters
+    # (rank.entries, rank.threshold, score.weights), and three cases were added to vary each
+    # rather than taking an exemption.
+    "recall-match.py": (
+        "coverage.situation",
+        "coverage.trigger",
+        "idf.docs",
+        "parse_trigger.description",
+        "plan_situation.plan_text",
+        "plan_situation.sentinel_text",
+        "rank.entries",
+        "rank.situation",
+        "rank.threshold",
+        "rank.top",
+        "relevance.situation",
+        "relevance.trigger",
+        "relevance.weights",
+        "score.situation",
+        "score.trigger",
+        "score.weights",
+        "stem.word",
+        "tokenise.text",
+    ),
     # ⟳ 2026-09-23, backlog #166 + #170: the ONE owner of the observer-log record, pinned in the
     # commit that adds it — this guard refused the file until it was, which is now the fourth time
     # it has caught a new script arriving unmeasured. DERIVED by running `analyse()` on the final
