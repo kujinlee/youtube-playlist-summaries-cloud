@@ -1,0 +1,18 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 2910 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "8a5a080e99944dbd7feae82032093806392c21b3",
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/1d12d1a5-4f7c-489c-b492-5d74b5dcce20/scratchpad/sg.yml: CREATED during the run (writer unattributed)"
+  ],
+  "model": "gpt-5.5",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/1d12d1a5-4f7c-489c-b492-5d74b5dcce20/scratchpad/r7-prompt.md",
+  "reason": "2910 chars",
+  "review": "explainer-src-root-self-configures-r7-codex.md",
+  "schema": 2,
+  "tool": "codex-review"
+}

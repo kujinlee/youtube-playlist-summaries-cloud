@@ -12893,3 +12893,46 @@ Carries three measured items only: run all document guards rather than a subset 
 command exists for them; a new `backlog.md` column value must be claimed by an `areas:` line in
 `features.md` or the row cannot render; and `check-dashboard-entry.py` reads the committed diff, so a
 pre-commit `rc=0` is vacuous.
+
+## 2026-09-29 [needs-you]
+A pull request that could never be merged is now closed, its eight rounds of review are saved, and the work it held has a place of its own.
+
+PR #295 had been open since 13 September and could not be merged at any point: half of what it contained
+had already reached the project by a different route, so merging it would have re-applied code that was
+already there. It sat unresolvable for sixteen days.
+
+⭐ **The part worth knowing is why nobody noticed.** It had been parked with a clear condition —
+*when a particular other item lands, pick this up again.* **That item landed on 15 September.** The
+condition was written down correctly, in a place nothing points at, so the moment it came true passed in
+silence. It surfaced only because you asked what was still open. This is precisely the failure the memory
+work is about, caught in the wild rather than reconstructed.
+
+⚠ **Closing it would have quietly cost something, so that was handled first.** The pull request
+carried **eight rounds of review — twenty-four documents and eight verdicts** that had never reached
+the project. A closed pull request's branch can still be dug up, but nobody will ever find it by looking.
+Those documents are merged here as their own change, before the closure.
+
+**The work itself — a restart feature for the local documentation server — is now written down as
+its own item**, with the symbols it needs, the three known defects that travel with it, and a warning not
+to start with the feature: the test guarding it is known to pass when it should fail.
+
+**Decide:** Do you still want the restart feature at all?
+- yes — fix the unsound guard first, then rebuild it on a fresh branch [recommended]
+- not now — leave the item open and unscheduled
+- no — retire it explicitly, so it stops looking pending
+- something else — I have a question about this
+
+<!--tech-->
+**Backlog #193** replaces closed PR #295. Remainder enumerated from the PR diff, not recalled:
+`scripts/explainer-serve.py` (+903/-35), `scripts/page_chrome.py` (+296/-4),
+`scripts/mutations/page_chrome.json` (+154/-121), plus smaller edits to `check-fixture-variation.py`,
+`check-plan-code.py`, `gen-dashboard.py`. Symbols: `RESTART_LOCK`, `Handler._restart`, `/_alive`,
+`/_restart`, `RESTART_LOG`, `respawn()`, `--restart`/`--respawn`, the pipe rewrite of `start()`,
+`page_chrome`'s restart control.
+
+Unblock: #295 was parked behind backlog #122, which closed 2026-09-15 via PR #305. Twelve days elapsed
+with no signal. Sequencing: **#125 before the feature** — its guard case is green on a live
+reproduction of the High it was written for. #126 and #127 travel with it.
+
+Testimony preserved: 32 files restored from `origin/explainer-src-root-self-configures` by explicit path
+(`docs/reviews/{claude,codex,coordinator,verdicts}/`), verified to carry no code.
