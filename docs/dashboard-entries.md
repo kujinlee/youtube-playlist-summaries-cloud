@@ -12984,3 +12984,57 @@ the must-be-silent one. And an absolute cutoff tuned for 141 entries stopped fir
 40 self-test cases, 10 mutation entries, registered in `EXPECTED_MUTATIONS` (1034 → 1044),
 `EXAMINED_KEYS`, and `check-selftest-counts`' POPULATION. `check-fixture-variation` flagged three
 never-varied parameters; three cases were added rather than an exemption taken.
+
+## 2026-09-29 [needs-you]
+The thing I built to make memory fire turned out not to work, and the experiment that showed why also showed what does.
+
+I spent the evening building the piece that reads the 141 trigger lines added this morning and speaks
+up when one applies. It compares the words in what I am about to do against the words in each trigger.
+
+**It looked like it worked, and it did not.** I wrote twenty test situations with the answers committed
+in advance, and it got **nineteen of twenty**. Then I rewrote the same twenty situations in different
+words — same moments, different phrasing — and it got **two**.
+
+⭐ **The nineteen was measuring my own vocabulary agreeing with itself.** I wrote the triggers in
+the morning and the test situations in the evening, in the same words, so of course they matched. When
+the wording changed, the whole thing collapsed — and not politely: it became confidently wrong
+rather than silent.
+
+⭐⭐ **Then the last experiment of the night reversed the conclusion.** I gave those same reworded
+situations to a fresh assistant with no knowledge of any of this, along with the 141 triggers, and asked
+which one matched by meaning rather than by words. **Nineteen of twenty.**
+
+So the trigger lines are good. The corpus was never the problem — the word-matching was. And the
+honest, uncomfortable part: I ruled out meaning-based matching early on because it is harder to test,
+and that is a reason about my own convenience rather than about whether the thing works.
+
+⚠ **One run, twenty cases, and I wrote both the triggers and the test.** That is the same setup
+that produced three wrong answers today. It needs repeating with situations written by someone else
+before anything gets built on it.
+
+**Decide:** what should happen to the half-built matcher?
+- replace the word-matching with meaning-matching, after repeating the experiment independently [recommended]
+- leave it parked; the trigger lines are useful on their own and cost nothing
+- drop the matcher idea and build the small guards that need no matching at all
+- something else — I have a question about this
+
+<!--tech-->
+**Backlog #191 C5.** Branch `c5-recall-matcher`, 4 commits, unmerged, `master` clean at `446025ab`.
+Round 1 dual review returned 2 Blocking, 4 High, 4 Medium, 7 Low on ~450 lines.
+
+Measured: lexical scoring fires on **52.7% of 1,062 real commands** (claimed 17%, from 30 hand-picked);
+`IDF × coverage` was dimensionally wrong (bounded × unbounded, cutoff a fraction of a single
+token's ceiling, so the effective bar slid from 0.300 to impossible depending on which token matched);
+the stemmer split every `-e` verb from its own inflections, fragmenting IDF across nine live pairs.
+Repairs 1 and 2 were correct and insufficient.
+
+Labelled set committed at `8d1202f0` **before** its first run. Lexical: 19/20 on author-wording,
+**2/20 paraphrased**. LLM meaning-matching on the same paraphrases: **19/20**.
+
+Also fixed and verified tonight: hook delivery. `PreToolUse` plain stdout at exit 0 reaches the user's
+transcript, **not** the model's context — so the matcher was writing where it could not work.
+`hookSpecificOutput.additionalContext` reaches both the main session and subagent sessions, probed
+independently. The hook is live and firing at ~125ms per Bash call.
+
+Full account, including the four scoring functions and the root-cause pattern behind every failure:
+`http://127.0.0.1:7391/2026-09-27-topic-memory-recall-taxonomy` §14.

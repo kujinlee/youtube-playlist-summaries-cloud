@@ -2,68 +2,111 @@
  {
   "name": "coverage is dropped from the score, so one coincidental rare token fires as loudly as a real match",
   "file": "scripts/recall-match.py",
-  "edits": [["    return score(situation, trigger, weights) * coverage(situation, trigger)\n",
-             "    return score(situation, trigger, weights)\n"]],
+  "edits": [
+   [
+    "    return score(situation, trigger, weights) * coverage(situation, trigger)\n",
+    "    return score(situation, trigger, weights)\n"
+   ]
+  ],
   "expect": "relevance halves a score when half the trigger is matched"
  },
  {
   "name": "coverage divides by the SITUATION instead of the trigger, so a verbose Doing line is punished and a one-word trigger always wins",
   "file": "scripts/recall-match.py",
-  "edits": [["    tt = set(trigger)\n    return len(set(situation) & tt) / len(tt) if tt else 0.0\n",
-             "    ss = set(situation)\n    return len(ss & set(trigger)) / len(ss) if ss else 0.0\n"]],
+  "edits": [
+   [
+    "    tt = set(trigger)\n    return len(set(situation) & tt) / len(tt) if tt else 0.0\n",
+    "    ss = set(situation)\n    return len(ss & set(trigger)) / len(ss) if ss else 0.0\n"
+   ]
+  ],
   "expect": "coverage divides by the TRIGGER's length"
  },
  {
   "name": "an empty trigger divides by zero instead of scoring 0",
   "file": "scripts/recall-match.py",
-  "edits": [["    return len(set(situation) & tt) / len(tt) if tt else 0.0\n",
-             "    return len(set(situation) & tt) / len(tt)\n"]],
+  "edits": [
+   [
+    "    return len(set(situation) & tt) / len(tt) if tt else 0.0\n",
+    "    return len(set(situation) & tt) / len(tt)\n"
+   ]
+  ],
   "expect": "coverage of an empty trigger is 0, never a divide-by-zero"
  },
  {
   "name": "the threshold stops scaling with corpus size, so it silently stops firing on a smaller corpus",
   "file": "scripts/recall-match.py",
-  "edits": [["    cutoff = threshold * math.log(max(len(docs), 2))\n",
-             "    cutoff = threshold * 4.95\n"]],
+  "edits": [
+   [
+    "    cutoff = threshold * math.log(max(len(docs), 2))\n",
+    "    cutoff = threshold * 4.95\n"
+   ]
+  ],
   "expect": "rank surfaces the abort entry for an abortSignal situation"
  },
  {
   "name": "score counts a repeated situation token twice, so a verbose line outranks a precise one",
   "file": "scripts/recall-match.py",
-  "edits": [["    return sum(weights.get(t, 0.0) for t in set(situation) & set(trigger))\n",
-             "    return sum(weights.get(t, 0.0) for t in situation if t in set(trigger))\n"]],
+  "edits": [
+   [
+    "    return sum(weights.get(t, 0.0) for t in set(situation) & set(trigger))\n",
+    "    return sum(weights.get(t, 0.0) for t in situation if t in set(trigger))\n"
+   ]
+  ],
   "expect": "score does not double-count a repeat"
  },
  {
   "name": "a description with no FIRES-WHEN returns an empty string instead of None, so un-rewritten entries score as empty triggers instead of being counted",
   "file": "scripts/recall-match.py",
-  "edits": [["    if not d.startswith(TRIGGER_PREFIX):\n        return None\n",
-             "    if not d.startswith(TRIGGER_PREFIX):\n        return \"\"\n"]],
+  "edits": [
+   [
+    "    if not d.startswith(TRIGGER_PREFIX):\n        return None\n",
+    "    if not d.startswith(TRIGGER_PREFIX):\n        return \"\"\n"
+   ]
+  ],
   "expect": "parse_trigger returns None with no prefix"
  },
  {
   "name": "plan_situation ignores the paused sentinel, so a handed-back plan still surfaces entries for work nobody is doing",
   "file": "scripts/recall-match.py",
-  "edits": [["    if \"paused:\" in sentinel_text:\n        return None\n", "    if False:\n        return None\n"]],
+  "edits": [
+   [
+    "    if \"paused:\" in sentinel_text:\n        return None\n",
+    "    if False:\n        return None\n"
+   ]
+  ],
   "expect": "plan_situation returns None when paused"
  },
  {
   "name": "plan_situation takes the first step rather than the first UNTICKED one, so it matches work already finished",
   "file": "scripts/recall-match.py",
-  "edits": [["        if re.search(r\"^- \\[ \\]\", block, re.M):\n", "        if True:\n"]],
+  "edits": [
+   [
+    "        if re.search(r\"^- \\[ \\]\", block, re.M):\n",
+    "        if True:\n"
+   ]
+  ],
   "expect": "plan_situation takes the first UNTICKED step"
  },
  {
-  "name": "an empty corpus reports OK instead of CANNOT RUN, which is the vacuous pass this script exists to refuse",
+  "name": "an empty corpus reports OK instead of CANNOT RUN, which is the vacuous pass this script exists to refuse \u2014 SURVIVED the 2026-09-29 sweep while the decision was inline in main() and this field held a written excuse instead of a case",
   "file": "scripts/recall-match.py",
-  "edits": [["    if not entries:\n        print(f\"CANNOT RUN:", "    if False:\n        print(f\"CANNOT RUN:"]],
-  "expect": "NO-CASE: exercised by the rc contract, not by a pure case — see the docstring"
+  "edits": [
+   [
+    "    if n_entries == 0:\n        return CANNOT_RUN,",
+    "    if False:\n        return CANNOT_RUN,"
+   ]
+  ],
+  "expect": "an empty corpus is CANNOT RUN, never a pass"
  },
  {
   "name": "the stem guard is removed, so short words are shredded and stop matching their own stems",
   "file": "scripts/recall-match.py",
-  "edits": [["        if word.endswith(suf) and len(word) - len(suf) >= _MIN_STEM:\n",
-             "        if word.endswith(suf):\n"]],
+  "edits": [
+   [
+    "        if word.endswith(suf) and len(word) - len(suf) >= _MIN_STEM:\n",
+    "        if word.endswith(suf):\n"
+   ]
+  ],
   "expect": "stem keeps short words whole"
  }
 ]
