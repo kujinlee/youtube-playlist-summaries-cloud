@@ -1,0 +1,827 @@
+{
+ "_what": "The corpus for the 2026-09-29 replication of the semantic-vs-lexical recall result. Self-contained: everything needed to re-run the measurement without the c5-recall-matcher branch.",
+ "_why": "The handoff's caveat was 'one run, n=20, one model, labels I wrote'. This bundle exists so the next person re-runs it rather than trusting it.",
+ "_provenance": {
+  "original_labels": "committed at 8d1202f0 BEFORE the lexical matcher was first run against them; reproduced verbatim below",
+  "paraphrases": "authored by an agent shown ONLY the situation strings \u2014 never the 141 triggers, never the labels",
+  "hard_negatives": "authored by an agent told only to write dull, ordinary engineering moments; it never saw the corpus, the triggers or any other part of this experiment",
+  "mixed_set": "the 20 positives and 60 negatives shuffled under opaque Q-ids so kind cannot be inferred from the id"
+ },
+ "_the_falsifier": "A forced-choice must-fire-only set CANNOT fail: an LLM always names something, so scoring only hits measures the labeller's taste. The 60 negatives are what make the number mean anything, and the pre-registered kill condition was >=8 false fires of 60.",
+ "original_labels": {
+  "_what": "A LABELLED must-fire/must-be-silent set for the recall matcher, over PLAN-STEP situations.",
+  "_why": "Written and committed BEFORE running the matcher against it. Every earlier number in this build was derived from output I looked at first: the 17% fire rate came from 30 commands I chose, and the 'B3 looks promising' claim came from reading 195 matches and noticing the good ones. Reading a list and noticing hits cannot count MISSES, because a miss is invisible without a label. Committing the answers first is the only way this set can falsify anything.",
+  "_method": "Situations are drawn from real `Doing:` lines written during this project's sessions, or are realistic paraphrases of moments that actually occurred. Expected entries were chosen by reading the memory corpus's triggers, NOT by running the matcher. Where more than one entry is genuinely right, `expect_any` lists them and surfacing any one counts as a hit.",
+  "_scoring": "hit = the expected entry appears in the top N. miss = it does not. violation = a `must_be_silent` situation surfaces anything at all.",
+  "must_fire": [
+   {
+    "situation": "run check-merge-ready again, merge only if READY",
+    "expect_any": [
+     "merge-ready-slice-merged-324"
+    ]
+   },
+   {
+    "situation": "running only two of the twenty document guards before the commit",
+    "expect_any": [
+     "merge-ready-slice-merged-324"
+    ]
+   },
+   {
+    "situation": "about to write a number from this morning into the commit message",
+    "expect_any": [
+     "a-retrospective-number-needs-provenance",
+     "an-inference-stated-as-measured"
+    ]
+   },
+   {
+    "situation": "stating the fire rate as measured, over thirty commands I picked myself",
+    "expect_any": [
+     "a-measurement-is-only-as-good-as-its-corpus",
+     "an-inference-stated-as-measured"
+    ]
+   },
+   {
+    "situation": "editing a file that mutation anchors bind to",
+    "expect_any": [
+     "a-mutation-anchor-is-unbound-by-any-edit-nearby",
+     "a-mutation-loses-its-binding"
+    ]
+   },
+   {
+    "situation": "opening a second branch that touches dashboard-entries.md and the roadmap",
+    "expect_any": [
+     "parallel-branches-append-to-one-log"
+    ]
+   },
+   {
+    "situation": "about to put a choice to the user about which pull request to merge",
+    "expect_any": [
+     "print-selection-cards-in-chat",
+     "putting-a-choice-to-the-user"
+    ]
+   },
+   {
+    "situation": "spawning the Claude half of the dual adversarial review",
+    "expect_any": [
+     "dual-review-is-the-process-not-a-request",
+     "agent-tool-restriction-has-no-owner",
+     "dual-review-what-it-catches"
+    ]
+   },
+   {
+    "situation": "dispatching Codex and waiting on the output file",
+    "expect_any": [
+     "running-codex"
+    ]
+   },
+   {
+    "situation": "pushing from the worktree under the scratchpad directory",
+    "expect_any": [
+     "push-from-a-worktree-needs-an-explicit-refspec"
+    ]
+   },
+   {
+    "situation": "writing a self-test case for the new guard",
+    "expect_any": [
+     "a-test-that-cannot-fail",
+     "assert-the-property-not-the-mechanism",
+     "exercise-the-producer-at-two-distinct-inputs"
+    ]
+   },
+   {
+    "situation": "proposing to build a search tool over the memory corpus",
+    "expect_any": [
+     "it-already-exists-under-a-name-i-didnt-search"
+    ]
+   },
+   {
+    "situation": "merging a pull request with --delete-branch while another is stacked on it",
+    "expect_any": [
+     "a-stacked-pr-dies-with-its-base-branch"
+    ]
+   },
+   {
+    "situation": "sending the spec to the user for approval",
+    "expect_any": [
+     "document-approval-is-interactive"
+    ]
+   },
+   {
+    "situation": "the schema gate needs Docker and the daemon is not responding",
+    "expect_any": [
+     "restart-docker-dont-record-cannot-run"
+    ]
+   },
+   {
+    "situation": "reading the status cell of a backlog row by position",
+    "expect_any": [
+     "a-positional-read-needs-a-verified-shape"
+    ]
+   },
+   {
+    "situation": "about to end the turn on a summary of what I will do next",
+    "expect_any": [
+     "never-close-with-a-promise",
+     "the-user-does-not-follow-in-real-time"
+    ]
+   },
+   {
+    "situation": "writing a check that compares two values captured in the same closure",
+    "expect_any": [
+     "guard-operands-from-one-closure"
+    ]
+   },
+   {
+    "situation": "claiming the guard proves nothing survived, by intercepting every call",
+    "expect_any": [
+     "proving-a-negative-by-interception-cannot-terminate"
+    ]
+   },
+   {
+    "situation": "about to write C5 in a message without saying what it is",
+    "expect_any": [
+     "name-and-define-every-reference"
+    ]
+   }
+  ],
+  "must_be_silent": [
+   {
+    "situation": "making a cup of tea"
+   },
+   {
+    "situation": "x"
+   },
+   {
+    "situation": "reading the weather forecast for tomorrow"
+   },
+   {
+    "situation": "listening to a record"
+   },
+   {
+    "situation": "walking to the shops and back"
+   }
+  ],
+  "_predictions": {
+   "_note": "Recorded before running, so the result can surprise me. If these are right, the set told me nothing I did not already believe.",
+   "expected_hit_rate": "12-15 of 20 \u2014 better than the 1/5 on Bash commands, well short of usable",
+   "expected_violations": "0 of 5 \u2014 the silent set is far from the corpus vocabulary",
+   "expected_weakest": "the multi-word abstract ones ('claiming the guard proves nothing', 'about to end the turn') \u2014 their triggers share few literal tokens with how I would phrase the moment"
+  }
+ },
+ "paraphrases": {
+  "F00": "re-execute check-merge-ready, and integrate only when it reports READY",
+  "F01": "executing just two of the twenty documentation safety checks ahead of recording the revision",
+  "F02": "on the verge of pasting a figure gathered earlier today into the text attached to a revision",
+  "F03": "reporting how often it triggers as an empirical figure, drawn from thirty instructions I chose myself",
+  "F04": "modifying a source file that mutation markers latch onto",
+  "F05": "starting up a further line of development that modifies both dashboard-entries.md and the launch plan",
+  "F06": "on the point of asking the human to decide which proposed changeset should be integrated",
+  "F07": "kicking off the Claude side of the two-part hostile critique",
+  "F08": "kicking off Codex, then sitting on the results file until it fills",
+  "F09": "uploading commits from the checkout that lives inside the temporary workspace folder",
+  "F10": "adding an internal verification scenario to the freshly built safety check",
+  "F11": "suggesting we construct a lookup utility across the whole body of stored recollections",
+  "F12": "integrating a proposed change using --delete-branch while a second one sits on top of it",
+  "F13": "handing the design document over to the human for sign-off",
+  "F14": "the database-structure check depends on Docker and the background service is unresponsive",
+  "F15": "pulling the state field out of a to-do table line by its index",
+  "F16": "on the verge of closing out my reply with an outline of my forthcoming actions",
+  "F17": "authoring a validation that weighs two variables both taken from one enclosing scope",
+  "F18": "asserting that the safety check demonstrates zero survivors, on the strength of trapping every invocation",
+  "F19": "on the verge of dropping the label C5 into a note without spelling out what it refers to",
+  "N01": "bumping a transitive dependency a version to clear an audit warning",
+  "N02": "adjusting the padding on a card component so its buttons line up",
+  "N03": "adding one more environment variable to the staging config file",
+  "N04": "updating the README install steps after the package was renamed",
+  "N05": "dropping a console log inside a click handler to see which element fires",
+  "N06": "raising the bundler's memory ceiling so the build finishes compiling",
+  "N07": "renaming a test fixture so it sorts beside the one it mirrors",
+  "N08": "pinning the linter version in the lockfile after a rule started failing",
+  "S00": "brewing myself a mug of tea",
+  "S01": "y",
+  "S02": "checking what the meteorologists predict for the day ahead",
+  "S03": "playing an LP on the turntable",
+  "S04": "strolling down to the corner store and back again"
+ },
+ "hard_negatives": {
+  "H01": "bumping the lockfile after adding a small date-formatting library to the web package",
+  "H02": "pinning a dev dependency to an exact version in the root package manifest",
+  "H03": "removing an unused utility package that nothing imports from the client app",
+  "H04": "moving a build-only tool from dependencies into devDependencies in the manifest",
+  "H05": "adding a peer dependency range so the plugin matches the host library version",
+  "H06": "nudging the gap between list items from twelve pixels to sixteen in the sidebar",
+  "H07": "switching a fixed header width to a percentage so it fills its container",
+  "H08": "extracting a repeated box-shadow into a CSS custom property on the root element",
+  "H09": "giving the disabled button state a lighter background and a not-allowed cursor",
+  "H10": "aligning the icon and label in the nav row with a flex gap instead of margins",
+  "H11": "adding a path alias for the shared folder to the bundler resolve config",
+  "H12": "splitting the vendor chunk out of the main bundle in the build settings",
+  "H13": "turning on source maps for the staging build target in the bundler config",
+  "H14": "adding an environment variable to the define block so the client reads the API host",
+  "H15": "excluding the generated types directory from the TypeScript compiler include list",
+  "H16": "enabling the no-floating-promises lint rule for the server package only",
+  "H17": "adding a formatter ignore entry for the generated GraphQL schema file",
+  "H18": "reordering imports in a handler module so the linter stops complaining",
+  "H19": "setting the print width to a hundred columns in the formatter config",
+  "H20": "silencing an exhaustive-deps warning on a hook with an inline comment",
+  "H21": "adding a recommended-extensions file so the editor suggests the formatter plugin",
+  "H22": "setting format-on-save for TypeScript files in the workspace editor settings",
+  "H23": "adding a debug launch profile that attaches to the running dev server",
+  "H24": "marking the build output folder as excluded from editor file watching",
+  "H25": "adding a composite index on tenant id and created-at for the events table",
+  "H26": "rewriting a subquery in the reports view as a join over the orders table",
+  "H27": "adding a not-null constraint and a default to the status column",
+  "H28": "paginating the admin user listing with a limit and offset in the query",
+  "H29": "renaming an ambiguous column alias in the monthly totals query",
+  "H30": "adding a request id field to the structured log lines in the API middleware",
+  "H31": "dropping a chatty debug log in the polling loop down to trace level",
+  "H32": "tagging outbound spans with the upstream service name in the tracer setup",
+  "H33": "including the tenant slug in the log context for background job runs",
+  "H34": "adding a retry with backoff to the outbound client for idempotent GET calls",
+  "H35": "setting a thirty-second timeout on the payments HTTP client instance",
+  "H36": "returning 404 instead of 200 with a null body from the lookup endpoint",
+  "H37": "accepting an optional cursor query parameter on the listing route",
+  "H38": "adding an Accept-Language header pass-through in the gateway client",
+  "H39": "raising the in-memory cache TTL for country lookups to one hour",
+  "H40": "adding a cache key prefix so staging and production entries stay separate",
+  "H41": "invalidating the profile cache entry when the display name is updated",
+  "H42": "reading the bearer token from the Authorization header in the session middleware",
+  "H43": "moving the token refresh call into a shared client wrapper",
+  "H44": "storing the session cookie with SameSite lax and a one-week expiry",
+  "H45": "streaming an upload to disk instead of buffering it in the import handler",
+  "H46": "creating the output directory before writing the generated report file",
+  "H47": "storing timestamps as UTC and converting to the user's zone at render time",
+  "H48": "using a date-only comparison for the expiry check in the coupon service",
+  "H49": "moving the hard-coded button labels into the translation catalogue",
+  "H50": "adding plural forms for the item-count string in the French locale file",
+  "H51": "adding an aria-label to the icon-only close button in the dialog",
+  "H52": "giving the search input a visible focus outline in the header bar",
+  "H53": "stacking the two-column settings form into one column under 640 pixels",
+  "H54": "adding safe-area padding at the bottom of the mobile tab bar",
+  "H55": "inlining the button styles in the welcome email so Outlook renders them",
+  "H56": "moving the nightly digest job from two in the morning to four",
+  "H57": "setting the memory limit for the worker container to one gigabyte",
+  "H58": "raising the queue-depth alert threshold for the import worker",
+  "H59": "memoising the row formatter so the table stops recomputing it per render",
+  "H60": "renaming the shortened helper variables in the invoice totals module to full words"
+ },
+ "mixed_key": {
+  "Q01": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H30",
+   "text": "adding a request id field to the structured log lines in the API middleware"
+  },
+  "Q02": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H02",
+   "text": "pinning a dev dependency to an exact version in the root package manifest"
+  },
+  "Q03": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H47",
+   "text": "storing timestamps as UTC and converting to the user's zone at render time"
+  },
+  "Q04": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H51",
+   "text": "adding an aria-label to the icon-only close button in the dialog"
+  },
+  "Q05": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H19",
+   "text": "setting the print width to a hundred columns in the formatter config"
+  },
+  "Q06": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H05",
+   "text": "adding a peer dependency range so the plugin matches the host library version"
+  },
+  "Q07": {
+   "expect": [
+    "name-and-define-every-reference"
+   ],
+   "kind": "fire",
+   "src": "F19",
+   "text": "on the verge of dropping the label C5 into a note without spelling out what it refers to"
+  },
+  "Q08": {
+   "expect": [
+    "document-approval-is-interactive"
+   ],
+   "kind": "fire",
+   "src": "F13",
+   "text": "handing the design document over to the human for sign-off"
+  },
+  "Q09": {
+   "expect": [
+    "merge-ready-slice-merged-324"
+   ],
+   "kind": "fire",
+   "src": "F01",
+   "text": "executing just two of the twenty documentation safety checks ahead of recording the revision"
+  },
+  "Q10": {
+   "expect": [
+    "proving-a-negative-by-interception-cannot-terminate"
+   ],
+   "kind": "fire",
+   "src": "F18",
+   "text": "asserting that the safety check demonstrates zero survivors, on the strength of trapping every invocation"
+  },
+  "Q11": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H60",
+   "text": "renaming the shortened helper variables in the invoice totals module to full words"
+  },
+  "Q12": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H58",
+   "text": "raising the queue-depth alert threshold for the import worker"
+  },
+  "Q13": {
+   "expect": [
+    "restart-docker-dont-record-cannot-run"
+   ],
+   "kind": "fire",
+   "src": "F14",
+   "text": "the database-structure check depends on Docker and the background service is unresponsive"
+  },
+  "Q14": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H07",
+   "text": "switching a fixed header width to a percentage so it fills its container"
+  },
+  "Q15": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H14",
+   "text": "adding an environment variable to the define block so the client reads the API host"
+  },
+  "Q16": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H13",
+   "text": "turning on source maps for the staging build target in the bundler config"
+  },
+  "Q17": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H48",
+   "text": "using a date-only comparison for the expiry check in the coupon service"
+  },
+  "Q18": {
+   "expect": [
+    "a-positional-read-needs-a-verified-shape"
+   ],
+   "kind": "fire",
+   "src": "F15",
+   "text": "pulling the state field out of a to-do table line by its index"
+  },
+  "Q19": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H25",
+   "text": "adding a composite index on tenant id and created-at for the events table"
+  },
+  "Q20": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H28",
+   "text": "paginating the admin user listing with a limit and offset in the query"
+  },
+  "Q21": {
+   "expect": [
+    "it-already-exists-under-a-name-i-didnt-search"
+   ],
+   "kind": "fire",
+   "src": "F11",
+   "text": "suggesting we construct a lookup utility across the whole body of stored recollections"
+  },
+  "Q22": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H27",
+   "text": "adding a not-null constraint and a default to the status column"
+  },
+  "Q23": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H35",
+   "text": "setting a thirty-second timeout on the payments HTTP client instance"
+  },
+  "Q24": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H06",
+   "text": "nudging the gap between list items from twelve pixels to sixteen in the sidebar"
+  },
+  "Q25": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H31",
+   "text": "dropping a chatty debug log in the polling loop down to trace level"
+  },
+  "Q26": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H55",
+   "text": "inlining the button styles in the welcome email so Outlook renders them"
+  },
+  "Q27": {
+   "expect": [
+    "a-stacked-pr-dies-with-its-base-branch"
+   ],
+   "kind": "fire",
+   "src": "F12",
+   "text": "integrating a proposed change using --delete-branch while a second one sits on top of it"
+  },
+  "Q28": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H53",
+   "text": "stacking the two-column settings form into one column under 640 pixels"
+  },
+  "Q29": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H03",
+   "text": "removing an unused utility package that nothing imports from the client app"
+  },
+  "Q30": {
+   "expect": [
+    "never-close-with-a-promise",
+    "the-user-does-not-follow-in-real-time"
+   ],
+   "kind": "fire",
+   "src": "F16",
+   "text": "on the verge of closing out my reply with an outline of my forthcoming actions"
+  },
+  "Q31": {
+   "expect": [
+    "a-retrospective-number-needs-provenance",
+    "an-inference-stated-as-measured"
+   ],
+   "kind": "fire",
+   "src": "F02",
+   "text": "on the verge of pasting a figure gathered earlier today into the text attached to a revision"
+  },
+  "Q32": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H32",
+   "text": "tagging outbound spans with the upstream service name in the tracer setup"
+  },
+  "Q33": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H40",
+   "text": "adding a cache key prefix so staging and production entries stay separate"
+  },
+  "Q34": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H52",
+   "text": "giving the search input a visible focus outline in the header bar"
+  },
+  "Q35": {
+   "expect": [
+    "print-selection-cards-in-chat",
+    "putting-a-choice-to-the-user"
+   ],
+   "kind": "fire",
+   "src": "F06",
+   "text": "on the point of asking the human to decide which proposed changeset should be integrated"
+  },
+  "Q36": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H44",
+   "text": "storing the session cookie with SameSite lax and a one-week expiry"
+  },
+  "Q37": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H38",
+   "text": "adding an Accept-Language header pass-through in the gateway client"
+  },
+  "Q38": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H26",
+   "text": "rewriting a subquery in the reports view as a join over the orders table"
+  },
+  "Q39": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H39",
+   "text": "raising the in-memory cache TTL for country lookups to one hour"
+  },
+  "Q40": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H23",
+   "text": "adding a debug launch profile that attaches to the running dev server"
+  },
+  "Q41": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H56",
+   "text": "moving the nightly digest job from two in the morning to four"
+  },
+  "Q42": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H34",
+   "text": "adding a retry with backoff to the outbound client for idempotent GET calls"
+  },
+  "Q43": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H57",
+   "text": "setting the memory limit for the worker container to one gigabyte"
+  },
+  "Q44": {
+   "expect": [
+    "dual-review-is-the-process-not-a-request",
+    "agent-tool-restriction-has-no-owner",
+    "dual-review-what-it-catches"
+   ],
+   "kind": "fire",
+   "src": "F07",
+   "text": "kicking off the Claude side of the two-part hostile critique"
+  },
+  "Q45": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H01",
+   "text": "bumping the lockfile after adding a small date-formatting library to the web package"
+  },
+  "Q46": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H59",
+   "text": "memoising the row formatter so the table stops recomputing it per render"
+  },
+  "Q47": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H18",
+   "text": "reordering imports in a handler module so the linter stops complaining"
+  },
+  "Q48": {
+   "expect": [
+    "a-test-that-cannot-fail",
+    "assert-the-property-not-the-mechanism",
+    "exercise-the-producer-at-two-distinct-inputs"
+   ],
+   "kind": "fire",
+   "src": "F10",
+   "text": "adding an internal verification scenario to the freshly built safety check"
+  },
+  "Q49": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H29",
+   "text": "renaming an ambiguous column alias in the monthly totals query"
+  },
+  "Q50": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H15",
+   "text": "excluding the generated types directory from the TypeScript compiler include list"
+  },
+  "Q51": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H41",
+   "text": "invalidating the profile cache entry when the display name is updated"
+  },
+  "Q52": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H43",
+   "text": "moving the token refresh call into a shared client wrapper"
+  },
+  "Q53": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H37",
+   "text": "accepting an optional cursor query parameter on the listing route"
+  },
+  "Q54": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H45",
+   "text": "streaming an upload to disk instead of buffering it in the import handler"
+  },
+  "Q55": {
+   "expect": [
+    "a-mutation-anchor-is-unbound-by-any-edit-nearby",
+    "a-mutation-loses-its-binding"
+   ],
+   "kind": "fire",
+   "src": "F04",
+   "text": "modifying a source file that mutation markers latch onto"
+  },
+  "Q56": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H46",
+   "text": "creating the output directory before writing the generated report file"
+  },
+  "Q57": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H11",
+   "text": "adding a path alias for the shared folder to the bundler resolve config"
+  },
+  "Q58": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H08",
+   "text": "extracting a repeated box-shadow into a CSS custom property on the root element"
+  },
+  "Q59": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H22",
+   "text": "setting format-on-save for TypeScript files in the workspace editor settings"
+  },
+  "Q60": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H12",
+   "text": "splitting the vendor chunk out of the main bundle in the build settings"
+  },
+  "Q61": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H10",
+   "text": "aligning the icon and label in the nav row with a flex gap instead of margins"
+  },
+  "Q62": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H33",
+   "text": "including the tenant slug in the log context for background job runs"
+  },
+  "Q63": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H09",
+   "text": "giving the disabled button state a lighter background and a not-allowed cursor"
+  },
+  "Q64": {
+   "expect": [
+    "push-from-a-worktree-needs-an-explicit-refspec"
+   ],
+   "kind": "fire",
+   "src": "F09",
+   "text": "uploading commits from the checkout that lives inside the temporary workspace folder"
+  },
+  "Q65": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H16",
+   "text": "enabling the no-floating-promises lint rule for the server package only"
+  },
+  "Q66": {
+   "expect": [
+    "running-codex"
+   ],
+   "kind": "fire",
+   "src": "F08",
+   "text": "kicking off Codex, then sitting on the results file until it fills"
+  },
+  "Q67": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H20",
+   "text": "silencing an exhaustive-deps warning on a hook with an inline comment"
+  },
+  "Q68": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H21",
+   "text": "adding a recommended-extensions file so the editor suggests the formatter plugin"
+  },
+  "Q69": {
+   "expect": [
+    "merge-ready-slice-merged-324"
+   ],
+   "kind": "fire",
+   "src": "F00",
+   "text": "re-execute check-merge-ready, and integrate only when it reports READY"
+  },
+  "Q70": {
+   "expect": [
+    "guard-operands-from-one-closure"
+   ],
+   "kind": "fire",
+   "src": "F17",
+   "text": "authoring a validation that weighs two variables both taken from one enclosing scope"
+  },
+  "Q71": {
+   "expect": [
+    "a-measurement-is-only-as-good-as-its-corpus",
+    "an-inference-stated-as-measured"
+   ],
+   "kind": "fire",
+   "src": "F03",
+   "text": "reporting how often it triggers as an empirical figure, drawn from thirty instructions I chose myself"
+  },
+  "Q72": {
+   "expect": [
+    "parallel-branches-append-to-one-log"
+   ],
+   "kind": "fire",
+   "src": "F05",
+   "text": "starting up a further line of development that modifies both dashboard-entries.md and the launch plan"
+  },
+  "Q73": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H24",
+   "text": "marking the build output folder as excluded from editor file watching"
+  },
+  "Q74": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H36",
+   "text": "returning 404 instead of 200 with a null body from the lookup endpoint"
+  },
+  "Q75": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H42",
+   "text": "reading the bearer token from the Authorization header in the session middleware"
+  },
+  "Q76": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H49",
+   "text": "moving the hard-coded button labels into the translation catalogue"
+  },
+  "Q77": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H50",
+   "text": "adding plural forms for the item-count string in the French locale file"
+  },
+  "Q78": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H04",
+   "text": "moving a build-only tool from dependencies into devDependencies in the manifest"
+  },
+  "Q79": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H17",
+   "text": "adding a formatter ignore entry for the generated GraphQL schema file"
+  },
+  "Q80": {
+   "expect": [],
+   "kind": "hard-negative",
+   "src": "H54",
+   "text": "adding safe-area padding at the bottom of the mobile tab bar"
+  }
+ },
+ "results": {
+  "lexical_top1_paraphrased": {
+   "must_fire": "3/20",
+   "trivial_negatives": "5/5 silent",
+   "hard_negatives_8": "7/8 silent",
+   "hard_negatives_60": "53/60 silent, 7 false fires = 11.7%"
+  },
+  "semantic_run1_33": {
+   "must_fire": "20/20",
+   "negatives": "13/13 silent"
+  },
+  "semantic_run2_33": {
+   "must_fire": "20/20",
+   "negatives": "13/13 silent",
+   "_note": "disagreed with run1 on 2 of 33, BOTH inside expect_any"
+  },
+  "semantic_probe_80": {
+   "must_fire": "20/20",
+   "negatives": "60/60 silent",
+   "_caveat": "answer key was reachable in the same directory; superseded by the isolated run"
+  },
+  "semantic_isolated_80": {
+   "must_fire": "20/20",
+   "negatives": "60/60 silent",
+   "_note": "clean room: input dir held only corpus+queries, output written elsewhere, agent reported opening only those files; agreed with probe_80 on 79/80"
+  }
+ },
+ "_bound": "0 false fires in 60 gives a 95% upper bound of 5.0% by the rule of three. That is the precision claim this experiment earns \u2014 no more."
+}

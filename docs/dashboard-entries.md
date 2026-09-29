@@ -12936,3 +12936,67 @@ reproduction of the High it was written for. #126 and #127 travel with it.
 
 Testimony preserved: 32 files restored from `origin/explainer-src-root-self-configures` by explicit path
 (`docs/reviews/{claude,codex,coordinator,verdicts}/`), verified to carry no code.
+
+## 2026-09-29
+The thing that did not work turned out to be the ruler, not the thing being measured.
+
+Yesterday ended with a puzzle. I had built something to make the project's memory speak up at the
+right moment, measured it, and found it did not work — it matched words, and words are not what
+makes two descriptions of the same moment the same. But the very last experiment of the night
+suggested the memory notes themselves were fine, and only the word-matching was broken. That was
+one run, and I had written both the questions and the answers, so it could not be trusted.
+
+**Today I repeated it properly, and it held up.**
+
+The rewording was done by an assistant who had never seen the memory notes, so it could not
+accidentally choose matching words. On those reworded situations the word-matcher got **3 out of
+20**. Matching by meaning got **20 out of 20** — on exactly the same sentences.
+
+⭐ **The more important half is the part I did not test yesterday.** A test that only asks "did you
+find the right one?" cannot be failed, because something asked to pick an answer always picks one.
+So I added sixty ordinary, unremarkable moments of engineering work that nothing in memory covers —
+adjusting padding, bumping a dependency, setting a timeout — and checked how often each approach
+spoke up when it should have stayed quiet.
+
+The word-matcher spoke up **7 times out of 60**, always nonsense: "stacking the settings form into
+one column" pulled up a note about stacked pull requests, because both contain the word "stack".
+Meaning-matching stayed quiet **60 times out of 60**, and on the near-misses it explained what it
+had considered and rejected.
+
+⛔ **One thing I got wrong and had to redo.** The first time I ran that check, I had left the answer
+sheet in the same folder I told the assistant to read from. It scored perfectly, and I could not
+prove it had not simply looked. I rebuilt it in an empty folder containing only the question paper
+and ran it again with a fresh assistant. Same result, so the answer stands — but I would not have
+been able to say that an hour ago.
+
+⚠ **What this does not say.** Sixty quiet moments is enough to say "wrong less than 5% of the time",
+not "never wrong". And the rewording and the matching were both done by the same kind of assistant,
+which is not the same as a person phrasing it their own way.
+
+Also today: the half-built word-matcher is no longer running on every command — it was spending
+time to print things that were mostly wrong.
+
+<!--tech-->
+**Backlog #191, C5.** Two branches. `c5-recall-matcher` (6 commits, **do not merge**) holds the
+refuted matcher, its round-1 review and the negative result. `semantic-recall-replication` (off
+`master` at `446025ab`) holds today's measurement.
+
+Four blind agents: a paraphraser shown only the situation strings; a negative author shown nothing
+at all; two matchers shown triggers and situations but never labels; one isolated re-run.
+Kill condition pre-registered at ≥8 false fires of 60.
+
+| arm | must-fire | negatives | false-fire |
+|---|---|---|---|
+| lexical top-1 | 3/20 | 53/60 | 11.7% |
+| semantic ×2 (33) | 20/20 | 13/13 | 0% |
+| semantic isolated (80 mixed) | 20/20 | 60/60 | 0% |
+
+Rule of three: 0 in 60 → **95% upper bound 5.0%**. Isolated run agreed with the contaminated one
+on 79/80, sole divergence inside a pre-declared `expect_any`.
+
+⛔ Also corrected today: `c5-recall-matcher`'s review doc claimed **B1 — fixed**. Unverifiable —
+`fe618a54` fixed B1 *and* turned the control red, and a red control collapses `check-plan-code.py
+--mutate .` to `NotMeasured` for all 54 scripts (`check-plan-code.py:2908` asserts it). Cannot run
+is a failure, never a pass. `master` unaffected.
+
+Full account: `docs/reviews/claude/semantic-recall-replication-2026-09-29.md`.
