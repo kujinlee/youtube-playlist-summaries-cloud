@@ -93,7 +93,7 @@ Usage:
     scripts/recall-llm.py --arm            # ONE model call, matches every step of the armed plan
     scripts/recall-llm.py --fire           # no model call; the entry for the current step
     scripts/recall-llm.py --print-prompt    # exactly what --arm would send. No call, no cost
-    scripts/recall-llm.py --self-test  # 171 cases
+    scripts/recall-llm.py --self-test  # 177 cases
 """
 from __future__ import annotations
 
@@ -132,6 +132,7 @@ class Refusal(Exception):
     """
 
     rc = CANNOT_RUN
+    label = "CANNOT RUN"
 
     def __init__(self, message: str):
         super().__init__(message)
@@ -139,10 +140,12 @@ class Refusal(Exception):
 
 class StaleCache(Refusal):
     rc = STALE_CACHE
+    label = "STALE CACHE"
 
 
 class ResponseRejected(Refusal):
     rc = BAD_RESPONSE
+    label = "RESPONSE REJECTED"
 
 
 class UnreadablePlan(Refusal):
@@ -162,6 +165,7 @@ class UnreadablePlan(Refusal):
     """
 
     rc = UNREADABLE_PLAN
+    label = "UNREADABLE PLAN"
 
 
 # ─────────────────────────────────────────────────────── the plan, and the sentinel
@@ -317,7 +321,10 @@ def read_or_refuse(path: Path, what: str, refusal: type = Refusal) -> str:
     B1's own fix. A bad cache is a STALE cache (rc 3, which the hook forwards, and whose repair is
     specific: re-arm), while an unreadable plan or sentinel really is CANNOT RUN.
     """
-    label = "STALE CACHE" if refusal is StaleCache else "CANNOT RUN"
+    # ⛔ ROUND 2 (Claude) — THIS WAS AN `is` COMPARISON AGAINST ONE CLASS, so a third refusal class
+    # silently got the wrong sentence and a subclass would slip through entirely. The label now
+    # belongs to the class, which is the only place that cannot disagree with it.
+    label = getattr(refusal, "label", "CANNOT RUN")
     try:
         return path.read_text(encoding="utf-8")
     except (UnicodeDecodeError, OSError) as exc:
@@ -838,17 +845,29 @@ def call_model(prompt: str) -> str:
 # ──────────────────────────────────────────────────────────────── IO assembly
 def read_armed_plan() -> tuple[str, Path, str]:
     """-> (sentinel text, plan path, plan text). Every failure here is a raised Refusal."""
+    # ⛔ ROUND 2 (Claude), BLOCKING — THE LINE BETWEEN rc 2 AND rc 5 IS THE SENTINEL'S EXISTENCE,
+    # and every failure below it used to be rc 2. NO sentinel means no plan is armed: genuinely
+    # routine, and a caller is right to stay silent. ONCE THE SENTINEL EXISTS A PLAN IS ARMED, and
+    # every way of failing to reach a usable one is "armed and I am blind to it" — which is exactly
+    # what rc 5 was invented for in round 1, and which round 1 gave to only ONE of the five ways.
+    # Measured through the real hook: a sentinel naming a vanished plan, a sentinel naming no plan,
+    # and an undecodable sentinel or plan were all rc 2 and therefore SILENT — B1's own sentence,
+    # in the only mode the hook runs, reproduced by the commit whose message says it closed it.
+    # ⚠ `.claude/plans/` is gitignored, so a branch switch produces the vanished-plan case routinely.
     if not SENTINEL.is_file():
         raise Refusal(f"CANNOT RUN: no plan is armed ({SENTINEL} absent), so there is no "
                       f"situation to match.")
-    sentinel_text = read_or_refuse(SENTINEL, "sentinel")
+    sentinel_text = read_or_refuse(SENTINEL, "sentinel", UnreadablePlan)
     named = sentinel_plan(sentinel_text)
     if not named:
-        raise Refusal("CANNOT RUN: the sentinel names no plan file.")
+        raise UnreadablePlan("UNREADABLE PLAN: a plan is armed but the sentinel names no plan "
+                             "file, so there is no situation to match. Re-arm it.")
     plan = ROOT / named if not Path(named).is_absolute() else Path(named)
     if not plan.is_file():
-        raise Refusal(f"CANNOT RUN: the sentinel names {named}, which is not a readable file.")
-    return sentinel_text, plan, read_or_refuse(plan, "plan file")
+        raise UnreadablePlan(f"UNREADABLE PLAN: the sentinel names {named}, which is not a readable "
+                             f"file — most often a plan that was never committed, after a branch "
+                             f"switch. Re-arm, or clear the sentinel.")
+    return sentinel_text, plan, read_or_refuse(plan, "plan file", UnreadablePlan)
 
 
 def read_corpus() -> list[tuple[str, str]]:
@@ -1026,6 +1045,17 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
                 return nag_once(d / ".last-nagged", "p:1") and nag_once(d / ".last-nagged", "p:1")
             finally:
                 os.chmod(d, 0o700)
+
+    def _caught_msg(thunk):
+        try:
+            thunk()
+        except Refusal as exc:
+            return str(exc)
+        return ""
+
+    def _write_bad_plan(root, sent):
+        (root / ".claude" / "plans" / "w.md").write_bytes(b"\xff\xfe nope")
+        sent.write_text("plan: .claude/plans/w.md\n", encoding="utf-8")
 
     def _raises_rc(thunk):
         try:
@@ -1670,6 +1700,41 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
     raises("do_fire REFUSES an armed plan it cannot read, instead of exiting 0 in silence",
            _fire_on_an_unreadable_plan, UnreadablePlan, "no recognisable")
 
+    # ── the BLOCKING from round 2: five ways to be armed-and-unusable, one boundary (5) ─
+    # ⛔ rc 5 existed for exactly this and round 1 gave it to ONE of the five ways. The line is the
+    # SENTINEL'S EXISTENCE: no sentinel is "nothing armed" (routine, silent, rc 2); a sentinel that
+    # exists means a plan IS armed, so every failure to reach a usable one must reach the reader.
+    def _armed_world(build):
+        import os
+        with tempfile.TemporaryDirectory() as tdA:
+            root = Path(tdA) / "repo"
+            (root / ".claude" / "plans").mkdir(parents=True)
+            sent = root / ".claude" / "executing-plan"
+            if build:
+                build(root, sent)
+            saved = (globals()["ROOT"], globals()["SENTINEL"])
+            try:
+                globals()["ROOT"], globals()["SENTINEL"] = root.resolve(), sent
+                do_fire()
+                return OK
+            except Refusal as exc:
+                return exc.rc
+            finally:
+                globals()["ROOT"], globals()["SENTINEL"] = saved
+
+    check("NO sentinel stays CANNOT RUN — nothing is armed, and silence is correct",
+          lambda: _armed_world(None), CANNOT_RUN)
+    check("a sentinel naming a VANISHED plan is UNREADABLE, not silence (a branch switch does this)",
+          lambda: _armed_world(lambda r, s: s.write_text("plan: .claude/plans/gone.md\n",
+                                                         encoding="utf-8")), UNREADABLE_PLAN)
+    check("a sentinel naming NO plan is UNREADABLE",
+          lambda: _armed_world(lambda r, s: s.write_text("armed: yes\n", encoding="utf-8")),
+          UNREADABLE_PLAN)
+    check("an undecodable SENTINEL is UNREADABLE, not CANNOT RUN",
+          lambda: _armed_world(lambda r, s: s.write_bytes(b"\xff\xfe nope")), UNREADABLE_PLAN)
+    check("an undecodable PLAN FILE is UNREADABLE, not CANNOT RUN",
+          lambda: _armed_world(_write_bad_plan), UNREADABLE_PLAN)
+
     # ── H2's WIRING, driven end to end (2) ──────────────────────────────────────────────
     # ⛔ The `_live_trigger_probe` cases test `live_trigger_for` ALONE, so every one of them passes
     # with `do_fire` still printing the CACHED text — measured: that mutation SURVIVED the sweep.
@@ -1815,20 +1880,34 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
     raises("do_fire REFUSES an entry that has lost its trigger, instead of serving the cached wording",
            _fire_on_a_trigger_less_entry, StaleCache, "no longer carries a FIRES-WHEN")
 
-    def _read_or_refuse_label(refusal):
-        with tempfile.TemporaryDirectory() as _td:
-            f = Path(_td) / "bad.bin"
-            f.write_bytes(b"\xff\xfe not utf-8")
-            try:
-                read_or_refuse(f, "recall cache", refusal)
-            except Refusal as exc:
-                return (type(exc).__name__, str(exc).split(":")[0])
-            return ("none", "")
+    # ⛔ THESE CALL `read_or_refuse` DIRECTLY, AT SEPARATE SITES WITH DIFFERENT LITERALS, AND THAT
+    # IS THE POINT. A single helper wrapping the call gave the suite ONE textual call site, so
+    # `check-fixture-variation.py` could not tell `path`, `what` or `refusal` from constants — and
+    # it went red in CI, which neither `--self-test` nor `--mutate .` can see. The world-builder
+    # returns the file; the calls are here.
+    def _undecodable(name):
+        d = Path(tempfile.mkdtemp())
+        f = d / name
+        f.write_bytes(b"\xff\xfe not utf-8")
+        return f
+
+    def _caught(thunk):
+        try:
+            thunk()
+        except Refusal as exc:
+            return (type(exc).__name__, str(exc).split(":")[0])
+        return ("none", "")
 
     check("read_or_refuse raises the CLASS it was given, with a sentence that matches it",
-          lambda: _read_or_refuse_label(StaleCache), ("StaleCache", "STALE CACHE"))
+          lambda: _caught(lambda: read_or_refuse(_undecodable("w.json"), "recall cache", StaleCache)),
+          ("StaleCache", "STALE CACHE"))
     check("...and the default reader is still CANNOT RUN, both class and sentence",
-          lambda: _read_or_refuse_label(Refusal), ("Refusal", "CANNOT RUN"))
+          lambda: _caught(lambda: read_or_refuse(_undecodable("plan.md"), "plan file")),
+          ("Refusal", "CANNOT RUN"))
+    check("...and a third reader names ITSELF, so `what` is not a constant either",
+          lambda: "sentinel" in _caught_msg(lambda: read_or_refuse(_undecodable("executing-plan"),
+                                                                  "sentinel", Refusal)),
+          True)
 
     # ── do_fire's DEDUPE wiring, driven end to end (2) ───────────────────────────────────
     # ⛔ The case above raises before it ever reaches the marker, so it cannot see this wiring at

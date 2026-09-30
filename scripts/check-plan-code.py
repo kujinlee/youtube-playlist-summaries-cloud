@@ -1339,8 +1339,11 @@ EXPECTED_MUTATIONS = {
     # literal below it; the only count that cannot is the literal, which the suite pins. So the
     # figure is NOT restated here. The same rule is written at the top of EXPECTED_MUTATIONS and
     # this comment was the counter-example to it.
-    # ⟳ 2026-09-30, review round 1 fold: 53 → 74 across B1, H1, H2, H3 and the model-call isolation.
-    "scripts/recall-llm.py": 80,
+    # ⟳ 2026-09-30, review rounds 1 and 2 folded. ⛔ NO COUNT HERE — and the previous version of
+    # THIS line, added to fix round-1 M1, said "53 → 74" three lines after declaring that the
+    # figure is not restated. It was 80 by the time the reviewer read it. A rule stated and
+    # broken in the same comment is worse than one never stated: the literal below is the count.
+    "scripts/recall-llm.py": 85,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -3765,7 +3768,7 @@ def _self_test() -> int:
     # Blocking and High — and the sum stayed at 1015 throughout, because an orphan keeps the count
     # while removing the coverage. CI caught it; `--self-test` cannot, because it loads the
     # manifests without resolving them. The split is on each file's own entry above.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1122)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1127)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

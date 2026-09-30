@@ -869,11 +869,66 @@
   "expect": "do_fire REFUSES an entry that has lost its trigger, instead of serving the cached wording"
  },
  {
-  "name": "the refusal sentence stops matching its exit code, so an rc-3 outcome reads as CANNOT RUN",
+  "name": "r2 BLOCKING RESTORED: a sentinel naming a vanished plan is CANNOT RUN again, so a branch switch makes the matcher silently blind",
   "file": "scripts/recall-llm.py",
   "edits": [
    [
-    "    label = \"STALE CACHE\" if refusal is StaleCache else \"CANNOT RUN\"",
+    "        raise UnreadablePlan(f\"UNREADABLE PLAN: the sentinel names {named}, which is not a readable \"",
+    "        raise Refusal(f\"UNREADABLE PLAN: the sentinel names {named}, which is not a readable \""
+   ]
+  ],
+  "expect": "a sentinel naming a VANISHED plan is UNREADABLE, not silence (a branch switch does this)"
+ },
+ {
+  "name": "a sentinel naming no plan collapses back to CANNOT RUN, joining the code the hook ignores",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "        raise UnreadablePlan(\"UNREADABLE PLAN: a plan is armed but the sentinel names no plan \"",
+    "        raise Refusal(\"UNREADABLE PLAN: a plan is armed but the sentinel names no plan \""
+   ]
+  ],
+  "expect": "a sentinel naming NO plan is UNREADABLE"
+ },
+ {
+  "name": "an undecodable sentinel is read with the generic refusal again, so it exits 2 and is swallowed",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    sentinel_text = read_or_refuse(SENTINEL, \"sentinel\", UnreadablePlan)",
+    "    sentinel_text = read_or_refuse(SENTINEL, \"sentinel\")"
+   ]
+  ],
+  "expect": "an undecodable SENTINEL is UNREADABLE, not CANNOT RUN"
+ },
+ {
+  "name": "an undecodable plan file is read with the generic refusal again",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    return sentinel_text, plan, read_or_refuse(plan, \"plan file\", UnreadablePlan)",
+    "    return sentinel_text, plan, read_or_refuse(plan, \"plan file\")"
+   ]
+  ],
+  "expect": "an undecodable PLAN FILE is UNREADABLE, not CANNOT RUN"
+ },
+ {
+  "name": "a MISSING sentinel is escalated to UNREADABLE, so an un-armed machine is nagged on every call",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "        raise Refusal(f\"CANNOT RUN: no plan is armed ({SENTINEL} absent), so there is no \"",
+    "        raise UnreadablePlan(f\"CANNOT RUN: no plan is armed ({SENTINEL} absent), so there is no \""
+   ]
+  ],
+  "expect": "NO sentinel stays CANNOT RUN \u2014 nothing is armed, and silence is correct"
+ },
+ {
+  "name": "the refusal label stops coming from the class, so a third refusal class gets the wrong sentence",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    label = getattr(refusal, \"label\", \"CANNOT RUN\")",
     "    label = \"CANNOT RUN\""
    ]
   ],
