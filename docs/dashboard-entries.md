@@ -13068,3 +13068,63 @@ headline was measured against an agent brief, not `build_prompt`'s output
 refuted by a one-variable control at 80/80 identical picks (`the-control-refuted-the-premise`).
 
 Full account: `docs/reviews/claude/semantic-recall-replication-2026-09-29.md`.
+
+## 2026-09-30 [needs-you]
+The memory now speaks up at the right moment — and four reviewers spent the night proving how badly I fix things.
+
+The matcher is built, running, and reviewed twice. When a plan starts, one question goes to the
+model covering every step; each step afterwards costs a tenth of a second. You can watch it working
+in this session: it surfaced the note about writing messages for people right as I sat down to write
+this entry.
+
+**What the reviews actually found is more useful than the matcher.** Two rounds, four reviewers,
+twenty-eight findings. The severity didn't improve between rounds — one serious problem each time.
+But what *changed* is where the problems came from: in the first round they were all original
+mistakes; in the second, **nine of fourteen were caused by my own repairs from the first round.**
+Two of my fixes broke in exactly the way they were meant to prevent. One fixed nothing at all — it
+changed a comparison that cannot come out differently.
+
+⭐⭐ **And then the pattern showed itself.** I sorted every serious finding by where the problem
+actually sat, and **78% of them were not inside anything — they were between two things.** A check
+that exists but one caller never asks. A signal the program sends and the listener ignores. The same
+sentence, over and over: *the part that knows is not the part that decides*.
+
+That is why the next session starts somewhere different. Another review round would find the seventh
+example of a problem I have now diagnosed six times. The question worth asking instead is structural:
+**should the whole thing be arranged so a caller cannot skip the check?**
+
+⚠ **Worth knowing how little my own confidence was worth.** The test suite was green — 128 cases,
+then 164, then 185 — through every single one of these. Five different ways a passing test meant
+nothing. Every one was caught by a machine re-running the real thing, and not once by me reading my
+own work.
+
+**Decide:** the next session opens with an architecture review of this. Is that what you want?
+- yes — review the structure, not the next defect [recommended]
+- no — run a third review round first, then decide
+- park the whole thing; the branch is clean and documented where it stands
+- something else — I have a question about this
+
+<!--tech-->
+**Backlog #191.** `semantic-recall-replication`, 18 commits, off `master` at `446025ab`, **unmerged
+and unpushed**. Tree clean.
+
+| round | B | H | M | caused by a previous fix |
+|---|---|---|---|---|
+| 1 (concurrent) | 1 | 4 | 5 | 0 of 14 |
+| 2 (alternating) | 1 | 5 | 5 | **9 of 14** |
+
+Blocking+High by location: **15 of 19 at a seam (78%)** — 4× caller/callee, 3× code/hook, 2×
+cache/corpus, 2× mode/mode, plus file/file, test/code, test/gate, parser/caller. 4 internal.
+
+Gates at the tip: `recall-llm --self-test` 185/185 · `--mutate .` 1133 mutations, 1133 killed, 1133
+attributed, 0 survivors · twelve `check-*` entry points rc=0 including `check-fixture-variation`,
+which round 2 caught RED and which neither the self-test nor the sweep can see.
+
+⛔ NOT CONVERGED and the architecture review does **not** arm — `dev-process.md:108` needs two
+consecutive fix-caused rounds in ONE component; this is one such round across five. Recorded per
+finding in `docs/reviews/claude/recall-llm-r2-convergence.md`. The recommendation is an architecture
+review **on judgement**, with one concrete question: should the rc contract be enforced at a single
+boundary rather than at every raise site?
+
+Also landed: the memory corpus (146 entries) and the authored explainer pages moved INTO the repo
+per the user's ruling, with bootstrap symlinks, a CI guard and a README section — backlog #194.

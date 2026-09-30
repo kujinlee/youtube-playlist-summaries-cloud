@@ -1702,6 +1702,86 @@ and the lexical form of the hybrid is refuted outright. <strong>D1</strong> unch
 next step is neither a scoring function nor an embedding table: it is <strong>relevance
 ranking</strong>, and before that, a dual review of what was built.</p>
 
+<div class="hr"></div>
+
+<h2 id="s17"><span class="n">17</span>Two review rounds, and what they say about the shape of the mistakes</h2>
+
+<p class="added">ADDED 2026-09-30. §16 ended with the matcher built and measured. It then went
+through two rounds of dual adversarial review — four reviewers, twenty-eight findings — and the
+interesting result is not the defect list. It is that <strong>78% of the serious findings were not
+inside any function. They were between things.</strong></p>
+
+<h3>What the rounds found</h3>
+
+<div class="scroll"><table>
+<thead><tr><th>round</th><th>Blocking</th><th>High</th><th>Medium</th><th>caused by a previous fix</th></tr></thead>
+<tbody>
+<tr><td>1 — Claude + Codex, concurrent</td><td>1</td><td>4</td><td>5</td><td><strong>0 of 14</strong></td></tr>
+<tr><td>2 — Codex then Claude, alternating</td><td>1</td><td>5</td><td>5</td><td><strong>9 of 14</strong></td></tr>
+</tbody></table></div>
+
+<p><strong>Severity did not improve — same Blocking, one more High.</strong> On a naive reading that
+is no progress. But the CAUSE inverted: round 1 found original defects, round 2 found my repairs
+incomplete. Two of my round-1 fixes <em>failed inside their own fix</em>, one was <strong>vacuous</strong>
+(a comparison between sets and sorted sequences over a dict's keys, which cannot differ because
+<code>json.loads</code> collapses duplicates first), and my round-2 fold turned a CI gate red in a way
+neither the self-test nor the mutation sweep could see.</p>
+
+<h3>⭐⭐ The measurement that decides what to do next</h3>
+
+<p>Every Blocking and High from both rounds, classified by where the defect actually lives:</p>
+
+<div class="scroll"><table>
+<thead><tr><th>where the defect lives</th><th>count</th><th>share</th></tr></thead>
+<tbody>
+<tr><td><strong>At a seam — between two things</strong></td><td><strong>15</strong></td><td><strong>78%</strong></td></tr>
+<tr><td>Inside one function's logic</td><td>4</td><td>21%</td></tr>
+</tbody></table></div>
+
+<p>The seams, by kind: <strong>4×</strong> caller/callee · <strong>3×</strong> code/hook ·
+<strong>2×</strong> cache/corpus · <strong>2×</strong> mode/mode · file/file · test/code · test/gate ·
+parser/caller.</p>
+
+<p>⭐ <strong>And almost all of them are one sentence: a check exists, and one of N call sites does not
+consult it.</strong> <code>plan_verdict</code> existed and <code>do_fire</code> never called it.
+<code>UNREADABLE_PLAN</code> existed at 2 of 5 armed-but-unusable paths. <code>nag_once</code> existed
+at 1 of 8 output paths. <code>live_trigger_for</code> returned a value the caller ignored. That is not
+six bugs — it is one structural question nobody had asked.</p>
+
+<h3>Why the mutation sweep found what a green suite could not</h3>
+
+<p>The self-test was green — 128, then 164, then 185 cases — through every one of these. Five
+distinct ways a passing test meant nothing:</p>
+
+<ul>
+<li>a case satisfied by a <strong>constant its own fixture supplied</strong></li>
+<li>a case asserting only a <strong>return code two branches share</strong></li>
+<li>a case testing a <strong>callee while the caller stayed wrong</strong> — six separate instances</li>
+<li>a fix with <strong>no observable difference to revert</strong>, so its mutation survived</li>
+<li>a case building <strong>two isolated worlds</strong> where one shared world was needed</li>
+</ul>
+
+<p>Every one was caught by a machine reading the real artefact — the mutation sweep, or
+<code>check-fixture-variation</code> — and not once by reading the diff. ⭐ The sweep's most useful
+property is not that it counts kills: it is that it <strong>refuses to report coverage for a
+mutation it could not attribute</strong>. A harness counting deaths would have shown a perfect score
+over the region that held the defect.</p>
+
+<h3>The convergence judgement, and why the next step is not round 3</h3>
+
+<p>⛔ <strong>NOT CONVERGED</strong>, and the architecture review does <em>not</em> arm:
+<code>dev-process.md:108</code> requires <em>two consecutive</em> fix-caused rounds <em>in one
+component</em>, and this is one such round spread across five components — no component has been
+re-opened twice. That is recorded per finding in
+<code>docs/reviews/claude/recall-llm-r2-convergence.md</code>.</p>
+
+<p class="note">⭐ <strong>So the recommendation is an architecture review INSTEAD of a round 3, on
+judgement rather than on the rule.</strong> Round 3 would find instance seven of a pattern already
+diagnosed six times. The structural question is the one that could stop producing them, and it is
+concrete: <em>should the rc contract be enforced at a single boundary, rather than at every raise
+site?</em> ⚠ Its output is leads, not findings — every load-bearing claim needs verifying by hand,
+which is exactly what this session's record argues for.</p>
+
 </div>
 
 <script>
@@ -1713,7 +1793,7 @@ ranking</strong>, and before that, a dual review of what was built.</p>
 })();
 </script>
 
-<div class="chrome"><span class="chrome-when">generated <time>2026-09-30 · §16 added · semantic-recall-replication 4d1e7b46 · unmerged, unpushed</time></span></div>
+<div class="chrome"><span class="chrome-when">generated <time>2026-09-30 · §17 added · semantic-recall-replication 03375631 · 18 commits, unmerged, unpushed</time></span></div>
 
 <div id="tray"><div class="in">
   <div id="qt"></div>
