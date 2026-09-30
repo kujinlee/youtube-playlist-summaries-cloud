@@ -75,7 +75,7 @@ Usage:
     scripts/recall-llm.py --arm            # ONE model call, matches every step of the armed plan
     scripts/recall-llm.py --fire           # no model call; the entry for the current step
     scripts/recall-llm.py --print-prompt    # exactly what --arm would send. No call, no cost
-    scripts/recall-llm.py --self-test  # 126 cases
+    scripts/recall-llm.py --self-test  # 128 cases
 """
 from __future__ import annotations
 
@@ -313,6 +313,9 @@ HOW TO DECIDE
   look at this channel at all.
 * The test is: WOULD THIS CHANGE WHAT THE PERSON DOES NEXT? If the entry is merely interesting,
   or about the same general area of work, the answer is NONE.
+* If the person is ALREADY DOING what the lesson advises, the answer is NONE. A lesson the
+  action already embodies changes nothing: telling someone who is adding an accessible name
+  that icon-only buttons need accessible names is noise, not recall.
 * Routine engineering work usually matches nothing. Most ordinary moments carry no lesson from
   this corpus, and saying so is the correct answer, not a failure to find one.
 
@@ -1083,6 +1086,18 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
           CANNOT_RUN)
     check("a NONE answer needs no corpus, so it is served even when the corpus is gone",
           lambda: cached_entry_verdict(None, False, False)[0], OK)
+
+    # ── the prompt's RUBRIC (2). Added 2026-09-30 after the scaling probes disagreed.
+    # ⛔ Two independent matchers, same corpus family, differed on 5 of 60 ordinary situations and
+    # ALL FIVE sat on one boundary: is a lesson the action ALREADY EMBODIES a match? One invented
+    # the rule "already doing it -> NONE" and the other never had it. An undefined rubric at the
+    # mechanism's most frequent decision is non-determinism, so the rule is stated in the prompt now.
+    check("the prompt tells the matcher that an already-embodied lesson is NONE",
+          lambda: "ALREADY DOING what the lesson advises" in build_prompt(
+              [("e", "a trigger")], [(1, "a situation")]), True)
+    check("...and still says a merely-adjacent match is an error, which is the other half",
+          lambda: "thematically adjacent" in build_prompt(
+              [("e", "a trigger")], [(1, "a situation")]), True)
 
     # ── should_surface / surface_marker (4) ─────────────────────────────────────────────
     check("should_surface prints a step not yet surfaced",

@@ -13000,3 +13000,71 @@ on 79/80, sole divergence inside a pre-declared `expect_any`.
 is a failure, never a pass. `master` unaffected.
 
 Full account: `docs/reviews/claude/semantic-recall-replication-2026-09-29.md`.
+
+## 2026-09-30
+The memory now speaks up at the right moment, and the thing I expected to limit it turns out not to.
+
+The matcher is built and working. When a plan is started, one question goes to the model covering
+every step at once, and the answer is kept. From then on each step costs nothing — a tenth of a
+second to look up what was already decided. You can see it working in tonight's own session: as I
+moved onto the measuring step, it surfaced the note about how a test that can only succeed proves
+nothing, which was exactly the right thing to be reminded of.
+
+⭐ **The question I set out to answer was "how big can the memory get before this stops working?"
+The answer is: bigger than I can currently test, and size is the wrong thing to worry about.**
+
+I padded the memory out with hundreds of invented lessons — to 300, then 600, then 1000 — and asked
+the same eighty questions each time. It kept finding the right note: twenty out of twenty, then
+nineteen, then twenty out of twenty again. **That it got BETTER at a thousand than at six hundred is
+the useful part** — a real decline cannot recover, so the wobble is ordinary run-to-run variation
+rather than the thing wearing out.
+
+⭐⭐ **What does limit it is something I was not looking at.** Two independent runs disagreed on
+five ordinary moments, and every disagreement was the same question: *if someone is already doing the
+right thing, should you tell them the rule anyway?* One run had invented an answer, the other had
+never considered it. About a fifth of everyday moments sit in that grey area. That is now written
+down as part of the question rather than left for each run to guess.
+
+And a bigger realisation behind it. As a memory grows to cover everything, almost nothing is
+genuinely uncovered any more — so "did it speak up wrongly?" stops being the right question and "was
+that worth interrupting me for?" becomes it. That is a judgement about worth, not correctness, and
+nothing I have built addresses it yet.
+
+⛔ **Three of my own measuring instruments were wrong tonight, and all three were caught.** I marked
+the matcher wrong for correct answers, because the filler I added to make the memory bigger genuinely
+covered some of the moments I had labelled as uncovered. I measured the wrong wording — my own
+paraphrase rather than the words the program actually sends — and had to redo it. And I nearly told
+you that a change I had just made cost accuracy; I tested it instead, and it turned out to change
+nothing at all.
+
+⚠ **One thing to hold lightly:** the extra lessons were invented, and invented ones are easier to
+tell apart than real ones. So these numbers are the best case, not the likely case.
+
+<!--tech-->
+**Backlog #191.** `semantic-recall-replication`, 4 commits, unmerged, off `master` at `446025ab`.
+
+`scripts/recall-llm.py` — ONE model call per PLAN at arm time (16.1s), cached; `--fire` is a lookup
+at 0.12s. Caller `PostToolUse(Bash, begin-plan.py)`, ~15 firings/day vs the refuted hook's ~275,
+deduped per (plan, step) by pure `should_surface`/`surface_marker`. Delivery via
+`hookSpecificOutput.additionalContext`, confirmed live. 128 cases, 53 mutations, and a 1087-mutation
+sweep at 0 survivors, all attributed.
+
+| run | corpus | recall (20) | true false fires (60) |
+|---|---|---|---|
+| probe-300 | 300 | 20/20 | 0 |
+| probe-600 | 600 | 19/20 | 0 |
+| probe-1000 | 1000 | 20/20 | 0 |
+| **shipped prompt** | 1000 | **19/20** | **0** |
+| shipped − rubric clause | 1000 | 19/20 | 0 |
+
+Non-monotonic recall ⇒ size is not the variable. 300 and 1000 chose identical entries on all 20
+positives. Binding variable is the already-embodied rubric boundary (5/60 disagreement, 11–12/60
+flagged borderline).
+
+⛔ Instrument corrections, all recorded in the review doc rather than quietly fixed: the scorer
+counted apt padding matches as false fires (`a-measurement-is-only-as-good-as-its-corpus`); the
+headline was measured against an agent brief, not `build_prompt`'s output
+(`a-mocked-boundary-tests-the-contract-you-imagined`); and a causal claim about the rubric clause was
+refuted by a one-variable control at 80/80 identical picks (`the-control-refuted-the-premise`).
+
+Full account: `docs/reviews/claude/semantic-recall-replication-2026-09-29.md`.

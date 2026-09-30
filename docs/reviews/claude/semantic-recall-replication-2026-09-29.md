@@ -212,3 +212,119 @@ MEASURED trigger rather than a judgement** — pad the trigger corpus to 300 / 6
 the 80-item probe to find where discrimination degrades. That names the corpus size at which an
 embedding shortlist earns its dependency, instead of guessing it. ⚠ And when that day comes, the
 shortlist's own recall@k must be measured first — measurement 1 is what happens when it is not.
+
+---
+
+# Addendum 2 — the corpus-scaling probe, and why its answer is not a corpus size
+
+**The question it was built to answer:** at what corpus size does meaning-matching stop
+discriminating, so an embedding shortlist earns the dependency it costs? That was the deferral —
+build the LLM call now, add embeddings when a measurement says to.
+
+**The answer: not at 1000 entries, and the trigger should not be a corpus size at all.**
+
+## Method
+
+The same 80-item set (20 blind paraphrases + 60 dull negatives, shuffled under opaque ids) re-run
+against corpora of 300, 600 and 1000. 860 synthetic "lessons" were authored by an agent that saw
+nothing else — no corpus, no queries, no labels — and told to write dull, plausible, mutually
+distinct engineering lore. The corpora are **nested** (141 real + the first N padding; verified that
+the 300-corpus is a byte-prefix of the 600-corpus) so size is the only variable. Each input directory
+held only `corpus.txt` and `queries.txt`, and every probe reported the paths it opened.
+
+Padding verified before use: 860 lines, 0 malformed, 860 unique names, **0 name collisions** with the
+real corpus, and one trigger flagged for overlap with a labelled answer then dismissed on inspection
+(*"about to put a decision to the user"* vs *"automating a user-facing decision"* — opposite).
+
+## Results
+
+| run | corpus | recall (20) | true false fires (60) | negatives covered by padding |
+|---|---|---|---|---|
+| baseline | 141 | 20/20 | 0 | — |
+| probe-300 | 300 | **20/20** | **0** | 5 |
+| probe-600 | 600 | **19/20** (one WRONG) | **0** | 0 |
+| probe-1000 | 1000 | **20/20** | **0** | 0 |
+| **shipped prompt** | 1000 | **19/20** (one MISS) | **0** | 0 |
+| shipped, clause removed | 1000 | **19/20** | **0** | 0 |
+
+⭐ **RECALL IS NON-MONOTONIC — 20, 19, 20 — AND THAT IS THE DECISIVE EVIDENCE.** Degradation caused
+by corpus size cannot go back up: 1000 could not beat 600. So the dip is per-run judgement variance,
+not a scaling effect. Probes at 300 and 1000 chose the **identical entry for all 20 positives**,
+which is stronger than matching scores. And across 180 negative judgements at three sizes, no probe
+ever picked a REAL entry for a moment the real corpus does not cover.
+
+## ⛔ The instrument was wrong first, and the repair is the finding
+
+The scorer originally counted any non-NONE answer on a negative as a false fire. At corpus 300 that
+reported **5 false fires**. All five were the matcher being RIGHT: it had matched *padding* entries
+that genuinely cover those moments — *"adding a required column to a big table"* for **"adding a
+not-null constraint and a default to the status column"**.
+
+**The negatives were labelled "nothing covers this" against the 141-entry REAL corpus, and then 860
+entries were added from ordinary engineering — the same well the negatives were drawn from.** The
+padding destroyed the negative set. This is `a-measurement-is-only-as-good-as-its-corpus`: the code
+did what was measured; the wrong SET was measured.
+
+Repaired by giving a negative's answer three outcomes rather than two — `silent`, `COVERED` (picked
+padding: not an error, and a measurement of how fast a growing corpus absorbs ordinary work), and
+`FALSE FIRE` (picked a real entry: a true error). ⚠ The `covered` column is **not comparable across
+probes**, because they applied different rubrics to it — see below. It measures judgement, not coverage.
+
+⭐⭐ **And the broken experiment found something better than the one designed.** As a corpus grows
+toward covering all of engineering, **genuine negatives become scarce.** At 141 entries "adding a
+not-null column" matches nothing; at 300 it matches something apt; at 1000 covering everything,
+nearly every engineering moment legitimately matches *something*. So the precision question changes
+character with scale: from *does it fire wrongly* to **is this correct match worth interrupting
+for**. That is a relevance question, not a correctness one, and neither an embedding nor an LLM
+*pick* answers it — it is a third mechanism. It is also, arguably, the real content of backlog #191.
+
+## What the binding variable actually is
+
+Not size. **The undefined boundary at the mechanism's most frequent decision: is a lesson the action
+ALREADY EMBODIES a match?**
+
+probe-300 and probe-1000 disagreed on exactly 5 of 60 negatives, **all in one direction**, and all
+five sit on that boundary. probe-1000 had invented a rule — *"a corpus entry whose lesson the action
+already embodies scores NONE"* — and probe-300 never had one. probe-1000 marked **12 of 60** negatives
+medium/low confidence; probe-600 listed **11** for the same reason. So roughly a fifth of ordinary
+engineering moments are in that grey zone, which is a far larger effect than anything size did.
+
+The rule is now stated in the shipped prompt, with two cases pinning it.
+
+## ⛔ Two corrections to this document's own method
+
+1. **The 20/20 headline was never measured against the prompt that ships.** It was measured against
+   the reviewer's agent brief — similar wording, not identical. `a-mocked-boundary-tests-the-contract-
+   you-imagined`. Repaired: `probe-shipped` was handed the exact 93KB text `build_prompt` emits,
+   verbatim. It scores **19/20 recall, 0 false fires, 60/60 silent** at corpus 1000. ⚠ So the
+   deployed artifact is one recall point more conservative than the brief that produced the headline.
+   The likeliest cause is its stronger prior — *"NONE … is very often the right one"* — but that is
+   **UNTESTED** and recorded as a hypothesis, not a finding.
+
+2. **A causal claim about the new rubric clause was formed and REFUTED before publication.** Q44 was
+   hit at 300, 600 and 1000, and missed in the shipped run that carried the clause — and the clause,
+   read plainly, would swallow it ("kicking off the review half" already embodies "never ask
+   permission to run a half"). A one-variable control was built: the same 93,781-char prompt minus
+   exactly the 252-char clause, byte-identical otherwise. Result: **80/80 identical picks.** The
+   clause is INERT on this set. `the-control-refuted-the-premise` — the correlation was real and the
+   causal story was fiction. The clause is kept because it costs nothing measured and closes a
+   stated ambiguity; ⚠ its BENEFIT is also unobserved here, since the disagreement it addresses
+   appeared between runs of the brief, and both shipped runs were already silent on all 60.
+
+## The recommendation, restated
+
+⛔ **Do not build the embedding stage on a corpus-size trigger.** Size was measured and is not the
+variable. Build it when *relevance* becomes the binding problem — when correct-but-not-worth-saying
+matches outnumber the useful ones — and note that a shortlist cannot help with that, because ranking
+by importance is a different operation from ranking by similarity.
+
+⚠ **The standing bias, stated once more because every number above inherits it:** the padding is
+SYNTHETIC. Real lessons cluster tightly in meaning (this corpus already holds `a-test-that-cannot-
+fail` beside `assert-the-property-not-the-mechanism`); invented filler spreads out and is easier to
+reject. **Every figure here is therefore an optimistic bound**, and the true degradation at 1000 real
+entries would be worse. A 92KB prompt also had to be read in two or three passes by every probe at
+1000, so a context limit and a discrimination limit are both in play at that size and this
+experiment does not separate them.
+
+REVIEW GAP: codex — not dispatched; measurements with pre-registered falsifiers, a one-variable
+control and isolated re-runs, not a code change
