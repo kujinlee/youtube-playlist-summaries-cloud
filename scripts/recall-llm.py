@@ -45,6 +45,17 @@ wiring was verified by RUNNING it, 2026-09-29: paused → silent rc=0, no cache 
 → 3, tick-only edit → served, no sentinel → 2, zero triggers → 2, and three rejected replies → 4
 with the on-disk cache byte-identical afterwards. Execution, not a case.
 
+⛔ AND THE ISOLATION OF THE MODEL CALL IS NOT MUTATED, WHICH IS DECLARED RATHER THAN IMPLIED.
+`call_model`'s `cwd=sandbox` and the refusal above it have NO mutation entry: no case can reach
+them, and writing an `expect` that names no real case is exactly the "hole with a label on it" that
+shipped on the refuted branch. Two candidate entries were written and DROPPED for that reason. So
+the sweep's green says nothing about this line. ⚠ Its property IS covered — `outside_repo` has four
+cases and two mutations — and the wiring was verified by EXECUTION on 2026-09-30: from the repo the
+reply was 1,278 chars of prose (rc=4); from a temp directory, 75 chars of clean JSON; after the fix,
+`--arm` completed in 11.2s with all five steps parsed. ⭐ This is the review's own closing point
+applied honestly: a mutation cannot delete a call that is absent, and the sweep does not stage
+`.claude/hooks/`, so a perfect score can sit over exactly the region that holds the defect.
+
 ⛔ AND ONE OF THOSE CLAIMS WAS FALSE AS FIRST WRITTEN — kept here rather than quietly corrected.
 The list also read "corpus unreachable → 2", which held for `--arm` and NOT for `--fire`: fire reads
 only the cache, and the cache stores the trigger TEXT as well as the name, so it touched the corpus
@@ -75,7 +86,7 @@ Usage:
     scripts/recall-llm.py --arm            # ONE model call, matches every step of the armed plan
     scripts/recall-llm.py --fire           # no model call; the entry for the current step
     scripts/recall-llm.py --print-prompt    # exactly what --arm would send. No call, no cost
-    scripts/recall-llm.py --self-test  # 128 cases
+    scripts/recall-llm.py --self-test  # 134 cases
 """
 from __future__ import annotations
 
@@ -85,6 +96,7 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -375,7 +387,13 @@ def parse_response(text: str, step_numbers: list[int],
         body = fence.group(1).strip()
     start, stop = body.find("{"), body.rfind("}")
     if start < 0 or stop < start:
-        raise ResponseRejected("the reply contains no JSON object at all")
+        # ⛔ CARRY THE EVIDENCE. This raised a bare sentence and threw the reply away, so the one
+        # error path that exists to be diagnosed could not be. Measured 2026-09-30: a real rc=4
+        # took a captured re-run to explain, and the cause (the subprocess inheriting this repo's
+        # hooks) was invisible from the message alone.
+        raise ResponseRejected(
+            f"the reply contains no JSON object at all ({len(text)} chars). "
+            f"First 300: {text.strip()[:300]!r}")
     try:
         obj = json.loads(body[start:stop + 1])
     except json.JSONDecodeError as exc:
@@ -580,6 +598,24 @@ def fire_output(entry: str | None, trigger: str | None) -> str:
     return render(entry, trigger or "(trigger not cached)")
 
 
+def outside_repo(candidate: str, repo: str) -> bool:
+    """PURE. -> is `candidate` outside `repo`? The property the model call depends on.
+
+    ⛔ WHY THIS IS A FUNCTION AND NOT AN INLINE `cwd=`. `call_model` has no case, by design, so a
+    later edit could drop its `cwd` and nothing would notice — and the consequence is not a crash
+    but CONTAMINATION: `claude -p` launched inside this repo loads `.claude/settings.json`, hits the
+    Stop guard on an armed plan, and answers with prose instead of JSON. Measured 2026-09-30.
+    Extracting the PROPERTY — the working directory is not inside this tree — gives the mutation
+    harness something to bite on, which an inline keyword argument cannot provide.
+
+    ⚠ It asserts the property, not the mechanism: it does not prove a hook cannot fire, only that
+    the subprocess is rooted where this repo's settings file is not found. That is the whole of the
+    contamination path measured, and it is stated rather than implied.
+    """
+    c, r = Path(candidate).resolve(), Path(repo).resolve()
+    return r not in c.parents and c != r
+
+
 # ───────────────────────────────────────────────────── the ONE impure function
 def call_model(prompt: str) -> str:
     """THE ONLY IMPURE FUNCTION. Runs `claude -p` and returns its answer verbatim.
@@ -596,10 +632,30 @@ def call_model(prompt: str) -> str:
     A non-zero exit, a timeout or an empty answer is a REFUSAL. An empty answer in particular must
     never be read as "nothing matches": that is the same shape as an empty corpus.
     """
+    # ⛔ RUN IT OUTSIDE THE REPOSITORY. MEASURED 2026-09-30, on this function's SECOND real call:
+    # `claude -p` launched with the repo as cwd is a full Claude Code session in this project, so it
+    # loads `.claude/settings.json` and every hook in it. It hit the Stop guard, which saw
+    # `.claude/executing-plan` naming a plan with unticked steps, REFUSED to let it stop, and the
+    # session then explained itself at length — burying its JSON in prose about plan ownership.
+    # `parse_response` rejected the reply (rc=4), correctly and uselessly.
+    #
+    # ⚠ THE FIRST CALL SUCCEEDED WITH A PLAN EQUALLY ARMED, so this is NON-DETERMINISTIC, which is
+    # worse than a hard failure: it would have shipped and failed occasionally. Measured both ways —
+    # from the repo, 1,278 chars of narrative; from a temp directory, 75 chars of clean JSON.
+    #
+    # The prompt is entirely self-contained (it carries the triggers and the situations), so the
+    # subprocess needs NO repo access. An empty cwd outside the tree means no settings file is
+    # found and no hook can fire. ⚠ This is the reason `call_model` has no case: nothing around it
+    # was wrong, and it was never run in the state it actually runs in — mid-plan, hooks armed.
     try:
-        proc = subprocess.run([  # noqa: S603 - a fixed argv, the prompt is not shell-interpreted
-            "claude", "-p", prompt, "--model", MODEL],
-            capture_output=True, text=True, timeout=CALL_TIMEOUT)
+        with tempfile.TemporaryDirectory() as sandbox:
+            if not outside_repo(sandbox, str(ROOT)):
+                raise Refusal(f"CANNOT RUN: refusing to call the model from {sandbox!r}, which is "
+                              f"inside {ROOT!r} — this repo's hooks would reach the subprocess.")
+            proc = subprocess.run([  # noqa: S603 - a fixed argv, the prompt is not shell-interpreted
+                "claude", "-p", prompt, "--model", MODEL],
+                capture_output=True, text=True, timeout=CALL_TIMEOUT,
+                cwd=sandbox, stdin=subprocess.DEVNULL)
     except FileNotFoundError as exc:
         raise Refusal("CANNOT RUN: the `claude` CLI is not on PATH, so no call was made.") from exc
     except subprocess.TimeoutExpired as exc:
@@ -1086,6 +1142,28 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
           CANNOT_RUN)
     check("a NONE answer needs no corpus, so it is served even when the corpus is gone",
           lambda: cached_entry_verdict(None, False, False)[0], OK)
+
+    # ── outside_repo (4). Added 2026-09-30 after `call_model`'s SECOND real call was contaminated
+    # by this repo's own hooks: launched with the repo as cwd, `claude -p` loaded
+    # `.claude/settings.json`, hit the Stop guard on an armed plan, and answered with 1,278 chars of
+    # prose instead of JSON. The first call had succeeded in the same state, so it is
+    # non-deterministic. `call_model` has no case, so the PROPERTY is extracted to be testable.
+    check("a temp directory elsewhere is outside the repo",
+          lambda: outside_repo("/tmp/somewhere-else", "/repo/root"), True)
+    check("a path INSIDE the repo is NOT outside it",
+          lambda: outside_repo("/repo/root/docs/memory", "/repo/root"), False)
+    check("the repo root is not outside ITSELF — the boundary is inclusive",
+          lambda: outside_repo("/repo/root", "/repo/root"), False)
+    check("a sibling whose name merely PREFIXES the repo path is outside it",
+          lambda: outside_repo("/repo/root-other", "/repo/root"), True)
+    # ⛔ `repo` was the SAME value in all four cases above, so nothing could tell it apart from a
+    # constant and the clause reading it was unguarded. Caught by `check-fixture-variation.py`, for
+    # the second time in this session — the same defect class, in the same session, after I had
+    # already fixed it once in `check-memory-link.py`. These two vary it in both directions.
+    check("the SAME candidate is inside one repo root and outside another",
+          lambda: (outside_repo("/a/b/c", "/a"), outside_repo("/a/b/c", "/z")), (False, True))
+    check("a deeper repo root than the candidate makes it outside",
+          lambda: outside_repo("/a/b", "/a/b/c/d"), True)
 
     # ── the prompt's RUBRIC (2). Added 2026-09-30 after the scaling probes disagreed.
     # ⛔ Two independent matchers, same corpus family, differed on 5 of 60 ordinary situations and

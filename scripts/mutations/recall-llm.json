@@ -581,5 +581,27 @@
    ]
   ],
   "expect": "...unless --again is passed, which is the deliberate escape"
+ },
+ {
+  "name": "outside_repo stops excluding the repo root itself, so a cwd equal to the repo passes as isolated",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    return r not in c.parents and c != r\n",
+    "    return r not in c.parents\n"
+   ]
+  ],
+  "expect": "the repo root is not outside ITSELF \u2014 the boundary is inclusive"
+ },
+ {
+  "name": "outside_repo compares unresolved paths, so a sibling that merely prefixes the repo path is misjudged",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    return r not in c.parents and c != r",
+    "    return not str(c).startswith(str(r))"
+   ]
+  ],
+  "expect": "a sibling whose name merely PREFIXES the repo path is outside it"
  }
 ]
