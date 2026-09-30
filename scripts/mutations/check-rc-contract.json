@@ -121,15 +121,15 @@
     "expect": "an apostrophe in a COMMENT does not open a string"
   },
   {
-    "name": "unmodelled quoting stops refusing, so a heredoc is answered over instead",
+    "name": "the ANSI-C quoting refusal is dropped, so $'…' is answered over [anchor retargeted round 4: the heredoc line is now its own entry]",
     "file": "scripts/check-rc-contract.py",
     "edits": [
       [
-        "    if re.search(r\"<<-?\\s*[\\w'\\\"]\", block):",
+        "    if re.search(r\"\\$'\", block):",
         "    if False:"
       ]
     ],
-    "expect": "a heredoc is refused, not guessed at"
+    "expect": "ANSI-C quoting is refused, not guessed at"
   },
   {
     "name": "the catch-all bound goes back to two-space indentation — round 3 H1",
@@ -152,5 +152,27 @@
       ]
     ],
     "expect": "a Detail: promise split across two statements is still caught — round 3 M4"
+  },
+  {
+    "name": "the heredoc detector narrows to a word-char delimiter again — round 4 H1",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "    if re.search(r\"(?<!<)<<(?!<)\", block):",
+        "    if re.search(r\"<<-?\\s*[\\w'\\\"]\", block):"
+      ]
+    ],
+    "expect": "an ESCAPED heredoc delimiter is refused too — round 4 H1"
+  },
+  {
+    "name": "the herestring look-behind is dropped, so `<<<` is refused and the guard reddens on the real repo",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "    if re.search(r\"(?<!<)<<(?!<)\", block):\n        problems.append(\"the `case` block contains a heredoc",
+        "    if re.search(r\"<<(?!<)\", block):\n        problems.append(\"the `case` block contains a heredoc"
+      ]
+    ],
+    "expect": "a herestring is NOT a heredoc and must not be refused"
   }
 ]

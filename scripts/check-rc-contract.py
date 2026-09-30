@@ -62,7 +62,7 @@ FAILS IF
 
 Usage:
     python3 scripts/check-rc-contract.py
-    python3 scripts/check-rc-contract.py --self-test  # 46 cases
+    python3 scripts/check-rc-contract.py --self-test  # 50 cases
 """
 from __future__ import annotations
 
@@ -256,7 +256,20 @@ def unmodelled_quoting(block: str) -> list[str]:
     if re.search(r"\$'", block):
         problems.append("the `case` block uses ANSI-C quoting (`$'…'`), whose escaping this guard "
                         "does not model. No statement about which codes are handled is possible.")
-    if re.search(r"<<-?\s*[\w'\"]", block):
+    # ⛔ ROUND 4 H1 — THIS WAS `<<-?\s*[\w'\"]` AND MISSED AN ESCAPED DELIMITER. Bash accepts
+    # `<<\EOF`, whose first character is a backslash and therefore outside that class, so the
+    # guard answered over heredoc BODY text and reported rc 5 as handled where bash has no `5)`
+    # arm at all — adjudicated against real bash by the reviewer. That is the exact failure shape
+    # B2's fix was written to close, one character narrower.
+    # ⭐ SO THE DETECTOR IS PESSIMISTIC NOW, NOT PRECISE: any `<<` that is not a herestring is
+    # refused, whatever follows it. A soundness check is only as sound as its detector, and the
+    # asymmetry is deliberate — a spurious cannot-run is LOUD and costs a person one look, while a
+    # missed one is silent and costs a wrong answer. `(?!<)` excludes `<<<`, bash's herestring,
+    # which the live hook does use (outside the `case` block) and which has no unmodelled body.
+    # ⚠ THE LOOK-BEHIND IS REQUIRED, and my own adjacent negative caught its absence: `<<(?!<)`
+    # still matches `<<<` at OFFSET 1, where the lookahead sees the quote rather than a third `<`.
+    # So a herestring would have been refused and this guard would be red on the real repo.
+    if re.search(r"(?<!<)<<(?!<)", block):
         problems.append("the `case` block contains a heredoc (`<<`), whose body this guard does "
                         "not model. No statement about which codes are handled is possible.")
     return problems
@@ -536,6 +549,18 @@ def _self_test() -> int:
          len(unmodelled_quoting("  3) PAYLOAD=$'a\\nb' ;;\n")), 1)
     case("a heredoc is refused, not guessed at",
          len(unmodelled_quoting("  3) cat <<EOF\nstuff\nEOF\n")), 1)
+    # ⛔ ROUND 4 H1's EXACT REPRO. `<<\EOF` is a legal escaped delimiter and the old class-based
+    # detector missed it, so the guard counted a heredoc BODY line as an arm.
+    case("an ESCAPED heredoc delimiter is refused too — round 4 H1",
+         len(unmodelled_quoting("  3) cat <<\\EOF\n  5) heredoc body, not an arm\nEOF\n")), 1)
+    case("...and a quoted delimiter is refused",
+         len(unmodelled_quoting("  3) cat <<'EOF'\nbody\nEOF\n")), 1)
+    case("...and a tab-stripping delimiter is refused",
+         len(unmodelled_quoting("  3) cat <<-EOF\nbody\nEOF\n")), 1)
+    # ⚠ THE ADJACENT NEGATIVE, and it is load-bearing: `<<<` is a HERESTRING, which the live hook
+    # uses. Refusing it would make this guard red on the real repo forever.
+    case("a herestring is NOT a heredoc and must not be refused",
+         unmodelled_quoting('  0) python3 -c x <<<"$PAYLOAD" ;;\n'), [])
     case("the live shape uses neither, so it is not refused",
          unmodelled_quoting(case_block(HOOK_OK) or ""), [])
 
