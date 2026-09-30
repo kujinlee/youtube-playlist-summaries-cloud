@@ -73,12 +73,19 @@ the empty-corpus branch to OK left its suite GREEN (`git show c5-recall-matcher:
 that function's docstring). So here every one of those outcomes is a pure function with a case:
 
     rc=0   matched, or the model genuinely answered NONE for this step over a NON-EMPTY corpus
-    rc=2   CANNOT RUN — no memory directory, zero parseable triggers, no armed plan, no readable
-           plan file, or a plan with no recognisable step
+    rc=2   CANNOT RUN — no memory directory, zero parseable triggers, no armed plan, or no
+           readable plan FILE. ⛔ This is the ROUTINE absence: on a machine with no plan armed it
+           is the normal state, and a caller is right to stay silent about it.
     rc=3   STALE CACHE — the plan's SITUATIONS have been edited since it was armed, this step was
            never matched, or the cache file is unparseable. NEVER served: a cached answer for a
            different situation is a wrong answer, not an old one. Ticking a box is NOT a change of
            situation and does not stale.
+    rc=5   UNREADABLE PLAN — a plan IS armed and cannot be read: no step matching
+           `- [ ] **Step N of M**`, or a step with neither a `Doing:` line nor a title. ⛔ SPLIT
+           OUT OF rc=2 BY REVIEW ROUND 1 (B1), and the split IS the fix. While both were 2 a
+           caller could not tell "nothing is armed" from "something is armed and I am blind to
+           it", so the catch-all that correctly ignores the first swallowed the second. Measured:
+           87 committed plans under `docs/superpowers/plans/` are in the unreadable shape today.
     rc=4   RESPONSE REJECTED — the model's reply named an entry that is not in the corpus, or did
            not answer exactly the steps it was asked about. Never guessed at.
 
@@ -86,7 +93,7 @@ Usage:
     scripts/recall-llm.py --arm            # ONE model call, matches every step of the armed plan
     scripts/recall-llm.py --fire           # no model call; the entry for the current step
     scripts/recall-llm.py --print-prompt    # exactly what --arm would send. No call, no cost
-    scripts/recall-llm.py --self-test  # 134 cases
+    scripts/recall-llm.py --self-test  # 139 cases
 """
 from __future__ import annotations
 
@@ -100,7 +107,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-OK, CANNOT_RUN, STALE_CACHE, BAD_RESPONSE = 0, 2, 3, 4
+OK, CANNOT_RUN, STALE_CACHE, BAD_RESPONSE, UNREADABLE_PLAN = 0, 2, 3, 4, 5
 
 # Resolved from THIS FILE's path, never from the cwd, so a worktree gets its own sentinel and its
 # own cache — the same reason `begin-plan.py` does it that way.
@@ -138,6 +145,25 @@ class ResponseRejected(Refusal):
     rc = BAD_RESPONSE
 
 
+class UnreadablePlan(Refusal):
+    """A plan IS armed and cannot be read. ⛔ DELIBERATELY NOT `CANNOT RUN`.
+
+    Review round 1, B1: `do_fire` never consulted `plan_verdict`, so a plan whose checkboxes do not
+    match `_BOX_RE` returned `None` from `first_unticked` by the same route as a FINISHED plan and
+    exited 0 in silence — "nothing fires" and "could not look" arriving at the reader as the same
+    observation, which is the refuted matcher's own H3 reproduced in its replacement. Measured:
+    87 committed plans under `docs/superpowers/plans/` are in that shape today.
+
+    ⛔ A FIFTH CODE, NOT `CANNOT_RUN`, AND THAT IS THE OTHER HALF OF THE FIX. The caller must tell
+    "no plan is armed" — genuinely routine, and correctly silent — from "a plan is armed and I
+    cannot read it", which the reader needs to hear. Both were rc 2, so the hook's catch-all
+    swallowed the second along with the first and the repair would have been invisible. The
+    alternative, matching on message text, is H4's defect and not a fix.
+    """
+
+    rc = UNREADABLE_PLAN
+
+
 # ─────────────────────────────────────────────────────── the plan, and the sentinel
 # ⚠ `- [ ]` or `- [x]`, then `**Step N of M**`, then an em-dash and the title. This is the shape
 # `begin-plan.py:175` writes; the number is taken from the STEP, never from the position in the
@@ -172,19 +198,19 @@ def plan_steps(plan_text: str) -> list[tuple[int, str]]:
 
 
 def plan_verdict(steps: list[tuple[int, str]]) -> tuple[int, str]:
-    """PURE. -> (rc, message) for a parsed plan. A plan nothing can be read out of is CANNOT RUN.
+    """PURE. -> (rc, message) for a parsed plan. A plan nothing can be read out of is UNREADABLE.
 
     Two ways a plan is unusable, and neither may be reported as "this plan has nothing to match":
     no recognisable step at all (a hand-written file in a different shape), and a step whose
     situation is empty (it would be sent to the model as a blank line and matched against nothing).
     """
     if not steps:
-        return CANNOT_RUN, ("CANNOT RUN: the plan file carries no recognisable "
+        return UNREADABLE_PLAN, ("UNREADABLE PLAN: the plan file carries no recognisable "
                             "`- [ ] **Step N of M**` step, so nothing was matched.")
     blank = [n for n, s in steps if not s]
     if blank:
-        return CANNOT_RUN, (f"CANNOT RUN: step(s) {blank} carry neither a `Doing:` line nor a "
-                            f"title, so there is no situation to match them on.")
+        return UNREADABLE_PLAN, (f"UNREADABLE PLAN: step(s) {blank} carry neither a `Doing:` "
+                            f"line nor a title, so there is no situation to match them on.")
     return OK, ""
 
 
@@ -745,9 +771,15 @@ def do_fire(again: bool = False) -> int:
     sentinel_text, plan, plan_text = read_armed_plan()
     if paused(sentinel_text):
         return OK  # a paused thread has no current step. Silence here is an answer, not a failure.
+    # ⛔ B1. THIS CALL IS THE FIX, AND ITS ABSENCE WAS THE BLOCKING. `first_unticked` returns None
+    # for TWO different worlds — every box ticked, and no box I can parse — so consulting it first
+    # made an unreadable plan indistinguishable from a finished one, at rc 0, in silence.
+    rc, msg = plan_verdict(plan_steps(plan_text))
+    if rc != OK:
+        raise UnreadablePlan(msg)
     step = first_unticked(plan_text)
     if step is None:
-        return OK  # every box ticked: also an answer.
+        return OK  # every box ticked: NOW this means only one thing.
     cache_file = cache_path(plan.stem)
     if not cache_file.is_file():
         raise StaleCache(f"STALE CACHE: {cache_file.name} does not exist — this plan was never "
@@ -864,12 +896,12 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
           "committing the recall@k ceiling and the latency probe")
 
     check("plan_verdict passes a real plan", lambda: plan_verdict(plan_steps(PLAN))[0], OK)
-    check("plan_verdict refuses a plan with no recognisable step",
-          lambda: plan_verdict([])[0], CANNOT_RUN)
+    check("plan_verdict refuses a plan with no recognisable step as UNREADABLE, not CANNOT RUN",
+          lambda: plan_verdict([])[0], UNREADABLE_PLAN)
     check("plan_verdict names WHICH steps have no situation",
           lambda: "[4]" in plan_verdict([(4, "")])[1], True)
     check("plan_verdict refuses a step whose situation is empty",
-          lambda: plan_verdict([(1, "a real one"), (2, "")])[0], CANNOT_RUN)
+          lambda: plan_verdict([(1, "a real one"), (2, "")])[0], UNREADABLE_PLAN)
 
     check("first_unticked is the first UNTICKED step, not the first step",
           lambda: first_unticked(PLAN), 2)
@@ -1231,6 +1263,23 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
           lambda: ResponseRejected("x").rc, BAD_RESPONSE)
     check("a StaleCache carries the STALE code", lambda: StaleCache("x").rc, STALE_CACHE)
     check("a bare Refusal is CANNOT RUN", lambda: Refusal("x").rc, CANNOT_RUN)
+    check("an UnreadablePlan carries its OWN code, not CANNOT RUN — the hook must route on it",
+          lambda: (UnreadablePlan("x").rc, UnreadablePlan("x").rc == CANNOT_RUN),
+          (UNREADABLE_PLAN, False))
+    check("the five rc values are all distinct, so no two conditions share a meaning",
+          lambda: sorted({OK, CANNOT_RUN, STALE_CACHE, BAD_RESPONSE, UNREADABLE_PLAN}),
+          [0, 2, 3, 4, 5])
+    # ⛔ B1, end to end. `first_unticked` returns None for BOTH worlds; only `do_fire` consulting
+    # `plan_verdict` can tell them apart, and that call was what the Blocking said was missing.
+    check("an unreadable plan and a FINISHED plan both give first_unticked None — the conflation",
+          lambda: (first_unticked("- [ ] **Step 1: no N of M**\n"),
+                   first_unticked("- [x] **Step 1 of 1** — done\n  - **Doing:** a situation\n")),
+          (None, None))
+    check("...but plan_verdict separates them, which is why do_fire must ask it first",
+          lambda: (plan_verdict(plan_steps("- [ ] **Step 1: no N of M**\n"))[0],
+                   plan_verdict(plan_steps("- [x] **Step 1 of 1** — done\n"
+                                           "  - **Doing:** a situation\n"))[0]),
+          (UNREADABLE_PLAN, OK))
 
     # ── do_fire's WIRING, driven end to end (1) ──────────────────────────────────────────
     # ⛔ THE ONLY CASE THAT CROSSES THE IO BOUNDARY, and it exists because unit coverage does not
@@ -1277,6 +1326,33 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
 
     raises("do_fire itself refuses a cached entry the live corpus no longer holds",
            _fire_on_a_corpus_missing_its_entry, StaleCache, "no longer holds")
+
+    # ── B1's WIRING, driven end to end (1) ──────────────────────────────────────────────
+    # ⛔ Every case above is pure, and B1 was a MISSING CALL: `plan_verdict` was correct and
+    # `do_fire` never asked it. A callee's tests cannot see that. This arms a plan in the shape
+    # `begin-plan.py`'s own parser accepts — and 87 committed plans use — and asserts the refusal
+    # comes out of `do_fire`, not that a pure function would have returned it.
+    def _fire_on_an_unreadable_plan():
+        import os
+        with tempfile.TemporaryDirectory() as td6:
+            root = Path(td6) / "repo"
+            plan = root / ".claude" / "plans" / "u.md"
+            plan.parent.mkdir(parents=True)
+            plan.write_text("### Task 1: Write the tests\n\n"
+                            "- [ ] **Step 1: Write the tests**\n"
+                            "  - **Doing:** writing the failing tests\n", encoding="utf-8")
+            (root / ".claude" / "executing-plan").write_text(
+                "plan: .claude/plans/u.md\n", encoding="utf-8")
+            saved = (globals()["ROOT"], globals()["SENTINEL"])
+            try:
+                globals()["ROOT"] = root.resolve()
+                globals()["SENTINEL"] = root / ".claude" / "executing-plan"
+                return do_fire()
+            finally:
+                globals()["ROOT"], globals()["SENTINEL"] = saved
+
+    raises("do_fire REFUSES an armed plan it cannot read, instead of exiting 0 in silence",
+           _fire_on_an_unreadable_plan, UnreadablePlan, "no recognisable")
 
     # ── do_fire's DEDUPE wiring, driven end to end (2) ───────────────────────────────────
     # ⛔ The case above raises before it ever reaches the marker, so it cannot see this wiring at

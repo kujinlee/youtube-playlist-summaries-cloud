@@ -44,15 +44,15 @@
   "expect": "plan_steps takes the Doing line as the situation"
  },
  {
-  "name": "plan_verdict passes a plan with no recognisable step, so a hand-written file reports nothing-fires instead of CANNOT RUN",
+  "name": "plan_verdict passes a plan with no recognisable step, so a hand-written file reports nothing-fires instead of UNREADABLE \u2014 \u27f3 retargeted 2026-09-30 when B1's fix renamed the code on this line and ORPHANED the anchor",
   "file": "scripts/recall-llm.py",
   "edits": [
    [
-    "    if not steps:\n        return CANNOT_RUN, (\"CANNOT RUN: the plan file carries no recognisable \"\n",
-    "    if False:\n        return CANNOT_RUN, (\"CANNOT RUN: the plan file carries no recognisable \"\n"
+    "    if not steps:\n        return UNREADABLE_PLAN,",
+    "    if False:\n        return UNREADABLE_PLAN,"
    ]
   ],
-  "expect": "plan_verdict refuses a plan with no recognisable step"
+  "expect": "plan_verdict refuses a plan with no recognisable step as UNREADABLE, not CANNOT RUN"
  },
  {
   "name": "plan_verdict stops noticing a step with no situation, so a blank line is sent to the model and matched against nothing",
@@ -603,5 +603,49 @@
    ]
   ],
   "expect": "a sibling whose name merely PREFIXES the repo path is outside it"
+ },
+ {
+  "name": "do_fire stops consulting plan_verdict \u2014 B1 restored: an unreadable plan again exits 0 in silence, indistinguishable from a finished one",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    rc, msg = plan_verdict(plan_steps(plan_text))\n    if rc != OK:\n        raise UnreadablePlan(msg)\n",
+    ""
+   ]
+  ],
+  "expect": "do_fire REFUSES an armed plan it cannot read, instead of exiting 0 in silence"
+ },
+ {
+  "name": "an unreadable plan is reported as CANNOT RUN again, so the caller cannot tell it from 'nothing is armed' and goes silent",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "        return UNREADABLE_PLAN, (\"UNREADABLE PLAN: the plan file carries no recognisable \"",
+    "        return CANNOT_RUN, (\"UNREADABLE PLAN: the plan file carries no recognisable \""
+   ]
+  ],
+  "expect": "plan_verdict refuses a plan with no recognisable step as UNREADABLE, not CANNOT RUN"
+ },
+ {
+  "name": "a step with neither a Doing line nor a title stops being UNREADABLE, so a blank situation is sent to the model",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "        return UNREADABLE_PLAN, (f\"UNREADABLE PLAN: step(s) {blank} carry neither a `Doing:` \"",
+    "        return CANNOT_RUN, (f\"UNREADABLE PLAN: step(s) {blank} carry neither a `Doing:` \""
+   ]
+  ],
+  "expect": "plan_verdict refuses a step whose situation is empty"
+ },
+ {
+  "name": "UnreadablePlan collapses back into CANNOT RUN, so the hook's catch-all swallows it and the reader hears nothing",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    rc = UNREADABLE_PLAN",
+    "    rc = CANNOT_RUN"
+   ]
+  ],
+  "expect": "an UnreadablePlan carries its OWN code, not CANNOT RUN \u2014 the hook must route on it"
  }
 ]

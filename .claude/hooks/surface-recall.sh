@@ -42,6 +42,12 @@ case "$RC" in
   3) PAYLOAD="recall-llm: the recall cache for this plan is absent or stale, so no memory entry was
 surfaced for this step. Run \`python3 scripts/recall-llm.py --arm\` to match this plan's steps
 (one model call, ~16s, covers every step). Detail: $OUT" ;;
+  # ⛔ rc=5 IS NOT SILENCE, AND SPLITTING IT OUT OF rc=2 IS HALF OF B1's FIX. A plan IS armed and
+  # the matcher cannot read it — 87 committed plans are in that shape. While this shared rc=2 with
+  # "nothing is armed", the catch-all below swallowed it and the reader heard nothing at all, which
+  # is the refuted matcher's H3: "nothing fires" and "could not look" arriving as one observation.
+  5) PAYLOAD="recall-llm: a plan IS armed and the matcher cannot read it, so NO memory entry was
+surfaced for this step — this is not 'nothing applies'. Detail: $OUT" ;;
   *) : ;;   # rc=2 CANNOT RUN (no plan armed / no corpus) is a normal state, not this hook's business
 esac
 
