@@ -93,7 +93,7 @@ Usage:
     scripts/recall-llm.py --arm            # ONE model call, matches every step of the armed plan
     scripts/recall-llm.py --fire           # no model call; the entry for the current step
     scripts/recall-llm.py --print-prompt    # exactly what --arm would send. No call, no cost
-    scripts/recall-llm.py --self-test  # 160 cases
+    scripts/recall-llm.py --self-test  # 164 cases
 """
 from __future__ import annotations
 
@@ -673,6 +673,28 @@ def surface_marker(plan_stem: str, step: int) -> str:
     return f"{plan_stem}:{step}"
 
 
+def nag_once(marker: Path, current: str) -> bool:
+    """-> may the nag be SAID this time? Records that it was, so the next call is silent.
+
+    ⛔ M4. Shares `should_surface`'s rule rather than restating it — a second copy of a dedupe is a
+    second copy of a rule, which `check-vocabulary-collisions.py` exists to refuse. ⚠ It is
+    best-effort for the same reason the surface marker is: failing to RECORD a nag must never
+    suppress it, so an unwritable directory means the nag repeats rather than vanishes.
+    """
+    try:
+        last = marker.read_text(encoding="utf-8").strip() if marker.is_file() else None
+    except (UnicodeDecodeError, OSError):
+        last = None
+    if not should_surface(last, current):
+        return False
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(current, encoding="utf-8")
+    except OSError:
+        pass
+    return True
+
+
 def should_surface(last: str | None, current: str) -> bool:
     """PURE. -> may this entry be printed? False when this exact step was already surfaced.
 
@@ -872,10 +894,18 @@ def do_fire(again: bool = False) -> int:
     step = first_unticked(plan_text)
     if step is None:
         return OK  # every box ticked: NOW this means only one thing.
+    # ⛔ M4. THE NAG IS THE COMMON CASE AND WAS THE ONLY THING NOT RATE-LIMITED. `--arm` is a
+    # manual, paid step that nothing runs automatically, so "never armed" is the DEFAULT state of
+    # every plan — and the dedupe sat after `fire_output`, reached only on a correct match. So the
+    # useful message was rate-limited and the nag was not, which is backwards. The rc stays 3 every
+    # time (the contract must not lie about the outcome); only the MESSAGE is deduped, and the hook
+    # forwards on non-empty output, exactly as it now does for rc 0.
     cache_file = cache_path(plan.stem)
     if not cache_file.is_file():
-        raise StaleCache(f"STALE CACHE: {cache_file.name} does not exist — this plan was never "
-                         f"armed for recall. Run `scripts/recall-llm.py --arm`.")
+        first = nag_once(CACHE_DIR / ".last-nagged", surface_marker(plan.stem, step))
+        raise StaleCache(
+            (f"STALE CACHE: {cache_file.name} does not exist — this plan was never armed for "
+             f"recall. Run `scripts/recall-llm.py --arm`.") if first else "")
     cache = parse_cache(read_or_refuse(cache_file, "recall cache"))
     rc, msg = cache_verdict(cache, plan_text)
     if rc != OK:
@@ -945,6 +975,24 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
             f = d / "e.md"
             f.write_bytes(body) if isinstance(body, bytes) else f.write_text(body)
             return live_trigger_for("e", d)
+
+    def _nag_probe(seed, current, first):
+        with tempfile.TemporaryDirectory() as _td:
+            marker = Path(_td) / ".last-nagged"
+            if not first:
+                nag_once(marker, seed)
+            return nag_once(marker, current)
+
+    def _nag_unwritable():
+        import os
+        with tempfile.TemporaryDirectory() as _td:
+            d = Path(_td) / "ro"
+            d.mkdir()
+            os.chmod(d, 0o500)
+            try:
+                return nag_once(d / ".last-nagged", "p:1") and nag_once(d / ".last-nagged", "p:1")
+            finally:
+                os.chmod(d, 0o700)
 
     def _raises_rc(thunk):
         try:
@@ -1320,6 +1368,22 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
           CANNOT_RUN)
     check("a NONE answer needs no corpus, so it is served even when the corpus is gone",
           lambda: cached_entry_verdict(None, False, False)[0], OK)
+
+    # ── M4 · the nag is deduped, the rc is not (4) ──────────────────────────────────────
+    # ⛔ `--arm` is manual and paid, so "never armed" is the DEFAULT state of every plan. The
+    # dedupe sat after `fire_output` — reached only on a correct match — so the USEFUL message was
+    # rate-limited and the nag was not. Backwards.
+    def _nag(marker_dir, current):
+        return nag_once(Path(marker_dir) / ".last-nagged", current)
+
+    check("the nag is said the FIRST time for a step",
+          lambda: _nag_probe("plan-a:1", "plan-a:1", first=True), True)
+    check("...and STAYS SILENT the second time for the same step",
+          lambda: _nag_probe("plan-a:1", "plan-a:1", first=False), False)
+    check("a DIFFERENT step nags again, because the situation has changed",
+          lambda: _nag_probe("plan-a:1", "plan-a:2", first=False), True)
+    check("an unwritable marker directory lets the nag REPEAT rather than vanish",
+          lambda: _nag_unwritable(), True)
 
     # ── H3 · duplicate step numbers (4) ─────────────────────────────────────────────────
     _dup = ("- [ ] **Step 1 of 2** — A\n  - **Doing:** ALPHA\n"
@@ -1701,7 +1765,11 @@ def main(argv: list[str]) -> int:
         # NOT a fail-open handler: every Refusal subclass carries a NON-ZERO rc, and this is the
         # only place they are caught. The alternative — letting them escape as a traceback — is
         # loud too but names Python's call stack instead of naming what could not be answered.
-        print(str(exc), file=sys.stderr)
+        # ⚠ A DELIBERATELY EMPTY message is the M4 dedupe: the rc still says 3 every time, and only
+        # the sentence is rate-limited. Printing it anyway would emit a bare newline, which a caller
+        # capturing both streams then has to strip.
+        if str(exc):
+            print(str(exc), file=sys.stderr)
         return exc.rc
 
 

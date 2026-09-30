@@ -812,5 +812,38 @@
    ]
   ],
   "expect": "parse_response REJECTS a reply that answers one step twice"
+ },
+ {
+  "name": "M4 RESTORED: the nag is never deduped, so every begin-plan.py call on an un-armed plan repeats the same instruction",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    if not should_surface(last, current):\n        return False\n",
+    ""
+   ]
+  ],
+  "expect": "...and STAYS SILENT the second time for the same step"
+ },
+ {
+  "name": "the nag marker is never recorded, so the first call is the only state and every call looks like the first",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "        marker.write_text(current, encoding=\"utf-8\")\n    except OSError:\n        pass\n",
+    "    except OSError:\n        pass\n"
+   ]
+  ],
+  "expect": "...and STAYS SILENT the second time for the same step"
+ },
+ {
+  "name": "an unwritable marker directory SUPPRESSES the nag instead of repeating it, so the reader is never told to arm",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    except OSError:\n        pass\n    return True",
+    "    except OSError:\n        return False\n    return True"
+   ]
+  ],
+  "expect": "an unwritable marker directory lets the nag REPEAT rather than vanish"
  }
 ]

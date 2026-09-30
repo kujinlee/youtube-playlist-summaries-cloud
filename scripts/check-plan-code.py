@@ -1328,13 +1328,19 @@ EXPECTED_MUTATIONS = {
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
-    # creates it. 41 entries over a file whose CENTRAL mechanism — a model call — cannot be
-    # mutated at all, which is why the mutations are dense everywhere else: the answer to an
-    # untestable core is to shrink it and cover everything it touches, not to accept the gap.
-    # SIX of the 41 mutate the PROMPT TEXT rather than code, and that is deliberate — the prompt
-    # is the measured artefact (20/20 must-fire, 0/60 false fires, 2026-09-29), so deleting one of
-    # its five load-bearing clauses invalidates the measurement exactly as a code defect would.
-    "scripts/recall-llm.py": 74,
+    # creates it, over a file whose CENTRAL mechanism — a model call — cannot be mutated at all.
+    # That is why the mutations are dense everywhere else: the answer to an untestable core is to
+    # shrink it and cover everything it touches, not to accept the gap. SIX of them mutate the
+    # PROMPT TEXT rather than code, deliberately — the prompt is the measured artefact (20/20
+    # must-fire, 0/60 false fires, 2026-09-29), so deleting one of its five load-bearing clauses
+    # invalidates the measurement exactly as a code defect would.
+    # ⛔ M1, round 1: this comment SAID "41 entries" twice, beside the number it sits next to — and
+    # it was already 53 when the review read it. A count in prose has no owner and drifts from the
+    # literal below it; the only count that cannot is the literal, which the suite pins. So the
+    # figure is NOT restated here. The same rule is written at the top of EXPECTED_MUTATIONS and
+    # this comment was the counter-example to it.
+    # ⟳ 2026-09-30, review round 1 fold: 53 → 74 across B1, H1, H2, H3 and the model-call isolation.
+    "scripts/recall-llm.py": 77,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -3759,7 +3765,7 @@ def _self_test() -> int:
     # Blocking and High — and the sum stayed at 1015 throughout, because an orphan keeps the count
     # while removing the coverage. CI caught it; `--self-test` cannot, because it loads the
     # manifests without resolving them. The split is on each file's own entry above.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1116)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1119)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

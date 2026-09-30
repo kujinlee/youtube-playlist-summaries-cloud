@@ -168,8 +168,26 @@ threshold floored to 0 so nothing is cut by the cutoff:**
 | recall@141 | 20/20 (100%) |
 
 ⛔ **A shortlist stage can only LOSE recall; it can never add any.** Eight of the twenty correct
-entries rank at 66, 82, 94, 95, 106, 107 and 108 — so a shortlist of any practical depth silently
-discards them, and the adjudicator never learns they existed. **Lexical-shortlist + LLM would score
+entries rank below 10 — so a shortlist of any practical depth silently discards them, and the
+adjudicator never learns they existed.
+
+⟳ **CORRECTED 2026-09-30, review round 1 M3 — and the correction is bigger than the typo.** This
+listed **seven** ranks — `66, 82, 94, 95, 106, 107, 108` — for a claimed *eight*, and `at_20: 12/20`
+requires eight. The omitted value is **33**. ⛔ **Re-deriving it found a second error the review did
+not reach: those ranks were measured over a 144-entry corpus, while every other figure on this page
+used the frozen 141** — three memory entries had been added between the runs. Both corpora were
+rebuilt in a redirected `HOME` and re-measured:
+
+| corpus | the eight ranks below 10 |
+|---|---|
+| **141** — what the rest of this page used | 32, 63, 79, 91, 92, 103, 104, 105 |
+| **144** — what the rank run actually saw | **33**, 66, 82, 94, 95, 106, 107, 108 |
+
+⭐ **The conclusion is unchanged and robust: eight entries fall below rank 10 in BOTH, so recall@10
+is 12/20 either way and a lexical shortlist still caps the mechanism at 60%.** What was wrong is the
+supporting detail — and the deeper error is presenting a rank list as a bare fact at all. **A rank is
+a function of the corpus it was computed over**, and this page gave one without naming its corpus.
+`a-measurement-is-only-as-good-as-its-corpus`, in the document about that very lesson. **Lexical-shortlist + LLM would score
 at best 12/20, against 20/20 for the LLM alone: the hybrid actively destroys the result.**
 
 ⭐ **And the loss is not random — it is concentrated in the most valuable half of the corpus.** The
@@ -188,7 +206,14 @@ Against that, the refuted hook fired on **~275 tool-call invocations per session
 The cost of a fire is the reader's ATTENTION, and the measured consequence of high frequency was
 52.7% firing with an 11.7% false-fire rate. Calling it more often is the failure, not the goal.
 
-## 3. A model call costs 6.41s — so it must be precomputed, not merely infrequent
+## 3. A model call costs 16.1s — so it must be precomputed, not merely infrequent
+
+⟳ **CORRECTED 2026-09-30, review round 1 M5.** This heading read *"6.41s"*, which is a **floor for
+CLI start-up on a trivial haiku prompt** and not the cost of this call — `call_model`'s own docstring
+says exactly that, so the page and the code contradicted each other. Measured for the real call (144
+triggers × 4 situations, 15,336 chars, `--model opus`): **16.1s**, and **11.2s** after the isolation
+fix. The argument is unchanged and in fact stronger — the floor alone already ruled out a
+per-tool-call boundary.
 
 `claude -p` exists (2.1.281), authenticates from disk with no API key, and answered a trivial
 haiku-model prompt at **6.41s**, CLI startup dominating. That is ~51× the old hook's 125 ms; at 275

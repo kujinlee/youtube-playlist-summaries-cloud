@@ -835,6 +835,7 @@
    "at_20": "12/20",
    "at_141": "20/20",
    "_ranks_of_the_eight_that_sank": [
+    33,
     66,
     82,
     94,
@@ -843,7 +844,19 @@
     107,
     108
    ],
-   "_verdict": "A lexical shortlist caps the mechanism at 60%. A shortlist can only LOSE recall. lexical+LLM scores at best 12/20 vs 20/20 for the LLM alone, so the no-new-dependency hybrid is REFUTED. Applies to LEXICAL shortlists only; embedding recall@k is unmeasured."
+   "_verdict": "A lexical shortlist caps the mechanism at 60%. A shortlist can only LOSE recall. lexical+LLM scores at best 12/20 vs 20/20 for the LLM alone, so the no-new-dependency hybrid is REFUTED. Applies to LEXICAL shortlists only; embedding recall@k is unmeasured.",
+   "_corpus_this_was_measured_over": 144,
+   "_ranks_at_the_141_corpus_used_elsewhere": [
+    32,
+    63,
+    79,
+    91,
+    92,
+    103,
+    104,
+    105
+   ],
+   "_corrected": "2026-09-30, round 1 M3: this held SEVEN ranks for a claimed eight (33 was missing), and re-deriving it showed the run used a 144-entry corpus while the rest of the experiment used the frozen 141. Eight fall below rank 10 in BOTH, so recall@10 = 12/20 and the 60% ceiling stand."
   },
   "call_frequency": {
    "_derived_from": "plan files on disk, not estimated",
@@ -860,7 +873,10 @@
    "prompt": "trivial, --model haiku",
    "latency_s": 6.41,
    "vs_old_hook_ms": 125,
-   "_verdict": "~51x the old hook; 29 min/session at 275 invocations. Cannot be synchronous on a frequent boundary. Resolution is PRECOMPUTE at plan-arm time (begin-plan.py writes every step's Doing: line up front), one call per plan, hook becomes a dict lookup, fire-time latency zero."
+   "_verdict": "~51x the old hook; 29 min/session at 275 invocations. Cannot be synchronous on a frequent boundary. Resolution is PRECOMPUTE at plan-arm time (begin-plan.py writes every step's Doing: line up front), one call per plan, hook becomes a dict lookup, fire-time latency zero.",
+   "latency_s_real_call": 16.1,
+   "latency_s_after_isolation_fix": 11.2,
+   "_corrected": "2026-09-30, round 1 M5: 6.41s is a CLI start-up floor on a trivial haiku prompt, not this call. The real call is 16.1s, and 11.2s once the subprocess stopped inheriting repo hooks."
   },
   "embedding_backend_availability": {
    "anthropic_api_key": false,

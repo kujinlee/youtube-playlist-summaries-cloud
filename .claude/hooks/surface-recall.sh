@@ -2,7 +2,17 @@
 # PostToolUse(Bash, begin-plan.py) — surface the memory entry for the step that is now current.
 #
 # This is the CALLER for scripts/recall-llm.py (backlog #191). A matcher nothing invokes is the
-# inert field this design spent a day arguing about, and `check-ratchet-contract.py` refuses one.
+# inert field this design spent a day arguing about.
+#
+# ⛔ M2 — AND THIS COMMENT USED TO CLAIM `check-ratchet-contract.py` REFUSES A CALLER-LESS
+# GUARD, WHICH IS FALSE OF THIS FILE. That check applies R3 (a caller) only over
+# `discover_guards()`, whose population is `GUARD_PATH_RE.fullmatch` — `check-*.py`. Verified
+# by running it: `guards discovered (41)` lists every `check-*.py` and NOT `recall-llm.py`,
+# which gets R4 only, and the code says so in as many words. **So deleting this hook and its
+# `.claude/settings.json` entry would leave that gate green.** The caller exists by design,
+# not by enforcement, and nothing currently protects it — said plainly rather than implied by
+# a citation that does not reach. This is quote-the-code-don't-characterise-it applied to a
+# comment: the sentence was true of the guard in general and false of the file it sat in.
 #
 # ⛔ WHY IT TRIGGERS ON `begin-plan.py` AND NOT ON EVERY Bash CALL. The refuted lexical matcher hung
 # off PreToolUse(Bash) and fired ~275 times a session, on 52.7% of real commands with an 11.7%
@@ -47,7 +57,10 @@ case "$RC" in
   # with no output is "nothing applies", and that is a fact about the contract rather than about
   # one sentence's spelling.
   0) [ -n "$OUT" ] && PAYLOAD="$OUT" ;;
-  3) PAYLOAD="recall-llm: the recall cache for this plan is absent or stale, so no memory entry was
+  # ⛔ M4: `-n "$OUT"` because the matcher now deduplicates the NAG's message while keeping rc 3
+  # every time — the contract must not lie about the outcome, but the reader should not be told to
+  # run `--arm` on every single begin-plan.py call for the same step.
+  3) [ -n "$OUT" ] && PAYLOAD="recall-llm: the recall cache for this plan is absent or stale, so no memory entry was
 surfaced for this step. Run \`python3 scripts/recall-llm.py --arm\` to match this plan's steps
 (one model call, ~16s, covers every step). Detail: $OUT" ;;
   # ⛔ rc=5 IS NOT SILENCE, AND SPLITTING IT OUT OF rc=2 IS HALF OF B1's FIX. A plan IS armed and
