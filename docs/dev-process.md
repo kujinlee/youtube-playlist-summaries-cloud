@@ -33,7 +33,12 @@ Pull the human back in only for an **unexpected situation**:
   correct; going silent is not;
 - a **blocker**: missing access/credentials, an external dependency down, a gate that will not go green;
 - anything that would **move the goal** (change the spec) rather than approach it;
-- an **outward-facing or hard-to-reverse action** — push, merge, deploy, delete, spend.
+- an **outward-facing or hard-to-reverse action** — merge, deploy, delete, spend.
+  ⟳ **2026-09-30: `push` REMOVED from this list at the user's instruction** — *"you don't need
+  to ask me for git push. just do it when it is necessary."* It contradicted Phase 5's own
+  *"open the PR, notify, do not merge"*, which already made push+PR the standard path, and the
+  general list was being read over the specific rule. ⚠ **A PR is still a separate judgement:**
+  do not open one for work that is NOT CONVERGED, because a PR asserts readiness for the gate.
 
 **Notification is mandatory whenever you actually need the human** (`PushNotification` — one line,
 lead with the decision needed). Silently "waiting" without notifying wastes their time. Do **not**
