@@ -13273,3 +13273,48 @@ the wrong answer to it.
 which `docs/features.md` claims no node for** — `check-features.py` rc=1, *"its rows cannot appear"*.
 Corrected to `(tooling)` / `(process)`. Third gate-subset miss of the session, and the one rule in
 `docs/CLAUDE.md` written for exactly it.
+
+## 2026-09-30
+Both bugs from this morning's review are fixed, and the thing that let them exist now has a guard.
+
+The two real defects are closed. **A message that used to arrive with its explanation stripped
+out** now arrives either complete or with no explanation offered — never a sentence ending in
+"Detail:" and then nothing. And **the case that produced total silence** — a plan running, notes
+directory missing — now says so plainly: *"the plan is fine; the corpus is missing."* Measured both
+ways each time, against the same setups that exposed them.
+
+⭐ **But the useful part is why they were both possible.** The program reports outcomes as numbers;
+a small script reads those numbers and decides what you see. Two halves, two languages, and
+**nothing anywhere checked that the two lists agreed.** There is now a check that reads both and
+refuses three specific disagreements — a number the program can report that the script ignores, a
+number the script handles that the program never sends, and a message that promises a detail it
+might not have. Each of those is one of the bugs above, made impossible to reintroduce quietly.
+
+⚠ **Three of my own mistakes, all caught by the machinery rather than by me.** The coverage checker
+**refused to give a score at all** — not a low score, none — because one of its 1,138 checks could
+not be tied to the test it claimed to protect. One of my edits had silently unhooked an older check
+from the line it was watching. And one test crashed instead of failing, which quietly skipped every
+test after it.
+
+<!--tech-->
+**Fixes backlog #201 and #202, both LIVE, and adds `scripts/check-rc-contract.py`** — the gate the
+corrected architecture review prescribed. `2a8edba3` on `semantic-recall-replication`.
+
+| | |
+|---|---|
+| **#202** | `UNANSWERABLE = 6` + `class Unanswerable` + a hook arm. B1's conflation surviving on the corpus side: rc=2 meant *nothing armed* AND *armed but corpus gone*. Control 290 B → test **rc=6, 448 B** (was 0) |
+| **#201** | the `5)` arm's `Detail:` clause is conditional; the static sentence is not. 409 → **139 → 139 with the clause absent**. ⛔ Guarding the whole arm like its siblings would make a deduped rc=5 silent — B1 again |
+| **guard** | reads both files. 22 cases, 5 mutations, CI caller, pinned count, pinned key set — **four guards refused it until each was satisfied**, which is exactly what a `.sh` hook gets none of |
+
+⛔ **The sweep reported NOT MEASURED over 1137 of 1138 verdicts** rather than a tally, because one
+mutation was unattributable — an orphaned anchor (#202 changed the line it bound to) plus a case
+that raised `IndexError` under a mutation and truncated the suite. Both fixed; every manifest swept,
+not just the file edited. Re-run: **56 files, 1138 mutations, 1138 killed, 1138 attributed, 0
+survivors.**
+
+`recall-llm.py --self-test` **188/188** (was 185) and now non-ambient — `_armed_world` and its
+near-duplicate sibling both swap `CACHE_DIR`, after a case was found reading the live `.last-said`
+marker this session's own hook had written. Proven with the marker present and removed.
+
+⛔ **STILL NOT CONVERGED.** Round 3 is owed and goes to **Codex first**, alternating, per the
+convergence document's own recommendation.
