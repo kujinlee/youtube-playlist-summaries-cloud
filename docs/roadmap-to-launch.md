@@ -2177,6 +2177,55 @@ roadmap** while #167 and #184 were on it. That is what this section exists to st
 rounds were rework; GitHub runs the sweep ~2× faster than this machine (8m08s for the whole `verify`
 job vs ~14 min for the local sweep alone). **The sweep is the most VISIBLE cost and not the largest.**
 
+## LLM recall matcher — backlog #191 — anchor `review-decides-itself` — 🟠 BUILT, REVIEWED TWICE, **NOT CONVERGED**; Phase 6 review DONE 2026-09-30
+
+**Branch `semantic-recall-replication`, off `master` at `446025ab`. Pushed, no PR — deliberately, a
+PR asserts readiness for the human gate and this is not converged.** ⛔ Do not trust any commit
+count written here: run `git log --oneline master..HEAD`. This row exists because there was none —
+the work shipped a 2204-line script and a registered `PostToolUse` hook with the backlog row as its
+only home, and `dev-process.md` requires the roadmap layer too.
+
+- [x] **The matcher is built and live.** ONE model call per PLAN at arm time, cached; `--fire` is a
+      cache lookup. Caller is `PostToolUse(Bash, begin-plan.py)`, delivery via
+      `hookSpecificOutput.additionalContext`, confirmed by running it.
+- [x] **Two review rounds, both halves each, filed under `docs/reviews/{claude,codex}/`** with
+      testimony verdicts; `check-review-rounds.py` reports 0 silent gaps.
+- [x] **Phase 6 architecture review — `docs/reviews/architecture-review-2026-09-30-recall-matcher.md`.**
+      ⛔ It did **NOT** arm: `dev-process.md:108` needs two consecutive fix-caused rounds in ONE
+      component and round 2 was one such round across five. **It ran on the user's direction**
+      (2026-09-30, *"next session will start architecture review"*), and that is recorded rather
+      than dressed up as a trigger.
+      ⭐ **Verdict: the framing question was aimed at a fix already in place.** The rc contract has
+      one boundary (`Refusal` subclasses carry their own rc; `main` returns `exc.rc`). What has no
+      owner is CONSULTATION — and the mechanism is that `check-ratchet-contract.py`'s
+      `GUARD_PATH_RE` is `scripts/check-*.py`, so every mechanical protection stops at that
+      filename convention and the seams are where no gate has jurisdiction. The file itself
+      designates that region *"plumbing"* and covered it with a dated manual run.
+- [ ] **NOT CONVERGED — round 3 is owed.** Round 2 found 1 Blocking + 5 High and its fixes are
+      unreviewed. The Phase 6 review is a DESIGN gate and does not substitute for a defect round.
+- [ ] **`CONTEXT.md` has no vocabulary for this subsystem** — `recall`, `arm`, `fire`,
+      `plan verdict`, `rubric`, `situation` all absent. ⭐ **THIS IS THE THIRD INSTANCE OF ONE
+      REPAIR:** Architecture Review #7 (2026-09-03) added *Verification Stack* for exactly this
+      symptom, the review-verdict path (2026-09-23) added *Testimony* and *Review identity* for it
+      again, and both recorded the same cause — a component argued for N rounds in words the
+      glossary did not contain, so each round could only name the instance in front of it.
+- [ ] **No falsifier at the call site.** rc separates *cannot-run* from *nothing-fires*, but nothing
+      separates *correctly nothing* from *should have fired and did not*. The shipped rubric makes
+      all-NONE a CORRECT answer when the author already embodies the lesson, so a live all-NONE run
+      and a broken matcher are the same observation.
+- [ ] **The code/hook seam has all its coverage on one side.** `.claude/hooks/surface-recall.sh` —
+      registered, the matcher's only caller — has no mutation entry, no self-test, and no script
+      anywhere reads it. Round 1's H4 was a cross-file defect there, caught by review not by a gate.
+- [ ] **An unowned number, asserted at four sites.** *"87 committed plans"* appears three times in
+      `recall-llm.py` and once in the hook; measured today it is 93 loose-unreadable of 96 tracked.
+      `CONTEXT.md`'s precedent is to REMOVE such a figure, not correct it — correcting it re-creates
+      the defect at the next commit.
+- [ ] **The seam measurement needs provenance.** *"15 of 19 at a seam (78%)"* does not reproduce —
+      the filed halves carry 16 Blocking+High. ⛔ The arithmetic is the lesser half: the split came
+      from a SINGLE classifier and was then quoted as a measurement. A second classifier is what it
+      needs, not a corrected denominator. ⚠ The conclusion is unaffected — the seam concentration is
+      overwhelming either way.
+
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all
 three. **M2 Sync is COMPLETE (PR #23 + #24, 2026-07-19).** **M1.1 is now DONE (2026-07-19).**

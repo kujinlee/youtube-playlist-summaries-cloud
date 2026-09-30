@@ -13069,7 +13069,7 @@ refuted by a one-variable control at 80/80 identical picks (`the-control-refuted
 
 Full account: `docs/reviews/claude/semantic-recall-replication-2026-09-29.md`.
 
-## 2026-09-30 [needs-you]
+## 2026-09-30 [resolved: 2026-09-30/3]
 The memory now speaks up at the right moment — and four reviewers spent the night proving how badly I fix things.
 
 The matcher is built, running, and reviewed twice. When a plan starts, one question goes to the
@@ -13098,15 +13098,17 @@ then 164, then 185 — through every single one of these. Five different ways a 
 nothing. Every one was caught by a machine re-running the real thing, and not once by me reading my
 own work.
 
-**Decide:** the next session opens with an architecture review of this. Is that what you want?
-- yes — review the structure, not the next defect [recommended]
-- no — run a third review round first, then decide
-- park the whole thing; the branch is clean and documented where it stands
-- something else — I have a question about this
+⟳ **ANSWERED 2026-09-30 by the user, in their own words — *"next session will start architecture
+review"*.** The review ran the same day: `docs/reviews/architecture-review-2026-09-30-recall-matcher.md`.
+⚠ This entry stood as `[needs-you]` after the answer arrived, because nothing closes a `[needs-you]`
+when the reply comes in conversation — `an-escalation-has-no-closer`, in the live repo.
 
 <!--tech-->
-**Backlog #191.** `semantic-recall-replication`, 18 commits, off `master` at `446025ab`, **unmerged
-and unpushed**. Tree clean.
+**Backlog #191.** `semantic-recall-replication`, off `master` at `446025ab`, **unmerged, PUSHED,
+no PR**. Tree clean. ⟳ **CORRECTED 2026-09-30: this said *18 commits* and *unpushed*; both were
+stale at the moment of writing** — `git log --oneline master..HEAD` gives 22 and `HEAD` equals
+`origin/semantic-recall-replication`. A count written into a file that keeps being committed is
+stale when written, so the command is named here instead of a number.
 
 | round | B | H | M | caused by a previous fix |
 |---|---|---|---|---|
@@ -13128,3 +13130,66 @@ boundary rather than at every raise site?
 
 Also landed: the memory corpus (146 entries) and the authored explainer pages moved INTO the repo
 per the user's ruling, with bootstrap symlinks, a CI guard and a README section — backlog #194.
+
+## 2026-09-30
+The review asked whether the structure was wrong. It was — but not in the place anyone was looking.
+
+Last night's conclusion was that most of the defects lived *between* things rather than inside them,
+and the question for today was whether the fix is to make callers unable to skip a check. **The
+answer is that the check was never the problem.** The one boundary everyone was worried about
+already exists and already works.
+
+⭐⭐ **What is actually wrong is that every automatic protection in this project stops at a file
+name.** The machinery that insists a safety script has tests, has no silent failure path, and is
+actually *called by something* only looks at files named `check-…`. The matcher is not named that.
+So the one rule that would have noticed its only caller is unprotected never looked at it — and that
+caller, a small shell script deciding what you get shown, has no tests, no coverage, and nothing
+anywhere that reads it. Three of the defects landed exactly there. **They were not careless work;
+that is the one place nothing was watching.**
+
+And the file predicted it. It says in as many words that every decision is a carefully tested
+function and *the rest is plumbing* — then notes that the plumbing holds the wiring, that miswired
+wiring is a defect this project has hit repeatedly, and that it checked the wiring **by running it
+once, by hand, on one day.** That run was real. It simply never runs again.
+
+⚠ **Two things I got wrong last night, found by re-deriving them rather than re-reading them.** The
+headline *"78% of problems were at seams"* does not reproduce — the real Blocking-and-High total is
+16, not 19. More importantly, that split came from **me** classifying my own findings and was then
+quoted as though measured; my second pass says 81–88%, which deserves no more trust than the first.
+The conclusion survives either way, and that is precisely why nobody audited the number. Separately,
+a figure baked into the code three times over — *"87 plans"* — is 93 today, and no check owns it.
+
+**Nothing was merged and nothing was opened as a pull request.** The work still owes a review round,
+so a PR would claim a readiness it does not have.
+
+<!--tech-->
+**Phase 6 architecture review — `docs/reviews/architecture-review-2026-09-30-recall-matcher.md`.**
+Subject: `scripts/recall-llm.py` (2204 lines), `scripts/begin-plan.py`,
+`.claude/hooks/surface-recall.sh`, on `semantic-recall-replication`. ⛔ It did **not** arm —
+`dev-process.md:108` needs two consecutive fix-caused rounds in ONE component — and ran on the
+user's direction, recorded as that rather than dressed up as a trigger.
+
+**Nine findings, every one verified by hand with its producing command recorded.** Filed as backlog
+**#195–#200**; the roadmap gained the section this work never had.
+
+| # | finding | lands as |
+|---|---|---|
+| F6+F7 | `GUARD_PATH_RE = scripts/check-*.py`, so rules R1–R3 never see the subsystem; the hook has 0 mutations, 0 cases, 0 readers | 🔴 #196 |
+| F1 | no falsifier at the call site — `NONE` is frequently CORRECT, so a live all-NONE run is unauditable | 🟠 #195 |
+| F3 | `CONTEXT.md` vocabulary absent — **third** instance of one prescribed repair (#7, review-verdict path, this) | 🟠 #198 |
+| F8 | *"15 of 19 (78%)"* does not reproduce — 16 B+H, and the split was one judge quoted as a measurement | 🟠 #199 |
+| F2 | *"87 committed plans"* at 4 sites; measured 93 of 96 tracked; no owner | 🟡 #197 |
+| F9 | Phase 6's `Explore` step informed 1 of 4 reviews; the partial-results remedy has now failed twice | 🟡 #200 |
+| F4 | no roadmap row for 22 commits and a registered live hook | ✅ fixed |
+| F5 | this file's own `[needs-you]` outlived its answer, and misstated commit count and push state | ✅ fixed |
+
+⛔ **All three `Explore` agents are recorded NOT RUN.** Dispatched with refutation mandates, all
+three went idle without reporting, and an explicit `SendMessage` resend went unanswered. The
+mechanism is already written down in the 2026-09-22 review — their replies are plain text, and plain
+text does not route to the coordinator. **Nothing in the review rests on them.**
+
+**Gates at this tree, all rc=0:** `recall-llm.py --self-test` 185/185 · `check-anchors` ·
+`check-docs` · `check-ratchet-contract` · `check-review-rounds` (0 silent gaps) ·
+`check-test-counts` · `check-roadmap-consistency` · `check-backlog-closure` ·
+`check-dashboard-entry`. **Convergence unchanged: NOT CONVERGED** — round 3 is still owed, and a
+design gate does not substitute for a defect round.
