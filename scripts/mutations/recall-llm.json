@@ -605,11 +605,11 @@
   "expect": "a sibling whose name merely PREFIXES the repo path is outside it"
  },
  {
-  "name": "do_fire stops consulting plan_verdict \u2014 B1 restored: an unreadable plan again exits 0 in silence, indistinguishable from a finished one",
+  "name": "do_fire stops consulting plan_verdict \u2014 B1 restored: an unreadable plan again exits 0 in silence, indistinguishable from a finished one \u2014 \u27f3 retargeted: H2's fix added the plan_text argument and orphaned the anchor",
   "file": "scripts/recall-llm.py",
   "edits": [
    [
-    "    rc, msg = plan_verdict(plan_steps(plan_text))\n    if rc != OK:\n        raise UnreadablePlan(msg)\n",
+    "    rc, msg = plan_verdict(plan_steps(plan_text), plan_text)\n    if rc != OK:\n        raise UnreadablePlan(msg)\n",
     ""
    ]
   ],
@@ -933,5 +933,71 @@
    ]
   ],
   "expect": "read_or_refuse raises the CLASS it was given, with a sentence that matches it"
+ },
+ {
+  "name": "H2 RESTORED: the mixed-plan check is skipped, so a plan whose boxes are only partly readable surfaces a LATER step's lesson at rc 0",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "        if loose > len(steps):\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": "a plan with boxes this CANNOT read is refused, even though others parsed"
+ },
+ {
+  "name": "the mixed-plan message stops counting both sides, so the reader cannot see how many boxes vanished",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "                f\"UNREADABLE PLAN: {loose} checkbox(es) are present but only {len(steps)} match \"",
+    "                f\"UNREADABLE PLAN: some checkboxes are present that do not match \""
+   ]
+  ],
+  "expect": "...and it counts BOTH, so the reader can see how many vanished"
+ },
+ {
+  "name": "the loose box pattern matches the STRICT shape only, so a mixed plan looks whole again",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "_LOOSE_BOX_RE = re.compile(r\"^- \\[[ x]\\]\", re.M)",
+    "_LOOSE_BOX_RE = re.compile(r\"^- \\[[ x]\\] \\*\\*Step \\d+ of\", re.M)"
+   ]
+  ],
+  "expect": "a plan with boxes this CANNOT read is refused, even though others parsed"
+ },
+ {
+  "name": "H5 RESTORED: the boundary dedupe is removed, so every stale state re-emits its block on every invocation",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "        if msg and not nag_once(CACHE_DIR / \".last-said\", hashlib.sha256(\n                msg.encode(\"utf-8\")).hexdigest()[:16]):\n            raise type(exc)(\"\") from exc.__cause__\n",
+    ""
+   ]
+  ],
+  "expect": "an rc-5 unreadable plan is SAID once and silent after \u2014 not only the cache branch"
+ },
+ {
+  "name": "the dedupe key stops being the message, so a DIFFERENT refusal is swallowed as a repeat",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "        if msg and not nag_once(CACHE_DIR / \".last-said\", hashlib.sha256(\n                msg.encode(\"utf-8\")).hexdigest()[:16]):",
+    "        if msg and not nag_once(CACHE_DIR / \".last-said\", \"constant\"):"
+   ]
+  ],
+  "expect": "the dedupe is keyed on the MESSAGE, so a DIFFERENT refusal in the SAME world is still said"
+ },
+ {
+  "name": "H4 RESTORED: an unreadable entry is silently cached-over, so --fire serves a healthy-looking match --arm would refuse",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    elif entry and status == LIVE_UNREADABLE and cached_trigger:\n",
+    "    elif False:\n"
+   ]
+  ],
+  "expect": "an entry that cannot be read says so, because --arm would refuse this corpus outright"
  }
 ]

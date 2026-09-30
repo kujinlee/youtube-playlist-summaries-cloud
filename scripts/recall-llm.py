@@ -93,7 +93,7 @@ Usage:
     scripts/recall-llm.py --arm            # ONE model call, matches every step of the armed plan
     scripts/recall-llm.py --fire           # no model call; the entry for the current step
     scripts/recall-llm.py --print-prompt    # exactly what --arm would send. No call, no cost
-    scripts/recall-llm.py --self-test  # 177 cases
+    scripts/recall-llm.py --self-test  # 185 cases
 """
 from __future__ import annotations
 
@@ -172,6 +172,16 @@ class UnreadablePlan(Refusal):
 # ⚠ `- [ ]` or `- [x]`, then `**Step N of M**`, then an em-dash and the title. This is the shape
 # `begin-plan.py:175` writes; the number is taken from the STEP, never from the position in the
 # file, because a cache keyed by position silently rebinds every answer when a step is inserted.
+# ⛔ ROUND 2 H2. `begin-plan.py:86` accepts `^- \\[( |x)\\] (.*)$` and `cmd_plan` arms any in-repo
+# markdown, so a plan can hold boxes that `_BOX_RE` below does NOT match. `plan_steps` then returns
+# only the ones it could read, `plan_verdict` sees a NON-EMPTY list and accepts, and `first_unticked`
+# points at a LATER step — so the reader standing at step 1 is handed step 2's lesson, at rc 0, with
+# no warning. Round 1 named this half of B1 and the fold closed only the all-silent half.
+# ⚠ This is the failure the prompt itself calls the most expensive one it can produce: a wrong
+# lesson costs more than no lesson. Counting boxes LOOSELY is what tells "no boxes at all" (nothing
+# to read) from "boxes I cannot read" (something is there and I am blind to part of it).
+_LOOSE_BOX_RE = re.compile(r"^- \[[ x]\]", re.M)
+
 _BOX_RE = re.compile(r"^- \[([ x])\] \*\*Step (\d+) of \d+\*\*(?:\s*—\s*(.*))?$", re.M)
 _DOING_RE = re.compile(r"^\s*-\s*\*\*Doing:\*\*\s*(.+)$", re.M)
 _PAUSED_RE = re.compile(r"^paused:", re.M)
@@ -201,13 +211,26 @@ def plan_steps(plan_text: str) -> list[tuple[int, str]]:
     return out
 
 
-def plan_verdict(steps: list[tuple[int, str]]) -> tuple[int, str]:
+def plan_verdict(steps: list[tuple[int, str]], plan_text: str = "") -> tuple[int, str]:
     """PURE. -> (rc, message) for a parsed plan. A plan nothing can be read out of is UNREADABLE.
 
     Two ways a plan is unusable, and neither may be reported as "this plan has nothing to match":
     no recognisable step at all (a hand-written file in a different shape), and a step whose
     situation is empty (it would be sent to the model as a blank line and matched against nothing).
     """
+    # ⛔ ROUND 2 H2 — THE MIXED PLAN. A plan whose boxes are only PARTLY readable is worse than one
+    # that is wholly unreadable: the unreadable ones vanish, the list is non-empty, and the reader is
+    # handed a LATER step's lesson while standing at an earlier one. Compared here rather than
+    # downstream, because by the time `first_unticked` runs the missing box is indistinguishable
+    # from one that was never written.
+    if plan_text:
+        loose = len(_LOOSE_BOX_RE.findall(plan_text))
+        if loose > len(steps):
+            return UNREADABLE_PLAN, (
+                f"UNREADABLE PLAN: {loose} checkbox(es) are present but only {len(steps)} match "
+                f"`- [ ] **Step N of M**`, so the step you are on may be one of the {loose - len(steps)} "
+                f"this cannot read — and a later step's lesson would be surfaced instead. Renumber "
+                f"them in that shape, or re-arm with `begin-plan.py`.")
     if not steps:
         return UNREADABLE_PLAN, ("UNREADABLE PLAN: the plan file carries no recognisable "
                             "`- [ ] **Step N of M**` step, so nothing was matched.")
@@ -890,7 +913,7 @@ def prepared_prompt() -> tuple[str, Path, str, list[tuple[int, str]], list[tuple
     """
     _sentinel, plan, plan_text = read_armed_plan()
     steps = plan_steps(plan_text)
-    rc, msg = plan_verdict(steps)
+    rc, msg = plan_verdict(steps, plan_text)
     if rc != OK:
         # ⛔ ROUND 2 #3. This raised a bare `Refusal` (rc 2) for the SAME verdict `do_fire` reports
         # as rc 5, so `--print-prompt` and `--arm` disagreed with `--fire` about what an unreadable
@@ -913,30 +936,70 @@ def do_arm() -> int:
         plan_text, picks,
         {v: by_name[v] for v in picks.values() if v != NONE},
         len(triggers), datetime.now(timezone.utc).isoformat(timespec="seconds"))
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    # ⛔ ROUND 2 H3 — THE ANSWER IS ALREADY PAID FOR BY THIS LINE. An unwritable cache directory
+    # raised OSError here and exited 1 — a code this contract does not define — AFTER the model call
+    # had been made and answered, throwing the answer away with it. H1 covered file READS and left
+    # writes open, and `--arm` is the one path where losing the result costs money rather than a
+    # retry. The picks are printed regardless below, so a failed write degrades to "you must re-arm
+    # next time" rather than "that call bought nothing".
     out = cache_path(plan.stem)
     # Written to a sibling and RENAMED: `os.replace` is atomic within a directory, so an interrupted
     # arm leaves the previous cache intact instead of a truncated one. `parse_cache` still refuses a
     # truncated file — this removes the way THIS code could produce one, not every way one can
     # arrive (a hand edit, an older format, a bad disk).
     tmp = out.with_suffix(".json.partial")
-    tmp.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-    tmp.replace(out)
+    written = True
+    try:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+        tmp.replace(out)
+    except OSError as exc:
+        written = False
+        print(f"⚠ the cache could NOT be written ({exc}). The answer below was still paid for and "
+              f"is printed in full; nothing will be surfaced automatically until --arm succeeds.")
     fired = sum(1 for v in picks.values() if v != NONE)
-    print(f"{out.relative_to(ROOT)}: {fired} of {len(picks)} step(s) matched an entry")
+    where = str(out.relative_to(ROOT)) if written else "(not written)"
+    print(f"{where}: {fired} of {len(picks)} step(s) matched an entry")
     for n, v in sorted(picks.items()):
         print(f"   step {n}: {v}")
-    return OK
+    return OK if written else CANNOT_RUN
 
 
 def do_fire(again: bool = False) -> int:
+    """`--fire`, with every REPEATED message suppressed — not just one branch's.
+
+    ⛔ ROUND 2 H5. Round 1's M4 found the useful message rate-limited while the nag was not, and the
+    fix added `nag_once` at exactly ONE branch: the missing-cache-file one. Measured, that left
+    SEVEN other non-OK paths un-deduped, including the two most reachable stale states — a stale
+    fingerprint (produced by editing any `Doing:` line after arming) and an unreadable plan — each
+    re-emitting a four-line block into the model's context on EVERY invocation.
+
+    ⭐ SO THE DEDUPE MOVED FROM A BRANCH TO THE BOUNDARY, and its key is the MESSAGE rather than
+    (plan, step): the early refusals do not know a step yet, and "have I just said this exact
+    sentence?" is the question all eight paths actually share. One rule, one place — the per-branch
+    version is deleted rather than joined by seven more.
+
+    ⚠ The rc is NEVER deduped. Only the sentence is: the contract must not lie about the outcome,
+    and the hook forwards on non-empty output.
+    """
+    try:
+        return _fire(again)
+    except Refusal as exc:
+        msg = str(exc)
+        if msg and not nag_once(CACHE_DIR / ".last-said", hashlib.sha256(
+                msg.encode("utf-8")).hexdigest()[:16]):
+            raise type(exc)("") from exc.__cause__
+        raise
+
+
+def _fire(again: bool = False) -> int:
     sentinel_text, plan, plan_text = read_armed_plan()
     if paused(sentinel_text):
         return OK  # a paused thread has no current step. Silence here is an answer, not a failure.
     # ⛔ B1. THIS CALL IS THE FIX, AND ITS ABSENCE WAS THE BLOCKING. `first_unticked` returns None
     # for TWO different worlds — every box ticked, and no box I can parse — so consulting it first
     # made an unreadable plan indistinguishable from a finished one, at rc 0, in silence.
-    rc, msg = plan_verdict(plan_steps(plan_text))
+    rc, msg = plan_verdict(plan_steps(plan_text), plan_text)
     if rc != OK:
         raise UnreadablePlan(msg)
     step = first_unticked(plan_text)
@@ -950,10 +1013,8 @@ def do_fire(again: bool = False) -> int:
     # forwards on non-empty output, exactly as it now does for rc 0.
     cache_file = cache_path(plan.stem)
     if not cache_file.is_file():
-        first = nag_once(CACHE_DIR / ".last-nagged", surface_marker(plan.stem, step))
-        raise StaleCache(
-            (f"STALE CACHE: {cache_file.name} does not exist — this plan was never armed for "
-             f"recall. Run `scripts/recall-llm.py --arm`.") if first else "")
+        raise StaleCache(f"STALE CACHE: {cache_file.name} does not exist — this plan was never "
+                         f"armed for recall. Run `scripts/recall-llm.py --arm`.")
     cache = parse_cache(read_or_refuse(cache_file, "recall cache", StaleCache))
     rc, msg = cache_verdict(cache, plan_text)
     if rc != OK:
@@ -984,6 +1045,13 @@ def do_fire(again: bool = False) -> int:
     if entry and live_trigger and cached_trigger and live_trigger != cached_trigger:
         text += ("\n   ⚠ this entry's trigger has been REWRITTEN since the plan was armed; the line "
                  "above is the live one. The match was made against the old wording.")
+    # ⛔ ROUND 2 H4. Falling back on LIVE_UNREADABLE keeps a match alive whose NAME still resolves —
+    # deliberate, because bookkeeping must not suppress a lesson. But it was SILENT, so `--fire`
+    # served a healthy-looking match from an entry `--arm` refuses outright (`load_triggers` raises
+    # on an unreadable entry). The two modes disagreed and the reader could not tell. Said now.
+    elif entry and status == LIVE_UNREADABLE and cached_trigger:
+        text += ("\n   ⚠ this entry could not be READ just now, so the line above is the cached "
+                 "wording and may be stale. `--arm` would refuse this corpus outright.")
     if not text:
         return OK
     marker_file = CACHE_DIR / ".last-surfaced"
@@ -1052,6 +1120,44 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
         except Refusal as exc:
             return str(exc)
         return ""
+
+    def _fire_with_an_unreadable_entry():
+        import io, os, contextlib
+        with tempfile.TemporaryDirectory() as tdC:
+            root, home = Path(tdC) / "repo", Path(tdC) / "home"
+            pl = root / ".claude" / "plans" / "w.md"
+            pl.parent.mkdir(parents=True)
+            pl.write_text("### T\n\n- [ ] **Step 1 of 1** — Go\n  - **Doing:** a situation\n",
+                          encoding="utf-8")
+            (root / ".claude" / "executing-plan").write_text("plan: .claude/plans/w.md\n",
+                                                             encoding="utf-8")
+            cd = root / ".claude" / "recall-cache"
+            cd.mkdir()
+            (cd / "w.json").write_text(json.dumps(cache_document(
+                ".claude/plans/w.md", pl.read_text(encoding="utf-8"), {1: "the-entry"},
+                {"the-entry": "THE CACHED WORDING"}, 1, "2026-09-30T00:00:00+00:00")),
+                encoding="utf-8")
+            slug = re.sub(r"[^A-Za-z0-9]", "-", str(root.resolve()))
+            corpus = home / ".claude" / "projects" / slug / "memory"
+            corpus.mkdir(parents=True)
+            (corpus / "the-entry.md").write_bytes(b"\xff\xfe not utf-8")
+            saved = (globals()["ROOT"], globals()["SENTINEL"], globals()["CACHE_DIR"],
+                     os.environ.get("HOME"))
+            try:
+                globals()["ROOT"] = root.resolve()
+                globals()["SENTINEL"] = root / ".claude" / "executing-plan"
+                globals()["CACHE_DIR"] = cd
+                os.environ["HOME"] = str(home)
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    do_fire()
+                return buf.getvalue()
+            finally:
+                (globals()["ROOT"], globals()["SENTINEL"], globals()["CACHE_DIR"]) = saved[:3]
+                if saved[3] is None:
+                    os.environ.pop("HOME", None)
+                else:
+                    os.environ["HOME"] = saved[3]
 
     def _write_bad_plan(root, sent):
         (root / ".claude" / "plans" / "w.md").write_bytes(b"\xff\xfe nope")
@@ -1698,7 +1804,92 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
                 globals()["ROOT"], globals()["SENTINEL"] = saved
 
     raises("do_fire REFUSES an armed plan it cannot read, instead of exiting 0 in silence",
-           _fire_on_an_unreadable_plan, UnreadablePlan, "no recognisable")
+           _fire_on_an_unreadable_plan, UnreadablePlan, "this cannot read")
+
+    # ── H2 · the MIXED plan, which is worse than a wholly unreadable one (4) ────────────
+    # ⛔ Round 1 named this half of B1 and the fold closed only the all-silent half. A plan whose
+    # boxes are PARTLY readable loses the unreadable ones silently, leaves a non-empty step list, and
+    # hands the reader a LATER step's lesson while they stand at an earlier one — rc 0, no warning.
+    # The prompt itself calls that the most expensive failure it can produce.
+    _MIXED = ("### Task 1\n\n- [ ] **Step 1: the shape begin-plan accepts**\n"
+              "  - **Doing:** GAMMA, where the reader is standing\n"
+              "- [ ] **Step 2 of 2** — B\n  - **Doing:** a situation\n")
+    _NO_BOXES = "### Task 1\n\njust prose, no checkboxes at all\n"
+    check("a plan with boxes this CANNOT read is refused, even though others parsed",
+          lambda: plan_verdict(plan_steps(_MIXED), _MIXED)[0], UNREADABLE_PLAN)
+    check("...and it counts BOTH, so the reader can see how many vanished",
+          lambda: ("2 checkbox(es) are present but only 1" in plan_verdict(plan_steps(_MIXED), _MIXED)[1]),
+          True)
+    check("without the mixed check it would have ACCEPTED and pointed at the later step",
+          lambda: (plan_verdict(plan_steps(_MIXED))[0], first_unticked(_MIXED)), (OK, 2))
+    check("a plan with NO boxes at all still gets the no-recognisable-step message",
+          lambda: "no recognisable" in plan_verdict(plan_steps(_NO_BOXES), _NO_BOXES)[1], True)
+
+    # ── H5 · the dedupe is at the BOUNDARY, so all eight paths share it (3) ─────────────
+    def _twice_on(build):
+        import os
+        with tempfile.TemporaryDirectory() as tdB:
+            root = Path(tdB) / "repo"
+            (root / ".claude" / "plans").mkdir(parents=True)
+            cd = root / ".claude" / "recall-cache"
+            cd.mkdir()
+            sent = root / ".claude" / "executing-plan"
+            build(root, sent)
+            saved = (globals()["ROOT"], globals()["SENTINEL"], globals()["CACHE_DIR"])
+            said = []
+            try:
+                globals()["ROOT"], globals()["SENTINEL"], globals()["CACHE_DIR"] = (
+                    root.resolve(), sent, cd)
+                for _ in range(2):
+                    try:
+                        do_fire()
+                        said.append("")
+                    except Refusal as exc:
+                        said.append(str(exc))
+            finally:
+                (globals()["ROOT"], globals()["SENTINEL"], globals()["CACHE_DIR"]) = saved
+            return (bool(said[0]), bool(said[1]))
+
+    check("an rc-5 unreadable plan is SAID once and silent after — not only the cache branch",
+          lambda: _twice_on(_write_bad_plan), (True, False))
+    check("a plan that VANISHED is also deduped, which the per-branch version never covered",
+          lambda: _twice_on(lambda r, s: s.write_text("plan: .claude/plans/gone.md\n",
+                                                      encoding="utf-8")), (True, False))
+    # ⛔ THIS CASE WAS VACUOUS AND THE SWEEP CAUGHT IT. It built TWO separate worlds, each with a
+    # fresh marker, so a constant dedupe key was undetectable — the mutation replacing the message
+    # hash with a literal SURVIVED. Two different refusals must occur in ONE world, sharing ONE
+    # marker, or nothing is being compared.
+    def _two_refusals_one_world():
+        import os
+        with tempfile.TemporaryDirectory() as tdD:
+            root = Path(tdD) / "repo"
+            (root / ".claude" / "plans").mkdir(parents=True)
+            cd = root / ".claude" / "recall-cache"
+            cd.mkdir()
+            sent = root / ".claude" / "executing-plan"
+            saved = (globals()["ROOT"], globals()["SENTINEL"], globals()["CACHE_DIR"])
+            said = []
+            try:
+                globals()["ROOT"], globals()["SENTINEL"], globals()["CACHE_DIR"] = (
+                    root.resolve(), sent, cd)
+                for build in (_write_bad_plan,
+                              lambda r, t: t.write_text("armed: yes\n", encoding="utf-8")):
+                    build(root, sent)
+                    try:
+                        do_fire()
+                        said.append("")
+                    except Refusal as exc:
+                        said.append(str(exc))
+            finally:
+                (globals()["ROOT"], globals()["SENTINEL"], globals()["CACHE_DIR"]) = saved
+            return (bool(said[0]), bool(said[1]))
+
+    check("the dedupe is keyed on the MESSAGE, so a DIFFERENT refusal in the SAME world is still said",
+          lambda: _two_refusals_one_world(), (True, True))
+
+    # ── H4 · an unreadable entry is announced, not silently cached-over (1) ─────────────
+    check("an entry that cannot be read says so, because --arm would refuse this corpus outright",
+          lambda: "could not be READ just now" in _fire_with_an_unreadable_entry(), True)
 
     # ── the BLOCKING from round 2: five ways to be armed-and-unusable, one boundary (5) ─
     # ⛔ rc 5 existed for exactly this and round 1 gave it to ONE of the five ways. The line is the
