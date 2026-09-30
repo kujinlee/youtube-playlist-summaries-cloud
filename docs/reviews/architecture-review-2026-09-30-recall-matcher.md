@@ -54,6 +54,14 @@ not:**
 > **The rc contract spans TWO LANGUAGES, nothing reconciles the codes the matcher emits against the
 > codes the hook handles, and `rc=2` carries a conjunction in its meaning.**
 
+⟳ **THAT SENTENCE WAS TRUE OF THE REVIEWED TREE AND IS NOW PARTLY STALE — round 3 L1, raised by
+the Codex half.** `scripts/check-rc-contract.py` exists on this branch and CI runs it, so the
+honest current claim is *"a reconciliation guard exists, and it was shape-fragile"* rather than
+*"nothing reconciles"*. ⚠ Round 3 then found that guard reading only two-space-indented arms
+(M1) and the `rc=2` conjunction still alive on the `--arm` path (H1) — so the verdict's DIAGNOSIS
+held while its "nothing" became wrong, which is the distinction worth keeping rather than
+smoothing over. Both are fixed; see backlog #201/#202 and the round-3 documents.
+
 Both live defects found after this document was written (L1 and L2 below, backlog #201 and #202) are
 instances of that one sentence. `rc=2` means *nothing is armed* — routine, correctly silent — AND
 *armed but the corpus is unreachable*, which the reader needs to hear. That is exactly the

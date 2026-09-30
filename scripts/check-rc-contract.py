@@ -62,7 +62,7 @@ FAILS IF
 
 Usage:
     python3 scripts/check-rc-contract.py
-    python3 scripts/check-rc-contract.py --self-test  # 22 cases
+    python3 scripts/check-rc-contract.py --self-test  # 35 cases
 """
 from __future__ import annotations
 
@@ -98,7 +98,20 @@ DELIBERATELY_UNHANDLED: dict[int, str] = {
        "entry is the thing that will be silently wrong.",
 }
 
-_ARM_RE = re.compile(r"^\s{2}(\d+)\)", re.M)
+# ⛔ ROUND 3 M1 — THIS WAS `^\s{2}(\d+)\)`, WHICH MATCHED ONLY TWO-SPACE INDENTATION, AND THE
+# GUARD BUILT TO CATCH SILENT WRONGNESS WAS SILENTLY WRONG. Reproduced by the reviewer: a `4)` arm
+# indented FOUR spaces is invisible, so `handled_codes` returns {0,3,5,6}, `unguarded_detail_arms`
+# returns [], and `verdict` returns [] — while bash would handle rc 4 and build an unguarded
+# `Detail:` payload. That is exactly this guard's own subject.
+#
+# ⛔ AND WIDENING THE PATTERN IS NOT THE WHOLE FIX. This repo's recorded verdict for a hand-rolled
+# reader is that it "CANNOT be made correct. It CAN be made unable to be silently wrong" — so the
+# indentation is now free AND `arm_soundness` below enumerates every arm-shaped line in the `case`
+# block and refuses anything it cannot classify. A shape this does not understand becomes a
+# CANNOT-RUN instead of a quietly missing arm.
+_ARM_RE = re.compile(r"^[ \t]*(\d+)\)", re.M)
+# Any arm head at all — a number, the catch-all, or a pattern this guard does not model.
+_ARM_SHAPE_RE = re.compile(r"^[ \t]*([^\s#][^)\n]*)\)", re.M)
 _OUT_IN_LABEL = re.compile(r"(?:Detail|detail):\s*\$OUT")
 _NONEMPTY_GUARD = re.compile(r'\[\s*-n\s*"\$OUT"\s*\]')
 
@@ -140,9 +153,84 @@ def defined_codes(matcher_src: str) -> dict[str, int]:
     return found[0]
 
 
+def case_block(hook_src: str) -> str | None:
+    """-> the text between `case ... in` and its `esac`, or None if that cannot be located.
+
+    ⚠ BOUNDED ON PURPOSE. Scanning the whole file for arm shapes would read a heredoc, a comment
+    block or any parenthesised prose as an arm; scanning only inside the `case` keeps membership
+    decidable by syntax, which is the same argument `peer-sites.py` records for asking about peers
+    within a CONTAINER rather than similar lines anywhere.
+    """
+    start = re.search(r"^\s*case\s+.*\s+in\s*$", hook_src, re.M)
+    if not start:
+        return None
+    end = re.search(r"^\s*esac\s*$", hook_src[start.end():], re.M)
+    if not end:
+        return None
+    return hook_src[start.end():start.end() + end.start()]
+
+
+def structural_lines(block: str) -> list[str]:
+    """-> the lines of the block that BEGIN outside a double-quoted string.
+
+    ⛔ ROUND 3 M1, THIRD MOVE. The soundness check fired on the live hook and was RIGHT to: the
+    rc=3 arm's payload is a multi-line double-quoted string whose continuation line begins at
+    column 0 with `(one model call, ~16s, covers every step). Detail: $OUT" ;;`, and a line-local
+    reader sees an arm head there. It is not one.
+
+    ⚠ THIS IS `CONTEXT.md`'s STRUCTURAL-LINE DISTINCTION IN A SECOND LANGUAGE. That entry says
+    whether a line is structure "depends on lines above it, so a line-local reader must guess" —
+    measured over eleven YAML block-scalar openers. The same is true of bash: a line inside an open
+    quote is CONTENT. So the state is carried rather than guessed, by double-quote parity, and
+    escaped quotes do not flip it.
+
+    ⚠ BOUND: it models double quotes only. Single quotes, `$'…'` and heredocs are not tracked — the
+    hook uses none of them today, and `arm_soundness` refuses any shape this does not classify, so
+    an unmodelled quoting form surfaces as a cannot-run rather than a wrong answer.
+    """
+    out: list[str] = []
+    in_string = False
+    for line in block.split("\n"):
+        if not in_string:
+            out.append(line)
+        i = 0
+        while i < len(line):
+            c = line[i]
+            if c == "\\":
+                i += 2
+                continue
+            if c == '"':
+                in_string = not in_string
+            i += 1
+    return out
+
+
+def arm_soundness(block: str) -> list[str]:
+    """A SOUNDNESS CHECK — every arm-shaped line is accounted for, or the guard cannot run.
+
+    ⛔ ROUND 3 M1's OTHER HALF. `handled_codes` answers "which codes are handled"; this answers
+    "did I understand every arm I was looking at". Without it, an arm shape this module does not
+    model — `4|5)`, `[45])`, a quoted pattern — is simply absent from the answer, and an absent
+    arm reads as an unhandled code or as no finding at all. Distinct from a falsifier: a falsifier
+    protects the CLAIM, this protects the READING the claim is derived from.
+    """
+    problems: list[str] = []
+    for m in _ARM_SHAPE_RE.finditer("\n".join(structural_lines(block))):
+        head = m.group(1).strip()
+        if head == "*" or head.isdigit():
+            continue
+        problems.append(
+            f"the `case` block holds an arm head this guard does not model: {head!r}. It is "
+            f"neither a bare integer nor the `*` catch-all, so no statement about which codes are "
+            f"handled is possible. Treat this as NOT RUN and teach the guard the shape."
+        )
+    return problems
+
+
 def handled_codes(hook_src: str) -> set[int]:
-    """-> every integer a `case` arm in the hook names."""
-    return {int(m.group(1)) for m in _ARM_RE.finditer(hook_src)}
+    """-> every integer a `case` arm names, at ANY indentation, on STRUCTURAL lines only."""
+    return {int(m.group(1))
+            for m in _ARM_RE.finditer("\n".join(structural_lines(hook_src)))}
 
 
 def unguarded_detail_arms(hook_src: str) -> list[int]:
@@ -207,11 +295,25 @@ def main(argv: list[str]) -> int:
         print(f"FAILED: {exc}. Treat this as NOT RUN.")
         return 2
     hook_src = HOOK.read_text(encoding="utf-8", errors="replace")
-    handled = handled_codes(hook_src)
+    # ⛔ THE READING IS CHECKED BEFORE THE CLAIM IS MADE — round 3 M1. An arm shape this module
+    # does not model would otherwise be simply absent from `handled`, and an absent arm reads as
+    # "no finding" rather than as "I could not look".
+    block = case_block(hook_src)
+    if block is None:
+        print("FAILED: could not locate the hook's `case ... in` / `esac` block, so no statement "
+              "about which codes it handles is possible. Treat this as NOT RUN.")
+        return 2
+    unsound = arm_soundness(block)
+    if unsound:
+        print(f"FAILED: {len(unsound)} arm shape(s) this guard cannot classify — treat as NOT RUN:")
+        for u in unsound:
+            print(f"  ✗ {u}")
+        return 2
+    handled = handled_codes(block)
     if not handled:
         print("FAILED: found no `case` arms in the hook at all, which cannot be right. NOT RUN.")
         return 2
-    problems = verdict(defined, handled, unguarded_detail_arms(hook_src))
+    problems = verdict(defined, handled, unguarded_detail_arms(block))
     print(f"rc contract: {len(defined)} code(s) defined, {len(handled)} handled by an arm, "
           f"{len(DELIBERATELY_UNHANDLED)} declared unhandled")
     if problems:
@@ -298,6 +400,54 @@ def _self_test() -> int:
          unguarded_detail_arms(
              'case "$RC" in\n  5) PAYLOAD="x. Detail: $OUT" ;;\n  *) : ;;\nesac\n'
              'echo [ -n "$OUT" ]\n'), [5])
+
+    # ── round 3 M1: indentation must not hide an arm, and an unmodelled shape must REFUSE ──
+    # ⛔ THE REVIEWER'S EXACT REPRO. A `4)` arm indented four spaces was invisible, so `verdict`
+    # returned [] while bash would handle rc 4 and build an unguarded `Detail:` payload.
+    FOUR_SPACE = ('case "$RC" in\n'
+                  '    4) PAYLOAD="rejected. Detail: $OUT" ;;\n'
+                  '  0) : ;;\n  3) : ;;\n  5) : ;;\n  6) : ;;\n  *) : ;;\nesac\n')
+    case("an arm indented FOUR spaces is still an arm — round 3 M1",
+         4 in handled_codes(case_block(FOUR_SPACE) or ""), True)
+    case("...and its unguarded Detail: is caught, which it was not before",
+         unguarded_detail_arms(case_block(FOUR_SPACE) or ""), [4])
+    case("a tab-indented arm is an arm",
+         handled_codes(case_block('case "$RC" in\n\t7) : ;;\n  *) : ;;\nesac\n') or ""), {7})
+    # ⛔ THE SOUNDNESS CHECK: a shape this guard does not model must REFUSE, not vanish.
+    case("an OR-pattern arm is a cannot-run, not a silently missing arm",
+         len(arm_soundness(case_block('case "$RC" in\n  4|5) : ;;\n  *) : ;;\nesac\n') or "")), 1)
+    case("a bracket-class arm is a cannot-run too",
+         len(arm_soundness(case_block('case "$RC" in\n  [45]) : ;;\n  *) : ;;\nesac\n') or "")), 1)
+    case("...and the canonical block is sound", arm_soundness(case_block(HOOK_OK) or ""), [])
+    # ⚠ THE BLOCK BOUND ITSELF: prose outside `case` must not be read as an arm.
+    case("text after esac is not part of the block",
+         "9)" in (case_block('case "$RC" in\n  0) : ;;\n  *) : ;;\nesac\nfoo 9) bar\n') or ""),
+         False)
+    case("no case block at all is a cannot-run", case_block("echo hi\n"), None)
+    case("a case block with no esac is a cannot-run",
+         case_block('case "$RC" in\n  0) : ;;\n'), None)
+
+    # ── round 3 M1, third move: a multi-line payload's continuation is CONTENT, not an arm ──
+    # ⛔ THE SHAPE THAT ACTUALLY FIRED ON THE LIVE HOOK. The rc=3 arm's payload spans lines and its
+    # continuation begins at column 0 with `(one model call, …). Detail: $OUT" ;;`. A line-local
+    # reader calls that an arm head; it is inside an open double quote.
+    MULTILINE = ('case "$RC" in\n'
+                 '  3) [ -n "$OUT" ] && PAYLOAD="stale, so no entry was\n'
+                 'surfaced for this step. Run `--arm` to match this plan\n'
+                 '(one model call, ~16s, covers every step). Detail: $OUT" ;;\n'
+                 '  *) : ;;\nesac\n')
+    case("a multi-line payload's continuation is not an arm head",
+         arm_soundness(case_block(MULTILINE) or ""), [])
+    case("...and the arm it belongs to is still found", handled_codes(case_block(MULTILINE) or ""),
+         {3})
+    case("an escaped quote does not flip the string state",
+         arm_soundness(case_block('case "$RC" in\n  3) X="a \\" b\n(not an arm). y" ;;\n  *) : ;;\nesac\n')
+                       or ""), [])
+    # ⚠ AND THE OTHER DIRECTION: a genuine arm on a structural line must still be seen, so the
+    # quote tracking cannot be satisfied by simply ignoring everything.
+    case("a real arm AFTER a multi-line payload is still found",
+         handled_codes(case_block(MULTILINE.replace('  *) : ;;', '  6) : ;;\n  *) : ;;')) or ""),
+         {3, 6})
 
     # ── verdict ────────────────────────────────────────────────────────────────────────────
     D = {"OK": 0, "CANNOT_RUN": 2, "STALE_CACHE": 3, "BAD_RESPONSE": 4,

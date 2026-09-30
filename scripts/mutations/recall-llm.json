@@ -999,5 +999,38 @@
       ]
     ],
     "expect": "an entry that cannot be read says so, because --arm would refuse this corpus outright"
+  },
+  {
+    "name": "unanswerable_if_armed converts EVERY refusal, flattening the five codes into one",
+    "file": "scripts/recall-llm.py",
+    "edits": [
+      [
+        "    if exc.rc == CANNOT_RUN:\n        return Unanswerable(str(exc))",
+        "    if True:\n        return Unanswerable(str(exc))"
+      ]
+    ],
+    "expect": "...but StaleCache keeps rc 3"
+  },
+  {
+    "name": "prepared_prompt stops opening the armed scope, so a missing corpus is rc 2 again (round 3 H1)",
+    "file": "scripts/recall-llm.py",
+    "edits": [
+      [
+        "    except Refusal as exc:\n        raise unanswerable_if_armed(exc) from exc.__cause__\n    return build_prompt(triggers, steps), plan, plan_text, steps, triggers",
+        "    except Refusal as exc:\n        raise exc\n    return build_prompt(triggers, steps), plan, plan_text, steps, triggers"
+      ]
+    ],
+    "expect": "prepared_prompt: an armed READABLE plan with no corpus is CANNOT ANSWER, not rc 2"
+  },
+  {
+    "name": "do_arm stops opening the armed scope, so a failed model call is rc 2 again",
+    "file": "scripts/recall-llm.py",
+    "edits": [
+      [
+        "        return _arm_body(prompt, plan, plan_text, steps, triggers)\n    except Refusal as exc:\n        raise unanswerable_if_armed(exc) from exc.__cause__",
+        "        return _arm_body(prompt, plan, plan_text, steps, triggers)\n    except Refusal as exc:\n        raise exc"
+      ]
+    ],
+    "expect": "do_arm: a bare CANNOT_RUN after the plan parsed is CANNOT ANSWER"
   }
 ]

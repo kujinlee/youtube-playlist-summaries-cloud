@@ -1347,8 +1347,13 @@ EXPECTED_MUTATIONS = {
     # hook's `case` arms. Five entries, registered in the same commit that creates it — R4 refused
     # the file until they existed, which is the population half of the contract doing its job on a
     # guard added minutes earlier.
-    "scripts/check-rc-contract.py": 5,
-    "scripts/recall-llm.py": 91,
+    # ⟳ 2026-09-30, round 3 M1: 5 -> 9. The arm reader's indentation, the soundness check over
+    # unmodelled arm shapes, the structural-line string tracking, and the `case` block bound.
+    "scripts/check-rc-contract.py": 9,
+    # ⟳⟳ 2026-09-30, round 3 H1: 91 -> 94. `unanswerable_if_armed` and its two boundaries —
+    # `prepared_prompt` and `do_arm` — because #202 fixed the conjunction on `--fire` and left it
+    # alive on `--arm`, which is B1's error a third time.
+    "scripts/recall-llm.py": 94,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -3776,7 +3781,7 @@ def _self_test() -> int:
     # manifests without resolving them. The split is on each file's own entry above.
     # ⟳ 2026-09-30, backlog #201/#202: 1133 -> 1138, the +5 from `check-rc-contract`'s manifest.
     # The figure is the guard's own — taken from its failure message, not counted by hand.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1138)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1145)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

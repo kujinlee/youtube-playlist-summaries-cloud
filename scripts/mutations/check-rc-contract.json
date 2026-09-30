@@ -53,5 +53,49 @@
       ]
     ],
     "expect": "a DEAD arm is refused"
+  },
+  {
+    "name": "the arm reader goes back to two-space indentation only (round 3 M1)",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "_ARM_RE = re.compile(r\"^[ \\t]*(\\d+)\\)\", re.M)",
+        "_ARM_RE = re.compile(r\"^\\s{2}(\\d+)\\)\", re.M)"
+      ]
+    ],
+    "expect": "an arm indented FOUR spaces is still an arm — round 3 M1"
+  },
+  {
+    "name": "the soundness check reports nothing, so an unmodelled arm shape vanishes instead of refusing",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "        if head == \"*\" or head.isdigit():\n            continue",
+        "        if True:\n            continue"
+      ]
+    ],
+    "expect": "an OR-pattern arm is a cannot-run, not a silently missing arm"
+  },
+  {
+    "name": "structural_lines stops tracking the string state, so a payload continuation reads as an arm",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "            if c == '\"':\n                in_string = not in_string",
+        "            if False:\n                in_string = not in_string"
+      ]
+    ],
+    "expect": "a multi-line payload's continuation is not an arm head"
+  },
+  {
+    "name": "case_block returns the whole file, so text after esac is read as part of the case",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "    return hook_src[start.end():start.end() + end.start()]",
+        "    return hook_src"
+      ]
+    ],
+    "expect": "text after esac is not part of the block"
   }
 ]

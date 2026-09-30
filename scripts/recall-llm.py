@@ -99,7 +99,7 @@ Usage:
     scripts/recall-llm.py --arm            # ONE model call, matches every step of the armed plan
     scripts/recall-llm.py --fire           # no model call; the entry for the current step
     scripts/recall-llm.py --print-prompt    # exactly what --arm would send. No call, no cost
-    scripts/recall-llm.py --self-test  # 188 cases
+    scripts/recall-llm.py --self-test  # 196 cases
 """
 from __future__ import annotations
 
@@ -172,6 +172,36 @@ class UnreadablePlan(Refusal):
 
     rc = UNREADABLE_PLAN
     label = "UNREADABLE PLAN"
+
+
+def unanswerable_if_armed(exc: Refusal) -> Refusal:
+    """PURE. -> the exception to re-raise once a plan IS known to be armed.
+
+    ⛔ ROUND 3 H1. Backlog #202 split rc 6 out of rc 2 on the `--fire` path and LEFT `--arm`
+    CARRYING THE CONJUNCTION — which is B1's error for the third time, and the reviewer enumerated
+    every surviving path: `read_corpus` for a missing corpus directory, zero entry files or zero
+    parseable triggers; `call_model` for a missing CLI, a timeout, a non-zero exit or empty output;
+    and `do_arm`'s cache write after the answer is already paid for. Every one of those happens
+    AFTER the plan has been read, so none of them is the routine absence rc 2 is reserved for.
+
+    ⭐ ONE RULE, CONSULTED AT THE TWO BOUNDARIES WHERE THE ARMED SCOPE OPENS — not a class change
+    at each raise site. The review record for this file says BOUNDARY RELOCATION is what actually
+    closed four of the six defects that produced this whole fold, while per-site edits produced the
+    next round's findings. `prepared_prompt` opens the scope once the plan parses; `do_arm` opens
+    it again for everything after `prepared_prompt` returns.
+
+    ⚠ THE PREDICATE IS THE CODE, NOT THE CLASS — and it was `type(exc) is Refusal and exc.rc ==
+    CANNOT_RUN` until a mutation proved the first half UNFALSIFIABLE. No `Refusal` subclass carries
+    rc 2 (`StaleCache` 3, `ResponseRejected` 4, `UnreadablePlan` 5, `Unanswerable` 6), so the rc
+    test already excludes every one of them and widening `type(...) is` to `isinstance` changed
+    nothing a case could see. An unfalsifiable clause reads as care and defends nothing.
+    ⭐ Dropping it is also the more correct rule: what makes a refusal non-routine here is the CODE
+    it carries, not which class produced it. A future subclass with rc 2 SHOULD convert, and under
+    the old predicate it silently would not have.
+    """
+    if exc.rc == CANNOT_RUN:
+        return Unanswerable(str(exc))
+    return exc
 
 
 class Unanswerable(Refusal):
@@ -950,12 +980,34 @@ def prepared_prompt() -> tuple[str, Path, str, list[tuple[int, str]], list[tuple
         # plan is. One meaning, one code, in every mode — otherwise the contract is per-entry-point
         # and a caller cannot rely on it.
         raise UnreadablePlan(msg)
-    triggers = read_corpus()
+    # ⛔ THE ARMED SCOPE OPENS HERE — round 3 H1. Above this line a refusal can mean "nothing is
+    # armed"; below it the plan has parsed, so a bare CANNOT_RUN is a plan that IS armed and an
+    # answer that cannot be reached. `unanswerable_if_armed` is the one rule; this is one of its
+    # two boundaries.
+    try:
+        triggers = read_corpus()
+    except Refusal as exc:
+        raise unanswerable_if_armed(exc) from exc.__cause__
     return build_prompt(triggers, steps), plan, plan_text, steps, triggers
 
 
 def do_arm() -> int:
     prompt, plan, plan_text, steps, triggers = prepared_prompt()
+    # ⛔ THE SECOND BOUNDARY OF THE ARMED SCOPE — round 3 H1. `prepared_prompt` above handles its
+    # own (and is the path `--print-prompt` shares); everything below it runs with a plan known to
+    # be armed, so `call_model`'s missing CLI / timeout / non-zero / empty output and the cache
+    # write are all rc 6, not the routine rc 2.
+    # ⚠ It wraps the BODY and not the call above it: wrapping `prepared_prompt()` too would convert
+    # "no sentinel" — the genuine routine absence — into rc 6, which is the conjunction inverted.
+    try:
+        return _arm_body(prompt, plan, plan_text, steps, triggers)
+    except Refusal as exc:
+        raise unanswerable_if_armed(exc) from exc.__cause__
+
+
+def _arm_body(prompt: str, plan, plan_text: str, steps, triggers) -> int:
+    """Everything `--arm` does once the plan is known good. Split out so the armed scope has a
+    boundary a case can drive, rather than a `try` wrapped around an inlined body."""
     print(f"recall-llm: ONE call for {len(steps)} step(s) against {len(triggers)} triggers "
           f"({len(prompt)} chars) …", file=sys.stderr)
     picks = parse_response(call_model(prompt), [n for n, _ in steps],
@@ -1971,6 +2023,72 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
 
     check("NO sentinel stays CANNOT RUN — nothing is armed, and silence is correct",
           lambda: _armed_world(None), CANNOT_RUN)
+    # ── round 3 H1 — THE CONJUNCTION SURVIVED ON `--arm`, AND THIS IS ITS FALSIFIER ─────────
+    # ⛔ #202 split rc 6 out of rc 2 on `--fire` and left `--arm` carrying it — B1's error a third
+    # time. The rule is `unanswerable_if_armed`; these cases drive the RULE and then each of its
+    # two BOUNDARIES, because a rule with no wiring case is a rule a refactor can silently detach.
+    check("a bare CANNOT_RUN inside the armed scope becomes CANNOT ANSWER",
+          lambda: unanswerable_if_armed(Refusal("m")).rc, UNANSWERABLE)
+    # ⚠ THE FOUR ADJACENT NEGATIVES. Each subclass already says something more specific, and
+    # widening the rule to `isinstance` would flatten all five into one — the conjunction again.
+    check("...but StaleCache keeps rc 3",
+          lambda: unanswerable_if_armed(StaleCache("m")).rc, STALE_CACHE)
+    check("...and UnreadablePlan keeps rc 5",
+          lambda: unanswerable_if_armed(UnreadablePlan("m")).rc, UNREADABLE_PLAN)
+    check("...and ResponseRejected keeps rc 4",
+          lambda: unanswerable_if_armed(ResponseRejected("m")).rc, BAD_RESPONSE)
+    check("...and an Unanswerable is not re-wrapped",
+          lambda: type(unanswerable_if_armed(Unanswerable("m"))).__name__, "Unanswerable")
+
+    def _prepared_with(read_plan, mem):
+        """Drive `prepared_prompt`'s boundary with the plan read and the corpus stubbed."""
+        saved = (globals()["read_armed_plan"], globals()["memory_dir"])
+        try:
+            globals()["read_armed_plan"], globals()["memory_dir"] = read_plan, mem
+            prepared_prompt()
+            return OK
+        except Refusal as exc:
+            return exc.rc
+        finally:
+            globals()["read_armed_plan"], globals()["memory_dir"] = saved
+
+    _ok_plan = lambda: ("plan: p.md\n", Path("p.md"),
+                        "- [ ] **Step 1 of 1** — Do\n  - **Doing:** doing it\n")
+
+    def _no_plan():
+        raise Refusal("CANNOT RUN: no plan is armed")
+
+    # ⛔ THE WIRING CASE FOR BOUNDARY A. Deleting the `try` in `prepared_prompt` leaves every case
+    # above green — they drive the rule, not its use.
+    check("prepared_prompt: an armed READABLE plan with no corpus is CANNOT ANSWER, not rc 2",
+          lambda: _prepared_with(_ok_plan, lambda: None), UNANSWERABLE)
+    # ⚠ AND THE OTHER DIRECTION AT THE SAME BOUNDARY: the routine absence must survive, or the
+    # fix has merely inverted the conjunction.
+    check("...while NO plan armed stays the routine rc 2",
+          lambda: _prepared_with(_no_plan, lambda: None), CANNOT_RUN)
+
+    def _arm_body_failing():
+        """Drive `do_arm`'s boundary: the plan parses, the body then raises a bare CANNOT_RUN."""
+        saved = (globals()["prepared_prompt"], globals()["_arm_body"])
+        try:
+            globals()["prepared_prompt"] = lambda: ("p", Path("p.md"), "t", [(1, "s")], [("n", "t")])
+
+            def _boom(*_a, **_k):
+                raise Refusal("CANNOT RUN: the model could not be reached")
+
+            globals()["_arm_body"] = _boom
+            do_arm()
+            return OK
+        except Refusal as exc:
+            return exc.rc
+        finally:
+            globals()["prepared_prompt"], globals()["_arm_body"] = saved
+
+    # ⛔ THE WIRING CASE FOR BOUNDARY B, and the reason `_arm_body` is a separate function: a `try`
+    # around an inlined body has no seam a case can reach.
+    check("do_arm: a bare CANNOT_RUN after the plan parsed is CANNOT ANSWER",
+          lambda: _arm_body_failing(), UNANSWERABLE)
+
     # ── backlog #202 — THE CORPUS SIDE OF rc=2's CONJUNCTION ────────────────────────────────
     # ⛔ THIS WORLD IS ENTIRELY VALID EXCEPT FOR THE CORPUS: the sentinel names a readable plan,
     # the cache carries the fingerprint this module itself computes, and the named entry is the
