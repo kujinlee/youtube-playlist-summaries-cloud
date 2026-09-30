@@ -38,7 +38,15 @@ OUT="$(python3 "$MATCHER" --fire 2>&1)"; RC=$?
 # NONE answer are both a silent rc=0. Only two things are worth the model's attention.
 PAYLOAD=""
 case "$RC" in
-  0) case "$OUT" in *"⭐ recall —"*) PAYLOAD="$OUT" ;; esac ;;
+  # ⛔ H4. THIS NO LONGER MATCHES A LITERAL, AND DELETING THE RULE IS THE FIX. It used to test the
+  # matcher's stdout for `⭐ recall —`, duplicating `render`'s first line across a file boundary
+  # with nothing reconciling them: every mutation entry targets the python file, this hook has no
+  # self-test, and no case asserted the pattern. Measured — changing `render`'s literal to
+  # `⭐ recall:`, an ordinary wording tweak, left the suite at 128/128 and the hook forwarding
+  # NOTHING. The rc contract already carries the distinction: rc 0 WITH output is a match, rc 0
+  # with no output is "nothing applies", and that is a fact about the contract rather than about
+  # one sentence's spelling.
+  0) [ -n "$OUT" ] && PAYLOAD="$OUT" ;;
   3) PAYLOAD="recall-llm: the recall cache for this plan is absent or stale, so no memory entry was
 surfaced for this step. Run \`python3 scripts/recall-llm.py --arm\` to match this plan's steps
 (one model call, ~16s, covers every step). Detail: $OUT" ;;

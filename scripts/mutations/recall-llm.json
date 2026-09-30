@@ -275,23 +275,23 @@
   "expect": "parse_response REJECTS an entry name that is not in the corpus"
  },
  {
-  "name": "parse_response compares the reply's keys against themselves, so a reply that answered different steps is accepted whole",
+  "name": "parse_response compares the reply's keys against themselves, so a reply that answered different steps is accepted whole \u2014 \u27f3 retargeted 2026-09-30: H3's set->sequence fix rewrote this line and orphaned the anchor",
   "file": "scripts/recall-llm.py",
   "edits": [
    [
-    "    want = {str(n) for n in step_numbers}\n    got = set(obj)\n",
-    "    want = set(obj)\n    got = set(obj)\n"
+    "    want = sorted(str(n) for n in step_numbers)\n",
+    "    want = sorted(obj)\n"
    ]
   ],
   "expect": "parse_response REJECTS a reply that is missing a step"
  },
  {
-  "name": "parse_response accepts extra keys as long as every asked-about step is answered, so an invented step number is cached beside the real ones",
+  "name": "parse_response accepts extra keys as long as every asked-about step is answered, so an invented step number is cached beside the real ones \u2014 \u27f3 retargeted 2026-09-30: same fix moved the diagnostic onto sets and orphaned this anchor",
   "file": "scripts/recall-llm.py",
   "edits": [
    [
-    "    if got != want:\n        missing, extra = sorted(want - got), sorted(got - want)\n",
-    "    if not want <= got:\n        missing, extra = sorted(want - got), sorted(got - want)\n"
+    "    if got != want:\n        missing, extra = sorted(set(want) - set(got)), sorted(set(got) - set(want))\n",
+    "    if not set(want) <= set(got):\n        missing, extra = sorted(set(want) - set(got)), sorted(set(got) - set(want))\n"
    ]
   ],
   "expect": "parse_response REJECTS a reply carrying a step nobody asked about"
@@ -724,5 +724,93 @@
    ]
   ],
   "expect": "...and it names WHICH key is wrong, not merely that something is"
+ },
+ {
+  "name": "H3 RESTORED: duplicate step numbers are accepted again, so one cached answer binds to two different moments",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    if dupes:\n        return UNREADABLE_PLAN,",
+    "    if False:\n        return UNREADABLE_PLAN,"
+   ]
+  ],
+  "expect": "a plan whose step numbers REPEAT is unreadable \u2014 a cached answer could bind to two moments"
+ },
+ {
+  "name": "the duplicate-number refusal stops naming which numbers repeat, so the author cannot tell what to renumber",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "        return UNREADABLE_PLAN, (f\"UNREADABLE PLAN: step number(s) {dupes} appear more than once, \"",
+    "        return UNREADABLE_PLAN, (\"UNREADABLE PLAN: some step numbers appear more than once, \""
+   ]
+  ],
+  "expect": "...and it names WHICH numbers repeat, since the author must renumber them"
+ },
+ {
+  "name": "the duplicate check fires on any REPEATED SHAPE rather than repeated numbers, refusing ordinary plans",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    dupes = sorted({n for n in (x for x, _ in steps) if [y for y, _ in steps].count(n) > 1})",
+    "    dupes = sorted({n for n in (x for x, _ in steps)})"
+   ]
+  ],
+  "expect": "a plan numbered uniquely is fine \u2014 the rule is duplication, not repetition of shape"
+ },
+ {
+  "name": "H3 RESTORED where it actually lives: the duplicate-key hook is dropped, so json.loads silently keeps the LAST answer and discards the first \u2014 \u27f3 replaced 2026-09-30, the previous entry mutated a comparison that cannot differ",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "        obj = json.loads(body[start:stop + 1], object_pairs_hook=no_duplicate_keys)",
+    "        obj = json.loads(body[start:stop + 1])"
+   ]
+  ],
+  "expect": "parse_response REJECTS a reply that answers one step twice"
+ },
+ {
+  "name": "H2 RESTORED: the cached trigger text is shown instead of the live one, so the reader is handed a sentence that exists nowhere",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    text = fire_output(entry, live_trigger or cached_trigger)",
+    "    text = fire_output(entry, cached_trigger)"
+   ]
+  ],
+  "expect": "do_fire prints the LIVE trigger, not the cached one, when they have diverged"
+ },
+ {
+  "name": "live_trigger_for raises on an unreadable entry instead of returning None, so one corrupt byte suppresses a match whose name still resolves",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    except (UnicodeDecodeError, OSError):\n        return None\n    return parse_trigger(desc) if desc else None",
+    "    except (UnicodeDecodeError, OSError):\n        raise\n    return parse_trigger(desc) if desc else None"
+   ]
+  ],
+  "expect": "an entry whose file cannot be read yields None rather than suppressing the match"
+ },
+ {
+  "name": "live_trigger_for reads the corpus even when there is none, so a missing directory becomes a traceback",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    if d is None:\n        return None\n",
+    "    if False:\n        return None\n"
+   ]
+  ],
+  "expect": "live_trigger_for returns None when there is no corpus, so the cached text is used"
+ },
+ {
+  "name": "the duplicate-key hook accepts a repeat, so one of the model's two answers is discarded in silence",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "        if key in seen:\n            raise ResponseRejected(f\"the reply answers step {key!r} more than once",
+    "        if False:\n            raise ResponseRejected(f\"the reply answers step {key!r} more than once"
+   ]
+  ],
+  "expect": "parse_response REJECTS a reply that answers one step twice"
  }
 ]

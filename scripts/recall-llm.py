@@ -93,7 +93,7 @@ Usage:
     scripts/recall-llm.py --arm            # ONE model call, matches every step of the armed plan
     scripts/recall-llm.py --fire           # no model call; the entry for the current step
     scripts/recall-llm.py --print-prompt    # exactly what --arm would send. No call, no cost
-    scripts/recall-llm.py --self-test  # 148 cases
+    scripts/recall-llm.py --self-test  # 160 cases
 """
 from __future__ import annotations
 
@@ -207,6 +207,17 @@ def plan_verdict(steps: list[tuple[int, str]]) -> tuple[int, str]:
     if not steps:
         return UNREADABLE_PLAN, ("UNREADABLE PLAN: the plan file carries no recognisable "
                             "`- [ ] **Step N of M**` step, so nothing was matched.")
+    # ⛔ H3. DUPLICATE STEP NUMBERS WERE ACCEPTED, and the numbers are the cache's keys. `plan_steps`
+    # takes the number from the step TEXT and never checks uniqueness, so a plan numbered per task
+    # (1, 2, 1, 2 — the ordinary shape when numbering restarts) produced duplicate keys. The model
+    # was then sent "1. situation ALPHA" AND "1. situation GAMMA", and ONE answer bound to BOTH
+    # moments. Refused here rather than patched downstream: a plan whose steps cannot be told apart
+    # has no well-defined "current step" at all.
+    dupes = sorted({n for n in (x for x, _ in steps) if [y for y, _ in steps].count(n) > 1})
+    if dupes:
+        return UNREADABLE_PLAN, (f"UNREADABLE PLAN: step number(s) {dupes} appear more than once, "
+                                 f"so a cached answer could not be bound to one moment. Number the "
+                                 f"steps uniquely across the whole plan.")
     blank = [n for n, s in steps if not s]
     if blank:
         return UNREADABLE_PLAN, (f"UNREADABLE PLAN: step(s) {blank} carry neither a `Doing:` "
@@ -335,6 +346,23 @@ def load_triggers(d: Path) -> list[tuple[str, str]]:
     return out
 
 
+def live_trigger_for(entry: str, d: Path | None) -> str | None:
+    """-> the trigger the corpus holds for `entry` RIGHT NOW, or None if it cannot be read.
+
+    ⛔ H2. One file, not the corpus: `--fire` is a cache lookup measured at 0.12s and re-reading 145
+    entries to display one sentence would spend the whole design. ⚠ It returns None rather than
+    raising — an unreadable single entry must not suppress a match whose NAME still resolves, which
+    is `cached_entry_verdict`'s job and already covered. The caller falls back to the cached text.
+    """
+    if d is None:
+        return None
+    try:
+        desc = frontmatter_description((d / f"{entry}.md").read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, OSError):
+        return None
+    return parse_trigger(desc) if desc else None
+
+
 def corpus_verdict(n_triggers: int, n_files: int) -> tuple[int, str]:
     """PURE. -> (rc, message) for a loaded corpus. CANNOT RUN is an OUTCOME, not a quiet pass.
 
@@ -422,6 +450,24 @@ def build_prompt(triggers: list[tuple[str, str]], steps: list[tuple[int, str]]) 
                          example_key=steps[0][0] if steps else 1)
 
 
+def no_duplicate_keys(pairs: list[tuple[str, object]]) -> dict:
+    """PURE. -> the object, or raises on a REPEATED key. Used as `json.loads`'s `object_pairs_hook`.
+
+    ⛔ H3. WITHOUT THIS THE DUPLICATE IS INVISIBLE. `json.loads` keeps the LAST value for a repeated
+    key and reports nothing, so `{"2": "running-codex", "2": "NONE"}` arrives as a clean one-key
+    object and the answer the model gave first is silently discarded — guessing, in a function whose
+    whole contract is to reject rather than guess. The collapse happens inside the parser, so NO
+    comparison made afterwards can see it.
+    """
+    seen: set[str] = set()
+    for key, _ in pairs:
+        if key in seen:
+            raise ResponseRejected(f"the reply answers step {key!r} more than once, so one of its "
+                                   f"answers was silently discarded by the JSON parser")
+        seen.add(key)
+    return dict(pairs)
+
+
 def parse_response(text: str, step_numbers: list[int],
                    valid_names: list[str]) -> dict[int, str]:
     """PURE. -> {step number: entry name or NONE}. REJECTS rather than guesses.
@@ -452,17 +498,23 @@ def parse_response(text: str, step_numbers: list[int],
             f"the reply contains no JSON object at all ({len(text)} chars). "
             f"First 300: {text.strip()[:300]!r}")
     try:
-        obj = json.loads(body[start:stop + 1])
+        obj = json.loads(body[start:stop + 1], object_pairs_hook=no_duplicate_keys)
     except json.JSONDecodeError as exc:
         raise ResponseRejected(f"the reply is not valid JSON — {exc}") from exc
     # ⚠ NO `isinstance(obj, dict)` CHECK, and its absence is deliberate: the slice above starts at
     # a `{` and ends at a `}`, so `json.loads` can only return a dict or raise. A branch no input
     # can reach reads as depth and cannot be falsified by any case, which is worse than not having
     # it — so the packaging refusal above is the one that carries this.
-    want = {str(n) for n in step_numbers}
-    got = set(obj)
+    # ⛔ H3, AND MY FIRST FIX FOR IT WAS VACUOUS — recorded because the sweep caught it and I did
+    # not. Swapping this comparison from sets to sorted sequences changes NOTHING: `json.loads`
+    # collapses duplicate keys before this function sees them, so a dict's keys are unique by
+    # construction and `sorted(keys) == sorted(set(keys))` is always true. Measured. The duplicate
+    # must be caught in the RAW TEXT — `no_duplicate_keys` does that via `object_pairs_hook`. The
+    # sequence comparison stays only because it is the honest shape for comparing sequences.
+    want = sorted(str(n) for n in step_numbers)
+    got = sorted(obj)
     if got != want:
-        missing, extra = sorted(want - got), sorted(got - want)
+        missing, extra = sorted(set(want) - set(got)), sorted(set(got) - set(want))
         raise ResponseRejected(f"the reply answers the wrong steps — missing {missing}, "
                                f"unexpected {extra}")
     allowed = set(valid_names)
@@ -836,7 +888,20 @@ def do_fire(again: bool = False) -> int:
         raise Refusal(msg)
     if rc != OK:
         raise StaleCache(msg)
-    text = fire_output(entry, (cache.get("triggers") or {}).get(entry or ""))
+    # ⛔ H2. THE CACHED TRIGGER TEXT WAS SHOWN WITHOUT EVER BEING RE-READ. `cached_entry_verdict`
+    # checks the entry still RESOLVES; it does not look at what the file now says. Measured: a cache
+    # armed while the trigger read "about to quote a green check as evidence", the corpus file then
+    # rewritten to "restoring a database from a dump", printed the OLD sentence — one that exists
+    # nowhere — and invited the reader to open a file that would not say it. `render`'s own
+    # docstring says why that string matters: it is what tells the reader whether this applies now.
+    # The LIVE text wins, and a divergence is SAID rather than hidden: it is the reader's signal
+    # that the entry may no longer be the right match at all.
+    cached_trigger = (cache.get("triggers") or {}).get(entry or "")
+    live_trigger = live_trigger_for(entry, d) if entry else None
+    text = fire_output(entry, live_trigger or cached_trigger)
+    if entry and live_trigger and cached_trigger and live_trigger != cached_trigger:
+        text += ("\n   ⚠ this entry's trigger has been REWRITTEN since the plan was armed; the line "
+                 "above is the live one. The match was made against the old wording.")
     if not text:
         return OK
     marker_file = CACHE_DIR / ".last-surfaced"
@@ -873,6 +938,13 @@ def do_fire(again: bool = False) -> int:
 # ────────────────────────────────────────────────────────────────── self-test
 def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable shape
     ok = fail = 0
+
+    def _live_trigger_probe(body):
+        with tempfile.TemporaryDirectory() as _td:
+            d = Path(_td)
+            f = d / "e.md"
+            f.write_bytes(body) if isinstance(body, bytes) else f.write_text(body)
+            return live_trigger_for("e", d)
 
     def _raises_rc(thunk):
         try:
@@ -1249,6 +1321,39 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
     check("a NONE answer needs no corpus, so it is served even when the corpus is gone",
           lambda: cached_entry_verdict(None, False, False)[0], OK)
 
+    # ── H3 · duplicate step numbers (4) ─────────────────────────────────────────────────
+    _dup = ("- [ ] **Step 1 of 2** — A\n  - **Doing:** ALPHA\n"
+            "- [ ] **Step 2 of 2** — B\n  - **Doing:** BETA\n"
+            "- [ ] **Step 1 of 2** — C\n  - **Doing:** GAMMA\n")
+    _uniq = ("- [ ] **Step 1 of 2** — A\n  - **Doing:** ALPHA\n"
+             "- [ ] **Step 2 of 2** — B\n  - **Doing:** BETA\n")
+    check("a plan whose step numbers REPEAT is unreadable — a cached answer could bind to two moments",
+          lambda: plan_verdict(plan_steps(_dup))[0], UNREADABLE_PLAN)
+    check("...and it names WHICH numbers repeat, since the author must renumber them",
+          lambda: "[1]" in plan_verdict(plan_steps(_dup))[1], True)
+    check("a plan numbered uniquely is fine — the rule is duplication, not repetition of shape",
+          lambda: plan_verdict(plan_steps(_uniq))[0], OK)
+    check("parse_response REJECTS a reply that answers one step twice",
+          lambda: _raises_rc(lambda: parse_response('{"1": "NONE", "2": "a", "2": "NONE"}',
+                                                    [1, 2], ["a"])), BAD_RESPONSE)
+    check("...and it names WHICH step was answered twice",
+          lambda: "'2'" in _raises_msg(lambda: parse_response('{"1": "NONE", "2": "a", "2": "NONE"}',
+                                                              [1, 2], ["a"])), True)
+    check("parse_response compares SEQUENCES: a duplicate key cannot satisfy three situations",
+          lambda: _raises_rc(lambda: parse_response('{"1": "NONE", "2": "NONE", "2": "NONE"}',
+                                                    [1, 2, 3], [])), BAD_RESPONSE)
+
+    # ── H2 · the trigger text shown is the LIVE one (4) ─────────────────────────────────
+    check("live_trigger_for returns None when there is no corpus, so the cached text is used",
+          lambda: live_trigger_for("x", None), None)
+    check("live_trigger_for reads the trigger the corpus holds NOW",
+          lambda: _live_trigger_probe('---\ndescription: "FIRES-WHEN: reading it live"\n---\n'),
+          "reading it live")
+    check("an entry whose file cannot be read yields None rather than suppressing the match",
+          lambda: _live_trigger_probe(b"\xff\xfe not utf-8"), None)
+    check("an entry with no FIRES-WHEN yields None, not an empty trigger",
+          lambda: _live_trigger_probe('---\ndescription: "no trigger here"\n---\n'), None)
+
     # ── decode_verdict / H1 (6) ─────────────────────────────────────────────────────────
     # ⛔ Seven paths exited 1 — a code this contract does not define — and the hook's catch-all
     # swallowed all of them into silence. Four were files read as UTF-8 with no named failure.
@@ -1454,6 +1559,55 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
 
     raises("do_fire REFUSES an armed plan it cannot read, instead of exiting 0 in silence",
            _fire_on_an_unreadable_plan, UnreadablePlan, "no recognisable")
+
+    # ── H2's WIRING, driven end to end (2) ──────────────────────────────────────────────
+    # ⛔ The `_live_trigger_probe` cases test `live_trigger_for` ALONE, so every one of them passes
+    # with `do_fire` still printing the CACHED text — measured: that mutation SURVIVED the sweep.
+    # Only a world where the two DIVERGE can tell which one reached the reader.
+    def _fire_with_a_rewritten_trigger():
+        import io, os, contextlib
+        with tempfile.TemporaryDirectory() as td7:
+            root, home = Path(td7) / "repo", Path(td7) / "home"
+            pl = root / ".claude" / "plans" / "w.md"
+            pl.parent.mkdir(parents=True)
+            pl.write_text("### T\n\n- [ ] **Step 1 of 1** — Go\n  - **Doing:** a situation\n",
+                          encoding="utf-8")
+            (root / ".claude" / "executing-plan").write_text("plan: .claude/plans/w.md\n",
+                                                             encoding="utf-8")
+            cd = root / ".claude" / "recall-cache"
+            cd.mkdir()
+            (cd / "w.json").write_text(json.dumps(cache_document(
+                ".claude/plans/w.md", pl.read_text(encoding="utf-8"), {1: "the-entry"},
+                {"the-entry": "THE CACHED WORDING"}, 1, "2026-09-30T00:00:00+00:00")),
+                encoding="utf-8")
+            slug = re.sub(r"[^A-Za-z0-9]", "-", str(root.resolve()))
+            corpus = home / ".claude" / "projects" / slug / "memory"
+            corpus.mkdir(parents=True)
+            (corpus / "the-entry.md").write_text(
+                '---\ndescription: "FIRES-WHEN: THE LIVE WORDING"\n---\nbody\n', encoding="utf-8")
+            saved = (globals()["ROOT"], globals()["SENTINEL"], globals()["CACHE_DIR"],
+                     os.environ.get("HOME"))
+            try:
+                globals()["ROOT"] = root.resolve()
+                globals()["SENTINEL"] = root / ".claude" / "executing-plan"
+                globals()["CACHE_DIR"] = cd
+                os.environ["HOME"] = str(home)
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    do_fire()
+                return buf.getvalue()
+            finally:
+                (globals()["ROOT"], globals()["SENTINEL"], globals()["CACHE_DIR"]) = saved[:3]
+                if saved[3] is None:
+                    os.environ.pop("HOME", None)
+                else:
+                    os.environ["HOME"] = saved[3]
+
+    check("do_fire prints the LIVE trigger, not the cached one, when they have diverged",
+          lambda: ("THE LIVE WORDING" in _fire_with_a_rewritten_trigger()
+                   and "THE CACHED WORDING" not in _fire_with_a_rewritten_trigger()), True)
+    check("...and it SAYS the trigger was rewritten, so the reader knows the match used old wording",
+          lambda: "REWRITTEN since the plan was armed" in _fire_with_a_rewritten_trigger(), True)
 
     # ── do_fire's DEDUPE wiring, driven end to end (2) ───────────────────────────────────
     # ⛔ The case above raises before it ever reaches the marker, so it cannot see this wiring at
