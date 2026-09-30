@@ -230,6 +230,18 @@ jobs:
       - name: check-memory-link self-test
         run: python3 scripts/check-memory-link.py --self-test
 
+      # ⛔ THE ONLY GATE THAT READS BOTH SIDES OF THE MATCHER/HOOK SEAM, and it exists because two
+      # LIVE defects lived there with 188 self-test cases and 91 mutations on the python side alone
+      # (backlog #201, #202). The matcher defines the exit codes; `.claude/hooks/surface-recall.sh`
+      # interprets them; nothing reconciled the two lists, and the hook is outside every other
+      # guard's population — `check-ratchet-contract`'s is `scripts/check-*.py`, so it cannot see a
+      # `.sh` file at all.
+      - name: rc contract — the matcher and its hook agree
+        run: python3 scripts/check-rc-contract.py
+
+      - name: check-rc-contract self-test
+        run: python3 scripts/check-rc-contract.py --self-test
+
       # The feature tree behind /features, which answers "what does this system do, and what does
       # it deliberately not do". The page is DERIVED from docs/features.md, so the tree is the only
       # hand-written surface and the only place it can rot. Two rules carry the weight: every node

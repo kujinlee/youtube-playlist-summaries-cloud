@@ -2213,9 +2213,13 @@ only home, and `dev-process.md` requires the roadmap layer too.
       separates *correctly nothing* from *should have fired and did not*. The shipped rubric makes
       all-NONE a CORRECT answer when the author already embodies the lesson, so a live all-NONE run
       and a broken matcher are the same observation.
-- [ ] **The code/hook seam has all its coverage on one side.** `.claude/hooks/surface-recall.sh` —
-      registered, the matcher's only caller — has no mutation entry, no self-test, and no script
-      anywhere reads it. Round 1's H4 was a cross-file defect there, caught by review not by a gate.
+- [x] **The code/hook seam had all its coverage on one side — `scripts/check-rc-contract.py` now
+      reads BOTH.** It refuses a code the matcher defines that no `case` arm names (#202's shape), a
+      dead arm, and an arm promising a `Detail:` it might not have (#201's shape); escapes are
+      written reasons, not flags. 22 cases, 5 mutations, a CI caller, a pinned declared count and a
+      pinned parameter-key set — four separate guards refused the file until each was satisfied.
+      ⚠ It does NOT give the hook a self-test or mutation entries of its own; what it gives is a
+      gate whose subject is the AGREEMENT, which is where both live defects were.
 - [ ] **An unowned number, asserted at four sites.** *"87 committed plans"* appears three times in
       `recall-llm.py` and once in the hook; measured today it is 93 loose-unreadable of 96 tracked.
       `CONTEXT.md`'s precedent is to REMOVE such a figure, not correct it — correcting it re-creates

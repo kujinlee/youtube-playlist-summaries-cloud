@@ -88,12 +88,18 @@ that function's docstring). So here every one of those outcomes is a pure functi
            87 committed plans under `docs/superpowers/plans/` are in the unreadable shape today.
     rc=4   RESPONSE REJECTED — the model's reply named an entry that is not in the corpus, or did
            not answer exactly the steps it was asked about. Never guessed at.
+    rc=6   CANNOT ANSWER — a plan IS armed, the cache is valid, and the answer cannot be reached
+           anyway: the corpus directory is gone. ⛔ SPLIT OUT OF rc=2 BY BACKLOG #202, and it is
+           rc=5's split repeated on the side no round examined. While this was 2 the hook's
+           catch-all swallowed it exactly as it once swallowed rc=5 — measured, 290 bytes of
+           control against ZERO. ⚠ Distinct from rc=5 on purpose: that one says the PLAN cannot be
+           read, and blaming the plan for a missing corpus is a wrong answer under a right code.
 
 Usage:
     scripts/recall-llm.py --arm            # ONE model call, matches every step of the armed plan
     scripts/recall-llm.py --fire           # no model call; the entry for the current step
     scripts/recall-llm.py --print-prompt    # exactly what --arm would send. No call, no cost
-    scripts/recall-llm.py --self-test  # 185 cases
+    scripts/recall-llm.py --self-test  # 188 cases
 """
 from __future__ import annotations
 
@@ -107,7 +113,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-OK, CANNOT_RUN, STALE_CACHE, BAD_RESPONSE, UNREADABLE_PLAN = 0, 2, 3, 4, 5
+OK, CANNOT_RUN, STALE_CACHE, BAD_RESPONSE, UNREADABLE_PLAN, UNANSWERABLE = 0, 2, 3, 4, 5, 6
 
 # Resolved from THIS FILE's path, never from the cwd, so a worktree gets its own sentinel and its
 # own cache — the same reason `begin-plan.py` does it that way.
@@ -166,6 +172,30 @@ class UnreadablePlan(Refusal):
 
     rc = UNREADABLE_PLAN
     label = "UNREADABLE PLAN"
+
+
+class Unanswerable(Refusal):
+    """A plan IS armed and the answer cannot be reached — for a reason that is NOT the plan.
+
+    ⛔ A SIXTH CODE, AND IT IS B1's SPLIT REPEATED ON THE SIDE NOBODY LOOKED AT. B1 took
+    `UNREADABLE_PLAN` out of `CANNOT_RUN` because a caller must tell "no plan is armed" — routine,
+    and correctly silent — from "a plan is armed and I am blind to it", which the reader needs. That
+    fixed the PLAN side. `rc=2` still carried the same conjunction on the CORPUS side, and every
+    later round looked at the plan side.
+
+    ⛔ MEASURED 2026-09-30, backlog #202, over a GREEN control: an armed plan, a cache valid by the
+    module's own `plan_fingerprint`, the named entry present, and only `HOME` changed — control
+    forwards 290 bytes, test forwards **0**, over a 161-char message whose last three words are
+    "NOTHING WAS SURFACED". The hook was right to ignore rc 2; rc 2 was wrong to mean two things.
+
+    ⚠ NOT `UNREADABLE_PLAN`, though it would have been one line fewer. That label says the PLAN is
+    the problem, and here the plan is fine — pointing the reader at their checkboxes when the corpus
+    is missing is a wrong answer wearing a right code. One meaning per code is this repo's own rule
+    (`check-sentinel-meanings.py`), applied where that guard cannot see.
+    """
+
+    rc = UNANSWERABLE
+    label = "CANNOT ANSWER"
 
 
 # ─────────────────────────────────────────────────────── the plan, and the sentinel
@@ -1024,7 +1054,10 @@ def _fire(again: bool = False) -> int:
     rc, msg = cached_entry_verdict(entry, d is not None,
                                    d is not None and (d / f"{entry}.md").is_file())
     if rc == CANNOT_RUN:
-        raise Refusal(msg)
+        # ⟳ backlog #202: was `raise Refusal(msg)` — rc 2, which the hook correctly ignores as the
+        # routine "nothing is armed" state, so a 161-char message ending "NOTHING WAS SURFACED"
+        # reached the reader as ZERO BYTES. A plan IS armed here; the corpus is what vanished.
+        raise Unanswerable(msg)
     if rc != OK:
         raise StaleCache(msg)
     # ⛔ H2. THE CACHED TRIGGER TEXT WAS SHOWN WITHOUT EVER BEING RE-READ. `cached_entry_verdict`
@@ -1795,13 +1828,24 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
                             "  - **Doing:** writing the failing tests\n", encoding="utf-8")
             (root / ".claude" / "executing-plan").write_text(
                 "plan: .claude/plans/u.md\n", encoding="utf-8")
-            saved = (globals()["ROOT"], globals()["SENTINEL"])
+            # ⛔ CACHE_DIR IS SWAPPED HERE TOO, AND ITS ABSENCE MADE THIS CASE AMBIENT. This is a
+            # near-copy of `_armed_world`, and when that one gained cache isolation for backlog
+            # #202 this one kept the blind spot — the shape this repo has measured seventeen times.
+            # MEASURED 2026-09-30: with the real `CACHE_DIR`, `do_fire`'s dedupe read the LIVE
+            # `.claude/recall-cache/.last-said` (written minutes earlier by the session's own hook),
+            # decided this sentence had already been said, and emptied it — so the case failed on
+            # `got ''`. Its outcome depended on whether the hook had fired earlier in the session,
+            # which is not a property of the code under test.
+            saved = (globals()["ROOT"], globals()["SENTINEL"], globals()["CACHE_DIR"])
             try:
                 globals()["ROOT"] = root.resolve()
                 globals()["SENTINEL"] = root / ".claude" / "executing-plan"
+                globals()["CACHE_DIR"] = root.resolve() / ".claude" / "recall-cache"
+                globals()["CACHE_DIR"].mkdir(parents=True, exist_ok=True)
                 return do_fire()
             finally:
-                globals()["ROOT"], globals()["SENTINEL"] = saved
+                (globals()["ROOT"], globals()["SENTINEL"],
+                 globals()["CACHE_DIR"]) = saved
 
     raises("do_fire REFUSES an armed plan it cannot read, instead of exiting 0 in silence",
            _fire_on_an_unreadable_plan, UnreadablePlan, "this cannot read")
@@ -1895,7 +1939,7 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
     # ⛔ rc 5 existed for exactly this and round 1 gave it to ONE of the five ways. The line is the
     # SENTINEL'S EXISTENCE: no sentinel is "nothing armed" (routine, silent, rc 2); a sentinel that
     # exists means a plan IS armed, so every failure to reach a usable one must reach the reader.
-    def _armed_world(build):
+    def _armed_world(build, cache=None):
         import os
         with tempfile.TemporaryDirectory() as tdA:
             root = Path(tdA) / "repo"
@@ -1903,18 +1947,69 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
             sent = root / ".claude" / "executing-plan"
             if build:
                 build(root, sent)
-            saved = (globals()["ROOT"], globals()["SENTINEL"])
+            # ⛔ CACHE_DIR IS SWAPPED TOO, and it was not until backlog #202 needed a case that
+            # reaches the cache. Without it `_fire` read the REAL repo's `.claude/recall-cache/`
+            # while every other path pointed at the temp root — so any cache-dependent case would
+            # have passed or failed for an ambient reason. The existing cases are unaffected: they
+            # all refuse before the cache is opened. ⚠ HOME is deliberately NOT swapped, which is
+            # what makes the corpus unreachable here: the temp root hashes to a slug that has no
+            # corpus, which is exactly #202's world.
+            saved = (globals()["ROOT"], globals()["SENTINEL"], globals()["CACHE_DIR"])
             try:
                 globals()["ROOT"], globals()["SENTINEL"] = root.resolve(), sent
+                globals()["CACHE_DIR"] = root.resolve() / ".claude" / "recall-cache"
+                globals()["CACHE_DIR"].mkdir(parents=True, exist_ok=True)
+                if cache is not None:
+                    cache(globals()["CACHE_DIR"], root.resolve())
                 do_fire()
                 return OK
             except Refusal as exc:
                 return exc.rc
             finally:
-                globals()["ROOT"], globals()["SENTINEL"] = saved
+                (globals()["ROOT"], globals()["SENTINEL"],
+                 globals()["CACHE_DIR"]) = saved
 
     check("NO sentinel stays CANNOT RUN — nothing is armed, and silence is correct",
           lambda: _armed_world(None), CANNOT_RUN)
+    # ── backlog #202 — THE CORPUS SIDE OF rc=2's CONJUNCTION ────────────────────────────────
+    # ⛔ THIS WORLD IS ENTIRELY VALID EXCEPT FOR THE CORPUS: the sentinel names a readable plan,
+    # the cache carries the fingerprint this module itself computes, and the named entry is the
+    # one the cache picked. Only `memory_dir()` fails — the temp ROOT hashes to a slug with no
+    # corpus behind it. Before #202 this returned rc 2, which the hook is RIGHT to ignore, so a
+    # 161-char message ending "NOTHING WAS SURFACED" reached the reader as zero bytes.
+    def _readable_plan(r, sent):
+        (r / ".claude" / "plans" / "p.md").write_text(
+            "- [ ] **Step 1 of 1** — Do the thing\n  - **Doing:** doing the thing\n",
+            encoding="utf-8")
+        sent.write_text("plan: .claude/plans/p.md\n", encoding="utf-8")
+
+    def _valid_cache(cdir, root):
+        text = (root / ".claude" / "plans" / "p.md").read_text(encoding="utf-8")
+        (cdir / "p.json").write_text(json.dumps({
+            "plan": ".claude/plans/p.md", "fingerprint": plan_fingerprint(text),
+            "corpus_size": 1, "model": MODEL, "armed": "2026-09-30T00:00:00+00:00",
+            "picks": {"1": "some-entry"},
+            "triggers": {"1": "FIRES-WHEN: doing the thing"}}), encoding="utf-8")
+
+    check("an armed plan with a VALID cache and no corpus is CANNOT ANSWER, not routine silence",
+          lambda: _armed_world(_readable_plan, _valid_cache), UNANSWERABLE)
+    # ⚠ THE ADJACENT NEGATIVE, so the code above cannot be satisfied by a rule that always fires:
+    # the SAME world with the model's answer being NONE has nothing to resolve, so the corpus is
+    # never consulted and the correct outcome is a silent rc 0.
+    def _none_cache(cdir, root):
+        text = (root / ".claude" / "plans" / "p.md").read_text(encoding="utf-8")
+        (cdir / "p.json").write_text(json.dumps({
+            "plan": ".claude/plans/p.md", "fingerprint": plan_fingerprint(text),
+            "corpus_size": 1, "model": MODEL, "armed": "2026-09-30T00:00:00+00:00",
+            "picks": {"1": NONE}, "triggers": {}}), encoding="utf-8")
+
+    check("...but a cached NONE needs no corpus, so the same world is a silent OK",
+          lambda: _armed_world(_readable_plan, _none_cache), OK)
+    # ⚠ AND THE SIXTH CODE MUST BE DISTINCT FROM THE FIFTH, asserted rather than assumed: they are
+    # different questions and a shared value would re-create the conjunction one code along.
+    check("CANNOT ANSWER and UNREADABLE PLAN are different codes",
+          lambda: len({OK, CANNOT_RUN, STALE_CACHE, BAD_RESPONSE, UNREADABLE_PLAN, UNANSWERABLE}), 6)
+
     check("a sentinel naming a VANISHED plan is UNREADABLE, not silence (a branch switch does this)",
           lambda: _armed_world(lambda r, s: s.write_text("plan: .claude/plans/gone.md\n",
                                                          encoding="utf-8")), UNREADABLE_PLAN)

@@ -106,6 +106,10 @@ POPULATION: frozenset[str] = frozenset({
                                      # never sees it — this is its only outside observer.
     # ⟳ 2026-09-12: gained a declared count when it gained its own manifest — the guard that
     # enforces R4 had exempted itself from it, because the escape regex matched its own docstring.
+    # ⟳ 2026-09-30, backlog #201/#202. Pinned in the SAME commit that creates it — a script
+    # declaring a count nothing verifies is the drift this file exists to refuse, and doing that on
+    # a brand-new guard would be the shape at one remove. This guard REFUSED it until it was pinned.
+    "check-rc-contract.py",
     "check-ratchet-contract.py",
     "check-banner-armed.py",
     # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record, pinned in the

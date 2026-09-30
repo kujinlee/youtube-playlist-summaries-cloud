@@ -1343,6 +1343,11 @@ EXPECTED_MUTATIONS = {
     # THIS line, added to fix round-1 M1, said "53 → 74" three lines after declaring that the
     # figure is not restated. It was 80 by the time the reviewer read it. A rule stated and
     # broken in the same comment is worse than one never stated: the literal below is the count.
+    # ⟳ 2026-09-30, backlog #201/#202: the guard that reconciles the matcher's exit codes with the
+    # hook's `case` arms. Five entries, registered in the same commit that creates it — R4 refused
+    # the file until they existed, which is the population half of the contract doing its job on a
+    # guard added minutes earlier.
+    "scripts/check-rc-contract.py": 5,
     "scripts/recall-llm.py": 91,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
@@ -3005,6 +3010,7 @@ def _self_test() -> int:
                                       # to it. A LIVE inventory entry, added with the manifest.
                                       "scripts/check-python-pin.py",
                                       "scripts/check-ratchet-contract.py",
+                                      "scripts/check-rc-contract.py",
                                       "scripts/check-review-decision.py",
                                       "scripts/check-review-recorded.py",
                                       "scripts/check-review-rounds.py",
@@ -3768,7 +3774,9 @@ def _self_test() -> int:
     # Blocking and High — and the sum stayed at 1015 throughout, because an orphan keeps the count
     # while removing the coverage. CI caught it; `--self-test` cannot, because it loads the
     # manifests without resolving them. The split is on each file's own entry above.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1133)
+    # ⟳ 2026-09-30, backlog #201/#202: 1133 -> 1138, the +5 from `check-rc-contract`'s manifest.
+    # The figure is the guard's own — taken from its failure message, not counted by hand.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1138)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

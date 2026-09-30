@@ -1,0 +1,57 @@
+[
+  {
+    "name": "a defined code with no arm stops being refused, so a new rc is swallowed as #202 was",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "        if code in handled:\n            continue\n",
+        "        if True:\n            continue\n"
+      ]
+    ],
+    "expect": "a defined code with NO arm and NO row is refused (rc 4, row removed)"
+  },
+  {
+    "name": "the unguarded-Detail rule stops firing, so #201's regression reads as clean",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "        if _OUT_IN_LABEL.search(body) and not _NONEMPTY_GUARD.search(body):",
+        "        if False:"
+      ]
+    ],
+    "expect": "an UNGUARDED Detail: clause is caught — the exact #201 regression"
+  },
+  {
+    "name": "an arm's span runs to the end of file, so a later -n guard silences the finding",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "        stop = marks[i + 1][0] if i + 1 < len(marks) else end_of_case",
+        "        stop = len(hook_src)"
+      ]
+    ],
+    "expect": "the LAST arm before the catch-all is still bounded, not run to the end of file"
+  },
+  {
+    "name": "two rc tuples stop being a cannot-run, so the guard picks one and guesses",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "    if len(found) != 1:",
+        "    if not found:"
+      ]
+    ],
+    "expect": "TWO rc tuples is a cannot-run — the guard must not pick one and guess"
+  },
+  {
+    "name": "a dead arm stops being refused, so an arm for a retired code reads as coverage",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "        if code not in set(defined.values()):",
+        "        if False:"
+      ]
+    ],
+    "expect": "a DEAD arm is refused"
+  }
+]

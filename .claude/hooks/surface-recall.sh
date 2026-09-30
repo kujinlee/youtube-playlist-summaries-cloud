@@ -67,9 +67,26 @@ surfaced for this step. Run \`python3 scripts/recall-llm.py --arm\` to match thi
   # the matcher cannot read it — 87 committed plans are in that shape. While this shared rc=2 with
   # "nothing is armed", the catch-all below swallowed it and the reader heard nothing at all, which
   # is the refuted matcher's H3: "nothing fires" and "could not look" arriving as one observation.
+  # ⛔ backlog #201 — THE `Detail:` CLAUSE IS NOW CONDITIONAL, AND THE OBVIOUS FIX WAS WRONG.
+  # `do_fire` empties the message when its dedupe says the sentence was already said, and this arm
+  # forwarded unconditionally, so from the SECOND firing onward the reader got a sentence ending
+  # "Detail:" with nothing after it — forever, because the marker persists. Measured with the hook
+  # as sole caller: 409 chars, then 148, then 148.
+  # ⛔ AND NOT `[ -n "$OUT" ] && PAYLOAD=…` LIKE ITS SIBLINGS: that makes a deduped rc=5 SILENT,
+  # which is the conflation B1 split this code out of rc=2 to end. rc=5 IS NOT SILENCE. So the
+  # static sentence always goes, and only the detail is conditional.
   5) PAYLOAD="recall-llm: a plan IS armed and the matcher cannot read it, so NO memory entry was
-surfaced for this step — this is not 'nothing applies'. Detail: $OUT" ;;
-  *) : ;;   # rc=2 CANNOT RUN (no plan armed / no corpus) is a normal state, not this hook's business
+surfaced for this step — this is not 'nothing applies'."
+     [ -n "$OUT" ] && PAYLOAD="$PAYLOAD Detail: $OUT" ;;
+  # ⛔ backlog #202 — rc=6, THE CORPUS SIDE OF THE SAME CONFLATION. A plan is armed and the cache
+  # is valid, and the corpus directory is gone. This was rc=2 until #202, so the catch-all below
+  # ate it: measured, a 161-char message ending "NOTHING WAS SURFACED" reached the reader as ZERO
+  # bytes against a 290-byte control. Same shape as rc=5, same treatment, same reason.
+  6) PAYLOAD="recall-llm: a plan IS armed and the memory corpus cannot be reached, so NO memory
+entry was surfaced for this step — this is not 'nothing applies'. The plan is fine; the corpus is
+missing."
+     [ -n "$OUT" ] && PAYLOAD="$PAYLOAD Detail: $OUT" ;;
+  *) : ;;   # rc=2 CANNOT RUN (no plan armed) is a normal state, not this hook's business
 esac
 
 [ -n "$PAYLOAD" ] || exit 0

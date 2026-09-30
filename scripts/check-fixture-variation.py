@@ -300,6 +300,13 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # ⟳ 2026-09-30, backlog #201/#202: the guard that reconciles the matcher's exit codes with its
+    # hook's `case` arms. Pinned in the same commit that creates it — this guard REFUSED the file
+    # until it was. DERIVED by running this module's own `analyse()` on the delivered source, not
+    # transcribed: six keys over four pure functions, `findings = []` on the first run.
+    "check-rc-contract.py": ('defined_codes.matcher_src', 'handled_codes.hook_src',
+                             'unguarded_detail_arms.hook_src', 'verdict.defined',
+                             'verdict.handled', 'verdict.unguarded'),
     # ⟳ 2026-09-30, backlog #194: the memory-link guard, pinned in the commit that creates
     # it. Its `tracked` parameter was flagged here as never-varied and two cases were added
     # rather than an exemption taken — the comparison that reads it is now guarded.
