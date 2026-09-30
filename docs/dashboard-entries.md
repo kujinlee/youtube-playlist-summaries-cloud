@@ -13193,3 +13193,83 @@ text does not route to the coordinator. **Nothing in the review rests on them.**
 `check-test-counts` · `check-roadmap-consistency` · `check-backlog-closure` ·
 `check-dashboard-entry`. **Convergence unchanged: NOT CONVERGED** — round 3 is still owed, and a
 design gate does not substitute for a defect round.
+
+## 2026-09-30
+I published a diagnosis this morning, asked three reviewers to destroy it, and they did. Here is the correction, and the two real bugs it led to.
+
+The architecture review I filed earlier had a headline answer: *the checks exist, and some callers
+just don't ask them*. I had dispatched three reviewers with instructions to demolish that idea
+rather than support it. They came back forty minutes after I had already committed and pushed it,
+and demolished it — every check in that file **is** asked, at every place that could ask. I
+re-derived it myself before believing them, and they were right.
+
+⭐⭐ **What is actually wrong is smaller and much more useful.** The program reports what happened
+with a numeric code, and one of those codes means two different things: *nothing applies here*
+(normal, and rightly silent) and *something applies but I could not reach it* (which you need to
+hear). A previous round had already spotted that exact confusion and fixed it — **for one half of
+the program.** Everyone then kept looking at the half that was fixed.
+
+**That reframing found two real bugs, both reproduced:**
+
+- Ask the same question twice with an unreadable plan, and from the second time onward you get a
+  message with its explanation stripped out — permanently, because the "don't repeat yourself"
+  marker never resets. Not silence, which would at least be honest; a sentence that ends in
+  "Detail:" and then stops.
+- Have a plan running, a valid cache, and the notes directory missing, and you get **nothing at
+  all** — indistinguishable from "no lesson applies". The program produces a perfectly clear
+  160-character explanation and the messenger drops it on the floor.
+
+⚠ **And the trigger for the second one was something I did to your machine this morning.** Fixing
+the notes so they stayed readable while I worked on another branch, I pointed them at a second copy
+of the repo. That is precisely the situation the second bug needs. Worse — there is a check for
+this, and when I finally ran *all* of them instead of the four I remembered, it refused my fix
+outright. So the arrangement is back to how it should be, the notes read fine, and the check is
+green.
+
+⚠ **Two other things I had shipped wrong and only found by running every check.** Six rows I filed
+this morning used a category name nothing in the project claims, which means **those rows could not
+be displayed at all** — silent in the file, loud in the build. And the review document said all
+three reviewers had failed to report, which stopped being true about an hour after I wrote it.
+
+**Nothing is merged and there is no pull request.** One branch still owes a review round; the other
+knows it does, and says so.
+
+<!--tech-->
+**Correcting the 2026-09-30 architecture review (backlog #191/#196) and filing what its agents
+found.** Branch `semantic-recall-replication`.
+
+⛔ **The primary verdict is REFUTED and corrected in place** — struck through in words, not deleted,
+in `docs/reviews/architecture-review-2026-09-30-recall-matcher.md` and in backlog **#196**, because
+both were pushed. Re-derived by AST, not relayed: five functions have N≥2 production call sites
+(`plan_verdict`, `should_surface`, `read_or_refuse` 4, `memory_dir`, `plan_steps` 3) and **all are
+consulted**; the one survivor is `decode_verdict`'s rc discarded at `:354`, where it is a constant.
+Route C: the proposed repair would have prevented **at most 1 of 6**, and for three the precondition
+is false. **Corrected verdict: the rc contract spans two languages, nothing reconciles emitted
+against handled codes, and `rc=2` carries a conjunction.**
+
+| # | filed | weight |
+|---|---|---|
+| **#201** | **LIVE** — repeated `rc=5` forwards a hollow message: 409 → 148 → 148 bytes, `Detail:` empty from call 2, marker persists | 🔴 |
+| **#202** | **LIVE** — armed + valid cache + corpus gone → **0 bytes** against a 290-byte control; B1's conflation on the corpus side | 🔴 |
+| #203 | `recall-llm.py:187` holds a second copy of a rule whose owner forbids copies; **3 of 6** inputs diverge | 🟠 |
+| #204 | `memory_dir`'s docstring promises a worktree finds its own corpus; it does not, **and `check-memory-link.py` refuses pointing it at one** | 🟡 |
+| #205 | `invocation_re` misses `sys.executable`; `brief-compose.py`'s green rests on `ci.yml:168`, not its three real callers | 🟡 |
+
+**F9 corrected, and the fix shape inverted.** Measured across all four reviews that dispatched
+`Explore` agents: the step has **never** failed to deliver entirely, but failed to deliver **in time
+in 3 of 4** — and in two of those, what arrived late changed the review. So the repair is not "make
+them deliver" but *mark the verdict PROVISIONAL until every dispatched agent reports*. The
+partial-results remedy has now failed twice, for the recorded reason (plain text does not route).
+
+⛔ **Ran ALL the document guards per `docs/CLAUDE.md` rule 1, taken from `ci.yml` rather than
+memory — 29 of them, and 4 came back non-zero.** Two were bare-invocation artefacts
+(`check-banner-armed` wants `--decide`, `check-plan-code` says NOT CHECKED). One was mine:
+`check-memory-link` rc=1 on the worktree symlink — **restored to the direct link, worktree removed,
+now rc=0 / 146 entries**. One is true and stays red: `check-review-recorded` reports guarded code
+committed after the last round — the mechanical form of NOT CONVERGED, and `NO-REVIEW:` would be
+the wrong answer to it.
+
+⚠ **Rows #195–#200 were filed with bundle `(tooling / backlog #191)` / `(process / backlog #191)`,
+which `docs/features.md` claims no node for** — `check-features.py` rc=1, *"its rows cannot appear"*.
+Corrected to `(tooling)` / `(process)`. Third gate-subset miss of the session, and the one rule in
+`docs/CLAUDE.md` written for exactly it.

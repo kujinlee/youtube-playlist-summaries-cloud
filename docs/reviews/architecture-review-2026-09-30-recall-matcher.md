@@ -30,7 +30,40 @@ raise site?"*
 handler anywhere in this file that turns one into a success — `main` prints it and returns
 `exc.rc`."* The rc contract has exactly one boundary and it holds.
 
-**What has no owner is CONSULTATION**, and the file says so about itself
+⛔ **THE ANSWER THIS SECTION FIRST GAVE WAS "CONSULTATION HAS NO OWNER", AND IT IS REFUTED. It is
+kept below, struck through in words rather than deleted, because it was published and pushed and a
+reader who saw it needs to meet the correction at the same place.** The refutation came from the
+three `Explore` agents this review had dispatched with a mandate to destroy its own hypothesis, and
+they delivered AFTER this document was first committed — see F9, which is corrected for the same
+reason.
+
+**What they measured, and what I then re-derived by AST rather than relaying:** every verdict
+function in `recall-llm.py` is consulted at every production call site. The claim's own pattern
+needs a function with N≥2 sites where one ignores it; five functions have N≥2 (`plan_verdict`,
+`should_surface`, `read_or_refuse` 4, `memory_dir`, `plan_steps` 3) and **all are consulted**. The
+single surviving instance is `decode_verdict`, whose rc is discarded at its only call site
+(`:354`, `raise refusal(decode_verdict(...)[1])`) — and that rc is a CONSTANT there, so it is
+latent and was filed as a round-2 Medium. Route C is decisive: of the six defects the framing was
+built on, the proposed repair would have prevented **at most one**, and for three the precondition
+is false because no decision function existed when the defect shipped. What actually closed four of
+them was **boundary relocation**, which the file has already done.
+
+⭐ **THE CORRECTED VERDICT — and it predicts where the live defects are, which the refuted one did
+not:**
+
+> **The rc contract spans TWO LANGUAGES, nothing reconciles the codes the matcher emits against the
+> codes the hook handles, and `rc=2` carries a conjunction in its meaning.**
+
+Both live defects found after this document was written (L1 and L2 below, backlog #201 and #202) are
+instances of that one sentence. `rc=2` means *nothing is armed* — routine, correctly silent — AND
+*armed but the corpus is unreachable*, which the reader needs to hear. That is exactly the
+conflation B1 fixed by splitting rc=5 out of rc=2 **for the plan side**; every round then looked at
+the plan side, and nobody looked at the corpus side. ⚠ This repo already owns the principle —
+`check-sentinel-meanings.py` enforces *"every nullable column means exactly ONE thing; a conjunction
+in the meaning is the tell"* — but its subject is database columns, so no guard applies it to rc
+codes.
+
+~~**What has no owner is CONSULTATION**~~ (refuted above), and the file says this about itself
 (`recall-llm.py:34-46`):
 
 > `⭐ STRUCTURE: EVERY DECISION IS A PURE FUNCTION; THE REST IS PLUMBING.`
@@ -48,9 +81,14 @@ predicted correctly, in writing, and the mitigation chosen was a dated manual ru
 verification that does not re-run. By this repo's own gate doctrine that is a decision wearing a
 checkbox.
 
-⭐ **The architectural answer is therefore neither a sixth consultation nor a new rc boundary. It is
-that the seam has no owner a guard population can see** — see F6 and F7 below, which give the
-mechanism the review rounds never identified.
+⭐ **The architectural answer has two halves, and only one of them was in the first version of this
+document.** The half that stood: **the seam has no owner a guard population can see** — F6 and F7
+below, whose measurements are unaffected by the refutation and give the mechanism the review rounds
+never identified. ⟳ **The half that was WRONG: this said the answer is "neither a sixth consultation
+nor a new rc BOUNDARY".** The boundary half is false. `rc=2` carries a conjunction, and L2's repair
+IS a contract change — a sixth code, or rc=5 widened to mean *armed and unanswerable* whatever the
+cause. What the sentence got right is that a sixth CONSULTATION was never the answer; what it got
+wrong is ruling out the contract, which is where one of the two live defects actually lives.
 
 ---
 
@@ -252,10 +290,25 @@ the gap where that had not been applied:
 | `refute-shallow-modules` | apply the deletion test to every pure function; test whether the mutation harness depends on the structure |
 | `refute-protocol-seam` | locate the owner of each of the four protocol parts; verify the 87 number independently |
 
-⛔ **ALL THREE ARE TO BE TREATED AS NOT RUN.** Each went `idle` without delivering a report, and an
-explicit resend request to each — sent by `SendMessage`, naming the exact format wanted — went
-unanswered. **Nothing in this document rests on them**; every finding above was produced by the
-coordinator running the code, with the producing command recorded in the finding.
+⟳ **THIS PARAGRAPH SAID "ALL THREE ARE TO BE TREATED AS NOT RUN", AND IT IS NOW FALSE.** All three
+delivered, roughly forty minutes after this document was first committed and pushed — the same
+shape `architecture-review-2026-09-23-review-verdict-path.md` records ("*returned AFTER this
+document was first committed*"), which makes this the second instance rather than a surprise. The
+original sentence is corrected rather than rewritten away, because a claim about how a review was
+conducted is exactly the kind that gets believed without checking.
+
+⭐ **AND THEY REFUTED THIS DOCUMENT'S PRIMARY VERDICT**, which is the strongest available argument
+for the refutation mandate they were briefed with: a confirming brief finds six supporting instances
+and stops, which is what my own reading of the same evidence did. The measured corrections they
+produced are folded into the question section above, into F8, and into backlog #201–#205.
+
+⚠ **WHAT STILL RESTS ON THE COORDINATOR, stated so the boundary is legible:** every finding in this
+document was produced or re-derived by hand with its command recorded, including each claim the
+agents made. That was not ceremony — **three of their summary lines were wrong while their data was
+right**: one said only two functions have N≥2 call sites (five do, in its own table), one said a
+mutation's green "says nothing about any reachable path" (manifest entry #60 names the reachable
+case), and one said `cache_document` has two statements (it has one). Phase 6's *agent output is a
+lead, not a finding* earned its keep in both directions here.
 
 ### F9 · Phase 6's mandated exploration step has a measured ~1-in-4 in-time delivery rate in this repo, and its known remedy has now failed twice
 
@@ -268,7 +321,7 @@ every architecture review in `docs/reviews/`:
 | `2026-09-22-observer-family` | **3 dispatched, none returned** before §1–§6 were written; one delivered later and produced F13–F15 as leads |
 | `2026-09-23-review-verdict-path` | returned **after** the document was committed and pushed |
 | `2026-09-24-number-populations` | none dispatched; every claim established by hand |
-| `2026-09-30` (this) | **3 dispatched, none returned; resend request unanswered** |
+| `2026-09-30` (this) | 3 dispatched; resend request unanswered; **all three delivered ~40 min after this document was committed**, and refuted its primary verdict |
 
 ⭐ **The mechanism is already recorded** (`architecture-review-2026-09-22-observer-family.md` §4.5):
 
@@ -280,15 +333,174 @@ every architecture review in `docs/reviews/`:
 coordinator; only an explicit `SendMessage` from the agent would, and nothing in the brief compels
 one.
 
-⚠ **The consequence for the process is the finding, not the flakiness.** `improve-codebase-architecture`
-presents agent exploration as step 1 of its method, and dev-process.md's Phase 6 row inherits that.
-Measured, the exploration step informed 1 of the 4 reviews that attempted it, while **every** review
-reached its verdict by the coordinator running the code. **Hand verification is not the backstop
-here — it is the method**, and the agent step is enrichment that must be declared NOT RUN when it
-does not arrive rather than silently waited on.
+⟳ **AND THE FINDING ITSELF IS CORRECTED, because this review's own agents then delivered.** The
+first version read as *they often never arrive*. Measured across all four attempts, the truth is
+sharper and more useful:
 
-**Fix shape:** brief every dispatched agent to deliver via `SendMessage` explicitly, and give the
-review a stated evidence bound either way. Do not make a Phase 6 verdict wait on it.
+> **The exploration step has NEVER failed to deliver entirely. It has failed to deliver IN TIME in
+> 3 of 4 attempts** — and in two of those three, what arrived late CHANGED the review: F13–F15 in
+> 2026-09-22, two corrections in 2026-09-23, and this review's entire primary verdict.
+
+⚠ **That inverts the fix.** "Make the agents deliver" is the wrong repair for a step that always
+delivers eventually; the repair is to stop treating a Phase 6 verdict as final at the moment the
+document is first committed. The cost of the old framing is visible in this very document: it was
+committed AND PUSHED with a headline verdict that its own commissioned agents refuted forty minutes
+later, and a reader in that window got the wrong diagnosis of a subsystem with two live defects.
+
+**Fix shape, revised:** (1) brief every dispatched agent to deliver by `SendMessage` explicitly,
+since a plain final message does not route and that mechanism is now recorded three times;
+(2) do not block the verdict on delivery — but mark the document's verdict section as PROVISIONAL
+until every dispatched agent has reported or been timed out, so a late refutation lands as an
+expected revision rather than a correction to something already believed. ⚠ The old fix shape said
+to declare the step NOT RUN when it does not arrive; that was written from a sample in which
+nothing had yet arrived late, and it is the wrong instruction for the measured distribution.
+
+⚠ **Also measured: the remedy of asking for partial results has failed TWICE** (2026-09-22 and
+here), for the recorded reason — an `Explore` agent's final message is plain text, and plain text
+does not route to the coordinator.
+
+---
+
+## Findings the agents produced, re-derived here by execution
+
+Added after the first commit of this document. Each was reproduced by the coordinator in a built
+world, and each states the control that makes the reproduction mean anything.
+
+### L1 · A repeated `rc=5` forwards a permanently hollowed-out message — backlog #201, LIVE
+
+`do_fire` empties the message when its dedupe says the sentence has already been said
+(`recall-llm.py:991`):
+
+```python
+raise type(exc)("") from exc.__cause__
+```
+
+The hook's arms are not symmetric. `0)` and `3)` guard on `[ -n "$OUT" ]`; `5)` does not:
+
+```
+.claude/hooks/surface-recall.sh:59   0) [ -n "$OUT" ] && PAYLOAD="$OUT" ;;
+.claude/hooks/surface-recall.sh:63   3) [ -n "$OUT" ] && PAYLOAD="recall-llm: the recall cache …
+.claude/hooks/surface-recall.sh:70   5) PAYLOAD="recall-llm: a plan IS armed and the matcher …
+```
+
+**Reproduced end to end** — a sandbox at a resolved temp root, `recall-llm.py` and the real hook
+copied in, `HOME` redirected to a fake corpus, an armed plan in the loose-checkbox shape, and the
+HOOK as the only caller (⚠ a first attempt failed because the probe's own `--fire` consumed the
+dedupe, so "call 1" was already deduped):
+
+| hook call | forwarded | `Detail:` |
+|---|---|---|
+| 1 | 409 chars | the full 261-char diagnostic |
+| 2 | 148 chars | **empty** |
+| 3 | 148 chars | **empty** |
+
+The marker persists, so it never recovers: from the second firing onward the reader is told *"a plan
+IS armed and the matcher cannot read it … Detail:"* with nothing after it, indefinitely. Worse than
+no dedupe — no dedupe repeats a USEFUL message; this repeats a useless one.
+
+⛔ **THE REPAIR IS A DESIGN DECISION, NOT THE OBVIOUS ONE-LINER.** Adding `[ -n "$OUT" ] &&` to the
+`5)` arm makes a deduped rc-5 SILENT, and the hook's own comment insists *"rc=5 IS NOT SILENCE"*
+because that conflation was B1. So the question is whether the dedupe should apply to an unreadable
+plan at all, or whether the hook should drop the `Detail:` label when there is nothing to put after
+it. **FALSIFIER:** this is wrong if a second firing forwards a populated `Detail:`.
+
+### L2 · An armed plan with a valid cache and a vanished corpus reaches the reader as SILENCE — backlog #202, LIVE
+
+`cached_entry_verdict` returns `CANNOT_RUN` when the corpus is unreachable
+(`recall-llm.py:718-720`), raised at `:1027`; the hook's catch-all then eats it, correctly, because
+`rc=2` is also the routine "nothing is armed" state (`surface-recall.sh:72`).
+
+**Reproduced over a GREEN control** — cache written with the module's own `plan_fingerprint`, plan
+readable, named entry present, and ONLY `HOME` changed between the two runs. ⚠ A first attempt had a
+RED control (it reported "corpus unreachable" with the corpus present, because `memory_dir` uses
+`ROOT.resolve()` and macOS `/var/folders` resolves to `/private/var/folders`, so the slug was
+computed from the wrong path); nothing below a red control counts.
+
+| run | matcher | hook forwards |
+|---|---|---|
+| CONTROL — corpus present | rc=0, surfaces the entry | **290 bytes** |
+| TEST — only `HOME` changed | rc=2, a 161-char message ending *"NOTHING WAS SURFACED"* | **0 bytes** |
+
+⭐ **THIS IS B1's DEFECT ONE SIDE OVER.** B1 was *"nothing fires" and "could not look" arriving as
+one observation*, and it was fixed by splitting rc=5 out of rc=2 **for the plan side**. Every
+subsequent round looked at the plan side. `rc=2` still means two things, and the corpus side is the
+half nobody examined. **FALSIFIER:** wrong if the hook forwards anything for that run.
+
+⚠ **ITS TRIGGER EXISTS ON THIS MACHINE RIGHT NOW, and I created it.** `memory_dir` slugs the repo
+path, and its docstring claims *"Derived, never hardcoded, so a worktree or a clone at another path
+still finds its own corpus."* Measured: the main checkout's slug has a corpus, and the worktree
+created at `~/code/agentic-ai-docs/yps-memory` on 2026-09-30 has **none**. The derivation is
+correct; the premise that each path HAS a corpus is false, because nothing creates one for a new
+slug. See S2.
+
+### S1 · `recall-llm.py` holds a second copy of a rule whose owner forbids copies — backlog #203
+
+`check-plan-progress.py:127-128`, in `strip_field`'s docstring, states the rule:
+
+> `So the predicate below is parse_sentinel's own rule applied per line, and nothing else may hold`
+> `a second copy of it — begin-plan.py borrows this function rather than writing its own.`
+
+`begin-plan.py` obeys — it imports `parse_sentinel` (`:276`) behind an `ImportError` guard that
+names the borrowed symbols (`:111-115`). `recall-llm.py:187` does not:
+
+```python
+_PAUSED_RE = re.compile(r"^paused:", re.M)
+```
+
+The owner splits on the first colon anywhere in the line and strips the key; this is line-anchored.
+**Measured, both parsers on the same bytes — 3 of 6 inputs disagree:**
+
+| sentinel line | owner | `recall-llm` |
+|---|---|---|
+| `paused: why` | paused | paused |
+| `␠␠paused: why` | **paused** | **running** |
+| `\tpaused: why` | **paused** | **running** |
+| `paused : why` | **paused** | **running** |
+| `Paused: why` | not paused | not paused |
+| `paused` (no colon) | not paused | not paused |
+
+On a divergent line the Stop guard stands the plan down while the matcher walks past the pause into
+the step machinery and surfaces a lesson for a step the reader is not on.
+
+⚠ **LATENT, and the reachability is the documented human path rather than a tool.**
+`begin-plan.py:522` writes `paused:` at column 0, so nothing in the repo produces a divergent line —
+but `parse_sentinel`'s own docstring says *"the file is also read by humans"*, and the Stop guard's
+refusal message instructs a human to *"add a line `paused: <why>`"* by hand. `check-banner-armed.py`
+records that exact route as already measured, which is why the other two copies adopted the
+colon-split rule; `recall-llm.py` shipped after them and did not.
+**FALSIFIER:** wrong if the two parsers agree on every input, or if a tool writes an indented pause.
+
+### S2 · `memory_dir`'s docstring promises a capability it does not have — backlog #204
+
+Quoted (`recall-llm.py:357-368`): *"Derived, never hardcoded, so a worktree or a clone at another
+path still finds its own corpus."* Measured 2026-09-30:
+
+| path | slug | corpus present? |
+|---|---|---|
+| main checkout | `-Users-…-youtube-playlist-summaries-cloud` | **yes** |
+| worktree at `…/yps-memory` | `-Users-…-yps-memory` | **no** |
+
+A worktree at another path finds NOTHING, because nothing creates a corpus for a new slug. The
+derivation is right and the sentence's promise is not — this repo's *true about the name, silent
+about the layer* shape. It is also L2's live trigger, and it is backlog #194's own defect in a new
+form: that row records *"committing files into the repo does not make the harness find them; any
+in-repo home needs a symlink or a bootstrap step."* It got the symlink, and the symlink inherited a
+dependency on which branch is checked out. **FALSIFIER:** wrong if a bootstrap step creates the
+corpus for a new slug — `scripts/bootstrap-memory.sh` exists and should be checked against this.
+
+### S3 · `invocation_re` cannot see the form this repo uses to spawn a sibling — backlog #205
+
+Not a defect in this subject, found while repairing #196 and recorded so it is not rediscovered.
+`check-ratchet-contract.invocation_re` is lexical over an interpreter list, so it matches
+`python3 x.py`, `./x.py`, `bash x.py`, `sh x.py` and nothing else. It misses
+`[sys.executable, str(ROOT / "scripts" / "x.py")]`, which is how this repo actually spawns a
+sibling from Python. Measured: `brief-compose.py` has three such production callers
+(`gen-features-page.py:693`, `gen-backlog-page.py`, `gen-dashboard.py`) and its R3 green comes from
+none of them — only `ci.yml:168`, its `--self-test` step. Delete that step and it reddens with three
+live callers intact.
+⚠ Wrong in ONE direction, the safe one (a false red on a used file), which is why it stays lexical
+while `import_re` — wrong in BOTH — was retired. **FALSIFIER:** wrong if `invocation_re` matches a
+`sys.executable` spawn.
 
 ---
 
