@@ -143,3 +143,72 @@ method, not an absent one. This document is the first instance of it.
 
 REVIEW GAP: codex — not dispatched; this is a measurement with its own pre-registered falsifier
 and an isolated re-run, not a code change
+
+---
+
+# Addendum, same day — three measurements that each retire a design option
+
+The replication above says *meaning-matching works*. It says nothing about **which mechanism to
+build**, and the obvious candidates are an LLM call, embeddings, or a hybrid shortlist. These three
+measurements were taken to decide that, and each one kills something.
+
+## 1. A lexical shortlist caps the whole mechanism at 60% — so the cheap hybrid is dead
+
+The tempting design is *lexical shortlists, LLM adjudicates* — it needs no new dependency, and
+§11's industry survey does recommend hybrids. **Measured over the same 20 blind paraphrases,
+threshold floored to 0 so nothing is cut by the cutoff:**
+
+| depth | correct entry present |
+|---|---|
+| recall@1 | 6/20 (30%) |
+| recall@3 | 9/20 (45%) |
+| recall@5 | 10/20 (50%) |
+| recall@10 | **12/20 (60%)** |
+| recall@20 | **12/20 (60%)** — no gain from 10→20 |
+| recall@141 | 20/20 (100%) |
+
+⛔ **A shortlist stage can only LOSE recall; it can never add any.** Eight of the twenty correct
+entries rank at 66, 82, 94, 95, 106, 107 and 108 — so a shortlist of any practical depth silently
+discards them, and the adjudicator never learns they existed. **Lexical-shortlist + LLM would score
+at best 12/20, against 20/20 for the LLM alone: the hybrid actively destroys the result.**
+
+⭐ **And the loss is not random — it is concentrated in the most valuable half of the corpus.** The
+entries that sank are the abstract, human-facing ones: *asking the human to decide* (106), *pushing
+from a worktree* (108), *closing a turn with what I will do next* (94). Precisely the triggers with
+the highest value and the lowest token overlap. ⚠ This result is about LEXICAL shortlists only; an
+embedding shortlist is semantic and its recall@k is unmeasured — and unmeasurable here (below).
+
+## 2. The call frequency is ~15/day, not ~275/session — so speed is not the binding constraint
+
+Derived from the plans on disk, not estimated: **45 plan files, 195 steps → 4.3 steps/plan**, and
+28 plans over the 8 active days to 2026-09-29 → **3.5 plans/day ≈ 15 intent-statements/day.**
+Against that, the refuted hook fired on **~275 tool-call invocations per session**.
+
+⭐ **So "embeddings are fast enough to call constantly" optimises the resource that is not scarce.**
+The cost of a fire is the reader's ATTENTION, and the measured consequence of high frequency was
+52.7% firing with an 11.7% false-fire rate. Calling it more often is the failure, not the goal.
+
+## 3. A model call costs 6.41s — so it must be precomputed, not merely infrequent
+
+`claude -p` exists (2.1.281), authenticates from disk with no API key, and answered a trivial
+haiku-model prompt at **6.41s**, CLI startup dominating. That is ~51× the old hook's 125 ms; at 275
+invocations it would add **29 minutes per session**.
+
+⭐⭐ **The resolution is not "fire less often" — it is to precompute.** `begin-plan.py` writes every
+step's `Doing:` line **at arm time**, so all the situations are knowable before any of them happen.
+One call per PLAN (~3.5/day) matches every step at once; the per-step hook becomes a dictionary
+lookup. **Latency at fire time goes to zero rather than being tolerated.**
+
+## What this leaves
+
+⛔ **No embedding backend exists in this environment** — no `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+`VOYAGE_API_KEY`, no `torch`, no `numpy`, and Anthropic ships no embeddings endpoint (the Codex
+`auth.json` is ChatGPT OAuth, not a platform key). Embeddings therefore cost a **new vendor key or
+~2 GB of local dependencies**, against #191's own constraint that this is harness work which *"must
+be portable or it is a local habit."*
+
+**Decision taken 2026-09-29: build the LLM call, precomputed at plan-arm time. Defer embeddings to a
+MEASURED trigger rather than a judgement** — pad the trigger corpus to 300 / 600 / 1000 and re-run
+the 80-item probe to find where discrimination degrades. That names the corpus size at which an
+embedding shortlist earns its dependency, instead of guessing it. ⚠ And when that day comes, the
+shortlist's own recall@k must be measured first — measurement 1 is what happens when it is not.

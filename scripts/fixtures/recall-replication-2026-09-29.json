@@ -823,5 +823,56 @@
    "_note": "clean room: input dir held only corpus+queries, output written elsewhere, agent reported opening only those files; agreed with probe_80 on 79/80"
   }
  },
- "_bound": "0 false fires in 60 gives a 95% upper bound of 5.0% by the rule of three. That is the precision claim this experiment earns \u2014 no more."
+ "_bound": "0 false fires in 60 gives a 95% upper bound of 5.0% by the rule of three. That is the precision claim this experiment earns \u2014 no more.",
+ "mechanism_measurements_same_day": {
+  "_what": "Three measurements taken to decide WHICH mechanism to build. Each retires an option.",
+  "lexical_recall_at_k": {
+   "_situations": "the same 20 blind paraphrases, threshold floored to 0",
+   "at_1": "6/20",
+   "at_3": "9/20",
+   "at_5": "10/20",
+   "at_10": "12/20",
+   "at_20": "12/20",
+   "at_141": "20/20",
+   "_ranks_of_the_eight_that_sank": [
+    66,
+    82,
+    94,
+    95,
+    106,
+    107,
+    108
+   ],
+   "_verdict": "A lexical shortlist caps the mechanism at 60%. A shortlist can only LOSE recall. lexical+LLM scores at best 12/20 vs 20/20 for the LLM alone, so the no-new-dependency hybrid is REFUTED. Applies to LEXICAL shortlists only; embedding recall@k is unmeasured."
+  },
+  "call_frequency": {
+   "_derived_from": "plan files on disk, not estimated",
+   "plan_files": 45,
+   "total_steps": 195,
+   "steps_per_plan": 4.3,
+   "plans_per_day": 3.5,
+   "intent_statements_per_day": 15,
+   "tool_call_invocations_per_session": 275,
+   "_verdict": "Frequency is ~18x lower at plan granularity. Speed is not the binding constraint, so embeddings' advantage buys headroom with no use. High frequency is the MEASURED failure: 52.7% firing, 11.7% false fires."
+  },
+  "model_call_latency": {
+   "cli": "claude -p, v2.1.281, authenticates from disk with no API key",
+   "prompt": "trivial, --model haiku",
+   "latency_s": 6.41,
+   "vs_old_hook_ms": 125,
+   "_verdict": "~51x the old hook; 29 min/session at 275 invocations. Cannot be synchronous on a frequent boundary. Resolution is PRECOMPUTE at plan-arm time (begin-plan.py writes every step's Doing: line up front), one call per plan, hook becomes a dict lookup, fire-time latency zero."
+  },
+  "embedding_backend_availability": {
+   "anthropic_api_key": false,
+   "openai_api_key": false,
+   "voyage_api_key": false,
+   "torch": false,
+   "numpy": false,
+   "sentence_transformers": false,
+   "anthropic_embeddings_endpoint": "does not exist",
+   "codex_auth": "ChatGPT OAuth, not a platform key",
+   "_verdict": "Embeddings cost a new vendor key or ~2GB of local deps, against #191's portability constraint for harness work."
+  },
+  "_decision": "Build the LLM call, precomputed at plan-arm time. Defer embeddings to a MEASURED trigger: pad the corpus to 300/600/1000 and re-run the 80-item probe to find where discrimination degrades."
+ }
 }
