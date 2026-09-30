@@ -94,6 +94,7 @@
 - [⭐⭐ Never close with a promise](never-close-with-a-promise.md) — ⛔ **5th instance 2026-09-25.** The Stop guard EXISTS and was INERT — I never armed it. ARM `begin-plan.py` for review/fold loops too, not just implementation
 - [⭐ Putting a choice to the user](putting-a-choice-to-the-user.md) — TAG A/B/C + a question exit; never two options that are the SAME action; decide it yourself when obvious
 - [⭐ Name and define every reference](name-and-define-every-reference.md) — never a bare `#39` or `M4`; gloss jargon on first use. Do NOT try to script it
+- [⛔ PUSH is mine, MERGING is theirs](push-is-mine-merging-is-theirs.md) — ruled 2026-09-30; never ask again. A PR is a SEPARATE judgement — not for unconverged work
 - [⭐ Defaults I decide myself](defaults-i-decide-myself.md) — small spend incl. a bounded prod write (measure the ledger); lighter verification. ⛔ NOT the CI wait — `--auto` is UNSAFE here, it once put a red on master
 - [⭐ Restart Docker, do not record CANNOT RUN](restart-docker-dont-record-cannot-run.md) — user instruction 2026-09-22. A visible Docker Desktop window is NOT a responsive daemon; `open -a Docker` is a no-op and the backend needs SIGKILL
 - [Process conventions](process-conventions.md) — branch + PR for EVERY change; spec = human gate; ticks in-convo, file at milestones; resume reads the RUNNING SYSTEM
