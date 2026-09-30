@@ -11,12 +11,12 @@
     "expect": "a defined code with NO arm and NO row is refused (rc 4, row removed)"
   },
   {
-    "name": "the unguarded-Detail rule stops firing, so #201's regression reads as clean",
+    "name": "the unguarded-Detail rule stops firing, so #201's regression reads as clean [anchor retargeted round 3: the condition it bound to was rewritten for M4]",
     "file": "scripts/check-rc-contract.py",
     "edits": [
       [
-        "        if _OUT_IN_LABEL.search(body) and not _NONEMPTY_GUARD.search(body):",
-        "        if False:"
+        "            bad.append(code)",
+        "            pass"
       ]
     ],
     "expect": "an UNGUARDED Detail: clause is caught — the exact #201 regression"
@@ -77,15 +77,15 @@
     "expect": "an OR-pattern arm is a cannot-run, not a silently missing arm"
   },
   {
-    "name": "structural_lines stops tracking the string state, so a payload continuation reads as an arm",
+    "name": "the double-quote branch is dead, so a payload string never closes and every later arm disappears [anchor retargeted round 3 for B2's state machine]",
     "file": "scripts/check-rc-contract.py",
     "edits": [
       [
-        "            if c == '\"':\n                in_string = not in_string",
-        "            if False:\n                in_string = not in_string"
+        "            elif state == '\"':",
+        "            elif False:"
       ]
     ],
-    "expect": "a multi-line payload's continuation is not an arm head"
+    "expect": "a real arm AFTER a multi-line payload is still found"
   },
   {
     "name": "case_block returns the whole file, so text after esac is read as part of the case",
@@ -97,5 +97,60 @@
       ]
     ],
     "expect": "text after esac is not part of the block"
+  },
+  {
+    "name": "the quoting machine stops tracking single quotes — round 3 B2's wrong answer restored",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "                if c in ('\"', \"'\"):\n                    state = c",
+        "                if c == '\"':\n                    state = c"
+      ]
+    ],
+    "expect": "a SINGLE-quoted payload's continuation is not an arm — round 3 B2"
+  },
+  {
+    "name": "comments are scanned for quotes again, so an apostrophe opens a phantom string",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "                if c == \"#\" and (i == 0 or line[i - 1] in \" \\t\"):\n                    break",
+        "                if False:\n                    break"
+      ]
+    ],
+    "expect": "an apostrophe in a COMMENT does not open a string"
+  },
+  {
+    "name": "unmodelled quoting stops refusing, so a heredoc is answered over instead",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "    if re.search(r\"<<-?\\s*[\\w'\\\"]\", block):",
+        "    if False:"
+      ]
+    ],
+    "expect": "a heredoc is refused, not guessed at"
+  },
+  {
+    "name": "the catch-all bound goes back to two-space indentation — round 3 H1",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "    m_catchall = re.search(r\"^[ \\t]*\\*\\)\", hook_src, re.M)",
+        "    m_catchall = re.search(r\"^  \\*\\)\", hook_src, re.M)"
+      ]
+    ],
+    "expect": "a four-space catch-all still bounds the last arm — round 3 H1"
+  },
+  {
+    "name": "the Detail promise must be adjacent again — round 3 M4",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "        if (_OUT_LABEL.search(body) and _OUT_REF.search(body)\n                and not _NONEMPTY_GUARD.search(body)):",
+        "        if (re.search(r'(?:Detail|detail):\\s*\\$OUT', body)\n                and not _NONEMPTY_GUARD.search(body)):"
+      ]
+    ],
+    "expect": "a Detail: promise split across two statements is still caught — round 3 M4"
   }
 ]

@@ -1032,5 +1032,27 @@
       ]
     ],
     "expect": "do_arm: a bare CANNOT_RUN after the plan parsed is CANNOT ANSWER"
+  },
+  {
+    "name": "the paid-answer cache failure returns rc 2 again — round 3 B1, a return is not a raise",
+    "file": "scripts/recall-llm.py",
+    "edits": [
+      [
+        "    if not written:",
+        "    if False:"
+      ]
+    ],
+    "expect": "--arm: a paid answer that cannot be cached is CANNOT ANSWER, not the routine rc 2"
+  },
+  {
+    "name": "_fire stops opening the armed scope, so a bare CANNOT_RUN under --fire reads as routine",
+    "file": "scripts/recall-llm.py",
+    "edits": [
+      [
+        "        return _fire_armed(again, sentinel_text, plan, plan_text)\n    except Refusal as exc:\n        raise unanswerable_if_armed(exc) from exc.__cause__",
+        "        return _fire_armed(again, sentinel_text, plan, plan_text)\n    except Refusal as exc:\n        raise exc"
+      ]
+    ],
+    "expect": "--fire: a bare CANNOT_RUN raised after the plan is read is CANNOT ANSWER"
   }
 ]

@@ -99,7 +99,7 @@ Usage:
     scripts/recall-llm.py --arm            # ONE model call, matches every step of the armed plan
     scripts/recall-llm.py --fire           # no model call; the entry for the current step
     scripts/recall-llm.py --print-prompt    # exactly what --arm would send. No call, no cost
-    scripts/recall-llm.py --self-test  # 196 cases
+    scripts/recall-llm.py --self-test  # 199 cases
 """
 from __future__ import annotations
 
@@ -1044,7 +1044,22 @@ def _arm_body(prompt: str, plan, plan_text: str, steps, triggers) -> int:
     print(f"{where}: {fired} of {len(picks)} step(s) matched an entry")
     for n, v in sorted(picks.items()):
         print(f"   step {n}: {v}")
-    return OK if written else CANNOT_RUN
+    if not written:
+        # ⛔ ROUND 3 B1 — THE FOURTH INSTANCE, AND THE FIRST ON A `return` RATHER THAN A `raise`.
+        # This read `return OK if written else CANNOT_RUN`, so an unwritable cache exited rc 2 —
+        # the routine "nothing is armed" code — after the model call had been made AND PAID FOR.
+        # `do_arm`'s `except Refusal` boundary could never see it, because a `return` is not a
+        # raise. ⚠ AND MY OWN COMMENT AT `do_arm` CLAIMED THIS PATH BY NAME: "…and the cache write
+        # are all rc 6, not the routine rc 2." That sentence was FALSE when it was written, about
+        # code in the same edit.
+        # ⭐ THE LESSON IS THE SHAPE, NOT THE LINE: three times the rule was relocated to a
+        # boundary and the boundary was placed on the RAISE path only. A `return` is an exit from
+        # the armed scope too, and no case or mutation reached this line — 196/196, rc-contract
+        # rc=0 and 0 survivors were all green over it.
+        raise Unanswerable(
+            "CANNOT ANSWER: the answer was paid for and could not be cached, so nothing will be "
+            "surfaced automatically until --arm succeeds. The picks are printed above.")
+    return OK
 
 
 def do_fire(again: bool = False) -> int:
@@ -1067,6 +1082,15 @@ def do_fire(again: bool = False) -> int:
     try:
         return _fire(again)
     except Refusal as exc:
+        # ⛔ NO ARMED-SCOPE CONVERSION HERE, AND THE FIRST ATTEMPT AT ROUND 3 M3 PUT ONE HERE AND
+        # IT WAS INERT. `exc = unanswerable_if_armed(exc)` followed by a bare `raise` does nothing:
+        # a bare raise re-raises the ACTIVE exception, not the rebound name, so only the dedupe
+        # path below would have seen it. ⚠ AND THE TEST PASSED FOR THAT REASON — "no sentinel stays
+        # rc 2" was green because the fix was a no-op, not because the placement was right.
+        # ⛔ THE PLACEMENT WAS ALSO WRONG. `_fire`'s armed scope does not begin at the top of
+        # `_fire`; it begins once `read_armed_plan()` has succeeded, exactly as in
+        # `prepared_prompt`. Wrapping the whole call would convert the ROUTINE absence — no
+        # sentinel — into rc 6, which is the conjunction inverted. The boundary is inside `_fire`.
         msg = str(exc)
         if msg and not nag_once(CACHE_DIR / ".last-said", hashlib.sha256(
                 msg.encode("utf-8")).hexdigest()[:16]):
@@ -1075,7 +1099,24 @@ def do_fire(again: bool = False) -> int:
 
 
 def _fire(again: bool = False) -> int:
+    # ⛔ ROUND 3 M3 — THE THIRD ENTRANCE TO THE ARMED SCOPE, placed where the scope actually opens.
+    # `read_armed_plan()` is OUTSIDE it: its failure means nothing is armed, which is the routine
+    # rc 2 the hook is right to ignore. Everything after it runs with a plan demonstrably armed, so
+    # a bare `Refusal` there is an armed plan that cannot be answered. Latent rather than live
+    # today — nothing below currently raises a bare `Refusal` — but `read_or_refuse`'s DEFAULT
+    # class is `Refusal`, so the next read under `--fire` that takes the default would land as the
+    # routine code with a plan armed, which is this fold's error a fifth time.
     sentinel_text, plan, plan_text = read_armed_plan()
+    try:
+        return _fire_armed(again, sentinel_text, plan, plan_text)
+    except Refusal as exc:
+        raise unanswerable_if_armed(exc) from exc.__cause__
+
+
+def _fire_armed(again: bool, sentinel_text: str, plan, plan_text: str) -> int:
+    """Everything `--fire` does once a plan is known to be armed. Split out so the boundary has a
+    seam a case can drive — a `try` around an inlined body has none, which is what made round 3
+    M3's first fix both misplaced and inert."""
     if paused(sentinel_text):
         return OK  # a paused thread has no current step. Silence here is an answer, not a failure.
     # ⛔ B1. THIS CALL IS THE FIX, AND ITS ABSENCE WAS THE BLOCKING. `first_unticked` returns None
@@ -2039,6 +2080,56 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
           lambda: unanswerable_if_armed(ResponseRejected("m")).rc, BAD_RESPONSE)
     check("...and an Unanswerable is not re-wrapped",
           lambda: type(unanswerable_if_armed(Unanswerable("m"))).__name__, "Unanswerable")
+
+    # ── round 3 B1 + M3 — A `return` IS AN EXIT FROM THE ARMED SCOPE, AND `_fire` IS ITS THIRD
+    # ENTRANCE ────────────────────────────────────────────────────────────────────────────────
+    def _arm_unwritable_cache():
+        """`--arm` with the answer paid for and the cache unwritable. Round 3 B1's exact world."""
+        saved = (globals()["prepared_prompt"], globals()["call_model"],
+                 globals()["parse_response"], globals()["CACHE_DIR"])
+        try:
+            globals()["prepared_prompt"] = lambda: (
+                "p", ROOT / ".claude" / "plans" / "p.md", "t", [(1, "s")], [("n", "trig")])
+            globals()["call_model"] = lambda _p: '{"1": "n"}'
+            globals()["parse_response"] = lambda *_a: {1: "n"}
+            globals()["CACHE_DIR"] = Path("/dev/null/nope")   # unwritable by construction
+            return do_arm()
+        except Refusal as exc:
+            return exc.rc
+        finally:
+            (globals()["prepared_prompt"], globals()["call_model"],
+             globals()["parse_response"], globals()["CACHE_DIR"]) = saved
+
+    # ⛔ THIS LINE WAS `return OK if written else CANNOT_RUN`, so a PAID answer that could not be
+    # cached exited on the routine "nothing is armed" code, and `do_arm`'s `except Refusal`
+    # boundary could never see it because a return is not a raise.
+    check("--arm: a paid answer that cannot be cached is CANNOT ANSWER, not the routine rc 2",
+          _arm_unwritable_cache, UNANSWERABLE)
+
+    def _fire_with_bare_refusal():
+        """A bare `Refusal` raised INSIDE `--fire`'s armed scope. Round 3 M3."""
+        def _boom(_t):
+            raise Refusal("CANNOT RUN: some future read under --fire")
+        saved = globals()["paused"]
+        try:
+            globals()["paused"] = _boom
+            return _armed_world(lambda r, sent: (
+                (r / ".claude" / "plans" / "p.md").write_text(
+                    "- [ ] **Step 1 of 1** — Do\n  - **Doing:** doing it\n", encoding="utf-8"),
+                sent.write_text("plan: .claude/plans/p.md\n", encoding="utf-8")))
+        finally:
+            globals()["paused"] = saved
+
+    # ⛔ THE BOUNDARY MUST BE LIVE, AND THE FIRST ATTEMPT AT M3 WAS INERT: it rebound `exc` in
+    # `do_fire` and then used a bare `raise`, which re-raises the ACTIVE exception and not the
+    # rebound name. The "no sentinel stays rc 2" check passed over that no-op, which is why this
+    # case asserts the CONVERSION rather than only the preservation.
+    check("--fire: a bare CANNOT_RUN raised after the plan is read is CANNOT ANSWER",
+          _fire_with_bare_refusal, UNANSWERABLE)
+    # ⚠ AND THE PRESERVATION, at the same boundary: `read_armed_plan` is OUTSIDE the armed scope,
+    # so no sentinel is still the routine absence. Wrapping the whole of `_fire` would invert it.
+    check("...while no sentinel is STILL the routine rc 2, because the plan read is outside it",
+          lambda: _armed_world(None), CANNOT_RUN)
 
     def _prepared_with(read_plan, mem):
         """Drive `prepared_prompt`'s boundary with the plan read and the corpus stubbed."""

@@ -219,7 +219,7 @@ handoff that superseded it.
 GUARD_PATH_RE = re.compile(r"scripts/check-[\w.-]+\.py")
 ```
 
-Run live: `guards discovered (41)`, and `recall-llm.py` appears **0 times** in the output. So rules
+Run live: `guards discovered (41)` — ⟳ round 3 M2: **42 now**, since `check-rc-contract.py` joined it, which is itself the point: a `check-*.py` file is seen by R1–R4 and a `.claude/hooks/*.sh` file is not. `recall-llm.py` appears **0 times** in the output. So rules
 R1 (has a `--self-test`), R2 (no fail-open handler) and R3 (**has a caller**) do not apply to it.
 
 The hook states this about itself, correctly and unprompted (`.claude/hooks/surface-recall.sh:6-16`):
@@ -242,18 +242,18 @@ would protect the caller.
 | | result |
 |---|---|
 | mutation manifests targeting the hook | **none** (`grep -rl surface-recall scripts/mutations/`) |
-| scripts or workflows reading the hook | **none** (`grep -rln surface-recall scripts/ .github/`) |
+| scripts or workflows reading the hook | **none** at the reviewed tree — ⟳ round 3 M2: now `scripts/check-rc-contract.py` plus two `ci.yml` steps |
 | self-test cases driving the hook end to end | **0** (`grep -n surface-recall scripts/recall-llm.py`) |
 | self-test cases driving a real armed world | 6 (`_armed_world`, `recall-llm.py:1898`) |
 
 The 6 end-to-end cases were added *in response to* round 2's Blocking — the coverage arrived after
 the defect, which is the point. Nothing reconciles the two halves of the rc contract: the matcher
-can emit `{0,2,3,4,5}` and the hook distinguishes `0`, `3`, `5`, with `2` and `4` falling into a
+can emit `{0,2,3,4,5}` and the hook distinguishes `0`, `3`, `5`, with `2` and `4` falling into a  ⟳ **round 3 M2: the matcher emits `{0,2,3,4,5,6}` since #202 and the hook distinguishes `0,3,5,6`; the finding stands as this tree's state, the numbers are updated so they do not read as current.**
 catch-all. Round 1's H4 was exactly a cross-file literal defect at this seam, found by review rather
 than by a gate.
 
 ⚠ **Latent, not live:** the swallowing of rc=4 is harmless *today* only because `--fire` cannot emit
-it — every `ResponseRejected` raise site (`recall-llm.py:520,552,558,573,579,582`) sits inside
+it — ⛔ **round 3 M1: THE NEXT SENTENCE WAS ALREADY FALSE AT THIS TREE.** `:520` at `d26c79d6` is inside `no_duplicate_keys`, not `parse_response`, so the citation listed the number that refutes it — and the claim was copied forward into `check-rc-contract.DELIBERATELY_UNHANDLED[4]`. The conclusion holds by another route (`no_duplicate_keys` has one caller, passed as `object_pairs_hook` inside `parse_response`); corrected at both sites. Every `ResponseRejected` raise site (`recall-llm.py:520,552,558,573,579,582`) sits inside
 `parse_response`, which only `--arm` calls. Nothing asserts that property, and it lives on the far
 side of the seam from the code that depends on it. Filed at that weight deliberately.
 

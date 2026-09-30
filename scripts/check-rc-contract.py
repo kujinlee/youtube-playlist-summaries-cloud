@@ -62,7 +62,7 @@ FAILS IF
 
 Usage:
     python3 scripts/check-rc-contract.py
-    python3 scripts/check-rc-contract.py --self-test  # 35 cases
+    python3 scripts/check-rc-contract.py --self-test  # 46 cases
 """
 from __future__ import annotations
 
@@ -86,16 +86,32 @@ _RC_NAMES = {"OK", "CANNOT_RUN", "STALE_CACHE", "BAD_RESPONSE", "UNREADABLE_PLAN
 DELIBERATELY_UNHANDLED: dict[int, str] = {
     0: "rc 0 IS handled — the `0)` arm forwards a match and stays silent on an empty answer. "
        "Listed only so the table below is total; `handled_codes` finds its arm.",
-    2: "CANNOT RUN is the ROUTINE absence — no plan armed. On a machine with nothing armed it is "
-       "the normal state and the reader is right not to hear about it. ⚠ This is the entry that "
-       "was doing too much work before backlog #202: it also covered 'armed but the corpus is "
-       "gone', which the reader DOES need, and that is now rc 6. If you find yourself widening "
-       "this sentence again, split the code instead.",
-    4: "RESPONSE REJECTED can only arise on the `--arm` path (every `ResponseRejected` raise site "
-       "is inside `parse_response`, which only `--arm` calls), and this hook runs `--fire` only. "
-       "⚠ Nothing asserts that property, and it lives on the far side of the seam from the code "
-       "that depends on it — so if `--fire` ever validates a cached name as a response, this "
-       "entry is the thing that will be silently wrong.",
+    2: "CANNOT RUN means NOTHING WAS ATTEMPTED, and round 3 H2 established that it carries three "
+       "shapes rather than one: no plan armed; no mode flag at all (`main`); and argparse's own "
+       "usage exit, which is also 2 — measured, `--fier` and `--fire --extra` both exit 2, and "
+       "that number belongs to argparse's convention rather than to this contract. ⚠ THE PREVIOUS "
+       "WORDING SAID ONLY 'no plan armed' AND WAS THEREFORE FALSE TWICE OVER. "
+       "⛔ AND THE PREVIOUS WORDING ENDED 'if you find yourself widening this sentence again, "
+       "split the code instead' — so this correction owes that test an answer. It is not a "
+       "widening: all three shapes are the SAME meaning, which is that the matcher never got to "
+       "look, and a caller is right to be silent about every one of them. The meaning that did NOT "
+       "belong — 'armed, and the answer cannot be reached' — was split out as rc 6 in #202 and "
+       "extended to `--arm` and `--fire` in round 3. ⚠ Argparse's 2 is also not mine to renumber "
+       "without wrapping its exit, and doing that to win a documentation argument would trade a "
+       "true sentence for a worse program.",
+    4: "RESPONSE REJECTED can only arise on the `--arm` path, and this hook runs `--fire` only. "
+       "⛔ THE EVIDENCE THIS ROW USED TO GIVE WAS FALSE — round 3 M1. It said 'every "
+       "`ResponseRejected` raise site is inside `parse_response`'. Derived by AST rather than "
+       "asserted: FIVE are (`:612`, `:618`, `:633`, `:639`, `:642`) and ONE is in "
+       "`no_duplicate_keys` (`:580`). ⚠ The conclusion survives — `no_duplicate_keys` has exactly "
+       "one caller, passed as `object_pairs_hook` inside `parse_response`, and `parse_cache` "
+       "passes none — but it survives for a DIFFERENT reason than the one written here, and a row "
+       "whose reason is false is a rubber stamp however right its verdict. "
+       "⚠ AND THE FALSE SENTENCE WAS COPIED from the architecture review, where it was already "
+       "false at the reviewed tree. A citation inherited without re-deriving it. "
+       "⚠ Nothing asserts the property mechanically, and it lives on the far side of the seam from "
+       "the code that depends on it — so if `--fire` ever validates a cached name as a response, "
+       "this entry is what will be silently wrong.",
 }
 
 # ⛔ ROUND 3 M1 — THIS WAS `^\s{2}(\d+)\)`, WHICH MATCHED ONLY TWO-SPACE INDENTATION, AND THE
@@ -112,7 +128,12 @@ DELIBERATELY_UNHANDLED: dict[int, str] = {
 _ARM_RE = re.compile(r"^[ \t]*(\d+)\)", re.M)
 # Any arm head at all — a number, the catch-all, or a pattern this guard does not model.
 _ARM_SHAPE_RE = re.compile(r"^[ \t]*([^\s#][^)\n]*)\)", re.M)
-_OUT_IN_LABEL = re.compile(r"(?:Detail|detail):\s*\$OUT")
+# ⛔ ROUND 3 M4 — THIS REQUIRED THE LABEL AND `$OUT` TO BE ADJACENT, so splitting the hook's own
+# append idiom across two statements made a #201 defect invisible (measured). The two halves are
+# separate now and an arm is judged on whether it mentions BOTH anywhere within itself, which is
+# the property that matters: an arm promising a detail while able to have none.
+_OUT_LABEL = re.compile(r"(?:Detail|detail):")
+_OUT_REF = re.compile(r"\$OUT|\$\{OUT\}")
 _NONEMPTY_GUARD = re.compile(r'\[\s*-n\s*"\$OUT"\s*\]')
 
 
@@ -171,38 +192,74 @@ def case_block(hook_src: str) -> str | None:
 
 
 def structural_lines(block: str) -> list[str]:
-    """-> the lines of the block that BEGIN outside a double-quoted string.
+    """-> the lines of the block that BEGIN outside any quoted string.
 
-    ⛔ ROUND 3 M1, THIRD MOVE. The soundness check fired on the live hook and was RIGHT to: the
-    rc=3 arm's payload is a multi-line double-quoted string whose continuation line begins at
-    column 0 with `(one model call, ~16s, covers every step). Detail: $OUT" ;;`, and a line-local
-    reader sees an arm head there. It is not one.
+    ⛔ ROUND 3 B2 — THIS TRACKED DOUBLE QUOTES ONLY AND THE DOCSTRING CLAIMED AN UNMODELLED FORM
+    BECAME A CANNOT-RUN. It did not: `arm_soundness` refuses a head it cannot CLASSIFY, and a bare
+    integer inside a SINGLE-quoted string classifies perfectly well. The reviewer adjudicated it
+    against real bash — one single-quoted multi-line payload and the guard reported
+    `handled {0,3,5,6}`, sound, `verdict` empty, exit 0, while bash dropped rc 5 entirely. A guard
+    giving a WRONG ANSWER where its own docstring promised a refusal is #202's shape inside the
+    instrument built to catch #202.
 
-    ⚠ THIS IS `CONTEXT.md`'s STRUCTURAL-LINE DISTINCTION IN A SECOND LANGUAGE. That entry says
-    whether a line is structure "depends on lines above it, so a line-local reader must guess" —
-    measured over eleven YAML block-scalar openers. The same is true of bash: a line inside an open
-    quote is CONTENT. So the state is carried rather than guessed, by double-quote parity, and
-    escaped quotes do not flip it.
+    ⚠ BASH QUOTING, MODELLED AS A THREE-STATE MACHINE rather than a parity count: inside double
+    quotes a backslash escapes, inside SINGLE quotes nothing escapes and only `'` ends the string,
+    and a `"` inside single quotes is literal (and vice versa). A parity count over both characters
+    gets every one of those wrong.
 
-    ⚠ BOUND: it models double quotes only. Single quotes, `$'…'` and heredocs are not tracked — the
-    hook uses none of them today, and `arm_soundness` refuses any shape this does not classify, so
-    an unmodelled quoting form surfaces as a cannot-run rather than a wrong answer.
+    ⚠ WHAT IS STILL NOT MODELLED IS NOW REFUSED RATHER THAN DESCRIBED — see `unmodelled_quoting`.
     """
     out: list[str] = []
-    in_string = False
+    state = None  # None | '"' | "'"
     for line in block.split("\n"):
-        if not in_string:
+        if state is None:
             out.append(line)
         i = 0
         while i < len(line):
             c = line[i]
-            if c == "\\":
-                i += 2
-                continue
-            if c == '"':
-                in_string = not in_string
+            if state == "'":
+                if c == "'":
+                    state = None
+            elif state == '"':
+                if c == "\\":
+                    i += 2
+                    continue
+                if c == '"':
+                    state = None
+            else:
+                if c == "\\":
+                    i += 2
+                    continue
+                # ⛔ A COMMENT IS NOT CODE, AND SCANNING ONE OPENED A PHANTOM STRING. Measured on
+                # the live hook: an apostrophe in a comment ("the NAG's message") put the machine
+                # into single-quote state, so the next arm head began "inside a string" and every
+                # reader downstream saw the wrong lines. In bash a `#` at a word boundary starts a
+                # comment and runs to end of line; quotes inside it are literal text.
+                if c == "#" and (i == 0 or line[i - 1] in " \t"):
+                    break
+                if c in ('"', "'"):
+                    state = c
             i += 1
     return out
+
+
+def unmodelled_quoting(block: str) -> list[str]:
+    """A SOUNDNESS CHECK over quoting forms — what this module cannot read must REFUSE.
+
+    ⛔ ROUND 3 B2's OTHER HALF, and the reason the docstring's promise is now true instead of
+    merely written. `structural_lines` models double and single quotes. It does NOT model
+    `$'...'` (ANSI-C quoting, where backslash escapes differ) or heredocs (`<<`, `<<-`), and a
+    line inside either could be read as structure. So their PRESENCE is refused outright: the
+    guard says "I cannot read this" instead of answering over text it has misparsed.
+    """
+    problems: list[str] = []
+    if re.search(r"\$'", block):
+        problems.append("the `case` block uses ANSI-C quoting (`$'…'`), whose escaping this guard "
+                        "does not model. No statement about which codes are handled is possible.")
+    if re.search(r"<<-?\s*[\w'\"]", block):
+        problems.append("the `case` block contains a heredoc (`<<`), whose body this guard does "
+                        "not model. No statement about which codes are handled is possible.")
+    return problems
 
 
 def arm_soundness(block: str) -> list[str]:
@@ -242,14 +299,20 @@ def unguarded_detail_arms(hook_src: str) -> list[int]:
     """
     spans = []
     marks = [(m.start(), int(m.group(1))) for m in _ARM_RE.finditer(hook_src)]
-    catchall = hook_src.find("\n  *)")
-    end_of_case = catchall if catchall != -1 else len(hook_src)
+    # ⛔ ROUND 3 H1 — M1 FREED `_ARM_RE`'s INDENTATION AND LEFT THIS LINE AT TWO SPACES, so M1
+    # was fixed as an INSTANCE. Measured by the reviewer: two hooks identical but for the
+    # indentation of `*)`, and at four spaces a genuine #201 defect in the `6)` arm went
+    # unreported while `arm_soundness` stayed clean. The mutation added for M1 targets `_ARM_RE`
+    # and cannot see this line, which is why it survived the fix.
+    m_catchall = re.search(r"^[ \t]*\*\)", hook_src, re.M)
+    end_of_case = m_catchall.start() if m_catchall else len(hook_src)
     for i, (pos, code) in enumerate(marks):
         stop = marks[i + 1][0] if i + 1 < len(marks) else end_of_case
         spans.append((code, hook_src[pos:stop]))
     bad = []
     for code, body in spans:
-        if _OUT_IN_LABEL.search(body) and not _NONEMPTY_GUARD.search(body):
+        if (_OUT_LABEL.search(body) and _OUT_REF.search(body)
+                and not _NONEMPTY_GUARD.search(body)):
             bad.append(code)
     return sorted(bad)
 
@@ -303,7 +366,7 @@ def main(argv: list[str]) -> int:
         print("FAILED: could not locate the hook's `case ... in` / `esac` block, so no statement "
               "about which codes it handles is possible. Treat this as NOT RUN.")
         return 2
-    unsound = arm_soundness(block)
+    unsound = unmodelled_quoting(block) + arm_soundness(block)
     if unsound:
         print(f"FAILED: {len(unsound)} arm shape(s) this guard cannot classify — treat as NOT RUN:")
         for u in unsound:
@@ -448,6 +511,58 @@ def _self_test() -> int:
     case("a real arm AFTER a multi-line payload is still found",
          handled_codes(case_block(MULTILINE.replace('  *) : ;;', '  6) : ;;\n  *) : ;;')) or ""),
          {3, 6})
+
+    # ── round 3 B2 — SINGLE QUOTES, THE FORM THAT GAVE A WRONG ANSWER ───────────────────────
+    # ⛔ The docstring promised an unmodelled quoting form became a cannot-run. It did not: a bare
+    # integer inside a SINGLE-quoted string classifies fine, so the reviewer's hook reported
+    # handled {0,3,5,6} / sound / verdict empty / exit 0 while real bash dropped rc 5.
+    SINGLE = ("case \"$RC\" in\n"
+              "  3) PAYLOAD='stale, and this is a long message\n"
+              "  5) not an arm — inside the single-quoted payload\n"
+              "  it ends here' ;;\n"
+              "  *) : ;;\nesac\n")
+    case("a SINGLE-quoted payload's continuation is not an arm — round 3 B2",
+         handled_codes(case_block(SINGLE) or ""), {3})
+    case("...and the guard does not invent rc 5 from inside that string",
+         5 in handled_codes(case_block(SINGLE) or ""), False)
+    # ⛔ A COMMENT IS NOT CODE. An apostrophe in a comment put the machine into single-quote state
+    # on the LIVE hook, so the next arm head read as string content — measured, and the reason the
+    # soundness check refused twice before this was modelled.
+    COMMENTED = ('case "$RC" in\n  # the NAG\'s message is deduped\n  5) : ;;\n  *) : ;;\nesac\n')
+    case("an apostrophe in a COMMENT does not open a string",
+         handled_codes(case_block(COMMENTED) or ""), {5})
+    # ⛔ AND WHAT IS STILL NOT MODELLED MUST REFUSE, which is what makes the docstring true now.
+    case("ANSI-C quoting is refused, not guessed at",
+         len(unmodelled_quoting("  3) PAYLOAD=$'a\\nb' ;;\n")), 1)
+    case("a heredoc is refused, not guessed at",
+         len(unmodelled_quoting("  3) cat <<EOF\nstuff\nEOF\n")), 1)
+    case("the live shape uses neither, so it is not refused",
+         unmodelled_quoting(case_block(HOOK_OK) or ""), [])
+
+    # ── round 3 H1 — the CATCH-ALL bound was left at two spaces when M1 freed the arm reader ──
+    # ⚠ THE CATCH-ALL'S BODY CARRIES THE GUARD, and that is what makes this fixture SENSITIVE.
+    # Two earlier versions were INERT and each passed for an ambient reason: with nothing after
+    # `esac` the bound cannot matter (`case_block` already strips it), and with an empty catch-all
+    # body the last arm absorbing `*) : ;;` changes no answer. MEASURED both ways — only when the
+    # catch-all body holds `[ -n "$OUT" ]` does a broken bound swallow it and silence a true
+    # finding: fixed `[6]`, broken `[]`.
+    FOUR_STAR = ('case "$RC" in\n  6) PAYLOAD="x"\n     PAYLOAD="$PAYLOAD Detail: $OUT" ;;\n'
+                 '    *) [ -n "$OUT" ] && : ;;\nesac\n')
+    case("a four-space catch-all still bounds the last arm — round 3 H1",
+         unguarded_detail_arms(case_block(FOUR_STAR) or ""), [6])
+    case("...and a tab-indented catch-all does too",
+         unguarded_detail_arms(case_block(FOUR_STAR.replace("    *)", "\t*)")) or ""), [6])
+
+    # ── round 3 M4 — the label and $OUT need not be ADJACENT ─────────────────────────────────
+    SPLIT = ('case "$RC" in\n  5) PAYLOAD="x. Detail:"\n     PAYLOAD="$PAYLOAD $OUT" ;;\n'
+             '  *) : ;;\nesac\n')
+    case("a Detail: promise split across two statements is still caught — round 3 M4",
+         unguarded_detail_arms(case_block(SPLIT) or ""), [5])
+    case("...and ${OUT} counts as a reference too",
+         unguarded_detail_arms(case_block(SPLIT.replace("$OUT", "${OUT}")) or ""), [5])
+    # ⚠ THE ADJACENT NEGATIVE: an arm mentioning a label but never $OUT promises nothing.
+    case("an arm with a label and no $OUT is not a problem",
+         unguarded_detail_arms(case_block('case "$RC" in\n  5) PAYLOAD="no Detail: here" ;;\n  *) : ;;\nesac\n') or ""), []),
 
     # ── verdict ────────────────────────────────────────────────────────────────────────────
     D = {"OK": 0, "CANNOT_RUN": 2, "STALE_CACHE": 3, "BAD_RESPONSE": 4,
