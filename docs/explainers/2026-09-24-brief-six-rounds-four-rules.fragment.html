@@ -1,0 +1,405 @@
+<title>Six rounds for four rules</title>
+<style>
+:root{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#8a857c; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#8a857c; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}}
+:root[data-theme="dark"]{
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+/* SIZE carries hierarchy. Headings are LIGHTER than body-bold, not heavier. */
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h)}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+/* BOLD IS A LABEL, NOT A SHOUT — weight only, a neutral tone, never a hue */
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+/* TERMINAL TEXTURE — inline code is a raised pill, and it carries the visual variety */
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em;white-space:nowrap}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+</style>
+<div class="shell">
+
+<h1>Six rounds for four rules</h1>
+<p class="sub">Why a change scoped as one review round took six, plus an architecture review — and what the machinery did about it.</p>
+<p class="asof">as of master <code>91f38afe</code> · 2026-09-24 · subject: PR #345 (backlog #177)</p>
+
+<div class="pin">
+<p style="margin:0"><b>The reading chosen.</b> You asked about “PR&nbsp;#345”. Its diff is four rules in a documentation file; a walkthrough of it would teach almost nothing. This page explains the <b>mechanism the PR accidentally demonstrated</b> instead. If you wanted a line-by-line walkthrough of the change, that is <code>explain-diff</code>, not this.</p>
+</div>
+
+<div class="howto">
+<h4>Reading and asking</h4>
+<!-- STATIC and correct with JS disabled; the lifted tray's script sharpens it to the
+     live/file wording. Its CSS and JS ship INSIDE that tray, so a page that omits this
+     markup gets a styled, scripted element that never exists. Measured absent on THIS
+     page by the §5b affordance probe before handover; the dashboard had the same defect
+     2026-09-14, and the delivery contract names it. -->
+<p style="margin:.2rem 0 .6rem"><span id="modechip">served &rarr; Send works &middot; opened as a file &rarr; Send copies instead</span></p>
+<ul>
+<li>This page lives at <b><code>http://127.0.0.1:7391/latest</code></b>, which always points at the newest explainer.</li>
+<li><b>To ask a question:</b> select any text, or hover a heading, → click <b>ask</b> → type → <b>Send</b>. Then say <b>“read my questions”</b> in the session and the answer is written into the page, under the section you asked from.</li>
+<li><b>If that URL does not load:</b> run <code>python3 scripts/explainer-serve.py</code> from the repo. It is safe to run twice. A reboot stops the server, which is the one moment you will need this.</li>
+<li>A <code>file://</code> copy of this page reads perfectly well offline. It only loses the <b>Send</b> button.</li>
+</ul>
+</div>
+
+<nav class="toc">
+<b>Contents</b>
+<ol>
+<li><a href="#what">What actually happened</a></li>
+<li><a href="#seq">The spine: five fixes, each narrowing to the last shape seen</a></li>
+<li><a href="#why">Why a pattern could never terminate this</a></li>
+<li><a href="#machine">What the machinery did — the trigger fired by itself</a></li>
+<li><a href="#root">The root cause, and why it inverts the usual question</a></li>
+<li><a href="#shape">The terminating move: a shape, not a wider pattern</a></li>
+<li><a href="#red">The gate that was red for four rounds while being called green</a></li>
+<li><a href="#filed">What was filed, and the one finding that ranked it</a></li>
+<li><a href="#worth">What it cost, and whether it was worth it</a></li>
+<li><a href="#table">Measured vs inferred</a></li>
+</ol>
+</nav>
+
+<h2 id="what">1 · What actually happened</h2>
+
+<p class="lede">PR #345 adopts two sections of an internal study into the project’s standing rules. The study had found that a large share of what reviewers were catching were not faults in the code but <b>claims the author had never checked</b> — an asserted line count that had gone the other way, a file count copied into three further places, “the class is closed” asserted twice over instance fixes.</p>
+
+<p>So the PR adds four author-side rules. The first is: <b>no number unless you measured it in this session.</b></p>
+
+<p>The repo’s own decision procedure scoped the change as <b>one review round</b> — it is prose-only, and <code>scripts/check-review-decision.py</code> keys that decision on the changed path set rather than on judgement. It took six, and a Phase 6 architecture review in the middle.</p>
+
+<div class="wrap">
+<table>
+<thead><tr><th>Round</th><th>Half</th><th>Findings</th><th>Fix-induced</th></tr></thead>
+<tbody>
+<tr><td>r1</td><td>Claude + Codex, concurrent</td><td>2 High · 6 Medium · 5 Low <span class="cite">(+ Codex 1M/1L; overlap 1 of 13)</span></td><td>7</td></tr>
+<tr><td>r2</td><td>Codex, on the fold</td><td>1 Medium</td><td>1</td></tr>
+<tr><td>r3</td><td>Claude</td><td>1 High · 1 Medium · 1 Low</td><td>3</td></tr>
+<tr><td colspan="4" style="background:var(--need-bg)"><b>⚑ Thrashing trigger fires → Phase 6 architecture review</b></td></tr>
+<tr><td>r4</td><td>Codex</td><td>1 <b>Blocking</b> · 1 High</td><td>2</td></tr>
+<tr><td>r5</td><td>Claude</td><td>1 <b>Blocking</b> · 1 High · 2 Medium</td><td>4</td></tr>
+<tr><td>r6</td><td>Codex, on the merging tree</td><td><span class="m">CONVERGED — none</span></td><td>0</td></tr>
+</tbody>
+</table>
+</div>
+
+<p class="cite">Counts read back from the YAML headers of <code>docs/reviews/coordinator/velocity-177-r{1..6}-coordinator.md</code> on master.</p>
+
+<div class="stop">
+<b>The uncomfortable part, first rather than buried.</b> Both High findings in round 1 were the coordinator’s <em>own unverified claims</em> — inside a change whose entire content is rules against unverified claims. One asserted that a practice “caught a Blocking on its first use”; the review document it named says, in a paragraph written to pre-empt exactly that attribution, that the finding rested on a different measurement entirely.
+</div>
+
+<h2 id="seq">2 · The spine: five fixes, each narrowing to the last shape seen</h2>
+
+<p class="lede">This is the whole page in two sentences. <b>Five consecutive fixes were each individually correct. Each one narrowed to the form of defect it had just been shown</b> — and the next instance arrived wearing a different spelling.</p>
+
+<ol class="seq">
+<li><span class="form">**34**</span> — bolded digits<span class="note">A check for surviving wrong numbers matched only the <b>bolded</b> form. Two of three survivors were unbolded.</span></li>
+<li><span class="form">34</span> — any digits<span class="note">Widened to all digits. Missed the next one entirely, because it was not written in digits.</span></li>
+<li><span class="form">“the fifteen schema gates”</span> — a number as a word<span class="note">A count of the repository, spelled in letters, inside the governing rule. Round 4, Blocking.</span></li>
+<li><span class="form">check-merge-ready.py:52-55</span> — a line locator<span class="note">A citation that drifts the moment the file is edited. Replaced with the symbol name.</span></li>
+<li><span class="form">“Rule 3 twenty lines below”</span> — a document-relative position<span class="note">Same class again, now measuring the document rather than the repository.</span></li>
+<li class="fix"><span class="form">A shape, not a pattern</span><span class="note">Round 4 stopped widening and changed the <b>kind</b> of fix. Round 5 tested it and found the rule bodies clean — no sixth spelling.</span></li>
+</ol>
+
+<div class="flag">
+<b>Any single fix here looks like diligence. The sequence looks like a wrong instrument.</b> That difference is legible only in aggregate, which is precisely why no individual round caught it and why the repo has a mechanical trigger for the shape rather than relying on someone noticing.
+</div>
+
+<h2 id="why">3 · Why a pattern could never terminate this</h2>
+
+<p>The obvious repair — “write a check that finds numbers in prose” — is not merely unattractive here. It is <b>already refuted, three times over, with measurements on record.</b></p>
+
+<p>The repo’s existing rule <i>Qualify every number in prose</i> records the syntactic hunt being tried at every scope that could carry it, and rejected:</p>
+
+<div class="wrap">
+<table>
+<thead><tr><th>Scope</th><th>Bare <code>#N</code> found</th><th>Verdict recorded</th></tr></thead>
+<tbody>
+<tr><td>all of <code>docs/</code></td><td><b>1,556</b> of 2,130</td><td>a gate firing 1,556 times is disabled the same day</td></tr>
+<tr><td>added lines on one branch</td><td><b>24</b></td><td>~90% false positives</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>And it reproduced <em>again</em>, during this work, on the very section being repaired. A sweep for digits, number-words and positional tokens over that section flagged <b>most of its lines</b> — dates, PR ids, backlog ids, rule numbers, row references, and the word “one” used as a pronoun — against a handful of genuinely repo-tracking expressions.</p>
+
+<blockquote>A syntactic proxy for “is this reference resolvable?” is the wrong instrument; the property is <b>semantic</b>.</blockquote>
+
+<p>The repo had also already written down the terminating move for this exact signature, in a different component: <b>refuse what cannot be classified, rather than widening the pattern.</b> That line existed before this branch started and was not reached for until round four.</p>
+
+<h2 id="machine">4 · What the machinery did — the trigger fired by itself</h2>
+
+<p>The project arms a Phase 6 architecture review on <b>thrashing</b>, defined as: two consecutive rounds carrying findings <em>caused by the previous round’s own fix</em>, in one component.</p>
+
+<p>Crucially, that is not a judgement someone makes. Each round’s coordinator document carries a small machine-readable header, and the decision tool computes the verdict from those records:</p>
+
+<pre><code>$ python3 scripts/check-review-decision.py
+ARCHITECTURE_REVIEW — thrashing: 'number-populations' carried fix-induced
+findings in r2 and r3
+  branch=velocity-177  scope=one-round  rounds=3  tree_reviewed=True</code></pre>
+
+<div class="good">
+<b>Why this design matters more than the verdict.</b> The party whose fixes caused the thrashing is the same party who would otherwise decide whether thrashing occurred. Deriving it from recorded evidence removes that conflict — and makes talking yourself out of it require going back and editing the evidence, which is visible. The repo’s rule adds one line on top: <b>the firing is not to be litigated.</b> That correction was itself bought by an episode where arguing the trigger’s wording cost three rounds of being technically right.
+</div>
+
+<p>At the end of round 6 the same tool returned <code>STOP — converged — a round saw the merging tree</code>. <span class="cite">That output was recorded during the session; it cannot be re-executed now, because the verdict is branch-scoped and the branch was deleted at merge.</span></p>
+
+<h2 id="root">5 · The root cause, and why it inverts the usual question</h2>
+
+<p>Every Phase 6 review here is obliged to ask: <i>“what did we decide this milestone that isn’t written down?”</i></p>
+
+<p class="lede">The answer was: <b>it was written down.</b> Three days earlier.</p>
+
+<p><code>CONTEXT.md</code> line 119, added in commit <code>5ffe6017</code> on 2026-09-21, after that same glossary was found claiming one number while the live guard printed another:</p>
+
+<blockquote>The number is <b>removed rather than corrected</b> — it had no owner, and this file is inside the corpus it describes, so any figure here is stale at the commit that writes it.</blockquote>
+
+<p>That is a complete, correct, general principle. It is also, operationally, invisible:</p>
+
+<div class="wrap">
+<table>
+<thead><tr><th>Question</th><th>Answer</th></tr></thead>
+<tbody>
+<tr><td>Is it an ADR?</td><td><b>No.</b> None of the thirteen files under <code>docs/adr/</code> mentions it</td></tr>
+<tr><td>Does any process document point at it?</td><td><b>No</b> — though it <em>is</em> restated in a roadmap section, found by round 4</td></tr>
+<tr><td>Does any guard detect a newly pinned figure?</td><td><b>No</b></td></tr>
+<tr><td>Days between the decision and this thrashing</td><td><b>3</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="flag">
+<b>The gap is between <em>recorded</em> and <em>findable</em>.</b> A principle whose only homes are a parenthesis inside a glossary entry about something else, and a status line in a roadmap, is a principle nobody writing a number will meet. Three rounds, two reviewers and four repair attempts were spent rediscovering it one instance at a time. Every finding was correct. Every fix was correct. None could terminate.
+</div>
+
+<div class="stop">
+<b>And the review overstated its own finding.</b> Its first draft said the decision’s <em>only</em> home was that parenthesis. Round 4 found the second home with a search the review had not run — an asserted claim, inside a review about asserted claims. Corrected in place; the narrower statement survives.
+</div>
+
+<h2 id="shape">6 · The terminating move: a shape, not a wider pattern</h2>
+
+<p>Round 4 stopped widening the pattern and changed what kind of thing the fix was. The rule section now declares an invariant over itself:</p>
+
+<pre><code>Scope: this section — its preamble and the bodies of its rules.
+Within it, three forms are refused:
+
+  1. a count of anything in this repository, in digits or in words —
+     including a count of this section's own contents;
+  2. a file:line locator where the name of the symbol, constant or
+     comment would serve;
+  3. a document-relative position — "twenty lines below".
+
+Everything else stays, including quotations of code and
+cross-references by name.</code></pre>
+
+<p>Two refinements came from round 5, and both matter:</p>
+
+<ul>
+<li><b>The enumeration is the test; the prose sentence is only its reason.</b> An earlier draft led with “makes no claim about the repository’s contents”. Read as the criterion, that forbids three expressions the rules actually need — including a verbatim quotation of a guard’s own comment. Worse, the repo’s review method <em>mandates</em> quoting code with a <code>file:line</code>. <b>A criterion that condemns the project’s own standing rule is the wrong criterion.</b></li>
+<li><b>The scope is this section, not the repository.</b> The first version said “a governing rule’s body”, which reads either as this section (no reach) or as every rule in the repo (condemning documents that legitimately cite lines). Widening it is a real question that needs an audit of what it would condemn — filed, not asserted.</li>
+</ul>
+
+<div class="good">
+<b>Why a shape terminates where a pattern cannot.</b> A pattern has to anticipate every spelling of the defect, and the defect supplies a new spelling each round. A shape says what the text may <em>contain</em>, so there is nothing left to outrun. The preamble’s count of its own rules — the one expression that had already rotted once, and that round 4’s fix <em>re-pinned</em> — is now a list rather than a count. <b>A list cannot disagree with its own contents.</b>
+</div>
+
+<h2 id="red">7 · The gate that was red for four rounds while being called green</h2>
+
+<p>Round 5 found something unrelated to numbers and worse than any of them: a <b>required CI check had been failing for four rounds</b>, and the session had been reporting CI as green.</p>
+
+<p>The cause is two grammars for one concern:</p>
+
+<div class="wrap">
+<table>
+<thead><tr><th>Source</th><th>Says a review gap is recorded as</th></tr></thead>
+<tbody>
+<tr><td><code>docs/round-header-template.md:29</code></td><td><code>halves.&lt;name&gt;</code> — “<code>ran</code>, or a string starting <code>GAP:</code>”</td></tr>
+<tr><td><code>scripts/check-review-rounds.py:86-88</code></td><td>a line-initial <code>REVIEW GAP: &lt;half&gt; — &lt;reason&gt;</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<p><b>Following the documented template puts a branch in violation of the enforced gate.</b> Every round document on this branch used the template’s form.</p>
+
+<div class="stop">
+<b>The second failure is the more instructive one.</b> The gate <em>was</em> run — at round 1, before any round document containing a gap existed — and it returned 0. That result was then carried forward across four rounds. The claim was not invented; it was true when made, and then <b>outlived its subject</b>. That is a distinct failure from asserting something unchecked, and harder to notice, because the check really did run and really did pass. The project’s most-recorded lesson covers it exactly: <b>a green is a claim about the tree it ran on.</b>
+</div>
+
+<h2 id="filed">8 · What was filed, and the one finding that ranked it</h2>
+
+<p>Five backlog rows came out of this, all aimed at the same root cause — the decision is recorded and unfindable — and each was written with its own <em>weakness</em> stated, not only its case.</p>
+
+<div class="wrap">
+<table>
+<thead><tr><th>Row</th><th>Work</th><th>The weakness written into it</th></tr></thead>
+<tbody>
+<tr><td><b>#179</b></td><td>An ADR for the principle</td><td>Read at architecture-review time, not when a number is typed</td></tr>
+<tr><td><b>#180</b></td><td>A pointer from the section about numbers</td><td>A pointer is easy to write and easy to stop reading</td></tr>
+<tr><td><b>#181</b></td><td>A named term in the glossary</td><td>A term with no rule behind it is vocabulary</td></tr>
+<tr><td><b>#182</b> 🔴</td><td>The two review-gap grammars; one wins, the loser is <b>deleted</b>, not deprecated</td><td>—</td></tr>
+<tr><td><b>#183</b></td><td>The spine says <b>thirteen</b> schema gates in one row and <b>fifteen</b> in another</td><td>—</td></tr>
+</tbody>
+</table>
+</div>
+
+<p class="cite">Verified on master: <code>docs/dev-process.md:142</code> reads “all THIRTEEN schema gates”; <code>docs/dev-process.md:163</code> reads “the fifteen schema gates, in CI”.</p>
+
+<div class="good">
+<b>#183 is worth more as evidence than as work, and that is why it was filed rather than quietly fixed.</b> Three candidates all targeted the same cause and nothing distinguished them. #183 does: nobody writing a row in the spine document is reading the section about qualifying numbers, so <b>#180’s pointer would never have reached it</b>. Only an ADR — which the Phase 6 gate <em>obliges</em> a reviewer to read — catches that class. The ranking now rests on a demonstrated hit rather than on preference.
+</div>
+
+<p>It is also a live instance of the principle itself, sitting in the most-read document in the repository. Its fix is written as <b>remove the count, do not correct it</b> — because correcting re-pins a figure that will rot again, which is exactly the move round 5 caught round 4’s fix making.</p>
+
+<h2 id="worth">9 · What it cost, and whether it was worth it</h2>
+
+<p>Six rounds is far past the one round the decision procedure assigned. Measured from the GitHub Actions API across two successful runs of the required job:</p>
+
+<div class="wrap">
+<table>
+<thead><tr><th>Step</th><th>Run A</th><th>Run B</th><th>Share</th></tr></thead>
+<tbody>
+<tr><td><b>Mutation sweep</b></td><td>554s</td><td>542s</td><td><b>~81%</b></td></tr>
+<tr><td><b>Unit + component tests</b> (2,892 cases)</td><td>27s</td><td>26s</td><td>~4%</td></tr>
+<tr><td>Everything else (typecheck, installs, ~30 guards)</td><td>~99s</td><td>~105s</td><td>~15%</td></tr>
+<tr><td><b>verify total</b></td><td><b>680s</b></td><td><b>673s</b></td><td></td></tr>
+<tr><td><code>schema-gates</code> (concurrent workflow)</td><td>103s</td><td>—</td><td>0 wall clock</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The sweep dominates because it does something different in kind from a test suite. Each mutation edits a delivered script and re-runs <b>that script’s entire self-test in a fresh Python interpreter</b> <span class="cite">(<code>scripts/check-plan-code.py:501</code>)</span>. With 1,030 mutations, that is roughly <b>87,600 case-executions</b> against the unit suite’s 2,892 — about 30× the work, at 538 ms per mutation versus 9.3 ms per test case.</p>
+
+<div class="flag">
+<b>That estimate carries its method, per the rule this PR adopts.</b> 87,600 is <em>not</em> a measurement. It joins each mutation manifest’s entry count to the case count each script declares in its own docstring, matched by a regex that resolved <b>941 of 1,030</b> mutations. The remaining 89 had no count the pattern could find, so the true figure is somewhat higher.
+</div>
+
+<p><b>The process isolation is the cost and also the point.</b> A mutation’s claim is “this guard would go red if its subject broke”, and proving it needs the mutated code loaded fresh — a shared interpreter is precisely how a mutation gets masked. The project already records paying for a related mistake: a control must be run <em>twice</em>, because a tree that goes bad partway makes every later suite exit non-zero, recorded as a catch indistinguishably from a real one.</p>
+
+<p><b>Was six rounds worth it?</b> An honest split:</p>
+
+<ul>
+<li><b>Yes for rounds 4–6.</b> They produced the shape invariant, and found a required CI gate that had been red for four rounds under a green report. Neither was reachable by more care in rounds 1–3.</li>
+<li><b>No for rounds 2–3 as they were spent.</b> Each corrected a real defect and neither could terminate, because the principle that would have ended them existed and was unreachable from where the work was happening. That is the expense the five filed rows exist to prevent recurring.</li>
+</ul>
+
+<h2 id="table">10 · Measured vs inferred</h2>
+
+<p>Prose cannot distinguish these and the difference is usually what a reader came for.</p>
+
+<div class="wrap">
+<table>
+<thead><tr><th>Claim</th><th>Status</th><th>How</th></tr></thead>
+<tbody>
+<tr><td>Round counts, severities, fix-induced flags</td><td class="m">MEASURED</td><td>Parsed from the YAML headers of the six coordinator documents on master</td></tr>
+<tr><td>The thrashing verdict was computed, not asserted</td><td class="m">MEASURED</td><td><code>check-review-decision.py</code> output, recorded in session</td></tr>
+<tr><td><code>STOP — converged — a round saw the merging tree</code></td><td class="i">RECORDED, NOT RE-RUN</td><td>Branch-scoped; the branch was deleted at merge, so it cannot be re-executed now</td></tr>
+<tr><td>The 2026-09-21 decision and its wording</td><td class="m">MEASURED</td><td><code>CONTEXT.md:119</code>; <code>git log 5ffe6017</code> dates it 2026-09-21</td></tr>
+<tr><td>It appears in no ADR</td><td class="m">MEASURED</td><td>Search across the thirteen files in <code>docs/adr/</code></td></tr>
+<tr><td>Two grammars for the review gap</td><td class="m">MEASURED</td><td><code>docs/round-header-template.md:29</code> vs <code>scripts/check-review-rounds.py:86-88</code></td></tr>
+<tr><td>CI was red for four rounds under a green report</td><td class="m">MEASURED</td><td><code>gh pr checks</code> showed <code>verify fail</code>; adding the prose lines turned it green</td></tr>
+<tr><td>Thirteen vs fifteen schema gates in the spine</td><td class="m">MEASURED</td><td><code>docs/dev-process.md:142</code> and <code>:163</code></td></tr>
+<tr><td>CI step timings and shares</td><td class="m">MEASURED</td><td>Actions API, two successful runs of the required job</td></tr>
+<tr><td>Each mutation re-runs a whole self-test in a fresh interpreter</td><td class="m">MEASURED</td><td><code>scripts/check-plan-code.py:501</code></td></tr>
+<tr><td>~87,600 case-executions in the sweep</td><td class="i">ESTIMATE</td><td>Manifest counts × docstring-declared case counts; resolved 941 of 1,030 — a lower bound</td></tr>
+<tr><td>1,556 / 24 false-positive figures for the syntactic hunt</td><td class="i">QUOTED FROM THE REPO</td><td>Recorded in <i>Qualify every number in prose</i>; measured in an earlier session, not re-run here</td></tr>
+<tr><td>“Any single fix looks like diligence; the sequence looks like a wrong instrument”</td><td class="i">INFERRED</td><td>An interpretation of the five-round sequence, not an observation</td></tr>
+<tr><td>Whether the five filed rows will prevent recurrence</td><td class="i">UNVERIFIED</td><td>Each row carries a falsifier; none has been tested yet</td></tr>
+</tbody>
+</table>
+</div>
+
+<p class="cite" style="margin-top:2rem">Page horizon: master <code>91f38afe</code>, 2026-09-24. Claims about the branch were verified before it was deleted at merge; claims about master were re-verified on master while writing this.</p>
+
+</div>

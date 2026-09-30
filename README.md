@@ -147,6 +147,32 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+## Shared project knowledge (run this once per clone)
+
+Two bodies of hard-won knowledge live in this repo but are read by tooling from paths **derived
+from your absolute checkout path**, so they differ on every machine. Two commands link them:
+
+```bash
+./scripts/bootstrap-memory.sh       # links ~/.claude/projects/<slug>/memory -> docs/memory/
+./scripts/bootstrap-explainers.sh   # links ~/explainers -> docs/explainers/
+./scripts/regen-pages.sh            # rebuilds the derived pages (~21s)
+```
+
+- **`docs/memory/`** — 146 entries of project and craft lessons, each carrying a `FIRES-WHEN:`
+  trigger. Measured 2026-09-29: 86% project-or-craft knowledge, 14% personal preference. Until
+  2026-09-30 this lived outside any repository, on one machine, and no teammate could obtain it.
+- **`docs/explainers/`** — the authored topic and brief pages. These have **no source in git**: the
+  HTML *is* the artefact. Serve them with `python3 scripts/explainer-serve.py`.
+
+⛔ The four **derived** pages (`dashboard`, `goals`, `backlog-table`, `features`) are deliberately
+gitignored. Generators rebuild them from tracked sources in ~21s, and a committed copy would be
+stale the moment its source moved — a confident page describing a world that has moved on. Run
+`scripts/regen-pages.sh` instead of committing them.
+
+⚠ If the memory symlink is missing, nothing errors loudly — the harness creates an empty directory
+and every recall silently reads a corpus of zero entries. `scripts/check-memory-link.py` is the
+guard for that, and it runs in CI.
+
 ## Environment variables
 
 Copy `.env.local.example` to `.env.local` and set:

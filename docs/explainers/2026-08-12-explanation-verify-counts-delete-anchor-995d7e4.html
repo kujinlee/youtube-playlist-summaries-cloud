@@ -1,0 +1,819 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PR #94 — delete one field, measure the other</title>
+<style>
+:root{
+  --bg:#fcfbf9; --panel:#ffffff; --ink:#191817; --ink2:#4a4640; --ink3:#7d766c;
+  --rule:#e6e1d8; --rule2:#d3ccbf;
+  --amber:#b26a12; --amber-bg:#fdf3e3; --amber-br:#f0d5a8;
+  --teal:#0f6f5c;  --teal-bg:#e8f6f2;  --teal-br:#a9ddd0;
+  --crim:#b02a37;  --crim-bg:#fdeef0;  --crim-br:#f3c2c8;
+  --indigo:#3f4fa8; --indigo-bg:#eef0fc; --indigo-br:#c3caf2;
+  --violet:#7a3f9d; --violet-bg:#f7eefc; --violet-br:#e0c4f0;
+  --code-bg:#f6f3ed; --code-br:#e6e1d8;
+  --c-key:#a03c8a; --c-str:#0f6f5c; --c-com:#96907f; --c-fn:#3f4fa8; --c-num:#b26a12; --c-typ:#0d6b8a;
+  --shadow:0 1px 3px rgba(60,50,30,.07), 0 6px 18px rgba(60,50,30,.05);
+}
+@media (prefers-color-scheme:dark){
+:root{
+  --bg:#131318; --panel:#1b1b22; --ink:#eceaf2; --ink2:#b9b4c2; --ink3:#8a8496;
+  --rule:#2e2d38; --rule2:#413f4e;
+  --amber:#e8a860; --amber-bg:#2a2015; --amber-br:#4d3a1e;
+  --teal:#5cc7ab;  --teal-bg:#12241f;  --teal-br:#1e463b;
+  --crim:#f08c96;  --crim-bg:#2a1519;  --crim-br:#4e2229;
+  --indigo:#98a5f5; --indigo-bg:#191c33; --indigo-br:#2e3560;
+  --violet:#c99bea; --violet-bg:#241734; --violet-br:#412a5c;
+  --code-bg:#1e1e26; --code-br:#2e2d38;
+  --c-key:#e08ccd; --c-str:#7fd6b8; --c-com:#726c80; --c-fn:#98a5f5; --c-num:#e8a860; --c-typ:#6cc4e0;
+  --shadow:none;
+}
+}
+:root[data-theme="dark"]{
+  --bg:#131318; --panel:#1b1b22; --ink:#eceaf2; --ink2:#b9b4c2; --ink3:#8a8496;
+  --rule:#2e2d38; --rule2:#413f4e;
+  --amber:#e8a860; --amber-bg:#2a2015; --amber-br:#4d3a1e;
+  --teal:#5cc7ab;  --teal-bg:#12241f;  --teal-br:#1e463b;
+  --crim:#f08c96;  --crim-bg:#2a1519;  --crim-br:#4e2229;
+  --indigo:#98a5f5; --indigo-bg:#191c33; --indigo-br:#2e3560;
+  --violet:#c99bea; --violet-bg:#241734; --violet-br:#412a5c;
+  --code-bg:#1e1e26; --code-br:#2e2d38;
+  --c-key:#e08ccd; --c-str:#7fd6b8; --c-com:#726c80; --c-fn:#98a5f5; --c-num:#e8a860; --c-typ:#6cc4e0;
+  --shadow:none;
+}
+:root[data-theme="light"]{
+  --bg:#fcfbf9; --panel:#ffffff; --ink:#191817; --ink2:#4a4640; --ink3:#7d766c;
+  --rule:#e6e1d8; --rule2:#d3ccbf;
+  --amber:#b26a12; --amber-bg:#fdf3e3; --amber-br:#f0d5a8;
+  --teal:#0f6f5c;  --teal-bg:#e8f6f2;  --teal-br:#a9ddd0;
+  --crim:#b02a37;  --crim-bg:#fdeef0;  --crim-br:#f3c2c8;
+  --indigo:#3f4fa8; --indigo-bg:#eef0fc; --indigo-br:#c3caf2;
+  --violet:#7a3f9d; --violet-bg:#f7eefc; --violet-br:#e0c4f0;
+  --code-bg:#f6f3ed; --code-br:#e6e1d8;
+  --c-key:#a03c8a; --c-str:#0f6f5c; --c-com:#96907f; --c-fn:#3f4fa8; --c-num:#b26a12; --c-typ:#0d6b8a;
+  --shadow:0 1px 3px rgba(60,50,30,.07), 0 6px 18px rgba(60,50,30,.05);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:400 17.5px/1.68 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;-webkit-text-size-adjust:100%}
+.wrap{max-width:50rem;margin:0 auto;padding:2rem 1.25rem 6rem}
+.mast{border:1px solid var(--rule);border-radius:14px;background:var(--panel);box-shadow:var(--shadow);
+  padding:1.6rem 1.5rem;margin-bottom:1.6rem;background-image:linear-gradient(180deg,var(--teal-bg),transparent 42%)}
+.eyebrow{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:.7rem;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--teal);font-weight:700;margin:0 0 .55rem}
+h1{font-size:2.3rem;line-height:1.12;margin:0 0 .5rem;letter-spacing:-.022em;font-weight:600}
+.dek{color:var(--ink2);font-size:1.06rem;margin:0;line-height:1.55}
+.meta{margin-top:1.2rem;padding-top:1rem;border-top:1px dashed var(--rule2);display:grid;
+  grid-template-columns:max-content 1fr;gap:.32rem 1.1rem;
+  font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:.745rem;line-height:1.5}
+.meta dt{color:var(--ink3);white-space:nowrap} .meta dd{margin:0;color:var(--ink2)}
+.meta dd b{color:var(--ink);font-weight:600}
+.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(8.2rem,1fr));gap:.6rem;margin:0 0 2rem}
+.stat{border:1px solid var(--rule);border-radius:10px;background:var(--panel);padding:.7rem .8rem;box-shadow:var(--shadow)}
+.stat .v{font-family:ui-monospace,monospace;font-size:1.32rem;font-weight:700;line-height:1.1;letter-spacing:-.02em}
+.stat .l{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.665rem;text-transform:uppercase;
+  letter-spacing:.075em;color:var(--ink3);margin-top:.24rem;line-height:1.35}
+.stat.a .v{color:var(--amber)} .stat.t .v{color:var(--teal)}
+.stat.c .v{color:var(--crim)} .stat.i .v{color:var(--indigo)} .stat.v2 .v{color:var(--violet)}
+nav.toc{border:1px solid var(--rule);border-left:4px solid var(--indigo);border-radius:0 12px 12px 0;
+  background:var(--panel);padding:1rem 1.2rem;margin:0 0 2.6rem;box-shadow:var(--shadow)}
+nav.toc .h{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.665rem;text-transform:uppercase;
+  letter-spacing:.1em;color:var(--indigo);font-weight:700;margin-bottom:.55rem}
+nav.toc ol{margin:0;padding-left:0;list-style:none;counter-reset:t;font-size:.94rem}
+nav.toc li{counter-increment:t;margin:.32rem 0;padding-left:2rem;position:relative}
+nav.toc li::before{content:counter(t);position:absolute;left:0;top:.12rem;font-family:ui-monospace,monospace;
+  font-size:.7rem;font-weight:700;color:var(--indigo);background:var(--indigo-bg);border:1px solid var(--indigo-br);
+  border-radius:5px;width:1.35rem;height:1.35rem;display:flex;align-items:center;justify-content:center}
+nav.toc a{color:var(--ink);text-decoration:none;border-bottom:1px solid transparent}
+nav.toc a:hover{border-bottom-color:var(--indigo)}
+h2{font-size:1.5rem;line-height:1.25;margin:3.4rem 0 1rem;letter-spacing:-.017em;font-weight:600;
+  padding-bottom:.45rem;border-bottom:2px solid var(--rule)}
+h2 .num{display:inline-block;font-family:ui-monospace,monospace;font-size:.82rem;font-weight:700;
+  color:var(--teal);background:var(--teal-bg);border:1px solid var(--teal-br);border-radius:6px;
+  padding:.1rem .45rem;margin-right:.55rem;vertical-align:.16em}
+h3{font-size:1.14rem;margin:2.1rem 0 .6rem;font-weight:600;letter-spacing:-.008em}
+h4{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.79rem;text-transform:uppercase;
+  letter-spacing:.075em;color:var(--ink3);margin:1.6rem 0 .5rem;font-weight:700}
+p{margin:0 0 1.05rem} a{color:var(--amber)}
+ul,ol{margin:0 0 1.1rem;padding-left:1.35rem} li{margin:.34rem 0}
+code,kbd{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+p code,li code,td code,dd code{font-size:.845em;background:var(--code-bg);border:1px solid var(--code-br);
+  padding:.06em .34em;border-radius:4px;color:var(--ink)}
+.codewrap{margin:0 0 1.35rem;border:1px solid var(--code-br);border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
+.codehead{font-family:ui-monospace,monospace;font-size:.685rem;color:var(--ink3);background:var(--code-bg);
+  padding:.42rem .85rem;border-bottom:1px solid var(--code-br);display:flex;justify-content:space-between;
+  gap:1rem;align-items:center}
+.codehead .tag{font-weight:700;letter-spacing:.05em;text-transform:uppercase;font-size:.63rem;white-space:nowrap}
+.tag.new{color:var(--teal)} .tag.del{color:var(--crim)} .tag.un{color:var(--ink3)} .tag.aft{color:var(--amber)}
+pre{background:var(--code-bg);padding:.9rem 1rem;overflow-x:auto;white-space:pre;margin:0;-webkit-overflow-scrolling:touch}
+pre code{white-space:pre;font-size:.808rem;line-height:1.62;display:block;background:none;border:0;padding:0}
+.k{color:var(--c-key);font-weight:600} .s{color:var(--c-str)} .c{color:var(--c-com);font-style:italic}
+.f{color:var(--c-fn)} .n{color:var(--c-num)} .t{color:var(--c-typ)} .m{color:var(--ink3)}
+.hi{background:var(--amber-bg);display:inline-block;width:100%;box-shadow:inset 3px 0 0 var(--amber)}
+.hid{background:var(--crim-bg);display:inline-block;width:100%;box-shadow:inset 3px 0 0 var(--crim)}
+.call{border:1px solid var(--rule);border-left:4px solid var(--amber);border-radius:0 10px 10px 0;
+  background:var(--amber-bg);padding:.85rem 1.05rem;margin:0 0 1.35rem}
+.call .lab{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.665rem;text-transform:uppercase;
+  letter-spacing:.09em;font-weight:700;color:var(--amber);display:block;margin-bottom:.35rem}
+.call p:last-child{margin-bottom:0}
+.call.bad{border-left-color:var(--crim);background:var(--crim-bg);border-color:var(--crim-br)} .call.bad .lab{color:var(--crim)}
+.call.good{border-left-color:var(--teal);background:var(--teal-bg);border-color:var(--teal-br)} .call.good .lab{color:var(--teal)}
+.call.info{border-left-color:var(--indigo);background:var(--indigo-bg);border-color:var(--indigo-br)} .call.info .lab{color:var(--indigo)}
+.chip{display:inline-block;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.635rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:.06em;padding:.12rem .42rem;border-radius:5px;border:1px solid;
+  vertical-align:.09em;white-space:nowrap}
+.chip.hi2{color:var(--crim);background:var(--crim-bg);border-color:var(--crim-br)}
+.chip.md{color:var(--amber);background:var(--amber-bg);border-color:var(--amber-br)}
+.chip.lo{color:var(--indigo);background:var(--indigo-bg);border-color:var(--indigo-br)}
+.chip.ok{color:var(--teal);background:var(--teal-bg);border-color:var(--teal-br)}
+.chip.adr{color:var(--violet);background:var(--violet-bg);border-color:var(--violet-br);font-family:ui-monospace,monospace}
+figure{margin:0 0 1.7rem}
+figcaption{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.775rem;color:var(--ink3);margin-top:.6rem;
+  line-height:1.5;padding-left:.7rem;border-left:2px solid var(--rule2)}
+/* two-column verdict */
+.verdict{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin:0 0 1.5rem}
+.vcol{border:1px solid var(--rule);border-radius:11px;padding:.85rem .95rem;background:var(--panel);box-shadow:var(--shadow)}
+.vcol.del{border-color:var(--crim-br);background:var(--crim-bg)}
+.vcol.keep{border-color:var(--teal-br);background:var(--teal-bg)}
+.vcol .vh{font-family:ui-monospace,monospace;font-size:.7rem;font-weight:700;letter-spacing:.09em;
+  text-transform:uppercase;margin-bottom:.4rem}
+.vcol.del .vh{color:var(--crim)} .vcol.keep .vh{color:var(--teal)}
+.vcol .fieldname{font-family:ui-monospace,monospace;font-size:.83rem;color:var(--ink);margin-bottom:.5rem;font-weight:600;display:block}
+.vcol ul{margin:0;padding-left:1.05rem;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.79rem;line-height:1.5}
+.vcol li{margin:.26rem 0}
+/* failure ledger */
+.ledger{display:flex;flex-direction:column;gap:.4rem;margin:0 0 1.4rem}
+.fail{display:grid;grid-template-columns:4.4rem 1fr;gap:.7rem;align-items:stretch}
+.fail .who{border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:ui-monospace,monospace;
+  font-weight:700;font-size:.78rem;border:1px solid;color:var(--crim);background:var(--crim-bg);border-color:var(--crim-br)}
+.fail .what{border:1px solid var(--rule);border-radius:8px;background:var(--panel);padding:.55rem .8rem;
+  font-family:ui-sans-serif,system-ui,sans-serif;font-size:.815rem;line-height:1.5}
+.fail .what b{color:var(--crim)}
+.fail .kind{float:right;margin-left:.6rem}
+/* pipeline */
+.pipe{display:flex;gap:.5rem;align-items:stretch;flex-wrap:wrap}
+.pnode{flex:1 1 9rem;min-width:8.4rem;border:1px solid var(--rule);border-radius:10px;background:var(--panel);
+  padding:.62rem .75rem;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.775rem;line-height:1.45;box-shadow:var(--shadow)}
+.pnode b{display:block;font-family:ui-monospace,monospace;font-size:.72rem;margin-bottom:.25rem}
+.pnode .sub{color:var(--ink3);font-size:.71rem}
+.pnode.src{border-color:var(--indigo-br);background:var(--indigo-bg)} .pnode.src b{color:var(--indigo)}
+.pnode.gate{border-color:var(--teal-br);background:var(--teal-bg)} .pnode.gate b{color:var(--teal)}
+.arw{align-self:center;color:var(--ink3);font-family:ui-monospace,monospace;font-size:1.1rem}
+.tw{overflow-x:auto;margin:0 0 1.4rem;border:1px solid var(--rule);border-radius:10px;box-shadow:var(--shadow);-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.815rem;
+  line-height:1.5;min-width:36rem;background:var(--panel)}
+th,td{padding:.6rem .75rem;text-align:left;vertical-align:top;border-bottom:1px solid var(--rule)}
+th{background:var(--code-bg);font-size:.665rem;text-transform:uppercase;letter-spacing:.07em;color:var(--ink3);
+  font-weight:700;border-bottom:2px solid var(--rule2)}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--code-bg) 45%,transparent)}
+td .side{display:block;margin-bottom:.32rem} td .side:last-child{margin-bottom:0} td .side b{color:var(--indigo)}
+.consq{color:var(--crim)}
+.foot{margin-top:4.5rem;padding-top:1.1rem;border-top:2px solid var(--rule);font-family:ui-sans-serif,system-ui,sans-serif;
+  font-size:.775rem;color:var(--ink3);line-height:1.7}
+
+/* ── Ask tray (added 2026-08-13) ─────────────────────────────────────────────────────────────
+   Offline by construction: clipboard is a browser API, nothing is fetched or sent. The
+   destination is the Claude Code session that already holds this repo and this diff — not an
+   external provider, which would both leak private source and answer worse. */
+.askbtn{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.66rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:.06em;color:var(--violet);background:var(--violet-bg);
+  border:1px solid var(--violet-br);border-radius:5px;padding:.1rem .4rem;cursor:pointer;
+  vertical-align:.2em;margin-left:.5rem;opacity:0;transition:opacity .12s}
+h2:hover .askbtn,h3:hover .askbtn,h2 .askbtn:focus,h3 .askbtn:focus{opacity:1}
+@media (hover:none){.askbtn{opacity:.75}}
+#selask{position:absolute;z-index:60;display:none;font-family:ui-sans-serif,system-ui,sans-serif;
+  font-size:.72rem;font-weight:700;color:#fff;background:var(--violet);border:0;border-radius:6px;
+  padding:.3rem .6rem;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.25)}
+#tray{position:fixed;right:1rem;bottom:1rem;z-index:70;width:min(24rem,calc(100vw - 2rem));
+  max-height:min(30rem,70vh);display:none;flex-direction:column;background:var(--panel);
+  border:1px solid var(--violet-br);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.18);overflow:hidden}
+#tray[data-open]{display:flex}
+#trayhead{display:flex;align-items:center;gap:.5rem;padding:.55rem .75rem;background:var(--violet-bg);
+  border-bottom:1px solid var(--violet-br);font-family:ui-sans-serif,system-ui,sans-serif;
+  font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--violet)}
+#trayhead .grow{flex:1}
+#trayhead button{font:inherit;text-transform:none;letter-spacing:0;color:var(--violet);background:none;
+  border:1px solid var(--violet-br);border-radius:5px;padding:.12rem .4rem;cursor:pointer}
+#traylist{flex:1 1 auto;min-height:0;overflow-y:auto;padding:.6rem .7rem;display:flex;flex-direction:column;gap:.6rem}
+.qitem{border:1px solid var(--rule);border-radius:8px;background:var(--bg);padding:.5rem .6rem}
+.qitem .where{font-family:ui-monospace,monospace;font-size:.65rem;color:var(--violet);font-weight:700;
+  display:flex;gap:.4rem;align-items:baseline}
+.qitem .where .x{margin-left:auto;cursor:pointer;color:var(--ink3);border:0;background:none;font-size:.8rem;line-height:1}
+.qitem blockquote{margin:.35rem 0;padding-left:.5rem;border-left:2px solid var(--rule2);
+  font-size:.74rem;color:var(--ink3);font-family:ui-sans-serif,system-ui,sans-serif;line-height:1.45;
+  max-height:4.2rem;overflow:hidden}
+.qitem textarea{width:100%;min-height:2.6rem;resize:vertical;font:inherit;font-size:.8rem;
+  font-family:ui-sans-serif,system-ui,sans-serif;color:var(--ink);background:var(--panel);
+  border:1px solid var(--rule2);border-radius:6px;padding:.35rem .45rem;margin-top:.25rem}
+/* Column, not row: the previous row layout gave the hint flex:1 and the button no flex-shrink:0,
+   so in a 24rem tray the button was squeezed to a sliver. A full-width button cannot collapse. */
+#sentnote{display:none;margin:.6rem .7rem;padding:.6rem .7rem;border-radius:8px;border:1px solid var(--teal-br);
+  background:var(--teal-bg);color:var(--teal);font-family:ui-sans-serif,system-ui,sans-serif;font-size:.8rem;
+  line-height:1.5;font-weight:600}
+#sentnote[data-show]{display:block}
+#traybar{flex:0 0 auto;padding:.55rem .7rem;border-top:1px solid var(--rule);display:flex;
+  flex-direction:column;gap:.4rem;font-family:ui-sans-serif,system-ui,sans-serif;
+  font-size:.68rem;color:var(--ink3)}
+#traybar button{font:inherit;font-size:.78rem;font-weight:700;color:#fff;background:var(--violet);
+  border:0;border-radius:6px;padding:.45rem .7rem;cursor:pointer;width:100%;flex:0 0 auto;white-space:nowrap}
+#traybar button.secondary{color:var(--violet);background:var(--violet-bg);border:1px solid var(--violet-br)}
+#traybar button[data-done]{background:var(--teal)}
+.qitem .row button[data-done]{color:#fff;background:var(--teal);border-color:var(--teal)}
+#traybar .hint{line-height:1.35}
+.qitem .row{display:flex;gap:.4rem;align-items:center;margin-top:.3rem}
+.qitem .row button{flex:0 0 auto;white-space:nowrap;font-family:ui-sans-serif,system-ui,sans-serif;
+  font-size:.68rem;font-weight:700;color:var(--violet);background:var(--violet-bg);
+  border:1px solid var(--violet-br);border-radius:5px;padding:.25rem .55rem;cursor:pointer}
+.qitem .row .kbd{flex:1;font-size:.63rem;color:var(--ink3);text-align:right}
+#fab{position:fixed;right:1rem;bottom:1rem;z-index:69;font-family:ui-sans-serif,system-ui,sans-serif;
+  font-size:.74rem;font-weight:700;color:#fff;background:var(--violet);border:0;border-radius:999px;
+  padding:.55rem .9rem;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.2);display:none}
+#fab[data-show]{display:block}
+#toast{position:fixed;left:50%;bottom:1.2rem;transform:translateX(-50%);z-index:80;
+  font-family:ui-sans-serif,system-ui,sans-serif;font-size:.78rem;color:#fff;background:#222;
+  padding:.5rem .9rem;border-radius:8px;opacity:0;pointer-events:none;transition:opacity .18s}
+#toast[data-show]{opacity:.95}
+@media print{.askbtn,#tray,#fab,#selask,#toast{display:none!important}}
+
+
+/* ── How to read / how to ask (added 2026-08-13) ─────────────────────────────────────────────── */
+.howto{border:1px solid var(--violet-br);background:var(--violet-bg);border-radius:11px;
+  padding:.8rem 1rem;margin:0 0 2rem;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.82rem;
+  line-height:1.55;color:var(--ink2)}
+.howto b{color:var(--violet)}
+.howto .u{display:block;font-family:ui-monospace,monospace;font-size:.9rem;font-weight:700;
+  color:var(--violet);background:var(--panel);border:1px solid var(--violet-br);border-radius:7px;
+  padding:.45rem .65rem;margin:.5rem 0;word-break:break-all}
+.howto code{background:var(--panel);border:1px solid var(--violet-br);padding:.06em .34em;
+  border-radius:4px;font-size:.88em}
+.howto ol{margin:.4rem 0 0;padding-left:1.2rem}
+.howto li{margin:.22rem 0}
+.howto .mode{font-family:ui-monospace,monospace;font-size:.68rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.07em;padding:.1rem .4rem;border-radius:5px;border:1px solid}
+.howto .mode.live{color:var(--teal);background:var(--teal-bg);border-color:var(--teal-br)}
+.howto .mode.flat{color:var(--amber);background:var(--amber-bg);border-color:var(--amber-br)}
+@media (max-width:36rem){
+  body{font-size:16.5px} .wrap{padding:1.3rem .85rem 4rem}
+  h1{font-size:1.72rem} h2{font-size:1.28rem}
+  .meta{grid-template-columns:1fr;gap:.12rem} .meta dt{margin-top:.4rem}
+  .verdict{grid-template-columns:1fr} .fail{grid-template-columns:3.4rem 1fr}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow">Explainer · process infrastructure</p>
+  <h1>Delete one field, measure the other</h1>
+  <p class="dek">Two hand-maintained numbers sat side by side in the roadmap. One was a cache of something <code>git</code> already knew; the other was the only real claim on the line. They get opposite treatment, and the reason generalises.</p>
+  <dl class="meta">
+    <dt>Change</dt><dd><b>PR #94</b> — verify the roadmap's test counts; delete the PR anchor beside them</dd>
+    <dt>Base..Head</dt><dd>ade2549..995d7e4</dd>
+    <dt>Built</dt><dd>2026-08-13T05:36Z</dd>
+    <dt>Inspected</dt><dd><b>16 files</b> read, of which <b>9 were not in the diff</b></dd>
+    <dt>Not verified</dt><dd>The gate has never run on GitHub's runner against a <em>failing</em> suite; the CI ordering is argued from the YAML, not observed — see §6</dd>
+  </dl>
+</header>
+
+<div class="strip">
+  <div class="stat c"><div class="v">4</div><div class="l">ways one field<br>was wrong</div></div>
+  <div class="stat c"><div class="v">3 of 4</div><div class="l">were omissions,<br>not wrong values</div></div>
+  <div class="stat t"><div class="v">17</div><div class="l">self-test cases<br>in the new gate</div></div>
+  <div class="stat a"><div class="v">5</div><div class="l">mutations run,<br>1 equivalent</div></div>
+  <div class="stat i"><div class="v">13</div><div class="l">the drift nobody<br>ever noticed</div></div>
+  <div class="stat v2"><div class="v">6→8</div><div class="l">ratchet inventory,<br>corrected again</div></div>
+</div>
+
+
+<div class="howto" id="howto">
+  <span class="mode flat" id="howtomode">checking…</span>
+  <b>Read this at</b>
+  <span class="u">http://127.0.0.1:7391/latest</span>
+  <span id="howtobody">Always redirects to the newest explainer — bookmark it once and no filename ever
+  needs copying again. <code>/</code> lists them all.</span>
+  <ol>
+    <li><b>To ask a question:</b> select any text (or hover a heading) → <b>ask</b> → type → <b>Send</b>,
+        then tell the session <i>&ldquo;read my questions&rdquo;</i>.</li>
+    <li><b>If that URL does not load</b>, the little server is not running. Start it from the repo:
+        <code>python3 scripts/explainer-serve.py</code> — it is safe to run twice, and it keeps serving
+        until you <code>--stop</code> it or reboot. <b>A reboot stops it</b>, which is the one time you
+        will need this line again.</li>
+    <li><b>Opened as a plain file instead?</b> Everything still reads; only <b>Send</b> is unavailable,
+        because a <code>file://</code> page has nothing to send to. Copy to the clipboard and say
+        <i>&ldquo;read my question&rdquo;</i> — the session can read it from there.</li>
+  </ol>
+</div>
+
+<nav class="toc">
+  <div class="h">Contents</div>
+  <ol>
+    <li><a href="#bg">Background — two fields on one line</a></li>
+    <li><a href="#intuition">Intuition — derived vs. measured</a></li>
+    <li><a href="#boundaries">Boundaries touched <span class="chip lo">start here</span></a></li>
+    <li><a href="#decisions">Decisions this change encodes</a></li>
+    <li><a href="#map">Code map</a></li>
+    <li><a href="#limits">Assumptions and limits</a></li>
+  </ol>
+</nav>
+
+<h2 id="bg"><span class="num">1</span>Background — two fields on one line</h2>
+
+<h3>The skippable version</h3>
+<p>
+<code>docs/roadmap-to-launch.md</code> opens with a block titled <em>▶ NEXT ACTIONS</em>, written to be
+the first thing a fresh session reads after a context reset. Its first bullet described the state of
+<code>master</code>. Two facts lived in that one sentence: which pull request had most recently landed,
+and how large the test suite was.
+</p>
+<p>
+Both were typed by hand. Both drifted. This change treats them completely differently, and which one
+gets deleted is the whole point.
+</p>
+
+<h3>The narrow prerequisites</h3>
+<p>
+Before this change the line read, in full:
+</p>
+<div class="codewrap">
+  <div class="codehead"><span>docs/roadmap-to-launch.md:1161</span><span class="tag del">before</span></div>
+<pre><code><span class="hid">- **`master` = the merge of PR #93**, clean, tsc clean, **2703 unit / 267 suites** green</span>
+  (unit count re-run 2026-08-12 on this branch; **491 integration** is the 2026-08-12
+  figure and was NOT re-run — this branch touches no integration surface).</code></pre>
+</div>
+
+<p>
+One check already policed the first half. <code>scripts/check-roadmap-consistency.py</code> extracted
+the number and compared it to the pull request in <code>HEAD</code>'s squash-merge subject:
+</p>
+<div class="codewrap">
+  <div class="codehead"><span>scripts/check-roadmap-consistency.py:107</span><span class="tag del">deleted by this change</span></div>
+<pre><code><span class="k">def</span> <span class="f">head_merged_pr</span>() -> <span class="t">int</span> | <span class="k">None</span>:
+    <span class="s">"""The PR number in HEAD's squash-merge subject, e.g. `... (#81)`."""</span>
+    subject = subprocess.<span class="f">run</span>([<span class="s">"git"</span>, <span class="s">"log"</span>, <span class="s">"-1"</span>, <span class="s">"--pretty=%s"</span>], …).stdout.<span class="f">strip</span>()
+    m = re.<span class="f">search</span>(<span class="s">r"\(#(\d+)\)\s*$"</span>, subject)
+    <span class="k">return</span> <span class="t">int</span>(m.<span class="f">group</span>(<span class="n">1</span>)) <span class="k">if</span> m <span class="k">else</span> <span class="k">None</span></code></pre>
+</div>
+
+<div class="call info">
+  <span class="lab">The limitation, stated in the script's own docstring</span>
+  <p>A squash-merge subject <em>only exists once the merge has happened</em>. On a feature branch there was nothing to compare, so the check printed a note and passed. It could report the mistake only on the first CI run on <code>master</code> — <strong>after</strong> the field was already wrong and CI was already red.</p>
+</div>
+
+<p>
+The second half — the counts — had no check at all. Nothing compared <code>2703</code> to anything.
+</p>
+
+<h2 id="intuition"><span class="num">2</span>Intuition — derived vs. measured</h2>
+
+<p>
+The unlock is a single question asked of each field: <strong>could a machine compute this without
+being told?</strong>
+</p>
+
+<div class="verdict">
+  <div class="vcol del">
+    <div class="vh">✗ Derived → delete</div>
+    <span class="fieldname">master = the merge of PR #N</span>
+    <ul>
+      <li><code>git log -1</code> already knows, always, for free</li>
+      <li>The written copy can only ever <em>lag</em> the truth</li>
+      <li>A check for it is a second mechanism guarding a cache nobody needed</li>
+    </ul>
+  </div>
+  <div class="vcol keep">
+    <div class="vh">✓ Measured → verify</div>
+    <span class="fieldname">2703 unit / 267 suites</span>
+    <ul>
+      <li>Not derivable without <em>running</em> the suite</li>
+      <li>It is the claim a reader actually leans on</li>
+      <li>So it earns a real gate, wired to the real runner</li>
+    </ul>
+  </div>
+</div>
+
+<p>
+Put that way the asymmetry is obvious, but it was not obvious in the moment, because both fields looked
+the same: a number in a sentence, occasionally wrong. The temptation was to build one mechanism to
+police both. That would have been the worse outcome, and §4 explains why.
+</p>
+
+<h3>Why the deleted field had to go rather than be enforced</h3>
+<p>Its failure history is short and unusually complete — four attempts, each a different shape:</p>
+
+<div class="ledger">
+  <div class="fail"><div class="who">v1</div><div class="what">
+    <span class="chip hi2 kind">wrong value</span>Held a raw <b>commit SHA</b>. False the moment it was written: the PR that edits the line is the PR whose merge moves <code>master</code> past whatever SHA it names.</div></div>
+  <div class="fail"><div class="who">#81</div><div class="what">
+    <span class="chip hi2 kind">copy-forward</span>Replaced the SHA with a PR number and wrote <b>#80</b> — the previous one. Wrong again on the very first merge.</div></div>
+  <div class="fail"><div class="who">#91</div><div class="what">
+    <span class="chip hi2 kind">omission</span>Did not touch the line <b>at all</b>. It still said #90, and <code>master</code> CI went red on merge.</div></div>
+  <div class="fail"><div class="who">#93</div><div class="what">
+    <span class="chip hi2 kind">omission</span>Repeated that omission <b>within the hour</b> — in the pull request that added the warning against it.</div></div>
+</div>
+
+<div class="call bad">
+  <span class="lab">⚑ The shape that matters</span>
+  <p>
+  <strong>Three of the four were omissions or copy-forwards, not wrong values.</strong> That distinction
+  decides what kind of fix can work. A wrong value can be caught by comparing it to something. An
+  <em>omission</em> cannot — there is nothing to compare, because nothing was written.
+  </p>
+  <p>
+  A required parameter refuses to be left out; the language will not let you call the function. A
+  paragraph saying <em>&ldquo;remember to update this&rdquo;</em> defends nothing — as #93 demonstrated
+  by being the paragraph <em>and</em> the violation, in the same commit.
+  </p>
+</div>
+
+<h3>What replaced it</h3>
+<p>
+For the surviving field, the gate reads the test runner's own output rather than anybody's memory. CI
+now writes jest's machine-readable results and hands them straight to the check:
+</p>
+
+<figure>
+  <div class="pipe">
+    <div class="pnode src"><b>npm test</b><span class="sub">--ci --json<br>--outputFile=…</span></div>
+    <div class="arw">→</div>
+    <div class="pnode"><b>jest-results.json</b><span class="sub">numTotalTests<br>numTotalTestSuites<br>success</span></div>
+    <div class="arw">→</div>
+    <div class="pnode gate"><b>check-test-counts</b><span class="sub">compares against<br>the roadmap's prose</span></div>
+    <div class="arw">→</div>
+    <div class="pnode"><b>exit 0 / 1</b><span class="sub">green only when<br>they agree</span></div>
+  </div>
+  <figcaption>The gate never counts anything itself. It compares two independent statements of the same fact — one written by a human in Markdown, one emitted by the runner — which is the only arrangement where drift is detectable.</figcaption>
+</figure>
+
+<p>The comparison, and the reason a failed run cannot be allowed to supply numbers:</p>
+<div class="codewrap">
+  <div class="codehead"><span>scripts/check-test-counts.py:83</span><span class="tag new">new</span></div>
+<pre><code><span class="k">def</span> <span class="f">actual_counts</span>(results: <span class="t">object</span>) -> <span class="t">tuple</span>[<span class="t">int</span>, <span class="t">int</span>]:
+    <span class="k">if not</span> <span class="f">isinstance</span>(results, <span class="t">dict</span>):
+        <span class="k">raise</span> <span class="t">CannotRun</span>(<span class="s">"… did not contain a JSON object. Treat as NOT RUN."</span>)
+<span class="hi">    <span class="k">if</span> results.<span class="f">get</span>(<span class="s">"success"</span>) <span class="k">is not</span> <span class="k">True</span>:                <span class="c"># checked FIRST, deliberately</span></span>
+<span class="hi">        <span class="k">raise</span> <span class="t">CannotRun</span>(</span>
+<span class="hi">            <span class="s">"… reports a run that did not succeed, so its counts describe a "</span></span>
+<span class="hi">            <span class="s">"failed suite. Fix the suite first. Treat this check as NOT RUN."</span>)</span>
+    <span class="k">for</span> key <span class="k">in</span> (<span class="s">"numTotalTests"</span>, <span class="s">"numTotalTestSuites"</span>):
+        <span class="k">if not</span> <span class="f">isinstance</span>(results.<span class="f">get</span>(key), <span class="t">int</span>):
+            <span class="k">raise</span> <span class="t">CannotRun</span>(<span class="s">f"… no integer `{key}`. Treat as NOT RUN."</span>)
+    <span class="k">return</span> results[<span class="s">"numTotalTests"</span>], results[<span class="s">"numTotalTestSuites"</span>]</code></pre>
+</div>
+
+<div class="call good">
+  <span class="lab">Proven by making it fail, not by watching it pass</span>
+  <p>The roadmap was drifted back to the <code>2690</code> it genuinely carried that morning, against a real run:</p>
+  <p style="font-family:ui-monospace,monospace;font-size:.78rem;line-height:1.6;margin-top:.5rem">
+  ✗ the roadmap claims 2,690 unit tests; the suite ran 2,703<br>
+  &nbsp;&nbsp;(2,690 is behind reality by 13). &nbsp;&nbsp;<strong>exit 1</strong></p>
+</div>
+
+<h2 id="boundaries"><span class="num">3</span>Boundaries touched</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th style="width:19%">Boundary</th><th style="width:19%">What crosses it</th><th style="width:29%">What each side may assume</th><th>When that assumption is violated</th></tr></thead>
+<tbody>
+<tr>
+  <td>CI workflow → <code>check-test-counts.py</code></td>
+  <td><code>jest-results.json</code>, produced one step earlier.</td>
+  <td><span class="side"><b>CI:</b> assumes the flags it passes keep producing that file at that path.</span>
+      <span class="side"><b>Script:</b> assumes nothing — it verifies presence, JSON validity, the <code>success</code> flag and both integer fields before reading either.</span></td>
+  <td>Every violation exits 1 saying <em>treat as NOT RUN</em>. This is the asymmetry the whole design turns on: the producer may change, so <strong>the consumer refuses to infer a pass from an absence.</strong></td>
+</tr>
+<tr>
+  <td><code>roadmap-to-launch.md</code> prose → the gate<br><span class="chip md">newly load-bearing</span></td>
+  <td>The literal string shape <code>**N unit / M suites**</code>.</td>
+  <td><span class="side"><b>Doc author:</b> may reword the surrounding sentence freely — and did, in this very change.</span>
+      <span class="side"><b>Gate:</b> assumes that one bolded fragment survives verbatim.</span></td>
+  <td class="consq">Reformatting that fragment makes the gate <em>cannot-run</em>, which fails loudly rather than passing — chosen deliberately. <strong>But note what this creates:</strong> a Markdown file now has a machine-readable contract inside prose, with nothing marking it as such to a human editing the sentence.</td>
+</tr>
+<tr>
+  <td>Three scripts → one prose file<br><span class="chip hi2">found while writing this</span></td>
+  <td><code>docs/roadmap-to-launch.md</code> is now parsed by <strong>three</strong> independent checks.</td>
+  <td><span class="side"><b>check-roadmap-consistency:</b> checkbox marks and the ▶ NEXT ACTIONS block.</span>
+      <span class="side"><b>check-gate-falsifiability:</b> only the <code>## M1</code>/<code>## M2</code>/<code>## M3</code> sections (<code>:57</code>).</span>
+      <span class="side"><b>check-test-counts:</b> one bolded fragment in the state block.</span></td>
+  <td class="consq">Each invented its own scanner and its own idea of the file's shape. No single place says <em>&ldquo;this document has a machine-readable schema&rdquo;</em>, so a reformatting that satisfies one parser can silently blind another. <strong>This change made it three; it did not create the pattern, but it is the increment worth noticing.</strong></td>
+</tr>
+<tr>
+  <td><code>check-ratchet-contract.py</code> → the new gate</td>
+  <td>Discovery by the literal word <em>ratchet</em>, from a CI step name or the script's docstring (<code>:46-48</code>).</td>
+  <td><span class="side"><b>Contract:</b> assumes a gate that is one will say so — it explicitly rejects a registry because that would be evadable by forgetting.</span>
+      <span class="side"><b>New gate:</b> opts in voluntarily, in its docstring.</span></td>
+  <td>A future gate that omits the word is invisible to the contract and may quietly ship an <code>except: return 0</code>. Opting in is still a choice — but the bar is now <em>lying</em> rather than <em>forgetting</em>, which is the strongest property available without a registry.</td>
+</tr>
+<tr>
+  <td>Deleted: <code>check-roadmap-consistency.py</code> → <code>git log</code></td>
+  <td>Nothing, now. <code>head_merged_pr()</code> and <code>check_pr_ref()</code> are gone.</td>
+  <td>—</td>
+  <td>Removing a check is itself an unreviewed change. What is lost: nothing detects a roadmap that <em>claims</em> a stale PR number — but the field it read no longer exists, so there is no claim to be stale.</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="decisions"><span class="num">4</span>Decisions this change encodes</h2>
+
+<h3>1 · Delete derived state rather than build a mechanism to police it</h3>
+<p>
+<strong>Decided:</strong> the PR anchor is removed, along with its regex, its two functions and its four
+self-test cases. <strong>Rejected:</strong> moving the existing check earlier so it could run at
+pull-request time — technically easy, since GitHub supplies the number to the job.
+</p>
+<p>
+The rejection has two independent reasons, and either alone would be sufficient. First, the field was
+<em>derived</em>: <code>git log -1</code> answers the question correctly, forever, at no cost. Second —
+and this is the sharper one — <strong>enforcing it would have been a green tick over the wrong
+subject.</strong> The PR number is the label; the counts beside it are the payload. A gate certifying
+<code>#94</code> while the counts silently said <code>2690</code> would have made the whole line
+<em>look</em> maintained, which is worse than an obviously stale line.
+</p>
+<div class="call">
+  <span class="lab"><span class="chip adr">ADR CANDIDATE:</span></span>
+  <p>Hard to reverse in practice (restoring the field means restoring the habit, and the habit is what failed four times), surprising without context (deleting a check reads as lowering standards), and a genuine trade-off (a fresh session must now run one command instead of reading one line). The general rule — <em>a hand-maintained cache of a computable value should be deleted, not guarded</em> — is the reusable part, and it has now been applied twice in this file: the PR range went first, for the same reason.</p>
+</div>
+
+<h3>2 · Keep the counts in prose at all</h3>
+<p>
+<strong>Decided:</strong> the numbers stay written down, and a gate keeps them honest.
+<strong>Rejected:</strong> deleting them too, by the same logic as the anchor.
+</p>
+<p>
+The distinction: the anchor is derivable from the repository, but the counts require <em>running the
+suite</em>, which a reader orienting after a context reset will not do. They are stated so that reader
+knows the size of the safety net before deciding how much to trust it. Verification is what converts
+that from a decaying assertion into a live one.
+</p>
+
+<h3>3 · The integration figure is labelled, not verified</h3>
+<p>
+<code>491 integration</code> stays on the line, explicitly marked as a dated note the gate does
+<strong>not</strong> check, because integration needs a live Supabase stack and does not run in CI.
+<strong>Rejected:</strong> silently carrying it forward beside verified numbers, which would borrow
+their credibility.
+</p>
+
+<h3>4 · Opt the gate into the ratchet contract</h3>
+<p>
+<strong>Decided:</strong> the docstring says the word <em>ratchet</em>, so
+<code>check-ratchet-contract.py</code> discovers it (as the eighth) and will fail if it ever grows a
+<code>--self-test</code>-less successor or an exception handler that returns 0.
+<strong>Rejected:</strong> staying invisible on the grounds that it has no baseline and so is not a
+ratchet in the counting sense. Being unlisted is precisely how a check stops being maintained.
+</p>
+
+<h2 id="map"><span class="num">5</span>Code map</h2>
+<ul>
+  <li><strong>The producer.</strong> <code>.github/workflows/ci.yml</code> — <code>npm test</code> gains <code>--json --outputFile=jest-results.json</code>. One flag change is what makes the counts measurable rather than asserted.</li>
+  <li><strong>The gate.</strong> <code>scripts/check-test-counts.py</code> (new, 243 lines) — <code>documented_counts</code> parses the roadmap, <code>actual_counts</code> reads the runner, <code>compare</code> is the discriminator, and every path that cannot reach its subject raises <code>CannotRun</code>.</li>
+  <li><strong>Two new CI steps</strong> immediately after the suite: the comparison, then the gate's own <code>--self-test</code>.</li>
+  <li><strong>The deletion.</strong> <code>scripts/check-roadmap-consistency.py</code> loses <code>STATE_PR_RE</code>, <code>head_merged_pr</code>, <code>check_pr_ref</code>, the call site, the <code>check_pr</code> parameter and four self-test cases — replaced by a comment explaining why, since a silent removal reads as an oversight.</li>
+  <li><strong>The prose.</strong> <code>docs/roadmap-to-launch.md</code> state block rewritten; <code>docs/dev-process.md</code> enforcement table gains a row; <code>docs/process-checklists.md</code> ratchet count corrected six → eight, with a note to read it from the script instead.</li>
+  <li><strong>Housekeeping.</strong> <code>.gitignore</code> gains <code>jest-results.json</code>.</li>
+</ul>
+
+<h2 id="limits"><span class="num">6</span>Assumptions and limits</h2>
+
+<h4>Verified by reading the code</h4>
+<ul>
+  <li>The old check could not run pre-merge — its own docstring says so at <code>check-roadmap-consistency.py:126</code>.</li>
+  <li><code>package.json:9</code> defines <code>"test": "jest"</code>, so <code>npm test -- --json --outputFile=…</code> passes straight through; <code>jest.config.ts</code> sets no <code>reporters</code> that would conflict.</li>
+  <li>Ratchet discovery is the literal word <em>ratchet</em> in a CI step name or docstring — <code>check-ratchet-contract.py:46-48</code>.</li>
+  <li><code>check-gate-falsifiability.py:57</code> restricts itself to the <code>## M1</code>/<code>## M2</code>/<code>## M3</code> sections, which is how it and the new gate read the same file without colliding.</li>
+</ul>
+
+<h4>Verified by running something</h4>
+<ul>
+  <li>Full run as CI does it, then the gate: <em>roadmap test counts match the suite: 2,703 unit / 267 suites</em>, exit 0.</li>
+  <li>Roadmap drifted to 2690 → exit 1, naming the 13-test gap. Absent results file → exit 1, <em>treat as NOT RUN</em>.</li>
+  <li>17 self-test cases pass. Five mutations: four killed; the fifth (<code>path.exists()</code>) survived as an equivalent mutant — removal still ends in <code>CannotRun</code> via the <code>OSError</code> catch — so the <em>message</em> it produces is now asserted and it dies.</li>
+  <li><code>check-ratchet-contract.py</code> discovers eight ratchets, new gate included, violations still 4 at baseline 4.</li>
+  <li>All eight gates pass; CI green on the pull request.</li>
+</ul>
+
+<h4>Not verified</h4>
+<ul>
+  <li><strong>The gate has never run against a genuinely failing suite on GitHub's runner.</strong> The <code>success is not True</code> branch is covered by a self-test with a synthetic payload, not by a real red run — and if jest exits non-zero, CI stops at the test step and the gate never executes at all. That branch defends a local invocation, not a CI one.</li>
+  <li><strong>CI step ordering is argued from the YAML, not observed.</strong> No run has yet exercised the case where <code>--outputFile</code> silently stops being written.</li>
+  <li><strong>The three-parsers finding in §3 is an observation, not a measured defect.</strong> No reformatting has actually blinded a parser; the claim is that nothing would prevent it.</li>
+  <li><strong>Two schema ratchets remain red</strong> — <code>check-sentinel-meanings</code>, <code>check-guard-coverage</code> — on <code>master</code> as well, both concerning the parked blob-addressing schema. Untouched here.</li>
+  <li><strong>The 491 integration figure is unverified by construction</strong> and labelled as such on the line itself.</li>
+</ul>
+
+<div class="foot">
+  Predecessor: <strong>PR #91</strong> (backlog #37) and its explainer · <strong>PR #92</strong> (the false frequency claim) · <strong>PR #93</strong> (this skill's own delivery bug)<br>
+  Generated by <code>/explain-diff</code>, adapted from Geoffrey Litt's skill — first run under the design requirements added in #93.
+</div>
+
+</div>
+
+<button id="selask" type="button">💬 ask about this</button>
+<button id="fab" type="button">💬 <span id="fabn">0</span> questions</button>
+<div id="tray" role="complementary" aria-label="Questions">
+  <div id="trayhead"><span class="grow">Questions for this session</span>
+    <button type="button" id="trayclear">clear</button>
+    <button type="button" id="traymin">–</button></div>
+  <div id="traylist"></div>
+  <div id="sentnote" role="status"></div>
+  <div id="traybar">
+    <button type="button" id="traysend">⇧ Send to session</button>
+    <button type="button" class="secondary" id="traycopy">or copy to clipboard</button>
+    <span class="hint" id="trayhint"></span>
+  </div>
+</div>
+<div id="toast" role="status"></div>
+<script>
+(function(){
+  var DOC = "PR #94 explainer — verify the roadmap's test counts; delete the PR anchor (ade2549..995d7e4)";
+  var items = [], seq = 0;
+  var tray=document.getElementById('tray'), list=document.getElementById('traylist'),
+      fab=document.getElementById('fab'), fabn=document.getElementById('fabn'),
+      sel=document.getElementById('selask'), toast=document.getElementById('toast');
+
+  function say(m){toast.textContent=m;toast.setAttribute('data-show','');
+    setTimeout(function(){toast.removeAttribute('data-show');},2200);}
+  function trim(t){t=(t||'').replace(/\s+/g,' ').trim();return t.length>420?t.slice(0,420)+'…':t;}
+  function sectionOf(node){
+    while(node && node!==document.body){
+      if(node.previousElementSibling){node=node.previousElementSibling;
+        if(/^H[23]$/.test(node.tagName)) return node.textContent.replace('ask','').trim();
+      } else node=node.parentNode;
+    }
+    return 'the page';
+  }
+  function render(){
+    list.innerHTML='';
+    items.forEach(function(it){
+      var d=document.createElement('div'); d.className='qitem';
+      var w=document.createElement('div'); w.className='where';
+      w.appendChild(document.createTextNode(it.where));
+      var x=document.createElement('button'); x.className='x'; x.type='button'; x.textContent='×';
+      x.onclick=function(){items=items.filter(function(o){return o.id!==it.id;});render();};
+      w.appendChild(x); d.appendChild(w);
+      if(it.quote){var q=document.createElement('blockquote');q.textContent=it.quote;d.appendChild(q);}
+      var cb=document.createElement('button'); cb.type='button'; cb.textContent='Copy this';
+      var ta=document.createElement('textarea');
+      ta.placeholder='What do you want to ask about this?'; ta.value=it.q||'';
+      ta.oninput=function(){it.q=ta.value;};
+      // Enter sends (copies just this one); Shift+Enter keeps the newline. A textarea with no
+      // send affordance is the wrong shape — reported 2026-08-13, and it was two bugs at once:
+      // the tray's only button was also being squeezed to nothing by its flex row.
+      ta.onkeydown=function(ev){
+        if(ev.key==='Enter'&&!ev.shiftKey&&!ev.isComposing){ev.preventDefault();copyOne(it,cb);}
+      };
+      d.appendChild(ta);
+      var row=document.createElement('div'); row.className='row';
+      cb.onclick=function(){copyOne(it,cb);};
+      var kb=document.createElement('span'); kb.className='kbd'; kb.textContent='Enter to copy';
+      row.appendChild(cb); row.appendChild(kb); d.appendChild(row);
+      list.appendChild(d);
+    });
+    fabn.textContent=items.length;
+    if(items.length){fab.setAttribute('data-show','');}else{fab.removeAttribute('data-show');tray.removeAttribute('data-open');}
+  }
+  function toMarkdown(list_){
+    var out='Question'+(list_.length>1?'s':'')+' on the '+DOC+'\n\n';
+    list_.forEach(function(it,i){
+      out+=(list_.length>1?(i+1)+'. ':'')+'**'+it.where+'**\n';
+      if(it.quote)out+='   > '+it.quote+'\n';
+      out+='   Q: '+(it.q.trim()||'(no question typed)')+'\n\n';
+    });
+    return out;
+  }
+  function toClipboard(txt,msg){
+    var done=function(){say(msg);};
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).then(done,function(){fb(txt,done);});
+    } else fb(txt,done);
+    function fb(t,ok){
+      var ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();
+      try{document.execCommand('copy');ok();}catch(_e){say('Could not copy automatically');}
+      document.body.removeChild(ta);
+    }
+  }
+  function flash(btn,label){
+    if(!btn)return; var old=btn.textContent;
+    btn.textContent=label; btn.setAttribute('data-done','');
+    setTimeout(function(){btn.textContent=old;btn.removeAttribute('data-done');},2000);
+  }
+  // Served over http://127.0.0.1 there is something listening, so Send POSTs and the question
+  // lands in a file the session reads. Opened as a plain file:// there is not, so Send is hidden
+  // and the clipboard carries it. Same document, both ways — the server is an enhancement, never a
+  // dependency, and the page must still work untouched in five years.
+  var SERVED = location.protocol === 'http:' || location.protocol === 'https:';
+  (function(){
+    var m=document.getElementById('howtomode'), b=document.getElementById('howtobody');
+    if(!m)return;
+    if(SERVED){
+      m.textContent='● live — Send works'; m.className='mode live';
+      b.innerHTML='You are reading the served copy, so <b>Send</b> posts straight to the session. '+
+        'This URL always redirects to the newest explainer — bookmark it once and no filename ever '+
+        'needs copying again. <code>/</code> lists them all.';
+    } else {
+      m.textContent='○ local file — Send unavailable'; m.className='mode flat';
+      b.innerHTML='You opened this as a <code>file://</code> page, so there is nothing to send to and '+
+        '<b>Send</b> is hidden. Start the server (step 2) and reopen at the URL above to get one-click '+
+        'Send; everything else on this page works either way.';
+    }
+  })();
+  var sendBtn=document.getElementById('traysend'), hint=document.getElementById('trayhint');
+  if(SERVED){
+    hint.innerHTML='<b>Send</b> posts straight to the session — then say <i>&ldquo;read my questions&rdquo;</i>. <b>Enter</b> copies one question; <b>Shift+Enter</b> is a newline.';
+  } else {
+    sendBtn.style.display='none';
+    document.getElementById('traycopy').textContent='Copy questions — then paste in your session';
+    hint.innerHTML='Opened as a local file, so there is nothing to send to — <b>clipboard is the channel</b>; say <i>&ldquo;read my question&rdquo;</i> after copying. Run <code>python3 scripts/explainer-serve.py</code> and reopen via <code>127.0.0.1:7391/latest</code> to get one-click Send. <b>Enter</b> copies one; <b>Shift+Enter</b> is a newline.';
+  }
+  function post(txt,cb){
+    var x=new XMLHttpRequest();
+    x.open('POST','/questions',true);
+    x.setRequestHeader('Content-Type','application/json');
+    x.onload=function(){cb(x.status===200);};
+    x.onerror=function(){cb(false);};
+    x.send(JSON.stringify({doc:DOC,text:txt}));
+  }
+  function copyOne(it,btn){
+    if(!it.q.trim()){say('Type a question first');return;}
+    toClipboard(toMarkdown([it]),'✓ copied — paste into the session');
+    flash(btn,'✓ copied — now paste');
+  }
+  // The only channel a file:// page actually has to this session. No network, no server: the
+  // browser writes the file, the agent reads it. Everything else is the user carrying the text.
+  function download(txt){
+    var blob=new Blob([txt],{type:'text/markdown'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    a.href=url; a.download='explainer-questions.md';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){URL.revokeObjectURL(url);},1000);
+  }
+  function add(where,quote){
+    var note=document.getElementById('sentnote'); if(note) note.removeAttribute('data-show');
+    items.push({id:++seq,where:where,quote:quote,q:''});
+    render(); tray.setAttribute('data-open',''); fab.removeAttribute('data-show');
+    var tas=list.querySelectorAll('textarea'); if(tas.length)tas[tas.length-1].focus();
+  }
+
+  // section buttons
+  Array.prototype.forEach.call(document.querySelectorAll('h2,h3'),function(h){
+    if(h.closest('#tray'))return;
+    var b=document.createElement('button'); b.type='button'; b.className='askbtn'; b.textContent='ask';
+    b.onclick=function(e){e.preventDefault();add(h.textContent.replace(/ask$/,'').trim(),'');};
+    h.appendChild(b);
+  });
+
+  // selection capture
+  document.addEventListener('mouseup',function(e){
+    if(e.target.closest&&e.target.closest('#tray'))return;
+    var s=window.getSelection(), t=s?String(s):'';
+    if(t.trim().length<12){sel.style.display='none';return;}
+    var r=s.getRangeAt(0).getBoundingClientRect();
+    sel.style.display='block';
+    sel.style.top=(window.scrollY+r.bottom+6)+'px';
+    sel.style.left=(window.scrollX+r.left)+'px';
+    sel.onclick=function(){
+      var node=s.anchorNode&&s.anchorNode.nodeType===3?s.anchorNode.parentNode:s.anchorNode;
+      add(sectionOf(node), trim(t)); sel.style.display='none'; s.removeAllRanges();
+    };
+  });
+  document.addEventListener('scroll',function(){sel.style.display='none';},{passive:true});
+
+  document.getElementById('traymin').onclick=function(){tray.removeAttribute('data-open');
+    if(items.length)fab.setAttribute('data-show','');};
+  fab.onclick=function(){tray.setAttribute('data-open','');fab.removeAttribute('data-show');};
+  document.getElementById('trayclear').onclick=function(){items=[];render();};
+
+  sendBtn.onclick=function(){
+    if(!items.length){say('No questions yet — select some text, or use an "ask" button.');return;}
+    var n=items.length;
+    post(toMarkdown(items),function(ok){
+      if(ok){
+        // DO NOT let render() close the tray here. Clearing items makes render() drop
+        // data-open, which took the confirmation off screen with it — a Send that worked
+        // looked like a no-op, and the window just vanished (reported 2026-08-13).
+        items=[]; render();
+        var note=document.getElementById('sentnote');
+        note.textContent='✓ Sent '+n+' question'+(n>1?'s':'')+' to the session. Now say "read my questions".';
+        note.setAttribute('data-show','');
+        tray.setAttribute('data-open',''); fab.removeAttribute('data-show');
+      }
+      else  { toClipboard(toMarkdown(items),'Send failed — copied instead, please paste');
+              flash(sendBtn,'✗ send failed — copied instead'); }
+    });
+  };
+  document.getElementById('traycopy').onclick=function(){
+    if(!items.length){say('No questions yet — select some text, or use an "ask" button.');return;}
+    toClipboard(toMarkdown(items),'✓ copied '+items.length+' question(s) — paste into the session');
+    flash(document.getElementById('traycopy'),'✓ copied — now paste');
+  };
+})();
+</script>
+
+</body>
+</html>

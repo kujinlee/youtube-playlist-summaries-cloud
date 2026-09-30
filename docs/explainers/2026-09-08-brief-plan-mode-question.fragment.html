@@ -1,0 +1,422 @@
+<title>Plan mode: keep it, feed it, or retire it</title>
+<style>
+:root{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#8a857c; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#8a857c; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}}
+:root[data-theme="dark"]{
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+/* SIZE carries hierarchy. Headings are LIGHTER than body-bold, not heavier. */
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h)}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+/* BOLD IS A LABEL, NOT A SHOUT — weight only, a neutral tone, never a hue */
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+/* TERMINAL TEXTURE — inline code is a raised pill, and it carries the visual variety */
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em;white-space:nowrap}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+</style>
+<h1>Plan mode: keep it, feed it, or retire it</h1>
+
+<div class="reading">
+<b>The reading I chose.</b> You asked about the design question I escalated after four review rounds
+on <code>scripts/check-plan-code.py</code>. I have taken it as: <i>“plan mode has no living
+exerciser — what should happen to it?”</i> — a decision page, not a tutorial on the tool. If you
+meant “explain what plan mode does” or “explain why the Phase&nbsp;6 trigger didn’t fire,” both are
+covered in passing but neither is the spine. <span class="fn">As of <code>307423f1</code> on
+<code>master</code>, 2026-09-09.</span>
+</div>
+
+<div class="howto">
+<span class="st">This page can answer back.</span> Live at
+<span class="kbd">http://127.0.0.1:7391/latest</span> — always the newest page.
+Select any text, or hover a heading, then click <b>ask</b>, type, and press <b>Send</b>; then say
+<i>“read my questions”</i> in the session. If that URL does not load, run
+<span class="kbd">python3 scripts/explainer-serve.py</span> (safe to run twice — <b>a reboot stops
+it</b>). Opened as a plain file it still reads fine; only <b>Send</b> stops working.
+</div>
+
+<h2>The one thing that reframes this</h2>
+
+<p class="lede">
+The corpus did not drain by neglect. <b>It was drained on purpose, eleven days ago, by a decision you
+took</b> — and the code was left behind. Plan mode is not a feature we forgot to use. It is the
+residue of a supersession that was carried out deliberately and never finished.
+</p>
+
+<p>Commit <code>da5cd27e</code> (PR&nbsp;#176, 2026-08-29, backlog&nbsp;#70) is titled
+<b>“Retire the plan-as-CI-dependency: mutate the code that ships, not a copy of it.”</b> Its own
+message says:</p>
+
+<pre><code>A SUPERSESSION, not a switch-off. The guarantee — "the mutation evidence
+describes the code that ships" — is kept and strengthened: it will describe the
+delivered files rather than a copy asserted to match them. Byte-identity with a
+document was the route, and a poor one.
+
+Measured for this spec, not recalled: 43 entries (32 + 11), 45 distinct anchored
+lines, 1,551 lines currently coupled, no other plan in the repo carries
+&lt;!-- file: --&gt; blocks …</code></pre>
+
+<p>Read the last clause again: <b>at the moment of that decision the corpus was already one
+document.</b> When that one plan’s embedded blocks were deleted — which the same PR did, on purpose,
+because “unvalidated code in a document rots and creates a belief that something is covered” — the
+corpus became zero. Everything since has been review effort spent on a mode with no callers.</p>
+
+<h2>Answered: what plan mode was <i>for</i>, and how it became residue<span class="tag m">your question</span></h2>
+
+<p class="fn">You asked: <i>“what was the original purpose of the plan mode and why it has become
+residue”</i> — highlighting the line where I set that reading aside. Fair; here it is, from the
+tool’s own first commit rather than from the shape of the code.</p>
+
+<h3>It was built to stop a planning document lying about its own verification</h3>
+
+<p>The very first docstring of <code>check-plan-code.py</code> states the reason, and it is specific:</p>
+
+<pre><code>WHY THIS EXISTS. Three adversarial review rounds on the project-dashboard plan each
+found that its stated evidence was wrong, and each found it BY HAND:
+
+  r2  a transcription silently dropped one word from an assertion, and the
+      coordinator reported 55/55 against a test it had weakened.
+  r3  the plan's blocks did not assemble at all — no import block for one file, no
+      `__main__` dispatch for the other, three functions present only as prose. Every
+      earlier reviewer had injected the missing pieces into a private harness, so the
+      hole survived two rounds. The plan's own evidence read `19/19 mutations caught`
+      while a mutation it NAMED survived, and `33 symbols byte-identical` against
+      files nobody else could open.</code></pre>
+
+<p>The diagnosis is the round-3 reviewer’s sentence, quoted in that same docstring:
+<b>“everything the plan says about CODE reproduced exactly; everything it says about its own
+VERIFICATION did not.”</b> Prose about a measurement is not the measurement.</p>
+
+<p>So the mechanism: a plan tags its code blocks with <code>&lt;!-- file: … --&gt;</code>, the tool
+<b>assembles</b> them into real files, <b>runs</b> their suites, <b>applies</b> the mutations the plan
+declares, and <b>generates</b> the evidence block that gets pasted back into the plan. Typed evidence
+became generated evidence. That is the whole idea, and it was a good one.</p>
+
+<h3>Why it became residue — and it is not because it failed</h3>
+
+<p class="lede">
+<b>Plan mode was a CI dependency for three hours and eighteen minutes.</b> It arrived at
+<b>14:19</b> on 2026-08-29 (<code>56201500</code>, PR&nbsp;#174) and was superseded at <b>17:37</b>
+the same afternoon (<code>da5cd27e</code>, PR&nbsp;#176). It has since absorbed four full adversarial
+review rounds and 568 lines of maintained code.
+</p>
+
+<p>What went wrong was not the guarantee but its <i>route</i>. Making the plan the subject meant the
+document and the shipped code had to stay byte-identical, and PR&nbsp;#176 measured that tax exactly:
+<b>1,551 lines coupled</b>, where “the first bug fixed in either turns CI red until the identical edit
+lands in the plan and its evidence is regenerated.” Every commit paid it.</p>
+
+<p><b>The supersession kept the guarantee and deleted the copy.</b> Mutating the delivered scripts
+directly gives you “the mutation evidence describes the code that ships” <i>without</i> a second copy
+to keep in sync — strictly stronger, because a copy asserted to match is exactly the thing that had
+been lying. In the commit’s own words: <i>“Byte-identity with a document was the route, and a poor
+one.”</i></p>
+
+<p class="lede">
+So plan mode did not decay. <b>It succeeded, and the fix that superseded it removed its subject.</b>
+There is no longer a plan-copy of the code that could lie about itself — which is precisely why
+nothing exercises the mode, and why every defect four rounds found is real but unreachable.
+</p>
+
+<p>That is also why <b>option B is the weak one</b>: feeding plan mode a corpus means reintroducing
+the plan-copy whose existence was the original problem. You would be rebuilding the liar in order to
+keep the lie detector.</p>
+
+<h3>“Did the new code take over its purpose, making it obsolete?” — nearly, and the gap matters<span class="tag m">your question</span></h3>
+
+<p><b>Yes to the guarantee; no to the scope.</b> Plan mode’s job had two halves, and
+<code>--mutate .</code> inherited only one of them:</p>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Plan mode did this</th><th>Who does it now</th></tr></thead>
+<tbody>
+<tr><td>Prove the mutation evidence describes the code that ships</td>
+    <td><b><code>--mutate .</code></b> — and better, because it reads the delivered files instead of a copy asserted to match them</td></tr>
+<tr><td>Prove a plan’s embedded code actually assembles and runs</td>
+    <td><b>nobody — and nothing needs to</b>, because no plan embeds code any more</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>So the second half was not taken over. <b>It was dissolved.</b> The question it answered —
+<i>“is the code in this document real?”</i> — stops having a subject once documents stop carrying
+code. That is a cleaner outcome than a handover, and it is why I would call plan mode obsolete rather
+than replaced.</p>
+
+<p class="lede">
+⚠ <b>But it is obsolete on a CONDITION that nothing enforces.</b> Measured just now:
+<code>scripts/check-plan-code.py</code> is the <b>only</b> file in the repository that looks for
+<code>&lt;!-- file: … --&gt;</code> tags, and CI invokes it only as <code>--mutate .</code> and
+<code>--self-test</code> — neither of which reads a plan. So if someone embeds code in a plan
+tomorrow, <b>nothing notices</b>: not CI, not a gate, not a reviewer’s checklist.
+</p>
+
+<p>Today that gap is harmless, because the practice stopped. But “obsolete as long as nobody does X,
+enforced by nobody remembering X” is a convention, and this project’s recorded position is that a
+convention is what fails quietly. <b>It does not change the recommendation; it adds one line to
+it.</b></p>
+
+<p><b>Amended option A:</b> retire the mode <i>and</i> leave behind a five-line gate that fails if any
+document under <code>docs/</code> acquires a <code>&lt;!-- file: … --&gt;</code> tag — with an error
+that says “plan mode was retired on &lt;date&gt;; this document expects a checker that no longer
+exists.” That converts the condition from something assumed into something asserted, costs almost
+nothing, and is the difference between deleting dead code and creating a silent hole where a guard
+used to be.</p>
+
+<h2>What I measured</h2>
+
+<p>I re-ran the corpus count myself rather than take the reviewer’s, because it is the number the
+whole decision rests on — and <b>widening the scan past the directory they used changed the
+answer</b>, which is worth knowing before you rely on either figure.</p>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Question</th><th>Measured</th><th>How</th></tr></thead>
+<tbody>
+<tr><td>Plans reaching plan mode’s file path</td><td class="n"><b>0 of 92</b></td>
+    <td>ran the delivered <code>extract()</code> over every file in <code>docs/superpowers/plans/</code></td></tr>
+<tr><td>Specs reaching it</td><td class="n"><b>0 of 93</b></td><td>same, over <code>docs/superpowers/specs/</code></td></tr>
+<tr><td>Plans carrying a generated evidence block</td><td class="n"><b>0</b></td><td>searched for the <code>GENERATED by…</code> marker</td></tr>
+<tr><td><b>Any markdown in the repo reaching it</b></td><td class="n"><b>5 of 1,391</b></td>
+    <td>widened the scan to every <code>*.md</code>; all five are SDD task briefs under <code>.superpowers/sdd/</code></td></tr>
+<tr><td>…of those five, tracked by git</td><td class="n"><b>0</b></td><td><code>git ls-files .superpowers/sdd/</code> returns nothing — a fresh clone has none of them</td></tr>
+<tr><td>CI invocations of plan mode</td><td class="n"><b>0</b></td><td>CI runs only <code>--mutate .</code> and <code>--self-test</code></td></tr>
+<tr><td>Plan-mode-only code</td><td class="n"><b>568 lines</b> (16%)</td><td>AST spans of the seven functions only that mode reaches</td></tr>
+<tr><td>Mutation entries defending it</td><td class="n"><b>20 of 44</b></td><td>mapped each anchor to its owning function</td></tr>
+<tr><td>Self-test cases naming a plan-mode surface</td><td class="n"><b>73 of 223</b> (32%)</td><td>parsed the case labels</td></tr>
+<tr><td>Functions <code>--mutate .</code> shares with plan mode</td><td class="n"><b>0</b></td>
+    <td>AST call graph of <code>mutate_delivered</code>: <code>stage_tree</code>, <code>run_suite</code>, <code>run_mutations</code>, <code>load_manifests</code>, <code>control_is_green</code>, <code>home_escapes</code> — and nothing else</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><b>That last row is what makes the decision cheap.</b> The two modes are fully disjoint. Retiring
+plan mode does not touch the mutation sweep that CI actually depends on.</p>
+
+<h3>The five untracked hits are not a reprieve</h3>
+
+<p>One of them — <code>task-6-brief.md</code> from the 2026-08-28 dashboard plan — declares
+<b>35 mutations</b>, so the mode did real work as recently as eleven days ago. But
+<code>.superpowers/sdd/</code> has <b>zero tracked files</b>: those briefs are local scratch from an
+SDD run, absent from a clone, and not read by any gate. They show the mode <i>was</i> used; they do
+not show anything <i>uses</i> it.</p>
+
+<h2>What four rounds actually bought</h2>
+
+<p>Eleven Highs across four rounds. I classified each by the function it lives in — quoting the
+headings from the review files rather than recalling them.</p>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Round</th><th>High</th><th>Lives in</th></tr></thead>
+<tbody>
+<tr><td class="n">r1 H1</td><td><code>controls_green</code> defaults to <code>True</code></td><td><b>shared</b> — <code>coverage_verdict.Measured</code></td></tr>
+<tr><td class="n">r1 H2</td><td>the honest zero hardcodes <code>declared=0</code></td><td>plan-only — <code>check()</code></td></tr>
+<tr><td class="n">r1 H3</td><td><code>compared</code> is <code>None</code> even when <code>--compare</code> was given</td><td>plan-only — <code>check()</code></td></tr>
+<tr><td class="n">r2 H1</td><td>the H3 fix has no guard on the sentence it exists to fix</td><td>plan-only — <code>evidence()</code></td></tr>
+<tr><td class="n">r2 H2</td><td><code>compared = {}</code> asserts a diff that never ran</td><td>plan-only — <code>evidence()</code></td></tr>
+<tr><td class="n">r2 H3</td><td><code>not muts</code> conflates “declared none” with “could not be read”</td><td>plan-only — <code>check()</code></td></tr>
+<tr><td class="n">r3 H1</td><td><code>mut_unreadable</code> guards one of two return paths</td><td>plan-only — <code>check()</code></td></tr>
+<tr><td class="n">r3 H2</td><td>the two matched strings are not the complete set</td><td>plan-only — <code>extract()</code></td></tr>
+<tr><td class="n">r3 H3</td><td>the subject sentence contradicts the tally four lines above</td><td>plan-only — <code>evidence()</code></td></tr>
+<tr><td class="n">r3 H4</td><td><code>verify_evidence</code> keys its mode off the result</td><td>plan-only — <code>verify_evidence()</code></td></tr>
+<tr><td class="n">r4 H1</td><td><code>assembled</code> still has two owners</td><td>plan-only — <code>extract()</code>/<code>evidence()</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<p class="lede">
+<b>10 of 11 Highs were defects in code that no living document executes.</b> Every one was real —
+reachable from the command line, demonstrated on the shipped CLI. None of them could have harmed
+anything, because nothing walks that path.
+</p>
+
+<p>The honest framing of the whole branch is therefore <i>“the durable artifact <b>would</b> lie if
+this mode were used”</i>, not <i>“it is lying.”</i> That does not make the work worthless — the one
+shared High (r1 H1) is genuinely load-bearing, and the union type it produced now guards the mutation
+sweep CI runs on every push. But four rounds is a lot of scrutiny for a 16% slice with no
+callers.</p>
+
+<h2>Why the Phase 6 trigger didn’t fire — briefly, since it’s adjacent</h2>
+
+<p>Our rule sends four inconclusive rounds to a design review. Round&nbsp;3 pre-registered a sharper
+test so it couldn’t be argued after the fact: <i>“if round 4 also produces a self-contradicting
+artifact, the finding is that the block has no single producer for ‘what was this run about’.”</i></p>
+
+<p>Round 4 <b>did</b> produce a self-contradicting artifact — so the trigger fired on its literal
+terms. But the <i>cause</i> that rule named was measured false: <code>evidence()</code>,
+<code>verify_evidence()</code> and <code>main()</code> now all derive their mode from the same flag
+and agree. Round 4’s High is one <i>number</i> with two increment sites, not two <i>sentences</i> from
+two variables. <code>review-method.md</code> says read the trigger off the cause, so I did not convene
+Phase&nbsp;6 on <code>evidence()</code> — and escalated this instead, which is the question a design
+review would actually be worth holding.</p>
+
+<h2>Three options</h2>
+
+<div class="opt rec">
+<h3>A — Retire plan mode<span class="tag rec">my recommendation</span></h3>
+<p>Delete <code>extract</code>, <code>check</code>, <code>evidence</code>,
+<code>pasted_evidence</code>, <code>verify_evidence</code>, <code>compare_delivered</code>,
+<code>unsafe_tag</code> and the CLI paths that reach them. Finish what PR&nbsp;#176 started.</p>
+<p class="cost"><b>Removes:</b> 568 lines (16%), 20 of 44 mutation entries, ~73 self-test cases.
+<b>Breaks:</b> nothing measured — the only two external importers
+(<code>check-selftest-counts.py</code>, <code>begin-plan.py</code>) take <code>count_drift</code>,
+which is module-level and survives. <code>--mutate .</code> shares no function with plan mode.
+<b>Costs:</b> one slice with its own review round; <code>EXPECTED_MUTATIONS</code> falls, so the
+ratchet needs a deliberate, documented decrease — this project treats a shrinking count as a
+red flag, correctly.</p>
+<p class="cost"><b>Why I lean here:</b> the supersession was already decided and justified in writing.
+Keeping the code preserves an option nobody has exercised in eleven days while charging review
+attention at four rounds and counting. Deleting it is the cheapest way to stop paying.</p>
+</div>
+
+<div class="opt">
+<h3>B — Give it a real exerciser</h3>
+<p>Make at least one living plan carry <code>&lt;!-- file: --&gt;</code> blocks and a mutations
+declaration, and put a gate on it, so the mode has a corpus that fails when it breaks.</p>
+<p class="cost"><b>Buys:</b> the four rounds’ findings become defects that <i>matter</i> rather than
+defects that <i>would</i> matter. <b>Costs:</b> reintroduces exactly the coupling PR&nbsp;#176
+removed — that commit measured it at <b>1,551 lines coupled</b>, where “the first bug fixed in either
+turns CI red until the identical edit lands in the plan.” <b>Ask yourself first:</b> what would the
+plan-embedded copy prove that <code>--mutate .</code> over the delivered scripts does not? I could
+not construct an answer, which is the strongest argument against B.</p>
+</div>
+
+<div class="opt">
+<h3>C — Leave it, and stop reviewing it</h3>
+<p>Keep the code, mark it explicitly dormant, and exclude it from review scope until something needs
+it.</p>
+<p class="cost"><b>Buys:</b> zero work now. <b>Costs:</b> the failure mode this project keeps
+recording — a comment saying “dormant” is a claim with no falsifier, and the next reviewer has no way
+to know the scope note exists. It also leaves 568 lines that <i>look</i> live to anyone reading the
+file. If you pick C, the honest form is a gate that <b>fails</b> if a plan ever starts using the
+mode, so dormancy is asserted rather than assumed.</p>
+</div>
+
+<h2>What I measured vs what I inferred</h2>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Claim</th><th>Status</th><th>Basis</th></tr></thead>
+<tbody>
+<tr><td>0 of 92 plans, 0 of 93 specs, 5 of 1,391 repo markdown files reach plan mode</td><td><span class="tag m">measured</span></td><td>ran the delivered <code>extract()</code> over each file, this session</td></tr>
+<tr><td>Those 5 files are untracked</td><td><span class="tag m">measured</span></td><td><code>git ls-files</code> → 0</td></tr>
+<tr><td>568 plan-only lines; 20 of 44 mutations; 73 of 223 cases</td><td><span class="tag m">measured</span></td><td>AST spans, anchor-to-function mapping, label parse</td></tr>
+<tr><td><code>mutate_delivered</code> calls no plan-mode function</td><td><span class="tag m">measured</span></td><td>AST call graph</td></tr>
+<tr><td>PR #176 deliberately superseded plan mode as a CI dependency</td><td><span class="tag m">measured</span></td><td>quoted verbatim from <code>da5cd27e</code></td></tr>
+<tr><td>10 of 11 Highs are plan-mode-only</td><td><span class="tag m">measured</span></td><td>headings quoted from the four review files; each mapped to its function</td></tr>
+<tr><td>Only <code>count_drift</code> is imported externally</td><td><span class="tag m">measured</span></td><td>grep across <code>scripts/</code> and <code>.claude/</code></td></tr>
+<tr><td>Retiring plan mode “breaks nothing”</td><td><span class="tag i">inferred</span></td><td>follows from the two rows above, but <b>no deletion was attempted</b> — the only way to know is to try it and run the gates</td></tr>
+<tr><td>Option B buys nothing <code>--mutate .</code> doesn’t</td><td><span class="tag i">inferred</span></td><td>I could not construct a counter-example; absence of one is not proof</td></tr>
+<tr><td>The SDD briefs won’t come back</td><td><span class="tag i">inferred</span></td><td>they are generated by a workflow that could run again; untracked ≠ never</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>What I would do if you say “A”</h2>
+
+<ul class="tight">
+<li>One branch, one slice: delete the seven functions and their CLI paths, delete the 20 mutation entries and ~73 cases <i>with</i> them.</li>
+<li><b>Record the <code>EXPECTED_MUTATIONS</code> decrease as a deliberate retirement</b>, in the same commit, with the count and the reason — a shrinking ratchet must never look like an accident.</li>
+<li>Run the full sweep and confirm the remaining entries still go red via their named cases.</li>
+<li>One review round, scoped to “what did the deletion take with it that something still needed?”</li>
+</ul>
+
+<p class="fn">Nothing here is filed to the backlog — that is your step. If you want any of the three
+options turned into a row, or the corpus measurement itself recorded as evidence on an existing one,
+say which.</p>

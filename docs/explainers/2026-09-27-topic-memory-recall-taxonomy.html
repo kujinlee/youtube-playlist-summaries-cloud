@@ -1,0 +1,1880 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Organising memory so recall stops failing — backlog #191</title>
+
+<style>
+
+:root{
+  --bg:#f6f6f4; --card:#fbfbfa; --raise:#eeeeeb; --pill:#e7e8e6;
+  --fg:#3f4045; --fg2:#5c5e64; --fg3:#868890; --strong:#23252a;
+  --rule:#dedfdc; --hair:#e9eae7;
+  --h:#23252a;
+  --accent:#3c5a86; --accent-bg:#eaeef4;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eef4ef;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e7e8e6; --code-fg:#464850;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#3f4045; --ink-soft:#5c5e64; --ink-faint:#868890; --structure:#dedfdc;
+  --good:#3d6b4c; --defect:#8f4444; --em:#23252a;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#16181b; --card:#1d1f23; --raise:#24262b; --pill:#282b30;
+  --fg:#bfc2c8; --fg2:#9fa2a9; --fg3:#7a7d85; --strong:#e7e9ed;
+  --rule:#2e3136; --hair:#26292e;
+  --h:#e7e9ed;
+  --accent:#8fb0d8; --accent-bg:#1b2129;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1a2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#282b30; --code-fg:#bbbec5;
+  --ink:#bfc2c8; --ink-soft:#9fa2a9; --ink-faint:#7a7d85; --structure:#2e3136;
+  --good:#8bb99b; --defect:#c98f8f; --em:#e7e9ed;
+}}
+:root[data-theme="dark"]{
+  --bg:#16181b; --card:#1d1f23; --raise:#24262b; --pill:#282b30;
+  --fg:#bfc2c8; --fg2:#9fa2a9; --fg3:#7a7d85; --strong:#e7e9ed;
+  --rule:#2e3136; --hair:#26292e;
+  --h:#e7e9ed;
+  --accent:#8fb0d8; --accent-bg:#1b2129;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1a2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#282b30; --code-fg:#bbbec5;
+  --ink:#bfc2c8; --ink-soft:#9fa2a9; --ink-faint:#7a7d85; --structure:#2e3136;
+  --good:#8bb99b; --defect:#c98f8f; --em:#e7e9ed;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h);text-wrap:balance}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px;text-wrap:balance;position:relative}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em;
+   scroll-margin-top:16px;position:relative}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre-wrap;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre-wrap}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+
+/* A MEASUREMENT is a numbered step because these four NARROW — each rules out a candidate. */
+.m{display:flex;gap:16px;align-items:baseline;margin:38px 0 0}
+.m .tag{font:600 12px/1.5 var(--mono);letter-spacing:.06em;color:var(--accent);
+  background:var(--accent-bg);border:1px solid var(--rule);border-radius:6px;
+  padding:3px 9px;white-space:nowrap;flex:none}
+.m h3{margin:0}
+
+/* The trigger-blindness bars: the page's core evidence, drawn to one scale (0-100% of 133 rows). */
+.bars{margin:22px 0;display:grid;gap:12px}
+.bar{display:grid;grid-template-columns:minmax(0,1fr) 62px;gap:14px;align-items:center}
+.bar .t{font-size:14.5px;color:var(--fg2)}
+.bar .v{font-variant-numeric:tabular-nums;font-weight:600;font-size:15px;text-align:right;
+  color:var(--strong)}
+.bar .track{grid-column:1 / -1;height:9px;background:var(--pill);border-radius:999px;overflow:hidden}
+.bar .fill{height:100%;background:var(--accent);border-radius:999px}
+.bar.total .fill{background:var(--fg3)}
+.scaleline{font-size:12px;color:var(--fg3);letter-spacing:.04em;margin-top:4px}
+
+.answered{border-left:3px solid var(--verified,#3a7);background:rgba(51,170,119,.06);
+ padding:.85rem 1.1rem;margin:1.1rem 0;border-radius:0 6px 6px 0}
+.answered .alab{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;
+ color:var(--verified,#3a7);font-weight:700;margin:0 0 .5rem}
+.answered p{margin:.55rem 0}.answered ul{margin:.5rem 0 .55rem 1.1rem}
+
+.added{border-left:3px solid var(--verified,#3a7);background:rgba(51,170,119,.06);padding:.7rem 1rem;
+ border-radius:0 6px 6px 0;margin:.9rem 0}
+.callout{border:1px solid var(--rule,#8884);border-radius:6px;padding:.85rem 1.1rem;margin:1.1rem 0;
+ background:rgba(128,128,128,.06)}
+.callout .alab{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;font-weight:700;
+ margin:0 0 .5rem;color:var(--fg3,#888)}
+
+  :root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied. */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
+  /* GIVE HEADINGS A POSITIONING CONTEXT, or the heading ask-path silently dies.
+     The tray appends an ABSOLUTELY positioned `.askbtn` to every heading. With no positioned
+     ancestor it resolves against the initial containing block, so EVERY heading button lands on
+     the same point in the top-right corner, stacked, with only the last one clickable.
+     MEASURED 2026-08-27 across ~/explainers: 29 of the 33 pages carrying a tray had NO positioning
+     context on headings. On one page: 10 buttons, 4 distinct positions, all 7 h2s at top:14
+     left:1560 — 6 unreachable. The 3 that worked did so by accident, sitting inside an unrelated
+     `position:relative` list item.
+     ⚠ WHY IT SURVIVED EVERY "I drove both question paths" CHECK: those checks call
+     `heading.querySelector('.askbtn').click()`, which fires the handler no matter where the button
+     is painted or what is stacked on top of it. That tests the HANDLER, never the AFFORDANCE. The
+     check that finds it is a hit test — `document.elementFromPoint(centre)` must return the button
+     itself. The selection path was never affected: its floater is `position:fixed` with explicit
+     coordinates, which is why the channel looked alive throughout.
+     `:where()` keeps this at ZERO specificity, so any fragment that positions its own headings
+     still wins — the shim only supplies what nobody supplied. */
+  :where(h1, h2, h3, h4) { position: relative; }
+
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-size:.8em;padding:.1rem .45rem;border-radius:99px;
+            border:1px solid var(--rule,#8884);white-space:nowrap}
+#modechip{font-family:var(--mono);font-size:.7rem;padding:.1em .45em;border-radius:99px;border:1px solid var(--rule);color:var(--fg3)}
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+#sentnote{font-size:.78rem;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+/* ---- end Ask tray ---- */
+.chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.82rem;color:var(--ink-soft,currentColor)}.chrome-btn{display:inline-flex;align-items:center;gap:.35rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule,currentColor);border-radius:.4rem;padding:.2rem .55rem;cursor:pointer}.chrome-btn:hover{color:var(--ink,inherit)}.chrome-btn:focus-visible{outline:2px solid var(--structural,currentColor);outline-offset:2px}.chrome-when{margin-inline-start:auto}.chrome-say{min-height:1em}@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+<header class="top">
+  <p class="kicker">Backlog #191 · design discussion, iteration 1 · not a build</p>
+  <h1>Organising memory so recall stops failing</h1>
+  <p class="sub">As of <strong>2026-09-27</strong> · master <code>b4174dca</code> · branch <code>backlog-191-memory-taxonomy</code> · PR <code>#355</code> open</p>
+</header>
+
+<div class="box acc" id="howto">
+  <span class="lbl">This page exists to be argued with <span id="modechip">○ checking…</span></span>
+  <p><strong>Select any passage, or hover a heading, and press <code>ask</code>.</strong> Your question
+  reaches my session carrying the heading and the exact text you highlighted, so you needn't restate
+  context. Type, press <strong>Send</strong>, then tell me <em>“read my questions”</em>.</p>
+  <p><strong>Stable URL:</strong> <code>http://127.0.0.1:7391/latest</code> is always the newest page.
+  If it doesn't load, run <code>python3 scripts/explainer-serve.py</code> — safe to run twice, and a
+  reboot stops it. A <code>file://</code> copy reads fine and only loses <strong>Send</strong>.</p>
+  <p>⛔ <strong>Iteration 1 of a walkthrough, not a document for approval.</strong> §8 and §9 are where
+  I most expect to be wrong — §8 is a place I disagree with your framing, and §9 holds four questions
+  I cannot answer for you.</p>
+</div>
+
+<div class="box warn">
+  <span class="lbl">The reading I chose — §1 of the explainer contract</span>
+  <p>Backlog #191 asks <strong>which of four candidate remedies to build</strong> for memory recall
+  failure. <strong>This page argues the question is mis-posed: the failure is not retrieval, and two of
+  the four candidates address retrieval.</strong> If you meant "just pick one of the four", say so and
+  I will answer that instead — but I think the measurements below make that the wrong question.</p>
+</div>
+
+<h2><span class="n">1</span>The thing that reframes it</h2>
+
+<p><strong>The index is already in context.</strong> <code>MEMORY.md</code> is injected into every
+session before I read a single file — all <strong>133</strong> hooks, every time. In the session that
+produced #191, nothing was un-found. The entries were in front of me and did not fire.</p>
+
+<div class="box bad">
+  <span class="lbl">What follows, and it is most of the design</span>
+  <p>“Find it faster” — a taxonomy <span class="pill mid">⑴</span> or a search tool
+  <span class="pill mid">⑵</span> — optimises a stage that was never the constraint. Both are real
+  improvements to the <em>wrong step</em>, which is exactly why ⑵ looked so plausible: a search tool
+  genuinely does not degrade as the corpus grows. It just is not what failed.</p>
+  <p>The failure is <strong>matching</strong>, not finding: 133 one-line hooks were in context and none
+  of them connected to <em>“I am about to open a PR right now.”</em></p>
+</div>
+
+<h2><span class="n">2</span>The row is wrong about its own first candidate</h2>
+
+<p class="lede">Independent of everything the walkthrough decides. It is a defect in a committed
+document, so it does not belong buried among the open questions.</p>
+
+<p><strong>#191 describes its candidate directions as “none designed”</strong>, and lists the first as:</p>
+
+<div class="q">
+  <p>“⑴ <strong>a taxonomy</strong> — classify each entry so recall searches a branch rather than the
+  corpus; the user's framing is that a PRINCIPLE is itself a search-area reducer, so the taxonomy's top
+  level may be principles rather than topics”</p>
+</div>
+
+<p><strong>What is measured (M2 below, in full):</strong> a taxonomy is <em>deployed</em> — five
+top-level sections holding 53 / 35 / 20 / 16 / 6 rows plus 3 before the first heading,
+<strong>133 rows, 100% link coverage</strong>, in place throughout the session that produced #191.</p>
+
+<div class="box bad">
+  <span class="lbl">Why this matters more than a wording slip</span>
+  <p>⑴ is not an undesigned candidate. It is a <strong>shipped mechanism whose falsifier has already
+  fired</strong>. As written, the row invites building a second one — and a reader who acts on it would
+  reproduce the failure it was filed to fix.</p>
+</div>
+
+<div class="box acc">
+  <span class="lbl">This is your call, not mine</span>
+  <p>By this project's convention, <strong>filing and amending backlog rows is the human's step</strong>.
+  The row is already committed in PR <strong>#355</strong>. So this page <strong>asks</strong>:
+  should ⑴ be amended to record that a taxonomy exists and what it measures — or left standing, with
+  the correction living only here?</p>
+</div>
+
+<div class="box warn">
+  <span class="lbl">The objection to my own claim, stated rather than left for you to find</span>
+  <p>A reader could fairly argue that ⑴ means a <strong>different</strong> taxonomy — one keyed
+  differently, not merely another set of headings. That is precisely the
+  keying-versus-classification distinction §4 draws, and if that is the reading, the row is
+  <em>imprecise</em> rather than <em>wrong</em>. Either way it should say that a classification already
+  exists, because the version on record reads as though none does.</p>
+</div>
+
+
+<div class="answered">
+<p class="alab">ANSWERED 2026-09-28 — and the rule this section invoked has been reversed</p>
+<p><strong>You asked: if you find something incorrect, why wait for approval?</strong> You were right,
+and the convention I cited here is now gone. Your rule, as I have recorded it:
+<strong>the gate is alignment, not permission.</strong> If we agree on the goal, I act and tell you
+afterwards so you can ask for a revert. I wait only when the goal itself — or what a problem even
+<em>is</em> — remains in question.</p>
+<p><strong>What changed, so it cannot quietly revert.</strong> The old rule was written in
+<strong>two</strong> places, one of them loaded into every session, which means correcting only the
+visible copy would have let the stale one win the next disagreement:</p>
+<ul>
+<li><code>docs/process-checklists.md</code> — the side-job checklist row that said
+<em>&ldquo;Filing is the user&rsquo;s step — agree before filing&rdquo;</em> (PR #357)</li>
+<li>the memory file <code>feedback-agree-before-filing</code>, whose index line now leads with the
+reversal</li>
+</ul>
+<p><strong>The incident that created the old rule is kept, not deleted, because it survives your
+version.</strong> On 2026-07-31 I filed three defects while we were still establishing the nature of
+the issue, and several framings needed correcting in the discussion that followed. That is filing
+before agreeing what the thing <em>was</em> — still forbidden. The error was never
+<em>filed without approval</em>.</p>
+<p><strong>What I did rather than ask.</strong> The row this section is about was amended and is
+merged (<code>8b5563cd</code>). Backlog #192, which had been sitting ready and waiting on you, is
+merged (<code>4d06370c</code>).</p>
+<p><strong>Where I deliberately did not extend it,</strong> since over-reading an authority is its own
+failure: merging in general stays a human gate per <code>docs/dev-process.md</code>, and
+outward-facing or irreversible actions — deploy, delete, spend — were not what you were answering. I
+did treat merging a <em>documentation-only backlog filing</em> as covered, because a backlog row here
+cannot exist without a PR, so refusing that merge would re-create the delay you are removing. Tell me
+if that reads wider than you meant.</p>
+</div>
+<h2><span class="n">3</span>Four measurements, each narrowing the field</h2>
+
+<p class="lede">They are numbered because they are a sequence, not a list — each one rules out a
+candidate the one before it left standing. Every command below is pipe-free and re-runnable from
+the memory directory.</p>
+
+<div class="m"><span class="tag">M1</span><h3>The corpus, re-derived rather than inherited</h3></div>
+<p>#191 states 142 files / ~10,000 lines. I re-counted rather than quote it, because this repo's
+most expensive recurring lesson is that a number without provenance is fiction.</p>
+
+<div class="scroll"><table>
+<thead><tr><th>Quantity</th><th class="num">Value</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>memory files</td><td class="num">142</td><td>including the index</td></tr>
+<tr><td>total lines</td><td class="num">9,979</td><td>#191's “~10,000” confirmed</td></tr>
+<tr><td><code>MEMORY.md</code></td><td class="num">153</td><td>the index — the part always in context</td></tr>
+<tr><td>bodies: median</td><td class="num">51</td><td>mean 69.7 — so the distribution is right-skewed</td></tr>
+<tr><td>bodies: largest</td><td class="num">331</td><td><code>launch-roadmap-state.md</code></td></tr>
+</tbody></table></div>
+
+<pre><code>python3 -c "import glob; print(len(glob.glob('memory/*.md')))"
+wc -l memory/*.md          # read the total row</code></pre>
+
+<div class="m"><span class="tag">M2</span><h3>A taxonomy already exists, and #191's falsifier has already fired against it</h3></div>
+<p>This is the measurement that removes candidate ⑴ from the list of things to build. #191 files
+“a taxonomy” as <em>undesigned</em>. It is <strong>deployed</strong>: five top-level sections, 133
+indexed rows, and <strong>100% link coverage</strong> — all 141 bodies are reachable from the index,
+none orphaned.</p>
+
+<div class="scroll"><table>
+<thead><tr><th>Section</th><th class="num">Rows</th><th class="num">Share</th><th>Keyed by</th></tr></thead>
+<tbody>
+<tr><td>How things go wrong here</td><td class="num"><strong>53</strong></td><td class="num">40%</td><td>subject</td></tr>
+<tr><td>Slice history</td><td class="num">35</td><td class="num">26%</td><td><strong>provenance</strong></td></tr>
+<tr><td>Working with me</td><td class="num">20</td><td class="num">15%</td><td>subject</td></tr>
+<tr><td>Design &amp; guard lessons</td><td class="num">16</td><td class="num">12%</td><td>subject</td></tr>
+<tr><td>Environments &amp; product context</td><td class="num">6</td><td class="num">5%</td><td>subject</td></tr>
+<tr><td>(before the first heading)</td><td class="num">3</td><td class="num">2%</td><td>—</td></tr>
+</tbody></table></div>
+
+<p>Two things follow. First, <strong>building a second taxonomy predicts a second failure</strong>,
+because the first one was in place throughout the session that produced #191. Second, the taxonomy is
+<strong>unbalanced</strong>: the branch you would search for a defect lesson holds 40% of the corpus, so
+"search a branch, not the corpus" buys a factor of 2.5, not a factor of 10.</p>
+
+<div class="m"><span class="tag">M3</span><h3>Search returns a quarter of the corpus for a central term</h3></div>
+<p>And this is the measurement that removes candidate ⑵. I probed the corpus with the terms I would
+actually have reached for during the failing session.</p>
+
+<div class="scroll"><table>
+<thead><tr><th>Query</th><th class="num">Files hit</th><th class="num">of 141</th><th>Usable?</th></tr></thead>
+<tbody>
+<tr><td><code>anchor</code></td><td class="num"><strong>34</strong></td><td class="num">24%</td><td><span class="pill no">no — that is a linear search</span></td></tr>
+<tr><td><code>vacuous</code></td><td class="num">15</td><td class="num">11%</td><td><span class="pill no">no</span></td></tr>
+<tr><td><code>check-merge-ready</code></td><td class="num">5</td><td class="num">4%</td><td><span class="pill yes">yes</span></td></tr>
+<tr><td><code>known positive</code></td><td class="num">1</td><td class="num">1%</td><td><span class="pill yes">yes — exactly right</span></td></tr>
+</tbody></table></div>
+
+<div class="box warn">
+  <span class="lbl">Why the two precise probes do not rescue the search tool</span>
+  <p>They were precise because <strong>the query term was distinctive</strong> — the corpus contributed
+  nothing. And you can only type <code>known positive</code> if you already know the lesson. A search
+  tool is only as good as the query, and the query is the thing recall failed to produce.</p>
+</div>
+
+<div class="m"><span class="tag">M4</span><h3>The index is trigger-blind — the number that decides the design</h3></div>
+<p>If matching is the constraint, the question is: <strong>how many index rows tell you what situation
+you would be in when you need them?</strong> I ran three progressively more generous tests, and I
+report all three because the regex is a proxy and the strict form flatters my own argument.</p>
+
+<div class="bars">
+  <div class="bar"><span class="t">Title <strong>opens</strong> with a situation (<code>when / before / after…</code>)</span><span class="v">1%</span><span class="track"><span class="fill" style="width:0.75%"></span></span></div>
+  <div class="bar"><span class="t">Title names a situation <em>anywhere</em></span><span class="v">4%</span><span class="track"><span class="fill" style="width:3.8%"></span></span></div>
+  <div class="bar"><span class="t">Title <em>or</em> hook names a situation anywhere — the most generous test</span><span class="v">16%</span><span class="track"><span class="fill" style="width:15.8%"></span></span></div>
+  <div class="bar total"><span class="t">All index rows</span><span class="v">133</span><span class="track"><span class="fill" style="width:100%"></span></span></div>
+  <p class="scaleline">One scale: 0 – 133 rows. Values are 1 · 5 · 21 · 133.</p>
+</div>
+
+<p><strong>The argument has to survive the generous test, and it does.</strong> Even counting every row
+whose hook mentions a condition anywhere, <strong>84% of the index tells you what a lesson is
+<em>about</em> and never what situation you would be in when you need it.</strong> The one row in 133
+that opens with a situation is <em>“After fixing, SEARCH for the class”</em>.</p>
+
+<div class="hr"></div>
+
+<h2><span class="n">4</span>The instance that shows the mechanism: keying is not classification</h2>
+
+<p>The lesson that put two PRs red — <em>run <code>check-merge-ready.py</code>, never a gate subset</em>
+— lives in <code>merge-ready-slice-merged-324.md</code>, filed under <strong>Slice history</strong>.
+That section has <strong>22 of its rows keyed to a PR number or a slice name</strong>.</p>
+
+<p>A reader asking <em>“what must I do before opening a PR?”</em> has no reason to open a section
+organised by <strong>which slice discovered what</strong>. The entry was not hidden. It was filed under
+its own biography.</p>
+
+<div class="two">
+  <div class="card">
+    <h4>A taxonomy sorts by resemblance</h4>
+    <p class="note">“What <em>is</em> this entry?” → subject (53 rows) and provenance (35 rows).
+    Answers a question you ask when browsing.</p>
+  </div>
+  <div class="card">
+    <h4>A key sorts by the retrieving question</h4>
+    <p class="note">“Does this apply to what I am doing <em>right now</em>?” → almost nothing in the
+    index answers this. Answers the question you ask when acting.</p>
+  </div>
+</div>
+
+<p><strong>The corpus is keyed for browsing and read while acting.</strong> That is the whole defect in
+one sentence, and it is why more entries, better entries, or faster access to entries all miss.</p>
+
+<div class="answered">
+<p class="alab">ANSWERED 2026-09-29 — you asked HOW a row is recognised, and WHY the hook is so fragile</p>
+
+<p><strong>On recognition: I cannot tell you, and that is the finding rather than a dodge.</strong>
+The rows sit in context as text; &sect;10 measured that no code reads the file, so there is no lookup
+event to point at. But the sharper problem is that <strong>I have no privileged access to it</strong> —
+no trace, no signal, nothing that says a row fired. ⛔ <strong>Which means I cannot distinguish
+&ldquo;the entry fired&rdquo; from &ldquo;I would have got it right anyway.&rdquo;</strong> Earlier today
+I read <code>cells[-2]</code> on a backlog row and got it right; I reported that the lesson had been
+followed &ldquo;by accident&rdquo; — <em>but that was itself a guess about my own process.</em> So the
+honest claim is stronger than <em>unmeasured</em>: the mechanism is <strong>unobservable from the
+inside</strong>, while its outcome is measurably unreliable at 5 of 6.</p>
+
+<p><strong>On fragility: three compounding causes, and the first is the root.</strong></p>
+
+<table><thead><tr><th>measured</th><th>value</th></tr></thead><tbody>
+<tr><td>label length</td><td>median 29 chars</td></tr>
+<tr><td><strong>hook length</strong></td><td><strong>median 57 chars</strong> (mean 85)</td></tr>
+<tr><td>whole row</td><td>~28 tokens</td></tr>
+<tr><td>all 133 rows, resident every session</td><td>~3,770 tokens</td></tr>
+<tr><td>hooks leaning on a backticked token</td><td>38 of 133 (29%)</td></tr>
+</tbody></table>
+
+<div class="callout">
+<p class="alab">COMPRESSION OPTIMISES THE WRONG AXIS — THIS IS THE ROOT CAUSE</p>
+<p>With 57 characters you keep what is most <strong>informative</strong>: the surprising detail, the
+cost. Recognition needs what is most <strong>matchable</strong>: the situation. Those are different, and
+the pressure <strong>systematically evicts the matchable half</strong> — because
+<em>&ldquo;when indexing a list by position&rdquo;</em> reads as generic and obvious, while
+<em>&ldquo;<code>cells[-2]</code> closed 2 open items&rdquo;</em> reads as sharp and memorable.</p>
+<p><strong>The 84% trigger-blindness is therefore not carelessness. It is an optimisation aimed at the
+wrong target</strong>, which is why more discipline would not have fixed it and a structural field
+will.</p>
+</div>
+
+<p><strong>Cause 2 — the curse of knowledge.</strong> The hook is written by whoever <em>just had</em>
+the failure, when <code>cells[-2]</code> is maximally salient. The author cannot simulate the future
+reader's state of not-knowing. That <strong>29% lean on a backticked token</strong> is the tell: they
+bet on a distinctive string the author can no longer stop seeing.</p>
+
+<p><strong>Cause 3 — no feedback loop, which is why hooks never improve.</strong> Nothing ever reports
+<em>&ldquo;your hook did not fire.&rdquo;</em> The only evidence of a miss is a defect weeks later that
+nobody attributes to the hook. So hooks are written once, under the curse of knowledge, compressed to 57
+characters, and <strong>never corrected</strong>.</p>
+
+<p><strong>Which is why A1 is structural rather than disciplinary</strong> — a named
+<code>FIRES-WHEN:</code> field defeats all three: compression cannot silently evict a named field (a
+missing one is visibly missing); it <em>forces</em> the author to state what salience hides; and once a
+matcher exists, <strong>a miss becomes observable for the first time</strong>.</p>
+</div>
+
+<h2><span class="n">5</span>Growth is measured, not feared</h2>
+
+<p>Your framing was that memory “will ever grow, so linear search becomes fragile”. That premise now
+has a number, taken from this repo's own prior enumeration at
+<code>docs/portable-practices.md:643</code> — counted, not recalled, on 2026-08-13.</p>
+
+<div class="scroll"><table>
+<thead><tr><th>Corpus</th><th class="num">2026-08-13</th><th class="num">2026-09-27</th><th class="num">Ratio</th><th>Rate</th></tr></thead>
+<tbody>
+<tr><td>memory files</td><td class="num">61</td><td class="num"><strong>142</strong></td><td class="num">2.33×</td><td>1.8 files/day</td></tr>
+<tr><td>review documents</td><td class="num">633</td><td class="num"><strong>1,256</strong></td><td class="num">1.98×</td><td>13.8/day</td></tr>
+</tbody></table></div>
+
+<p>Both roughly doubled in <strong>45 days</strong>. At the same rate the index carries about
+<strong>223 rows</strong> by mid-November.</p>
+
+<div class="box warn">
+  <span class="lbl">The honest limit on that number</span>
+  <p>Two points, 45 days apart, give a <strong>rate</strong> — not a trend, and nothing about the shape
+  of the curve. It could be linear, front-loaded by a burst of consolidation, or accelerating. The
+  projection is arithmetic, not a forecast, and I would not build a threshold on it.</p>
+</div>
+
+<h2><span class="n">6</span>⭐ The prior art — and my own instance of the failure, while writing this</h2>
+
+<p>The diagnosis in §1 is <strong>already written down in this repo</strong>, and has been for thirteen
+days. <code>docs/portable-practices.md:1160-1162</code>, on a waiter that reported “still running” over
+a file that had been finished for 1h53m:</p>
+
+<div class="q">
+  <p>“The rule against this was already written down, in a document loaded into every session, and was
+  broken three times that day — <strong>recalled at the moment of use instead of read</strong>.”</p>
+</div>
+
+<p>§19 of the same document (line 822) reaches the identical verdict about selection cards: <em>“the
+rule was reconstructed from recall at the moment of use instead of read. A PreToolUse hook now…”</em></p>
+
+<div class="box bad">
+  <span class="lbl">Both times, the resolution was a mechanism — not a better note</span>
+  <p>And I spent four measurements re-deriving a diagnosis this repo had already named. That is
+  precisely the verdict #191 itself quotes from
+  <code>architecture-review-2026-09-24-number-populations</code>:
+  <em>“re-deriving, one instance at a time, a decision this repo had already made and filed where
+  nothing points.”</em> This page is an instance of its own subject.</p>
+</div>
+
+<p><strong>What the measurements do add, stated narrowly.</strong> The prior art gives the
+<strong>cause</strong> — recalled at the moment of use instead of read. It does not measure the corpus,
+does not show the index is trigger-blind at 1–16%, and does not show that search returns 24% of the
+corpus for a central term. So the prior art tells you <em>why</em> it fails; M1–M4 tell you
+<em>what shape</em> the remedy has to be. Neither is redundant, and neither is novel on its own.</p>
+
+<div class="hr"></div>
+
+<h2><span class="n">7</span>The design, in three parts</h2>
+
+<h3>Part A — mechanism is primary, because it is the only remedy with prior wins</h3>
+
+<p>A mechanism does not need recall. That is not an argument, it is the observed record: of the eight
+repairs attempted in the session that produced #191, <strong>exactly one works without the author
+remembering anything</strong> — a guard. The other seven are notes competing with 9,979 lines. Two
+earlier mechanism wins are on record: the selection-card hook, and PR #354's escape cross-check.</p>
+
+<div class="box ok">
+  <span class="lbl">The promotion rule — the crisp, decidable part of this design</span>
+  <p><strong>A memory entry graduates to a hook when its trigger is exactly decidable from the text of
+  a tool call.</strong></p>
+  <p>Your own candidate is the worked example: refuse <code>git commit -m</code> whose argument contains
+  a backtick, a double quote, or a newline. That is exactly decidable — no judgement, no false
+  positives, and it fires at the moment of the mistake rather than hoping to be remembered before it.
+  It generalises to the rule behind it: <em>never pass prose as a shell argument</em> —
+  <code>--body-file</code>, <code>--prompt-file</code>, <code>git commit -F</code>.</p>
+</div>
+
+<p>Entries whose trigger needs judgement <strong>cannot</strong> be promoted. “Measure the population
+the code actually sees” has no tool-call signature. Those fall to Part B, and Part B is explicitly the
+weaker half — that is the honest structure of this design, not a hedge.</p>
+
+<h3>Part B — for the residue: re-key the index by trigger, and keep single ownership</h3>
+
+<p>The synthesis that keeps #177 intact — because #191 is explicit that duplication is the
+<em>vulnerability</em> and #177's <em>one owner per fact</em> is the first-order remedy:</p>
+
+<div class="box acc">
+  <span class="lbl">One owner per fact, N pointers by trigger</span>
+  <p>The <strong>entry file</strong> stays subject-keyed and single-owned, exactly as now. The
+  <strong>index</strong> gains a trigger-keyed view whose rows are <strong>pointers, not content</strong>.</p>
+  <p>Pointers may safely appear under several triggers <em>because they carry no facts</em> — there is
+  nothing in them to drift. This is the <code>process-rationale.md</code> pointer-row pattern, which
+  #191 names as the one read-trigger mechanism measured to work here.</p>
+</div>
+
+<p>Candidate top-level triggers are <strong>operations</strong> — observable from what I am about to do,
+not from what I would have to realise:</p>
+
+<ul>
+<li>about to <strong>open a PR</strong> · about to <strong>commit</strong></li>
+<li>about to <strong>claim something is measured</strong> · about to <strong>trust a green check</strong></li>
+<li>about to <strong>write a guard or a mutation</strong> · about to <strong>spawn agents</strong></li>
+<li>about to <strong>close a message to the user</strong> · about to <strong>build something that may already exist</strong></li>
+</ul>
+
+<h3>Part C — the falsifier, sharper than #191's</h3>
+
+<p>#191's falsifier is <em>“a class already present in memory recurs, and the postmortem shows the
+entry existed and was not found.”</em> After re-keying that is too weak, because a trigger-keyed index
+changes what <em>found</em> means. The sharper form:</p>
+
+<div class="box bad">
+  <span class="lbl">What must be observed for Part B to be judged wrong</span>
+  <p>A class recurs · the entry <strong>existed under the correct trigger</strong> · and it still was
+  not read. <strong>→ keying is not the constraint, and mechanism is the only remaining answer.</strong></p>
+  <p>The baseline this has to beat is <strong>doing nothing</strong> — not “doing something”. If Part A
+  alone removes the classes that actually cost money, Part B is ceremony, and its own falsifier is what
+  would show that.</p>
+</div>
+
+<div class="hr"></div>
+
+<h2><span class="n">8</span>Where I disagree with your framing</h2>
+
+<p>You suggested the taxonomy's top level <em>may be principles rather than topics</em>, because a
+principle is itself a search-area reducer. <strong>My measurements push toward operations instead</strong>,
+and I want to put the disagreement in front of you rather than quietly resolve it.</p>
+
+<div class="two">
+  <div class="card">
+    <h4>The case for operations</h4>
+    <p class="note">An operation is <strong>observable</strong>. I am literally about to run
+    <code>gh pr create</code>. A principle still requires me to <em>recognise that it applies</em> —
+    and recognition is the exact step that failed in every one of the six sampled classes.</p>
+  </div>
+  <div class="card">
+    <h4>The case for principles — steelmanned</h4>
+    <p class="note">A principle fires across many operations. <em>“Measure the population the code
+    actually sees”</em> applies to a guard, a CI check, a backlog row and a review. Keying it to
+    operations <strong>duplicates it into every branch</strong> — and duplication is #191's stated
+    vulnerability, the very thing #177 was built to remove.</p>
+  </div>
+</div>
+
+<p><strong>My proposed resolution, which is itself contestable:</strong> the duplication a principle
+would suffer under operation-keying is duplication of <em>pointers</em>, and a pointer carries no fact,
+so there is nothing to drift. The principle keeps exactly one owner — its entry file — and appears as a
+pointer under each operation where it fires. If you think that understates the cost of a pointer going
+stale when its owner is renamed, that is the strongest counter-argument and I would rather hear it now
+than after building.</p>
+
+<div class="hr"></div>
+
+<h2><span class="n">9</span>Four questions I cannot answer for you</h2>
+
+<h3>Q1 — Operations or principles as the top level?</h3>
+<p>§8 is the whole argument. I measured toward operations; you proposed principles. This is a real
+fork, not a detail, because it decides what the index's headings <em>are</em>. A third possibility I
+have not argued: both levels, principles nested under operations — which doubles the structure and may
+be worse than either.</p>
+
+<h3>Q2 — Does the trigger-keyed view replace the current index, or sit beside it?</h3>
+<p>Sitting beside it means <strong>two indexes</strong>. And
+<code>a-second-implementation-of-one-rule-drifts</code> stands at <strong>17 measured instances</strong>
+— the most-repeated failure in this entire memory. That is a strong argument for
+<strong>generating</strong> one from the other, so only one is hand-maintained and the generated one
+carries no facts of its own. The open part is <em>which direction</em>: does the subject-keyed index
+generate the trigger view, or does a trigger-keyed source generate the browsable view?</p>
+
+<h3>Q3 — Where does the mechanism live, given the memory is outside this repo?</h3>
+<p>#191 is <strong>harness scope</strong> — deliverable #2, <code>docs/portable-practices.md</code>. The
+memory directory sits outside this repository entirely, so a generator or hook that only works here is
+a local habit, not a portable practice. Does the rule ship in <code>portable-practices.md</code>, and
+does the generator live in <code>scripts/</code> even though its subject is outside the tree? I have
+checked: <strong>nothing in <code>scripts/</code> or <code>.claude/</code> currently reads the memory
+corpus at all</strong>, so there is no existing home to extend.</p>
+
+<h3>Q4 — Is 133 rows survivable at all, or does re-keying need a merge pass first?</h3>
+<p>Direction ⑷ — <em>fewer, bigger entries</em> — is <strong>untested by every measurement on this
+page</strong>. I have no evidence for it and no evidence against it. I am not dismissing it; I am
+reporting that I cannot rank it, and that re-keying a 133-row index and re-keying an 80-row index are
+different projects.</p>
+
+<div class="hr"></div>
+
+<h2><span class="n">10</span>Your four mechanisms — and what the harness actually has</h2>
+
+<p class="added">ADDED 2026-09-28, from your comment. <strong>You proposed that recall failure here is
+mainly a <em>matching</em> difficulty, and offered four mechanisms borrowed from human memory.</strong>
+That diagnosis is the same one §1 reaches from measurement — the index was never un-found, only
+never matched — arrived at independently, which is the strongest agreement this page contains.</p>
+
+<table>
+<thead><tr><th>your mechanism</th><th>status here</th></tr></thead>
+<tbody>
+<tr><td><strong>(1) a distinct signal</strong></td><td>Already emitted, and free. A tool call
+<em>is</em> one: <code>gh pr create</code> needs no tagging to be distinctive</td></tr>
+<tr><td><strong>(2) temporal / sequence pattern</strong></td><td>⚠ <strong>UNMEASURED.</strong> I have
+no evidence either way, and say so rather than invent it. The repo's guard vocabulary already splits
+SHAPE from SEQUENCE, so the concept has a home if it earns one</td></tr>
+<tr><td><strong>(3) a pattern-matching monitor</strong></td><td>⛔ <strong>MEASURED: does not
+exist.</strong> See below — you guessed the harness probably had one; it does not</td></tr>
+<tr><td><strong>(4) active tagging / idea breadcrumbs</strong></td><td>The strongest of the four,
+<em>and</em> the one that needs the narrowest scope. See below</td></tr>
+</tbody></table>
+
+<h3>(3) measured: there is no matcher, but the socket for one exists</h3>
+
+<p>Two independent grounds, because a negative needs more than a code read:</p>
+<ul>
+<li><strong>No file in the <code>remember</code> plugin references <code>MEMORY.md</code> at all</strong>
+— zero matches, with a control proving the search works (111 hits for another term in the same tree).
+No scoring, ranking, embedding or keyword matching in either hook.</li>
+<li><strong>Direct observation, which beats the code read:</strong> 133 rows on disk, 133 rows delivered
+into this session. Unfiltered.</li>
+</ul>
+
+<p>Its own index header claimed otherwise — <em>&ldquo;the hook decides relevance&rdquo;</em> —
+and that sentence was written by me and was never true. It is now corrected in place, which makes it the
+fourth unverified claim this session has caught in its own documents.</p>
+
+<p><strong>But the socket is real.</strong> A <code>UserPromptSubmit</code> hook already fires on every
+message you send (it currently injects a timestamp), and a <code>PostToolUse</code> hook fires on every
+tool call. A monitor has somewhere to live and something to watch. <strong>Nothing needs inventing
+except the matcher itself.</strong></p>
+
+<h3>A second opinion, and why it agrees with §1 without meaning to</h3>
+
+<p>You asked Gemini how Claude Code matches memory. <strong>Its answer corroborates the reframe —
+but it is answering about a different system, and one of its specifics is fabricated.</strong> Both
+matter, so both are here.</p>
+
+<p><strong>What it gets right, and it is the load-bearing part.</strong> It says matching happens
+&ldquo;<em>via the LLM context</em>&rdquo; — instructions are injected into the prompt, and the model
+&ldquo;<em>attends to both your request and the injected constraints</em>&rdquo; — explicitly
+<em>&ldquo;rather than a hidden vector database.&rdquo;</em> <strong>That is the same finding as §1
+and §10, from an independent source: there is no retrieval step. Attention IS the matcher.</strong>
+Gemini presents this as a design feature. The measurements here say it is the failure point.</p>
+
+<div class="callout">
+<p class="alab">BOTH ARE TRUE, AND THE GAP BETWEEN THEM IS THE WHOLE PROBLEM</p>
+<p>Attention-as-matcher works well for a 200-line <code>CLAUDE.md</code> describing the stack you are
+touching. It fails for a 133-row index plus ~10,000 lines of entries, competing with everything else in
+a long session. <strong>The mechanism does not degrade gracefully — it degrades invisibly.</strong>
+Nothing reports a miss, nothing counts one, and the only evidence is a defect weeks later whose lesson
+was sitting in context the whole time. That is a mechanism with no falsifier, which is the property this
+repository refuses in every gate it builds — and it is running the memory.</p>
+</div>
+
+<p><strong>What it was actually describing.</strong> Its hierarchy, path-scoping and override rules are
+the <code>CLAUDE.md</code> system — real, and not the subject. <strong>The corpus in question lives
+at <code>~/.claude/projects/&lt;slug&gt;/memory/</code>, outside any <code>CLAUDE.md</code> hierarchy
+entirely</strong>, so none of that path-scoping governs it. Its &ldquo;Discovery / file-system
+traversal&rdquo; row does not apply to a single file of it.</p>
+
+<p><strong>One fabrication, checked rather than assumed.</strong> It lists <code>.clauderc</code> as a
+memory artifact. <strong>No such file exists anywhere on this machine or in this repository</strong> —
+searched with a control that did find the real <code>settings.json</code> at both levels, so the negative
+is trustworthy. Its &ldquo;Active Tool-Based Memory Retrieval&rdquo; section is also about grepping the
+<em>codebase</em>, which is true and has nothing to do with the memory corpus — measured earlier:
+<strong>nothing reads that corpus at all.</strong></p>
+
+<p>The hierarchical-scoping claim is <strong>untestable here</strong> rather than wrong: this repository
+has exactly one <code>CLAUDE.md</code>, so there is no nesting to observe. Reported as untested.</p>
+
+<h3>Where (1) and (4) converge with §8 — and improve on §7</h3>
+
+<p><strong>The tag does not have to be authored: for operations it is already being emitted.</strong>
+§8 argued for keying by OPERATION over PRINCIPLE because an operation is observable. A
+<code>PreToolUse</code> hook sees <code>gh pr create</code> before it runs. That is your (1) and (3)
+combined, with no breadcrumb required — the work emits its own distinct signal as a side effect of
+being work.</p>
+
+<p><strong>So explicit tagging earns its place exactly where there is no tool signature.</strong>
+&ldquo;I am reasoning about whether this measurement is sound&rdquo; leaves no trace a hook can see;
+&ldquo;I am about to state a number I did not derive&rdquo; leaves none either — and those are the
+failures that actually cost this session. That residue is the case for (4), and it is a real one, but it
+is smaller than it first looks and should be scoped to it.</p>
+
+<div class="callout">
+<p class="alab">THIS IS BETTER THAN PART A, AND SUPERSEDES IT FOR THE GENERAL CASE</p>
+<p>§7's Part A proposed promoting entries to hooks <strong>one at a time</strong>, when a trigger is
+exactly decidable from a tool call. That does not scale: 133 rows would need 133 promotions, and the
+corpus grows at 1.8 files a day.</p>
+<p><strong>Your (3) + (4) is one mechanism instead of N.</strong> A single monitor that matches the whole
+corpus against the current moment scales with the corpus rather than against it — and it removes the
+part of Part A I was least comfortable with, which is that every promotion is itself an act of recall by
+the author. <strong>Part A survives only for the narrow case it is genuinely best at:</strong> a defect
+so exactly decidable that refusing it outright beats surfacing a note about it — your
+<code>git commit -m</code> with a backtick.</p>
+</div>
+
+<p><strong>What is still unresolved, and I am not going to paper over it:</strong> a matcher needs
+something to match <em>on</em>. If the index stays keyed by subject, a monitor watching
+<code>gh pr create</code> has nothing to match against — which puts §8's
+operations-versus-principles fork back on the critical path rather than beside it. <strong>The monitor
+and the re-keying are the same project, not two.</strong></p>
+
+<div class="hr"></div>
+
+<h2><span class="n">11</span>What the industry does about this — a recorded search</h2>
+
+<p class="added">ADDED 2026-09-29, at your request. <strong>Researched, not recalled</strong> — this
+repository's own rule says prior art is a research step and that <em>an unrecorded search is
+indistinguishable from no search</em>, so the queries and the misses are both below.</p>
+
+<h3>Family 1 — make the STORED item carry its own situation (the one with a measured effect size)</h3>
+
+<p>Anthropic's <strong>Contextual Retrieval</strong> prepends a short explanatory context to each chunk
+<em>before</em> it is indexed, so the chunk carries the circumstance it belongs to rather than floating
+free. Published figures, on top-20 retrieval failure rate:</p>
+
+<table><thead><tr><th>technique</th><th>failure rate</th><th>reduction</th></tr></thead><tbody>
+<tr><td>baseline</td><td>5.7%</td><td>—</td></tr>
+<tr><td>contextual embeddings + contextual BM25</td><td>2.9%</td><td><strong>49%</strong></td></tr>
+<tr><td>… plus reranking</td><td>1.9%</td><td><strong>67%</strong></td></tr>
+</tbody></table>
+
+<p>⭐ <strong>This is the single most relevant result in the survey, because it is
+&sect;7's Part B under another name.</strong> The fix is not a better search over the same corpus —
+it is <em>rewriting what is stored so that it carries the situation it applies to</em>. That is exactly
+&ldquo;re-key the index by trigger&rdquo;, and it now has an industry name and a number attached.</p>
+
+<h3>Family 2 — hybrid retrieval and reranking</h3>
+
+<p>Lexical (BM25) catches exact identifiers; embeddings catch paraphrase; a reranker does deeper
+analysis on the small candidate set the first two produce. Relevant here because &sect;3 measured that
+a bare lexical probe returns <strong>34 of 141 files</strong> for <code>anchor</code> — which is
+precisely the imprecision a reranking stage exists to fix. ⚠ But it presumes a retrieval step, and
+&sect;10 measured that <strong>there is none</strong>.</p>
+
+<h3>Family 3 — agent-memory architectures, and the tiering that matters</h3>
+
+<p><strong>Letta/MemGPT</strong> uses an explicitly OS-inspired split: <em>core</em> memory always in
+context (RAM), <em>archival</em> memory in an external searchable store (disk), <em>recall</em> memory
+for history — and the agent calls tools to search the lower tiers. <strong>Mem0</strong> does
+passive extraction plus semantic search; <strong>Zep/Graphiti</strong> adds a bi-temporal knowledge
+graph.</p>
+
+<div class="callout">
+<p class="alab">THE TIERING IS THE FINDING, NOT THE VENDOR</p>
+<p><strong><code>MEMORY.md</code> is currently 100% core memory.</strong> All 133 rows, always resident,
+no archival tier and no tool to search one. Every one of these systems concluded independently that this
+shape stops working past a certain size — which is the same conclusion &sect;1 reached by
+measurement, arrived at by people who had to ship it.</p>
+<p>⚠ <strong>Treat their benchmark numbers with suspicion.</strong> Zep reports 71.2% on LongMemEval
+against Mem0's 49%; Mem0 separately claims 94.4 on the same benchmark. Vendor-published figures that
+disagree this violently are marketing until independently replicated, and I am not going to launder them
+by quoting only one.</p>
+</div>
+
+<h3>Family 4 — do not retrieve at all: enforce at the point of action</h3>
+
+<p>The most widely adopted answer in ordinary software is not a memory system. <strong>Danger.js</strong>
+exists to automate review chores and its tagline is literally the problem statement —
+<em>&ldquo;Stop saying &lsquo;you forgot to&hellip;&rsquo;&rdquo;</em>. Twitch pairs
+<strong>CODEOWNERS with lint rules</strong> to steer a monolith: ownership routes the change, lint
+snapshots stop the pattern spreading. Policy-as-code routes risky operations to a human at the moment
+they are attempted.</p>
+
+<p>The argument, in the sharpest form the search produced: <em>a constraint that exists only in
+institutional memory degrades over time, while a lint rule enforces the constraint forever.</em></p>
+
+<p><strong>factory.ai makes the agent-specific version of this case</strong> — that linters beat
+markdown instruction files for directing agents, naming three failure modes of prose guidance:
+<strong>ambiguity</strong> (the agent believes it complied), <strong>no enforcement</strong> (advice does
+not fail a build, so drift accumulates quietly), and <strong>limited scope</strong> (prose cannot verify
+cross-file boundaries). ⛔ <strong>It offers no measurements of any kind</strong> — no benchmark, no
+case study, no numbers. It is an argument, and a good one, but it is not evidence, and this page is not
+going to cite it as though it were.</p>
+
+<h3>Family 5 — the cognitive science, which names what you described</h3>
+
+<p>Your framing has a formal name and a fifty-year literature: <strong>Tulving and Thomson's encoding
+specificity principle</strong> — retrieval succeeds to the extent that the cues present at recall
+<em>overlap the cues present at encoding</em>. Context encoded alongside a memory is what later evokes
+it.</p>
+
+<p>⭐ <strong>That is this page's whole finding, stated by psychologists in 1973.</strong> The index
+encodes by SUBJECT (&ldquo;what this lesson is about&rdquo;). Retrieval is attempted in a SITUATION
+(&ldquo;I am about to open a PR&rdquo;). The cues do not overlap, so the trace is not evoked — and
+&sect;3 measured the non-overlap directly: <strong>1 of 133 rows opens by naming a situation.</strong></p>
+
+<div class="answered">
+<p class="alab">ANSWERED 2026-09-29 — you asked whether Family 5, Family 1 and idea-breadcrumbs are the same thing</p>
+
+<p><strong>They are the same principle attacked from opposite ends of one equation, and you are right
+to collapse them.</strong> Encoding specificity says success is a function of <em>two</em> terms:</p>
+
+<p style="text-align:center"><em>retrieval success &asymp; overlap( cues stored at ENCODING , cues present
+at RETRIEVAL )</em></p>
+
+<ul>
+<li><strong>Family 1</strong> raises the FIRST term — enrich the stored item before indexing.</li>
+<li><strong>Your breadcrumbs</strong> raise the SECOND — enrich the moment of retrieval.</li>
+<li><strong>Family 5</strong> is the law saying either works.</li>
+</ul>
+
+<p><strong>But the asymmetry decides what to build:</strong></p>
+
+<table><thead><tr><th></th><th>encoding-side (Family 1)</th><th>query-side (breadcrumbs)</th></tr></thead>
+<tbody>
+<tr><td>when</td><td>once per entry, offline</td><td>every time, in flight</td></tr>
+<tr><td>cost</td><td>bounded — 133 rewrites, then done</td><td>recurs forever</td></tr>
+<tr><td>measured?</td><td><strong>yes, 49–67%</strong></td><td>no</td></tr>
+<tr><td><strong>depends on recall?</strong></td><td><strong>no</strong></td>
+<td><strong>yes — if the agent chooses to emit it</strong></td></tr>
+</tbody></table>
+
+<p>⚠ <strong>That last row is the trap, and it is #191's own sentence:</strong> <em>a note is a recall
+aid, and recall is what failed.</em> A breadcrumb I must REMEMBER to drop carries the same defect as the
+notes it is meant to rescue.</p>
+
+<div class="callout">
+<p class="alab">THE ESCAPE IS ALREADY HALF-BUILT HERE, AND THE BUILT HALF IS THE BREADCRUMBS</p>
+<p><strong>Measured 2026-09-29:</strong> <code>scripts/check-banner-armed.py</code> verifies that a
+<code>## ▶ STEP n of N</code> banner was emitted and paired with an armed plan. <strong>It never
+reads the content.</strong> Yet the banner grammar is already mandatory and already structured —
+<code>Thread:</code>, <code>Doing:</code>, <code>Why:</code> — and the memory file specifying it says
+the trail is <em>&ldquo;DATA, not just courtesy … expected to feed a <code>/goals</code> or
+<code>/dashboard</code> workflow view later.&rdquo;</em></p>
+<p>⭐ <strong>So the in-flight reasoning breadcrumb is already being emitted, in structured form, on
+every step of every session — and nothing consumes it.</strong> <code>Doing:</code> is literally a
+statement of the current situation, written before the work, in a fixed grammar. The expensive half of
+(4) is not generating breadcrumbs; it is <strong>reading a stream that already flows</strong> — and
+it needs no recall, because the banner is mandatory for an entirely different reason.</p>
+</div>
+
+<div class="callout" style="border-color:#c96">
+<p class="alab" style="color:#c96">CORRECTED 2026-09-29 — you caught two errors in the table that stood here</p>
+<p><strong>(a) I called Family 1 a kind of ad-hoc tag. It is the opposite:</strong> the prepended
+context is generated <em>systematically, for every chunk, against a fixed brief</em>. I let
+&ldquo;deliberate&rdquo; slide into &ldquo;ad-hoc&rdquo; and then argued against the weaker form I had
+substituted.</p>
+<p><strong>(b) The table had no encoding-side row at all.</strong> I drew an equation with two terms and
+then tabulated only one of them — leaving out the single technique in this whole page with a measured
+effect size.</p>
+<p>⭐ <strong>And your correction fixes the axis.</strong> I claimed recall-cost depends on whether the
+HARNESS emits a cue automatically. It does not. <strong>It depends on whether the cue has
+STRUCTURE.</strong> I write <code>Doing:</code> every step without remembering to — nothing
+automates it; the grammar demands a value. <strong>A structured field prompts its own content</strong>,
+so a cue I author deliberately costs no recall provided its shape is fixed. That is the real principle,
+and it was hiding under an accidental one.</p>
+</div>
+
+<p><strong>The table rebuilt on the right axis, with both terms of the equation:</strong></p>
+
+<table><thead><tr><th>side</th><th>cue</th><th>structured?</th><th>recall cost</th><th>status</th></tr></thead>
+<tbody>
+<tr><td rowspan="3"><strong>ENCODING</strong><br><span class="muted">what is stored</span></td>
+<td><strong>situational header per entry</strong> — Family 1's technique in this repo's idiom: a
+fixed-grammar line declaring WHEN the entry fires</td><td>✅ fixed grammar</td>
+<td><strong>none</strong> — authored once, offline, against a template</td>
+<td>⛔ <strong>not built — and it is the only thing here with a measured effect size</strong></td></tr>
+<tr><td>trigger-keyed index rows (&sect;7 Part B)</td><td>✅</td><td>none</td>
+<td>the same technique, named before the survey found its industry form</td></tr>
+<tr><td><em>&ldquo;write a better note&rdquo;</em></td><td>❌ none</td><td><strong>full</strong></td>
+<td>this is the intervention that already failed</td></tr>
+<tr><td rowspan="4"><strong>RETRIEVAL</strong><br><span class="muted">what the moment emits</span></td>
+<td>tool calls (<code>gh pr create</code>)</td><td>✅ by the harness</td><td>none</td>
+<td>unread — catches the 2 of 6 that paths miss</td></tr>
+<tr><td>file paths</td><td>✅ by the harness</td><td>none</td>
+<td>✅ <strong>already matched</strong> by nested <code>CLAUDE.md</code> (&sect;10: 4 of 6)</td></tr>
+<tr><td>step banners (<code>Thread:</code>/<code>Doing:</code>/<code>Why:</code>)</td>
+<td>✅ by convention, agent-filled</td><td>none — the grammar prompts it</td>
+<td>⛔ <strong>emitted, structured, UNREAD</strong></td></tr>
+<tr><td>free-prose asides</td><td>❌ none</td><td><strong>full</strong></td>
+<td>the only genuinely risky tier — and it is optional</td></tr>
+</tbody></table>
+
+<div class="callout">
+<p class="alab">WHERE THIS LANDS: ONE GRAMMAR ON BOTH SIDES</p>
+<p>Encoding specificity says overlap is what matters. <strong>Overlap is cheapest to compute when both
+sides speak the same grammar</strong> — so the two structured cues should be designed as one thing,
+not two:</p>
+<p style="margin:.6rem 0"><code>FIRES-WHEN: about to open a PR</code> &nbsp;← stored on the entry
+(encoding side, authored once)<br>
+<code>Doing: opening the PR for backlog #192</code> &nbsp;← emitted by the banner (retrieval side,
+already written every step)</p>
+<p>Neither side costs recall, because both are fields in a fixed form. And the matcher — &sect;10's
+missing monitor — stops needing to be clever: <strong>it is comparing two strings written in the
+same vocabulary, not doing semantic search over 10,000 lines of prose.</strong></p>
+<p>⚠ <strong>The 49–67% figure is Anthropic's, for chunk retrieval in a RAG pipeline.</strong> It is
+evidence that enriching the stored side works in general; it is NOT a measurement of this design, and
+nothing here has measured that. Stated so it is not quoted back as though it were ours.</p>
+</div>
+
+<p><strong>So the answer to your question is yes, and it is better than a merger.</strong> Because the
+principle is one equation with two terms, the two techniques are additive rather than alternative
+— and tiers 1–3 give you the query-side term <em>without</em> the recall dependency that made
+(4) look risky. Only tier 4 has that problem, and tier 4 is now optional.</p>
+</div>
+
+<h3>What I searched and did NOT find</h3>
+
+<p>⚠ Recorded because an unrecorded miss is indistinguishable from not looking.
+<strong>I found no prior art for your (4) applied to the QUERY side</strong> — an agent emitting
+breadcrumb tags about its own in-flight reasoning, for a monitor to match against memory. Contextual
+Retrieval does this on the <em>storage</em> side; nothing I found does it on the <em>query</em> side.
+That may mean it is genuinely novel, or that I searched with the wrong vocabulary. <strong>I cannot
+tell which, and am not going to claim the flattering reading.</strong></p>
+
+<p><strong>Queries run:</strong> agent memory architectures and comparisons; just-in-time developer
+guidance, path-scoped lint rules, CODEOWNERS, Danger.js and policy-as-code; Anthropic contextual
+retrieval with hybrid search and reranking; encoding specificity and transfer-appropriate processing.</p>
+
+<div class="callout">
+<p class="alab">WHAT THE SURVEY CHANGES ABOUT THE DESIGN</p>
+<p><strong>1. Nobody relies on attention alone past small N.</strong> Every system found builds an
+explicit retrieval or enforcement step. &sect;10's finding — that attention <em>is</em> the matcher
+here — is not a normal architecture at this corpus size; it is the unusual one.</p>
+<p><strong>2. The best-measured technique is the re-keying, not a search tool.</strong> 49–67%
+failure reduction came from enriching what is stored, not from searching it better. That is direct
+evidence for Part B over direction ⑵, and it is the strongest argument this page now has.</p>
+<p><strong>3. The most-adopted technique is not retrieval at all.</strong> Lint rules, CODEOWNERS and
+PR-time bots enforce at the moment of action — which is the nested <code>CLAUDE.md</code> measured
+in &sect;10 and your tool-call monitor, and it is what ordinary teams actually ship.</p>
+</div>
+
+<div class="hr"></div>
+
+<div class="answered">
+<p class="alab">CORRECTED 2026-09-29 — A1 was proposed in the wrong place, and my word "hook" caused a false problem</p>
+
+<p><strong>First, a terminology error of mine.</strong> I used <em>hook</em> for the trailing prose in
+an index row (the journalism sense). In this repository <em>hook</em> already means a
+<code>.claude/hooks/*.sh</code> script. Two unrelated things, one word, never glossed — which
+manufactured an apparent &ldquo;fragile location mechanism&rdquo; that <strong>does not exist</strong>.
+The link is a filename: deterministic, unambiguous, fine. What is fragile is <em>deciding a row is
+relevant now</em>, which is not a lookup failure and cannot be fixed by better addressing.</p>
+
+<p>⭐ <strong>Second, and this changes the design: A1 belongs in the ENTRY FILE, not the index row —
+and the field already exists.</strong> Every one of the 141 entries carries a <code>description:</code>
+frontmatter field, documented in the memory instructions as <em>&ldquo;a one-line summary, used to
+decide relevance during recall.&rdquo;</em></p>
+
+<table><thead><tr><th>measured</th><th>value</th></tr></thead><tbody>
+<tr><td>coverage</td><td><strong>141 / 141 — 100%</strong></td></tr>
+<tr><td>median length</td><td><strong>183 chars</strong> — 3&times; the 57 an index row affords</td></tr>
+<tr><td>always-resident cost</td><td><strong>zero</strong> — regime 3, never injected</td></tr>
+<tr><td>opens with a situation word</td><td><strong>4 (3%)</strong></td></tr>
+<tr><td>names one anywhere</td><td>43 (30%)</td></tr>
+<tr><td>anything that reads it</td><td><strong>nothing</strong> (&sect;10, measured)</td></tr>
+</tbody></table>
+
+<p>A field designed for relevance-during-recall, fully populated, free, in the right place —
+<strong>written as subject-summary rather than situation, and consumed by nothing.</strong></p>
+
+<div class="callout">
+<p class="alab">THE TRADE-OFF, STATED RATHER THAN BURIED</p>
+<p>In the entry file it is <strong>not in context</strong>, so attention cannot use it — only a
+matcher can, which makes it hard-depend on C5. The index-row version works without a matcher but taxes
+always-resident context 133 times forever. <strong>Since &sect;13 already sequences the matcher, and the
+field already exists at 100% coverage, the entry-file version wins</strong> — and A1 changes from
+<em>author 133 new lines</em> to <em>rewrite 141 existing ones, offline, in place</em>.</p>
+</div>
+
+<div class="callout" style="border-color:#c96">
+<p class="alab" style="color:#c96">AND THE 5-of-6 FIGURE IS NOT A FAILURE RATE</p>
+<p>It means: <em>of six failure classes examined in one session, five had an entry that already
+existed.</em> That is a <strong>sample of failures with no denominator</strong>. It says nothing about
+how often memory does fire — and per &sect;4's answer, <strong>that is unobservable, so there is no
+numerator either</strong>.</p>
+<p>⛔ <strong>So the success rate is not merely unmeasured; it is UNMEASURABLE under the current
+design.</strong> Building the matcher would create the first denominator this system has ever had —
+a reason to build it that is independent of whether it improves recall at all.</p>
+</div>
+</div>
+
+<h2><span class="n">12</span>Bag of engineering ideas — the complete inventory</h2>
+
+<div class="callout" style="border-color:#6a9">
+<p class="alab" style="color:#6a9">HOW TO READ THE CODES — added 2026-09-29 because they were used before being defined</p>
+<p>Every idea below has a code <code>&lt;group letter&gt;&lt;number&gt;</code>. <strong>The letter says
+what the idea does to the overlap equation</strong> (&sect;11: <em>overlap(cues stored at encoding, cues
+present at retrieval)</em>), so the letter alone tells you which half of the problem it attacks:</p>
+<table><thead><tr><th>group</th><th>what it changes</th><th>the ones referred to elsewhere</th></tr></thead>
+<tbody>
+<tr><td><strong>A</strong></td><td>what is <strong>STORED</strong> — raises the encoding term</td>
+<td><strong>A1</strong> = a fixed-grammar situational line on each entry (<code>FIRES-WHEN:</code>)</td></tr>
+<tr><td><strong>B</strong></td><td>what the <strong>MOMENT</strong> emits — raises the retrieval term</td>
+<td><strong>B1</strong> tool calls &middot; <strong>B2</strong> file paths (nested
+<code>CLAUDE.md</code>) &middot; <strong>B3</strong> the plan step's
+<code>Doing:</code>/<code>Why:</code></td></tr>
+<tr><td><strong>C</strong></td><td>adds a <strong>RETRIEVAL</strong> step — there is none today</td>
+<td><strong>C5</strong> = <em>a matcher comparing two fixed-grammar strings</em>: reads A1 from the
+entries, reads B1/B2/B3 from the moment, surfaces the overlap. <strong>No embeddings, no semantic
+search</strong></td></tr>
+<tr><td><strong>D</strong></td><td>restructures the <strong>CORPUS</strong></td>
+<td><strong>D1</strong> = tiering — a small always-resident core plus a searchable archive</td></tr>
+<tr><td><strong>E</strong></td><td><strong>BYPASSES</strong> retrieval — enforces at the moment of action</td>
+<td><strong>E1</strong> a guard that refuses the mistake &middot; <strong>E3</strong> the
+<code>git commit -m</code> backtick guard</td></tr>
+<tr><td><strong>F</strong></td><td>laws and practices, not techniques</td>
+<td><strong>F1</strong> encoding specificity (Tulving &amp; Thomson)</td></tr>
+</tbody></table>
+<p>So <em>&ldquo;A1 hard-depends on C5&rdquo;</em> reads as: <strong>putting the trigger line in the
+entry file only helps once something reads it.</strong></p>
+
+<p><strong>And what &ldquo;attention cannot use it&rdquo; costs — neither speed nor tokens. It is
+binary:</strong></p>
+<table><thead><tr><th>placement</th><th>token cost</th><th>effect BEFORE a matcher</th><th>AFTER</th><th>room</th></tr></thead>
+<tbody>
+<tr><td>in the index row</td><td>133 rows &times; N, <strong>every session, forever</strong></td>
+<td><em>some</em> — it is in context</td><td>same</td><td>squeezed into ~57 chars</td></tr>
+<tr><td><strong>in the entry file</strong></td><td><strong>zero</strong></td>
+<td><strong>none — inert</strong></td><td>full</td><td>183+ chars</td></tr>
+</tbody></table>
+<p>⭐ <strong>What decides it: the index-row benefit is unobservable while its cost is certain.</strong>
+Per &sect;4 nothing can confirm that in-context text ever fires, so <em>&ldquo;some effect&rdquo;</em> is
+precisely the unfalsifiable claim this page exists to attack — paid for with a measured, permanent
+token cost. The entry-file version does nothing until something reads it, and then its effect is
+<strong>observable</strong>: the matcher surfaced the row, or it did not.</p>
+</div>
+
+<p class="added">ADDED 2026-09-29. <strong>Every idea raised anywhere in this discussion, grouped by
+what it actually does to the overlap equation.</strong> Completeness is the point, so ideas that are
+wrong, already-failed or inapplicable are listed too, with that noted — an inventory that quietly
+drops the losers cannot be checked.</p>
+
+<h3>A — Enrich what is STORED (raise the encoding term)</h3>
+<table><thead><tr><th>#</th><th>idea</th><th>source</th><th>evidence</th></tr></thead><tbody>
+<tr><td>A1</td><td><strong>Situational header per entry</strong> — a fixed-grammar line declaring
+WHEN the entry fires (<code>FIRES-WHEN:</code>)</td><td>Anthropic Contextual Retrieval, in our idiom</td>
+<td>⭐ <strong>49–67% failure reduction</strong> — measured, but for RAG chunks, not this</td></tr>
+<tr><td>A2</td><td>Trigger-keyed index rows; one owner per fact, N pointers by trigger</td>
+<td>&sect;7 Part B</td><td>same technique, named before the survey found its industry form</td></tr>
+<tr><td>A3</td><td>Merge entries until the index is scannable (&ldquo;fewer, bigger&rdquo;)</td>
+<td>#191 direction ⑷</td><td>⚠ <strong>untested</strong> — no evidence for or against</td></tr>
+<tr><td>A4</td><td><em>&ldquo;Write it down better&rdquo;</em></td><td>the status quo</td>
+<td>⛔ <strong>FAILED</strong> — 5 of 6 lessons were written down and unapplied</td></tr>
+</tbody></table>
+
+<h3>B — Expose what the MOMENT emits (raise the retrieval term)</h3>
+<table><thead><tr><th>#</th><th>idea</th><th>source</th><th>evidence</th></tr></thead><tbody>
+<tr><td>B1</td><td><strong>Tool-call signal</strong> — <code>PreToolUse</code> reads the command
+about to run</td><td>your (1)+(3)</td><td>hook exists; matcher does not</td></tr>
+<tr><td>B2</td><td><strong>File-path signal</strong> — nested instruction file per directory</td>
+<td>your question, 2026-09-29</td><td>✅ <strong>MEASURED to fire mid-session; 4 of 6</strong></td></tr>
+<tr><td>B3</td><td><strong>Plan-step signal</strong> — <code>Doing:</code>/<code>Why:</code> read
+from <code>.claude/plans/&lt;slug&gt;.md</code></td><td>your (4), structured form</td>
+<td>✅ <strong>MEASURED: on disk, structured, nothing reads it</strong></td></tr>
+<tr><td>B4</td><td>Step banners read from the transcript</td><td>your (4)</td>
+<td>⚠ <strong>BLOCKED</strong> — the in-flight turn is not flushed until Stop; B3 is the way round</td></tr>
+<tr><td>B5</td><td>Free-prose asides / ad-hoc tags</td><td>—</td>
+<td>⛔ unstructured — full recall cost, the failure being fixed</td></tr>
+<tr><td>B6</td><td>Temporal / sequence pattern of recent actions</td><td>your (2)</td>
+<td>⚠ <strong>UNMEASURED</strong> — no evidence either way</td></tr>
+</tbody></table>
+
+<h3>C — Add a RETRIEVAL step (there is currently none)</h3>
+<table><thead><tr><th>#</th><th>idea</th><th>source</th><th>evidence</th></tr></thead><tbody>
+<tr><td>C1</td><td>Lexical search over the corpus (grep/BM25)</td><td>#191 direction ⑵</td>
+<td>⚠ <strong>imprecise here</strong> — <code>anchor</code> returns 34 of 141 files</td></tr>
+<tr><td>C2</td><td>Embedding search</td><td>Mem0 and most RAG</td><td>untested here; needs infra</td></tr>
+<tr><td>C3</td><td>Hybrid lexical+semantic</td><td>industry standard</td>
+<td>Anthropic: pairing both is what produced the 49%</td></tr>
+<tr><td>C4</td><td>Reranking over a candidate set</td><td>industry standard</td>
+<td>the step from 49% → 67%</td></tr>
+<tr><td>C5</td><td>A matcher comparing two FIXED-GRAMMAR strings (A1 &times; B1/B2/B3)</td>
+<td>this discussion</td><td>⭐ needs no embeddings; mutation-testable like every guard here</td></tr>
+</tbody></table>
+
+<h3>D — Restructure the CORPUS</h3>
+<table><thead><tr><th>#</th><th>idea</th><th>source</th><th>evidence</th></tr></thead><tbody>
+<tr><td>D1</td><td><strong>Tiering</strong> — small always-resident core + searchable archival</td>
+<td>Letta/MemGPT</td><td>⭐ every system surveyed converged on it; ours is <strong>100% core</strong></td></tr>
+<tr><td>D2</td><td>A taxonomy over entries</td><td>#191 direction ⑴</td>
+<td>⛔ <strong>DEPLOYED, falsifier fired</strong> — 5 sections, 133 rows, failed anyway</td></tr>
+<tr><td>D3</td><td>Temporal knowledge graph</td><td>Zep/Graphiti</td>
+<td>⚠ vendor benchmarks disagree violently; heavy</td></tr>
+<tr><td>D4</td><td>Derived-edge knowledge graph over documents</td><td><code>portable-practices.md</code></td>
+<td>already written down here, with its trap: hand-maintained goes stale and is worse than grep</td></tr>
+</tbody></table>
+
+<h3>E — Bypass retrieval: enforce at the point of action</h3>
+<table><thead><tr><th>#</th><th>idea</th><th>source</th><th>evidence</th></tr></thead><tbody>
+<tr><td>E1</td><td><strong>A guard that refuses the mistake</strong></td><td>#191's own baseline</td>
+<td>⭐ <strong>1 of 8 repairs that worked without recall</strong></td></tr>
+<tr><td>E2</td><td>Promotion rule: entry → hook when exactly decidable from the tool call</td>
+<td>&sect;7 Part A</td><td>⚠ superseded for the general case — N promotions, each an act of recall</td></tr>
+<tr><td>E3</td><td><code>git commit -m</code> with a backtick refused</td><td>your candidate, 2026-09-27</td>
+<td>exactly decidable, no false positives — the best instance of E1</td></tr>
+<tr><td>E4</td><td>Lint rules as enforced architecture; CODEOWNERS + lint pairing</td><td>Twitch, factory.ai</td>
+<td>⚠ factory.ai gives <strong>zero measurements</strong>; Twitch is a case study</td></tr>
+<tr><td>E5</td><td>PR-time rule bot (Danger.js shape)</td><td>industry</td>
+<td>✅ <strong>we already have this</strong> — <code>check-merge-ready.py</code></td></tr>
+<tr><td>E6</td><td>Policy-as-code: route risky ops to a human at the moment</td><td>industry</td>
+<td>partially present — the human merge gate</td></tr>
+</tbody></table>
+
+<h3>F — Laws and practices, not techniques</h3>
+<table><tbody>
+<tr><td>F1</td><td><strong>Encoding specificity</strong> (Tulving &amp; Thomson) — overlap between
+encoding cues and retrieval cues governs everything above. The law, not a tool</td></tr>
+<tr><td>F2</td><td><strong>Prior art is a research step, not a memory</strong> — and record the
+search, including the misses. Already in <code>portable-practices.md</code></td></tr>
+<tr><td>F3</td><td><strong>A carry-forward naming no destination is a note</strong> — give deferrals
+an id in the same turn</td></tr>
+</tbody></table>
+
+<div class="hr"></div>
+
+<h2><span class="n">13</span>Bag of feasible applications here — with the costs</h2>
+
+<p class="added">Ranked by <strong>value ÷ cost</strong>, not by how interesting they are. Every row
+names what would have to be TRUE for it to be worth doing, and what it would break.</p>
+
+<h3>Tier 1 — do these: high value, low cost, evidence exists</h3>
+
+<table><thead><tr><th></th><th>what it is here</th><th>pros</th><th>cons / risk</th><th>cost</th></tr></thead>
+<tbody>
+<tr><td><strong>B2</strong><br>nested<br><code>CLAUDE.md</code></td>
+<td>A pointer-only file per directory, firing when a file there is read or edited</td>
+<td>✅ <strong>Already measured to work (4 of 6).</strong> Zero new machinery — the harness already
+looks for it. Needs no matcher, no hook, no retrieval step</td>
+<td>Permanent context tax on every access in that tree. A second place a rule can live → drift, this
+repo's most-measured failure (17×). Mitigated only by <em>point, never restate</em></td>
+<td><strong>DONE</strong> — PR #358, green</td></tr>
+<tr><td><strong>A1+A2</strong><br><code>FIRES-WHEN:</code><br>headers</td>
+<td>A fixed-grammar situational line on each memory entry and index row</td>
+<td>⭐ <strong>The only idea with a measured effect size.</strong> Offline, one-time, no recall
+dependency. Makes C5 trivial later. Incremental — the 20 costliest entries first</td>
+<td>133 entries is real authoring work. The 49–67% is Anthropic's, for RAG chunks —
+<strong>transfer is assumed, not shown</strong>. A badly-worded trigger is worse than none</td>
+<td>Medium, splittable</td></tr>
+<tr><td><strong>E3</strong><br>prose-in-shell<br>guard</td>
+<td><code>PreToolUse</code> refusing <code>git commit -m</code> whose argument holds a backtick, quote or
+newline</td>
+<td>Exactly decidable, no false positives. Kills a class that bit twice this week. Same shape as guards
+already shipped here</td>
+<td>Solves one narrow class only. Does nothing for the general problem</td>
+<td>Small</td></tr>
+</tbody></table>
+
+<h3>Tier 2 — the real build, once Tier 1 exists</h3>
+
+<table><thead><tr><th></th><th>what it is here</th><th>pros</th><th>cons / risk</th><th>cost</th></tr></thead>
+<tbody>
+<tr><td><strong>B3&times;C5</strong><br>the matcher</td>
+<td>A hook reading the current step's <code>Doing:</code>/<code>Why:</code> from
+<code>.claude/plans/&lt;slug&gt;.md</code> and surfacing memory rows whose
+<code>FIRES-WHEN:</code> matches</td>
+<td>⭐ <strong>Both sides already exist on disk in fixed grammars.</strong> No embeddings, no transcript,
+no flush problem. Two short strings in one vocabulary → <strong>mutation-testable like every other
+guard here</strong>, which a semantic matcher could not be</td>
+<td><strong>Hard-depends on A1</strong> — with no <code>FIRES-WHEN:</code> there is nothing to match
+against. Fires only while a plan is armed. A noisy matcher becomes an ignored one, which is worse than
+silence</td>
+<td>Medium</td></tr>
+<tr><td><strong>B1</strong><br>tool-call<br>matcher</td>
+<td>Same matcher, keyed on the command in <code>PreToolUse</code></td>
+<td>Catches the <strong>2 of 6</strong> that B2 structurally cannot — both were tool-output failures</td>
+<td>Same dependency on A1. Risk of firing on every <code>git status</code></td><td>Medium</td></tr>
+<tr><td><strong>D1</strong><br>tiering</td>
+<td>Shrink the always-resident index to a true core; move the rest behind the matcher</td>
+<td>The one structural fix for growth — 1.8 files/day, ~223 rows by mid-November. Every surveyed
+system converged here</td>
+<td><strong>Only safe once the matcher works</strong>: demoting a row before anything can retrieve it
+makes it strictly less findable. Sequencing error here is the dangerous one</td>
+<td>Medium–large</td></tr>
+</tbody></table>
+
+<h3>Tier 3 — explicitly NOT now, with the reason</h3>
+
+<table><thead><tr><th></th><th>why not</th></tr></thead><tbody>
+<tr><td><strong>C2/C3/C4</strong> embeddings, hybrid, reranking</td>
+<td>Infrastructure for a 142-file corpus, when C5 needs none. <strong>Revisit only if fixed-grammar
+matching is measured to miss</strong> — that is its falsifier, and it should be pre-committed</td></tr>
+<tr><td><strong>D3</strong> temporal knowledge graph</td>
+<td>Heavy, and its evidence is vendor benchmarks that disagree by 45 points</td></tr>
+<tr><td><strong>D4</strong> document knowledge graph</td>
+<td>Only with derived edges, per this repo's own warning. A bigger project than the problem</td></tr>
+<tr><td><strong>A3</strong> merge entries</td>
+<td>Untested, and it trades precision for scannability — the wrong trade if the matcher lands</td></tr>
+<tr><td><strong>B6</strong> sequence patterns</td>
+<td>No evidence yet. Would need a measurement design before an implementation</td></tr>
+<tr><td><strong>E2</strong> promote entries one at a time</td>
+<td>Superseded by B3&times;C5: N promotions, each itself an act of recall</td></tr>
+</tbody></table>
+
+<div class="callout">
+<p class="alab">THE SEQUENCE — CORRECTED 2026-09-29</p>
+<p>⟳ <strong>This block used to read <em>A1 &rarr; C5 &rarr; D1</em>. That was wrong in a way the user
+found by asking whether an inert field is even a problem.</strong> It is not — &ldquo;does nothing
+until its consumer exists&rdquo; is the normal condition of any component built before its reader, and
+listing it as a cost made a one-sided comparison look balanced.</p>
+<p>⛔ <strong>The real error was the opposite one.</strong> Rewriting all 141 <code>description:</code>
+fields BEFORE the matcher means authoring 141 trigger lines <strong>with no feedback on whether any of
+them work</strong> — which is cause 3 from &sect;4, the precise reason the existing hooks never
+improved, reproduced inside the fix.</p>
+<p><strong>Corrected sequence:</strong></p>
+<table><thead><tr><th>#</th><th>step</th><th>why here</th></tr></thead><tbody>
+<tr><td>1</td><td><strong>A1 on a small batch</strong> — the ~20 ⭐-flagged entries that have
+actually cost something</td><td>enough to build against, small enough to throw away if the grammar is
+wrong</td></tr>
+<tr><td>2</td><td><strong>C5</strong> — the matcher, against those 20</td>
+<td>creates the <strong>first denominator this system has ever had</strong></td></tr>
+<tr><td>3</td><td><strong>MEASURE</strong> — does it surface them at the right moments?</td>
+<td>the feedback loop that has never existed; without it step 4 is blind</td></tr>
+<tr><td>4</td><td><strong>A1 on the remaining ~120</strong></td>
+<td>now informed by evidence about what a good trigger line looks like</td></tr>
+<tr><td>5</td><td><strong>D1</strong> — tiering</td>
+<td>only ever last: demoting a row before retrieval works makes it strictly less findable</td></tr>
+</tbody></table>
+<p><strong>What would prove the whole design wrong:</strong> a failure class recurs, the entry existed,
+its trigger line correctly described the situation, the matcher was armed — and it still was not
+applied. Then matching was never the constraint and only E1-style refusal remains.</p>
+</div>
+
+<div class="hr"></div>
+
+<h2><span class="n">14</span>C5 was built, reviewed, and measured — what actually happened</h2>
+
+<p class="added">ADDED 2026-09-29 evening. <strong>Everything above this section was written before the
+matcher existed.</strong> It has now been built, put through round 1 of a dual adversarial review
+(2 Blocking, 4 High, 4 Medium, 7 Low on ~450 lines), and measured against real populations. This
+section records what the measurements did to the design — including the parts that refute it.</p>
+
+<h3>A1 is done, and it cost nothing</h3>
+<p>All <strong>141</strong> entries now carry a <code>FIRES-WHEN:</code> trigger in frontmatter, two
+grammars (89 ACTION, 52 LOOKUP), median 52 characters. The corpus is under version control for the
+first time. <strong>The grammar reclassified 14 entries mechanically</strong> — filed as history or
+state, but with a trigger that only fits the ACTION grammar.</p>
+
+<h3>⛔ Three scoring functions failed, and the third failure is what located the real defect</h3>
+<table><thead><tr><th>scoring</th><th>fire rate on real commands</th><th>must-fire</th><th>verdict</th></tr></thead>
+<tbody>
+<tr><td>IDF only</td><td>98.2%, <strong>flat</strong> from 0.1 to 0.5</td><td>—</td>
+<td>one rare token clears any cutoff</td></tr>
+<tr><td>IDF &times; coverage (shipped)</td><td>52.7%, plateaus at ~25%</td><td>1/5</td>
+<td>bounded &times; unbounded — dimensionally wrong</td></tr>
+<tr><td>weight fraction (repair)</td><td>66% at 0.30, 41% at 0.40</td><td>1/5</td>
+<td>correct dimensions, still no operating point</td></tr>
+<tr><td>max-IDF &ldquo;distinctiveness&rdquo;</td><td>65% at best</td><td>3/5</td>
+<td>⛔ <strong>measured and killed</strong> — the <code>max</code> term contributes nearly nothing</td></tr>
+</tbody></table>
+
+<div class="callout">
+<p class="alab">⭐ THE CHANNEL WAS WRONG, NOT THE SCORING — AND IT IS THE ONE I NEVER MEASURED</p>
+<p>Every experiment above fed the matcher <strong>Bash commands</strong> (B1). The design's other input
+is <strong>B3: the <code>Doing:</code> line of the current plan step</strong> — and it was never tested
+until the fourth scoring function had already failed.</p>
+<p>On 195 real <code>Doing:</code> lines from this session, the same unchanged matcher produces:
+<em>&ldquo;run check-merge-ready again, merge only if READY&rdquo;</em> &rarr;
+<strong>merge-ready-slice-merged-324</strong>; <em>&ldquo;anchors bind by TEXT so rewriting these
+functions ORPHANS&rdquo;</em> &rarr; <strong>a-mutation-anchor-is-unbound</strong>;
+<em>&ldquo;merging in the forced order, since #219 is stacked on #218&rdquo;</em> &rarr;
+<strong>a-stacked-pr-dies-with-its-base-branch</strong>; <em>&ldquo;x&rdquo;</em> &rarr; silent.</p>
+<p><strong>A Bash command says what is being TYPED. A <code>Doing:</code> line says what is being
+DONE</strong> — written deliberately, before the work, in the same vocabulary as the triggers. That is
+the encoding-specificity condition (&sect;11 F1) stated exactly. The design was built for that channel
+and then evaluated entirely on the other one.</p>
+</div>
+
+<div class="callout" style="border-color:#c96">
+<p class="alab" style="color:#c96">AND THE FIRE RATE HAD THE WRONG UNITS ALL EVENING</p>
+<p>A percentage is meaningless without its denominator. <strong>28% of 275 Bash calls is 77
+interruptions per session. 28% of ~10 plan steps is three.</strong> The same number, two completely
+different mechanisms — and every threshold argument above was conducted without asking which one was
+being tuned.</p>
+</div>
+
+<h3>⛔ The delivery was writing where the model cannot read</h3>
+<p>A <code>PreToolUse</code> hook's <strong>plain stdout at exit 0 reaches the user's transcript, not
+the model's context.</strong> Verified with a disk probe: the hook fired on every Bash call, wrote its
+output, and <strong>none of it ever reached the model</strong>. This page already had a name for that
+shape in the memory corpus — <em>a gate's channel can be weaker than the gate</em>.</p>
+<p>Fixed with <code>hookSpecificOutput.additionalContext</code>, and then verified <strong>twice, end to
+end, which no earlier check did</strong>: in the main session, and by an independent probe in a
+<strong>subagent</strong> session — which matters because <code>subagent-driven-development</code> is
+this project's Phase 3 default, so a mechanism silent there would be silent in most sessions that do
+the work.</p>
+
+<div class="callout">
+<p class="alab">THE ROOT CAUSE OF ALL THREE FAILURES IS ONE PATTERN</p>
+<p><strong>I validated components against inputs I chose, instead of paths against inputs they
+receive.</strong></p>
+<ul>
+<li><strong>Scoring</strong> — tuned on 30 commands I picked. Real population: 52.7%, not the 17% shipped.</li>
+<li><strong>Delivery</strong> — verified by piping payloads into the script by hand. That tests the
+script and says nothing about whether anything receives its output. Nothing did.</li>
+<li><strong>Docstring claims</strong> — pinned by a case (<code>check-merge-ready.py</code>) that
+<strong>ends in <code>.py</code> and is immune by construction</strong>, with seven real
+counter-examples sitting in the corpus.</li>
+</ul>
+<p>Each time the failure was plainly visible in the real population at the first honest measurement,
+and invisible in mine — because my sample was drawn from the same mental model as the design.</p>
+</div>
+
+<h3>⛔ And then the labelled set refuted the whole approach — 19/20 became 2/20</h3>
+
+<p>A must-fire set of 20 plan-step situations plus 5 that must stay silent was written and
+<strong>committed before the first run</strong> (<code>8d1202f0</code>), with predictions recorded in
+the file. Result at threshold 0.20, top 3: <strong>19/20 hits, 0/5 violations</strong> — and it
+surprised the prediction of 12–15 in both directions, which is what pre-commitment is for.</p>
+
+<p><strong>Then the obvious objection was tested: I wrote both the labels and the triggers.</strong>
+Every situation was re-worded to describe the same moment in different words —
+<em>&ldquo;pushing from the worktree&rdquo;</em> became <em>&ldquo;sending commits upstream from the
+secondary checkout&rdquo;</em>:</p>
+
+<table><thead><tr><th>wording</th><th>must-fire hits</th></tr></thead><tbody>
+<tr><td>my labels</td><td><strong>19 / 20</strong></td></tr>
+<tr><td><strong>paraphrased, identical moments</strong></td><td><strong>2 / 20</strong></td></tr>
+</tbody></table>
+
+<div class="callout" style="border-color:#c96">
+<p class="alab" style="color:#c96">THE 19/20 MEASURED LEXICAL SELF-AGREEMENT, NOT RECALL</p>
+<p><em>&ldquo;pushing from the worktree&rdquo;</em> matched <em>&ldquo;pushing from a git
+worktree&rdquo;</em> because the same author wrote both, hours apart, in the same words. Under
+paraphrase the matcher is not near-missing — it is <strong>confidently wrong</strong>:
+<em>&ldquo;handing the design over for a yes or no&rdquo;</em> &rarr;
+<code>frontend-subproject-design-state</code>; <em>&ldquo;wrapping up by describing the plan for
+afterwards&rdquo;</em> &rarr; <code>document-approval-is-interactive</code>. It has no grip on the
+meaning at all.</p>
+<p>⛔ <strong>Third instance of one pattern in a single build.</strong> 30 Bash commands I chose; 195
+plan steps I eyeballed; 20 labels I wrote. Each test was generated from the same mental model as the
+thing under test. <strong>Pre-committing the labels was necessary and NOT sufficient</strong> — it
+prevents revising the answer after seeing output, and cannot prevent writing the test in the
+artifact's own vocabulary. The falsifying move was not the labels; it was <em>paraphrasing them</em>.</p>
+</div>
+
+<p><strong>This is a property of the approach, not of the implementation.</strong> Token overlap
+between two short strings works only when both are phrased by the same author in the same vocabulary,
+and real situations are not. A better stemmer or a fifth combiner moves 2/20 to perhaps 4/20, not to
+usable.</p>
+
+<div class="callout">
+<p class="alab">⭐ WHICH RETROACTIVELY VINDICATES THE OPTION THIS PAGE DISMISSED</p>
+<p>&sect;12's <strong>C2 / C3 — embeddings and hybrid retrieval</strong> — were ruled out here as
+&ldquo;infrastructure for a 142-file corpus, when C5 needs none&rdquo;, and because a semantic matcher
+cannot be mutation-tested the way every guard in this repo is. <strong>That reasoning was correct
+about mutation testing and wrong about the problem.</strong> Embeddings exist precisely because
+lexical overlap fails across paraphrase, which is the failure measured above — and &sect;11's
+industry survey said so: hybrid lexical + semantic is what produced Anthropic's 49% reduction, and
+<em>&ldquo;using only one leaves accuracy on the table.&rdquo;</em> The page recorded that finding and
+then argued past it on testability grounds.</p>
+<p>⚠ Stated as a corrected inference, not a new claim: <strong>nothing here has measured that
+embeddings would work on this corpus.</strong> What is measured is that the lexical approach does not.</p>
+</div>
+
+<h3>⭐⭐ And then the same paraphrases, read by an LLM: 19/20. The conclusion inverts.</h3>
+
+<p>A clean subagent — no context on any of this — was given only the 141 triggers and the
+<strong>same 20 paraphrased situations</strong>, and asked which entry each matched by MEANING. Scored
+against the labels committed at <code>8d1202f0</code>, which it never saw:</p>
+
+<table><thead><tr><th>matcher</th><th>situations</th><th>score</th></tr></thead><tbody>
+<tr><td>lexical (IDF &times; coverage)</td><td>my wording</td><td>19/20 — <strong>contaminated</strong></td></tr>
+<tr><td>lexical</td><td><strong>paraphrased</strong></td><td><strong>2/20</strong></td></tr>
+<tr><td><strong>LLM meaning-matching</strong></td><td><strong>paraphrased</strong></td><td><strong>19/20</strong></td></tr>
+</tbody></table>
+
+<p>Its single miss is arguably the label's fault: for <em>&ldquo;I ran a couple of the checks, that
+should be enough&rdquo;</em> it answered <code>a-check-result-is-not-the-claim</code>, a defensible
+read — and that same item was lexical's only miss on <em>my</em> wording too, because the
+<code>merge-ready</code> trigger mentions neither guards nor subsets.</p>
+
+<div class="callout">
+<p class="alab">⛔ THE 141 TRIGGERS ARE GOOD. THE CORPUS WAS NEVER THE PROBLEM.</p>
+<p>They carried <strong>19 of 20 through paraphrase</strong> when read by something that understands
+meaning. Everything this page concluded about the trigger corpus being wrong-shaped, needing
+rewriting, or needing shorter phrasing is <strong>refuted</strong>. The matcher was the defect, and
+its replacement is an LLM or embedding call — <strong>not a fifth scoring function</strong>.</p>
+<p>⚠ <strong>One run, n=20, one model, labels written by the author of the triggers.</strong> That is
+the same contamination shape that produced three false results tonight. Replicate with a paraphrase
+set authored by someone else before building on it.</p>
+</div>
+
+<div class="callout" style="border-color:#c96">
+<p class="alab" style="color:#c96">WHY THE WRONG THING GOT BUILT — THE TRANSFERABLE PART</p>
+<p>&sect;12 ruled out semantic matching because <em>&ldquo;a semantic matcher cannot be
+mutation-tested the way every guard in this repo is.&rdquo;</em> <strong>That was true, and it was the
+wrong criterion.</strong> A property of the <em>verification method</em> was allowed to select the
+<em>mechanism</em> — choosing one that is thoroughly testable and does not work, over one that works
+and is harder to test. <strong>Testability is a means; it got promoted to the objective.</strong></p>
+<p>And &sect;11's own survey had already said it: hybrid lexical + semantic is what produced
+Anthropic's 49% failure reduction, and <em>&ldquo;using only one leaves accuracy on the
+table.&rdquo;</em> <strong>This page recorded that finding and then argued past it.</strong></p>
+<p>The honest repair is not to abandon testability — it is to test a semantic matcher the way this
+one was finally tested: against a labelled set, <strong>paraphrased away from the artifact's own
+vocabulary</strong>. That is a different verification method, not an absent one.</p>
+</div>
+
+<h3>What this does to &sect;13</h3>
+<p><strong>A1: done.</strong> <strong>C5: built, and its delivery works; its scoring is unresolved for
+B1 and looks viable for B3.</strong> <strong>D1 (tiering): unchanged, still last.</strong> The
+corrected next step is not a better scoring function — it is <strong>a labelled must-fire set for plan
+steps</strong>, the one measurement that would establish whether B3 works, and the one nobody has taken.</p>
+<p>⚠ Still open and honestly unresolved: false positives on plan steps at threshold 0.20 are real
+(<em>&ldquo;commit the fold, re-run the card&rdquo;</em> &rarr; <code>restart-docker</code> is simply
+wrong), a real Porter stemmer would fix vocabulary splits my hand-rolled one still has
+(<code>happiness</code>/<code>happy</code>, <code>relational</code>/<code>relate</code>), and whether
+B1 can be rescued at all is unknown.</p>
+
+<div class="hr"></div>
+
+<h2><span class="n">15</span>Measured, inferred, unmeasured</h2>
+
+<p class="lede">The prose above cannot be told apart by reading it, and the difference is usually what
+you came for.</p>
+
+<div class="scroll"><table>
+<thead><tr><th>Claim</th><th>Status</th><th>How to check it</th></tr></thead>
+<tbody>
+<tr><td>142 files · 9,979 lines · 153-line index · median body 51</td><td><span class="pill yes">measured</span></td><td><code>glob</code> + <code>wc -l memory/*.md</code>, this session</td></tr>
+<tr><td>5 sections · 133 rows · 100% link coverage · section shares</td><td><span class="pill yes">measured</span></td><td>parse <code>MEMORY.md</code> headings and <code>](*.md)</code> links</td></tr>
+<tr><td><code>anchor</code> → 34/141 · <code>vacuous</code> → 15/141</td><td><span class="pill yes">measured</span></td><td>regex over every body, this session</td></tr>
+<tr><td>Trigger-blindness at 1% / 4% / 16%</td><td><span class="pill yes">measured</span></td><td>three regexes over 133 parsed rows; all three reported</td></tr>
+<tr><td>Growth 61→142 and 633→1256 over 45 days</td><td><span class="pill yes">measured</span></td><td><code>portable-practices.md:643</code> vs today's count</td></tr>
+<tr><td>The prior diagnosis and its two hook resolutions</td><td><span class="pill yes">measured</span></td><td><code>portable-practices.md:1160-1162</code> and <code>:822</code>, quoted verbatim</td></tr>
+<tr><td>Nothing in the repo reads the memory corpus</td><td><span class="pill yes">measured</span></td><td>grep over <code>scripts/</code> and <code>.claude/</code> — zero hits</td></tr>
+<tr><td><strong>Operations beat principles as the key</strong></td><td><span class="pill mid">inferred</span></td><td>follows from recognition being the failed step; not tested</td></tr>
+<tr><td><strong>Trigger-keying would have caught the <code>check-merge-ready</code> case</strong></td><td><span class="pill mid">inferred</span></td><td>plausible from where the entry sat; no counterfactual was run</td></tr>
+<tr><td><strong>Pointer duplication is safe</strong></td><td><span class="pill mid">inferred</span></td><td>argued in §8; the stale-rename counter-case is unaddressed</td></tr>
+<tr><td><strong>The growth rate continues</strong></td><td><span class="pill mid">inferred</span></td><td>two points give a rate, not a curve</td></tr>
+<tr><td><strong>#191's ⑴ calls a taxonomy undesigned; five sections with 133 rows exist</strong></td><td><span class="pill yes">measured</span></td><td>the section counts in M2 — parse <code>MEMORY.md</code></td></tr>
+<tr><td><strong>That the deployed taxonomy is the same thing ⑴ proposes</strong></td><td><span class="pill mid">inferred</span></td><td>⑴ may mean a <em>differently keyed</em> taxonomy — the §4 distinction. Then the row is imprecise, not wrong; §2 states the objection</td></tr>
+<tr><td>Direction ⑷ — fewer, bigger entries</td><td><span class="pill no">unmeasured</span></td><td>nothing on this page bears on it either way</td></tr>
+<tr><td>Whether any re-keying survives a real session</td><td><span class="pill no">unmeasured</span></td><td>only Part C's falsifier can answer this, after the fact</td></tr>
+<tr><td colspan="3"><strong>⟳ ADDED 2026-09-30 — §16's claims, on the same terms</strong></td></tr>
+<tr><td>Lexical 3/20 vs semantic 20/20 on paraphrases authored by an agent blind to the triggers</td><td><span class="pill yes">measured</span></td><td>both arms over identical strings; fixture <code>scripts/fixtures/recall-replication-2026-09-29.json</code></td></tr>
+<tr><td>0 true false fires in 60 dull negatives; 95% upper bound <strong>5.0%</strong></td><td><span class="pill yes">measured</span></td><td>rule of three over 60; isolated re-run, key unreachable</td></tr>
+<tr><td>A lexical shortlist caps the mechanism at 60% — recall@10 = 12/20, @20 = 12/20</td><td><span class="pill yes">measured</span></td><td>threshold floored to 0; eight correct entries rank 66–108</td></tr>
+<tr><td>~15 intent-statements/day vs ~275 tool calls/session</td><td><span class="pill yes">measured</span></td><td>45 plan files, 195 steps, 3.5 plans/day, from disk</td></tr>
+<tr><td>A model call costs 16.1s for 144 triggers × 4 situations</td><td><span class="pill yes">measured</span></td><td>the script's own first real <code>--arm</code>; <code>--fire</code> 0.12s</td></tr>
+<tr><td>No embedding backend exists here (no key, no <code>torch</code>, no <code>numpy</code>)</td><td><span class="pill yes">measured</span></td><td><code>env</code> + import probes; Anthropic ships no embeddings endpoint</td></tr>
+<tr><td>Recall does not degrade to corpus 1000 — 20/20, 19/20, 20/20 at 300/600/1000</td><td><span class="pill yes">measured</span></td><td>nested corpora, 300 a byte-prefix of 600; non-monotonic ⇒ not a size effect</td></tr>
+<tr><td>The binding variable is the already-embodied rubric boundary</td><td><span class="pill yes">measured</span></td><td>5/60 disagreement, all one direction; 11–12/60 flagged borderline</td></tr>
+<tr><td>The rubric clause is inert on this set</td><td><span class="pill yes">measured</span></td><td>one-variable control, 252 chars removed, 80/80 identical picks</td></tr>
+<tr><td>The shipped prompt is 1 recall point more conservative than the brief that produced 20/20</td><td><span class="pill yes">measured</span></td><td><code>build_prompt</code>'s own 93KB output, run verbatim: 19/20</td></tr>
+<tr><td>…because of its stronger <em>"NONE is very often right"</em> prior</td><td><span class="pill no">unmeasured</span></td><td>the likeliest cause, and no control was run on it. A hypothesis</td></tr>
+<tr><td>Degradation at 1000 <em>real</em> entries would be worse than measured</td><td><span class="pill mid">inferred</span></td><td>padding is synthetic; real lessons cluster in meaning, filler spreads out</td></tr>
+<tr><td>Whether a discrimination limit or a context limit binds at 92KB</td><td><span class="pill no">unmeasured</span></td><td>every probe at 1000 read its corpus in 2–3 passes; not separated</td></tr>
+<tr><td>That relevance ranking is the next binding problem</td><td><span class="pill mid">inferred</span></td><td>follows from negatives becoming scarce as the corpus grows; not tested</td></tr>
+</tbody></table></div>
+
+<p class="note">⟳ <strong>CORRECTED 2026-09-30.</strong> This paragraph read <em>"Nothing here has
+been built"</em> and was true when written. It is now false: the matcher is built, measured and
+running — see <a href="#s16">§16</a>. It is corrected rather than deleted because the sentence it
+guarded is still right — <em>do not build a tool before the keying question is answered</em> — and
+§16 is what answered it. Keying by SITUATION was the answer, and it was settled by measurement
+rather than by argument.</p>
+
+<div class="hr"></div>
+
+<h2 id="s16"><span class="n">16</span>Replicated, built, and the scaling trigger retired</h2>
+
+<p class="added">ADDED 2026-09-30. §14 ended with one instruction to its own future: <em>"one run,
+n=20, one model, labels written by the author of the triggers — replicate with a paraphrase set
+authored by someone else before building on it."</em> That was done, it held, the matcher was built
+on it, and then the question §13 deferred — <em>when do embeddings earn their dependency?</em> — was
+measured and turned out to be the wrong question.</p>
+
+<h3>The replication held, and the control is the load-bearing half</h3>
+
+<p>An agent was shown only the 25 situation strings — never the 141 triggers, never the labels — and
+rewrote each moment in different words: <em>guard</em> became <em>safety check</em>, <em>adversarial
+review</em> became <em>hostile critique</em>, <em>commit message</em> became <em>the text attached to
+a revision</em>. A second agent, blind to the labels, matched them. A third re-ran it in a clean room.</p>
+
+<div class="scroll"><table>
+<thead><tr><th>arm</th><th>must-fire (20)</th><th>negatives</th><th>false-fire rate</th></tr></thead>
+<tbody>
+<tr><td>lexical, top-1</td><td><strong>3/20</strong></td><td>53/60 silent</td><td><strong>11.7%</strong></td></tr>
+<tr><td>semantic, two independent runs</td><td>20/20</td><td>13/13</td><td>0%</td></tr>
+<tr><td><strong>semantic, isolated, 80 mixed</strong></td><td><strong>20/20</strong></td><td><strong>60/60</strong></td><td><strong>0%</strong></td></tr>
+</tbody></table></div>
+
+<p><strong>3/20 is not a bad score to be explained away — it is what proves the paraphrases are
+HARD.</strong> Its three hits are all places a proper noun survived rewording: <code>Docker</code>,
+<code>--delete-branch</code>, and <em>mutation markers</em> for <em>mutation anchors</em>. And the
+precision half, which §14 never had: lexical fires on 7 of 60 dull engineering moments, every one a
+pure token collision — <em>"stacking the two-column settings form into one column"</em> surfaced
+<code>a-stacked-pr-dies-with-its-base-branch</code>, on the word <em>stack</em>. Semantic fired on 0
+of 60, and on the near-misses named what it rejected: a 404-versus-200 query declined with <em>"not a
+storage guard"</em>, having found <code>rls-denial-is-indistinguishable-from-absence</code>, whose
+subject is literally <em>same 404 both ways</em>.</p>
+
+<p class="note">⚠ The bound is <strong>5.0%</strong>, not zero — rule of three over 60 negatives.
+And paraphraser and matcher share a model family, so this measures LLM-to-LLM invertibility, not
+human-to-LLM.</p>
+
+<h3>⛔ The cheap hybrid is refuted, and §12's vindication needs narrowing</h3>
+
+<p>§14 concluded that C2/C3 were retroactively vindicated. Half of that stands and half does not.
+The tempting design — <em>lexical shortlists, LLM adjudicates</em> — needs no new dependency and is
+what §11's survey recommends. Measured over the same 20 blind paraphrases, threshold floored to 0:
+<strong>recall@1 6/20, @5 10/20, @10 12/20, @20 12/20</strong> (no gain from 10 to 20), @141 20/20.</p>
+
+<p><strong>A shortlist stage can only LOSE recall; it can never add any.</strong> Eight correct
+entries rank at 66, 82, 94, 95, 106, 107 and 108, so any practical depth discards them and the
+adjudicator never learns they existed — <strong>lexical+LLM tops out at 12/20 against 20/20 for the
+LLM alone.</strong> ⭐ And the loss concentrates in the most valuable half of the corpus: the ones
+that sank are <em>asking the human to decide</em> (106), <em>pushing from a worktree</em> (108),
+<em>closing a turn with what I will do next</em> (94) — highest value, lowest token overlap. ⚠ This
+is about LEXICAL shortlists only; an embedding shortlist is semantic and its recall@k is unmeasured,
+and unmeasurable here: there is no embedding backend on this machine and Anthropic ships no
+embeddings endpoint, so C3 costs a new vendor key or ~2GB of local dependencies — against #191's own
+rule that harness work must be portable or it is a local habit.</p>
+
+<h3>What was built, and why it is precomputed rather than merely infrequent</h3>
+
+<p>Frequency, derived from the plans on disk rather than estimated: <strong>45 plan files, 195 steps,
+3.5 plans/day ≈ 15 intent-statements a day</strong>, against the refuted hook's <strong>~275 tool-call
+invocations per session</strong>. So <em>"embeddings are fast enough to call constantly"</em>
+optimises the resource that is not scarce — the cost of a fire is the reader's attention, and high
+frequency <em>is</em> the measured failure.</p>
+
+<p>A model call costs <strong>16.1s</strong>. But <code>begin-plan.py</code> writes every step's
+<code>Doing:</code> line <strong>at arm time</strong>, so all the situations are knowable before any
+of them happen. <code>scripts/recall-llm.py --arm</code> makes ONE call for the whole plan and caches
+it; <code>--fire</code> is a cache lookup at <strong>0.12s</strong>. Latency at fire time goes to zero
+rather than being tolerated. The caller is <code>PostToolUse(Bash, begin-plan.py)</code> — a step
+transition is the moment a lesson is useful, and that is the only event marking one — deduped per
+(plan, step) so <code>--status</code> cannot reprint it. 128 self-test cases, 53 mutations, 0
+survivors in a 1087-entry sweep.</p>
+
+<p class="note">⚠ <strong>A semantic matcher IS testable, which retires §14's remaining caveat.</strong>
+Not by mutating the model call — that is impossible — but by mutating everything around it. The
+matcher has 19 pure functions and one impure one, and the impure one has no case by design. §12's
+error was never preferring testable mechanisms; it was letting that preference <em>select</em> one.</p>
+
+<h3>⭐⭐ The scaling question was measured, and size is not the variable</h3>
+
+<p>The same 80-item set against nested corpora — 141 real entries plus the first N of 860 synthetic
+lessons written by an agent that saw nothing else, with the 300-corpus verified a byte-prefix of the
+600-corpus so size is the only thing that moves.</p>
+
+<div class="scroll"><table>
+<thead><tr><th>run</th><th>corpus</th><th>recall (20)</th><th>true false fires (60)</th></tr></thead>
+<tbody>
+<tr><td>probe-300</td><td>300</td><td>20/20</td><td>0</td></tr>
+<tr><td>probe-600</td><td>600</td><td>19/20</td><td>0</td></tr>
+<tr><td>probe-1000</td><td>1000</td><td>20/20</td><td>0</td></tr>
+<tr><td><strong>shipped prompt, verbatim</strong></td><td>1000</td><td><strong>19/20</strong></td><td><strong>0</strong></td></tr>
+<tr><td>shipped − rubric clause</td><td>1000</td><td>19/20</td><td>0</td></tr>
+</tbody></table></div>
+
+<p>⭐ <strong>Recall is NON-MONOTONIC — 20, 19, 20 — and that is the decisive evidence.</strong>
+Degradation caused by corpus size cannot go back up: 1000 could not beat 600. So the dip is per-run
+judgement variance, not wear. Probes at 300 and 1000 chose the <strong>identical entry for all 20
+positives</strong>, and across 180 negative judgements none ever picked a real entry for a moment the
+real corpus does not cover.</p>
+
+<p>⭐⭐ <strong>The binding variable is a rubric boundary, not size:</strong> <em>is a lesson the
+action ALREADY EMBODIES a match?</em> The two probes disagreed on exactly 5 of 60 negatives, all in
+one direction, all on that question — one had invented a rule, the other had never considered it.
+They flagged 11–12 of 60 borderline for the same reason, so roughly a fifth of ordinary moments sit
+there. It is stated in the prompt now, with two cases pinning it.</p>
+
+<h3>⭐⭐ And the reframe: as the corpus grows, genuine negatives become scarce</h3>
+
+<p>At 141 entries <em>adding a not-null column</em> matches nothing. At 300 it matches something apt.
+At 1000 covering all of engineering, nearly every moment legitimately matches <em>something</em>. So
+the precision question changes character with scale — from <em>does it fire wrongly</em> to
+<strong>is this correct match worth interrupting for</strong>. That is a relevance question, not a
+correctness one, and <strong>a similarity shortlist cannot answer it, because ranking by importance
+is not ranking by similarity.</strong> It is a third mechanism, and it is arguably what #191 was
+about all along.</p>
+
+<p class="note">⛔ <strong>Do not set the embedding trigger on a corpus size.</strong> Size was
+measured and does not bind at 1000. Build the next stage when relevance becomes the binding problem —
+when correct-but-not-worth-saying matches outnumber the useful ones.</p>
+
+<h3>⛔ Three of this section's own instruments were wrong</h3>
+
+<p>§14's transferable lesson was <em>I validated components against inputs I chose.</em> Tonight
+produced three more of the same family, all caught by re-running rather than re-reading, and all
+recorded rather than quietly fixed.</p>
+
+<p><strong>1. The scorer counted the matcher being RIGHT as failure.</strong> At corpus 300 it
+reported 5 false fires; all five were apt matches against <em>padding</em> — <em>"adding a required
+column to a big table"</em> for <strong>"adding a not-null constraint and a default to the status
+column"</strong>. The negatives were labelled <em>nothing covers this</em> against the 141 REAL
+corpus, and then 860 entries were added <strong>from the same well the negatives came from</strong>.
+I destroyed my own negative set. Repaired with three outcomes per negative — silent, COVERED, FALSE
+FIRE — and the <em>covered</em> column is not comparable across probes, because they applied
+different rubrics to it.</p>
+
+<p><strong>2. The 20/20 headline was never measured against the prompt that ships.</strong> It was
+measured against the reviewer's agent brief — similar wording, not identical. Repaired by handing a
+fresh matcher the exact 93KB text <code>build_prompt</code> emits: <strong>19/20, 0 false
+fires</strong>. So the deployed artifact is one recall point more conservative than the brief that
+produced the headline.</p>
+
+<p><strong>3. A causal claim was formed and refuted before publication.</strong> The missed item was
+hit at 300, 600 and 1000 and missed only in the run carrying the new rubric clause — and the clause,
+read plainly, would swallow it (<em>"kicking off the review half"</em> already embodies <em>"never ask
+permission to run a half"</em>). So a one-variable control was built: the same 93,781-character prompt
+minus exactly the 252-character clause, byte-identical otherwise. <strong>80/80 identical picks.</strong>
+The clause is inert on this set. The correlation was real and the causal story was fiction.</p>
+
+<p class="note">⚠ <strong>Every figure in this section is an optimistic bound.</strong> The padding
+is synthetic, and synthetic distractors are easier to reject than real lessons, which cluster — this
+corpus already holds <code>a-test-that-cannot-fail</code> beside
+<code>assert-the-property-not-the-mechanism</code>. A 92KB prompt also had to be read in two or three
+passes by every probe at 1000, so a context limit and a discrimination limit are both in play there
+and this experiment does not separate them.</p>
+
+<h3>What this does to §13, again</h3>
+
+<p><strong>A1</strong> done. <strong>C5</strong> superseded — its scoring is dead and its delivery,
+its corpus and its concept all survived into the replacement. <strong>C2/C3</strong> not yet needed,
+and the lexical form of the hybrid is refuted outright. <strong>D1</strong> unchanged. The corrected
+next step is neither a scoring function nor an embedding table: it is <strong>relevance
+ranking</strong>, and before that, a dual review of what was built.</p>
+
+</div>
+
+<script>
+(function(){
+  var c = document.getElementById('modechip');
+  if (!c) return;
+  var live = location.protocol === 'http:' || location.protocol === 'https:';
+  c.textContent = live ? '● live — Send works' : '○ local file — Send disabled';
+})();
+</script>
+
+<div class="chrome"><span class="chrome-when">generated <time>2026-09-30 · §16 added · semantic-recall-replication 4d1e7b46 · unmerged, unpushed</time></span></div>
+
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>

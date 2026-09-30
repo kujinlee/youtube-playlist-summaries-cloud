@@ -1,0 +1,379 @@
+<title>PR #342 — one owner for the observer log</title>
+<style>
+:root{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#8a857c; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#8a857c; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}}
+:root[data-theme="dark"]{
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+/* SIZE carries hierarchy. Headings are LIGHTER than body-bold, not heavier. */
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h)}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+/* BOLD IS A LABEL, NOT A SHOUT — weight only, a neutral tone, never a hue */
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+/* TERMINAL TEXTURE — inline code is a raised pill, and it carries the visual variety */
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em;white-space:nowrap}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+</style>
+<div class="wrap">
+
+<div class="mast">
+  <span class="eyebrow">Briefing · branch observer-log-owner · PR #342</span>
+  <h1>One owner for the observer log — three review rounds done, and the branch cannot merge yet</h1>
+  <p class="sub">The work is finished and measured. What stops it is procedural and real: two commits
+  made after the last review round changed guarded code, so no reviewer has seen them. The repo's own
+  gate says so, and it is right.</p>
+  <span class="stamp">A decision is waiting on you</span>
+</div>
+
+<div class="howto">
+  <div><strong>This page is live at <a href="http://127.0.0.1:7391/latest">http://127.0.0.1:7391/latest</a></strong> — that URL always points at the newest briefing.</div>
+  <div><strong>To ask a question:</strong> select any text, or hover a heading, then click <em>ask</em>, type, and press <strong>Send</strong>. Then say <em>“read my questions”</em> in chat.</div>
+  <div><strong>If the URL does not load:</strong> run <code>python3 scripts/explainer-serve.py</code> — safe to run twice. A reboot stops the server, which is the one moment you will need this.</div>
+  <div>A saved <code>file://</code> copy still reads fine; it only loses the Send button.</div>
+  <div><span id="modechip">served &rarr; Send works &middot; opened as a file &rarr; Send copies instead</span></div>
+</div>
+
+<section>
+  <h2>Where it stands</h2>
+  <div class="stats">
+    <div class="stat"><span class="n">7</span><span class="k">commits ahead of master</span></div>
+    <div class="stat bad"><span class="n">4</span><span class="k">of them never pushed</span></div>
+    <div class="stat"><span class="n">6</span><span class="k">review halves filed (3 rounds × 2)</span></div>
+    <div class="stat bad"><span class="n">2</span><span class="k">commits no round has seen</span></div>
+    <div class="stat good"><span class="n">981</span><span class="k">mutations pinned (954 on master)</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>The shape: what each commit was actually measured at</h2>
+  <p class="sub">Bar height is the pinned mutation total. Colour is the sweep verdict <em>observed in
+  this session</em> — not inferred, and not carried over from earlier ones. Two sweeps refused to run
+  at all, which is the harness working: a refusal is evidence, a silent pass would not be.</p>
+  <div class="chart">
+    <div class="bars">
+      <div class="bar" style="height:100%"><span class="v m">954</span><div class="col" style="height:32%" role="img" aria-label="master, 954 mutations, no sweep verdict from this session"></div></div>
+      <div class="bar" style="height:100%"><span class="v m">964</span><div class="col" style="height:44%" role="img" aria-label="commit 088649a6, 964 mutations, no sweep verdict from this session"></div></div>
+      <div class="bar" style="height:100%"><span class="v m">966</span><div class="col" style="height:47%" role="img" aria-label="commit b360f7cf, 966 mutations, no sweep verdict from this session"></div></div>
+      <div class="bar" style="height:100%"><span class="v m">966</span><div class="col" style="height:47%" role="img" aria-label="commit 9c843358, 966 mutations, no sweep verdict from this session"></div></div>
+      <div class="bar refused" style="height:100%"><span class="v m">972</span><div class="col" style="height:62%" role="img" aria-label="commit 6367c90f, 972 mutations, sweep REFUSED: four entries repeated an anchor tuple"></div></div>
+      <div class="bar clean" style="height:100%"><span class="v m">977</span><div class="col" style="height:76%" role="img" aria-label="commit 26fc8f82, 977 mutations, sweep CLEAN: 977 killed, 977 attributed, 0 survivors"></div></div>
+      <div class="bar refused" style="height:100%"><span class="v m">981</span><div class="col" style="height:90%" role="img" aria-label="commit c3ad7727, 981 mutations, sweep REFUSED: control red before any mutation"></div></div>
+      <div class="bar clean" style="height:100%"><span class="v m">981</span><div class="col" style="height:90%" role="img" aria-label="commit 7840a3be, 981 mutations, sweep CLEAN: 981 killed, 981 attributed, 0 survivors"></div></div>
+    </div>
+    <div class="xaxis">
+      <span>master</span><span>088649a6</span><span>b360f7cf</span><span>9c843358</span>
+      <span>6367c90f</span><span>26fc8f82</span><span>c3ad7727</span><span>7840a3be</span>
+    </div>
+    <div class="legend">
+      <span><i class="c"></i>sweep clean</span>
+      <span><i class="r"></i>sweep REFUSED — not measured</span>
+      <span><i class="p"></i>first run disturbed by load</span>
+      <span><i class="u"></i>no verdict from this session</span>
+    </div>
+  </div>
+  <div class="answered">
+    <span class="lab">You asked</span>
+    <p><em>“So full sweep for every commit? I thought sweep is for PR but if it happens every commit,
+    sweep is real drag.”</em></p>
+    <h3>You are right about the drag, and the chart overstates how often CI pays it</h3>
+    <p><strong>CI does not sweep per commit.</strong> The <code>verify</code> job runs per
+    <em>push</em>, so a push carrying five commits sweeps once, not five times. Measured on CI run
+    35889056587, that step took <span class="m">8m12s</span> inside a <span class="m">10m22s</span>
+    job — <strong>79% of the whole gate</strong>.</p>
+    <p style="margin-top:.6rem"><strong>The per-commit column above is me, locally, not CI.</strong>
+    I re-ran the sweep after each fold because each fold changed mutation entries, and a sweep
+    verdict only covers the tree it read. That is a choice about how carefully to land a branch that
+    edits the mutation harness itself — not a policy, and not something you pay for on ordinary
+    work.</p>
+    <p style="margin-top:.6rem"><strong>The drag is already filed as your own backlog row #173</strong>,
+    from this exact observation. Its measurement: three of the five PRs merged on 2026-09-22/23
+    changed no code at all, and when no <code>scripts/**</code> file changed the sweep mutates
+    unchanged code against unchanged suites — it can only reproduce the previous result. The fix is a
+    step-level <code>if:</code>, never a workflow <code>paths:</code> filter, because a filter means
+    the check never reports and a required check that never reports leaves a PR pending forever.</p>
+    <p style="margin-top:.6rem">⚠ One caveat worth carrying: round 3 found that the only cheap check
+    which could have caught a broken manifest did not exist — everything else read temp fixtures.
+    Two new cases now read the real manifests in under a second. That matters <em>because</em> of
+    #173: skipping the sweep is sound only if something cheap still notices a manifest that cannot
+    load.</p>
+  </div>
+  <div class="answered">
+    <span class="lab">You asked</span>
+    <p><em>“‘step level if’ can be a way to know how much the new change can affect. Is this a way to
+    find a blast radius? If we have a reliable way to find blast radius, we just need to sweep within
+    the blast radius, I feel. Or is it the other way around?”</em></p>
+    <h3>They are two different things, and the cheap one works <em>because</em> it refuses to
+    estimate a blast radius</h3>
+    <p><strong>The step-level <code>if:</code> is not a blast radius.</strong> It is one binary
+    question — <em>did any file under <code>scripts/</code> or <code>scripts/mutations/</code>
+    change?</em> — and the answer only ever turns the whole sweep on or off. It computes nothing
+    about <em>which</em> mutations could be affected.</p>
+    <p style="margin-top:.6rem">What makes it safe is that its rule is a <strong>tautology, not an
+    estimate</strong>: if no code and no manifest changed, the sweep mutates unchanged code against
+    unchanged suites, so it can only reproduce the previous result. There is nothing to be wrong
+    about. That is why it is row #173 and why it goes first.</p>
+    <p style="margin-top:.6rem"><strong>The blast-radius version is the other row, #174, and your
+    instinct is right that it is the more powerful lever — but it is measured and the naive form is
+    UNSOUND.</strong> A mutation's verdict can change if the mutated file's <em>suite</em> changes,
+    and <strong>half the suites read the repository rather than just their own module</strong>
+    (<code>POPULATION</code> lists, <code>glob()</code>, <code>subprocess</code> runs over other
+    scripts). Those files carry <span class="m">488 of 964</span> mutations — about
+    <strong>51%</strong> — so they must be swept whatever changed. Measured cost of each rule:
+    <em>changed ∪ importers</em> → <span class="m">31%</span> but unsound; adding the repo-reading
+    suites → <span class="m">51%</span> median for a one-file change. So the sound blast radius buys
+    roughly <strong>2×, not 3×</strong>.</p>
+    <p style="margin-top:.6rem">⚠ And that 51% is an <em>upper bound on the coupling, not a
+    measurement of it</em> — the detector flags any suite containing <code>subprocess.run</code>,
+    which over-counts, since a suite shelling out to itself is not repo-coupled. Row #174's first
+    task is to measure the real set, because if it is much smaller the payoff is much larger.</p>
+    <p style="margin-top:.6rem"><strong>So: not the other way around — they compose.</strong> #173
+    removes the cost from PRs that provably cannot differ; #174 shrinks what remains. #173 is
+    smaller, sound, and independent, which is why it is worth landing without waiting for the harder
+    one.</p>
+    <p style="margin-top:.6rem"><strong>⭐ One caution from this session, which is new evidence for
+    #174.</strong> Scoping by changed files assumes a verdict depends only on the code. Today a
+    sweep reported one <em>unattributable</em> kill that a direct reproduction in a staged tree could
+    not reproduce — the same commit, the same mutation, a different answer, with heavy concurrent
+    load the only difference. If a verdict can move without any file changing, a changed-file scope
+    rests on an assumption I have now watched wobble once. That argues for keeping a periodic full
+    sweep even after scoping lands — not for abandoning the idea.</p>
+    <p style="margin-top:.6rem"><strong>⟳ The re-run settled it: LOAD, not a code defect.</strong>
+    With nothing else competing, the same tree swept
+    <span class="m">981 mutations, 981 killed, 981 attributed, 0 survivors, rc=0</span>. So the
+    harness's capture of a suite's <code>[FAIL]</code> lines can be disturbed by concurrent work on
+    the machine. ⛔ That is worse than a red, not better: an intermittent unattributable kill invites
+    re-running until green, which is how a real one would eventually be waved through. It does not
+    change the merge decision and it is not this branch's subject — it is a finding to file.</p>
+  </div>
+  <p class="sub">The two refusals are the most useful events of the session. At <code>6367c90f</code>
+  four new mutation entries repeated an earlier entry's anchor tuple, so the loader rejected the
+  manifest and reported <span class="m">NOT MEASURED</span> — a commit whose message had already
+  declared those entries delivered. At <code>c3ad7727</code> the control run went red <em>before any
+  mutation was applied</em>, because three cases written minutes earlier asked this repository about
+  its own files and the harness stages a copy with no <code>.git</code>.</p>
+</section>
+
+<section>
+  <h2>What is blocked, and on what</h2>
+  <div class="tw"><table>
+    <thead><tr><th>What</th><th>Blocked on</th><th>State</th><th>Since</th></tr></thead>
+    <tbody>
+      <tr><td>Merging PR #342</td><td>A fourth review round over the two unreviewed commits</td>
+        <td><span class="pill bad">blocked</span></td><td class="num">now</td></tr>
+      <tr><td><code>check-review-recorded</code></td>
+        <td>Guarded code committed after the last round: <code>codex-review.py</code>, its manifest, <code>check-plan-code.py</code></td>
+        <td><span class="pill bad">rc=1</span></td><td class="num">c3ad7727</td></tr>
+      <tr><td>CI <code>verify</code> on the PR</td>
+        <td>Same gate — and the run is 4 commits stale, so pushing alone will not clear it</td>
+        <td><span class="pill bad">FAILURE</span></td><td class="num">9c843358</td></tr>
+      <tr><td>Final mutation sweep</td><td>Nothing — complete</td>
+        <td><span class="pill ok">981/981 clean</span></td><td class="num">7840a3be</td></tr>
+      <tr><td>Deploy-drift check</td><td><code>flyctl</code> has no auth token in this session</td>
+        <td><span class="pill bad">CANNOT RUN</span></td><td class="num">—</td></tr>
+      <tr><td>Backlog #175 — line-citation guard</td><td>Nobody; filed today, not started</td>
+        <td><span class="pill wait">filed</span></td><td class="num">today</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>The three rounds, and what each one caught</h2>
+  <p class="sub">Every Blocking on this branch was introduced by a <em>fold</em> — the fix for the
+  previous round. That is the pattern the fourth round exists to respect, not a reason to think the
+  branch is fragile.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Round</th><th>Half</th><th>Verdict as the document states it</th><th>The finding that mattered</th></tr></thead>
+    <tbody>
+      <tr><td class="num">r1</td><td>Claude</td><td class="num">2B · 3H · 4M · 2L</td><td>An assertion whose expected value was the symbol under test</td></tr>
+      <tr><td class="num">r1</td><td>Codex</td><td>2 Blocking (no severity totals stated)</td><td>Adapter passthrough is a different property from what the module preserves</td></tr>
+      <tr><td class="num">r2</td><td>Claude</td><td class="num">2B · 3H · 3M · 3L</td><td>A fix applied as an instance while the class stayed open</td></tr>
+      <tr><td class="num">r2</td><td>Codex</td><td>Blocking, in round 1's own fold</td><td>An unearned ratchet fall still standing</td></tr>
+      <tr><td class="num">r3</td><td>Claude</td><td class="num">1B · 3H · 4M · 4L</td><td>The manifest the previous commit declared delivered was <em>refused</em> by the harness</td></tr>
+      <tr><td class="num">r3</td><td>Codex</td><td><span class="pill ok">CONVERGED — 0/0/0/0</span></td><td>Re-derived every number independently; could not refute the fold</td></tr>
+    </tbody>
+  </table></div>
+  <p class="sub">Round 3's Claude half also refuted a claim written into the module itself: that the
+  file-encoding argument could not be mutation-covered. It can — the locale is an input a case can
+  choose, and under <code>LC_ALL=C</code> the missing argument raises. The paragraph asserting
+  otherwise is deleted and the case exists.</p>
+</section>
+
+<section>
+  <h2>The decision</h2>
+  <div class="decision">
+    <div class="rec">
+      <span class="lab">Recommendation</span>
+      <h3>Run a fourth round over the two unreviewed commits, then push and merge</h3>
+      <p>Both halves, scoped to <code>c3ad7727</code> and <code>7840a3be</code> — the verdict-path
+      refusal and its case rewrite. Roughly 30–45 minutes, mostly unattended. It clears
+      <code>check-review-recorded</code> honestly, which is the only thing standing between this
+      branch and a merge.</p>
+    </div>
+    <div class="against">
+      <span class="lab">The strongest argument against</span>
+      <h3>Round 3 already converged, and this change is small and well-tested</h3>
+      <p>Codex found nothing at round 3 and re-derived every number to say so. The verdict-path fix
+      carries 103 self-test cases, four mutations each killed by the case it names, and was verified
+      in three separate worlds. A fourth round on a change whose own gates are green looks like
+      process for its own sake — and it was only added to this branch because you chose to fix it
+      here rather than file it.</p>
+    </div>
+    <div class="answer">
+      <span class="lab">Why I still recommend the round</span>
+      <h3>Every Blocking this branch produced was in code no round had seen</h3>
+      <p>Round 2's Blocking came from round 1's fold; round 3's came from round 2's. The two
+      unreviewed commits are exactly that shape — code added after the last reviewer looked. And they
+      are not hypothetically risky: three cases in them were <em>already wrong when written</em>,
+      passing only because they ran inside this git checkout, and it was the harness that caught it,
+      not me. That is the second time in this branch that my own new cases were wrong in a way only
+      execution revealed.</p>
+      <p style="margin-top:.6rem">The honest alternative, if you want this merged today, is a written
+      <code>NO-REVIEW:</code> reason in the PR body. That is a real option the gate supports — but it
+      spends the exemption on the one commit class that has produced every Blocking here.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>What I could not verify</h2>
+  <div class="cannot">
+    <strong>Deploy drift — NOT RUN.</strong> <code>flyctl releases</code> failed with
+    <em>no access token available</em>, so I could not compare what is live against the roadmap's
+    claim. The roadmap's newest deploy line records release <span class="m">v10</span> from
+    2026-08-24. Treat the live-vs-claimed comparison as unchecked, not as agreeing.
+  </div>
+  <ul>
+    <li><strong>Per-severity counts for the two earlier Codex halves</strong> are not on the page.
+    Those documents use a different layout and state no totals; my parse of their sections disagreed
+    with itself, so their verdicts are quoted and their counts are omitted rather than guessed.</li>
+    <li><strong>Sweep verdicts for the four oldest commits</strong> were produced in an earlier
+    session. One of them wrote a zero-byte output file, so its “clean” claim has no evidence behind
+    it. They are drawn as <em>no verdict from this session</em>.</li>
+  </ul>
+</section>
+
+<footer>
+  <div class="row">
+    <span>HEAD <code>7840a3be</code></span>
+    <span>branch <code>observer-log-owner</code></span>
+    <span>working tree clean</span>
+    <span>7 ahead of master · 4 unpushed</span>
+  </div>
+  <div class="row">
+    <span><code>check-docs</code> rc=0</span>
+    <span><code>check-roadmap-consistency</code> rc=0</span>
+    <span><code>check-test-counts</code> rc=0</span>
+    <span><code>check-producer-enumeration</code> rc=0</span>
+    <span><code>check-review-rounds</code> rc=0</span>
+    <span style="color:var(--problem)"><code>check-review-recorded</code> rc=1</span>
+  </div>
+  <div class="row">
+    <span>observer_log <code>44/44</code></span>
+    <span>banner <code>160/160</code></span>
+    <span>ci-watched <code>58/58</code></span>
+    <span>closing-table <code>154/154</code></span>
+    <span>dashboard-entry <code>149/149</code></span>
+    <span>codex-review <code>103/103</code></span>
+    <span>plan-code <code>130/130</code></span>
+  </div>
+  <div class="row"><span>Every figure above came from a command run while building this page. The
+  mutation sweep for HEAD completed afterwards and its verdict is recorded above: 981/981 killed and
+  attributed, 0 survivors, on a quiet machine.</span></div>
+</footer>
+
+</div>

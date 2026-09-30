@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proposal vs implementation — the velocity ledger</title>
+
+<style>:root{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#8a857c; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#8a857c; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}}
+:root[data-theme="dark"]{
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+/* SIZE carries hierarchy. Headings are LIGHTER than body-bold, not heavier. */
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h)}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+/* BOLD IS A LABEL, NOT A SHOUT — weight only, a neutral tone, never a hue */
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+/* TERMINAL TEXTURE — inline code is a raised pill, and it carries the visual variety */
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em;white-space:nowrap}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+:root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied. */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
+  /* GIVE HEADINGS A POSITIONING CONTEXT, or the heading ask-path silently dies.
+     The tray appends an ABSOLUTELY positioned `.askbtn` to every heading. With no positioned
+     ancestor it resolves against the initial containing block, so EVERY heading button lands on
+     the same point in the top-right corner, stacked, with only the last one clickable.
+     MEASURED 2026-08-27 across ~/explainers: 29 of the 33 pages carrying a tray had NO positioning
+     context on headings. On one page: 10 buttons, 4 distinct positions, all 7 h2s at top:14
+     left:1560 — 6 unreachable. The 3 that worked did so by accident, sitting inside an unrelated
+     `position:relative` list item.
+     ⚠ WHY IT SURVIVED EVERY "I drove both question paths" CHECK: those checks call
+     `heading.querySelector('.askbtn').click()`, which fires the handler no matter where the button
+     is painted or what is stacked on top of it. That tests the HANDLER, never the AFFORDANCE. The
+     check that finds it is a hit test — `document.elementFromPoint(centre)` must return the button
+     itself. The selection path was never affected: its floater is `position:fixed` with explicit
+     coordinates, which is why the channel looked alive throughout.
+     `:where()` keeps this at ZERO specificity, so any fragment that positions its own headings
+     still wins — the shim only supplies what nobody supplied. */
+  :where(h1, h2, h3, h4) { position: relative; }
+
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-size:.8em;padding:.1rem .45rem;border-radius:99px;
+            border:1px solid var(--rule,#8884);white-space:nowrap}
+#modechip{font-family:var(--mono);font-size:.7rem;padding:.1em .45em;border-radius:99px;border:1px solid var(--rule);color:var(--fg3)}
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+#sentnote{font-size:.78rem;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+/* ---- end Ask tray ---- */
+.chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.82rem;color:var(--ink-soft,currentColor)}.chrome-btn{display:inline-flex;align-items:center;gap:.35rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule,currentColor);border-radius:.4rem;padding:.2rem .55rem;cursor:pointer}.chrome-btn:hover{color:var(--ink,inherit)}.chrome-btn:focus-visible{outline:2px solid var(--structural,currentColor);outline-offset:2px}.chrome-when{margin-inline-start:auto}.chrome-say{min-height:1em}@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+<h1>Proposal vs implementation — the velocity ledger</h1>
+<p class="asof">as of master <code>91f38afe</code> · 2026-09-24 · subjects: <code>docs/development-velocity.md</code> + PR #345</p>
+
+<div class="box bad">
+  <span class="lbl">⛔ Read this first — this page's subject no longer exists in the form described</span>
+  <p><strong>This is a dated artifact of 2026-09-24 and it is still accurate about that day.</strong> But
+  its whole frame is the ten-section <code>docs/development-velocity.md</code>, and on <strong>2026-09-26</strong>
+  that document was decomposed and retired. Its sections now live in three places, so a reader following
+  this page's file references lands on a forwarding table rather than the content described here.</p>
+
+  <p><strong>For the current state, read
+  <a href="/2026-09-25-brief-velocity-prespec-walkthrough"><strong>Development velocity — the migration,
+  and what is left</strong></a></strong> instead.</p>
+
+  <p>What moved where: the <strong>design and the decisions</strong> (§2, §3, §4's rules, §5's policy,
+  §8's rejections, §9's five answers) are in the spec, <code>docs/superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md</code>;
+  the <strong>measurements</strong> (§1, §4's controlled experiment, §5's CI figures, §6 and §7's evidence)
+  are in <code>docs/velocity-evidence-2026-09-24.md</code>; the <strong>rules in force</strong> stayed in
+  <code>docs/process-checklists.md</code> §6 and §7. The old filename survives as a tombstone that routes
+  each old section and lists every document citing it.</p>
+
+  <p>⚠ <strong>Two of this page's traps are now fixed and two are still true</strong>, which is the part
+  worth knowing before you use it: §5's cracked headline number is <em>still</em> cracked and is now
+  marked at all five sites that state it, and §6's <em>“four rules / five rules”</em> contradiction
+  survives as recorded review history. But the banner giving §3 and §4 two statuses each is <strong>gone</strong> —
+  that status table was demoted and then removed — and the ten-section walkthrough in §2 below describes
+  a structure that no longer holds.</p>
+</div>
+
+<div class="pin">
+<p style="margin:0"><b>The reading chosen.</b> You named a document <i>and</i> a PR, so this page is a
+<b>proposal-vs-implementation ledger</b>: what the analysis proposed, what PR&nbsp;#345 actually did
+with each part, and why the gaps exist. The separate question — <i>why the review took six rounds</i> —
+is <a href="/2026-09-24-brief-six-rounds-four-rules.html">the other page</a>.</p>
+</div>
+
+<div class="howto">
+<h4>Reading and asking</h4>
+<p style="margin:.2rem 0 .55rem"><span id="modechip">served &rarr; Send works &middot; opened as a file &rarr; Send copies instead</span></p>
+<ul>
+<li>This page lives at <b><code>http://127.0.0.1:7391/latest</code></b>, which always points at the newest explainer.</li>
+<li><b>To ask:</b> select any text, or hover a heading &rarr; click <b>ask</b> &rarr; type &rarr; <b>Send</b>. Then say <b>&ldquo;read my questions&rdquo;</b> and the answer is written into this page, under the section you asked from.</li>
+<li><b>If that URL does not load:</b> run <code>python3 scripts/explainer-serve.py</code> — safe to run twice, and <b>a reboot stops it</b>, which is the one moment you need this line.</li>
+<li>A <code>file://</code> copy still reads fine; it only loses <b>Send</b>.</li>
+</ul>
+</div>
+
+<nav class="toc">
+<b>On this page</b>
+<ol>
+<li><a href="#spine">The spine: review was a generator, not a sieve</a></li>
+<li><a href="#ledger">The ledger — all ten sections</a></li>
+<li><a href="#landed">What actually landed, quoted</a></li>
+<li><a href="#trap1">Trap: rule 1 and rule 1b are different rules</a></li>
+<li><a href="#trap2">Trap: two live defects in the rationale doc</a></li>
+<li><a href="#trap3">Trap: §5&rsquo;s headline number is cracked</a></li>
+<li><a href="#filed">What was filed instead of built</a></li>
+<li><a href="#table">Measured vs inferred</a></li>
+</ol>
+</nav>
+
+<h2 id="spine">1 &middot; The spine: review was a generator, not a sieve</h2>
+
+<p class="lede">The natural assumption about a proposal going through review is that review
+<i>removes</i> things — the document proposes ten, six survive. That is not what happened, and
+noticing it is the difference between reading the ledger and understanding it.</p>
+
+<p>PR&nbsp;#345 moved in <b>both</b> directions:</p>
+
+<table>
+<tr><th>Direction</th><th>What</th><th>Why</th></tr>
+<tr>
+  <td><span class="tag">DROPPED</span></td>
+  <td>The literal wording <i>&ldquo;a side job re-asks Q0&rdquo;</i>, which §7 proposed</td>
+  <td>Q0 does not exist. <b>A rule pointing at nothing is a rule that cannot run</b>, which this repo
+      treats as a failure rather than a pass. What landed instead is the part that is true without
+      Q0, with the attachment point marked for when Q0 arrives.</td>
+</tr>
+<tr>
+  <td><span class="tag">ADDED</span></td>
+  <td><b>Rule 1b</b> — <i>say what you counted, not just that you counted</i></td>
+  <td>Not in the proposal at all. It was produced by §6&rsquo;s own first review round, from three
+      defects <i>in the change that adopted §6</i>. The document now says so:
+      <span class="src">development-velocity.md:197</span> — <i>&ldquo;1b did not exist when §6 was
+      written; it was produced by §6&rsquo;s own first review round.&rdquo;</i></td>
+</tr>
+<tr>
+  <td><span class="tag">ADDED</span></td>
+  <td>The <b>shape invariant</b> — a scope plus three refused forms</td>
+  <td>Also absent from the proposal. It was written at round 4 after four pattern-shaped fixes each
+      failed to terminate.</td>
+</tr>
+</table>
+
+<div class="box ok">
+<p><b>So the ledger has three columns, not two.</b> &ldquo;Proposed and adopted&rdquo;, &ldquo;proposed and
+not adopted&rdquo;, and <b>&ldquo;not proposed, and adopted anyway&rdquo;</b> — the last of which is where
+the two most load-bearing rules came from.</p>
+</div>
+
+<h2 id="ledger">2 &middot; The ledger — all ten sections</h2>
+
+<p>Status text below is quoted from the document&rsquo;s own banner
+(<span class="src">development-velocity.md:5-12</span>) where it states one.</p>
+
+<div class="scroll">
+<table>
+<tr><th>§</th><th>Section</th><th>Status</th><th>What PR #345 did</th></tr>
+<tr><td>1</td><td>The baseline — where time went</td><td><span class="tag">proposal</span> measurement &amp; rationale</td><td>Nothing. Kept as evidence.</td></tr>
+<tr><td>2</td><td>The instrument question (Q0)</td><td><span class="tag">DECIDED IN FORM, NOT BUILT</span></td><td>Settled Q0&rsquo;s <b>form</b> only: <b>hybrid</b> — judgement at the entry, mechanical for escalation. No card, no code. §10 is its brief.</td></tr>
+<tr><td>3</td><td>Four signals that say SEAM</td><td><span class="tag">not mechanised</span></td><td>Nothing built. Banner clarifies they are <b>usable observations today</b>, after a round read &ldquo;not built&rdquo; as &ldquo;not usable&rdquo;.</td></tr>
+<tr><td>4</td><td>The timing rules</td><td><span class="tag">DECIDED IN FORM, NOT BUILT</span></td><td>Nothing adopted. Its controlled experiment is cited by the §7 rule that <i>did</i> land.</td></tr>
+<tr><td>5</td><td>Sweep policy</td><td><span class="tag">item 1 ONLY</span> as practice</td><td>Draft-PR-at-slice-start adopted as <b>practice, not automated</b>. Items 2–4 remain proposal.</td></tr>
+<tr><td>6</td><td>Reduce defect INJECTION</td><td><span class="tag">✅ ADOPTED</span></td><td><b>Governs from <code>process-checklists.md</code>.</b> Five rules — see below.</td></tr>
+<tr><td>7</td><td>Side jobs</td><td><span class="tag">✅ ADOPTED</span></td><td>New subsection: <i>a side job inherits NO design approval</i>. The &ldquo;re-asks Q0&rdquo; wording dropped.</td></tr>
+<tr><td>8</td><td>Rejected, with reasons</td><td><span class="tag">proposal</span></td><td>Unchanged. Still records scoping the sweep to changed files as <b>unsound</b> (backlog #174).</td></tr>
+<tr><td>9</td><td>The five open questions</td><td><span class="tag">✅ DECISIONS</span></td><td>All five <b>answered</b> in place, two by the owner and three from measurement.</td></tr>
+<tr><td>10</td><td>What is left</td><td><span class="tag">✅ DECISIONS</span></td><td>Added by PR #345. The design session&rsquo;s brief.</td></tr>
+</table>
+</div>
+
+<p class="small">Read down the <i>status</i> column and the shape is plain: <b>two of ten sections
+now govern.</b> Everything about <i>which instrument to use</i> — the document&rsquo;s stated central
+gap — is decided in form and unbuilt.</p>
+
+<h2 id="landed">3 &middot; What actually landed, quoted</h2>
+
+<p>In <code>docs/process-checklists.md</code>, one new section
+(<span class="src">:428</span>) holding five numbered rules, plus a subsection inside the existing
+side-job section (<span class="src">:762</span>).</p>
+
+<table>
+<tr><th>Rule</th><th>At</th><th>What it requires</th></tr>
+<tr><td><b>1</b></td><td><span class="src">:454</span></td><td>No number unless it was measured in <b>this</b> session</td></tr>
+<tr><td><b>1b</b></td><td><span class="src">:468</span></td><td>Say <b>what you counted</b>, not just that you counted</td></tr>
+<tr><td><b>2</b></td><td><span class="src">:500</span></td><td>Fix the sentence <b>in place</b> — an appended correction is not a fix</td></tr>
+<tr><td><b>3</b></td><td><span class="src">:511</span></td><td>A class claim requires a class <b>sweep</b></td></tr>
+<tr><td><b>4</b></td><td><span class="src">:534</span></td><td>Derive gate lists from <b>the workflows</b> — never from memory, never from one workflow</td></tr>
+<tr><td>side job</td><td><span class="src">:762</span></td><td><i>&ldquo;The name gets it a thread. It does <b>not</b> get it the review the parent work had.&rdquo;</i></td></tr>
+</table>
+
+<h3>They are a list, not a count — deliberately</h3>
+
+<p>The section preamble (<span class="src">process-checklists.md:452</span>) reads:</p>
+
+<pre><code>They are numbered 1, 1b, 2, 3 and 4 — listed, not counted, and that is deliberate.</code></pre>
+
+<p>Because the count went stale twice: <i>&ldquo;all four&rdquo;</i> when 1b was added, and then the
+repair <b>re-pinned</b> it as <i>&ldquo;five of them&rdquo;</i>. <b>A list cannot disagree with its own
+contents.</b></p>
+
+<h3>The shape invariant</h3>
+
+<p>Added at round 4, after four pattern-shaped fixes failed to terminate
+(<span class="src">process-checklists.md:569</span>):</p>
+
+<pre><code>Scope: this section — its preamble and the bodies of rules 1, 1b, 2, 3 and 4.
+Within it, three forms are refused:
+
+  1. a count of anything in this repository, in digits or in words —
+     including a count of this section's own contents;
+  2. a file:line locator where the name of the symbol, constant or
+     comment would serve;
+  3. a document-relative position — "twenty lines below", "the section above".
+
+Everything else stays, including quotations of code and cross-references by name.</code></pre>
+
+<div class="box warn">
+<p><b>The enumeration is the test; the prose sentence is only its reason.</b> An earlier version led
+with <i>&ldquo;makes no claim about the repository&rsquo;s contents&rdquo;</i> — and read as the test,
+that clause forbids three expressions these rules <i>need</i>, including rule 3&rsquo;s
+cross-reference. A criterion that condemns the repo&rsquo;s own standing rule about quoting code is
+the wrong criterion.</p>
+</div>
+
+<h3>Rule 3 is a pointer, not a copy</h3>
+
+<p>It defers to <code>review-method.md</code> §0 Q2 step 5 rather than restating it
+(<span class="src">process-checklists.md:526</span>): <i>&ldquo;That step binds the reviewer; nothing
+bound the author, and the two findings above are what that gap produced.&rdquo;</i> The reviewer-side
+rule already existed; what was missing was anything binding the <b>author</b>.</p>
+
+<h2 id="trap1">4 &middot; Trap: rule 1 and rule 1b are different rules</h2>
+
+<p>They look like one rule split in two. They are not, and conflating them is how three of this
+branch&rsquo;s defects happened.</p>
+
+<table>
+<tr><th></th><th>Rule 1 — provenance</th><th>Rule 1b — population</th></tr>
+<tr><td>Asks</td><td><i>Did you measure it?</i></td><td><i>Does the label name what the command counted?</i></td></tr>
+<tr><td>Fails when</td><td>The number was recalled or inferred</td><td>The number was measured, and names a different set</td></tr>
+<tr><td>Example</td><td>&ldquo;the draft PR caught that Blocking&rdquo; — no measurement existed</td><td>&ldquo;28 gates&rdquo; — 28 was real; <i>gates</i> was not what the regex counted</td></tr>
+</table>
+
+<div class="box bad">
+<p><b>A number can pass rule 1 and fail rule 1b</b>, and that is not a corner case — it is what
+happened three times in the change that introduced the rule. All three answered <b>yes</b> to
+&ldquo;did you measure it&rdquo;.</p>
+</div>
+
+<h2 id="trap2">5 &middot; Trap: two live defects in the rationale doc</h2>
+
+<p>Found while building this page, by reading the file rather than trusting it. <b>Both are on
+master now</b>, and both are in the <i>rationale</i> document, not the governing one.</p>
+
+<h3>(a) §6 says &ldquo;four rules&rdquo; and &ldquo;five rules&rdquo; twenty lines apart</h3>
+
+<table>
+<tr><th>Line</th><th>Text</th></tr>
+<tr><td><span class="src">:175</span></td><td>&ldquo;These <b>four</b> rules now live in <code>docs/process-checklists.md</code>&hellip;&rdquo;</td></tr>
+<tr><td><span class="src">:195</span></td><td>&ldquo;&hellip;deriving gate lists rather than recalling them — <b>five rules, not four.</b>&rdquo;</td></tr>
+<tr><td><span class="src">:197</span></td><td>&ldquo;r3 Low: this outline said four and omitted 1b&hellip;&rdquo;</td></tr>
+</table>
+
+<p>A review round caught the count at <span class="src">:195</span> and fixed it. <b>The banner
+seven lines above was not touched.</b> Same defect, same section, a third location — a count of the
+rules, inside the section about counting.</p>
+
+<h3>(b) The banner gives §3 and §4 two different statuses each</h3>
+
+<pre><code>:8   | **§2 Q0**, §4 timing rules | DECIDED IN FORM, NOT BUILT |
+:9   | **§3 seam signals**        | not MECHANISED …           |
+:12  | §1, §3, §4, §8             | measurement and rationale — proposal |</code></pre>
+
+<p>§3 and §4 each appear twice, with different statuses — in a banner whose first line is
+<i>&ldquo;Read this line before citing anything below.&rdquo;</i></p>
+
+<div class="box warn">
+<p><b>Why this is worth showing rather than hiding.</b> Six review rounds, two reviewers and an
+architecture review passed over both. Neither is in the governing document — and the banner itself
+says <i>&ldquo;an adopted rule is not cited from here&rdquo;</i>, which limits the blast radius. But
+they are a fair measure of how much a rationale document decays once the rules leave it.</p>
+</div>
+
+<h2 id="trap3">6 &middot; Trap: §5&rsquo;s headline number is cracked</h2>
+
+<p>§5 argues the draft-PR practice with (<span class="src">development-velocity.md:142</span>):</p>
+
+<pre><code>GitHub is roughly TWICE as fast as this machine: measured on PR #342, the
+verify job completed in 8m08s including the sweep, tsc, the unit suite and
+~30 other gates. The local sweep alone takes ~14 minutes.</code></pre>
+
+<p><b>Two problems, and the first is what rule 1b exists for.</b></p>
+
+<ol>
+<li><b>Different populations.</b> It compares CI&rsquo;s <i>whole verify job</i> against the
+<i>local sweep alone</i> — the CI side doing strictly more work. The honest comparison is
+sweep-to-sweep.</li>
+<li><b>The denominator moved.</b> <code>verify</code> was 488s on PR #342 and is
+<b>673–680s</b> now — about 39% slower in three days.</li>
+</ol>
+
+<div class="box warn">
+<p>⚠ <b>The corrected ratio is NOT KNOWN.</b> The local sweep was not re-run on this tree, so this
+page gives you the crack, not the fix. What is measured is only that the CI side grew and the
+comparison was between unlike things to begin with.</p>
+</div>
+
+<h3>Where CI time actually goes</h3>
+
+<p>Measured from the Actions API across two successful runs:</p>
+
+<table>
+<tr><th>Step</th><th>Time</th><th>Share</th></tr>
+<tr><td>Mutation sweep (<code>--mutate .</code>)</td><td>554s / 542s</td><td><b>~81%</b></td></tr>
+<tr><td>Unit + component tests (2,892)</td><td>27s / 26s</td><td>~4%</td></tr>
+<tr><td>Everything else (tsc, installs, ~30 guards)</td><td>~95s</td><td>~15%</td></tr>
+<tr><td><code>verify</code> total</td><td><b>680s / 673s</b></td><td></td></tr>
+<tr><td><code>schema-gates</code> (concurrent workflow)</td><td>103s</td><td>0 wall clock</td></tr>
+</table>
+
+<p>Each mutation re-runs its target&rsquo;s entire <code>--self-test</code> in a <b>fresh
+interpreter</b> (<span class="src">scripts/check-plan-code.py:501</span>), 1,030 times. That
+isolation is why the sweep is slow — and it is also what keeps a mutation&rsquo;s verdict honest, so
+it is a cost rather than waste. <b>§5&rsquo;s four items all optimise <i>frequency</i>, because
+<i>cost</i> is load-bearing.</b></p>
+
+<h2 id="filed">7 &middot; What was filed instead of built</h2>
+
+<p>Five rows, all opened the same day. Three came from the architecture review, two from round 5.</p>
+
+<table>
+<tr><th>Row</th><th>Work</th><th>Its own stated weakness</th></tr>
+<tr><td><b>#179</b></td><td>An ADR for the principle behind all of this</td><td>Read at architecture-review time, not when a number is being typed</td></tr>
+<tr><td><b>#180</b></td><td>A pointer from <i>Qualify every number in prose</i></td><td>A pointer is easy to write and easy to stop reading</td></tr>
+<tr><td><b>#181</b></td><td>A named term in <code>CONTEXT.md</code></td><td>A term with no rule behind it is vocabulary</td></tr>
+<tr><td><b>#182</b> <span class="tag">🔴</span></td><td>Two grammars for one review-gap concern</td><td>&mdash; live: following the template reddens a required CI job</td></tr>
+<tr><td><b>#183</b></td><td><code>dev-process.md</code> says thirteen schema gates in one row, fifteen in another</td><td>&mdash;</td></tr>
+</table>
+
+<div class="box ok">
+<p><b>#183 is the one that ranks the others.</b> Nobody writing a row in <code>dev-process.md</code>
+is reading the numbers section — so <b>#180&rsquo;s pointer would never have reached it.</b> Only an
+ADR is read by the process that would. That is a demonstrated hit rather than a judgement, and it is
+why #179 goes first.</p>
+</div>
+
+<h2 id="table">8 &middot; Measured vs inferred</h2>
+
+<div class="scroll">
+<table>
+<tr><th>Claim</th><th>Basis</th></tr>
+<tr><td>Banner statuses for all ten sections</td><td><b>MEASURED</b> — read from <code>development-velocity.md:5-12</code> on master <code>91f38afe</code></td></tr>
+<tr><td>Five rules at <code>process-checklists.md</code> :454 / :468 / :500 / :511 / :534</td><td><b>MEASURED</b> — heading lines read directly</td></tr>
+<tr><td>Side-job subsection at :762</td><td><b>MEASURED</b> — read directly</td></tr>
+<tr><td>Shape invariant text</td><td><b>MEASURED</b> — quoted verbatim from :569-579</td></tr>
+<tr><td>&ldquo;four rules&rdquo; vs &ldquo;five rules&rdquo; contradiction</td><td><b>MEASURED</b> — <code>:175</code> vs <code>:195</code>, with <code>:197</code> recording the partial fix</td></tr>
+<tr><td>§3 / §4 appear twice in the banner with different statuses</td><td><b>MEASURED</b> — banner rows :8, :9, :12</td></tr>
+<tr><td>CI step timings (554s / 27s / 680s / 103s)</td><td><b>MEASURED</b> — GitHub Actions API, two successful runs</td></tr>
+<tr><td>1,030 mutations; fresh interpreter per mutation</td><td><b>MEASURED</b> — manifest entry counts; <code>check-plan-code.py:501</code></td></tr>
+<tr><td>verify was 488s on PR #342, is 673–680s now</td><td><b>MEASURED</b> — the 8m08s figure is quoted from §5; the current figures from the API</td></tr>
+<tr><td>The corrected sweep-to-sweep ratio</td><td><b>NOT KNOWN</b> — the local sweep was not re-run on this tree</td></tr>
+<tr><td>&ldquo;Rule 1b was produced by §6&rsquo;s own review round&rdquo;</td><td><b>QUOTED FROM THE REPO</b> — <code>development-velocity.md:197</code></td></tr>
+<tr><td>Weaknesses listed for #179 / #180 / #181</td><td><b>QUOTED</b> — each row states its own, in <code>docs/backlog.md</code></td></tr>
+<tr><td>&ldquo;Two of ten sections now govern&rdquo;</td><td><b>INFERRED</b> — a reading of the banner, not a figure the document states</td></tr>
+</table>
+</div>
+
+<hr>
+<p class="small">Built in the session that merged PR #345. The companion page —
+<a href="/2026-09-24-brief-six-rounds-four-rules.html">why six rounds for four rules</a> — covers the
+review history this ledger only points at.</p>
+
+</div>
+
+<div class="chrome"><span class="chrome-when">generated <time>2026-09-26 08:37 · 2cf9be43</time></span></div>
+
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>

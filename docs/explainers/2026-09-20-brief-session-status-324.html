@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>#324 is merged — and both PRs still open are red for the same kind of reason</title>
+
+<style>:root{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#8a857c; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#8a857c; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}}
+:root[data-theme="dark"]{
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+/* SIZE carries hierarchy. Headings are LIGHTER than body-bold, not heavier. */
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h)}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+/* BOLD IS A LABEL, NOT A SHOUT — weight only, a neutral tone, never a hue */
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+/* TERMINAL TEXTURE — inline code is a raised pill, and it carries the visual variety */
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em;white-space:nowrap}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+:root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied. */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
+  /* GIVE HEADINGS A POSITIONING CONTEXT, or the heading ask-path silently dies.
+     The tray appends an ABSOLUTELY positioned `.askbtn` to every heading. With no positioned
+     ancestor it resolves against the initial containing block, so EVERY heading button lands on
+     the same point in the top-right corner, stacked, with only the last one clickable.
+     MEASURED 2026-08-27 across ~/explainers: 29 of the 33 pages carrying a tray had NO positioning
+     context on headings. On one page: 10 buttons, 4 distinct positions, all 7 h2s at top:14
+     left:1560 — 6 unreachable. The 3 that worked did so by accident, sitting inside an unrelated
+     `position:relative` list item.
+     ⚠ WHY IT SURVIVED EVERY "I drove both question paths" CHECK: those checks call
+     `heading.querySelector('.askbtn').click()`, which fires the handler no matter where the button
+     is painted or what is stacked on top of it. That tests the HANDLER, never the AFFORDANCE. The
+     check that finds it is a hit test — `document.elementFromPoint(centre)` must return the button
+     itself. The selection path was never affected: its floater is `position:fixed` with explicit
+     coordinates, which is why the channel looked alive throughout.
+     `:where()` keeps this at ZERO specificity, so any fragment that positions its own headings
+     still wins — the shim only supplies what nobody supplied. */
+  :where(h1, h2, h3, h4) { position: relative; }
+
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-size:.8em;padding:.1rem .45rem;border-radius:99px;
+            border:1px solid var(--rule,#8884);white-space:nowrap}
+#modechip{font-family:var(--mono);font-size:.7rem;padding:.1em .45em;border-radius:99px;border:1px solid var(--rule);color:var(--fg3)}
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+#sentnote{font-size:.78rem;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+/* ---- end Ask tray ---- */
+.chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.82rem;color:var(--ink-soft,currentColor)}.chrome-btn{display:inline-flex;align-items:center;gap:.35rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule,currentColor);border-radius:.4rem;padding:.2rem .55rem;cursor:pointer}.chrome-btn:hover{color:var(--ink,inherit)}.chrome-btn:focus-visible{outline:2px solid var(--structural,currentColor);outline-offset:2px}.chrome-when{margin-inline-start:auto}.chrome-say{min-height:1em}@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+
+<section>
+  <div class="eyebrow">Brief · 2026-09-20 · session status</div>
+  <h1>#324 is merged. Both PRs still open are red — and neither is red for its code.</h1>
+  <span class="stamp"><span class="dot"></span>One decision waiting on you</span>
+  <p class="lede">The work you asked for is done: <strong>PR #324 merged</strong> as
+  <code>af4d9033</code>, master is clean, and all seven ratchets are green. What the ground-truth
+  sweep turned up is separate and more useful: <strong>#317 and #295 both have a failing
+  <code>verify</code></strong>, and in the one I could read to the bottom the failure is
+  <strong>a missing review round, not a broken build</strong>. Separately, I could not verify what is
+  actually deployed — <code>flyctl</code> has no token in this shell.</p>
+  <p class="horizon">As of <code>af4d9033</code> · master, clean, 0 ahead of origin · 2026-09-20 19:39 PDT</p>
+</section>
+
+<div class="howto">
+  <span id="modechip">served → Send works · opened as a file → Send copies instead</span>
+  <span class="st">This page can answer back.</span> Live at
+  <span class="kbd">http://127.0.0.1:7391/latest</span> — always the newest page. Select any text, or
+  hover a heading, then click <b>ask</b>, type, and press <b>Send</b>; then say
+  <i>“read my questions”</i> in the session. If that URL does not load, run
+  <span class="kbd">python3 scripts/explainer-serve.py</span> (safe to run twice — <b>a reboot stops
+  it</b>). Opened as a plain file it still reads fine; only <b>Send</b> stops working.
+</div>
+
+<section>
+  <h2>Where things stand</h2>
+  <div class="stats">
+    <div class="stat ok">
+      <span class="k">Unit suite</span>
+      <span class="v">2,892</span>
+      <span class="n">of 2,892 passing · 278 suites · 0 failures</span>
+    </div>
+    <div class="stat ok">
+      <span class="k">Ratchets</span>
+      <span class="v">7 / 7</span>
+      <span class="n">green — but one only after I regenerated stale input</span>
+    </div>
+    <div class="stat bad">
+      <span class="k">Open PRs</span>
+      <span class="v">2 red</span>
+      <span class="n">#317 and #295 — both <code>verify</code> failing</span>
+    </div>
+    <div class="stat warn">
+      <span class="k">Deployed</span>
+      <span class="v">?</span>
+      <span class="n">unverified — <code>flyctl</code> is not authenticated here</span>
+    </div>
+    <div class="stat acc">
+      <span class="k">Open backlog</span>
+      <span class="v">88</span>
+      <span class="n">rows of 144 · 1 🔴 · 24 🟠</span>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>The shape of what is left</h2>
+  <div class="chart">
+    <div class="scale"><span>0</span><span>88 open rows</span></div>
+
+    <div class="row">
+      <span class="lab">🔴 <b>1</b> critical</span>
+      <span class="track">
+        <span class="bar" style="width:1.1%" role="img" aria-label="1 critical open backlog row of 88"><span class="seg b" style="flex:1"></span></span>
+        <span class="after">#139 — deploy kills the in-flight summary and keeps the spend</span>
+      </span>
+    </div>
+    <div class="row">
+      <span class="lab">🟠 <b>24</b> high</span>
+      <span class="track">
+        <span class="bar" style="width:27.3%" role="img" aria-label="24 high-severity open backlog rows of 88"><span class="seg h" style="flex:1"></span></span>
+        <span class="after">27% of open work</span>
+      </span>
+    </div>
+    <div class="row">
+      <span class="lab">🟡 <b>44</b> medium</span>
+      <span class="track">
+        <span class="bar" style="width:50.0%" role="img" aria-label="44 medium-severity open backlog rows of 88"><span class="seg m" style="flex:1"></span></span>
+        <span class="after">the bulk — half of everything open</span>
+      </span>
+    </div>
+    <div class="row">
+      <span class="lab">🟢 <b>16</b> low</span>
+      <span class="track">
+        <span class="bar" style="width:18.2%" role="img" aria-label="16 low-severity open backlog rows of 88"><span class="seg l" style="flex:1"></span></span>
+        <span class="after">18%</span>
+      </span>
+    </div>
+    <div class="row">
+      <span class="lab">— <b>3</b> unmarked</span>
+      <span class="track">
+        <span class="bar" style="width:3.4%" role="img" aria-label="3 unmarked open backlog rows of 88"><span class="seg x" style="flex:1"></span></span>
+        <span class="after">no severity marker at the row head</span>
+      </span>
+    </div>
+
+    <div class="legend">
+      <span><i style="background:var(--s-block)"></i>critical</span>
+      <span><i style="background:var(--s-high)"></i>high</span>
+      <span><i style="background:var(--s-med)"></i>medium</span>
+      <span><i style="background:var(--s-low)"></i>low</span>
+      <span><i style="background:var(--s-none)"></i>unmarked</span>
+    </div>
+  </div>
+  <p class="caption">Counted this evening by parsing <code>docs/backlog.md</code>: 144 rows, 56 closed,
+  88 open. A row counts as closed only if its head carries ✅ or its status cell says closed/done —
+  so this undercounts closure if a row was settled without either mark. The roadmap claims every open
+  row has carried a severity marker since 2026-08-19; <strong>three do not</strong>.</p>
+</section>
+
+<section>
+  <h2>What is blocked, and on what</h2>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr><th>What</th><th>Blocked on</th><th>Since</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>PR #317</b> — declare the interpreter every guard runs on<br>
+              <span style="color:var(--ink-faint)">+2,398 / −3 · 15 files</span></td>
+          <td><b>A review round on the current tree.</b> <code>verify</code> fails at the
+              review-recorded gate: <code>check-plan-code.py</code>,
+              <code>check-python-pin.py</code> and its mutation manifest all changed after round 2.
+              The gate names the fix itself — run another round, or put
+              <code>NO-REVIEW: &lt;reason&gt;</code> in the PR body.</td>
+          <td class="n">2026-09-17<br>3 days</td>
+        </tr>
+        <tr>
+          <td><b>PR #295</b> — the dead source links on <code>/goals</code><br>
+              <span style="color:var(--ink-faint)">+5,725 / −182 · 40 files</span></td>
+          <td><b>Its <code>verify</code> is red and its last run is five days old.</b> In that run
+              the unit suite passed 2,819/2,819 and the mutation gate killed 646/646 — the job then
+              exits 1 in the <code>check-plan-code.py --self-test</code> step
+              <em>immediately after printing <code>128/128 passed</code></em>. That run predates the
+              plan-mode retirement that changed those very counts, so it should be re-run before
+              anyone reads it as a real failure.</td>
+          <td class="n">2026-09-13<br>7 days</td>
+        </tr>
+        <tr>
+          <td><b>Deploy verification</b> — is production running what master says?</td>
+          <td><b>You.</b> <code>flyctl releases</code> returns
+              <em>no access token available</em>, so I cannot compare the live release against the
+              roadmap's claim. Run <span class="kbd">! flyctl auth login</span> in the session and I
+              can finish the check.</td>
+          <td class="n">this session</td>
+        </tr>
+        <tr>
+          <td><b>SDD ledger</b> — <code>.superpowers/sdd/progress.md</code></td>
+          <td><b>Nothing — it is simply dead.</b> Last modified <b>2026-07-17</b>, two months ago,
+              while the other two layers moved all week. <code>dev-process.md</code> names it as one
+              of three layers that must stay in sync; in practice the roadmap plus the dashboard have
+              taken over. Worth either reviving or formally retiring.</td>
+          <td class="n">2026-07-17<br>2 months</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="caption">The session task list is empty, which looks like a fourth gap and is not: the
+  roadmap says outright that the task list does not survive <code>/compact</code> and that the
+  roadmap file is therefore the durable record. That layer is working as designed.</p>
+</section>
+
+<section>
+  <h2>The decision</h2>
+  <div class="rec">
+    <div class="head">Recommendation — clear #317 next</div>
+    <div class="body">
+      <p>Run one review round against #317's current tree, then merge it. It is the cheapest red on
+      the board: the code is written and its schema half already passes, and the gate has told us
+      exactly what it wants. This is the same state #324 was in this afternoon, and clearing it took
+      one round.</p>
+      <p class="against"><b>The strongest argument against:</b> #317 has sat untouched for three days
+      and across six session handoffs. Work nobody returns to is usually work nobody wants, and
+      closing it would remove a red from the board for free. Its subject — pinning the Python
+      interpreter — is also infrastructure, not product, at a moment when the launch milestones are
+      closed and the 🔴 row on the board (<b>#139</b>, a deploy killing the in-flight summary while
+      keeping the charge) is about real money.</p>
+      <p class="answer"><b>The answer, and its limit:</b> #139 is the more valuable row and should be
+      next after this — but it is <em>design</em> work, filed deliberately rather than patched,
+      whereas #317 is finished code held up by one procedural round. They are not competing for the
+      same hour. The honest limit on my recommendation is that I have not read #317's diff; I read
+      its CI failure. If its 2,398 lines are not wanted, closing it is the better call and I would
+      not argue.</p>
+    </div>
+  </div>
+  <div class="warnbox">
+    <b>Before any of that, the one thing only you can unblock:</b> run
+    <span class="kbd">! flyctl auth login</span>. Until then nobody can answer “is production running
+    what master says?” — and this project has twice recorded a roadmap that was confidently wrong
+    about exactly that, once by eight days.
+  </div>
+</section>
+
+<section>
+  <h2>What happened today</h2>
+  <div class="find">
+    <span class="tag">Merged · 17:02</span>
+    <p><strong>PR #324</strong> — <code>check-merge-ready.py</code>, which runs every gate CI will
+    run <em>including the two pull-request-only steps a local run cannot reach</em>, plus a warn band
+    on the docs line budget. 19 files, +1,846 / −18, three dual review rounds. Its own subject line is
+    the lesson: <em>the line budget reported ok at 100%, so the wall could only be found by hitting
+    it.</em></p>
+  </div>
+  <div class="find">
+    <span class="tag">Merged · 13:00</span>
+    <p><strong>PR #323</strong> — the feature hub: one page for what the system does today and what
+    it deliberately does not.</p>
+  </div>
+  <div class="find">
+    <span class="tag">Housekeeping · evening</span>
+    <p><strong>The memory index was over both its budgets</strong> and one memory file was above the
+    read limit, so its tail was being truncated on every load. 39 files merged into 16 by
+    concatenating bodies verbatim, the oversized RESUME file split at its own seam, and
+    <code>show-a-live-progress-line</code> — written on 2026-09-13 and <strong>never indexed, so never
+    recallable</strong> — finally linked. Index 21.4 KB → 16.3 KB; 148 files → 126; every link now
+    resolves in both directions.</p>
+  </div>
+</section>
+
+<section>
+  <h2>What I could not verify</h2>
+  <div class="note">
+    <p style="margin:0 0 .6rem"><b>Stated rather than hidden, because a brief you do not check is
+    only worth its weakest number.</b></p>
+    <ul style="margin:0">
+      <li><b>What is deployed.</b> <code>flyctl</code> has no token in this shell. Not a pass — a
+      <em>cannot run</em>.</li>
+      <li><b>Why #295 really fails.</b> I read its log to the exit but its last run is five days old
+      and predates changes to the very counts it checks. Re-run it before trusting it.</li>
+      <li><b>#317's diff.</b> I read its CI failure, not its 2,398 lines.</li>
+      <li><b>The closed/open backlog split.</b> Derived from ✅ marks and status cells, not from git.
+      A row settled without either mark reads as open here.</li>
+    </ul>
+  </div>
+  <div class="warnbox">
+    <b>And one that was nearly a silent pass.</b> <code>check-test-counts</code> came back
+    <em>FAIL (cannot run)</em> — the jest results were stale, four test files having changed after the
+    run that produced them. This project's own rule is that <em>cannot run is a failure, never a
+    pass</em>. I regenerated the suite (2,892 passing) and the gate then went green. Had it been the
+    older version of that gate, it would have <b>passed against the stale file</b> — the roadmap still
+    warns that it has no freshness bound, which is no longer true. The gate got stronger and its
+    documentation did not follow.
+  </div>
+</section>
+
+<section class="foot">
+  <h3 style="margin-bottom:.6rem">Ground truth — every figure on this page came from a command run at 19:39 PDT</h3>
+  <div class="grid">
+    <div><span class="kk">HEAD</span><span>af4d9033</span></div>
+    <div><span class="kk">branch / tree</span><span>master · clean · 0 ahead</span></div>
+    <div><span class="kk">check-docs</span><span class="pass">rc=0</span></div>
+    <div><span class="kk">check-roadmap-consistency</span><span class="pass">rc=0</span></div>
+    <div><span class="kk">check-test-counts</span><span class="pass">rc=0 <span class="cannot">(was CANNOT RUN)</span></span></div>
+    <div><span class="kk">check-producer-enumeration</span><span class="pass">rc=0</span></div>
+    <div><span class="kk">check-backlog-closure</span><span class="pass">rc=0</span></div>
+    <div><span class="kk">check-anchors</span><span class="pass">rc=0</span></div>
+    <div><span class="kk">check-review-rounds</span><span class="pass">rc=0</span></div>
+    <div><span class="kk">jest</span><span class="pass">2,892 / 2,892 · 278 suites</span></div>
+    <div><span class="kk">PR #317 verify</span><span class="fail">fail</span></div>
+    <div><span class="kk">PR #295 verify</span><span class="fail">fail</span></div>
+    <div><span class="kk">schema-gates (both PRs)</span><span class="pass">pass</span></div>
+    <div><span class="kk">flyctl releases</span><span class="cannot">CANNOT RUN — no token</span></div>
+    <div><span class="kk">backlog</span><span>144 rows · 88 open · 56 closed</span></div>
+    <div><span class="kk">task list</span><span>empty (by design)</span></div>
+    <div><span class="kk">merges, last 7 days</span><span>25</span></div>
+    <div><span class="kk">memory index</span><span>16.3 KB · 139 lines · 126 files</span></div>
+  </div>
+  <p class="caption" style="margin-top:.9rem">Figures rot at different rates. The ratchet exit codes
+  and the PR check states are the most volatile — both can change within minutes of a push. The
+  backlog split and the merge count are good for days. <code>af4d9033</code> is the only thing here
+  that cannot go stale.</p>
+</section>
+
+</div>
+
+<div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><span class="chrome-when">generated <time>2026-09-20 19:41 · af4d9033</time></span></div>
+<script>/*yps-chrome-v1*/(function(){var K='yps-theme',A='data-theme',R=document.documentElement;function cur(){return R.getAttribute(A)||(window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');}try{var s=localStorage.getItem(K);if(s==='dark'||s==='light')R.setAttribute(A,s);}catch(e){}var b=document.getElementById('chrome-theme');if(b){b.setAttribute('aria-pressed',String(cur()==='dark'));b.addEventListener('click',function(){var n=cur()==='dark'?'light':'dark';R.setAttribute(A,n);b.setAttribute('aria-pressed',String(n==='dark'));try{localStorage.setItem(K,n);}catch(e){}});}var r=document.getElementById('chrome-refresh'),say=document.getElementById('chrome-refresh-say');if(r){r.addEventListener('click',function(){if(location.protocol==='file:'){if(say)say.textContent='opened as a file \u2014 no server to rebuild it; run the generator';return;}r.disabled=true;if(say)say.textContent='rebuilding\u2026';fetch('/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({page:r.getAttribute('data-page')})}).then(function(x){if(!x.ok)return x.text().then(function(t){throw new Error(t);});return x.json();}).then(function(j){if(j&&j.warning){if(say)say.textContent='rebuilt WITH A WARNING: '+j.warning;return;}location.reload();}).catch(function(e){r.disabled=false;if(say)say.textContent='could not rebuild: '+e.message;});});}})();</script>
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>

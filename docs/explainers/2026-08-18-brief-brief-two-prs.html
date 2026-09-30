@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brief — the trigger was missing, not the capability</title>
+
+<style>:root{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#8a857c; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#8a857c; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}}
+:root[data-theme="dark"]{
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+/* SIZE carries hierarchy. Headings are LIGHTER than body-bold, not heavier. */
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h)}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+/* BOLD IS A LABEL, NOT A SHOUT — weight only, a neutral tone, never a hue */
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+/* TERMINAL TEXTURE — inline code is a raised pill, and it carries the visual variety */
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em;white-space:nowrap}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+:root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); --rule: var(--rule, #d3d9e2); }
+
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{display:inline-block;font-family:var(--mono);font-size:.72rem;padding:.1em .5em;
+          border-radius:99px;border:1px solid var(--structure-br);margin-left:.4em}
+/* ---- ask tray ---- */
+.askbtn{position:absolute;font-family:var(--sans);font-size:.68rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:.06em;border:1px solid var(--structure-br);
+  background:var(--structure-bg);color:var(--structure);border-radius:99px;padding:.18em .6em;
+  cursor:pointer;z-index:40}
+#tray{position:fixed;right:0;bottom:0;left:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.9rem 1rem calc(.9rem + env(safe-area-inset-bottom));z-index:60;display:none;
+  box-shadow:0 -8px 26px rgba(0,0,0,.16)}
+#tray.on{display:block}
+#tray .inner{max-width:52rem;margin:0 auto}
+#tray .qt{font-family:var(--sans);font-size:.72rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#tray .qt b{color:var(--fg2)}
+#tray .row{display:flex;gap:.5rem;align-items:flex-start;flex-wrap:wrap}
+#qbox{flex:1 1 16rem;min-width:0;font-family:var(--sans);font-size:.9rem;padding:.5rem .65rem;
+  border:1px solid var(--rule);border-radius:8px;background:var(--bg);color:var(--fg);resize:vertical;min-height:2.6rem}
+#tray button.act{flex:0 0 auto;font-family:var(--sans);font-size:.82rem;font-weight:650;padding:.5rem 1rem;
+  border-radius:8px;border:1px solid var(--structure);background:var(--structure);color:#fff;cursor:pointer}
+#tray button.sec{flex:0 0 auto;font-family:var(--sans);font-size:.82rem;padding:.5rem .8rem;border-radius:8px;
+  border:1px solid var(--rule);background:var(--bg2);color:var(--fg2);cursor:pointer}
+#sentnote{font-family:var(--sans);font-size:.76rem;margin-top:.5rem;min-height:1.1em;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+
+  <header class="mast">
+    <div class="kicker">Briefing · 2026-08-18 · post-launch-blocker</div>
+    <h1>Two pull requests are waiting on you. Nothing else is.</h1>
+    <p>Both are small, both are green, and neither touches the product. Everything shipped
+       yesterday is live and verified. The only other thing worth your attention is housekeeping
+       this briefing turned up: <strong>ten of eleven local branches are dead</strong>.</p>
+    <span class="stamp">⚑ 2 merges pending</span>
+    <span class="stamp g">✓ prod healthy · 0 launch blockers</span>
+  </header>
+
+  <section>
+    <h2>Where things stand</h2>
+    <div class="stats">
+      <div class="stat warn"><div class="v">2</div>
+        <div class="k">PRs open, both CI-green and mergeable</div></div>
+      <div class="stat good"><div class="v">v7</div>
+        <div class="k">live release, 16h uptime · <code>/dev-login</code> correctly 404</div></div>
+      <div class="stat good"><div class="v">0</div>
+        <div class="k">launch blockers, and no successor</div></div>
+      <div class="stat bad"><div class="v">10</div>
+        <div class="k">of 11 local branches are dead weight — nothing points at them</div></div>
+      <div class="stat struct"><div class="v">16</div>
+        <div class="k">backlog rows still marked OPEN, of 52 total</div></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>The two decisions</h2>
+    <div class="scroll"><table>
+      <thead><tr><th>PR</th><th>What</th><th>Size</th><th>CI</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>#106</strong></td>
+          <td><strong>Two pre-existing test flakes.</strong> A cleanup that swept <code>$HOME</code>
+              by prefix and deleted a neighbouring suite's live temp dirs (~1 run in 5), and the
+              heaviest I/O test in the repo left on Jest's default 5&nbsp;s timeout. Both reproduce
+              on a clean tree — neither came from yesterday's work.</td>
+          <td class="mono">+36 / −8<br>3 files</td>
+          <td><span class="pill p-good">pass 1m29s</span></td>
+        </tr>
+        <tr>
+          <td><strong>#107</strong></td>
+          <td><strong>Backlog #51 and #52.</strong> Ad-hoc single-video digest (feasibility study
+              only), and sub-playlist split + cross-playlist artifact sharing — the latter now
+              carrying the four design decisions from today's discussion, explicitly marked
+              <em>not scheduled</em>.</td>
+          <td class="mono">+2 / −0<br>1 file</td>
+          <td><span class="pill p-good">pass 2m33s</span></td>
+        </tr>
+      </tbody>
+    </table></div>
+    <div class="note g" style="margin-top:1rem">
+      <p><strong>Recommendation: merge both.</strong> #106 removes a source of false reds that
+      teaches everyone to re-run and shrug. #107 is documentation of decisions that currently exist
+      only in a chat log — the single most losable form.</p>
+    </div>
+    <p style="margin-top:1rem"><strong>The strongest argument against:</strong> #106 edits tests to
+    make them pass, which is the shape of covering something up. That deserves scrutiny, not a
+    shrug.</p>
+    <p><strong>The answer:</strong> neither change touches an assertion. One narrows a cleanup's
+    blast radius to the directories the file actually created; the other raises a timeout to match
+    what the test was already doing. The evidence is 8 consecutive green runs of a suite that was
+    red about 1 in 5 — a single green run is exactly what the defect produced 4 times out of 5.</p>
+  </section>
+
+  <section class="card">
+    <h2>The shape — why "unmerged" means nothing here</h2>
+    <p style="margin-top:0;color:var(--ink-2);font-size:.92rem">
+      Eleven local branches. <code>git branch --merged</code> calls ten of them unmerged. Only two
+      are actually alive.</p>
+    <div class="bars">
+      <div class="bar">
+        <div class="lbl">Merged via <strong>squash</strong></div>
+        <div class="track"><div class="fill" style="width:81.8%;background:var(--struct)"
+             role="img" aria-label="9 of 11 branches were merged by squash and are safe to delete"></div></div>
+        <div class="n">9</div>
+      </div>
+      <div class="bar">
+        <div class="lbl">Abandoned (PR closed)</div>
+        <div class="track"><div class="fill" style="width:9.1%;background:var(--bad)"
+             role="img" aria-label="1 of 11 branches was abandoned when its PR was closed unmerged"></div></div>
+        <div class="n">1</div>
+      </div>
+      <div class="bar">
+        <div class="lbl">Actually live</div>
+        <div class="track"><div class="fill" style="width:18.2%;background:var(--good)"
+             role="img" aria-label="2 of 11 branches are live, backing the two open PRs"></div></div>
+        <div class="n">2</div>
+      </div>
+    </div>
+    <div class="note s" style="margin-top:1.1rem">
+      <p><strong>A squash merge replays the branch as one new commit, so the branch tip is never an
+      ancestor of <code>master</code>.</strong> Git therefore reports every squash-merged branch as
+      unmerged, forever. The signal is not git — it is the PR state.</p>
+      <p>Checked each one: PRs <strong>#52, #53, #54, #55, #56, #57, #65, #67</strong> are all
+      <strong>MERGED</strong>. <code>docs/premise-discipline</code> backs PR <strong>#102</strong>,
+      which was <strong>CLOSED unmerged</strong> — that one is abandoned work, not shipped work.</p>
+    </div>
+
+    <h3 style="margin-top:1.6rem">↩ Asked from this page: <em>so was it fixed by checking PR
+    state?</em></h3>
+
+    <p><strong>Yes for the deletion — no for the recurrence.</strong> Two different meanings of
+    "fixed", and it is worth separating them because this is the second time today the same
+    distinction has come up.</p>
+
+    <p><strong>What was actually done.</strong> Every branch was re-queried at the moment of
+    deletion with <code>gh pr list --head &lt;branch&gt; --state all</code> — not from the earlier
+    scan, and not from <code>git branch --merged</code>, which is the thing that lies here. Each
+    branch's SHA was written to a recovery file first, so every deletion is one
+    <code>git branch &lt;name&gt; &lt;sha&gt;</code> away from being undone. So the decision rested
+    on PR state, exactly as the paragraph above says it should.</p>
+
+    <div class="note">
+      <p><strong>But nothing stops it happening again.</strong> That was a careful manual pass, and
+      a careful manual pass is precisely what the ✅-marker section of this page just finished
+      demonstrating the limits of — a convention plus a hand check found two rows; a script found
+      three more.</p>
+      <p>Next time branches accumulate, the same wrong instrument (<code>git branch --merged</code>)
+      is still the one that comes to hand, and the same person has to remember not to trust it.
+      <strong>This is an instance fix, not a class fix</strong>, and it is recorded that way rather
+      than counted as done.</p>
+    </div>
+
+    <p><strong>It is scriptable</strong> — enumerate local branches, ask the PR state of each, report
+    which are dead and which are genuinely unmerged. Roughly fifteen lines, and the same argument as
+    the marker ratchet applies. <strong>Not written yet, and deliberately not written silently:</strong>
+    the stakes here are clutter rather than money or a misleading status, so whether it earns a place
+    among the repo's gates is a judgement call that belongs to the reader, not to me.</p>
+
+    <h3 style="margin-top:1.6rem">↩ Asked from this page: <em>if the roadmap-refreshing mechanism
+    used PR state, would the roadmap checks then be accurate?</em></h3>
+
+    <p><strong>It would fix one layer of three, and the layer it fixes is not the one that has cost
+    this project money.</strong></p>
+
+    <p><strong>First, two things checked just now rather than assumed.</strong>
+    <code>check-roadmap-consistency.py</code> does not read git, GitHub, or anything outside the
+    document — its stated job is that <em>"the roadmap's summary block must not name work that is
+    already ticked done."</em> It compares the roadmap <strong>against itself</strong>. And across
+    every script in <code>scripts/</code>, <strong>nothing queries PR state at all</strong>. So yes:
+    wiring PR state in would be strictly more than exists today.</p>
+
+    <div class="scroll"><table>
+      <thead><tr><th>Layer</th><th>Answers</th><th>Checked today by</th></tr></thead>
+      <tbody>
+        <tr><td><strong>git</strong></td><td>is the code written and merged?</td>
+            <td>manual reconciliation at session start</td></tr>
+        <tr><td><strong>GitHub / PR state</strong></td><td>is it approved and landed?</td>
+            <td><span class="pill p-bad">nothing</span></td></tr>
+        <tr><td><strong>The running system</strong></td><td>is it actually true in production?</td>
+            <td><span class="pill p-bad">nothing automatic</span></td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="note">
+      <p><strong>The third layer is the expensive one, and today proved it twice.</strong>
+      <em>Merged ≠ deployed</em> — backlog #36 was merged while production still ran v6, and nothing
+      would have said so. <em>Deployed ≠ working</em> — v7 was live, but "the encoder is in the
+      running image" stayed an <strong>inference</strong> until a Korean-titled video was actually
+      ingested. And the precedent that made all of this worth doing: production once ran
+      <strong>eight days behind on a migration</strong> while every file on disk looked correct.</p>
+      <p>A PR-state check cannot see any of that. It would have reported ✅ for all three.</p>
+    </div>
+
+    <p><strong>There is also a reason the roadmap does not store PR state today, and it is not an
+    oversight.</strong> It used to carry a <code>master = the merge of PR #N</code> field, deleted
+    2026-08-12 after being wrong four ways. The conclusion drawn then was not <em>"derive it more
+    carefully"</em> — it was <strong>don't store a derivable value at all; point at the source.</strong>
+    Adding a script that re-derives PR state into the document would re-create the cache, just with a
+    fresher fill. The better shape is a check that <em>compares</em> the claim to the source and
+    fails on drift — which is exactly what <code>check-test-counts.py</code> does for test numbers,
+    and what nothing yet does for merge or deploy state.</p>
+
+    <h3 style="margin-top:1.6rem">↩ Flagged from this page: <em>"is there any falsifier on a deploy
+    claim at all? Right now, no."</em></h3>
+
+    <p><strong>The obvious design is the wrong one, and noticing why is what makes a cheap version
+    possible.</strong></p>
+
+    <div class="note">
+      <p><strong>The trap:</strong> a check that asks production directly. It needs credentials and
+      a network, so it will often be unable to run — and this project's own rule is that
+      <em>"cannot run" is a FAILURE, never a pass</em>. A gate that goes red every time someone is
+      offline is a gate that gets commented out. That is the
+      <strong>unfalsifiable-guard family</strong> arriving from the opposite direction: not a check
+      that can never fail, but one that fails so often it stops meaning anything.</p>
+    </div>
+
+    <div class="note g">
+      <p><strong>The cheap version needs no credentials and no network.</strong> Staleness is
+      detectable from <code>git</code> alone, provided the roadmap records <em>which commit</em> the
+      live release was built from — not just its version number.</p>
+      <p><strong>FAILS IF</strong> the roadmap names a deployed release, and <code>master</code> has
+      advanced past the commit that release was built from, while the surrounding text still reads as
+      though production were current.</p>
+    </div>
+
+    <p>That catches the exact failure this project has already paid for — production running
+    <strong>eight days behind</strong> while every file on disk looked correct — and it catches the
+    milder version from this morning, where <code>master</code> carried the #36 fix and production
+    did not. It says nothing about whether the deployed image <em>works</em>; that still needs the
+    kind of run a Korean-titled video provided. But <strong>"the claim is now older than the code"
+    is mechanically decidable</strong>, and it is the half that goes stale silently.</p>
+
+    <p>One prerequisite, and it is small: the roadmap currently records
+    <em>"Deployed: release v7, 2026-08-18"</em>. It would also need the <strong>SHA that release was
+    built from</strong> — which is the one thing about a deploy that is not derivable after the fact,
+    and therefore the one thing genuinely worth writing down.</p>
+
+    <h3 style="margin-top:1.6rem">↩ Asked from this page: <em>are you suggesting this as a solution?
+    Why not implement? Is it the best solution or a fragile one?</em></h3>
+
+    <p><strong>Suggesting it: yes. Best: no — it is fragile, in two ways that should have been named
+    before proposing it.</strong></p>
+
+    <div class="note">
+      <p><strong>Fragility 1 — its prerequisite is "remember to write something down."</strong>
+      Recording the SHA at deploy time is a manual step in the loop, which is precisely the failure
+      class this page already documents three times over: the roadmap's PR field, the severity
+      markers, the stale task subject. A fix founded on a human remembering to record state is the
+      same defect one level up.</p>
+      <p><strong>Fragility 2 — "master has advanced" is a noisy signal.</strong> Master moves on
+      doc-only commits constantly; several did today. A gate that fires on every docs PR gets
+      ignored, then disabled — and it teaches people to ignore its neighbours too.</p>
+    </div>
+
+    <p><strong>Two things found by checking rather than assuming.</strong>
+    <code>scripts/check-deployed-bundle.ts</code> <em>already</em> reads the live deployed app — it
+    fetches <code>/login</code> and scans the served bundle for leaked credentials. Its docstring
+    exists to make exactly this point: a static check <em>"emits byte-identical output everywhere…
+    someone sees OK and ticks a box believing production was verified."</em> So reading the running
+    system over the network is an established pattern here, not a new risk. And a grep of
+    <code>Dockerfile</code> and <code>fly.toml</code> finds <strong>no embedded commit SHA</strong> —
+    nothing to derive from today.</p>
+
+    <div class="note g">
+      <p><strong>The better design: embed the commit SHA at BUILD time</strong>, serve it from the
+      deployed app, and let the check derive both sides. No manual step, and the comparison becomes
+      exact — <em>"prod runs commit X, master is Y"</em> — rather than the proxy <em>"master
+      moved"</em>. That removes both fragilities. It costs a Dockerfile and deploy-path change, which
+      makes it a genuine fork rather than a cheap add.</p>
+    </div>
+
+    <p><strong>Why it was not simply implemented.</strong> The reason given in chat was context
+    pressure, and that was weak — this reader has already said not to hesitate on decisions that are
+    mine. The <em>real</em> reason only appeared on checking: <strong>the cheap version is the wrong
+    one</strong>, and shipping it would have added a noisy gate to a repository whose entire
+    discipline is that gates must be trustworthy. Pausing was right; the reason first offered for
+    pausing was not.</p>
+
+    <h3 style="margin-top:1.6rem">↩ Asked from this page: <em>how did you find the roadmap was out of
+    sync? If you can find it whenever you need to, that may be just enough.</em></h3>
+
+    <div class="note g">
+      <p><strong>That is right, and it dissolves the gate entirely. Shipped as a three-line skill
+      step instead of a script.</strong></p>
+    </div>
+
+    <p><strong>How the drift was actually found: one command.</strong>
+    <code>flyctl releases</code>, compared by eye to the roadmap's <em>"Deployed: release …"</em>
+    line. No credentials beyond a CLI that is already installed, no new infrastructure, no
+    bookkeeping.</p>
+
+    <p><strong>So the capability was never missing — only the TRIGGER was.</strong> The briefing's
+    ground-truth list did not mention production at all, and every check it <em>did</em> run is blind
+    to that layer: the ratchets compare documents to documents, and
+    <code>check-roadmap-consistency</code> compares the roadmap to <em>itself</em>. Production got
+    checked in both of today's briefings only because a <em>memory</em> says Session Resume must read
+    git, files <strong>and the running system</strong> — and a memory is not a step list.</p>
+
+    <p><strong>The fix is the two commands, added to the briefing's ground-truth list</strong>, with
+    the mismatch named as the finding. It runs exactly when someone is about to trust the roadmap,
+    costs nothing when nothing has drifted, and cannot rot the way a hand-recorded SHA would.</p>
+
+    <div class="note s">
+      <p><strong>The rule this yields is the inverse of one already in the spine.</strong>
+      <code>dev-process.md</code> says <em>"before adding a rule, ask whether it can be a script."</em>
+      The complement, learned here: <strong>before adding a script, ask whether the check already
+      exists and merely lacks a moment to run.</strong></p>
+      <p>Bounded honestly: this catches <strong>version</strong> drift (live release vs the claim),
+      not <strong>commit</strong> drift (a release built from a stale tree). Version drift is what has
+      actually happened — twice.</p>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>The branch that looked alarming, and wasn't</h2>
+    <p style="margin-top:0"><code>worktree-agent-a8b4be87e2dd79386</code> — <strong>28 commits,
+    42 files, +4,377 lines, and no pull request at all.</strong> On its face, a month of
+    unaccounted-for work.</p>
+    <p>It is <strong>backlog #46, serve-path bounding</strong>, and it is already on
+    <code>master</code>: PR <strong>#67</strong>, squash <code>0aac16d</code>. Verified rather than
+    assumed — three of its files (<code>tests/lib/serve-budget.test.ts</code>,
+    <code>tests/lib/serve-rpc.test.ts</code>, <code>tests/support/fake-rpc.ts</code>) all resolve on
+    <code>master</code>. It is the pre-squash worktree, left behind when the worktree was removed.</p>
+    <p><strong>Safe to delete, along with the other nine.</strong> Not doing so is the actual risk:
+    a directory of branches that all look unmerged is a place where one genuinely unmerged branch
+    can hide indefinitely.</p>
+  </section>
+
+  <section class="card">
+    <h2>Reconciliation — the three layers against git</h2>
+    <div class="note">
+      <p><strong>One stale task subject.</strong> Task #46 still reads
+      <em>"PR #67 OPEN (39 commits, 7 review rounds). MERGE IS THE HUMAN GATE"</em> while being
+      marked <strong>completed</strong> — and PR #67 has been merged since 11 August. The status is
+      right; the sentence describing it is eight days out of date and contradicts itself.</p>
+    </div>
+    <div class="note g" style="margin-top:.9rem">
+      <p><strong>Otherwise the layers agree.</strong> The roadmap, the backlog and git now tell the
+      same story about #36 — merged, deployed, verified — because that was reconciled in PR #105
+      yesterday. Prod was checked live for this page, not inferred: release <strong>v7</strong>,
+      <code>/</code> answers 307, <code>/dev-login</code> is 404.</p>
+    </div>
+
+    <h3 style="margin-top:1.6rem">↩ Asked from this page: <em>what has been done about the stale
+    task subject, is it still stale, and what was the root cause?</em></h3>
+
+    <p><strong>What had been done: nothing.</strong> It was reported as a finding on this page and
+    left there. That is worth saying plainly — a briefing that surfaces a defect and does not close
+    it has moved the problem, not solved it.</p>
+
+    <p><strong>Was it still stale: yes</strong>, until this question arrived. Re-checked: the
+    subject read <em>"PR #67 OPEN … MERGE IS THE HUMAN GATE"</em>, the description opened
+    <em>"NOT MERGED; merging is the human gate"</em>, and <code>status</code> was
+    <code>completed</code> — <strong>the entry contradicted itself in two fields</strong> while PR
+    #67 had been merged since 11 August as squash <code>0aac16d</code>. <strong>Now fixed:</strong>
+    the subject describes the work, and the description opens with the merge and its sha.</p>
+
+    <div class="note s">
+      <p><strong>Root cause: transient state was written into a field nothing re-reads.</strong></p>
+      <p><code>status</code> is the field designed to change, and it <em>was</em> updated correctly.
+      But the subject and description were composed as a <strong>status snapshot</strong> — "OPEN",
+      "NOT MERGED", "the human gate is next" — so they froze at the moment of writing. No workflow
+      revisits them, because nothing needs to: the machine-readable field was already right.</p>
+      <p>The fix is not vigilance. It is <strong>not putting state there in the first place</strong>:
+      a subject should describe the <em>work</em>, and status should live in <code>status</code>.
+      Any subject naming a phase — "PR open", "awaiting review", "next up" — is guaranteed to rot.</p>
+    </div>
+
+    <p style="margin-top:1rem"><strong>This is the third instance of one pattern, and the project
+    has already paid for it twice:</strong></p>
+    <div class="scroll"><table>
+      <thead><tr><th>Where</th><th>The stale thing</th><th>Resolution</th></tr></thead>
+      <tbody>
+        <tr><td>Roadmap</td>
+            <td><code>master = the merge of PR #N</code> — a field holding a value that moves every merge</td>
+            <td><strong>DELETED</strong> 2026-08-12. It was wrong four ways in a short life; three
+                were omissions or copy-forwards, and the fourth repeated <em>inside the PR that
+                added the warning against it</em></td></tr>
+        <tr><td>Backlog</td>
+            <td>🔴 / 🟠 severity markers, recorded at filing and never downgraded on close</td>
+            <td><strong>Convention changed</strong> 2026-08-17 (PR #105): <code>✅ (was 🔴)</code>,
+                and the rule written at the top of the table</td></tr>
+        <tr><td>Task list</td>
+            <td>#46's subject naming a PR's phase</td>
+            <td><strong>Rewritten today</strong> to describe the work; the root cause recorded in
+                the task itself</td></tr>
+      </tbody>
+    </table></div>
+    <p>The roadmap's own conclusion generalises to all three: prose <em>"cannot defend, because a
+    paragraph cannot refuse to be skipped the way a required parameter can."</em> Where a value can
+    be derived — from <code>git</code>, from a PR's state, from a <code>status</code> field —
+    writing it down a second time creates a copy that can only drift.</p>
+
+    <h3 style="margin-top:1.6rem">↩ Asked from this page: <em>any fix, or acknowledgment of the root
+    cause only?</em></h3>
+
+    <p><strong>Mostly acknowledgment — you caught the weak spot, and the quote you highlighted is
+    the argument against my own remedy.</strong> Scored honestly, one of the three was actually
+    fixed and two were rules that can be skipped:</p>
+
+    <div class="scroll"><table>
+      <thead><tr><th>Instance</th><th>What was done</th><th>Is it a fix?</th></tr></thead>
+      <tbody>
+        <tr><td>Roadmap <code>master = PR #N</code></td>
+            <td><strong>Field deleted</strong></td>
+            <td><span class="pill p-good">YES — structural</span><br>
+                <span class="dim">the thing cannot go stale because it no longer exists</span></td></tr>
+        <tr><td>Backlog severity markers</td>
+            <td>Convention written at the top of the table; two rows hand-corrected</td>
+            <td><span class="pill p-bad">NO — it was prose</span><br>
+                <span class="dim">now fixed, below</span></td></tr>
+        <tr><td>Task #46's subject</td>
+            <td>Rewritten once; rule recorded in the task body</td>
+            <td><span class="pill p-warn">Still prose</span><br>
+                <span class="dim">and not fixable from this repo</span></td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="note g" style="margin-top:1rem">
+      <p><strong>The middle row is now a script</strong> — <code>check-docs.py</code> gained
+      <code>check_backlog_closed_markers</code>. <strong>FAILS IF</strong> a row's Status cell marks
+      it closed (contains ✅) while its Item cell still begins with 🔴/🟠/🟡/🟢.</p>
+      <p><strong>And it immediately proved the point.</strong> The prose convention plus a hand pass
+      had corrected two rows on 17 August. On its first run the script found
+      <strong>three more — #43, #46, #50</strong> — all closed, all still flying a severity marker,
+      none of which the hand pass had looked at.</p>
+      <p><em>A convention catches what someone happens to read. A script catches what is there.</em>
+      <strong>Mutation-checked:</strong> restoring #36's bare 🔴 makes the gate exit 1 and name the
+      row; putting it back makes it exit 0 — because a check never observed to fail is
+      indistinguishable from one that cannot.</p>
+    </div>
+
+    <div class="note" style="margin-top:.9rem">
+      <p><strong>What is still NOT fixed, said plainly.</strong> The task-subject instance stays a
+      convention. Tasks live outside this repository, so no ratchet here can see them — and a
+      convention is exactly what the row above just demonstrated the limits of. Recording that as an
+      open weakness rather than closing the section on a success.</p>
+    </div>
+  </section>
+
+  <footer>
+    <p><strong>Ground truth</strong> — every figure came from a command run while building this page.</p>
+    <dl>
+      <dt>master</dt><dd>126190a · working tree clean · 0 ahead of upstream</dd>
+      <dt>Branch</dt><dd>docs/backlog-51-52 (+2, backing PR #107)</dd>
+      <dt>Open PRs</dt><dd>#106 CLEAN pass 1m29s · #107 CLEAN pass 2m33s</dd>
+      <dt>Ratchets</dt><dd>check-docs 0 · check-roadmap-consistency 0 · check-test-counts 0 · check-producer-enumeration 0</dd>
+      <dt>Unit</dt><dd>2,719 tests / 268 suites (results file written today 09:11)</dd>
+      <dt>Prod</dt><dd>Fly v7, up 16h19m · GET / → 307 · GET /dev-login → 404</dd>
+      <dt>Backlog</dt><dd>52 rows, 16 with an OPEN status cell</dd>
+    </dl>
+    <p style="margin-top:.9rem"><strong>Not re-measured for this page:</strong> the integration
+    suite (522 tests) was last run in full this morning against a live local stack; it was not
+    re-run to build this briefing. The unit count comes from a results file written today, not from
+    a fresh run.</p>
+    <p class="dim" style="margin-top:.7rem">Built 2026-08-18, early afternoon.</p>
+  </footer>
+
+</div>
+
+<div id="tray" role="dialog" aria-label="Ask a question">
+  <div class="inner">
+    <div class="qt" id="qt"></div>
+    <div class="row">
+      <textarea id="qbox" placeholder="Type your question, then press Send (or ⌘/Ctrl+Enter)…" rows="2"></textarea>
+      <button class="act" id="sendbtn" type="button">Send</button>
+      <button class="sec" id="closebtn" type="button">Close</button>
+    </div>
+    <div id="sentnote" aria-live="polite"></div>
+  </div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+<!-- probe 1787097109 -->
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>

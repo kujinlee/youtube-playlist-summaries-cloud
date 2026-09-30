@@ -1,0 +1,1116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PR #155 — the schema that has never run</title>
+
+<style>:root{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#8a857c; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#8a857c; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}}
+:root[data-theme="dark"]{
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+/* SIZE carries hierarchy. Headings are LIGHTER than body-bold, not heavier. */
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h)}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+/* BOLD IS A LABEL, NOT A SHOUT — weight only, a neutral tone, never a hue */
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+/* TERMINAL TEXTURE — inline code is a raised pill, and it carries the visual variety */
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em;white-space:nowrap}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+:root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied. */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
+
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ask tray */
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+#sentnote{font-size:.78rem;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+
+<h1>The schema that has never run</h1>
+<p style="font-size:1.06rem;color:var(--fg2);margin-top:0">PR #155 turns four spec files into <code>0027_stable_blob_addressing.sql</code> and applies it — locally. It is the first time this design touches a real database, after eighteen design reviews and eleven implementation rounds. Nothing in your application calls it yet, and that is deliberate.</p>
+
+<div class="hdr">
+<b>Change:</b> feat(M4): promote the stable-blob-addressing schema as migration 0027<br>
+<b>Base..Head:</b> <code>master</code>..<code>c5f00bf</code> &nbsp;(32 commits, 45 files, +9,873 / −463)<br>
+<b>Source:</b> <code>gh pr diff 155</code> + <code>git diff origin/master...c5f00bf</code><br>
+<b>Built:</b> 2026-08-27T12:20Z<br>
+<b>Inspected:</b> 45 files in the diff, plus <b>12 read outside it</b> — CONTEXT.md, ADR-0006/0007/0011, <code>0001_core_schema.sql</code>, <code>0008_jobs_queue.sql</code>, <code>global-setup.ts</code>, <code>blob-addressing-caller-contract.test.ts</code>, <code>file-response.ts</code>, <code>check-live-schema.py</code>, <code>m4_catalog.py</code>, the rollback SQL, <code>dev-process.md</code>, the milestone spine<br>
+<b>Not verified:</b> the <code>pre</code> phase since <code>0027</code> was applied locally (argued from code paths, not measured); migration <em>timing</em> at production's row counts; <code>supabase db push --linked</code>'s one-transaction property (help-checked, never executed against a real remote)
+</div>
+
+<div class="strip">
+  <div class="stat s"><div class="n">161</div><div class="k">catalog objects</div></div>
+  <div class="stat s"><div class="n">1,898</div><div class="k">lines of 0027</div></div>
+  <div class="stat c"><div class="n">11</div><div class="k">review rounds</div></div>
+  <div class="stat d"><div class="n">23</div><div class="k">findings, rounds 10–11</div></div>
+  <div class="stat v"><div class="n">0</div><div class="k">of them in 0027</div></div>
+  <div class="stat v"><div class="n">14/14</div><div class="k">gates green</div></div>
+</div>
+
+<div class="howto">
+  <div class="t">Reading this later &nbsp;<span id="modechip">live or local file</span></div>
+  <ul>
+    <li><strong>Stable link:</strong> <code>http://127.0.0.1:7391/latest</code> — always the newest explainer, so a bookmark never goes stale. <code>/</code> lists them all.</li>
+    <li><strong>To ask a question:</strong> select any text, or hover a heading, and click <em>ask</em> → type → <strong>Send</strong>. Then tell the session <em>&ldquo;read my questions&rdquo;</em>. Answers are added back into this page, under the section you asked from.</li>
+    <li><strong>If that URL does not load:</strong> run <code>python3 scripts/explainer-serve.py</code> from the repo — safe to run twice. <strong>A reboot stops the server</strong>, which is the one moment you will need this line.</li>
+    <li><strong>Opened as a <code>file://</code> copy?</strong> Everything reads fine; only <strong>Send</strong> is unavailable, and it falls back to the clipboard.</li>
+  </ul>
+</div>
+
+<div class="toc">
+  <strong style="font-family:var(--sans);font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--fg3)">Contents</strong>
+  <ol>
+    <li><a href="#bg">Background — what the system does today</a></li>
+    <li><a href="#int">Intuition — one video, two playlists, one summary</a></li>
+    <li><a href="#bounds">Boundaries touched</a> &nbsp;<span class="chip s">start here</span></li>
+    <li><a href="#dec">Decisions this change encodes</a></li>
+    <li><a href="#cascade">The review cascade, and why it stopped</a></li>
+    <li><a href="#map">Code map</a></li>
+    <li><a href="#limits">Assumptions and limits</a></li>
+  </ol>
+</div>
+
+<h2 id="bg">1 · Background — what the system does today</h2>
+
+<h3>The skippable version</h3>
+<p>The product turns a YouTube playlist into a set of documents. For each video it produces a <strong>summary</strong> (Markdown, written by a Gemini call that costs money) and several things derived from it — a rendered HTML doc, a PDF, per-section “dig deeper” expansions. In <code>CONTEXT.md</code>’s vocabulary the summary is a <strong>source-of-truth blob</strong>: if it disappears, the system must say so rather than quietly regenerate, because a regenerated summary comes back <em>different in substance</em>. The HTML and PDF are <strong>derived-cache blobs</strong> — free and deterministic to rebuild.</p>
+<p>Every one of those blobs is found by <em>deriving</em> its storage key from a <strong>base</strong>: a serial number plus a slug from the video’s title. That is the design’s original sin, and the reason this whole milestone exists.</p>
+
+<div class="box s">
+  <div class="t">The problem, in one sentence</div>
+  <p>The base is built from <em>mutable</em> data. Rename a video and the slug changes; reconcile two sides of a sync and the serial changes. <strong>Change a base and every blob addressed through it becomes unreachable — including the paid ones.</strong></p>
+</div>
+
+<h3>The narrow prerequisites for this change</h3>
+<p>Three earlier decisions are load-bearing here, and none is re-opened by this PR:</p>
+<div class="tw"><table>
+<thead><tr><th style="width:6.5rem">Decision</th><th>What it settled</th><th style="width:9rem">Status</th></tr></thead>
+<tbody>
+<tr><td><strong>ADR-0006</strong></td><td>A blob’s address stops moving. Artifacts become <em>workspace-scoped</em>, and a <strong>artifact manifest</strong> maps <em>slot → artifact</em> as the single source of truth for which copy is current.</td><td><span class="chip v">accepted</span> 2026-08-24</td></tr>
+<tr><td><strong>ADR-0007</strong></td><td>Artifacts are an <strong>append-only log</strong>. A second production run <em>creates</em>, never replaces. The reservation protocol — six review rounds of contention machinery — is <strong>deleted</strong>.</td><td><span class="chip v">accepted</span> 2026-08-24</td></tr>
+<tr><td><strong>ADR-0011</strong></td><td>Corrections stay <em>per-playlist</em>. Only artifacts are shared. Recorded because nine of eleven Blocking/High findings across five rounds came from one denormalized column.</td><td><span class="chip v">accepted</span> 2026-08-25</td></tr>
+</tbody>
+</table></div>
+
+<p>All three were <em>accepted</em> and none had ever executed. The milestone spine put it bluntly: <strong>accepted is not implemented</strong> — the schema had never run. That sentence is what this PR falsifies.</p>
+
+<h2 id="int">2 · Intuition — one video, two playlists, one summary</h2>
+
+<p>Suppose you have two playlists, <em>Systems Reading</em> and <em>Weekend Queue</em>, and the same conference talk appears in both. Today the product treats those as unrelated: two playlists, two ingests, two paid Gemini calls, two summaries that may say different things.</p>
+
+<p>A <strong>workspace</strong> is the container that makes them one. Put both playlists in a workspace and the talk’s artifacts are addressed under the <em>workspace</em>, not the playlist — so the summary is produced once and both playlists read it.</p>
+
+<div class="flow">
+  <div class="node no"><div class="n1">Before</div><div class="n2">key = <code>playlist / 007_the-talk.md</code><br>rename the video → new key → blob lost</div></div>
+  <div class="arr">→</div>
+  <div class="node ok"><div class="n1">After 0027</div><div class="n2">key = <code>&lt;workspace&gt;/videos/&lt;video&gt;/&lt;generation&gt;/summary.md</code><br>rename anything → key unchanged</div></div>
+</div>
+
+<p>The address is now built from three ids that never change: the workspace, the video, and an opaque <strong>generation</strong> id minted when the paid run completes. The title and the serial no longer appear in it at all.</p>
+
+<div class="box c">
+  <div class="t">The concept doing the work: generation</div>
+  <p>A <strong>generation</strong> is one production run of a paid artifact <em>and everything that run produced</em> — for a summary, both the body and the <strong>card</strong> (the tl;dr, the takeaways, the format and corrections stamps). They are inseparable by construction, so a reader can never see one run’s card describing another run’s body. Run the summary again and you get a <em>second</em> generation; the first is untouched. The manifest decides which one is <strong>authoritative</strong>.</p>
+</div>
+
+<h3>What ADR-0011 changed, concretely</h3>
+<p>An earlier draft of this schema also carried each video’s <em>corrections</em> — the user’s edits to a summary — up onto the workspace row, so they could be shared too. That is the column that produced nine of eleven findings across five rounds.</p>
+
+<p>The reason is visible in the keys. <code>videos</code> is keyed <code>(playlist_id, video_id)</code>; <code>workspace_videos</code> is keyed <code>(workspace_id, video_id)</code>. One video in two playlists is <strong>two rows</strong> in the first table and <strong>one row</strong> in the second. Corrections are per-playlist truth, so putting them on the workspace row means two truths racing for one slot.</p>
+
+<div class="two">
+  <div class="box d">
+    <div class="t">Before — denormalized</div>
+    <p><code>workspace_videos.corrections_hash</code> is a <em>copy</em>. A trigger syncs it. Two playlists disagree → the copy is whatever wrote last, and the reader compares against a value that may belong to the other playlist.</p>
+  </div>
+  <div class="box v">
+    <div class="t">After — ADR-0011</div>
+    <p>The column is gone. <code>workspace_videos</code> is <code>(workspace_id, video_id)</code> and nothing else. The reader joins to <code>videos</code> for the playlist it is actually serving and compares there. One truth, read where it lives.</p>
+  </div>
+</div>
+
+<div class="box v">
+  <div class="t">Measured, not argued</div>
+  <p>Removing it deleted <strong>one function and two triggers</strong> (10 triggers → 8) and <strong>seven assertion blocks</strong> from the behavioural suite. Those assertions were <em>deleted, not retargeted</em> — the plan’s own instruction, because “an assertion retargeted to keep it alive is how a suite ends up testing what is easy rather than what matters.” The honest count of assertions this schema makes about corrections currency is now <strong>zero</strong>, and the file says so out loud.</p>
+</div>
+
+<h2 id="bounds">3 · Boundaries touched</h2>
+
+<p>Six boundaries move. The asymmetries in the third column are the whole point — where the two sides may assume different things, that difference is where the defects have historically lived.</p>
+
+<div class="tw"><table>
+<thead><tr>
+<th style="width:9.5rem">Boundary</th><th style="width:12rem">What crosses it</th><th>What each side may assume</th><th>When that assumption is violated</th>
+</tr></thead>
+<tbody>
+<tr>
+  <td><strong>1 · Application ↔ M4 schema</strong><br><span class="chip v">inert</span></td>
+  <td>Nothing. No call, in either direction.</td>
+  <td><strong>Schema side:</strong> may assume it has no callers — every write goes through <code>record_artifact</code> and nothing invokes it.<br><strong>App side:</strong> may assume M4 is not there.</td>
+  <td>The day a caller lands, <strong>backlog 26 becomes a money defect</strong>: ADR-0007 deleted the only per-kind attempt bound, so a summary bounded at 1 paid attempt inherits <code>jobs.max_attempts</code>, which is <code>default 5</code> at <code>0008_jobs_queue.sql:14</code>. <strong>A 5× spend ceiling nobody chose.</strong> This PR makes that day observable — see boundary 6.</td>
+</tr>
+<tr>
+  <td><strong>2 · Migration ledger ↔ live catalog</strong><br><span class="chip s">phase</span></td>
+  <td><code>0027</code>, one direction, once.</td>
+  <td><strong>Ledger side:</strong> append-only — <code>0027</code> is never edited; a correction is a later file.<br><strong>Catalog side:</strong> says what <em>this</em> database has, which may lag.</td>
+  <td>Reading one and reporting on the other. Round 11 found a guard whose anti-rot check asked the <em>ledger</em> whether a function still existed — true forever, because you never edit an applied migration. The falsifier could not fire.</td>
+</tr>
+<tr>
+  <td><strong>3 · Spec files ↔ migration</strong><br><span class="chip c">source swap</span></td>
+  <td>The schema text the gates verify.</td>
+  <td><strong>Before <code>0027</code>:</strong> the four <code>schema/*.sql</code> files are the subject.<br><strong>After:</strong> the migration is, and the spec files become scenery.</td>
+  <td>Mutating one while verifying the other. <strong>Measured:</strong> the first post-<code>0027</code> run of the mutation gate reported <strong>57 of 58 mutations “SURVIVED”</strong> — no guard had weakened; the harness was editing spec files the verifier no longer opened.</td>
+</tr>
+<tr>
+  <td><strong>4 · Gate ↔ its subject database</strong><br><span class="chip d">was fatal</span></td>
+  <td>A rebuilt copy of M4.</td>
+  <td><strong>Gate side:</strong> needs a database <em>without</em> M4, to build M4 into.<br><strong>Developer side:</strong> their <code>postgres</code> now <em>has</em> M4.</td>
+  <td>Both true at once. <strong>Seven of fourteen gates died</strong> on <code>relation "workspaces" already exists</code>. They now build a pre-M4 base by cloning and applying the committed rollback. Without it the suite could not be green in <em>either</em> phase — an unsatisfiable bar.</td>
+</tr>
+<tr>
+  <td><strong>5 · Integration suite ↔ every developer’s stack</strong><br><span class="chip d">irreversible</span></td>
+  <td><code>supabase migration up</code>, automatically.</td>
+  <td><strong>Suite side:</strong> refuses to run against a schema that is not the branch’s (<code>global-setup.ts:54</code>).<br><strong>Developer side:</strong> may not expect a test run to alter their database.</td>
+  <td>Nothing breaks — but it is <strong>one-way</strong>. From <code>6bf4e18</code> onward, <code>npm run test:integration</code> applies M4 on every machine that runs it. That is the point of no return for local stacks, and it has been crossed.</td>
+</tr>
+<tr>
+  <td><strong>6 · Guard ↔ TypeScript source</strong><br><span class="chip c">new</span></td>
+  <td>“Is this occurrence inside a comment?”</td>
+  <td><strong>Guard side:</strong> a mention in a comment is not a caller.<br><strong>Source side:</strong> <code>//</code> and <code>/*</code> appear inside strings, regex literals and JSX all the time.</td>
+  <td>Both directions are money bugs. A real <code>rpc('record_artifact')</code> filed as a comment ⇒ <strong>silent DORMANT</strong> on the money path. A comment filed as a call ⇒ a red guard over nothing, and <em>a guard that is red when nothing is wrong gets disabled</em>.</td>
+</tr>
+</tbody>
+</table></div>
+
+<div class="box d">
+  <div class="t">Row 6 is where I would look first</div>
+  <p>It took <strong>four</strong> attempts. Two regexes missed a call because <code>https://</code> appeared earlier on the line. A hand-written scanner then desynced on a regex literal containing a quote — <strong>240 real comment lines across 12 production files were being read as code</strong>, and the construct is live at <code>lib/html-doc/file-response.ts:8</code>. The fix stopped guessing and asked the TypeScript compiler. Genuine comments misread: <strong>240 → 0</strong>.</p>
+</div>
+
+<p class="lbl">lib/html-doc/file-response.ts:6–9 — unchanged production code; the input that broke two guards</p>
+<pre><code><span class="ln">  <span class="kw">const</span> cleaned = base</span>
+<span class="ln">    .<span class="cal">replace</span>(/[^\x20-\x7e]/g, <span class="str">'_'</span>) <span class="com">// non-printable-ASCII → _</span></span>
+<span class="ln hlr">    .<span class="cal">replace</span>(/[<span class="str">"</span>\\/;]/g, <span class="str">'_'</span>)       <span class="com">// quote, backslash, slash, semicolon → _</span></span>
+<span class="ln">    .<span class="cal">replace</span>(/^[.\s]+|[.\s]+$/g, <span class="str">''</span>); <span class="com">// trim dots and spaces</span></span>
+</code></pre>
+<p>A character scanner sees the <code>"</code> inside that character class, decides a string has opened, and from there its idea of inside-versus-outside is inverted for the rest of the file. The compiler does not, because it has to parse this correctly to compile it.</p>
+
+<h2 id="dec">4 · Decisions this change encodes</h2>
+
+<h3>Decided: the schema lands inert, and the day it stops being inert is observable</h3>
+<p>Nothing in <code>lib/ app/ worker/ components/</code> references any M4 relation — <strong>verified, zero matches</strong>. The schema ships as pure structure. What is new is that “inert” is no longer a claim someone re-checks by hand:</p>
+
+<p class="lbl">scripts/check-paid-caller-arrival.py — new; the trigger for backlog 26</p>
+<pre><code><span class="ln"><span class="com">#   exit 0 = DORMANT — no production caller. Backlog 26 may remain open.</span></span>
+<span class="ln hlr"><span class="com">#   exit 1 = FIRED   — a production caller exists. Backlog 26 must be closed FIRST.</span></span>
+<span class="ln"><span class="com">#   exit 2 = CANNOT RUN (treat as NOT RUN, never as dormant)</span></span>
+</code></pre>
+
+<p>Backlog 26 asks which attempt ceiling governs a paid slot — the deliberate <code>summary_max_attempts = 1</code>, or the inherited <code>jobs.max_attempts = 5</code>. It costs nothing while nothing calls the write path, and 5× the moment something does. Its trigger used to be a sentence in a table.</p>
+
+<p><span class="adrc">ADR CANDIDATE:</span> <em>a deferred decision’s trigger must be a command, not a sentence.</em> Hard to reverse (it changes what “tracked” means), surprising without context, and a real trade-off — a script can only observe a proxy, where a sentence can name the true condition. Currently recorded only in the backlog row and <code>dev-process.md</code>’s enforcement table.</p>
+
+<h3>Decided: gates get their own pre-M4 database rather than refusing</h3>
+<p>When <code>0027</code> was applied locally, seven gates broke identically. Refusing was <em>honest</em> — and it made the fourteen-gate suite unable to be green in either phase. The alternative chosen: give the rebuild gates a database of their own, cloned from the live stack <em>with data</em> and rolled back with the committed rollback file.</p>
+
+<div class="box c">
+  <div class="t">Rejected: clone schema-only</div>
+  <p>The first draft did, and gate 1 failed with <code>null value in column "workspace_id"</code> — <code>01_workspaces.sql</code> <em>derives</em> workspaces from <code>profiles</code>, and an empty clone has none. The tempting repair was to seed two synthetic profiles. That would have been a <strong>silent loss of coverage</strong>: this gate exists to verify the DDL runs against real, <em>populated</em> tables, and every backfill in the migration is exactly that. Cloning with data costs 5.4 s and 21 MB, measured.</p>
+</div>
+
+<p><span class="adrc">ADR CANDIDATE:</span> <em>a gate’s subject may be manufactured, but never simplified.</em> The manufactured base must carry the population the real subject has, or the gate quietly becomes a different gate.</p>
+
+<h3>Decided: `05_assert.sql` executes everywhere, but is never a migration</h3>
+<p>The behavioural suite holds an arbitrary-SQL executor (<code>execute p_sql</code>) and <code>delete from profiles</code>. If either reaches <code>supabase/migrations/</code>, both are queued for production. Gate 14 is the mechanical proof that they have not — and it is the gate that round 11 caught reporting <strong>green over the exact violation it exists to detect</strong>.</p>
+
+<h3>Decided: open the PR with the instruments imperfect</h3>
+<p>Rounds 10 and 11 produced 1 Blocking, 8 High, 8 Medium, 6 Low. <strong>None was in <code>0027</code>.</strong> Every finding was in a gate, a harness or a guard. The decision was to merge the schema and treat instrument hardening as its own slice.</p>
+
+<div class="box s">
+  <div class="t">The strongest argument against, and the answer</div>
+  <p><strong>Against:</strong> these instruments are what will certify M4-β against production, so weakness in them is weakness in the production gate.</p>
+  <p><strong>Answer:</strong> <code>0027</code> is what this PR ships; merging is a human gate; M4-β is a <em>second</em> human gate that happens after merge. The instruments get another pass before they are pointed at production. What round 12 would review is a <code>.mjs</code> file with a 10-case self-test, not anything that touches data.</p>
+  <p><strong>What that answer does not cover:</strong> rounds 10 and 11 each found something serious in exactly this kind of code. Predicting that round 12 finds nothing would be ignoring the evidence this PR is built on.</p>
+</div>
+
+<h2 id="cascade">5 · The review cascade, and why it stopped</h2>
+
+<p>This branch has a shape worth seeing rather than reading: <strong>each fix round caused the next round’s worst finding.</strong> <code>portable-practices</code> §12 predicts it; here it happened twice in one evening.</p>
+
+<div class="cascade">
+  <div class="cstep fix"><div class="rd">r10 H2</div><div class="bd"><div class="h">Fix: gate 14 passed over zero input</div><div class="s">An unmatched glob fed the gate nothing and it reported green. Added <code>shopt -s nullglob</code>, a corpus floor — and <code>set -uo pipefail</code>.</div></div></div>
+  <div class="cstep bug"><div class="rd">→ r11 B1</div><div class="bd"><div class="h">Caused: gate 14 green over the violation itself <span class="chip d">Blocking</span></div><div class="s"><code>grep -q</code> exits on first match; the producer dies of SIGPIPE 141; <code>pipefail</code> reports the producer; <code>!</code> inverts it to success. Measured 8/8 false-green with <code>pipefail</code>, 8/8 correct without. A full <code>05_assert.sql</code> appended to <code>0027</code> <strong>passed</strong>.</div></div></div>
+  <div class="cstep fix"><div class="rd">r10 H4</div><div class="bd"><div class="h">Fix: a <code>//</code> in a string hid a real call</div><div class="s">Replaced two regexes with a hand-written character scanner tracking quotes.</div></div></div>
+  <div class="cstep bug"><div class="rd">→ r11 H1</div><div class="bd"><div class="h">Caused: a regex literal desyncs the scanner <span class="chip d">High</span></div><div class="s">240 real comment lines across 12 files read as code; both directions reproduced on the live tree.</div></div></div>
+  <div class="cstep fix"><div class="rd">r11 fix</div><div class="bd"><div class="h">Stopped the sequence — by changing the question</div><div class="s">Not a fifth scanner. <code>scripts/ts-comment-spans.mjs</code> asks the TypeScript compiler, which already ships here and already must know about regex literals, JSX and template interpolation. <strong>No fallback</strong>: missing node is CANNOT RUN.</div></div></div>
+</div>
+
+<div class="box v">
+  <div class="t">And verifying that fix found one more, in the fix itself</div>
+  <p>TypeScript reports offsets in <strong>UTF-16 code units</strong>; Python counts <strong>code points</strong>. One file contains <code>🖼</code> — one code point, two UTF-16 units — so every offset after it drifted and a genuine comment two lines below was classified as code. Silent, direction-dependent, on the money path. Found by <em>re-measuring</em>, not by re-reading.</p>
+</div>
+
+<p>The general lesson the branch keeps paying for: each earlier fix asked <em>“what did the last counter-example have that ordinary code does not?”</em> — a question about characters, with an unbounded supply of answers. The escape was to stop proxying and ask the thing itself.</p>
+
+<h2 id="map">6 · Code map</h2>
+
+<p>In flow order — schema first, then what verifies it, then what records it.</p>
+
+<div class="tw"><table>
+<thead><tr><th style="width:15rem">Group</th><th>Why it changed</th></tr></thead>
+<tbody>
+<tr><td><code>supabase/migrations/0027_…sql</code><br><span class="chip s">new · 1,898 lines</span></td><td>The migration. Three <code>add nullable → backfill → set not null</code> sequences on <code>playlists</code>, <code>videos</code>, <code>jobs</code> (<code>:53</code>, <code>:58</code>, <code>:63</code>), then the five new tables, three views, and the RPC surface.</td></tr>
+<tr><td><code>…/schema/03_generations.sql</code><br><code>…/schema/04_artifacts.sql</code><br><code>…/schema/05_assert.sql</code></td><td>ADR-0011 applied: <code>workspace_videos</code> reduced to <code>(workspace_id, video_id)</code>; both corrections-ranking terms removed from the reader; seven assertion blocks deleted rather than retargeted.</td></tr>
+<tr><td><code>scripts/m4-base-db.sh</code><br><code>scripts/m4_base_db.py</code><br><span class="chip s">new</span></td><td>The pre-M4 base. Clones <em>with data</em>, applies the rollback, and asserts absence with the derived manifest rather than trusting the exit code — <code>skipping</code> notices are the falsifier, because a wrong <code>drop function</code> signature is a silent no-op.</td></tr>
+<tr><td><code>scripts/check-schema-gates.sh</code></td><td>13 → 14 gates. Gate 14 keeps <code>05_assert.sql</code> out of migrations; its body was rewritten twice — once for the empty-input hole, once for the <code>pipefail</code> inversion that fix introduced.</td></tr>
+<tr><td><code>verify-schema.sh</code> · <code>run-schema-assertions.sh</code></td><td>Both gained an <strong>assertion floor</strong>. Each was reporting success over zero assertions: the success marker proves nothing <em>raised</em>, and cannot prove anything <em>ran</em>.</td></tr>
+<tr><td><code>mutate-schema.py</code></td><td>Mutations follow the source across the <code>0027</code> boundary, with an anchor-count check and an inventory floor. Both gaps were <em>described in comments</em> before they were implemented.</td></tr>
+<tr><td><code>scripts/check-paid-caller-arrival.py</code><br><code>scripts/ts-comment-spans.mjs</code><br><span class="chip s">new</span></td><td>Backlog 26’s trigger, and the compiler-backed answer to “is this a comment?”</td></tr>
+<tr><td><code>docs/reviews/plan-m4-v2-r{10,11}-{codex,claude}.md</code></td><td>Four review documents, both halves of both rounds.</td></tr>
+</tbody>
+</table></div>
+
+<h2 id="limits">7 · Assumptions and limits</h2>
+
+<p>What I inspected, what I inferred, and what I could not confirm.</p>
+
+<div class="tw"><table>
+<thead><tr><th style="width:6.5rem">Status</th><th>Claim</th></tr></thead>
+<tbody>
+<tr><td><span class="chip v">verified</span></td><td><strong>Nothing calls the M4 schema.</strong> <code>rg</code> over <code>lib app worker components</code> for all five relations and <code>record_artifact</code>: <strong>0 matches</strong>.</td></tr>
+<tr><td><span class="chip v">verified</span></td><td><strong>The backfills cannot abort on production data.</strong> <code>playlists.owner_id uuid not null references profiles(id)</code> (<code>0001:12</code>); <code>videos.playlist_id uuid not null</code> + composite FK (<code>0001:24,32</code>); the same for <code>jobs</code>. Quoted, not characterised.</td></tr>
+<tr><td><span class="chip v">verified</span></td><td><strong>Backlog 26’s 5× is real.</strong> <code>max_attempts int not null default 5</code> — <code>0008_jobs_queue.sql:14</code>.</td></tr>
+<tr><td><span class="chip v">verified</span></td><td><strong>The integration suite applies migrations.</strong> <code>global-setup.ts:46</code> runs <code>supabase migration up</code> and refuses to continue if it cannot (<code>:54</code>).</td></tr>
+<tr><td><span class="chip s">inferred</span></td><td><strong>“0 of 23 findings were in <code>0027</code>”</strong> is my classification of the two review documents, not a field either reviewer filled in. I read every finding and assigned it; a reader who disagrees about one or two would not change the shape, but the number is mine.</td></tr>
+<tr><td><span class="chip s">inferred</span></td><td><strong>The generation-id-in-the-key claim.</strong> I read the key shapes in the assertion fixtures (<code>…/videos/vidA/gOLD/summary.md</code>) rather than tracing a live write, because there is no live write — see the first row.</td></tr>
+<tr><td><span class="chip d">not verified</span></td><td><strong>The <code>pre</code> phase.</strong> Not re-run since <code>0027</code> was applied locally. Its greenness is argued from the code paths, not measured.</td></tr>
+<tr><td><span class="chip d">not verified</span></td><td><strong>Migration timing at production scale.</strong> Production carries 1 profile and 12 videos; the gate subject carries 8,384 and 4,385. Correctness is covered at the harsher end; <em>duration under a <code>lock_timeout</code></em> is not measured at production’s shape.</td></tr>
+<tr><td><span class="chip d">not verified</span></td><td><strong><code>supabase db push --linked</code> applies in one transaction.</strong> Help-checked, never executed against a real remote. The plan flags it, and it matters at M4-β.</td></tr>
+<tr><td><span class="chip d">not verified</span></td><td><strong>Round 11’s fixes have had no review.</strong> Commit <code>974f6ec</code> is unreviewed, and the two rounds before it each found the previous round’s fix to be the defect. Task #156 carries it.</td></tr>
+</tbody>
+</table></div>
+
+<div class="box c">
+  <div class="t">Known and deliberately unfixed</div>
+  <p><strong>A base database leaks on SIGTERM/SIGKILL</strong> and nothing sweeps orphans (task #145 / #156). <strong><code>--expect-present</code> is <code>MANIFEST ⊆ live</code></strong>, so an <em>added</em> column on an M4 relation is invisible while a <em>removed</em> one is caught — mutation 3 of the live-gate harness asserts both directions and states that no premise covers the added case. Closing that is a design question, not a patch.</p>
+</div>
+
+<div class="foot">
+PR #155 · base <code>master</code> · head <code>c5f00bf</code> · 32 commits · 45 files · +9,873 / −463<br>
+gates 14/14 · gate 1 120 assertions (floor 120) · gate 2 58/58 mutations · integration 535/538 · tsc clean · CI verify pass 2m16s<br>
+production untouched — release v10, schema 0026 · merging is a human gate · applying M4-β is a second one<br>
+built 2026-08-27 · 45 files in the diff, 12 read outside it
+</div>
+
+</div>
+
+<script>
+(function(){
+  var c = document.getElementById('modechip');
+  if (!c) return;
+  var live = location.protocol === 'http:' || location.protocol === 'https:';
+  c.textContent = live ? '\u25cf live \u2014 Send works' : '\u25cb local file \u2014 Send unavailable';
+})();
+</script>
+
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body></html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>

@@ -81,6 +81,7 @@ SCRIPTS = ROOT / "scripts"
 # separately verified against the real suites and were all ACCURATE — including the two that print
 # no total at all, whose case lines were counted by hand (10 and 11).
 POPULATION: frozenset[str] = frozenset({
+    "check-memory-link.py",
     # ⟳ 2026-09-29, backlog #191: pinned in the commit that creates `recall-llm.py`. Its own
     # docstring is the only place its case count is stated, and a count nothing verifies is the
     # drift this file exists to refuse — doing that on a brand-new file would be that shape one

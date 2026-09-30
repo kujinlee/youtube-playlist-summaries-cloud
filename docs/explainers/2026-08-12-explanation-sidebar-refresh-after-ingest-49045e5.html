@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PR #91 — the sidebar is a sibling</title>
+<style>
+:root{
+  --bg:#fcfbf9; --panel:#ffffff; --ink:#191817; --ink2:#4a4640; --ink3:#7d766c;
+  --rule:#e6e1d8; --rule2:#d3ccbf;
+  --amber:#b26a12; --amber-bg:#fdf3e3; --amber-br:#f0d5a8;
+  --teal:#0f6f5c;  --teal-bg:#e8f6f2;  --teal-br:#a9ddd0;
+  --crim:#b02a37;  --crim-bg:#fdeef0;  --crim-br:#f3c2c8;
+  --indigo:#3f4fa8; --indigo-bg:#eef0fc; --indigo-br:#c3caf2;
+  --violet:#7a3f9d; --violet-bg:#f7eefc; --violet-br:#e0c4f0;
+  --code-bg:#f6f3ed; --code-br:#e6e1d8;
+  --c-key:#a03c8a; --c-str:#0f6f5c; --c-com:#96907f; --c-fn:#3f4fa8; --c-num:#b26a12; --c-typ:#0d6b8a;
+  --shadow:0 1px 3px rgba(60,50,30,.07), 0 6px 18px rgba(60,50,30,.05);
+}
+@media (prefers-color-scheme:dark){
+:root{
+  --bg:#131318; --panel:#1b1b22; --ink:#eceaf2; --ink2:#b9b4c2; --ink3:#8a8496;
+  --rule:#2e2d38; --rule2:#413f4e;
+  --amber:#e8a860; --amber-bg:#2a2015; --amber-br:#4d3a1e;
+  --teal:#5cc7ab;  --teal-bg:#12241f;  --teal-br:#1e463b;
+  --crim:#f08c96;  --crim-bg:#2a1519;  --crim-br:#4e2229;
+  --indigo:#98a5f5; --indigo-bg:#191c33; --indigo-br:#2e3560;
+  --violet:#c99bea; --violet-bg:#241734; --violet-br:#412a5c;
+  --code-bg:#1e1e26; --code-br:#2e2d38;
+  --c-key:#e08ccd; --c-str:#7fd6b8; --c-com:#726c80; --c-fn:#98a5f5; --c-num:#e8a860; --c-typ:#6cc4e0;
+  --shadow:none;
+}
+}
+:root[data-theme="dark"]{
+  --bg:#131318; --panel:#1b1b22; --ink:#eceaf2; --ink2:#b9b4c2; --ink3:#8a8496;
+  --rule:#2e2d38; --rule2:#413f4e;
+  --amber:#e8a860; --amber-bg:#2a2015; --amber-br:#4d3a1e;
+  --teal:#5cc7ab;  --teal-bg:#12241f;  --teal-br:#1e463b;
+  --crim:#f08c96;  --crim-bg:#2a1519;  --crim-br:#4e2229;
+  --indigo:#98a5f5; --indigo-bg:#191c33; --indigo-br:#2e3560;
+  --violet:#c99bea; --violet-bg:#241734; --violet-br:#412a5c;
+  --code-bg:#1e1e26; --code-br:#2e2d38;
+  --c-key:#e08ccd; --c-str:#7fd6b8; --c-com:#726c80; --c-fn:#98a5f5; --c-num:#e8a860; --c-typ:#6cc4e0;
+  --shadow:none;
+}
+:root[data-theme="light"]{
+  --bg:#fcfbf9; --panel:#ffffff; --ink:#191817; --ink2:#4a4640; --ink3:#7d766c;
+  --rule:#e6e1d8; --rule2:#d3ccbf;
+  --amber:#b26a12; --amber-bg:#fdf3e3; --amber-br:#f0d5a8;
+  --teal:#0f6f5c;  --teal-bg:#e8f6f2;  --teal-br:#a9ddd0;
+  --crim:#b02a37;  --crim-bg:#fdeef0;  --crim-br:#f3c2c8;
+  --indigo:#3f4fa8; --indigo-bg:#eef0fc; --indigo-br:#c3caf2;
+  --violet:#7a3f9d; --violet-bg:#f7eefc; --violet-br:#e0c4f0;
+  --code-bg:#f6f3ed; --code-br:#e6e1d8;
+  --c-key:#a03c8a; --c-str:#0f6f5c; --c-com:#96907f; --c-fn:#3f4fa8; --c-num:#b26a12; --c-typ:#0d6b8a;
+  --shadow:0 1px 3px rgba(60,50,30,.07), 0 6px 18px rgba(60,50,30,.05);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;background:var(--bg);color:var(--ink);
+  font:400 17.5px/1.68 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  -webkit-text-size-adjust:100%;
+}
+.sans{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:50rem;margin:0 auto;padding:2rem 1.25rem 6rem}
+
+/* ---------- masthead ---------- */
+.mast{
+  border:1px solid var(--rule);border-radius:14px;background:var(--panel);
+  box-shadow:var(--shadow);padding:1.6rem 1.5rem;margin-bottom:1.6rem;
+  background-image:linear-gradient(180deg,var(--amber-bg),transparent 42%);
+}
+.eyebrow{
+  font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:.7rem;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--amber);font-weight:700;margin:0 0 .55rem;
+}
+h1{font-size:2.3rem;line-height:1.12;margin:0 0 .5rem;letter-spacing:-.022em;font-weight:600}
+.dek{color:var(--ink2);font-size:1.06rem;margin:0;line-height:1.55}
+.meta{
+  margin-top:1.2rem;padding-top:1rem;border-top:1px dashed var(--rule2);
+  display:grid;grid-template-columns:max-content 1fr;gap:.32rem 1.1rem;
+  font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:.745rem;line-height:1.5;
+}
+.meta dt{color:var(--ink3);white-space:nowrap}
+.meta dd{margin:0;color:var(--ink2)}
+.meta dd b{color:var(--ink);font-weight:600}
+
+/* ---------- verdict strip ---------- */
+.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(8.2rem,1fr));gap:.6rem;margin:0 0 2rem}
+.stat{border:1px solid var(--rule);border-radius:10px;background:var(--panel);padding:.7rem .8rem;box-shadow:var(--shadow)}
+.stat .v{font-family:ui-monospace,monospace;font-size:1.32rem;font-weight:700;line-height:1.1;letter-spacing:-.02em}
+.stat .l{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.665rem;text-transform:uppercase;
+  letter-spacing:.075em;color:var(--ink3);margin-top:.24rem;line-height:1.35}
+.stat.a .v{color:var(--amber)} .stat.t .v{color:var(--teal)}
+.stat.c .v{color:var(--crim)} .stat.i .v{color:var(--indigo)}
+
+/* ---------- toc ---------- */
+nav.toc{border:1px solid var(--rule);border-left:4px solid var(--indigo);border-radius:0 12px 12px 0;
+  background:var(--panel);padding:1rem 1.2rem;margin:0 0 2.6rem;box-shadow:var(--shadow)}
+nav.toc .h{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.665rem;text-transform:uppercase;
+  letter-spacing:.1em;color:var(--indigo);font-weight:700;margin-bottom:.55rem}
+nav.toc ol{margin:0;padding-left:0;list-style:none;counter-reset:t;font-size:.94rem}
+nav.toc li{counter-increment:t;margin:.32rem 0;padding-left:2rem;position:relative}
+nav.toc li::before{content:counter(t);position:absolute;left:0;top:.12rem;
+  font-family:ui-monospace,monospace;font-size:.7rem;font-weight:700;color:var(--indigo);
+  background:var(--indigo-bg);border:1px solid var(--indigo-br);border-radius:5px;
+  width:1.35rem;height:1.35rem;display:flex;align-items:center;justify-content:center}
+nav.toc a{color:var(--ink);text-decoration:none;border-bottom:1px solid transparent}
+nav.toc a:hover{border-bottom-color:var(--indigo)}
+
+/* ---------- headings ---------- */
+h2{font-size:1.5rem;line-height:1.25;margin:3.4rem 0 1rem;letter-spacing:-.017em;font-weight:600;
+  padding-bottom:.45rem;border-bottom:2px solid var(--rule)}
+h2 .num{display:inline-block;font-family:ui-monospace,monospace;font-size:.82rem;font-weight:700;
+  color:var(--amber);background:var(--amber-bg);border:1px solid var(--amber-br);border-radius:6px;
+  padding:.1rem .45rem;margin-right:.55rem;vertical-align:.16em}
+h3{font-size:1.14rem;margin:2.1rem 0 .6rem;font-weight:600;letter-spacing:-.008em;color:var(--ink)}
+h4{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.79rem;text-transform:uppercase;
+  letter-spacing:.075em;color:var(--ink3);margin:1.6rem 0 .5rem;font-weight:700}
+p{margin:0 0 1.05rem}
+a{color:var(--amber)}
+ul,ol{margin:0 0 1.1rem;padding-left:1.35rem}
+li{margin:.34rem 0}
+strong{font-weight:700}
+em{font-style:italic}
+
+/* ---------- code ---------- */
+code,kbd{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+p code,li code,td code,dd code{font-size:.845em;background:var(--code-bg);border:1px solid var(--code-br);
+  padding:.06em .34em;border-radius:4px;color:var(--ink)}
+.codewrap{margin:0 0 1.35rem;border:1px solid var(--code-br);border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
+.codehead{font-family:ui-monospace,monospace;font-size:.685rem;color:var(--ink3);
+  background:var(--code-bg);padding:.42rem .85rem;border-bottom:1px solid var(--code-br);
+  display:flex;justify-content:space-between;gap:1rem;align-items:center}
+.codehead .tag{color:var(--amber);font-weight:700;letter-spacing:.05em;text-transform:uppercase;font-size:.63rem;white-space:nowrap}
+pre{background:var(--code-bg);padding:.9rem 1rem;overflow-x:auto;white-space:pre;margin:0;
+  -webkit-overflow-scrolling:touch}
+pre code{white-space:pre;font-size:.808rem;line-height:1.62;display:block;background:none;border:0;padding:0}
+.k{color:var(--c-key);font-weight:600} .s{color:var(--c-str)} .c{color:var(--c-com);font-style:italic}
+.f{color:var(--c-fn)} .n{color:var(--c-num)} .t{color:var(--c-typ)} .m{color:var(--ink3)}
+.hi{background:var(--amber-bg);display:inline-block;width:100%;box-shadow:inset 3px 0 0 var(--amber)}
+
+/* ---------- callouts ---------- */
+.call{border:1px solid var(--rule);border-left:4px solid var(--amber);border-radius:0 10px 10px 0;
+  background:var(--amber-bg);padding:.85rem 1.05rem;margin:0 0 1.35rem}
+.call .lab{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.665rem;text-transform:uppercase;
+  letter-spacing:.09em;font-weight:700;color:var(--amber);display:block;margin-bottom:.35rem}
+.call p:last-child{margin-bottom:0}
+.call.bad{border-left-color:var(--crim);background:var(--crim-bg);border-color:var(--crim-br)}
+.call.bad .lab{color:var(--crim)}
+.call.good{border-left-color:var(--teal);background:var(--teal-bg);border-color:var(--teal-br)}
+.call.good .lab{color:var(--teal)}
+.call.info{border-left-color:var(--indigo);background:var(--indigo-bg);border-color:var(--indigo-br)}
+.call.info .lab{color:var(--indigo)}
+
+/* ---------- chips ---------- */
+.chip{display:inline-block;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.635rem;
+  font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:.12rem .42rem;
+  border-radius:5px;border:1px solid;vertical-align:.09em;white-space:nowrap}
+.chip.hi2{color:var(--crim);background:var(--crim-bg);border-color:var(--crim-br)}
+.chip.md{color:var(--amber);background:var(--amber-bg);border-color:var(--amber-br)}
+.chip.lo{color:var(--indigo);background:var(--indigo-bg);border-color:var(--indigo-br)}
+.chip.ok{color:var(--teal);background:var(--teal-bg);border-color:var(--teal-br)}
+.chip.adr{color:var(--violet);background:var(--violet-bg);border-color:var(--violet-br);font-family:ui-monospace,monospace}
+
+/* ---------- round cascade ---------- */
+.cascade{margin:0 0 1.5rem;display:flex;flex-direction:column;gap:.5rem}
+.rnd{display:grid;grid-template-columns:3.1rem 1fr;gap:.75rem;align-items:stretch}
+.rnd .badge{border-radius:9px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  font-family:ui-monospace,monospace;font-weight:700;border:1px solid;line-height:1.05;padding:.4rem 0}
+.rnd .badge b{font-size:1.02rem} .rnd .badge span{font-size:.58rem;letter-spacing:.06em;opacity:.85;margin-top:.1rem}
+.rnd .body{border:1px solid var(--rule);border-radius:9px;background:var(--panel);padding:.6rem .8rem;
+  font-family:ui-sans-serif,system-ui,sans-serif;font-size:.83rem;line-height:1.5}
+.rnd .body .broke{color:var(--crim);font-weight:600}
+.rnd .body .fixed{color:var(--teal);font-weight:600}
+.r1 .badge{color:var(--indigo);background:var(--indigo-bg);border-color:var(--indigo-br)}
+.r2 .badge{color:var(--amber);background:var(--amber-bg);border-color:var(--amber-br)}
+.r3 .badge{color:var(--violet);background:var(--violet-bg);border-color:var(--violet-br)}
+.r4 .badge{color:var(--crim);background:var(--crim-bg);border-color:var(--crim-br)}
+.chain{text-align:center;color:var(--ink3);font-size:.9rem;line-height:1;margin:-.15rem 0}
+
+/* ---------- diagrams ---------- */
+figure{margin:0 0 1.7rem}
+figcaption{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.775rem;color:var(--ink3);
+  margin-top:.6rem;line-height:1.5;padding-left:.7rem;border-left:2px solid var(--rule2)}
+.tree{display:flex;gap:.55rem;align-items:stretch;flex-wrap:wrap}
+.node{flex:1 1 9.5rem;min-width:8.6rem;border:1px solid var(--rule);border-radius:10px;
+  background:var(--panel);padding:.65rem .75rem;font-family:ui-sans-serif,system-ui,sans-serif;
+  font-size:.78rem;line-height:1.45;box-shadow:var(--shadow)}
+.node b{display:block;font-family:ui-monospace,monospace;font-size:.735rem;color:var(--ink);margin-bottom:.28rem}
+.node .tagline{color:var(--ink3);font-size:.715rem}
+.node.hot{border-color:var(--crim);background:var(--crim-bg)}
+.node.hot b{color:var(--crim)}
+.node.cool{border-color:var(--teal);background:var(--teal-bg)}
+.node.cool b{color:var(--teal)}
+.plus{align-self:center;color:var(--ink3);font-family:ui-monospace,monospace;font-size:1.15rem}
+.lanes{display:flex;flex-direction:column;gap:.42rem;font-family:ui-monospace,monospace;font-size:.72rem;
+  background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:.85rem .9rem;box-shadow:var(--shadow)}
+.lane{display:grid;grid-template-columns:5.6rem 1fr;gap:.55rem;align-items:center}
+.lane .nm{color:var(--ink3);text-align:right;white-space:nowrap;font-size:.685rem}
+.bar{position:relative;height:1.75rem;background:var(--code-bg);border:1px solid var(--code-br);border-radius:6px}
+.seg{position:absolute;top:2px;bottom:2px;display:flex;align-items:center;justify-content:center;
+  border-radius:4px;color:#fff;font-size:.655rem;white-space:nowrap;padding:0 .35rem;overflow:hidden;font-weight:600}
+.s-run{background:#6d7787} .s-ok{background:#0f6f5c} .s-bad{background:#b02a37}
+.s-gh{background:repeating-linear-gradient(45deg,#b26a12,#b26a12 5px,#cf8a30 5px,#cf8a30 10px)}
+.axis{font-family:ui-monospace,monospace;font-size:.63rem;color:var(--ink3);text-align:right;margin-top:.2rem}
+
+/* ---------- tables ---------- */
+.tw{overflow-x:auto;margin:0 0 1.4rem;border:1px solid var(--rule);border-radius:10px;box-shadow:var(--shadow);
+  -webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;font-family:ui-sans-serif,system-ui,sans-serif;
+  font-size:.815rem;line-height:1.5;min-width:36rem;background:var(--panel)}
+th,td{padding:.6rem .75rem;text-align:left;vertical-align:top;border-bottom:1px solid var(--rule)}
+th{background:var(--code-bg);font-size:.665rem;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--ink3);font-weight:700;border-bottom:2px solid var(--rule2)}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--code-bg) 45%,transparent)}
+td .side{display:block;margin-bottom:.32rem}
+td .side:last-child{margin-bottom:0}
+td .side b{color:var(--indigo)}
+.consq{color:var(--crim)}
+
+.foot{margin-top:4.5rem;padding-top:1.1rem;border-top:2px solid var(--rule);
+  font-family:ui-sans-serif,system-ui,sans-serif;font-size:.775rem;color:var(--ink3);line-height:1.7}
+.foot code{font-size:.75rem}
+
+@media (max-width:36rem){
+  body{font-size:16.5px}
+  .wrap{padding:1.3rem .85rem 4rem}
+  h1{font-size:1.72rem} h2{font-size:1.28rem}
+  .meta{grid-template-columns:1fr;gap:.12rem}
+  .meta dt{margin-top:.4rem}
+  .lane{grid-template-columns:3.6rem 1fr}
+  .rnd{grid-template-columns:2.6rem 1fr}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow">Explainer · backlog #37</p>
+  <h1>The sidebar is a sibling</h1>
+  <p class="dek">Why a newly ingested playlist stayed invisible — and why a three-line fix took four adversarial review rounds, each one breaking what the last one repaired.</p>
+  <dl class="meta">
+    <dt>Change</dt><dd><b>PR #91</b> — fix(#37) sidebar refresh after ingest</dd>
+    <dt>Base..Head</dt><dd>7217071..49045e5 &nbsp;<span class="m">(5 commits)</span></dd>
+    <dt>Built</dt><dd>2026-08-13T03:40:13Z</dd>
+    <dt>Inspected</dt><dd><b>19 files</b> read, of which <b>10 were not in the diff</b></dd>
+    <dt>Not verified</dt><dd>No browser run of the built branch. Prod evidence is release <b>v6</b>, which predates this change — see §6</dd>
+  </dl>
+</header>
+
+<div class="strip">
+  <div class="stat c"><div class="v">4</div><div class="l">review rounds,<br>none converged</div></div>
+  <div class="stat c"><div class="v">3&nbsp;of&nbsp;3</div><div class="l">Highs caused by<br>the prior fix</div></div>
+  <div class="stat a"><div class="v">13</div><div class="l">mutations, every<br>guard load-bearing</div></div>
+  <div class="stat t"><div class="v">2703</div><div class="l">unit tests green<br>267 suites</div></div>
+  <div class="stat i"><div class="v">3</div><div class="l">lines that were<br>the actual fix</div></div>
+</div>
+
+<nav class="toc">
+  <div class="h">Contents</div>
+  <ol>
+    <li><a href="#bg">Background — how the sidebar behaved before</a></li>
+    <li><a href="#intuition">Intuition — sibling, not parent</a></li>
+    <li><a href="#boundaries">Boundaries touched <span class="chip lo">start here</span></a></li>
+    <li><a href="#decisions">Decisions this change encodes</a></li>
+    <li><a href="#map">Code map</a></li>
+    <li><a href="#limits">Assumptions and limits</a></li>
+  </ol>
+</nav>
+
+<h2 id="bg"><span class="num">1</span>Background</h2>
+
+<h3>The skippable version</h3>
+<p>
+The cloud app is one page. On the left, a narrow column lists every playlist you own; on the right sits
+whatever playlist you are currently looking at. You add one by pasting a YouTube URL into a modal, which
+starts an <em>ingest</em>: the server creates a playlist row and fans out one summarisation Job per video.
+</p>
+<p>
+The complaint was simple. You ingest a playlist, it appears in the main pane, you click away to another
+playlist — and the one you just made is nowhere in the left-hand list. Pasting its URL still works, which
+is exactly what made it feel like lost data rather than a display bug.
+</p>
+
+<h3>The narrow prerequisites</h3>
+<p>Three facts about the code carry the whole story.</p>
+
+<p><strong>One — the list comes from a single unfiltered query.</strong> No pagination, no cache, no filter that could drop a row:</p>
+<div class="codewrap">
+  <div class="codehead"><span>lib/storage/supabase/supabase-metadata-store.ts:241</span><span class="tag">unchanged</span></div>
+<pre><code><span class="k">const</span> { data, error } = <span class="k">await</span> <span class="k">this</span>.client
+  .<span class="f">from</span>(<span class="s">'playlists'</span>)
+  .<span class="f">select</span>(<span class="s">'id, playlist_key, playlist_url, playlist_title, created_at'</span>)
+  .<span class="f">eq</span>(<span class="s">'owner_id'</span>, ownerId)
+  .<span class="f">order</span>(<span class="s">'playlist_title'</span>, { nullsFirst: <span class="k">false</span> })
+  .<span class="f">order</span>(<span class="s">'created_at'</span>);</code></pre>
+</div>
+
+<p><strong>Two — the sidebar fetched exactly once.</strong> Its only load lived in an effect keyed on the signed-in user:</p>
+<div class="codewrap">
+  <div class="codehead"><span>components/cloud/PlaylistSidebar.tsx</span><span class="tag">before</span></div>
+<pre><code><span class="f">useEffect</span>(() => {
+  backfillFiredRef.current = <span class="k">false</span>;
+  <span class="f">listPlaylists</span>().<span class="f">then</span>(<span class="c">/* … */</span>);
+  <span class="k">return</span> () => { cancelled = <span class="k">true</span>; };
+<span class="hi">}, [userId]);        <span class="c">// userId never changes during a session</span></span></code></pre>
+</div>
+
+<p><strong>Three — an ingest navigates, but does not remount.</strong> On success the parent pushes a new query string on the <em>same route</em>:</p>
+<div class="codewrap">
+  <div class="codehead"><span>components/cloud/CloudApp.tsx</span><span class="tag">before</span></div>
+<pre><code><span class="k">function</span> <span class="f">onIngestSuccess</span>(result: <span class="t">IngestResult</span>) {
+  <span class="f">setModalOpen</span>(<span class="k">false</span>);
+  <span class="f">setSummary</span>(result);
+  <span class="hi">  router.<span class="f">push</span>(<span class="s">`/?playlist=</span>${result.playlistId}<span class="s">`</span>);  <span class="c">// same route</span></span>
+}</code></pre>
+</div>
+
+<div class="call info">
+  <span class="lab">The three facts together</span>
+  <p>The query would always have returned the new playlist. <strong>The sidebar simply never asked again.</strong> Its state was whatever existed at sign-in, frozen for the life of the tab.</p>
+</div>
+
+<h2 id="intuition"><span class="num">2</span>Intuition — sibling, not parent</h2>
+
+<p>
+The unlock is structural, not about data. <code>PlaylistSidebar</code> and the content pane are
+<em>siblings</em> inside <code>CloudAppBody</code>. The sidebar is not on the path the URL changes, and it
+is not keyed by the playlist id — so when React reconciles after <code>router.push</code>, it sees the same
+component in the same position with the same props, and leaves it completely alone.
+</p>
+
+<figure>
+  <div class="tree">
+    <div class="node"><b>CloudAppBody</b><span class="tagline">reads <code>?playlist</code></span></div>
+    <div class="plus">→</div>
+    <div class="node hot"><b>PlaylistSidebar</b><span class="tagline">sibling · not keyed<br><strong>never remounts</strong></span></div>
+    <div class="plus">+</div>
+    <div class="node cool"><b>PlaylistLibrary</b><span class="tagline">keyed by playlistId<br>re-fetches on change</span></div>
+  </div>
+  <figcaption>Navigation changes what the right pane shows. The left pane is not downstream of that change, so nothing about a navigation ever reaches it.</figcaption>
+</figure>
+
+<p>
+The decisive clue was already in the file. Deleting a playlist <em>did</em> refresh the list —
+<code>handleDeleted</code> calls <code>listPlaylists()</code> again. One mutation path had been wired for
+freshness and the other never had. The bug was not a missing capability; it was a <strong>missing wire</strong>.
+</p>
+
+<div class="call good">
+  <span class="lab">Measured, not assumed</span>
+  <p>Against production release v6: three playlist rows, one owner, all three with non-null titles — and a fresh page load rendered all three. The filed report blamed the read path or a null-title filter. One query excluded both. <strong>Nothing was ever lost.</strong></p>
+</div>
+
+<h3>Where the complexity came from</h3>
+<p>
+Bumping a counter on ingest is three lines. Everything else in this diff exists because two loads can be in
+flight at once, and the second one is not always the one that finishes last. The <code>+ New playlist</code>
+button renders <em>while the list is still loading</em>, so a user on a slow connection can start and finish
+an ingest before the sign-in fetch returns.
+</p>
+
+<figure>
+  <div class="lanes">
+    <div class="lane"><span class="nm">sign-in load</span><div class="bar">
+      <div class="seg s-run" style="left:1%;width:76%">slow — returns the PRE-ingest list</div>
+      <div class="seg s-bad" style="left:77%;width:22%">applies ✗</div></div></div>
+    <div class="lane"><span class="nm">ingest</span><div class="bar">
+      <div class="seg s-gh" style="left:21%;width:20%">create</div></div></div>
+    <div class="lane"><span class="nm">refetch</span><div class="bar">
+      <div class="seg s-run" style="left:41%;width:16%">fast</div>
+      <div class="seg s-ok" style="left:57%;width:20%">applies ✓</div></div></div>
+    <div class="axis">time →</div>
+  </div>
+  <figcaption><strong>The naive fix.</strong> The refetch lands first and renders the new playlist; the slow sign-in load lands second and overwrites it with the pre-ingest list — reinstating the exact bug being fixed. Round 1 found this.</figcaption>
+</figure>
+
+<p>
+The obvious defence — a <code>cancelled</code> flag per effect — cannot work, because each flag only knows
+its own effect. Two effects cannot see each other. What is needed is one ordering shared by every load: the
+same guard <code>PlaylistLibrary</code> already applies to <code>listVideos</code> twelve lines away
+(<code>CloudApp.tsx:147</code>, <code>reqSeq</code>).
+</p>
+
+<h4>Why one counter is still not enough</h4>
+<p><em>&ldquo;Newest started&rdquo;</em> and <em>&ldquo;newest applied&rdquo;</em> come apart exactly when a load fails:</p>
+
+<div class="tw">
+<table>
+<thead><tr><th style="width:31%">Ordering</th><th>Guard on newest <em>started</em></th><th>Guard on newest <em>applied</em></th></tr></thead>
+<tbody>
+<tr><td>#2 succeeds, then #1 succeeds</td><td><span class="chip ok">ok</span> #1 dropped</td><td><span class="chip ok">ok</span> #1 dropped</td></tr>
+<tr><td>#2 <strong>fails</strong>, then #1 succeeds</td><td><span class="chip hi2">bug</span> #1 dropped — stuck on <em>Loading…</em> while holding a good list</td><td><span class="chip ok">ok</span> #1 applied</td></tr>
+<tr><td>#2 succeeds, then #1 <strong>fails</strong></td><td><span class="chip hi2">bug</span> error raised over a correct list</td><td><span class="chip ok">ok</span> rejection suppressed</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>So the final shape asks <strong>three</strong> questions at the moment of the write, not one:</p>
+<div class="codewrap">
+  <div class="codehead"><span>components/cloud/PlaylistSidebar.tsx:107</span><span class="tag">after</span></div>
+<pre><code><span class="k">async function</span> <span class="f">loadPlaylists</span>(isCancelled = () => <span class="k">false</span>) {
+  <span class="k">const</span> seq = ++startedSeqRef.current;
+  <span class="k">const</span> requestedFor = userId;                          <span class="c">// whose data did I ask for?</span>
+  <span class="k">try</span> {
+    <span class="k">const</span> result = <span class="k">await</span> <span class="f">listPlaylists</span>();
+<span class="hi">    <span class="k">if</span> (<span class="f">isCancelled</span>()                                <span class="c">// does my caller still exist?</span></span>
+<span class="hi">     || requestedFor !== currentUserIdRef.current       <span class="c">// same account?</span></span>
+<span class="hi">     || seq &lt;= appliedSeqRef.current) <span class="k">return null</span>;      <span class="c">// something newer won?</span></span>
+    appliedSeqRef.current = seq;
+    <span class="f">setPlaylists</span>(result);
+    <span class="k">if</span> (errorSeqRef.current !== <span class="k">null</span> &amp;&amp; seq &gt;= errorSeqRef.current) {
+      errorSeqRef.current = <span class="k">null</span>;
+      <span class="f">setError</span>(<span class="k">null</span>);                                 <span class="c">// only a NEWER load retires a banner</span>
+    }
+    <span class="k">return</span> result;
+  } <span class="k">catch</span> (err) {
+    <span class="k">if</span> (<span class="f">isCancelled</span>() || requestedFor !== currentUserIdRef.current
+     || seq !== startedSeqRef.current) <span class="k">return null</span>;
+    errorSeqRef.current = seq;
+    <span class="k">throw</span> err;
+  }
+}</code></pre>
+</div>
+
+<h4>The four rounds, as a chain</h4>
+<div class="cascade">
+  <div class="rnd r1"><div class="badge"><b>R1</b><span>HIGH</span></div><div class="body">
+    Per-effect <code>cancelled</code> flags can't see each other — a slow mount load overwrites the post-ingest list.
+    <span class="fixed">Fixed:</span> shared monotonic sequence.</div></div>
+  <div class="chain">↓ that fix broke…</div>
+  <div class="rnd r2"><div class="badge"><b>R2</b><span>HIGH ×2</span></div><div class="body">
+    The guard covered <span class="broke">only successes</span>: stale rejections raise errors; a newer <em>failure</em> discards an older good result.
+    <span class="fixed">Fixed:</span> two counters — started vs applied.</div></div>
+  <div class="chain">↓ that fix broke…</div>
+  <div class="rnd r3"><div class="badge"><b>R3</b><span>HIGH ×2</span></div><div class="body">
+    The helper <span class="broke">writes state before the caller's cancel check</span> → cross-account leak. And a failed refresh went <span class="broke">silent</span>.
+    <span class="fixed">Fixed:</span> cancellation passed in; banner and list now coexist.</div></div>
+  <div class="chain">↓ that fix broke…</div>
+  <div class="rnd r4"><div class="badge"><b>R4</b><span>HIGH ×2</span></div><div class="body">
+    Success <span class="broke">cleared a still-accurate warning</span>; cancellation had been fixed one effect at a time, not as a class.
+    <span class="fixed">Fixed:</span> error tagged to its request; guard moved onto the request.</div></div>
+</div>
+
+<div class="call bad">
+  <span class="lab">⚑ The finding worth remembering</span>
+  <p>
+  That account guard was <strong>vacuous when first written</strong>. <code>loadPlaylists</code> is a closure
+  recreated each render, so the refresh effect held the version from the render where
+  <code>userId === 'a'</code>. It compared <code>requestedFor</code> against <code>userId</code> — and
+  <em>both read <code>'a'</code></em> after a switch to <code>'b'</code>, because both came from the same
+  stale closure. The condition could never be true.
+  </p>
+  <p>
+  Neither instrument caught it alone. The mutation run reported only <em>&ldquo;untested&rdquo;</em>; the
+  guard itself read as <em>&ldquo;protected&rdquo;</em>. It took a test that genuinely reached the path. The
+  fix is <code>currentUserIdRef</code>, reassigned every render, so one operand is actually live.
+  </p>
+</div>
+
+<h2 id="boundaries"><span class="num">3</span>Boundaries touched</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th style="width:19%">Boundary</th><th style="width:20%">What crosses it</th><th style="width:28%">What each side may assume</th><th>When that assumption is violated</th></tr></thead>
+<tbody>
+<tr>
+  <td><code>CloudAppBody</code> → <code>PlaylistSidebar</code><br><span style="color:var(--ink3)">the new <code>refreshKey</code> prop</span></td>
+  <td>A number whose <em>change</em> is the signal. Its value and starting point carry no meaning.</td>
+  <td><span class="side"><b>Parent:</b> may pass any starting value, and must only ever change it forward.</span>
+      <span class="side"><b>Sidebar:</b> may assume the first render's value means &ldquo;no refresh requested yet&rdquo;.</span></td>
+  <td class="consq">If the parent ever revisits the first-render value, that refresh is silently skipped. <code>CloudApp.tsx:82</code> starts at 0 and only increments — but nothing enforces it. A monotonic counter is a contract, not a type.</td>
+</tr>
+<tr>
+  <td>Sidebar → <code>GET /api/playlists</code></td>
+  <td>A call with no owner argument; the owner is resolved server-side from the session cookie.</td>
+  <td><span class="side"><b>Client:</b> may assume the response is the full list for <em>whoever the cookie names now</em> — not whoever it named when the call was issued.</span>
+      <span class="side"><b>Server:</b> assumes nothing about the caller's UI state.</span></td>
+  <td class="consq">This asymmetry is the entire reason for the account guard. The response cannot tell you which account it belongs to, so the <em>client</em> must remember what it asked for. Without that, one user's library renders under another's.</td>
+</tr>
+<tr>
+  <td>Sidebar → <code>POST /api/playlists/backfill-titles</code><br><span class="chip hi2">found by this explainer</span></td>
+  <td>A repair call, newly reachable from the ingest path as well as sign-in.</td>
+  <td><span class="side"><b>Route:</b> its own comment states the sidebar bounds <em>call frequency</em> to once per session, calling that &ldquo;the real backstop against repeated work&rdquo; (<code>route.ts:8-18</code>).</span>
+      <span class="side"><b>Sidebar:</b> now also calls it once per ingest, bypassing that key deliberately.</span></td>
+  <td class="consq"><strong>The route's stated backstop is no longer true.</strong> Each call iterates <em>every</em> null-title row with a YouTube fetch per row, so N ingests with an unfillable row cost O(N × rows). Bounded and cheap at real scale — but the comment describes a guarantee the caller stopped providing. <em>Fixed separately in PR #92.</em></td>
+</tr>
+<tr>
+  <td>Sidebar state → its own render</td>
+  <td><code>error</code> and <code>playlists</code>, previously mutually exclusive.</td>
+  <td><span class="side"><b>Render:</b> may now assume both can be true at once, and must show both.</span></td>
+  <td class="consq">If an error again suppresses the list, a failed post-ingest refresh shows a blank sidebar rather than a stale-but-useful one — trading a visible wrong answer for a visible <em>absence</em>, which reads as data loss.</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="decisions"><span class="num">4</span>Decisions this change encodes</h2>
+
+<h3>1 · The parent signals; the sidebar does not detect</h3>
+<p>
+<strong>Decided:</strong> refresh is an explicit input from whoever mutated the list.
+<strong>Rejected:</strong> having the sidebar notice on its own — polling, refetching on navigation, watching
+the URL. Nothing observable from inside the component distinguishes &ldquo;a playlist was just created&rdquo;
+from any other re-render, so detection would have to be a heuristic. A test pins this: no refetch on a timer
+within an hour, nor on plain navigation.
+</p>
+
+<h3>2 · Show stale data <em>and</em> say it is stale</h3>
+<p>
+The one place two review rounds genuinely disagreed. <span class="chip md">R2</span> argued a newer failed
+load must not discard an older successful one, or the sidebar strands on a spinner while holding good data.
+<span class="chip lo">R3</span> argued that rendering that older result shows pre-ingest data with no sign
+anything went wrong — the <em>quietly serves stale data</em> failure this project treats as worst.
+</p>
+<p>
+<strong>Both were right.</strong> They conflicted only because the render treated
+<code>{!error &amp;&amp; playlists &amp;&amp; …}</code> as the natural shape, making &ldquo;report the failure&rdquo;
+and &ldquo;show the data&rdquo; mutually exclusive. Decoupling them dissolves the disagreement instead of
+picking a winner.
+</p>
+<div class="call">
+  <span class="lab"><span class="chip adr">ADR CANDIDATE:</span></span>
+  <p>Hard to reverse (a UI contract other panes may copy), surprising without context (the natural React idiom is the exclusive one), and a real trade-off (a stale list with a warning can still mislead a skimming user). Worth an ADR if this pattern spreads beyond the sidebar.</p>
+</div>
+
+<h3>3 · Guard the request, not the effect</h3>
+<p>
+<strong>Decided:</strong> the account check lives on the request — compare the <code>userId</code> it was
+issued for against the one currently mounted. <strong>Rejected:</strong> adding cancellation to each effect.
+Round 3 fixed the mount effect that way, and round 4 found the identical defect intact in the refresh effect,
+whose cleanup is keyed on <code>refreshKey</code> and so never fires on a <code>userId</code> change —
+patching instances of a class as though they were the class.
+</p>
+<div class="call info">
+  <span class="lab">Reachability, stated plainly</span>
+  <p>This scenario <strong>cannot occur in the app today</strong>. There is no <code>router.refresh()</code> anywhere; sign-out does <code>router.replace('/login')</code>, which unmounts <code>CloudApp</code>; sign-in returns through an OAuth callback — a full page load. So no mounted instance ever sees <code>userId</code> A→B. It is guarded and tested anyway: the distance to reachable is one account switcher, and the failure shows one user's library to another. The cost is a string compare.</p>
+</div>
+
+<h3>4 · Repair a null title on the ingest path too</h3>
+<p>
+<code>producer.ts:96-98</code> deliberately leaves the row untitled when the YouTube title fetch misses or
+throws, expecting &ldquo;the backfill route retries later&rdquo;. Before this change that row was invisible,
+so the gap never showed. Now it renders as <em>Untitled playlist</em> while the once-per-session sweep has
+already been spent.
+</p>
+<p>
+<strong>Decided:</strong> the refresh path runs its own repair, ignoring the sessionStorage key.
+<strong>Rejected:</strong> reusing the session key (it would never fire) and doing nothing (a permanently
+untitled row for the session).
+</p>
+<div class="call bad">
+  <span class="lab">⚑ Found while writing this explainer — not by any review round</span>
+  <p>The backfill route's comment claims the sidebar bounds call frequency to once per session, calling that &ldquo;the real backstop against repeated work&rdquo;. <strong>That comment was made false by this change.</strong> Round 2 asked how many backfill calls a user could cause and answered correctly — but neither reviewer opened the route to notice the bound it documents had been the caller's to provide. Not a correctness defect; a stale claim about an invariant, which is the category this project treats most seriously. Corrected in <strong>PR #92</strong>.</p>
+</div>
+
+<h2 id="map"><span class="num">5</span>Code map</h2>
+<p>Ordered by flow, not by file.</p>
+<ul>
+  <li><strong>The signal.</strong> <code>CloudApp.tsx:82</code> holds <code>sidebarRefreshKey</code>; <code>:87</code> bumps it in <code>onIngestSuccess</code>; <code>:96</code> passes it down. <em>This is the entire original fix.</em></li>
+  <li><strong>The load helper.</strong> <code>PlaylistSidebar.tsx:107</code> — <code>loadPlaylists</code>, the single funnel every load goes through, holding all three guards and the error tagging.</li>
+  <li><strong>The counters.</strong> <code>PlaylistSidebar.tsx:90-91</code> (<code>startedSeqRef</code>, <code>appliedSeqRef</code>), plus <code>currentUserIdRef</code> reassigned each render and <code>errorSeqRef</code> tagging the banner to its request.</li>
+  <li><strong>The refresh effect.</strong> Keyed on <code>[refreshKey]</code>, skipping while the value still equals the first render's. Carries the null-title repair and now reports its own failure rather than swallowing it.</li>
+  <li><strong>The render.</strong> Banner moved above the list instead of replacing it; only the <em>Loading…</em> placeholder is still suppressed by an error, since a load that failed is not still in progress.</li>
+  <li><strong>Tests.</strong> <code>tests/components/cloud-app-ingest.test.tsx</code> — eight #37 cases, every one asserting rendered output rather than a call count.</li>
+</ul>
+
+<h2 id="limits"><span class="num">6</span>Assumptions and limits</h2>
+
+<h4>Verified by reading the code</h4>
+<ul>
+  <li>The list query is unfiltered and unpaginated — quoted above from <code>supabase-metadata-store.ts:241</code>.</li>
+  <li>The producer leaves a row untitled on a title-fetch miss or throw — <code>lib/job-queue/producer.ts:94-98</code>, <code>catch { /* leave null; backfill retries */ }</code>.</li>
+  <li>The backfill route processes <em>all</em> null-title rows and named the sidebar as the frequency bound — <code>app/api/playlists/backfill-titles/route.ts:8-18</code>.</li>
+  <li>No <code>router.refresh()</code> exists under <code>app/</code>, <code>components/</code> or <code>lib/</code> (grep, empty). Sign-out is <code>router.replace('/login')</code> at <code>AccountMenu.tsx:51</code>.</li>
+  <li>The session is read per request in a server component and passed as a prop — <code>app/page.tsx:22-27</code>, with <code>export const dynamic = 'force-dynamic'</code>.</li>
+</ul>
+
+<h4>Verified by running something</h4>
+<ul>
+  <li>Three playlist rows, one owner, three non-null titles — direct query against the production database, read-only role.</li>
+  <li>A fresh load of the deployed app rendered all three links. <strong>Release v6, which predates this branch</strong> — it confirms the diagnosis, not the fix.</li>
+  <li><code>tsc --noEmit</code> clean; 2703 unit tests across 267 suites; six runnable doc/ratchet gates pass; CI <code>verify</code> green.</li>
+  <li>13 mutations, every guard load-bearing. Two initially survived, and <em>both were gaps in the tests rather than the code</em> — including the vacuous guard in §2.</li>
+</ul>
+
+<h4>Not verified</h4>
+<ul>
+  <li><strong>No browser run of this branch.</strong> Every claim about the fixed behaviour rests on jsdom tests.</li>
+  <li><strong>The null-title repair has never run against the real YouTube API</strong> from this path — only against a mocked <code>backfillPlaylistTitles</code>.</li>
+  <li><strong>The quota cost in §3, row 3 is reasoned, not measured.</strong> No counting of actual YouTube API calls was done.</li>
+  <li><strong>StrictMode double-invocation is argued, not observed.</strong> No test runs the suite under StrictMode.</li>
+  <li><strong>Two schema ratchets are red</strong> — <code>check-sentinel-meanings</code> and <code>check-guard-coverage</code>. Red on <code>master</code> too (verified by stash), both concerning the parked blob-addressing schema, so untouched here rather than fixed.</li>
+</ul>
+
+<div class="foot">
+  Reviews: <code>docs/reviews/backlog-37-sidebar-refresh-codex{,-r2,-r3,-r4}.md</code><br>
+  Deferred complexity: backlog <strong>#38</strong> (<code>usePlaylistList</code> hook) · Follow-up: <strong>PR #92</strong> (the false frequency claim)<br>
+  Generated by <code>/explain-diff</code>, adapted from Geoffrey Litt's skill.
+</div>
+
+</div>
+</body>
+</html>

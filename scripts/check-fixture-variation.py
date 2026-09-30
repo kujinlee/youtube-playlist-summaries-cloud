@@ -300,6 +300,10 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # ⟳ 2026-09-30, backlog #194: the memory-link guard, pinned in the commit that creates
+    # it. Its `tracked` parameter was flagged here as never-varied and two cases were added
+    # rather than an exemption taken — the comparison that reads it is now guarded.
+    "check-memory-link.py": ('link_verdict.is_symlink', 'link_verdict.link_exists', 'link_verdict.n_entries', 'link_verdict.target', 'link_verdict.tracked', 'slug_for.repo'),
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher, pinned in the commit that creates it
     # — this guard REFUSED the file until it was, the fifth time it has caught a new script
     # arriving unmeasured. DERIVED by running `analyse()` on the delivered source AFTER the module

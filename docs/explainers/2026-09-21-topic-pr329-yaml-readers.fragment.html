@@ -1,0 +1,653 @@
+<title>PR #329 — when a line scan cannot tell structure from content</title>
+<style>
+:root{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#8a857c; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#8a857c; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}}
+:root[data-theme="dark"]{
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+/* SIZE carries hierarchy. Headings are LIGHTER than body-bold, not heavier. */
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h)}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+/* BOLD IS A LABEL, NOT A SHOUT — weight only, a neutral tone, never a hue */
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+/* TERMINAL TEXTURE — inline code is a raised pill, and it carries the visual variety */
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em;white-space:nowrap}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+</style>
+<div class="wrap">
+
+<h1>When a line scan cannot tell structure from content</h1>
+<p class="sub">PR #329 — the nature of the problem, and how it is solved.
+<b>Horizon: <code>master 5ffe6017</code></b>, squash-merged 2026-09-21.</p>
+
+<div class="reading">
+<b>The reading I chose.</b> You asked about the <em>nature</em> of the problem, so this page explains
+<b>why a guard that reads YAML by scanning lines kept producing the same defect for seven review
+rounds, and what #329 decided to do about it.</b> It is not a walkthrough of the diff — the change
+itself is a review document and five backlog rows, and a line-by-line reading of it would teach you
+nothing. If you wanted the diff, stop here and ask for <code>explain-diff</code> instead.
+</div>
+
+<div class="howto">
+<span id="modechip">served → Send works · opened as a file → Send copies instead</span>
+<b>This page can answer back.</b> It lives at
+<b><a href="http://127.0.0.1:7391/latest">http://127.0.0.1:7391/latest</a></b>, which always points at
+the newest explainer.
+<ol>
+<li><b>To ask:</b> select any text, or hover a heading, → click <b>ask</b> → type → <b>Send</b>.
+Then say <b>“read my questions”</b> in the session, and the answer is written into this page under
+the section you asked from.</li>
+<li><b>If that URL does not load:</b> run <code>python3 scripts/explainer-serve.py</code> from the
+repo — safe to run twice. <b>A reboot stops the server</b>, which is the one moment you will need
+this line.</li>
+<li><b>Opened as a <code>file://</code> copy</b> it still reads perfectly; only <b>Send</b> goes away.</li>
+</ol>
+</div>
+
+<div class="toc">
+<b>What follows</b>
+<ol>
+<li><a href="#reframe">The one confusion, wearing ten costumes</a></li>
+<li><a href="#ten">Ten defects, one root cause</a></li>
+<li><a href="#circle">Why “just parse it properly” is not available here</a></li>
+<li><a href="#three">Three guards, three standards, one missing primitive</a></li>
+<li><a href="#falsegreen">The false green found by reviewing the review</a></li>
+<li><a href="#solved">How it is solved — and what it deliberately does not fix</a></li>
+<li><a href="#underneath">The problem underneath the problem</a></li>
+<li><a href="#ledger">Measured vs inferred</a></li>
+</ol>
+</div>
+
+<h2 id="reframe">1. The one confusion, wearing ten costumes</h2>
+
+<p class="lead"><b>The root cause in one sentence: the guard tried to work out what a YAML
+file means by looking at one line at a time, and in YAML a line's meaning is not on the line — it
+is in the lines above it.</b></p>
+
+<p>So the guard was reading information that was not there, and filling the gap with a guess. The
+guess was <em>"if it looks like a setting, it is a setting."</em> That guess is wrong whenever a
+file quotes something that looks like a setting, which YAML files do constantly, because half of
+what they contain is shell scripts.</p>
+
+<p>Here is the whole problem in six lines. Both sides are character-for-character the same text.
+The left side installs Python 3.12. The right side installs nothing at all — it writes those
+characters into a shell script:</p>
+
+<figure>
+<svg viewBox="0 0 700 208" role="img" aria-label="The same text as structure and as content">
+  <rect x="8" y="8" width="330" height="192" rx="9" fill="var(--structure-bg)" stroke="var(--structure-br)"/>
+  <rect x="362" y="8" width="330" height="192" rx="9" fill="var(--bad-bg)" stroke="var(--bad-br)"/>
+  <text x="24" y="33" font-family="var(--sans)" font-size="13" font-weight="700" fill="var(--structure)">STRUCTURE — it means this</text>
+  <text x="378" y="33" font-family="var(--sans)" font-size="13" font-weight="700" fill="var(--bad)">CONTENT — it just says this</text>
+  <text x="24" y="63" font-family="var(--mono)" font-size="12.5" fill="var(--ink)">- uses: actions/setup-python@v5</text>
+  <text x="24" y="83" font-family="var(--mono)" font-size="12.5" fill="var(--ink)">  with:</text>
+  <text x="24" y="103" font-family="var(--mono)" font-size="12.5" fill="var(--ink)">    python-version: '3.12'</text>
+  <text x="378" y="63" font-family="var(--mono)" font-size="12.5" fill="var(--ink-faint)">- run: |</text>
+  <text x="378" y="83" font-family="var(--mono)" font-size="12.5" fill="var(--ink-faint)">    uses: actions/setup-python@v5</text>
+  <text x="378" y="103" font-family="var(--mono)" font-size="12.5" fill="var(--ink-faint)">    with:</text>
+  <text x="378" y="123" font-family="var(--mono)" font-size="12.5" fill="var(--ink-faint)">      python-version: '3.12'</text>
+  <text x="24" y="146" font-family="var(--sans)" font-size="12.5" fill="var(--ink-soft)">Installs Python 3.12.</text>
+  <text x="378" y="152" font-family="var(--sans)" font-size="12.5" fill="var(--ink-soft)">Writes a string to a shell.</text>
+  <text x="378" y="170" font-family="var(--sans)" font-size="12.5" fill="var(--ink-soft)">Installs nothing.</text>
+  <text x="24" y="178" font-family="var(--sans)" font-size="12.5" font-weight="700" fill="var(--ink)">A regex sees the same characters in both.</text>
+</svg>
+<figcaption>The distinction a line scan structurally cannot make. Everything below follows from it.</figcaption>
+</figure>
+
+<p><b>Why it went wrong ten times rather than once:</b> each fix taught the guard one
+more rule about context — where a step ends, which dashes start a new item, which <code>steps:</code>
+belongs to the job. Every one of those rules was correct. But there is no finite list of them. YAML's
+context rules are a language, and you cannot reach a language by adding special cases to a regular
+expression, because the next shape always walks around the last patch.</p>
+
+<p>That is the difference between <em>ten bugs</em> and <em>one bug found ten times</em>. Nobody was
+careless. The approach could not get there.</p>
+
+<p>For orientation: the guard is <code>scripts/check-python-pin.py</code>, and it answers <em>does
+every CI job pin the Python version it runs on?</em> That matters because the repo's forty guards all
+run under <code>python3</code>, so a runner-image bump could silently change every one of them at
+once. The code names its own root cause, in a comment written at the seventh occurrence:</p>
+
+<pre><code># ⭐ THE SEVENTH DEFECT IN THIS FUNCTION, AND IT IS THE SAME ROOT CAUSE AS THE OTHER SIX: the
+# guard reads YAML by scanning lines, so anything SHAPED like a step is a step. Each repair has
+# taught it one more thing that shape alone cannot tell it — where the step ENDS, which lines
+# are CONTENT, which dashes are SIBLINGS, and now which list it is IN.</code></pre>
+<p class="sub"><code>scripts/check-python-pin.py:188-191</code></p>
+
+<div class="qa">
+<span class="asked">Asked on this page · answered 2026-09-21</span>
+<p class="q">Say plainly why this case causes an error. What was the root cause?</p>
+
+<p><b>The root cause: a regular expression can only see one line, and YAML meaning lives across
+lines. The guard needed information that a single line does not contain, so it guessed — and the
+guess was wrong whenever a workflow quoted text that looked like configuration.</b></p>
+
+<p>Concretely, the error in this specific case. The guard looked for the text
+<code>python-version:</code> to decide "this job pins its Python". That text appears in two totally
+different situations. In the first, it sits inside the settings of a real
+<code>setup-python</code> step, and it genuinely installs an interpreter. In the second, it sits
+inside a <code>run:</code> block — which is just a shell script written into the file as data — and
+it installs nothing whatsoever. Both look identical to the guard, because the thing that separates
+them is not on that line. It is two lines higher up, where the block was opened.</p>
+
+<p>So the guard reported a job as correctly pinned when that job had no Python setup at all. That is
+the error: not a crash, but a <b>confident wrong answer in the dangerous direction</b> — the guard
+exists to catch unpinned jobs, and it said the job was fine.</p>
+
+<p>And the reason it recurred ten times: every fix taught it one more contextual rule, and each rule
+was right. But structure is exactly the information a line-by-line scan throws away, so there was
+always one more shape. The tenth defect was not a new mistake. It was the first one, wearing a
+different costume.</p>
+</div>
+
+<h2 id="ten">2. Ten defects, one root cause</h2>
+
+<p>Each repair moved a boundary. None changed the mechanism. That is the shape worth recognising —
+the fixes were individually correct and collectively a treadmill.</p>
+
+<table>
+<tr><th>#</th><th>What text impersonated structure</th><th>What the guard then believed</th></tr>
+<tr><td>1</td><td>any line shaped like a pin, anywhere in the file</td><td>an unpinned job was pinned</td></tr>
+<tr><td>2–3</td><td>a pin inside an unrelated action's <code>with:</code></td><td>same, narrower</td></tr>
+<tr><td>4</td><td>a <code>uses:</code> line inside a shell <b>heredoc</b></td><td>a step existed that did not</td></tr>
+<tr><td>5</td><td>a <b>dash line</b> inside a block scalar</td><td>a <em>phantom step</em> owning a fake <code>with:</code></td></tr>
+<tr><td>6</td><td>a <b>comment</b> at the step's own indent</td><td>the step ended early; a real pin vanished</td></tr>
+<tr><td>7</td><td>a <code>strategy.matrix.include</code> entry</td><td>a matrix row counted as a step</td></tr>
+<tr><td>8</td><td>a matrix <em>dimension</em> named <code>steps</code></td><td>the job's step list was the wrong list</td></tr>
+<tr><td>9</td><td>an action <em>input</em> named <code>steps</code></td><td>the real step's body was eaten</td></tr>
+<tr><td>10</td><td>a <b>job id</b> literally named <code>steps</code></td><td>the job key was read as the step list</td></tr>
+</table>
+
+<div class="callout bad">
+<b>Two directions, and only one of them is loud.</b> Defects 1, 4, 5, 7, 8 and 10 are
+<b>false greens</b> — the guard reports “pinned” over a job that is not. Defects 6 and 9 are
+<b>misses</b> — a real pin vanishes and the author is told to add a step they can already see, or to
+add the job to <code>EXEMPT_JOBS</code>. The miss direction is fail-closed and therefore safe-ish, but
+it has a nasty second-order effect: <b>it routes an honest author toward a permanent exemption.</b>
+</div>
+
+<p>The guard's own docstring states the standard it kept failing:</p>
+
+<pre><code>⛔⛔ IT USED TO MATCH ANY LINE SHAPED LIKE A PIN, WHICH IS A FALSE GREEN — r1 High (codex),
+reproduced: a `python-version:` inside a shell heredoc, or in an unrelated action's `with:`
+block, made a job with NO `setup-python` at all read as pinned, `unpinned_jobs` returned `[]`
+and `verdict` returned 0. A guard that can be satisfied by a line of prose is worse than no
+guard, because it reports the absence of the thing it was built to find.</code></pre>
+<p class="sub"><code>scripts/check-python-pin.py:363-367</code></p>
+
+<h2 id="circle">3. Why “just parse it properly” is not available here</h2>
+
+<p>The obvious answer is to stop scanning lines and parse the YAML. Every defect above is a
+consequence of not having a parse tree. So why not?</p>
+
+<p>Because of a circularity that is easy to miss and impossible to argue with once seen:</p>
+
+<figure>
+<svg viewBox="0 0 700 250" role="img" aria-label="The dependency circularity">
+  <defs><marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3.2" orient="auto">
+    <path d="M0,0 L0,6.4 L7.5,3.2 z" fill="var(--bad)"/></marker></defs>
+  <rect x="235" y="8" width="230" height="46" rx="8" fill="var(--structure-bg)" stroke="var(--structure-br)"/>
+  <text x="350" y="29" text-anchor="middle" font-size="12.5" font-weight="700" fill="var(--ink)">check-python-pin.py exists</text>
+  <text x="350" y="45" text-anchor="middle" font-size="12.5" fill="var(--ink-soft)">to PIN the CI interpreter</text>
+
+  <rect x="470" y="98" width="222" height="46" rx="8" fill="var(--card)" stroke="var(--rule)"/>
+  <text x="581" y="119" text-anchor="middle" font-size="12.5" fill="var(--ink)">a real parse needs</text>
+  <text x="581" y="135" text-anchor="middle" font-size="12.5" font-weight="700" fill="var(--ink)">a YAML library</text>
+
+  <rect x="235" y="190" width="230" height="46" rx="8" fill="var(--bad-bg)" stroke="var(--bad-br)"/>
+  <text x="350" y="211" text-anchor="middle" font-size="12.5" fill="var(--ink)">which must be installed INTO</text>
+  <text x="350" y="227" text-anchor="middle" font-size="12.5" font-weight="700" fill="var(--bad)">the interpreter being pinned</text>
+
+  <rect x="8" y="98" width="222" height="46" rx="8" fill="var(--card)" stroke="var(--rule)"/>
+  <text x="119" y="119" text-anchor="middle" font-size="12.5" fill="var(--ink)">…so the guard's subject</text>
+  <text x="119" y="135" text-anchor="middle" font-size="12.5" font-weight="700" fill="var(--ink)">now depends on the guard</text>
+
+  <path d="M465,40 Q560,58 575,96" fill="none" stroke="var(--bad)" stroke-width="1.6" marker-end="url(#ar)"/>
+  <path d="M575,146 Q560,182 467,205" fill="none" stroke="var(--bad)" stroke-width="1.6" marker-end="url(#ar)"/>
+  <path d="M233,213 Q128,190 122,146" fill="none" stroke="var(--bad)" stroke-width="1.6" marker-end="url(#ar)"/>
+  <path d="M124,96 Q140,56 233,38" fill="none" stroke="var(--bad)" stroke-width="1.6" marker-end="url(#ar)"/>
+</svg>
+<figcaption>Adding a parser to fix the pin guard changes the very thing the pin guard measures.</figcaption>
+</figure>
+
+<p>That is not a theoretical objection. It is grounded in four facts, all measured on
+<code>master 5ffe6017</code>:</p>
+
+<pre><code>$ python3 -c "import yaml"
+ModuleNotFoundError: No module named 'yaml'
+
+scripts importing a YAML parser: 0  (of 63 files)
+no python dependency manifest in repo root      (no requirements.txt / pyproject.toml / setup.py / Pipfile)
+pip install in either workflow: ci.yml:0  schema-gates.yml:0</code></pre>
+
+<p>So a real parse means this repository's <b>first third-party runtime dependency</b>, and
+<code>actions/setup-python@v5</code> hands CI a clean interpreter, so an install step would be needed
+there too. A <em>vendored</em> subset parser dodges the dependency by being a hand-rolled parser
+again — larger, and with no upstream test suite.</p>
+
+<div class="callout warn">
+<b>One precise correction, because it cuts the other way.</b> It is tempting to say “every guard here
+is stdlib-only”. That is <b>false</b>: 17 of the 63 scripts import local sibling modules
+(<code>page_markup</code>, <code>coverage_verdict</code>, <code>m4_base_db</code>, and three others).
+The true claim is narrower — <b>no guard imports a <em>third-party</em> package</b>. The imprecise
+version accidentally argues against the fix chosen below, because local-library imports are not an
+exception to house style here; they <em>are</em> the house style.
+</div>
+
+<h2 id="three">4. Three guards, three standards, one missing primitive</h2>
+
+<p>Here is the finding that turns this from a bug report into an architecture review. Three guards
+read workflow files as text. Each of them independently discovered it needed the same missing
+primitive — <em>which lines of this file are structure?</em> — and each solved it to a different
+standard, without any of them knowing the others existed.</p>
+
+<table>
+<tr><th>Guard</th><th>What it built</th><th>Cost</th><th>On a shape it does not understand</th></tr>
+<tr>
+  <td><code>check-python-pin.py</code></td>
+  <td>a partial reader: comment masking, block-scalar masking, sibling-dash rules, job-key disambiguation</td>
+  <td><b>10 defects / 7 rounds</b></td>
+  <td><span class="tag t-lat">fail-closed</span> — except for §5, which is a false green</td>
+</tr>
+<tr>
+  <td><code>check-merge-ready.py</code></td>
+  <td>a <em>different</em> reader, <b>plus a soundness check</b></td>
+  <td>4 shapes / 3 rounds</td>
+  <td><span class="tag t-meas">refuses</span> — surfaces the line it could not account for</td>
+</tr>
+<tr>
+  <td><code>check-ratchet-contract.py</code></td>
+  <td><b>nothing.</b> <code>ci.yml</code> is read as flat text</td>
+  <td>—</td>
+  <td><span class="tag t-inf">fails OPEN</span></td>
+</tr>
+</table>
+
+<p>The middle row is the interesting one, because it reached the right conclusion first and wrote it
+down:</p>
+
+<pre><code>⭐ THE REAL LESSON, and why the fix is not a fifth regex: this is a hand-rolled YAML parser and
+the project is stdlib-only, so `yaml` is unavailable. A hand-rolled parser CANNOT be made
+correct. It CAN be made unable to be silently wrong — which is what the soundness check does.</code></pre>
+<p class="sub"><code>scripts/check-merge-ready.py:130-132</code></p>
+
+<h3>The third guard fails open, and here is what that looks like</h3>
+
+<p><code>check-ratchet-contract.py</code> has a rule called R3: <em>does something actually execute
+this guard?</em> It answers by scanning a blob of text that includes <code>ci.yml</code>. Run against
+four different blobs:</p>
+
+<pre><code>R3 SATISFIED  &lt;- a YAML COMMENT describing a REMOVED step
+R3 SATISFIED  &lt;- text inside a `run: |` block scalar
+R3 SATISFIED  &lt;- a step disabled by `if: false`
+R3 SATISFIED  &lt;- a genuine step            (the control)</code></pre>
+
+<p>All four indistinguishable. The function's own docstring says the rule
+<em>“must not be satisfiable by prose”</em> and cites the finding that a documentation table row was
+once read as a caller. <span class="hl">It excluded <code>docs/</code> — and prose inside
+<code>ci.yml</code> satisfies it.</span> The fix went to the directory that had failed, not to the
+class of thing that had failed.</p>
+
+<p>How much of that file is text it reads as executable?</p>
+
+<pre><code>ci.yml lines            : 480
+survive _structural     : 196
+masked (comment/scalar) : 284  = 59%</code></pre>
+
+<div class="callout good">
+<b>But nothing is currently standing on it.</b> Swept across all 40 guards: <b>0</b> depend on this
+false green. And the zero is not the vacuous kind — <b>21 of the 40</b> are satisfied by
+<code>ci.yml</code> and nothing else, and all 21 survive masking. So the hole is real and
+<b>latent</b>. <span class="tag t-lat">latent</span>
+</div>
+
+<p class="lead">Which produces the review's actual verdict: <b>the defect is not in any of the three.
+It is that there are three.</b></p>
+
+<h2 id="falsegreen">5. The false green found by reviewing the review</h2>
+
+<p>This is the part that changed what gets built, and it was not in the first draft of the review. It
+was found <em>while the review was being reviewed</em> — and it is a live defect in shipped code on
+<code>master</code>.</p>
+
+<p>The masking regex that decides where a block scalar begins:</p>
+
+<pre><code>_BLOCK_SCALAR = re.compile(r"^(\s*)[\w.\-]+:\s*[|&gt;][-+0-9]*\s*(#.*)?$")</code></pre>
+<p class="sub"><code>scripts/check-python-pin.py:298</code></p>
+
+<p><code>[\w.\-]+</code> cannot span the space in <code>- run:</code>. So a step written in the
+<b>dash shorthand</b> — perfectly ordinary GitHub Actions — never has its body masked, and its
+content is read as structure.</p>
+
+<p>Here is the minimal pair. <b>Two fixtures identical in every character except where
+<code>run: |</code> sits</b>, both run against the shipped guard on <code>master 5ffe6017</code>:</p>
+
+<pre><code>### the dash shorthand:   - run: |
+jobs seen      : ['verify', 'schema-gates']
+  verify         declared_pins -&gt; ['3.12']
+  schema-gates   declared_pins -&gt; ['3.12']      &lt;-- from HEREDOC TEXT
+unpinned_jobs  : []
+verdict        : rc=0
+                 python pin OK — every job pins 3.12, and this interpreter is 3.12
+
+### the same thing under a name:   - name: seed / run: |
+  verify         declared_pins -&gt; ['3.12']
+  schema-gates   declared_pins -&gt; []            &lt;-- correctly sees nothing
+verdict        : rc=1
+                 FAILED — 1 job(s) pin no Python version:</code></pre>
+
+<p>In the first fixture, the <code>schema-gates</code> job has <b>no <code>setup-python</code> step at
+all</b> and runs on whatever interpreter the runner image happens to ship. The guard says
+<code>python pin OK</code>.</p>
+
+<h3>Why the obvious framing understates it</h3>
+
+<p>There is a second defence, <code>pin_took_effect</code>, built precisely to catch a pin that is
+present but ineffective. It checks <em>provenance</em>: did the running interpreter come from
+<code>setup-python</code>? You would expect it to catch this. It does not, and the reason is a seam
+nobody had looked at:</p>
+
+<figure>
+<svg viewBox="0 0 700 186" role="img" aria-label="Scope mismatch between the two checks">
+  <rect x="8" y="30" width="330" height="140" rx="9" fill="var(--good-bg)" stroke="var(--good-br)"/>
+  <rect x="362" y="30" width="330" height="140" rx="9" fill="var(--bad-bg)" stroke="var(--bad-br)"/>
+  <text x="173" y="20" text-anchor="middle" font-size="12.5" font-weight="700" fill="var(--good)">job A — verify</text>
+  <text x="527" y="20" text-anchor="middle" font-size="12.5" font-weight="700" fill="var(--bad)">job B — schema-gates</text>
+  <text x="26" y="58" font-size="12.5" fill="var(--ink)">real setup-python step ✓</text>
+  <text x="26" y="80" font-size="12.5" fill="var(--ink)">the guard RUNS here</text>
+  <text x="26" y="102" font-size="12.5" fill="var(--ink-soft)">→ pythonLocation is set</text>
+  <text x="26" y="124" font-size="12.5" font-weight="700" fill="var(--good)">pin_took_effect: satisfied</text>
+  <text x="380" y="58" font-size="12.5" fill="var(--ink)">NO setup-python step</text>
+  <text x="380" y="80" font-size="12.5" fill="var(--ink)">one `- run: |` heredoc</text>
+  <text x="380" y="102" font-size="12.5" fill="var(--ink-soft)">→ declared_pins says '3.12'</text>
+  <text x="380" y="124" font-size="12.5" font-weight="700" fill="var(--bad)">runs on the ambient python</text>
+  <text x="350" y="160" text-anchor="middle" font-size="12.5" font-weight="700" fill="var(--ink)">pin_took_effect speaks for ONE job · declared_pins speaks for ALL jobs</text>
+</svg>
+<figcaption>One genuinely-pinned job launders the entire workflow. Every layer reports green.</figcaption>
+</figure>
+
+<div class="callout bad">
+<b>This is verbatim the defect the whole effort exists to end.</b> The original finding (#137) was
+that <code>ci.yml</code> ran bare <code>python3</code> 45 times in the one required check. The
+shorthand hole restores exactly that state while printing <code>python pin OK</code>.
+</div>
+
+<p>Two things make it worse than an ordinary missed shape:</p>
+
+<p><b>The test suite appears to cover it and does not.</b> There is a case asserting that a job
+holding only heredoc text reports as unpinned. It passes — but not because the mask worked. Its
+fixture contains no <code>uses: actions/setup-python</code>, so the function skips the step
+<em>before</em> the masking is ever load-bearing. Add the <code>uses:</code> line inside the same
+heredoc and the case inverts. A test can pass for a reason that has nothing to do with what it
+claims.</p>
+
+<p><b>It is latent, and that is precisely why it is urgent.</b> No current workflow uses the dash
+shorthand, so nothing is broken today <span class="tag t-lat">latent</span>. But the review's
+recommendation was to promote this reader — <em>because it is the best-paid-for of the three</em> —
+into the other guards. <span class="hl">Shipping the fix as written would have propagated the false
+green into all of them.</span> That reordered the work.</p>
+
+<h2 id="solved">6. How it is solved — and what it deliberately does not fix</h2>
+
+<p>The decision: <b>extract the reader into one shared library</b> rather than parse or refuse.
+<code>_structural()</code> moves out of <code>check-python-pin.py</code> into an importable
+<code>scripts/workflow_structure.py</code>, and the fail-open sibling is wired to read
+<code>ci.yml</code> through it.</p>
+
+<div class="callout good">
+<b>This exact move has already been made here once.</b> <code>scripts/coverage_verdict.py</code> was
+extracted from <code>check-plan-code.py</code>, <em>and its mutations moved with it</em> — that
+manifest holds 6 entries and the ratchet declares 6. The reason recorded in the code is the same
+argument the review makes: <em>“Keeping BOTH would be two mechanisms for one concern.”</em> So the
+recommendation is not a proposal; it is a repeat of a move this repository has already made and
+pinned.
+</div>
+
+<h3>The sequence, and why order is the load-bearing part</h3>
+
+<table>
+<tr><th>Row</th><th>What</th><th>When</th></tr>
+<tr><td><b>#154</b></td><td>the dash-shorthand false green (§5)</td><td><b class="hl">FIRST</b> — #155 would otherwise promote the reader carrying it</td></tr>
+<tr><td>#155</td><td>extract <code>workflow_structure.py</code>; wire R3; move 12 mutation anchors <em>and their killing cases</em></td><td>after #154 · <b>size not known</b></td></tr>
+<tr><td>#156</td><td><code>if: false</code>, and R3's corpus being <code>ci.yml</code> alone</td><td>after #155</td></tr>
+<tr><td>#157</td><td>a soundness check for pins and steps</td><td>any time</td></tr>
+<tr><td>#158</td><td>the flow-mapping bound — read <code>{k: v}</code> or refuse on it</td><td>any time</td></tr>
+</table>
+
+<h3>What the fix does not do, stated rather than implied</h3>
+
+<p><b><code>if: false</code> survives it.</b> Masking answers a <em>structural</em> question; whether
+a step executes is a <em>semantic</em> one. Measured:</p>
+
+<pre><code>                              before      after _structural
+comment                       SATISFIED -&gt; VIOLATION
+block scalar (`- name:` form) SATISFIED -&gt; VIOLATION
+if: false                     SATISFIED -&gt; SATISFIED     &lt;-- unchanged
+control (a genuine step)      SATISFIED -&gt; SATISFIED     &lt;-- correct</code></pre>
+
+<p>Sharper still: promoting a structure reader into R3 does not answer <em>“does this guard
+execute?”</em> — it answers <em>“does this text survive content masking?”</em> Those are different
+questions, and R3's name claims the first.</p>
+
+<p><b>The reader still is not correct.</b> A genuinely pinned job written as a flow mapping reads as
+unpinned:</p>
+
+<pre><code>with: {python-version: '3.12'}        # valid YAML, a real pin
+declared_pins -&gt; []
+unpinned_jobs -&gt; ['w.yml:verify']
+verdict rc=2 -&gt; CANNOT RUN — no `python-version:` was found in any workflow</code></pre>
+
+<p>Fail-closed, so not a false green — but the guard reports the <b>absence of a thing that is
+present</b>, and routes the author toward an exemption. That is #158.</p>
+
+<p><b>And risk concentrates.</b> One reader shared by two guards means a future defect in it is a
+defect in both at once. That is the price of putting the knowledge in one place, and it is the right
+trade here only because the alternative — three readers of three different qualities — is what this
+review found.</p>
+
+<h2 id="underneath">7. The problem underneath the problem</h2>
+
+<p class="lead">The review took four rounds. The three <em>repair</em> rounds each caught a defect in
+the repair before it — and all three were the same class.</p>
+
+<table>
+<tr><th>Round</th><th>The sentence it caught</th><th>Whose inference</th></tr>
+<tr>
+  <td><b>r2</b></td>
+  <td><em>“no guard invocation sits inside a conditional step”</em> — two do</td>
+  <td>a reviewer's, propagated <b>without being re-run</b></td>
+</tr>
+<tr>
+  <td><b>r3</b></td>
+  <td><em>“rejecting them would red-line two guards that genuinely run”</em> — both have a second
+      <b>unconditional</b> invocation, so the measured cost is <b>0 guards</b></td>
+  <td>the author's own — <b>inside the paragraph repairing r2's</b></td>
+</tr>
+<tr>
+  <td><b>r4</b></td>
+  <td>twelve mutation entries listed as <code>#26–#37</code> — 0-based, so the ordinal reading moves
+      the wrong anchor and drops a needed one</td>
+  <td>the author's own, in the row an implementer would follow</td>
+</tr>
+</table>
+
+<p>Every one of them is <b>a plausible inference written in the grammar of a measurement</b>.</p>
+
+<div class="callout warn">
+<b>The obvious lesson is the wrong one.</b> “Verify agent output” was already a written rule in this
+project, and it was <em>quoted at the start of the task</em>. Having the rule did not prevent any of
+the three. What produced them is structural: each sentence sat in a paragraph running
+<em>correction → transcript → inference → recommendation</em> with no seam, so
+<span class="hl2">the inference was invisible to its own author while being obvious to the next
+reader</span>.
+</div>
+
+<p>Note also what r3 observed about the arguments themselves: all three false claims were
+<b>supporting figures invented for a conclusion that stood without them</b>. The
+statically-false-versus-event-scoped distinction was correct on its merits; the “two red-lined
+guards” was decoration that happened to be false. An argument that suddenly needs a cost figure is
+worth a second look.</p>
+
+<h3>The symmetry</h3>
+
+<p>It is worth noticing that this page has described the same failure twice, at two levels:</p>
+
+<table>
+<tr><th></th><th>In the YAML</th><th>In the review prose</th></tr>
+<tr><td><b>Two kinds of thing</b></td><td>structure vs content</td><td>measurement vs inference</td></tr>
+<tr><td><b>Written in</b></td><td>one indistinguishable character sequence</td><td>one indistinguishable paragraph</td></tr>
+<tr><td><b>Consequence</b></td><td>a scanner credits text as configuration</td><td>a reader credits a guess as a fact</td></tr>
+<tr><td><b>Fix</b></td><td>mark which lines are structure</td><td>label the measurement; separate the sentence</td></tr>
+</table>
+
+<p>In both cases the repair is the same move: <b>stop relying on the reader to tell two things apart,
+and mark them.</b></p>
+
+<h2 id="ledger">8. Measured vs inferred</h2>
+
+<p>Everything above, sorted by how it is known. This table is the point of the page as much as the
+prose is — you cannot tell these apart from the narrative.</p>
+
+<table>
+<tr><th>Claim</th><th>Status</th><th>How</th></tr>
+<tr><td>The dash-shorthand false green produces <code>rc=0 "every job pins 3.12"</code></td>
+    <td><span class="tag t-meas">measured</span></td>
+    <td>executed on <code>master 5ffe6017</code>; minimal pair, both fixtures shown in §5</td></tr>
+<tr><td>R3 is satisfied by a comment, a block scalar and <code>if: false</code></td>
+    <td><span class="tag t-meas">measured</span></td>
+    <td>four blobs against <code>check_caller</code>, control included</td></tr>
+<tr><td>284 of <code>ci.yml</code>'s 480 lines (59%) are masked</td>
+    <td><span class="tag t-meas">measured</span></td>
+    <td>executed. <b>Composition differs from the impression</b>: 269 comments, 15 block-scalar lines — <b>94.7% comments</b></td></tr>
+<tr><td>No third-party dependency; PyYAML absent; no manifest; no <code>pip install</code></td>
+    <td><span class="tag t-meas">measured</span></td>
+    <td>import attempt + greps over 63 scripts and both workflows</td></tr>
+<tr><td>A flow-mapping pin reads as unpinned</td>
+    <td><span class="tag t-meas">measured</span></td>
+    <td>executed; <code>rc=2 CANNOT RUN</code></td></tr>
+<tr><td>Ten defects, one root cause</td>
+    <td><span class="tag t-meas">measured</span> <span class="tag t-inf">+ recorded</span></td>
+    <td>the count and shapes are the code's own comments (r1–r6) — quoted, not re-derived</td></tr>
+<tr><td>R3's fail-open is <b>latent</b> — 0 of 40 guards depend on it</td>
+    <td><span class="tag t-lat">latent</span></td>
+    <td>swept; and <b>not vacuous</b> — 21 of 40 rest on <code>ci.yml</code> alone and all 21 survive masking. ⚠ <b>Point-in-time, and the sweep is not committed</b> — nothing will say when it expires</td></tr>
+<tr><td>The dash-shorthand hole is <b>latent</b></td>
+    <td><span class="tag t-lat">latent</span></td>
+    <td>no current workflow uses the shorthand form (grep over both files)</td></tr>
+<tr><td>Extraction is the right mechanism</td>
+    <td><span class="tag t-inf">inferred</span></td>
+    <td>a judgement, argued from the <code>coverage_verdict.py</code> precedent and the dependency circularity — not a measurement</td></tr>
+<tr><td>#154 must precede #155</td>
+    <td><span class="tag t-inf">inferred</span></td>
+    <td>follows from the false green plus the intent to promote the reader; nobody has tried the sequence</td></tr>
+<tr><td><b>The size of #155</b></td>
+    <td><span class="tag t-inf">NOT KNOWN</span></td>
+    <td>three rounds each found another unbudgeted consumer (a missing test seam, <code>check-fixture-variation.py</code>, job-level conditions). Round 4 swept and found no fourth. <b>Decided: size it by attempting it, not by more review rounds</b></td></tr>
+</table>
+
+<div class="foot">
+<p><b>Sources.</b> <code>docs/reviews/architecture-review-2026-09-21-workflow-readers.md</code>;
+review halves under <code>docs/reviews/{claude,codex}/arch-review-153-r{1..4}-*.md</code>; backlog rows
+#153–#158; <code>scripts/check-python-pin.py</code>, <code>scripts/check-merge-ready.py</code>,
+<code>scripts/check-ratchet-contract.py</code>.</p>
+<p>Every transcript on this page was executed against <code>master 5ffe6017</code> while writing it,
+except the ten historical defects in §2, which are quoted from the code's own comments and labelled
+as such in §8. Nothing here is paraphrased from memory.</p>
+</div>
+
+</div>

@@ -1335,6 +1335,7 @@ EXPECTED_MUTATIONS = {
     # is the measured artefact (20/20 must-fire, 0/60 false fires, 2026-09-29), so deleting one of
     # its five load-bearing clauses invalidates the measurement exactly as a code defect would.
     "scripts/recall-llm.py": 53,
+    "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree
@@ -2981,6 +2982,7 @@ def _self_test() -> int:
                                       "scripts/check-guard-coverage.py",
                                       "scripts/check-handoff-path.py",
                                       "scripts/check-live-schema.py",
+                                      "scripts/check-memory-link.py",
                                       "scripts/check-merge-ready.py",
                                       "scripts/check-paid-caller-arrival.py",
                                       "scripts/check-plan-code.py",
@@ -3757,7 +3759,7 @@ def _self_test() -> int:
     # Blocking and High — and the sum stayed at 1015 throughout, because an orphan keeps the count
     # while removing the coverage. CI caught it; `--self-test` cannot, because it loads the
     # manifests without resolving them. The split is on each file's own entry above.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1087)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1095)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -1,0 +1,987 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M4 — the verification instrument, mid-reshape</title>
+
+<style>:root{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#8a857c; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#8a857c; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}}
+:root[data-theme="dark"]{
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+/* SIZE carries hierarchy. Headings are LIGHTER than body-bold, not heavier. */
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h)}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+/* BOLD IS A LABEL, NOT A SHOUT — weight only, a neutral tone, never a hue */
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+/* TERMINAL TEXTURE — inline code is a raised pill, and it carries the visual variety */
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em;white-space:nowrap}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+:root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied. */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
+
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ask tray */
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+#sentnote{font-size:.78rem;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+
+<div class="mast">
+  <div class="kicker">Briefing · M4 · promote the stable-blob-addressing schema</div>
+  <h1>The instrument is being reshaped. The migration it guards still does not exist.</h1>
+  <p class="dek">Seven review rounds and two architecture reviews have gone into one thing: a gate that
+  reads the deployed Postgres catalog and says whether M4 is really there. Fork (a) — your decision
+  yesterday — shrinks it. Two of six steps are done and both were measured today.</p>
+  <div class="stamp"><span class="dot"></span> No decision is waiting on you</div>
+</div>
+
+<section>
+  <div class="shead"><span>1 · Where it stands</span><b>all figures measured 2026-08-26 06:58 PDT</b></div>
+  <div class="stats">
+    <div class="stat ok"><div class="v num">22/22</div><div class="l">mutations caught by the live gate</div><div class="sub">was 21 yesterday</div></div>
+    <div class="stat bad"><div class="v num">1 / 60</div><div class="l">assertion blocks marked runnable</div><div class="sub">fork (a) rests on this</div></div>
+    <div class="stat st"><div class="v num">0 / 10</div><div class="l">M4 plan tasks ticked</div><div class="sub">49 open steps</div></div>
+    <div class="stat bad"><div class="v num">0027</div><div class="l">the migration — does not exist</div><div class="sub">prod is at 0026</div></div>
+    <div class="stat ok"><div class="v num">6</div><div class="l">commits on the branch, all pushed</div><div class="sub">no PR open yet</div></div>
+  </div>
+  <p class="cap">The two red numbers are the honest ones. <strong>1 of 60</strong> is the size of the bet
+  fork (a) makes: the plan is to verify M4 by <em>executing</em> its invariants rather than comparing a
+  fingerprint, and so far exactly one of the sixty assertion blocks has been proven to run twice.
+  <strong>0027</strong> is the uncomfortable one — all of this guards a migration nobody has written.</p>
+</section>
+
+<section>
+  <div class="shead"><span>2 · The shape</span><b>derived from git history of the harness</b></div>
+  <h2>Every round taught the harness a defect it could not previously write down</h2>
+  <p>The mutation harness sabotages a real throwaway database and demands the gate go red. Its size is
+  the best single measure of how much this instrument actually knows, because each new mutation exists
+  because a review round found a state the previous harness was structurally unable to express.</p>
+
+  <div class="chart">
+    <div class="bars">
+      <div class="bar"><span class="n num">4</span><div class="col" style="height:18%" role="img" aria-label="4 mutations at commit 1706930"></div></div>
+      <div class="bar"><span class="n num">6</span><div class="col" style="height:27%" role="img" aria-label="6 mutations at commit 903004d"></div></div>
+      <div class="bar"><span class="n num">8</span><div class="col" style="height:36%" role="img" aria-label="8 mutations at commit d6688d8"></div></div>
+      <div class="bar"><span class="n num">21</span><div class="col" style="height:95%" role="img" aria-label="21 mutations at commit 74f450b"></div></div>
+      <div class="bar now"><span class="n num">22</span><div class="col" style="height:100%" role="img" aria-label="22 mutations at commit de52f50, today"></div></div>
+    </div>
+    <div class="xax">
+      <div>1706930<br>08-25<br>the plan</div>
+      <div>903004d<br>08-25<br>161 objects</div>
+      <div>d6688d8<br>08-25<br>names → digests</div>
+      <div>74f450b<br>08-25<br>rounds 5+6</div>
+      <div>de52f50<br><b>08-26</b><br>today</div>
+    </div>
+    <p class="cap">The jump from 8 to 21 is round 5's lesson: the gate compared <em>definitions</em>, so
+    turning RLS off, flipping a view to <code>security invoker</code>, or granting <code>anon</code> write
+    access all left the fingerprint byte-identical. Today's 22nd is the narrowest sabotage in the suite —
+    changing one argument default, and nothing else.</p>
+  </div>
+
+  <h3>Four consecutive rounds where the fix became the next defect</h3>
+  <div class="casc">
+    <div class="cs"><div class="r">round 4 → 5</div><div class="fix">names → digests</div>
+      <div class="out">Absent mode needed the <em>opposite</em> change. "Defined" is not "in force".</div></div>
+    <div class="cs"><div class="r">round 5 → 6</div><div class="fix">digest raw ACL text</div>
+      <div class="out">Made <code>--prod --expect-present</code> unsatisfiable: production's ACL names a role no laptop has.</div></div>
+    <div class="cs"><div class="r">round 6 → 7</div><div class="fix">effective access + a coverage ratchet</div>
+      <div class="out">Four of the ratchet's written exclusion <em>reasons</em> were false.</div></div>
+    <div class="cs last"><div class="r">round 7 → now</div><div class="fix">fork (a): stop growing the fingerprint</div>
+      <div class="out">Two steps done. Not yet reviewed — round 8 comes after step 6.</div></div>
+  </div>
+  <p class="cap">This cascade is why Phase 6 fired, twice. It is also the argument for fork (a): a
+  fingerprint has to enumerate everything worth comparing <em>and</em> be comparable across
+  environments. An executed assertion needs neither.</p>
+</section>
+
+<section>
+  <div class="shead"><span>3 · Today</span><b>2 commits, both measured</b></div>
+  <h2>Fork (a), steps 1 and 2</h2>
+
+  <h3><span class="chip c-m">step 1</span> &nbsp;The assertion suite runs, and catches round 7's Blocking</h3>
+  <p>The first <code>@RE-RUNNABLE</code> marker went on the block that proves <code>anon</code> cannot
+  <code>TRUNCATE</code> the paid manifest — a bypass that fires neither row-level security nor row
+  triggers. Measured three ways:</p>
+  <pre><code>correct schema                      assertion exit 0   GREEN
+grant truncate ... to anon          assertion exit 1   CAUGHT
+same DB, check-live-schema          exit 0             blind — BY DESIGN now</code></pre>
+  <p>That third line is the point of fork (a). The fingerprint stays blind to TRUNCATE on purpose,
+  because the assertion covers it — rather than growing the fingerprint a fifth time.</p>
+
+  <h3><span class="chip c-m">step 2</span> &nbsp;Argument defaults enter the function digest</h3>
+  <p><code>record_artifact</code> takes seven defaulted parameters. Changing one of them —
+  <code>p_md_hash text default null</code> to <code>default 'r7-default'</code> — moved nothing the gate
+  could see, while every caller that omits that argument then writes a different value. One term fixes
+  it, in the payload rather than the symbol, so the manifest key stays stable.</p>
+
+  <div class="call p">
+    <div class="t">I reproduced the exact defect I was fixing</div>
+    <p>Round 7's finding was <em>"a written exclusion reason is false."</em> My replacement reason said
+    identity arguments render "types only". Measured on a two-argument probe:</p>
+    <pre><code>identity: a integer, b text
+full    : a integer, b text DEFAULT 'x'::text</code></pre>
+    <p>They render names <em>and</em> types; what they omit is <em>defaults</em>. Both statements sound
+    true and are about the same object, and only a measurement separates them. Corrected in all three
+    places before the commit — but it is evidence for Phase 6 #2's thesis, not against it: a mechanism
+    whose correctness rests on prose being true keeps producing false prose.</p>
+  </div>
+
+  <div class="call p">
+    <div class="t">And a false green, caught in the same run</div>
+    <p>The new mutation reported <span class="ok">✓</span> on its first execution <em>without running its
+    own check</em>. Its narrowness probe concatenated two <code>"char"</code> columns without casts, died
+    with <code>operator is not unique</code>, returned empty for both before and after — and empty equals
+    empty, so the check passed. Casts added, plus a guard that fails closed on an empty probe. Without it
+    the ✓ would have been unearned, which is worse than a ✗.</p>
+  </div>
+</section>
+
+<section>
+  <div class="shead"><span>4 · What is blocked</span><b>nothing is waiting on a person</b></div>
+  <div class="scroll"><table>
+    <thead><tr><th>What</th><th>Blocked on</th><th>Since</th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Fork (a) steps 3–6</strong></td><td><span class="chip c-m">nothing</span> autonomous</td><td>—</td>
+        <td>Remove privileges from the digest · move per-environment privilege to <code>check-anon-exposure.py</code> · extend the function revokes to <code>service_role</code> · two ADRs</td></tr>
+      <tr><td><strong>Round 8 review</strong></td><td><span class="chip c-s">step 6</span></td><td>—</td>
+        <td>Dual adversarial, after the fork (a) work lands. Rounds 1–7 all NOT CONVERGED</td></tr>
+      <tr><td><strong>PR for this branch</strong></td><td><span class="chip c-s">round 8</span></td><td>—</td>
+        <td>6 commits, pushed, no PR yet. Merging stays a human gate</td></tr>
+      <tr><td><strong>The other 59 assertion blocks</strong></td><td><span class="chip c-p">a seed corpus</span></td><td>2026-08-25</td>
+        <td>They read fixtures nothing currently supplies. This is fork (a)'s biggest unverified assumption</td></tr>
+      <tr><td><strong>Schema gates 3 &amp; 4</strong></td><td><span class="chip c-s">plan Task 5</span></td><td>ADR-0007</td>
+        <td>Red, and red <em>by plan</em> — their inventories still name columns the reservation protocol took with it when it was deleted</td></tr>
+      <tr><td><strong>Migration 0027</strong></td><td><span class="chip c-s">plan Task 6</span></td><td>—</td>
+        <td>Does not exist. Applying it to production is the second human gate, and it is far away</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <div class="shead"><span>5 · A disagreement between layers</span><b>checkboxes vs git</b></div>
+  <h2>The plan says nothing is done. Git says Task 3 shipped.</h2>
+  <p>The M4 v2 plan has <strong class="num">10</strong> tasks and <strong class="num">49</strong> open
+  steps, and <strong class="num">zero</strong> are ticked. But Task 3 — <em>"the gate that reads the
+  deployed catalog"</em> — demonstrably exists: <code>check-live-schema.py</code> passes 68 self-test
+  cases, its manifest covers 161 objects, and 22 sabotages of a live database all go red against it.</p>
+  <p>This is the failure mode <code>dev-process.md</code> names directly: <em>checkboxes are a claim; git
+  is the truth</em>. Nothing is wrong with the code — the bookkeeping simply never caught up while seven
+  review rounds rewrote the task underneath it. I will reconcile it when fork (a) closes, because ticking
+  boxes on a task the next two steps still modify would be recording a state that is about to move.</p>
+</section>
+
+<section>
+  <div class="shead"><span>6 · The standing recommendation</span><b>no answer needed — read if you want the reasoning</b></div>
+  <h2>Finish fork (a), then round 8, then a PR</h2>
+  <p>You decided fork (a) yesterday and nothing since has argued against it. Steps 3–6 are mechanical
+  compared to what came before: three of them <em>remove</em> code.</p>
+
+  <div class="call d">
+    <div class="t">The strongest argument against continuing</div>
+    <p>Phase 6 #2 asked it as its fifth question, and it has never been properly answered:
+    <strong>seven rounds and roughly 3,400 lines of gate code and reviews, for a migration that does not
+    exist and a schema that has never run in production.</strong> A reasonable person could say the
+    instrument has become the project, and that writing <code>0027</code> first — then verifying whatever
+    it actually does — would have cost a fraction of this.</p>
+  </div>
+
+  <p><strong>My answer, and I want to be honest that it is only partly satisfying.</strong> The
+  disproportion is real and I would not defend how we got here. But two of the findings this instrument
+  produced were not instrument defects at all — they were defects in <em>the schema M4 is about to
+  ship</em>. Round 6 found that <code>workspaces</code>, the tenancy root, had grants and no revoke, so
+  M4 would have shipped <code>anon</code> INSERT, UPDATE and DELETE on it in production. Round 7 found
+  <code>service_role</code> holds INSERT on <code>video_artifacts</code> but cannot use it. Neither was
+  reachable by reading the spec; both came out of executing it.</p>
+  <p>So the cost was not spent purely on the instrument. It was spent finding out that the schema was
+  wrong in ways nobody had noticed in eighteen prior rounds of reviewing it as text. That is also the
+  argument for fork (a): <em>keep the executing, drop the fingerprinting</em>.</p>
+
+  <div class="call m">
+    <div class="t">What would change my mind</div>
+    <p>If steps 3–6 turn up a third round of instrument-only findings — defects in the gate rather than in
+    the schema — then the instrument has stopped paying for itself and M4 should go straight to writing
+    <code>0027</code> with the assertions as its only guard. That is a falsifier, not a feeling, and round
+    8 is where it gets tested.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="fgrid">
+    <div><b>Commit</b>de52f50 (branch head)<br>docs/m4-round7<br>6 ahead of master · 0 unpushed<br>working tree clean</div>
+    <div><b>Deployed</b>fly release v10<br>2026-08-24 23:01<br>roadmap claims v10 — <span class="ok">agree</span><br>prod migration 0026</div>
+    <div><b>Doc ratchets</b>check-docs <span class="ok">0</span><br>roadmap-consistency <span class="ok">0</span><br>test-counts <span class="ok">0</span> · anchors <span class="ok">0</span><br>producer-enum <span class="ok">0</span> · review-rounds <span class="ok">0</span></div>
+    <div><b>Schema gates</b>suite exit <span class="no">1</span> (2 red by plan)<br>3/10 guard-coverage <span class="no">FAIL</span><br>4/10 sentinel-meanings <span class="no">FAIL</span><br>8/10 assertions <span class="dim">SKIPPED, M4_PHASE=pre</span></div>
+    <div><b>Self-tests</b>check-live-schema 68/68<br>catalog-coverage 11/11<br>gen-m4-manifest 4/4<br>run-schema-assertions pass</div>
+    <div><b>Instrument</b>manifest 161 objects<br>coverage 203 cols / 9 catalogs<br>73 digested · 130 excluded · 18 rules<br>mutations 22/22 caught</div>
+    <div><b>Corpus</b>32 M4 review documents<br>2 architecture reviews<br>plan 1,072 lines · 10 tasks<br>05_assert.sql 2,257 lines · 105 raises</div>
+    <div><b>Built</b>2026-08-26 06:58 PDT<br>every figure from a command<br>run in this invocation<br>volatile: gate exits, self-tests</div>
+  </div>
+</footer>
+
+</div>
+
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body></html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>

@@ -1,0 +1,714 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Development velocity — how the review loop decides its own next step</title>
+
+<style>:root{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#8a857c; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#8a857c; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}}
+:root[data-theme="dark"]{
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+/* SIZE carries hierarchy. Headings are LIGHTER than body-bold, not heavier. */
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h)}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+/* BOLD IS A LABEL, NOT A SHOUT — weight only, a neutral tone, never a hue */
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+/* TERMINAL TEXTURE — inline code is a raised pill, and it carries the visual variety */
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em;white-space:nowrap}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+:root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied. */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
+  /* GIVE HEADINGS A POSITIONING CONTEXT, or the heading ask-path silently dies.
+     The tray appends an ABSOLUTELY positioned `.askbtn` to every heading. With no positioned
+     ancestor it resolves against the initial containing block, so EVERY heading button lands on
+     the same point in the top-right corner, stacked, with only the last one clickable.
+     MEASURED 2026-08-27 across ~/explainers: 29 of the 33 pages carrying a tray had NO positioning
+     context on headings. On one page: 10 buttons, 4 distinct positions, all 7 h2s at top:14
+     left:1560 — 6 unreachable. The 3 that worked did so by accident, sitting inside an unrelated
+     `position:relative` list item.
+     ⚠ WHY IT SURVIVED EVERY "I drove both question paths" CHECK: those checks call
+     `heading.querySelector('.askbtn').click()`, which fires the handler no matter where the button
+     is painted or what is stacked on top of it. That tests the HANDLER, never the AFFORDANCE. The
+     check that finds it is a hit test — `document.elementFromPoint(centre)` must return the button
+     itself. The selection path was never affected: its floater is `position:fixed` with explicit
+     coordinates, which is why the channel looked alive throughout.
+     `:where()` keeps this at ZERO specificity, so any fragment that positions its own headings
+     still wins — the shim only supplies what nobody supplied. */
+  :where(h1, h2, h3, h4) { position: relative; }
+
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-size:.8em;padding:.1rem .45rem;border-radius:99px;
+            border:1px solid var(--rule,#8884);white-space:nowrap}
+#modechip{font-family:var(--mono);font-size:.7rem;padding:.1em .45em;border-radius:99px;border:1px solid var(--rule);color:var(--fg3)}
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+#sentnote{font-size:.78rem;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+/* ---- end Ask tray ---- */
+.chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.82rem;color:var(--ink-soft,currentColor)}.chrome-btn{display:inline-flex;align-items:center;gap:.35rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule,currentColor);border-radius:.4rem;padding:.2rem .55rem;cursor:pointer}.chrome-btn:hover{color:var(--ink,inherit)}.chrome-btn:focus-visible{outline:2px solid var(--structural,currentColor);outline-offset:2px}.chrome-when{margin-inline-start:auto}.chrome-say{min-height:1em}@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+<header class="top">
+  <p class="kicker">Goal-level design · iteration 1 · DRAFT, no Phase 1 gate yet</p>
+  <h1>Development velocity — how the review loop decides its own next step</h1>
+  <p class="sub">Anchor <code>review-decides-itself</code> · spec <code>docs/superpowers/specs/2026-09-26-development-velocity-review-loop-design.md</code> · branch <code>velocity-goal-spec</code></p>
+</header>
+
+<div class="box acc" id="howto">
+  <span class="lbl">This page exists to be argued with <span id="modechip">○ checking…</span></span>
+  <p><strong>Select any passage and press <code>ask</code>.</strong> Your question reaches my session
+  carrying the heading and the exact text you highlighted, so you needn't restate context. Type, press
+  <strong>Send</strong>, then tell me <em>“read my questions”</em>. I verified that path end-to-end today.</p>
+  <p><strong>Stable URL:</strong> <code>http://127.0.0.1:7391/latest</code> is always the newest page.
+  If it doesn't load, run <code>python3 scripts/explainer-serve.py</code> — safe twice, and a reboot stops it.
+  A <code>file://</code> copy reads fine and only loses <strong>Send</strong>.</p>
+  <p>⛔ <strong>This is iteration 1 of a walkthrough, not a document for approval.</strong> The loop is
+  ideation → draft → your questions → revise. Disagreeing with a section is the point; a yes/no on 226
+  lines would be a rubber stamp by construction.</p>
+</div>
+
+<div class="box bad">
+  <span class="lbl">Why this document exists — the failure it is correcting</span>
+  <p><strong>#177 ran backwards.</strong> Ideation → <em>implementation</em> → spec → plan → review.
+  PR #345 shipped <strong>23 files with zero spec or plan files</strong>; the spec and plan were
+  backfilled the next day; the three review rounds then audited the backfill.</p>
+  <p>⭐ <strong>Measured, and it is the point you made:</strong> across all three rounds every finding's
+  <code>aim</code> is <code>deliverable</code> and every component is document hygiene — stale pointers,
+  cracked numbers, orphaned lines, missing provenance. <strong>Not one asks whether the design is
+  sound.</strong> Twenty findings in round 3 alone. And the Phase 1 gate approved a document describing
+  already-merged work, so it could only ratify.</p>
+</div>
+
+<h2><span class="n">1</span>The first goal-level design in this repository</h2>
+
+<p>Measured 2026-09-26: <strong>no anchor has one.</strong> <code>review-decides-itself</code> has four
+component specs; <code>status-visibility</code> has thirteen; in every case the only goal-level artifact
+is the one-sentence entry in <code>docs/anchors.md</code> plus the derived <code>/goals</code> page.
+<strong>That absence is why nothing felt like the right document to walk through — nothing of this kind
+existed.</strong></p>
+
+<div class="box warn">
+  <span class="lbl">Being first, it must state its boundary — or it rebuilds the defect we just removed</span>
+  <p>A goal-level document that restates its components is the two-owners defect the last two days were
+  spent removing. So the spec opens with a table: this document owns the <strong>concept</strong>, how the
+  pieces <strong>compose</strong>, the <strong>ordering</strong>, what is <strong>decided vs open</strong>,
+  and the <strong>goal-level falsifier</strong>. Each component spec keeps its own internal design.</p>
+  <p><strong>The rule, stated rather than assumed:</strong> if this document ever states something a
+  component spec also states, <strong>the component wins and this one becomes a pointer.</strong></p>
+</div>
+
+<h2><span class="n">2</span>The pain point, measured rather than felt</h2>
+
+<p>You said the slowness is mainly the sweep. The baseline disagrees — and this is #177's own headline
+finding.</p>
+
+<div class="scroll">
+<table>
+<tr><th>Cost</th><th>Measured</th><th>Character</th></tr>
+<tr><td>mutation sweeps</td><td>7 runs × ~14 min ≈ <strong>100 min</strong></td><td><strong>machine</strong> time, background, ~0 tokens</td></tr>
+<tr><td>review rounds</td><td>5 rounds, 10 documents on one PR</td><td>model dispatches</td></tr>
+<tr><td>⭐ <strong>rework from thrashing</strong></td><td><strong>3 of those 5 rounds</strong></td><td>each found a defect <em>inside the previous round's fix</em></td></tr>
+<tr><td>CI round-trips lost</td><td>1 full cycle</td><td>5 gates run locally; CI runs 33</td></tr>
+</table>
+</div>
+
+<div class="box ok">
+  <span class="lbl">But your intuition is pointing at something real</span>
+  <p>The baseline's own note: <em>“ran in background; I repeatedly <strong>waited</strong> anyway.”</em>
+  The sweep's felt cost is largely <strong>waiting on a job that did not require waiting</strong> — a
+  different defect, with a different fix, and not this goal's subject.</p>
+  <p>⭐⭐ <strong>And the two costs are causally linked, in the direction that decides this design.</strong>
+  A round costs a dispatch, a fold, <em>and a sweep</em>. If 3 of 5 rounds were rework, roughly
+  <strong>3 of those 7 sweeps existed only because of thrashing</strong>. ⚠ That is arithmetic over the
+  table, not an independent measurement — it assumes one sweep per round.</p>
+  <p>⛔ <strong>And attacking the sweep directly is already refused:</strong> backlog #174 — scoping it to
+  changed files is unsound and <em>“fails silently in the unsafe direction.”</em> <strong>So the leverage
+  is upstream, in whatever causes rework.</strong> Which is where your architecture instinct was already
+  looking.</p>
+</div>
+
+<h2><span class="n">3</span>What actually causes the rework — and it is not the review process</h2>
+
+<p>You asked how to <strong>prevent</strong> rework, not detect it. That needed one measurement: of round
+3's twenty findings, <strong>what kind of artifact was each defect in?</strong></p>
+
+<div class="scroll">
+<table>
+<tr><th>Count</th><th>Artifact</th></tr>
+<tr><td><strong>9</strong></td><td>hand-written prose</td></tr>
+<tr><td><strong>7</strong></td><td>a number written in prose</td></tr>
+<tr><td>2</td><td>a process step</td></tr>
+<tr><td>1</td><td>code — a generator (<code>ROOTS</code> in <code>gen-backlog-page.py</code> has one key)</td></tr>
+<tr><td>⭐ <strong>0</strong></td><td><strong>tested code</strong></td></tr>
+</table>
+</div>
+
+<div class="box bad">
+  <span class="lbl">Sixteen of nineteen — and none in tested code</span>
+  <p><strong>So the thrashing is not a review-process failure.</strong> It is what happens when facts are
+  maintained by hand in documents, where no compiler, test or generator can contradict the author.</p>
+  <p>⭐ <strong>The corroboration is in the same corpus:</strong> <code>dashboard</code>,
+  <code>goals</code>, <code>backlog-table</code> and <code>features</code> are all <em>generated</em>
+  pages, and <strong>not one</strong> of round 3's findings is in them — except the single code defect,
+  which has a code fix.</p>
+  <p>⛔ <strong>And the asymmetry is the cause:</strong> Phase 3 mandates test-driven development for
+  code. <strong>A review fold is prose editing and goes through nothing</strong> — no test, no falsifier,
+  no generator. That is why code here reaches <em>0 survivors</em> over 900-odd mutations while prose
+  thrashed for six rounds on one document.</p>
+</div>
+
+<h3>The prevention rules, ordered by leverage</h3>
+
+<p>⚠ <strong>These are prevention, not detection.</strong> An enumerated citing-sites list, a
+<code>CLASS SWEPT:</code> clause and an alternating round all find the defect <em>after</em> it is made.
+These aim to make it unrepresentable.</p>
+
+<div class="scroll">
+<table>
+<tr><th>#</th><th>Rule</th><th>Why it prevents rather than detects</th></tr>
+<tr><td><strong>1</strong></td><td><strong>One owner per fact; everything else points.</strong></td><td>the citing-sites problem existed because <em>“where §N lives”</em> was written in <strong>seven</strong> places. With one owner there is no class to sweep, so an instance-not-class fix becomes <strong>impossible</strong> rather than discouraged</td></tr>
+<tr><td><strong>2</strong></td><td><strong>Derive the number; never write it.</strong> Cite a run id, SHA or symbol, or have the producer print it</td><td>a document inside the corpus it describes is stale <strong>at the commit that writes it.</strong> 7 of 19 findings were this — and <strong>4 of my own defects</strong> yesterday were numbers I typed</td></tr>
+<tr><td><strong>3</strong></td><td><strong>A fact in a document must have a PRODUCER or an OWNER. If it has neither, it is not written.</strong></td><td>rules 1 and 2 as a single test the author can apply at write time, with no tooling at all</td></tr>
+<tr><td><strong>4</strong></td><td><strong>One purpose per commit.</strong></td><td>the <code>reset --hard</code> that destroyed round 3's testimony was only needed because a rename was bundled with content edits. Committing the rename alone first removes the need for the destructive repair entirely</td></tr>
+<tr><td><strong>5</strong></td><td><strong>Make a stale reference unrepresentable</strong> — references resolved at build time, i.e. a generated index</td><td>⚠ <strong>named honestly as the expensive one.</strong> The only rule here that requires building something — and the one that would retire rule 1's manual discipline</td></tr>
+</table>
+</div>
+
+<h3>Which numbers must be exact — the discriminator the repo lacks</h3>
+
+<p>You asked whether an exact number even matters when it isn't the core of the feature. <strong>The repo
+decided half of this and never wrote the other half.</strong> Decided: backlog <strong>#183</strong> —
+<em>“the fix is to REMOVE the count, not to correct it — correcting it re-pins a figure that will rot
+again”</em>; and §26 — <em>“never let a document state a count over a set its own commits join.”</em>
+<strong>Missing:</strong> any statement of <em>when exactness is load-bearing.</em></p>
+
+<div class="scroll">
+<table>
+<tr><th>Class</th><th>Example</th><th>Treatment</th></tr>
+<tr><td><strong>ratchet</strong></td><td><code>EXPECTED_MUTATIONS</code>; declared <code>--self-test</code> counts</td><td>⛔ <strong>exact, and it must have a producer.</strong> Exactness <em>is</em> the mechanism — <em>“about 300 mutations”</em> cannot detect 299, so coverage shrinks silently</td></tr>
+<tr><td><strong>argument</strong></td><td><em>“~7 hand-chosen edge cases against 5,287 real calls”</em></td><td>⭐ <strong>a magnitude is strictly better.</strong> The order of magnitude carries the argument; ±20% changes nothing, and a magnitude cannot rot</td></tr>
+<tr><td><strong>inventory</strong></td><td><em>“13 schema gates”</em>, <em>“42 explainer pages”</em></td><td><strong>remove it, or point at the producer.</strong> No decision rests on it</td></tr>
+</table>
+</div>
+
+<div class="box bad">
+  <span class="lbl">The cost of vagueness — the real objection to your proposal</span>
+  <p>A ball-park <strong>trades a detectable error for an undetectable one.</strong> <em>“13”</em> against
+  an actual 15 is comparable — a reader or a gate can catch it. <em>“About a dozen”</em> when it is 40 is
+  wrong in a way nothing can detect, because the claim never committed to anything.</p>
+  <p><strong>So the rule is not <em>be vague</em>. It is: state the precision you can defend — and if a
+  decision depends on the exact value, it needs a PRODUCER, not prose.</strong></p>
+</div>
+
+<div class="box ok">
+  <span class="lbl">A live instance, which beats a cited one</span>
+  <p>We spent part of today re-deriving the <em>remove-the-count</em> decision from first principles, and
+  neither of us found #183 or §26 until we went looking. <strong>That is <code>number-populations</code>'
+  diagnosis happening in real time</strong> — <em>“re-deriving, one instance at a time, a decision this
+  repo had already made and filed where nothing points”</em> — about numbers, between the two people
+  discussing it.</p>
+</div>
+
+<h3>Rules 1 and 3 are one rule seen from two ends</h3>
+
+<p>Your point that a repair should fix <strong>all</strong> instances rather than the one the previous
+round named is right — and note it <em>is</em> prevention, not detection: it prevents the <em>next</em>
+round's finding.</p>
+
+<p>⭐ <strong>The sharper form:</strong> if you <strong>cannot enumerate</strong> the instances, that is
+the signal to <strong>de-duplicate rather than sweep harder</strong> — because a fact with one owner has
+exactly one instance. <em>Fix every instance</em> is what you do when duplication already exists;
+<em>one owner per fact</em> stops it existing.</p>
+
+<div class="box warn">
+  <span class="lbl">What prevention cannot reach</span>
+  <p>Judging whether work is covered by an existing design is <strong>irreducibly a judgement</strong>,
+  and nothing catches a wrong call <em>before</em> the fact. <strong>So thrashing-as-detection still has
+  to exist.</strong> Prevention shrinks the surface; it does not remove the need for the signal.</p>
+</div>
+
+<h2><span class="n">4</span>The central claim: “upfront” is a relationship, not a schedule</h2>
+
+<p>You remembered the upfront architecture review as refuted but never properly discussed. Both are true,
+and the reason is more interesting than either.</p>
+
+<div class="box bad">
+  <span class="lbl">The contradiction that passed a Phase 1 gate and three review rounds</span>
+  <p>The backfilled spec <strong>rejects</strong>: <em>“More upfront architecture review — would not have
+  caught the verdict path, which was out of scope and untouched when the first review ran; and reviewing
+  everything upfront is waterfall.”</em></p>
+  <p>Its <strong>own Q0 table prescribes</strong>: <code>| moves a seam | an architecture review <strong>before building</strong> |</code></p>
+  <p>Those coexist only under a distinction <strong>nobody ever wrote down.</strong></p>
+</div>
+
+<p>Three timestamps, all 2026-09-23, from <code>git log</code>:</p>
+
+<div class="scroll">
+<table>
+<tr><th>Event</th><th>Time</th><th>Relationship to that review</th></tr>
+<tr><td>the <code>observer-family</code> architecture review filed</td><td><strong>08:34</strong></td><td>its own header: <em>“Armed by THRASHING, on two slices independently”</em> — <strong>reactive</strong></td></tr>
+<tr><td><code>088649a6</code>, the observer-log record work</td><td><strong>11:21</strong></td><td><strong>2h47m later</strong>, built with those findings in hand — <strong>upfront</strong></td></tr>
+<tr><td><code>c3ad7727</code>, the verdict-path side job</td><td><strong>13:53</strong></td><td>2h32m later again — <strong>inherited nothing</strong>; out of scope</td></tr>
+</table>
+</div>
+
+<div class="box ok">
+  <span class="lbl">The same review was reactive for one slice and upfront for another</span>
+  <p><strong>So <em>upfront</em> and <em>reactive</em> are not properties of a review. They are properties
+  of the relationship between a review and a piece of work.</strong></p>
+  <p>That is why the two sentences above could sit in one document, pass a gate and survive three rounds
+  without anyone noticing: <strong>they describe the same instrument from two vantage points.</strong>
+  Nobody was wrong — the vocabulary could not hold the distinction.</p>
+</div>
+
+<p>Four consequences, stated so you can argue with them:</p>
+
+<div class="scroll">
+<table>
+<tr><th></th><th>Consequence</th></tr>
+<tr><td><strong>1</strong></td><td><strong>Architecture review is not a phase.</strong> It is an instrument producing <em>a design in force over a scope</em>. Running it again extends or redraws that scope. The record agrees — <strong>14</strong> exist, including two pairs filed on a single day.</td></tr>
+<tr><td><strong>2</strong></td><td>The question is never <em>“should we review upfront?”</em> but <strong>“is the work I am about to start covered by a design currently in force?”</strong></td></tr>
+<tr><td><strong>3</strong></td><td><strong>The art is judging scope coverage</strong> — irreducibly a judgement, which is why Q0's entry half is yours.</td></tr>
+<tr><td><strong>4</strong></td><td><strong>The science is detecting that the judgement was wrong.</strong> Thrashing is that signal. It fires after the fact — its limitation, and also why it works: <strong>it needs no classifier.</strong></td></tr>
+</table>
+</div>
+
+<h2><span class="n">5</span>The guiding directive</h2>
+
+<p>Your framing: mixing architecture review and review rounds is an <strong>art rather than a science,
+but we need a guiding directive.</strong> Both are trial-and-error correction methods; they differ in the
+<strong>grain</strong> of error they can see, not in kind.</p>
+
+<div class="box acc">
+  <span class="lbl">The directive</span>
+  <p style="font-size:1.05em"><strong>Before starting work, name the design in force over it.<br>
+  If none is, that is the thing to produce first.<br>
+  If you cannot name its scope, you are not covered.</strong></p>
+  <p>⚠ <strong>Deliberately a directive and not a decision tree.</strong> A mechanical classifier for
+  <em>“is this a seam?”</em> does not exist — three hand-kept path lists each scored something dangerous
+  as one-round. The directive asks for what a person can answer and a reader can check: <strong>a name
+  and a scope.</strong></p>
+</div>
+
+<div class="scroll">
+<table>
+<tr><th>Grain of error</th><th>Instrument that sees it</th><th>Why the others cannot</th></tr>
+<tr><td>wrong <strong>composition</strong> — pieces individually correct, wrong as a set</td><td>architecture review</td><td>per-task review only ever sees one change</td></tr>
+<tr><td>wrong <strong>locality</strong> — this function, this value</td><td>the adversarial round</td><td>an architecture review does not read every line</td></tr>
+<tr><td>wrong <strong>surface</strong> — a rule that holds on the cases a reader thinks of</td><td>a corpus run</td><td>six rounds examined ~<strong>7</strong> hand-chosen cases; one corpus run put the rule against <strong>5,287</strong> real calls</td></tr>
+<tr><td>a guard that <strong>cannot fail</strong></td><td>the mutation sweep</td><td>a green suite proves nothing about a hollow falsifier</td></tr>
+</table>
+</div>
+
+<h3>When a finding might have siblings, change instrument — don't run another round</h3>
+
+<p>You said all instances of one class should be found in <strong>one</strong> review, not serially across
+rounds. The honest constraint: a class is usually invisible from a single instance — it becomes visible at
+instance two, which is <em>why</em> rounds discover it serially.</p>
+
+<div class="box ok">
+  <span class="lbl">But that argues for a different instrument, not for reviewing harder</span>
+  <p>Measured: a corpus run examined <strong>5,287</strong> real calls where six review rounds had examined
+  ~<strong>7</strong> hand-picked cases. So <em>“find them all in one pass”</em> is reachable — by switching
+  instrument.</p>
+  <p style="font-size:1.03em"><strong>When a finding looks like it may have siblings, the next step is a
+  CORPUS RUN, not round N+1.</strong></p>
+</div>
+
+<p>⚠ <strong>And consolidation is not missing either — it arrives late by construction.</strong>
+<em>“The three Blockings are not three mistakes; they are one mechanism defect”</em> is an architecture
+review doing exactly the N-to-1 consolidation you describe. The defect is that it is <strong>convened only
+on thrashing</strong> — after N rounds have already been paid for.</p>
+
+<h2><span class="n">6</span>Where the research actually stands</h2>
+
+<div class="scroll">
+<table>
+<tr><th>Claim</th><th>Evidence today</th></tr>
+<tr><td>rework, not the sweep, is the largest cost</td><td>✅ measured — one branch</td></tr>
+<tr><td>⭐ <strong>rework is caused by hand-maintained prose, not by review process</strong></td><td>✅ <strong>the strongest claim here — 16 of 19, and 0 in tested code</strong></td></tr>
+<tr><td>designed work converges faster than un-designed</td><td>⛔ <strong>n = 0 — and the prior n=1 was WRONG</strong> (see below)</td></tr>
+<tr><td><em>upfront</em> and <em>reactive</em> are relationships</td><td>✅ measured — three timestamps</td></tr>
+<tr><td>the four signals identify seam problems</td><td>⚠ one labelled positive, <strong>never tested for false positives</strong></td></tr>
+<tr><td>an upfront review <strong>for seam work only</strong> pays for itself</td><td>❌ <strong>not measured at all</strong></td></tr>
+</table>
+</div>
+
+<div class="box bad">
+  <span class="lbl">The load-bearing claim has no evidence, and the spec says so</span>
+  <p>The bottom row <em>is</em> your instinct, and it is unmeasured. <strong>That is what calibration must
+  actually measure</strong> — not merely <em>“do the signals fire on thrashing”</em> but <strong>“would an
+  earlier instrument decision have changed the outcome.”</strong></p>
+  <p>⚠ <strong>And one number in the spec is labelled a lead rather than a measurement.</strong> I nearly
+  told you <em>“11 of 14 reviews were reactive.”</em> I won't: checking the one case whose answer I knew
+  showed the classifier was a keyword grep that cannot distinguish a review <em>convened by</em> thrashing
+  from one <em>discussing</em> it. The three timestamps are measured; the ratio is not.</p>
+</div>
+
+<div class="box bad">
+  <span class="lbl">The one piece of evidence we thought we had is false</span>
+  <p>The experiment's <em>designed</em> arm is commit <code>088649a6</code>, branch
+  <code>origin/observer-log-owner</code> — mapping confirmed. Its owner records
+  <strong>“CONVERGED by round 3.”</strong> The round documents carry <strong>r1–r5</strong>, and the
+  <code>Verdict</code> sections say <strong>r4: NOT CONVERGED</strong> and <strong>r5: NOT CONVERGED</strong>
+  (0 Blocking, 1 High, 4 Medium, 1 Low).</p>
+  <p>So on round count the designed arm did <strong>worse</strong> than the un-designed arm's claimed
+  “thrashed 3 rounds” — and the un-designed arm has <strong>no review stem at all.</strong> Both claims
+  are unsupported: one contradicted, one untraceable.</p>
+  <p>⚠ <strong>Narrowly:</strong> what is verified is that <code>observer-log-owner</code> reached r5 not
+  converged. Whether §4 meant something weaker — that the review's own findings closed by r3 — is not
+  established, and the table does not say it.</p>
+</div>
+
+<h3>🔬 Future experiment — deliberately deferred</h3>
+
+<p><strong>Hypothesis:</strong> an architecture review held <em>before</em> building work that moves a
+seam reduces total rework, in some identifiable class of cases.</p>
+
+<div class="box warn">
+  <span class="lbl">The existing corpus cannot answer it — and that is about how the data was recorded</span>
+  <p>Rounds-before vs rounds-after, across the 38 subjects reaching r4+, returned
+  <code>BEFORE=0, AFTER=n</code> for almost every one — because round documents are committed in
+  <strong>batches</strong>. All ten <code>observer-log-owner</code> documents share the timestamp
+  <code>2026-09-23 19:39:01</code>. Neither dates nor commit times can order rounds against a review.</p>
+</div>
+
+<div class="scroll">
+<table>
+<tr><th>The experiment requires</th><th>Because</th></tr>
+<tr><td><strong>pre-register the metric and the subject↔work mapping before the work starts</strong></td><td>both arms of the existing experiment are untraceable after the fact</td></tr>
+<tr><td><strong>record a timestamp per round as it happens</strong>, not at commit time</td><td>batched commits destroyed the ordering</td></tr>
+<tr><td><strong>compare WITHIN a thrashing subject</strong> — rounds before vs after its own review</td><td>reviews are convened <em>because</em> of thrashing, so comparing across subjects is biased against them</td></tr>
+</table>
+</div>
+
+<p>⚠ <strong>Until it runs, the architecture claim is an instinct with a mechanism and no evidence.</strong>
+§3's prevention rules do not depend on it — they stand on 16-of-19 — so this deferral blocks nothing.</p>
+
+<h2><span class="n">7</span>What I need from you next</h2>
+
+<div class="box warn">
+  <span class="lbl">Three places I expect you to push back, and would rather you did</span>
+  <p><strong>1 · Is the directive enough?</strong> It asks for a name and a scope and nothing enforces it.
+  Backlog #184 records the sibling failure — a script with no caller is reached only by remembering to
+  open the document that names it. A directive nobody is prompted to follow may be the same shape.</p>
+  <p><strong>2 · Is <em>n = 1</em> acceptable to design on?</strong> One controlled pair supports the whole
+  architecture claim. The alternative is a retrospective corpus run over finished branches first — which
+  is calibration, and it is small.</p>
+  <p><strong>3 · Does the boundary hold?</strong> Read the table in §1 and tell me whether anything here
+  belongs in a component spec instead. That is the failure mode I am least able to see in my own writing.</p>
+</div>
+
+</div>
+
+<script>
+(function(){
+  var c = document.getElementById('modechip');
+  if (!c) return;
+  var live = location.protocol === 'http:' || location.protocol === 'https:';
+  c.textContent = live ? '● live — Send works' : '○ local file — Send disabled';
+})();
+</script>
+
+<div class="chrome"><span class="chrome-when">generated <time>2026-09-26 17:57 · d838a2f7</time></span></div>
+
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>

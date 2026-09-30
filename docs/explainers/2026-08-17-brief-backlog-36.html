@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brief — backlog #36, 17 Aug 2026</title>
+
+
+<style>:root{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#8a857c; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#8a857c; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}}
+:root[data-theme="dark"]{
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+/* SIZE carries hierarchy. Headings are LIGHTER than body-bold, not heavier. */
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h)}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+/* BOLD IS A LABEL, NOT A SHOUT — weight only, a neutral tone, never a hue */
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+/* TERMINAL TEXTURE — inline code is a raised pill, and it carries the visual variety */
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em;white-space:nowrap}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+:root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); --rule: var(--rule, #d3d9e2); }
+
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{display:inline-block;font-family:var(--mono);font-size:.72rem;padding:.1em .5em;
+          border-radius:99px;border:1px solid var(--structure-br);margin-left:.4em}
+/* ---- ask tray ---- */
+.askbtn{position:absolute;font-family:var(--sans);font-size:.68rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:.06em;border:1px solid var(--structure-br);
+  background:var(--structure-bg);color:var(--structure);border-radius:99px;padding:.18em .6em;
+  cursor:pointer;z-index:40}
+#tray{position:fixed;right:0;bottom:0;left:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.9rem 1rem calc(.9rem + env(safe-area-inset-bottom));z-index:60;display:none;
+  box-shadow:0 -8px 26px rgba(0,0,0,.16)}
+#tray.on{display:block}
+#tray .inner{max-width:52rem;margin:0 auto}
+#tray .qt{font-family:var(--sans);font-size:.72rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#tray .qt b{color:var(--fg2)}
+#tray .row{display:flex;gap:.5rem;align-items:flex-start;flex-wrap:wrap}
+#qbox{flex:1 1 16rem;min-width:0;font-family:var(--sans);font-size:.9rem;padding:.5rem .65rem;
+  border:1px solid var(--rule);border-radius:8px;background:var(--bg);color:var(--fg);resize:vertical;min-height:2.6rem}
+#tray button.act{flex:0 0 auto;font-family:var(--sans);font-size:.82rem;font-weight:650;padding:.5rem 1rem;
+  border-radius:8px;border:1px solid var(--structure);background:var(--structure);color:#fff;cursor:pointer}
+#tray button.sec{flex:0 0 auto;font-family:var(--sans);font-size:.82rem;padding:.5rem .8rem;border-radius:8px;
+  border:1px solid var(--rule);background:var(--bg2);color:var(--fg2);cursor:pointer}
+#sentnote{font-family:var(--sans);font-size:.76rem;margin-top:.5rem;min-height:1.1em;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Backlog #36 &middot; cloud blob key encoding &middot; brief of 17 Aug 2026, 14:48 PDT</div>
+    <h1>Five review rounds found 103 defects.<br>One of them was about the design.</h1>
+    <p class="dek">The plan to fix “a Korean title destroys a paid summary” has not converged in five
+      adversarial rounds. Phase 6 ran instead of a sixth and found that most of the plan does not fix
+      the bug — and that the reviews have been auditing prose, not code.</p>
+    <div class="stamp">A decision is waiting on you — nothing committed toward it</div>
+  </header>
+
+  <section>
+    <h2>Where it stands</h2>
+    <div class="stats">
+      <div class="stat is-alarm"><b class="num">5</b><span>review rounds, <strong>none converged</strong>. A Blocking appeared in every one.</span></div>
+      <div class="stat is-alarm"><b class="num">60%</b><span>of round 5’s findings were defects created by round 4’s own fixes.</span></div>
+      <div class="stat is-accent"><b class="num">1</b><span>design finding in five rounds — and it was round&nbsp;1.</span></div>
+      <div class="stat"><b class="num">0</b><span>of 16 tasks implemented. Zero source files touched today.</span></div>
+      <div class="stat is-warn"><b class="num">11</b><span>commits since the roadmap was last updated. It does not know about any of this.</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>The defect class shifted, and never shifted back</h2>
+    <p class="lede">Each bar is one round, width scaled by total findings. Substance —
+      <span style="color:var(--alarm);font-weight:600">logic</span> and
+      <span style="color:var(--accent);font-weight:600">design</span> — disappears after round 2.
+      What remains is <span style="color:var(--noise);font-weight:600">transcription</span>:
+      identifiers that don’t resolve, citations off by a few lines, counts that contradict their own
+      itemisation. The figure on the right is the share of that round’s findings that were defects
+      <em>introduced by the previous round’s fixes</em>.</p>
+
+    <div class="chart">
+      <div class="rows">
+        <div class="row">
+          <div class="lbl">Round <em>1</em></div>
+          <div class="bar" role="img" aria-label="Round 1, 25 findings: 1 design, 8 logic, 7 test-efficacy, 5 transcription, 4 process. None fix-induced.">
+            <i class="seg-design" style="width:3.0%"></i><i class="seg-logic" style="width:24.2%"></i><i class="seg-test" style="width:21.2%"></i><i class="seg-trans" style="width:15.2%"></i><i class="seg-proc" style="width:12.1%"></i>
+          </div>
+          <div class="tail"><span class="num">25</span> found</div>
+        </div>
+        <div class="row">
+          <div class="lbl">Round <em>2</em></div>
+          <div class="bar" role="img" aria-label="Round 2, 33 findings: 9 logic, 10 test-efficacy, 12 transcription, 2 process. 24 percent fix-induced.">
+            <i class="seg-logic" style="width:27.3%"></i><i class="seg-test" style="width:30.3%"></i><i class="seg-trans" style="width:36.4%"></i><i class="seg-proc" style="width:6.1%"></i>
+          </div>
+          <div class="tail"><span class="num">33</span> · <b>24%</b></div>
+        </div>
+        <div class="row">
+          <div class="lbl">Round <em>3</em></div>
+          <div class="bar" role="img" aria-label="Round 3, 17 findings: no logic, 2 test-efficacy, 14 transcription, 1 process. 35 percent fix-induced.">
+            <i class="seg-test" style="width:6.1%"></i><i class="seg-trans" style="width:42.4%"></i><i class="seg-proc" style="width:3.0%"></i>
+          </div>
+          <div class="tail"><span class="num">17</span> · <b>35%</b></div>
+        </div>
+        <div class="row">
+          <div class="lbl">Round <em>4</em></div>
+          <div class="bar" role="img" aria-label="Round 4, 12 findings: no logic, 1 test-efficacy, 9 transcription, 2 cross-task. 42 percent fix-induced.">
+            <i class="seg-test" style="width:3.0%"></i><i class="seg-trans" style="width:27.3%"></i><i class="seg-cross" style="width:6.1%"></i>
+          </div>
+          <div class="tail"><span class="num">12</span> · <b>42%</b></div>
+        </div>
+        <div class="row">
+          <div class="lbl">Round <em>5</em></div>
+          <div class="bar" role="img" aria-label="Round 5, 10 findings: 1 logic, 2 test-efficacy, 5 transcription, 2 cross-task. 60 percent fix-induced.">
+            <i class="seg-logic" style="width:3.0%"></i><i class="seg-test" style="width:6.1%"></i><i class="seg-trans" style="width:15.2%"></i><i class="seg-cross" style="width:6.1%"></i>
+          </div>
+          <div class="tail"><span class="num">10</span> · <b>60%</b></div>
+        </div>
+      </div>
+      <div class="legend">
+        <span><i class="seg-design"></i>Design — 1 total</span>
+        <span><i class="seg-logic"></i>Logic — 18</span>
+        <span><i class="seg-test"></i>Test efficacy — 22</span>
+        <span><i class="seg-trans"></i>Transcription — 45</span>
+        <span><i class="seg-cross"></i>Cross-task — 4</span>
+        <span><i class="seg-proc"></i>Process — 7</span>
+      </div>
+    </div>
+
+    <div class="callout is-alarm">
+      <h3>Why the fixes keep failing</h3>
+      <p>The plan is a <strong>3,905-line markdown document, 57% of it inside code fences</strong> —
+        1,581 lines of TypeScript across 26 test-shaped blocks. That code is never compiled, never
+        run, never import-resolved. Each fix is hand-typed into prose, which is a fresh chance to
+        mistype. Hence 60%.</p>
+      <p>The clinching exhibit: round 5’s Blocking was a class missing an interface member — a
+        <code>TS2420</code>. The plan’s own rules require <code>tsc --noEmit</code> on every task.
+        <strong>A whole round was spent on a defect the plan itself assigns to the compiler</strong>,
+        possible only because the code lives in a file that isn’t a file.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>The finding that changes the scope</h2>
+    <blockquote>
+      Korean <strong>already passes</strong> the current allowlist, because Hangul is <code>\p{L}</code>.
+      The Korean case is fixed by the <strong>encoder</strong>; the guard fixes a different, adjacent set.
+      <cite>The approved spec, §3.4 — written 14 Aug, three days before anyone acted on it</cite>
+    </blockquote>
+    <p class="lede">Verified independently rather than taken on the spec’s word: the shipped serve
+      guard accepts the exact failing key <code>003_돈-버는-…-다이제스트.md</code> (38 code points).
+      The failure is the Storage upload, which throws before anything is persisted — so production
+      holds no corrupt rows and needs no migration. A re-ingest self-heals.</p>
+    <div class="tblwrap">
+      <table>
+        <thead><tr><th>Seam</th><th>Fixes #36?</th><th>What it actually guards</th></tr></thead>
+        <tbody>
+          <tr><td>Segment encoder at the blob seam</td><td class="who" style="color:var(--good);font-weight:600">YES — the fix</td><td>One file. Encodes logical → physical keys where the Korean name reaches Storage unchanged.</td></tr>
+          <tr><td>Servability predicate</td><td class="who none">no</td><td>NFD Latin, spaces, emoji — not Hangul.</td></tr>
+          <tr><td>Metadata seam</td><td class="who none">no</td><td>One enforcement point instead of three. Structural value, not this bug.</td></tr>
+          <tr><td>Share / mint / adopt guards</td><td class="who none">no</td><td>Pre-existing gaps, reachable only via hand-renamed vault files.</td></tr>
+          <tr><td>Sync reconciliation</td><td class="who none">no</td><td>Real latent defect; a Korean title never reaches it.</td></tr>
+          <tr><td>Envelope schema · <code>promoteIfAbsent</code></td><td class="who none">no</td><td>Namespace ownership and APFS aliasing. Orthogonal.</td></tr>
+          <tr><td><code>companionTransfer</code></td><td class="who machine">no — but fix it</td><td>Deletes another video’s <em>paid</em> model today, measured. Deserves its own slice.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+    <div class="callout is-warn">
+      <h3>Asked from this page — “what bug is this finding relevant in fixing?”</h3>
+      <p><strong>The encoder fixes backlog #36.</strong> The other twelve tasks fix a class that is
+        <em>filed as a bug nowhere</em> — searching <code>docs/backlog.md</code> for
+        <em>unservable</em>, <em>hand-renamed</em> or <em>orphan-adopt</em> returns only #17 (a
+        different, real bug) and #36 itself. There is no recorded incident.</p>
+      <p><strong>What the guard class actually is.</strong> A key Supabase Storage will happily
+        <em>store</em> but the serve path will not <em>serve</em>: a slash
+        (<code>nested/evil.md</code>), <code>..</code>, a control or bidi character, over 131 code
+        points. The serve guard
+        (<code>assert-cloud-summary-md-key.ts:14</code>) allows no slashes, so such a row 409s —
+        the paid summary exists and cannot be displayed.</p>
+      <p><strong>Where such a name could come from — and it is not the app.</strong> Measured:
+        <em>zero</em> <code>slugify</code> outputs fail the predicate, across the whole code-point
+        space. The only entry point is <code>recoverOrphanedVideos</code>
+        (<code>lib/pipeline.ts:129</code>), which does <code>fs.readdirSync(outputFolder)</code> and
+        adopts on-disk filenames <strong>verbatim</strong>. So it takes a human placing or renaming
+        a file in their own vault, which sync then adopts.</p>
+      <p><strong>Why this argues for the split rather than against it.</strong> That route is open on
+        <code>master</code> today and the encoder neither opens nor widens it. Twelve tasks are
+        currently gating a launch blocker in order to harden a path no user has walked. As its own
+        backlog item it can be prioritised honestly against everything else; welded to #36 it can
+        only be prioritised as “urgent”.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What is blocked, and on what</h2>
+    <div class="tblwrap">
+      <table>
+        <thead><tr><th>Item</th><th>Blocked on</th><th>Since</th><th>Note</th></tr></thead>
+        <tbody>
+          <tr><td>Scope decision — PR 1</td><td class="who person">you</td><td class="who">17 Aug, 12:52</td><td>Everything below waits on this.</td></tr>
+          <tr><td>Implementation, all 16 tasks</td><td class="who machine">plan gate (armed)</td><td class="who">15 Aug</td><td>Correctly blocked — the gate clears on convergence, which has not happened.</td></tr>
+          <tr><td>Roadmap update</td><td class="who person">the decision</td><td class="who">16 Aug</td><td>11 commits stale. Writing it now would record a scope that may change.</td></tr>
+          <tr><td>Backlog #48 — <code>/loop</code> trial</td><td class="who person">you</td><td class="who">17 Aug</td><td>A trigger for unattended work. Needs one real trial to decide.</td></tr>
+          <tr><td>Backlog #49, #50 — the two scripts</td><td class="who none">not started</td><td class="who">17 Aug</td><td>Harness work, deliberately behind the launch blocker.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout is-warn">
+      <h3>Reconciliation finding — the roadmap disagrees with git</h3>
+      <p><code>docs/roadmap-to-launch.md</code> was last updated at <strong>plan review round 3</strong>
+        and there have been <strong>11 commits since</strong>. It contains no mention of the scope
+        finding — searching it for <em>“encoder alone”</em> returns nothing. Checkboxes are a claim;
+        git is the truth, and right now they differ.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>The decision waiting on you</h2>
+    <div class="verdict">
+      <h3>Ship the encoder as its own PR. Take the other twelve tasks off the launch path.</h3>
+      <div class="tasks">
+        <b>T1 encoder</b><b>T2 blob seam</b><b>T14 e2e proof</b><b>T15 ADR</b>
+        <s>T0</s><s>T3</s><s>T4</s><s>T5</s><s>T6</s><s>T7</s><s>T8</s><s>T9</s><s>T10</s><s>T11</s><s>T12</s><s>T13</s>
+      </div>
+      <div class="scales">
+        <div class="pan pro">
+          <h4>For</h4>
+          <p>Four of sixteen tasks, touching one file. It is the only part that fixes the bug, and the
+            part with the strongest evidence already on disk — both tasks were written, executed and
+            run. It depends on none of the material that produced five non-converging rounds.</p>
+        </div>
+        <div class="pan">
+          <h4>Against — the strongest version</h4>
+          <p>It splits a design that eighteen spec rounds reasoned about as a whole. The encoder makes
+            previously-impossible keys <em>writable</em> while the guards deciding which keys are
+            <em>servable</em> stay unshipped — and adopting a hand-renamed vault file remains a live
+            route to an unservable cloud key.</p>
+          <p><strong>The answer:</strong> that route is open on <code>master</code> today; the encoder
+            neither opens nor widens it. Deferring an already-absent guard is the status quo, now
+            written down — different from carrying twelve unconverged tasks onto the launch path.</p>
+        </div>
+      </div>
+    </div>
+    <h3 style="margin-top:34px">Two things to fold in either way — explained</h3>
+    <p class="lede">These hold whichever way the decision goes. Neither is large; both are the kind
+      of thing that is invisible until it costs something.</p>
+
+    <div class="callout">
+      <h3>1 &middot; Re-run the production gate when this merges</h3>
+      <p><strong>The claim.</strong> Shipping the encoder requires <em>no migration</em> — nothing
+        already sitting in cloud storage has to be renamed. That is what makes this a cheap,
+        forward-only change instead of a data-rewriting one.</p>
+      <p><strong>Why it is true.</strong> The encoder only rewrites a name containing a character
+        outside its safe set. Five such characters are ones Supabase Storage happily accepts:
+        <strong>space, <code>(</code>, <code>)</code>, <code>+</code>, <code>=</code></strong>. So
+        the claim holds exactly when no existing object name uses one. It was checked against
+        production on <strong>14 August</strong>, read-only: 19 objects, zero affected, exit 0.</p>
+      <p><strong>Why that is not enough.</strong> That is a fact about the bucket <em>on that day</em>,
+        not a standing property — the spec itself says so. Every ingest since then has added objects
+        nobody re-checked. If one carries a space or a bracket, the encoder computes a
+        <em>different</em> physical key for an object that already exists, and the summary behind it
+        becomes unreachable. <strong>Verified: no step in the plan re-runs the query</strong> — zero
+        occurrences of <code>psql</code>, <code>claude_ro</code> or <code>supabase&nbsp;db</code>.
+        (<code>check-encoder-gate-sql.py</code> compares the spec's SQL to the encoder; it never
+        touches the bucket.)</p>
+      <p><strong>The fix.</strong> Re-run that same read-only query as part of merging. One line. It
+        turns “we checked once” into a gate that can still fail — which is the only kind worth
+        having.</p>
+    </div>
+
+    <div class="callout">
+      <h3>2 &middot; Rescue one rule before it dies with the plan</h3>
+      <p><strong>The rule.</strong> Adopted mid-slice, after round 2, and stated at the top of the
+        plan: <em>every code snippet is either <strong>executed and verified</strong>, or it is the
+        <strong>current code quoted verbatim</strong> plus a precise statement of the change.</em>
+        Nothing invented, nothing untested, no snippet that merely looks plausible.</p>
+      <p><strong>Why it was worth adopting.</strong> Rounds 1 and 2 produced four invented
+        identifiers — names that appeared in the plan and nowhere in the codebase. The rule is the
+        method change that answered them, and the plan's 33 <em>EXECUTED</em> markers are what it
+        looks like when followed.</p>
+      <p><strong>Where it lives: nowhere durable.</strong> Checked all five process documents —
+        <code>dev-process.md</code>, <code>process-checklists.md</code>, <code>review-method.md</code>,
+        <code>process-rationale.md</code>, <code>portable-practices.md</code>. <strong>Zero hits in
+        every one.</strong> It exists at line 24 of a plan document that is currently being proposed
+        for the shelf.</p>
+      <p><strong>Why that matters here specifically.</strong> This project has two deliverables — the
+        product, and the reusable harness. This is harness material of the first order, produced by
+        the most expensive slice yet, and it is one <code>git rm</code> away from being lost. Moving
+        it costs a paragraph.</p>
+    </div>
+  </section>
+
+  <footer>
+    <span class="eyebrow">Ground truth — every figure below was read by command at 14:48 PDT, 17 Aug 2026</span>
+    <dl class="facts">
+      <div><dt>HEAD</dt><dd>b4f8cd9</dd></div>
+      <div><dt>Branch</dt><dd>fix/cloud-blob-key-encoding</dd></div>
+      <div><dt>Working tree</dt><dd class="ok">clean</dd></div>
+      <div><dt>Ahead of master</dt><dd>84 commits</dd></div>
+      <div><dt>Plan gate</dt><dd class="hot">ARMED</dd></div>
+      <div><dt>Ratchets</dt><dd class="ok">4 / 4 exit 0</dd></div>
+      <div><dt>Plan</dt><dd>3,905 lines</dd></div>
+      <div><dt>Spec</dt><dd>2,025 lines · v21 closed</dd></div>
+      <div><dt>Review files</dt><dd>11 on disk</dd></div>
+      <div><dt>Today’s diff</dt><dd>1,909 + / 40 − · 10 files</dd></div>
+      <div><dt>Source files today</dt><dd class="ok">0</dd></div>
+      <div><dt>Tasks implemented</dt><dd class="hot">0 of 16</dd></div>
+    </dl>
+  </footer>
+
+</div>
+
+
+<div id="tray" role="dialog" aria-label="Ask a question">
+  <div class="inner">
+    <div class="qt" id="qt"></div>
+    <div class="row">
+      <textarea id="qbox" placeholder="Type your question, then press Send (or ⌘/Ctrl+Enter)…" rows="2"></textarea>
+      <button class="act" id="sendbtn" type="button">Send</button>
+      <button class="sec" id="closebtn" type="button">Close</button>
+    </div>
+    <div id="sentnote" aria-live="polite"></div>
+  </div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>
+
+</body>
+</html>

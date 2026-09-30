@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PR #97 — the guard that was skipped when it mattered</title>
+<style>
+:root{
+  --bg:#fcfbf9;--panel:#fff;--ink:#191817;--ink2:#4a4640;--ink3:#7d766c;--rule:#e6e1d8;--rule2:#d3ccbf;
+  --amber:#b26a12;--amber-bg:#fdf3e3;--amber-br:#f0d5a8;
+  --teal:#0f6f5c;--teal-bg:#e8f6f2;--teal-br:#a9ddd0;
+  --crim:#b02a37;--crim-bg:#fdeef0;--crim-br:#f3c2c8;
+  --indigo:#3f4fa8;--indigo-bg:#eef0fc;--indigo-br:#c3caf2;
+  --violet:#7a3f9d;--violet-bg:#f7eefc;--violet-br:#e0c4f0;
+  --code-bg:#f6f3ed;--code-br:#e6e1d8;
+  --c-key:#a03c8a;--c-str:#0f6f5c;--c-com:#96907f;--c-fn:#3f4fa8;--c-num:#b26a12;--c-typ:#0d6b8a;
+  --shadow:0 1px 3px rgba(60,50,30,.07),0 6px 18px rgba(60,50,30,.05);
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#131318;--panel:#1b1b22;--ink:#eceaf2;--ink2:#b9b4c2;--ink3:#8a8496;--rule:#2e2d38;--rule2:#413f4e;
+  --amber:#e8a860;--amber-bg:#2a2015;--amber-br:#4d3a1e;
+  --teal:#5cc7ab;--teal-bg:#12241f;--teal-br:#1e463b;
+  --crim:#f08c96;--crim-bg:#2a1519;--crim-br:#4e2229;
+  --indigo:#98a5f5;--indigo-bg:#191c33;--indigo-br:#2e3560;
+  --violet:#c99bea;--violet-bg:#241734;--violet-br:#412a5c;
+  --code-bg:#1e1e26;--code-br:#2e2d38;
+  --c-key:#e08ccd;--c-str:#7fd6b8;--c-com:#726c80;--c-fn:#98a5f5;--c-num:#e8a860;--c-typ:#6cc4e0;
+  --shadow:none;
+}}
+:root[data-theme="dark"]{
+  --bg:#131318;--panel:#1b1b22;--ink:#eceaf2;--ink2:#b9b4c2;--ink3:#8a8496;--rule:#2e2d38;--rule2:#413f4e;
+  --amber:#e8a860;--amber-bg:#2a2015;--amber-br:#4d3a1e;
+  --teal:#5cc7ab;--teal-bg:#12241f;--teal-br:#1e463b;
+  --crim:#f08c96;--crim-bg:#2a1519;--crim-br:#4e2229;
+  --indigo:#98a5f5;--indigo-bg:#191c33;--indigo-br:#2e3560;
+  --violet:#c99bea;--violet-bg:#241734;--violet-br:#412a5c;
+  --code-bg:#1e1e26;--code-br:#2e2d38;
+  --c-key:#e08ccd;--c-str:#7fd6b8;--c-com:#726c80;--c-fn:#98a5f5;--c-num:#e8a860;--c-typ:#6cc4e0;
+  --shadow:none;
+}
+:root[data-theme="light"]{
+  --bg:#fcfbf9;--panel:#fff;--ink:#191817;--ink2:#4a4640;--ink3:#7d766c;--rule:#e6e1d8;--rule2:#d3ccbf;
+  --amber:#b26a12;--amber-bg:#fdf3e3;--amber-br:#f0d5a8;
+  --teal:#0f6f5c;--teal-bg:#e8f6f2;--teal-br:#a9ddd0;
+  --crim:#b02a37;--crim-bg:#fdeef0;--crim-br:#f3c2c8;
+  --indigo:#3f4fa8;--indigo-bg:#eef0fc;--indigo-br:#c3caf2;
+  --violet:#7a3f9d;--violet-bg:#f7eefc;--violet-br:#e0c4f0;
+  --code-bg:#f6f3ed;--code-br:#e6e1d8;
+  --c-key:#a03c8a;--c-str:#0f6f5c;--c-com:#96907f;--c-fn:#3f4fa8;--c-num:#b26a12;--c-typ:#0d6b8a;
+  --shadow:0 1px 3px rgba(60,50,30,.07),0 6px 18px rgba(60,50,30,.05);
+}
+*{box-sizing:border-box} html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:400 17.5px/1.68 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;-webkit-text-size-adjust:100%}
+.wrap{max-width:50rem;margin:0 auto;padding:2rem 1.25rem 6rem}
+.mast{border:1px solid var(--rule);border-radius:14px;background:var(--panel);box-shadow:var(--shadow);
+  padding:1.6rem 1.5rem;margin-bottom:1.6rem;background-image:linear-gradient(180deg,var(--crim-bg),transparent 42%)}
+.eyebrow{font-family:ui-monospace,Menlo,monospace;font-size:.7rem;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--crim);font-weight:700;margin:0 0 .55rem}
+h1{font-size:2.3rem;line-height:1.12;margin:0 0 .5rem;letter-spacing:-.022em;font-weight:600}
+.dek{color:var(--ink2);font-size:1.06rem;margin:0;line-height:1.55}
+.meta{margin-top:1.2rem;padding-top:1rem;border-top:1px dashed var(--rule2);display:grid;
+  grid-template-columns:max-content 1fr;gap:.32rem 1.1rem;font-family:ui-monospace,Menlo,monospace;
+  font-size:.745rem;line-height:1.5}
+.meta dt{color:var(--ink3);white-space:nowrap} .meta dd{margin:0;color:var(--ink2)} .meta dd b{color:var(--ink)}
+.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(8.2rem,1fr));gap:.6rem;margin:0 0 1.6rem}
+.stat{border:1px solid var(--rule);border-radius:10px;background:var(--panel);padding:.7rem .8rem;box-shadow:var(--shadow)}
+.stat .v{font-family:ui-monospace,monospace;font-size:1.32rem;font-weight:700;line-height:1.1;letter-spacing:-.02em}
+.stat .l{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.665rem;text-transform:uppercase;
+  letter-spacing:.075em;color:var(--ink3);margin-top:.24rem;line-height:1.35}
+.stat.a .v{color:var(--amber)} .stat.t .v{color:var(--teal)} .stat.c .v{color:var(--crim)}
+.stat.i .v{color:var(--indigo)} .stat.v2 .v{color:var(--violet)}
+.howto{border:1px solid var(--violet-br);background:var(--violet-bg);border-radius:11px;padding:.8rem 1rem;
+  margin:0 0 2rem;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.82rem;line-height:1.55;color:var(--ink2)}
+.howto b{color:var(--violet)}
+.howto .u{display:block;font-family:ui-monospace,monospace;font-size:.9rem;font-weight:700;color:var(--violet);
+  background:var(--panel);border:1px solid var(--violet-br);border-radius:7px;padding:.45rem .65rem;margin:.5rem 0;word-break:break-all}
+.howto code{background:var(--panel);border:1px solid var(--violet-br);padding:.06em .34em;border-radius:4px;font-size:.88em}
+.howto ol{margin:.4rem 0 0;padding-left:1.2rem} .howto li{margin:.22rem 0}
+.howto .mode{font-family:ui-monospace,monospace;font-size:.68rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.07em;padding:.1rem .4rem;border-radius:5px;border:1px solid}
+.howto .mode.live{color:var(--teal);background:var(--teal-bg);border-color:var(--teal-br)}
+.howto .mode.flat{color:var(--amber);background:var(--amber-bg);border-color:var(--amber-br)}
+nav.toc{border:1px solid var(--rule);border-left:4px solid var(--indigo);border-radius:0 12px 12px 0;
+  background:var(--panel);padding:1rem 1.2rem;margin:0 0 2.6rem;box-shadow:var(--shadow)}
+nav.toc .h{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.665rem;text-transform:uppercase;
+  letter-spacing:.1em;color:var(--indigo);font-weight:700;margin-bottom:.55rem}
+nav.toc ol{margin:0;padding-left:0;list-style:none;counter-reset:t;font-size:.94rem}
+nav.toc li{counter-increment:t;margin:.32rem 0;padding-left:2rem;position:relative}
+nav.toc li::before{content:counter(t);position:absolute;left:0;top:.12rem;font-family:ui-monospace,monospace;
+  font-size:.7rem;font-weight:700;color:var(--indigo);background:var(--indigo-bg);border:1px solid var(--indigo-br);
+  border-radius:5px;width:1.35rem;height:1.35rem;display:flex;align-items:center;justify-content:center}
+nav.toc a{color:var(--ink);text-decoration:none;border-bottom:1px solid transparent}
+nav.toc a:hover{border-bottom-color:var(--indigo)}
+h2{font-size:1.5rem;line-height:1.25;margin:3.4rem 0 1rem;letter-spacing:-.017em;font-weight:600;
+  padding-bottom:.45rem;border-bottom:2px solid var(--rule)}
+h2 .num{display:inline-block;font-family:ui-monospace,monospace;font-size:.82rem;font-weight:700;color:var(--crim);
+  background:var(--crim-bg);border:1px solid var(--crim-br);border-radius:6px;padding:.1rem .45rem;margin-right:.55rem;vertical-align:.16em}
+h3{font-size:1.14rem;margin:2.1rem 0 .6rem;font-weight:600;letter-spacing:-.008em}
+h4{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.79rem;text-transform:uppercase;letter-spacing:.075em;
+  color:var(--ink3);margin:1.6rem 0 .5rem;font-weight:700}
+p{margin:0 0 1.05rem} a{color:var(--amber)} ul,ol{margin:0 0 1.1rem;padding-left:1.35rem} li{margin:.34rem 0}
+code,kbd{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+p code,li code,td code,dd code{font-size:.845em;background:var(--code-bg);border:1px solid var(--code-br);
+  padding:.06em .34em;border-radius:4px;color:var(--ink)}
+.codewrap{margin:0 0 1.35rem;border:1px solid var(--code-br);border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
+.codehead{font-family:ui-monospace,monospace;font-size:.685rem;color:var(--ink3);background:var(--code-bg);
+  padding:.42rem .85rem;border-bottom:1px solid var(--code-br);display:flex;justify-content:space-between;gap:1rem;align-items:center}
+.codehead .tag{font-weight:700;letter-spacing:.05em;text-transform:uppercase;font-size:.63rem;white-space:nowrap}
+.tag.new{color:var(--teal)} .tag.del{color:var(--crim)} .tag.un{color:var(--ink3)} .tag.aft{color:var(--amber)}
+pre{background:var(--code-bg);padding:.9rem 1rem;overflow-x:auto;white-space:pre;margin:0;-webkit-overflow-scrolling:touch}
+pre code{white-space:pre;font-size:.808rem;line-height:1.62;display:block;background:none;border:0;padding:0}
+.k{color:var(--c-key);font-weight:600} .s{color:var(--c-str)} .c{color:var(--c-com);font-style:italic}
+.f{color:var(--c-fn)} .n{color:var(--c-num)} .t{color:var(--c-typ)} .m{color:var(--ink3)}
+.hi{background:var(--amber-bg);display:inline-block;width:100%;box-shadow:inset 3px 0 0 var(--amber)}
+.hid{background:var(--crim-bg);display:inline-block;width:100%;box-shadow:inset 3px 0 0 var(--crim)}
+.hig{background:var(--teal-bg);display:inline-block;width:100%;box-shadow:inset 3px 0 0 var(--teal)}
+.call{border:1px solid var(--rule);border-left:4px solid var(--amber);border-radius:0 10px 10px 0;
+  background:var(--amber-bg);padding:.85rem 1.05rem;margin:0 0 1.35rem}
+.call .lab{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.665rem;text-transform:uppercase;
+  letter-spacing:.09em;font-weight:700;color:var(--amber);display:block;margin-bottom:.35rem}
+.call p:last-child{margin-bottom:0}
+.call.bad{border-left-color:var(--crim);background:var(--crim-bg);border-color:var(--crim-br)} .call.bad .lab{color:var(--crim)}
+.call.good{border-left-color:var(--teal);background:var(--teal-bg);border-color:var(--teal-br)} .call.good .lab{color:var(--teal)}
+.call.info{border-left-color:var(--indigo);background:var(--indigo-bg);border-color:var(--indigo-br)} .call.info .lab{color:var(--indigo)}
+.chip{display:inline-block;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.635rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:.06em;padding:.12rem .42rem;border-radius:5px;border:1px solid;vertical-align:.09em;white-space:nowrap}
+.chip.hi2{color:var(--crim);background:var(--crim-bg);border-color:var(--crim-br)}
+.chip.md{color:var(--amber);background:var(--amber-bg);border-color:var(--amber-br)}
+.chip.lo{color:var(--indigo);background:var(--indigo-bg);border-color:var(--indigo-br)}
+.chip.ok{color:var(--teal);background:var(--teal-bg);border-color:var(--teal-br)}
+.chip.adr{color:var(--violet);background:var(--violet-bg);border-color:var(--violet-br);font-family:ui-monospace,monospace}
+figure{margin:0 0 1.7rem}
+figcaption{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.775rem;color:var(--ink3);margin-top:.6rem;
+  line-height:1.5;padding-left:.7rem;border-left:2px solid var(--rule2)}
+/* run ladder */
+.runs{display:flex;flex-direction:column;gap:.45rem;margin:0 0 1.5rem}
+.run{display:grid;grid-template-columns:1fr;border:1px solid var(--rule);border-radius:9px;background:var(--panel);overflow:hidden}
+.run .rh{font-family:ui-monospace,monospace;font-size:.72rem;font-weight:700;padding:.4rem .7rem;
+  border-bottom:1px solid var(--rule);letter-spacing:.03em}
+.run.before .rh{color:var(--crim);background:var(--crim-bg)}
+.run.after  .rh{color:var(--teal);background:var(--teal-bg)}
+.run .rows{font-family:ui-monospace,monospace;font-size:.73rem;padding:.5rem .7rem;line-height:1.75}
+.run .rows .ok{color:var(--teal)} .run .rows .no{color:var(--crim)} .run .rows .sk{color:var(--ink3)}
+.run .verdict{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.78rem;padding:.45rem .7rem;
+  border-top:1px dashed var(--rule2);line-height:1.5}
+.run.before .verdict{color:var(--crim)} .run.after .verdict{color:var(--teal)}
+.tw{overflow-x:auto;margin:0 0 1.4rem;border:1px solid var(--rule);border-radius:10px;box-shadow:var(--shadow)}
+table{border-collapse:collapse;width:100%;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.815rem;
+  line-height:1.5;min-width:36rem;background:var(--panel)}
+th,td{padding:.6rem .75rem;text-align:left;vertical-align:top;border-bottom:1px solid var(--rule)}
+th{background:var(--code-bg);font-size:.665rem;text-transform:uppercase;letter-spacing:.07em;color:var(--ink3);
+  font-weight:700;border-bottom:2px solid var(--rule2)}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--code-bg) 45%,transparent)}
+td .side{display:block;margin-bottom:.32rem} td .side:last-child{margin-bottom:0} td .side b{color:var(--indigo)}
+.consq{color:var(--crim)}
+.foot{margin-top:4.5rem;padding-top:1.1rem;border-top:2px solid var(--rule);font-family:ui-sans-serif,system-ui,sans-serif;
+  font-size:.775rem;color:var(--ink3);line-height:1.7}
+.askbtn{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.66rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.06em;color:var(--violet);background:var(--violet-bg);border:1px solid var(--violet-br);
+  border-radius:5px;padding:.1rem .4rem;cursor:pointer;vertical-align:.2em;margin-left:.5rem;opacity:0;transition:opacity .12s}
+h2:hover .askbtn,h3:hover .askbtn,h2 .askbtn:focus,h3 .askbtn:focus{opacity:1}
+@media (hover:none){.askbtn{opacity:.75}}
+#selask{position:absolute;z-index:60;display:none;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.72rem;
+  font-weight:700;color:#fff;background:var(--violet);border:0;border-radius:6px;padding:.3rem .6rem;cursor:pointer;
+  box-shadow:0 3px 10px rgba(0,0,0,.25)}
+#tray{position:fixed;right:1rem;bottom:1rem;z-index:70;width:min(24rem,calc(100vw - 2rem));max-height:min(30rem,70vh);
+  display:none;flex-direction:column;background:var(--panel);border:1px solid var(--violet-br);border-radius:12px;
+  box-shadow:0 8px 30px rgba(0,0,0,.18);overflow:hidden}
+#tray[data-open]{display:flex}
+#trayhead{display:flex;align-items:center;gap:.5rem;padding:.55rem .75rem;background:var(--violet-bg);
+  border-bottom:1px solid var(--violet-br);font-family:ui-sans-serif,system-ui,sans-serif;font-size:.72rem;
+  font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--violet)}
+#trayhead .grow{flex:1}
+#trayhead button{font:inherit;text-transform:none;letter-spacing:0;color:var(--violet);background:none;
+  border:1px solid var(--violet-br);border-radius:5px;padding:.12rem .4rem;cursor:pointer}
+#traylist{flex:1 1 auto;min-height:0;overflow-y:auto;padding:.6rem .7rem;display:flex;flex-direction:column;gap:.6rem}
+.qitem{border:1px solid var(--rule);border-radius:8px;background:var(--bg);padding:.5rem .6rem}
+.qitem .where{font-family:ui-monospace,monospace;font-size:.65rem;color:var(--violet);font-weight:700;display:flex;gap:.4rem;align-items:baseline}
+.qitem .where .x{margin-left:auto;cursor:pointer;color:var(--ink3);border:0;background:none;font-size:.8rem;line-height:1}
+.qitem blockquote{margin:.35rem 0;padding-left:.5rem;border-left:2px solid var(--rule2);font-size:.74rem;color:var(--ink3);
+  font-family:ui-sans-serif,system-ui,sans-serif;line-height:1.45;max-height:4.2rem;overflow:hidden}
+.qitem textarea{width:100%;min-height:2.6rem;resize:vertical;font:inherit;font-size:.8rem;
+  font-family:ui-sans-serif,system-ui,sans-serif;color:var(--ink);background:var(--panel);
+  border:1px solid var(--rule2);border-radius:6px;padding:.35rem .45rem;margin-top:.25rem}
+.qitem .row{display:flex;gap:.4rem;align-items:center;margin-top:.3rem}
+.qitem .row button{flex:0 0 auto;white-space:nowrap;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.68rem;
+  font-weight:700;color:var(--violet);background:var(--violet-bg);border:1px solid var(--violet-br);border-radius:5px;
+  padding:.25rem .55rem;cursor:pointer}
+.qitem .row button[data-done]{color:#fff;background:var(--teal);border-color:var(--teal)}
+.qitem .row .kbd{flex:1;font-size:.63rem;color:var(--ink3);text-align:right}
+#sentnote{display:none;margin:.6rem .7rem;padding:.6rem .7rem;border-radius:8px;border:1px solid var(--teal-br);
+  background:var(--teal-bg);color:var(--teal);font-family:ui-sans-serif,system-ui,sans-serif;font-size:.8rem;line-height:1.5;font-weight:600}
+#sentnote[data-show]{display:block}
+#traybar{flex:0 0 auto;padding:.55rem .7rem;border-top:1px solid var(--rule);display:flex;flex-direction:column;
+  gap:.4rem;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.68rem;color:var(--ink3)}
+#traybar button{font:inherit;font-size:.78rem;font-weight:700;color:#fff;background:var(--violet);border:0;
+  border-radius:6px;padding:.45rem .7rem;cursor:pointer;width:100%;flex:0 0 auto;white-space:nowrap}
+#traybar button.secondary{color:var(--violet);background:var(--violet-bg);border:1px solid var(--violet-br)}
+#traybar button[data-done]{background:var(--teal)}
+#fab{position:fixed;right:1rem;bottom:1rem;z-index:69;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.74rem;
+  font-weight:700;color:#fff;background:var(--violet);border:0;border-radius:999px;padding:.55rem .9rem;cursor:pointer;
+  box-shadow:0 4px 14px rgba(0,0,0,.2);display:none}
+#fab[data-show]{display:block}
+#toast{position:fixed;left:50%;bottom:1.2rem;transform:translateX(-50%);z-index:80;font-family:ui-sans-serif,system-ui,sans-serif;
+  font-size:.78rem;color:#fff;background:#222;padding:.5rem .9rem;border-radius:8px;opacity:0;pointer-events:none;transition:opacity .18s}
+#toast[data-show]{opacity:.95}
+@media print{.askbtn,#tray,#fab,#selask,#toast{display:none!important}}
+@media (max-width:36rem){
+  body{font-size:16.5px} .wrap{padding:1.3rem .85rem 4rem}
+  h1{font-size:1.72rem} h2{font-size:1.28rem}
+  .meta{grid-template-columns:1fr;gap:.12rem} .meta dt{margin-top:.4rem}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow">Explainer · first independent review of M3.1</p>
+  <h1>The guard that was skipped when it mattered</h1>
+  <p class="dek">A money assertion built to replace a false claim turned out to be weaker than advertised in three separate ways — and the sharpest one was found by trying to prove it worked.</p>
+  <dl class="meta">
+    <dt>Change</dt><dd><b>PR #97</b> — file the losable items, arm the push loop, and fix what the review found</dd>
+    <dt>Base..Head</dt><dd>c02e754..a45e375</dd>
+    <dt>Built</dt><dd>2026-08-14T00:07Z</dd>
+    <dt>Inspected</dt><dd><b>24 files</b> read, of which <b>17 were not in the diff</b></dd>
+    <dt>Not verified</dt><dd>The guard's coverage is narrower than "no money" implies — a normal reserve+release writes no audit row and nets to zero. See §6</dd>
+  </dl>
+</header>
+
+<div class="strip">
+  <div class="stat c"><div class="v">2</div><div class="l">Blockings, both on<br>the money guard</div></div>
+  <div class="stat c"><div class="v">303→305</div><div class="l">audit ids burned<br>proving it fires</div></div>
+  <div class="stat a"><div class="v">24¢</div><div class="l">spent to test<br>the guard, twice</div></div>
+  <div class="stat i"><div class="v">3</div><div class="l">losable items<br>filed</div></div>
+  <div class="stat t"><div class="v">0</div><div class="l">production code<br>touched</div></div>
+</div>
+
+<div class="howto" id="howto">
+  <span class="mode flat" id="howtomode">checking…</span>
+  <b>Read this at</b>
+  <span class="u">http://127.0.0.1:7391/latest</span>
+  <span id="howtobody">Always redirects to the newest explainer — bookmark it once and no filename ever needs copying again. <code>/</code> lists them all.</span>
+  <ol>
+    <li><b>To ask a question:</b> select any text (or hover a heading) → <b>ask</b> → type → <b>Send</b>. The session is watching the questions file, so it arrives on its own.</li>
+    <li><b>If that URL does not load</b>, the server is not running: <code>python3 scripts/explainer-serve.py</code> — safe to run twice. <b>A reboot stops it</b>, which is the one time you will need this line.</li>
+    <li><b>Opened as a plain file?</b> Everything reads; only <b>Send</b> is unavailable. Copy to the clipboard and say <i>&ldquo;read my question&rdquo;</i>.</li>
+  </ol>
+</div>
+
+<nav class="toc">
+  <div class="h">Contents</div>
+  <ol>
+    <li><a href="#bg">Background — the claim, and the assertion meant to hold it</a></li>
+    <li><a href="#intuition">Intuition — three ways a money guard can be absent</a></li>
+    <li><a href="#boundaries">Boundaries touched <span class="chip lo">start here</span></a></li>
+    <li><a href="#decisions">Decisions this change encodes</a></li>
+    <li><a href="#map">Code map</a></li>
+    <li><a href="#limits">Assumptions and limits</a></li>
+  </ol>
+</nav>
+
+<h2 id="bg"><span class="num">1</span>Background</h2>
+
+<h3>The skippable version</h3>
+<p>
+The cloud app charges for generation. Opening a summary for the first time materialises a
+&ldquo;magazine model&rdquo; via a language model, and that costs money, recorded in a Postgres
+ledger. A browser test that clicks around the app can therefore <em>spend</em>, quietly, on every run.
+</p>
+<p>
+The previous change (PR #96) built exactly such a test, and its header promised in capitals that no
+money was spent. That promise was false: the suite reserved 12¢ per run. The fix was to stop
+promising and start asserting — read the ledger before and after, fail if it moved.
+</p>
+<p>
+This change is what happened when that assertion was reviewed by someone other than its author.
+</p>
+
+<h3>The narrow prerequisites</h3>
+<p>
+Two tables matter. <code>spend_ledger</code> holds a per-day running total; <code>ledger_audit</code>
+is an append-only log:
+</p>
+<div class="codewrap">
+  <div class="codehead"><span>supabase/migrations/0020_reservation_release.sql:12</span><span class="tag un">unchanged</span></div>
+<pre><code><span class="k">create table</span> ledger_audit (
+<span class="hig">  id            <span class="t">bigint</span> <span class="k">generated always as identity</span> <span class="k">primary key</span>,</span>
+  day           <span class="t">date</span>        <span class="k">not null</span>,
+  kind          <span class="t">text</span>        <span class="k">not null</span>,   <span class="c">-- e.g. 'release_underflow'</span>
+  expected_amt  <span class="t">int</span>         <span class="k">not null</span>,
+  note          <span class="t">text</span>,
+  at            <span class="t">timestamptz</span> <span class="k">not null default</span> <span class="f">now</span>()
+);
+<span class="k">grant select</span>, <span class="k">insert</span> <span class="k">on</span> ledger_audit <span class="k">to</span> service_role;  <span class="c">-- the ONLY grant</span></code></pre>
+</div>
+<p>
+<code>generated always as identity</code> plus <em>no update or delete grant</em> is the property this
+change leans on: <code>max(id)</code> can only ever go up.
+</p>
+
+<div class="call info">
+  <span class="lab">Why that property matters</span>
+  <p>A <strong>sum</strong> can return to where it started. A reserve followed by a release nets to zero, and an assertion watching only the total sees nothing happen — while a paid call very much happened. A monotonic sequence cannot be walked back.</p>
+</div>
+
+<h2 id="intuition"><span class="num">2</span>Intuition — three ways a money guard can be absent</h2>
+
+<p>
+The guard shipped in PR #96 looked like this, and it is worth seeing before the objections, because
+each objection is about <em>when</em> it runs or <em>what</em> it compares — not about whether the
+comparison is written correctly.
+</p>
+
+<div class="codewrap">
+  <div class="codehead"><span>tests/e2e/cloud-journey.spec.ts</span><span class="tag del">before</span></div>
+<pre><code><span class="k">let</span> ledgerAtStart = <span class="n">0</span>;
+<span class="hid">test.<span class="f">beforeAll</span>(<span class="k">async</span> () => { ledgerAtStart = <span class="k">await</span> <span class="f">reservedCentsToday</span>(); });</span>
+
+<span class="c">// …six rungs later, as the sixth test in a describe.serial block…</span>
+<span class="hid"><span class="f">expect</span>(<span class="k">await</span> <span class="f">reservedCentsToday</span>()).<span class="f">toBe</span>(ledgerAtStart);</span></code></pre>
+</div>
+
+<h3>Absence 1 — the window started too late</h3>
+<p>
+<code>beforeAll</code> belongs to the <code>cloud</code> project, which Playwright runs only
+<em>after</em> the <code>setup</code> project has finished. Everything the setup did — creating a user,
+seeding a playlist, writing blobs — was already inside the baseline. The suite could not detect its own
+first act.
+</p>
+
+<h3>Absence 2 — the quantity could cancel</h3>
+<p>
+Summing <code>reserved_cents + actual_cents</code> answers <em>&ldquo;is the total the same?&rdquo;</em>,
+which is not the question. Reserve 12¢, release 12¢, and the total is unchanged while a language model
+was called and paid for.
+</p>
+
+<h3>Absence 3 — and this is the one worth the whole page</h3>
+<p>
+To prove the assertion could fail, I un-skipped a rung already known to spend. The ledger moved. The
+assertion never ran.
+</p>
+
+<figure>
+<div class="runs">
+  <div class="run before">
+    <div class="rh">MUTATION · assertion as a rung in describe.serial</div>
+    <div class="rows">
+      <span class="ok">✓ 1 · renders CloudApp</span><br>
+      <span class="ok">✓ 2 · sidebar lists playlists</span><br>
+      <span class="ok">✓ 3 · ingest appears with no reload</span><br>
+      <span class="no">✘ 4 · magazine render &nbsp;<span class="m">(un-skipped — a known money path)</span></span><br>
+      <span class="sk">– 6 · the whole journey moved no money &nbsp;← NEVER RAN</span>
+    </div>
+    <div class="verdict">ledger_audit 303 → 304. Money moved, and the guard was not there to see it: <code>describe.serial</code> aborts the remaining rungs once one fails.</div>
+  </div>
+  <div class="run after">
+    <div class="rh">AFTER · the same assertion as an afterAll hook</div>
+    <div class="rows">
+      <span class="no">✘ 4 · magazine render &nbsp;<span class="m">(same mutation)</span></span><br>
+      <span class="ok">afterAll → Expected: 304 &nbsp; Received: 305</span>
+    </div>
+    <div class="verdict">The rung still fails, and the guard still fires. 12¢ per proof, spent twice.</div>
+  </div>
+</div>
+<figcaption>The same mutation, before and after. Nothing about the comparison changed — only where it was attached.</figcaption>
+</figure>
+
+<div class="call bad">
+  <span class="lab">⚑ The shape</span>
+  <p>
+  A guard that is skipped precisely when something has gone wrong is <strong>absent exactly when it is
+  most needed</strong>. A failing run is the run where you most want to know whether money moved, and
+  it was the only run where nobody checked.
+  </p>
+  <p>
+  Note how it was found. Not by review — the reviewer raised the other two absences and not this one.
+  Not by the suite passing. It surfaced from <em>attempting to demonstrate that the guard worked</em>,
+  which is a different activity from using it.
+  </p>
+</div>
+
+<h3>What it looks like now</h3>
+<div class="codewrap">
+  <div class="codehead"><span>tests/e2e/cloud-journey.spec.ts:161</span><span class="tag new">after</span></div>
+<pre><code><span class="hig">test.<span class="f">afterAll</span>(<span class="k">async</span> () => {                     <span class="c">// runs even when a rung failed</span></span>
+  <span class="k">const</span> now = <span class="k">await</span> <span class="f">readLedger</span>();
+<span class="hig">  <span class="f">expect</span>(now.auditMaxId).<span class="f">toBe</span>(<span class="f">fx</span>().ledgerBaseline.auditMaxId);   <span class="c">// cannot be netted</span></span>
+  <span class="f">expect</span>(now.centsTotal).<span class="f">toBe</span>(<span class="f">fx</span>().ledgerBaseline.centsTotal); <span class="c">// weaker, secondary</span>
+});</code></pre>
+</div>
+<p>
+And the baseline now comes from the setup, taken before it touches anything, carried in the fixture
+file rather than computed in a hook that runs too late.
+</p>
+
+<h2 id="boundaries"><span class="num">3</span>Boundaries touched</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th style="width:18%">Boundary</th><th style="width:19%">What crosses it</th><th style="width:29%">What each side may assume</th><th>When that assumption is violated</th></tr></thead>
+<tbody>
+<tr>
+  <td>Playwright lifecycle → the money guard<br><span class="chip hi2">the finding</span></td>
+  <td>Whether the assertion executes at all.</td>
+  <td><span class="side"><b>Author:</b> assumed a test in a serial block always runs.</span>
+      <span class="side"><b>Playwright:</b> <code>describe.serial</code> orders tests and <strong>aborts the remainder on the first failure</strong> — a documented feature, not a bug.</span></td>
+  <td class="consq">The guard vanishes in exactly the runs that failed. Fixed by attaching it to <code>afterAll</code>, whose contract is "runs regardless". <strong>The boundary was between a test and its runner</strong> — the kind nobody thinks to inspect, because the runner is not code you wrote.</td>
+</tr>
+<tr>
+  <td>The <code>setup</code> project → the <code>cloud</code> project</td>
+  <td>The ledger baseline, now carried in the fixture file.</td>
+  <td><span class="side"><b>Cloud project:</b> assumed its own <code>beforeAll</code> was "the start".</span>
+      <span class="side"><b>Playwright:</b> project dependencies run to completion first, so that hook fires after the setup already acted.</span></td>
+  <td class="consq">Anything the setup spent was inside the baseline and undetectable. The setup now reads the witnesses as its first statement, before it creates a user or writes a blob.</td>
+</tr>
+<tr>
+  <td>The suite → <code>ledger_audit</code><br><span class="chip md">narrower than it sounds</span></td>
+  <td>A read of <code>max(id)</code>, treated as "did any money event occur?".</td>
+  <td><span class="side"><b>Assertion:</b> treats a stationary max as "nothing was paid for".</span>
+      <span class="side"><b>Schema:</b> writes rows for <code>serve_settle</code> and <code>release_underflow</code> — <em>not</em> for every reservation.</span></td>
+  <td class="consq">A reserve that is later released <em>normally</em> writes no audit row and nets the cents to zero, so <strong>both</strong> assertions pass. Unreachable in this suite today (it never enqueues), but the guard's name is broader than its reach. Stated in §6 rather than left implied.</td>
+</tr>
+<tr>
+  <td>Test → the sign-out UI</td>
+  <td>Two exact, scoped locators instead of a <code>.catch()</code> fallback chain.</td>
+  <td><span class="side"><b>Old test:</b> assumed a fallback selector was a safety net.</span>
+      <span class="side"><b>The DOM:</b> a fallback matches <em>whatever else fits the pattern</em> — any control matching <code>/account|menu|sign/i</code> that navigates.</span></td>
+  <td class="consq">The rung could pass while sign-out was broken. A fallback locator converts "this element" into "something like this", which is a weaker assertion wearing the same syntax. It now also returns to a protected route: reaching <code>/login</code> proves a navigation, not an invalidated session.</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="decisions"><span class="num">4</span>Decisions this change encodes</h2>
+
+<h3>1 · A cost claim belongs in a hook, not a test</h3>
+<p>
+<strong>Decided:</strong> the money assertion runs in <code>afterAll</code>.
+<strong>Rejected:</strong> leaving it as a rung and relying on the suite passing — which is
+circular, since a failing suite is the case it exists for.
+</p>
+<div class="call">
+  <span class="lab"><span class="chip adr">ADR CANDIDATE:</span></span>
+  <p>Hard to reverse (moving it back silently restores the hole), surprising without context (a hook is a strange home for the file's central claim, and it no longer shows as a named test), and a real trade-off (hook failures report less legibly than test failures). The general rule is the reusable part: <em>an assertion about a side effect of the whole suite must be attached to something that runs when the suite fails.</em></p>
+</div>
+
+<h3>2 · Watch an append-only sequence, not a balance</h3>
+<p>
+<strong>Decided:</strong> <code>max(ledger_audit.id)</code> is the primary witness; the cents total is
+kept as a secondary. <strong>Rejected:</strong> the sum alone, which cannot distinguish
+&ldquo;nothing happened&rdquo; from &ldquo;something happened and was undone&rdquo;.
+</p>
+
+<h3>3 · Spend money to prove a money guard fires</h3>
+<p>
+<strong>Decided:</strong> un-skip a known-spending rung twice and watch the ledger, at 12¢ a time.
+<strong>Rejected:</strong> reasoning that the assertion must work because the comparison looks right —
+which is precisely how the original false claim survived.
+</p>
+<p>
+The general form: <em>a guard nobody has watched fail is a guard nobody has tested.</em> Where a
+mutation is cheap this is routine; here it had a price, and the price was worth paying once.
+</p>
+
+<h3>4 · Record three items that existed only in conversation</h3>
+<p>
+A grep found <strong>zero</strong> mentions of two of them anywhere in <code>docs/</code>. Filed as
+<strong>#41</strong> (the prod smoke that is the other half of roadmap 3.1), <strong>#42</strong>
+(the <code>middleware</code>→<code>proxy</code> deprecation the project's own AGENTS.md says to heed),
+and <strong>#43</strong> (un-skipping the magazine render, now bounded because the freshness contract
+was read afterwards). <strong>Rejected:</strong> trusting that a decision discussed is a decision kept.
+</p>
+
+<h2 id="map"><span class="num">5</span>Code map</h2>
+<ul>
+  <li><strong>The witnesses.</strong> <code>tests/e2e/cloud-fixture.ts</code> — <code>readLedger()</code> returns <code>{auditMaxId, centsTotal}</code>. Lives in the plain module because Playwright forbids a spec importing a test file.</li>
+  <li><strong>The baseline.</strong> <code>tests/e2e/cloud.setup.ts</code> — read as the setup's first statement, carried in the fixture.</li>
+  <li><strong>The guard.</strong> <code>tests/e2e/cloud-journey.spec.ts:161</code> — an <code>afterAll</code>, append-only witness asserted first.</li>
+  <li><strong>The sign-out rung</strong> — exact scoped locators, plus a return to a protected route.</li>
+  <li><strong>The corrected header</strong> — the rungs do <em>not</em> share a page; measured, not assumed.</li>
+  <li><strong>The record.</strong> <code>docs/backlog.md</code> (#41–#43, and the panel design folded into #40), <code>docs/portable-practices.md</code> §10, <code>docs/reviews/m3-1-cloud-e2e-codex.md</code>, and the skill's new push-loop requirement.</li>
+</ul>
+
+<h2 id="limits"><span class="num">6</span>Assumptions and limits</h2>
+
+<h4>Verified by reading the code</h4>
+<ul>
+  <li><code>ledger_audit.id</code> is <code>generated always as identity</code> and only <code>select, insert</code> are granted — <code>0020_reservation_release.sql:12-22</code>. Monotonicity is a schema property, not a convention.</li>
+  <li><code>actual_cents</code> is <em>never written</em> — <code>0011_cost_guardrails.sql:15</code> says "inert in 1D; written by the deferred reconcile". The settle slice remains unbuilt, so the ledger over-counts by design.</li>
+  <li>The sign-out trigger's accessible name is the email — <code>AccountMenu.tsx:56-65</code> — and the item is <code>role="menuitem"</code> inside <code>role="menu"</code>.</li>
+</ul>
+
+<h4>Verified by running something</h4>
+<ul>
+  <li><strong>The guard fires on failure:</strong> mutation → rung 4 fails → <code>afterAll</code> reports <em>Expected 304, Received 305</em>.</li>
+  <li><strong>Money really moved</strong> during that mutation: <code>ledger_audit</code> max id 303 → 304 → 305 across two proofs.</li>
+  <li><strong><code>describe.serial</code> does not share a page</strong> — measured directly by comparing the page fixture across two serial tests: <code>SHARED_PAGE=false</code>.</li>
+  <li>Clean suite: 6 passed, 2 skipped. <code>tsc</code> clean; 2703 unit / 267 suites green.</li>
+  <li><code>ledger_audit</code> locally holds two kinds: <code>serve_settle</code> (278) and <code>release_underflow</code> (27).</li>
+</ul>
+
+<h4>Not verified</h4>
+<ul>
+  <li><strong>The guard's coverage is narrower than its name.</strong> A reservation that is later released <em>normally</em> writes no audit row and nets the cents to zero — so both assertions pass while a paid call occurred. Unreachable in this suite today because it never enqueues a job, but "moved no money" overstates what is checked. This was found while writing this explainer, by reading which <code>kind</code>s exist.</li>
+  <li><strong>The reviewer's Mediums are unaddressed:</strong> the ingest rung does not assert exactly one POST was intercepted, nor that no real POST escaped, nor does it wait on the sidebar's refetch; "no reload" is not positively asserted; and every run accumulates users, playlists and blobs that are never cleaned up.</li>
+  <li><strong>No second review round has run</strong> on these fixes. Every previous branch this week that fixed review findings had those fixes reviewed in turn, and in three of them the fix introduced the next defect.</li>
+  <li><strong>The quote-stripping change to a shared jest loader</strong> is still only argued, not tested — no case covers a value that legitimately begins and ends with a quote.</li>
+</ul>
+
+<div class="foot">
+  Review: <code>docs/reviews/m3-1-cloud-e2e-codex.md</code> · Predecessor: PR #96 (the suite) · Filed here: backlog #41, #42, #43<br>
+  Generated by <code>/explain-diff</code>, adapted from Geoffrey Litt's skill.
+</div>
+
+</div>
+
+<button id="selask" type="button">💬 ask about this</button>
+<button id="fab" type="button">💬 <span id="fabn">0</span> questions</button>
+<div id="tray" role="complementary" aria-label="Questions">
+  <div id="trayhead"><span class="grow">Questions for this session</span>
+    <button type="button" id="trayclear">clear</button>
+    <button type="button" id="traymin">–</button></div>
+  <div id="traylist"></div>
+  <div id="sentnote" role="status"></div>
+  <div id="traybar">
+    <button type="button" id="traysend">⇧ Send to session</button>
+    <button type="button" class="secondary" id="traycopy">or copy to clipboard</button>
+    <span class="hint" id="trayhint"></span>
+  </div>
+</div>
+<div id="toast" role="status"></div>
+<script>
+(function(){
+  var DOC = "PR #97 explainer — the money guard review (c02e754..a45e375)";
+  var items = [], seq = 0;
+  var tray=document.getElementById('tray'), list=document.getElementById('traylist'),
+      fab=document.getElementById('fab'), fabn=document.getElementById('fabn'),
+      sel=document.getElementById('selask'), toast=document.getElementById('toast');
+  var SERVED = location.protocol === 'http:' || location.protocol === 'https:';
+  var sendBtn=document.getElementById('traysend'), hint=document.getElementById('trayhint');
+  (function(){
+    var m=document.getElementById('howtomode'), b=document.getElementById('howtobody');
+    if(SERVED){
+      m.textContent='● live — Send works'; m.className='mode live';
+      b.innerHTML='You are reading the served copy, so <b>Send</b> posts straight to the session, which is watching for it. Bookmark this URL — it always points at the newest explainer.';
+      hint.innerHTML='<b>Send</b> posts straight to the session. <b>Enter</b> copies one question; <b>Shift+Enter</b> is a newline.';
+    } else {
+      m.textContent='○ local file — Send unavailable'; m.className='mode flat';
+      b.innerHTML='You opened this as a <code>file://</code> page, so there is nothing to send to and <b>Send</b> is hidden. Start the server (step 2) and reopen at the URL above.';
+      sendBtn.style.display='none';
+      document.getElementById('traycopy').textContent='Copy questions — then paste in your session';
+      hint.innerHTML='Clipboard is the channel here; say <i>&ldquo;read my question&rdquo;</i> after copying. <b>Enter</b> copies one; <b>Shift+Enter</b> is a newline.';
+    }
+  })();
+  function say(m){toast.textContent=m;toast.setAttribute('data-show','');
+    setTimeout(function(){toast.removeAttribute('data-show');},2200);}
+  function trim(t){t=(t||'').replace(/\s+/g,' ').trim();return t.length>420?t.slice(0,420)+'…':t;}
+  function sectionOf(node){
+    while(node && node!==document.body){
+      if(node.previousElementSibling){node=node.previousElementSibling;
+        if(/^H[23]$/.test(node.tagName)) return node.textContent.replace(/ask$/,'').trim();
+      } else node=node.parentNode;
+    }
+    return 'the page';
+  }
+  function toMarkdown(l){
+    var out='Question'+(l.length>1?'s':'')+' on the '+DOC+'\n\n';
+    l.forEach(function(it,i){
+      out+=(l.length>1?(i+1)+'. ':'')+'**'+it.where+'**\n';
+      if(it.quote)out+='   > '+it.quote+'\n';
+      out+='   Q: '+(it.q.trim()||'(no question typed)')+'\n\n';
+    });
+    return out;
+  }
+  function toClipboard(txt,msg){
+    var done=function(){say(msg);};
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).then(done,function(){fb(txt,done);});
+    } else fb(txt,done);
+    function fb(t,ok){
+      var ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();
+      try{document.execCommand('copy');ok();}catch(_e){say('Could not copy automatically');}
+      document.body.removeChild(ta);
+    }
+  }
+  function flash(btn,label){
+    if(!btn)return; var old=btn.textContent;
+    btn.textContent=label; btn.setAttribute('data-done','');
+    setTimeout(function(){btn.textContent=old;btn.removeAttribute('data-done');},2000);
+  }
+  function copyOne(it,btn){
+    if(!it.q.trim()){say('Type a question first');return;}
+    toClipboard(toMarkdown([it]),'✓ copied — paste into the session');
+    flash(btn,'✓ copied — now paste');
+  }
+  function post(txt,cb){
+    var x=new XMLHttpRequest();
+    x.open('POST','/questions',true);
+    x.setRequestHeader('Content-Type','application/json');
+    x.onload=function(){cb(x.status===200);};
+    x.onerror=function(){cb(false);};
+    x.send(JSON.stringify({doc:DOC,text:txt}));
+  }
+  function render(){
+    list.innerHTML='';
+    items.forEach(function(it){
+      var d=document.createElement('div'); d.className='qitem';
+      var w=document.createElement('div'); w.className='where';
+      w.appendChild(document.createTextNode(it.where));
+      var x=document.createElement('button'); x.className='x'; x.type='button'; x.textContent='×';
+      x.onclick=function(){items=items.filter(function(o){return o.id!==it.id;});render();};
+      w.appendChild(x); d.appendChild(w);
+      if(it.quote){var q=document.createElement('blockquote');q.textContent=it.quote;d.appendChild(q);}
+      var cb=document.createElement('button'); cb.type='button'; cb.textContent='Copy this';
+      var ta=document.createElement('textarea');
+      ta.placeholder='What do you want to ask about this?'; ta.value=it.q||'';
+      ta.oninput=function(){it.q=ta.value;};
+      ta.onkeydown=function(ev){
+        if(ev.key==='Enter'&&!ev.shiftKey&&!ev.isComposing){ev.preventDefault();copyOne(it,cb);}
+      };
+      d.appendChild(ta);
+      var row=document.createElement('div'); row.className='row';
+      cb.onclick=function(){copyOne(it,cb);};
+      var kb=document.createElement('span'); kb.className='kbd'; kb.textContent='Enter to copy';
+      row.appendChild(cb); row.appendChild(kb); d.appendChild(row);
+      list.appendChild(d);
+    });
+    fabn.textContent=items.length;
+    if(items.length){fab.setAttribute('data-show','');}else{fab.removeAttribute('data-show');tray.removeAttribute('data-open');}
+  }
+  function add(where,quote){
+    var note=document.getElementById('sentnote'); if(note) note.removeAttribute('data-show');
+    items.push({id:++seq,where:where,quote:quote,q:''});
+    render(); tray.setAttribute('data-open',''); fab.removeAttribute('data-show');
+    var tas=list.querySelectorAll('textarea'); if(tas.length)tas[tas.length-1].focus();
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('h2,h3'),function(h){
+    if(h.closest('#tray'))return;
+    var b=document.createElement('button'); b.type='button'; b.className='askbtn'; b.textContent='ask';
+    b.onclick=function(e){e.preventDefault();add(h.textContent.replace(/ask$/,'').trim(),'');};
+    h.appendChild(b);
+  });
+  document.addEventListener('mouseup',function(e){
+    if(e.target.closest&&e.target.closest('#tray'))return;
+    var s=window.getSelection(), t=s?String(s):'';
+    if(t.trim().length<12){sel.style.display='none';return;}
+    var r=s.getRangeAt(0).getBoundingClientRect();
+    sel.style.display='block';
+    sel.style.top=(window.scrollY+r.bottom+6)+'px';
+    sel.style.left=(window.scrollX+r.left)+'px';
+    sel.onclick=function(){
+      var node=s.anchorNode&&s.anchorNode.nodeType===3?s.anchorNode.parentNode:s.anchorNode;
+      add(sectionOf(node), trim(t)); sel.style.display='none'; s.removeAllRanges();
+    };
+  });
+  document.addEventListener('scroll',function(){sel.style.display='none';},{passive:true});
+  document.getElementById('traymin').onclick=function(){tray.removeAttribute('data-open');
+    if(items.length)fab.setAttribute('data-show','');};
+  fab.onclick=function(){tray.setAttribute('data-open','');fab.removeAttribute('data-show');};
+  document.getElementById('trayclear').onclick=function(){items=[];render();};
+  sendBtn.onclick=function(){
+    if(!items.length){say('No questions yet — select some text, or use an "ask" button.');return;}
+    var n=items.length;
+    post(toMarkdown(items),function(ok){
+      if(ok){
+        items=[]; render();
+        var note=document.getElementById('sentnote');
+        note.textContent='✓ Sent '+n+' question'+(n>1?'s':'')+' to the session. It is watching, so no need to ask.';
+        note.setAttribute('data-show','');
+        tray.setAttribute('data-open',''); fab.removeAttribute('data-show');
+      }
+      else { toClipboard(toMarkdown(items),'Send failed — copied instead, please paste');
+             flash(sendBtn,'✗ send failed — copied instead'); }
+    });
+  };
+  document.getElementById('traycopy').onclick=function(){
+    if(!items.length){say('No questions yet — select some text, or use an "ask" button.');return;}
+    toClipboard(toMarkdown(items),'✓ copied '+items.length+' question(s) — paste into the session');
+    flash(document.getElementById('traycopy'),'✓ copied — now paste');
+  };
+})();
+</script>
+</body>
+</html>
