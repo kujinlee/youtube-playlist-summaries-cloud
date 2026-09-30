@@ -110,72 +110,6 @@
     "expect": "an UNPARSEABLE file does not exempt — a docstring we cannot read is not a declaration"
   },
   {
-    "name": "the import arm is neutered, so an imported library looks unused",
-    "file": "scripts/check-ratchet-contract.py",
-    "edits": [
-      [
-        "if import_re(basename).search(caller_blob):",
-        "if re.compile(r\"(?!)\").search(caller_blob):"
-      ]
-    ],
-    "expect": "an IMPORTED library is USED, even though nothing invokes it"
-  },
-  {
-    "name": "the line-start anchor is dropped, so an import inside a string literal counts",
-    "file": "scripts/check-ratchet-contract.py",
-    "edits": [
-      [
-        "_LINE_START = r\"^\"",
-        "_LINE_START = r\"\""
-      ]
-    ],
-    "expect": "an import inside a STRING LITERAL is not a use — the measured fixture shape"
-  },
-  {
-    "name": "the optional indent is dropped, so an in-function import stops counting",
-    "file": "scripts/check-ratchet-contract.py",
-    "edits": [
-      [
-        "_OPT_INDENT = r\"[ \\t]*\"",
-        "_OPT_INDENT = r\"\""
-      ]
-    ],
-    "expect": "...and the import may be INDENTED — `import m4_catalog as m4c` inside a function is real"
-  },
-  {
-    "name": "the identifier guard is bypassed, so a hyphenated executable can match the import arm",
-    "file": "scripts/check-ratchet-contract.py",
-    "edits": [
-      [
-        "if not stem.isidentifier():",
-        "if False:"
-      ]
-    ],
-    "expect": "the import arm cannot satisfy a HYPHENATED executable — it is not a legal identifier"
-  },
-  {
-    "name": "R2 stops being applied to the widened population",
-    "file": "scripts/check-ratchet-contract.py",
-    "edits": [
-      [
-        "for line in fail_open_handlers(texts[rel]):",
-        "for line in []:"
-      ]
-    ],
-    "expect": "evaluate APPLIES R2 to a NON-guard"
-  },
-  {
-    "name": "R3 stops being applied to the widened population",
-    "file": "scripts/check-ratchet-contract.py",
-    "edits": [
-      [
-        "out.extend(check_caller(rel, texts[rel], widened_blob))",
-        "_ = widened_blob"
-      ]
-    ],
-    "expect": "evaluate APPLIES R3 to a NON-guard — the rule the recall matcher's hook needed"
-  },
-  {
     "name": "the blob is built for guards only, so every widened file gets an empty one — the live defect",
     "file": "scripts/check-ratchet-contract.py",
     "edits": [
@@ -185,5 +119,126 @@
       ]
     ],
     "expect": "a SELF-TESTED NON-GUARD gets one too — R3 is asked of it, so it needs a blob"
+  },
+  {
+    "name": "code_only stops blanking strings, so a print() naming a script counts as a caller",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "if tok.type not in (tokenize.STRING, tokenize.COMMENT):",
+        "if tok.type not in (tokenize.COMMENT,):"
+      ]
+    ],
+    "expect": "a print() naming a script is blanked — round 1 H1's actual shape"
+  },
+  {
+    "name": "code_only stops blanking comments, so a commented-out invocation counts",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "for row in range(r1, r2 + 1):",
+        "for row in range(r1, r1):"
+      ]
+    ],
+    "expect": "a comment naming a script is blanked"
+  },
+  {
+    "name": "code_only returns the RAW text on a tokenize failure — the false green restored",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "    except (tokenize.TokenError, SyntaxError, IndentationError):\n        return None\n",
+        "    except (tokenize.TokenError, SyntaxError, IndentationError):\n        return text\n"
+      ]
+    ],
+    "expect": "a source that will not TOKENIZE yields None, never its raw text"
+  },
+  {
+    "name": "import_names stops reading the extra names on an import line, so `import os, lib` is missed",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "            for a in n.names:\n                found.add(a.name.split(\".\")[0])\n        elif isinstance(n, ast.ImportFrom):",
+        "            found.add(n.names[0].name.split(\".\")[0])\n        elif isinstance(n, ast.ImportFrom):"
+      ]
+    ],
+    "expect": "a SECOND module on one import line is found"
+  },
+  {
+    "name": "import_names stops reading relative from-imports, so `from . import lib` is missed",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "            if n.level or n.module:",
+        "            if n.module and False:"
+      ]
+    ],
+    "expect": "a relative from-import is found"
+  },
+  {
+    "name": "import_names swallows a SyntaxError as an empty graph instead of a cannot-run",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "    try:\n        tree = ast.parse(text)\n    except SyntaxError:\n        return None\n    found: set[str] = set()",
+        "    try:\n        tree = ast.parse(text)\n    except SyntaxError:\n        return set()\n    found: set[str] = set()"
+      ]
+    ],
+    "expect": "a source that will not PARSE is a cannot-run, not an empty graph"
+  },
+  {
+    "name": "the import ARM treats a missing graph as a licence, so an unused library passes R3",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "    if imported is not None and basename.removesuffix(\".py\") in imported:",
+        "    if imported is None or basename.removesuffix(\".py\") in imported:"
+      ]
+    ],
+    "expect": "no import graph supplied is not a licence — the arm stays inert"
+  },
+  {
+    "name": "fail_open_handlers reports an unparseable file as clean instead of NOT RUN",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "    except SyntaxError:\n        return None\n    out: list[int] = []",
+        "    except SyntaxError:\n        return []\n    out: list[int] = []"
+      ]
+    ],
+    "expect": "an unparseable file is a LOUD cannot-run, never a crash and never a pass"
+  },
+  {
+    "name": "the widened R2 cannot-run is reported under the WRONG rule name, so the unparseable file reads as a fail-open",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "            out.append(Violation(rel, \"R2_unparseable\",\n                                 \"R2 could not be evaluated: the file does not parse, so no \"",
+        "            out.append(Violation(rel, \"R2_fail_open\",\n                                 \"R2 could not be evaluated: the file does not parse, so no \""
+      ]
+    ],
+    "expect": "evaluate survives an unparseable NON-guard and reports it loudly"
+  },
+  {
+    "name": "caller_text sends .py through raw, restoring prose as a caller",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "    if suffix != \".py\":\n        return raw",
+        "    if True:\n        return raw"
+      ]
+    ],
+    "expect": "a .py source is read as CODE — a print() naming a script is not a caller"
+  },
+  {
+    "name": "R3 stops being applied to the widened population",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "        out.extend(check_caller(rel, texts[rel], widened_blob, imported))",
+        "        _ = widened_blob"
+      ]
+    ],
+    "expect": "evaluate APPLIES R3 to a NON-guard — the rule the recall matcher's hook needed"
   }
 ]

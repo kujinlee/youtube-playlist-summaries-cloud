@@ -71,6 +71,14 @@ discovers by globbing `scripts/check-*.py`, so this file is never even read, and
 unchecked for the same reason every other claim about a neighbour's behaviour has tonight. It is a
 tool, not a gate; it keeps the two contract rules (a --self-test exists, no `except` returns 0)
 because they are good practice, not because anything enforces them here.
+
+NO-CALLER: it is a SERVER a person starts to read pages on localhost, and there is no moment in CI
+at which starting one would mean anything — a gate that launches a long-lived listener either hangs
+or is killed, and neither is a verdict. ⚠ DECLARED 2026-09-30 ONLY AFTER A FALSE GREEN WAS REMOVED,
+which is the honest history: R3 reported this file as having a caller on SEVEN matches that were
+all inside string literals — six `print()` lines in the page generators telling a human how to
+start it, plus `check-explainer-delivery.SHARED_BODY`. Round 1 H1 named it; `code_only` closed it;
+this declaration is what the closed hole revealed was missing all along.
 """
 from __future__ import annotations
 

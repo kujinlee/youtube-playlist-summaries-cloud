@@ -27,13 +27,15 @@ work exists to remove.
 
 Usage:
     python3 scripts/check-ratchet-contract.py
-    python3 scripts/check-ratchet-contract.py --self-test  # 52 cases
+    python3 scripts/check-ratchet-contract.py --self-test  # 74 cases
 """
 from __future__ import annotations
 
 import ast
+import io
 import re
 import sys
+import tokenize
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -87,14 +89,32 @@ def discover_ratchets(ci_yaml: str, script_texts: dict[str, str]) -> list[str]:
     return found
 
 
-def fail_open_handlers(text: str) -> list[int]:
-    """Line numbers of `except` handlers that swallow into SUCCESS.
+def fail_open_handlers(text: str) -> list[int] | None:
+    """Line numbers of `except` handlers that swallow into SUCCESS, or None if it would not PARSE.
 
     `return 0` from an exception handler means "I could not run, therefore all is well" — the single
-    most expensive rule in the contract. Returning None is NOT flagged: that is the documented way to
-    say "unknown" and hand the fail-closed decision to the caller."""
+    most expensive rule in the contract. Returning None from the SCANNED code is NOT flagged: that is
+    the documented way to say "unknown" and hand the fail-closed decision to the caller.
+
+    ⛔ `None` FROM THIS FUNCTION MEANS CANNOT RUN, AND IT USED TO MEAN A TRACEBACK. `ast.parse` was
+    called bare, so an unparseable file crashed the whole guard before a single violation printed —
+    reported 2026-09-30, round 1 H3, and reproduced: a file whose docstring contains `--self-test`
+    and whose body is `def broken(` raises `SyntaxError: '(' was never closed` out of `evaluate`.
+    ⚠ The crash predates the widened population — `discover_guards` is filename-only, so an
+    unparseable `scripts/check-*.py` reached it too — but applying R2 to files discovered by a
+    REGEX OVER RAW TEXT is what made it reachable a second way, and that is why it surfaced now.
+    ⚠ FIXED HERE RATHER THAN AT THE CALL SITE, because there are two call sites and the finding was
+    that the SIBLINGS already handle this class deliberately (`check_caller`, `check_manifest`) while
+    this one did not. Guarding one caller would have been instance-not-class, twice over.
+    ⛔ AND IT FAILS CLOSED: the callers turn `None` into a violation, never into silence. A
+    cannot-run rendered as a pass is the single claim this file exists to refuse.
+    """
+    try:
+        parsed = ast.parse(text)
+    except SyntaxError:
+        return None
     out: list[int] = []
-    for node in ast.walk(ast.parse(text)):
+    for node in ast.walk(parsed):
         if not isinstance(node, ast.ExceptHandler):
             continue
         for sub in ast.walk(node):
@@ -146,60 +166,124 @@ def invocation_re(basename: str) -> re.Pattern[str]:
     enforced* and nothing runs it. A substring match would read that table row as
     a caller — which is the very finding this rule exists to catch, so the rule
     must not be satisfiable by prose.
+
+    ⚠ THE BOUND, stated because a round-1 reviewer measured it and it is not obvious: this is a
+    LEXICAL test over an interpreter list, so it sees `python3 x.py`, `./x.py`, `bash x.py` and
+    `sh x.py` and NOTHING ELSE. It misses the two forms this repo actually uses to spawn a sibling
+    from Python — `sys.executable` and `str(ROOT / "scripts" / "x.py")`. MEASURED 2026-09-30:
+    `brief-compose.py` has three genuine production callers of exactly that shape
+    (`gen-features-page.py:693`, `gen-backlog-page.py`, `gen-dashboard.py`), and its R3 green comes
+    from ONE place that is not any of them — `ci.yml:168`, its `--self-test` step. Delete that step
+    and R3 goes RED with three live callers intact.
+    ⚠ Wrong in ONE direction only, and it is the safe one: a false RED on a file that is used. That
+    is the same argument that retired `import_re`, which was wrong in BOTH — so this stays lexical
+    for now rather than being rebuilt, and the gap is written down instead of fixed. It predates
+    the widened population; `code_only` does not worsen it, because these forms never matched.
+    ⚠ NOT FILED AS A BACKLOG ROW YET, deliberately: the rows for this review live on
+    `semantic-recall-replication` (#195-#200), and minting an id here would collide with them.
     """
     return re.compile(r"(?:python3?\s+|\./|\bbash\s+|\bsh\s+)(?:\S*/)?" + re.escape(basename))
 
 
-# ── THE TWO HALVES OF `import_re`'s ANCHOR, NAMED SEPARATELY ────────────────────────────────────
-# ⚠ TWO CONSTANTS, NOT ONE `r"^[ \t]*"`, AND THE REASON IS MECHANICAL RATHER THAN STYLISTIC. They
-# guard two different failures, so a mutation must be able to move one without the other — and a
-# manifest cannot hold two entries against the same anchor text, which `check-plan-code` refuses
-# because it cannot tell two mutations of one line from a duplicate that keeps the count while
-# shrinking coverage. Written as one literal, only ONE of these could ever have a falsifier.
-_LINE_START = r"^"        # excludes `# import x` and an import inside a string literal
-_OPT_INDENT = r"[ \t]*"   # admits `import m4_catalog as m4c` inside a function body
+def code_only(text: str) -> str | None:
+    """-> `text` with every STRING and COMMENT token blanked, or None if it does not tokenize.
 
+    ⛔ ROUND 1 H1/H2, AND IT IS R3's OWN DEFECT CLASS TURNED ON ITSELF. `invocation_re`'s docstring
+    says the rule "must not be satisfiable by prose", and `docs/` is excluded from the caller
+    sources because a table row "is a CLAIM about a caller, not one". But `scripts/*.py` IS a
+    caller source, and a `print()` telling a human how to start a server is the same claim in a
+    different file type. MEASURED 2026-09-30: R3 reported GREEN for `scripts/explainer-serve.py`,
+    which nothing executes, on SEVEN matches that are ALL inside string literals — six `print()`
+    calls in the page generators plus `check-explainer-delivery.SHARED_BODY`.
+    ⛔ WORSE, AND THIS IS THE HALF THAT MATTERS: R3 would not have noticed the real caller of
+    `begin-plan.py` (`ci.yml`) or `gen-m4-manifest.py` (`check-schema-gates.sh`) being DELETED,
+    because prose in other `.py` files keeps them green. A guard that cannot go red is not a guard.
 
-def import_re(basename: str) -> re.Pattern[str]:
-    """A mention that IMPORTS, not a mention that describes.
+    ⚠ LINE STRUCTURE IS PRESERVED, so `invocation_re`'s per-line reasoning is unchanged and a
+    blanked line cannot merge two neighbours into a match that neither contains.
 
-    ⚠ SIBLING OF `invocation_re`, AND IT EXISTS BECAUSE R3's QUESTION WAS WRONG FOR HALF ITS NEW
-    POPULATION. R3 was only ever asked of `scripts/check-*.py`, every one of which is invoked.
-    Extending it to the self-tested NON-guard population brings in LIBRARIES — `coverage_verdict`,
-    `m4_catalog`, `observer_log`, `subject_status` — which are imported by name and never invoked.
-    Measured 2026-09-30 before this function existed: asking "does anything invoke it?" reported
-    `R3_no_caller` for all four, while `m4_catalog` alone had 5 AST-verified importers. A false RED
-    is the direction that gets a gate switched off (backlog #56), so it is the expensive one.
+    ⚠ ONLY `.py` SOURCES GO THROUGH THIS. A shell or YAML `run:` line is a string to its own
+    language and an INVOCATION to ours — `ci.yml:303` runs `begin-plan.py` inside what YAML
+    calls a scalar — so blanking those would delete every real caller. The asymmetry is the
+    point, not an oversight.
 
-    ⛔ ANCHORED AT LINE START, WITH OPTIONAL INDENT, AND BOTH HALVES OF THAT ARE MEASURED.
-    The indent is required: `verify-exclusion-reasons.py:388` imports inside a function
-    (`import m4_catalog as m4c`). The anchor is required: `check-storage-independence.py:398`
-    carries `"from m4_catalog import CATALOG_SQL\\n…"` as a test FIXTURE inside a string literal,
-    and a pattern without the anchor counts it — the same way a prose table row would satisfy
-    `invocation_re` if it did not demand an interpreter before the name. A commented-out
-    `# import x` is excluded by the same anchor, since the `#` takes the line-start position.
-
-    ⚠ NO NAMING CONVENTION IS CONSULTED, DELIBERATELY. A hyphenated basename is not a legal Python
-    identifier, so this arm CANNOT be satisfied for an executable — the rule discriminates library
-    from executable by what the language permits, not by `CONTEXT.md`'s underscore-vs-hyphen
-    convention. That was the alternative design and it was rejected: a filename convention
-    deciding a gate's behaviour is the exact mechanism the 2026-09-30 architecture review found at
-    fault, and building the repair on it would rest the fix on the thing being criticised.
-
-    ⚠ THE BOUND, stated rather than implied: this is a regex over a concatenated blob, so it is
-    sound only to the extent the anchor holds — it is NOT an AST import graph. Measured against
-    one on all four libraries in the widened population: identical answers, 0 regex-only matches
-    and 0 real importers missed. That is a MEASUREMENT over today's corpus, not a proof.
+    ⛔ None IS A CANNOT-RUN. Returning the raw text on a tokenize failure would restore exactly
+    the false green above, and returning "" would invent a false red; the caller reports it.
     """
-    stem = basename[:-3] if basename.endswith(".py") else basename
-    if not stem.isidentifier():
-        # An executable's name cannot appear in an import statement at all. Refuse to build a
-        # pattern that could only ever match prose about it.
-        return re.compile(r"(?!)")
-    return re.compile(
-        _LINE_START + _OPT_INDENT
-        + rf"(?:import[ \t]+{re.escape(stem)}|from[ \t]+{re.escape(stem)}[ \t]+import)\b",
-        re.M)
+    try:
+        toks = list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (tokenize.TokenError, SyntaxError, IndentationError):
+        return None
+    out = text.splitlines(keepends=True)
+    for tok in toks:
+        if tok.type not in (tokenize.STRING, tokenize.COMMENT):
+            continue
+        (r1, c1), (r2, c2) = tok.start, tok.end
+        for row in range(r1, r2 + 1):
+            if row - 1 >= len(out):
+                continue
+            line = out[row - 1]
+            nl = "\n" if line.endswith("\n") else ""
+            body = line[:-1] if nl else line
+            a = c1 if row == r1 else 0
+            b = c2 if row == r2 else len(body)
+            out[row - 1] = body[:a] + " " * max(0, min(b, len(body)) - a) + body[min(b, len(body)):] + nl
+    return "".join(out)
+
+
+def import_names(text: str) -> set[str] | None:
+    """-> every module name this source IMPORTS, top-level component only. None if it will not parse.
+
+    ⛔ AN AST GRAPH, NOT A REGEX, AND THE REGEX WAS WRONG IN BOTH DIRECTIONS AT ONCE — which is the
+    signature of a lexical rule that cannot be made correct. Round 1 measured both halves:
+      · FALSE GREEN — `fixture = \"\"\"\\nimport lib\\n\"\"\"` satisfied the arm, because inside a
+        triple-quoted string the import begins at column 0. The old comment claimed the anchor
+        excluded "an import inside a string literal"; it excluded only one that does not BEGIN a
+        line, and triple-quoted fixtures are this repo's dominant idiom.
+      · FALSE RED — `import os, lib` is valid Python that imports `lib`, and the pattern only
+        accepted the target as the FIRST module after `import`. So did `from . import lib`.
+    A false red is the direction that gets a gate switched off (backlog #56), and a false green is
+    the direction that makes it decorative. `ast` answers both exactly and needs no line anchor, no
+    optional indent and no identifier guard — a hyphenated name simply cannot appear here.
+
+    ⚠ THE BOUND, stated rather than implied: this says a module of that NAME is imported, never
+    that it resolves to the file under test. A hypothetical `scripts/json.py` would be satisfied by
+    any `import json`. That hole is real and unclosed; the population already holds underscore-named
+    libraries, so it is reachable by adding a file whose stem shadows a stdlib module.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return None
+    found: set[str] = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Import):
+            for a in n.names:
+                found.add(a.name.split(".")[0])
+        elif isinstance(n, ast.ImportFrom):
+            if n.module:
+                found.add(n.module.split(".")[0])
+            # `from . import lib` / `from pkg import lib` — the NAME is the module being imported.
+            if n.level or n.module:
+                for a in n.names:
+                    found.add(a.name.split(".")[0])
+    return found
+
+
+# ⛔ `import_re`, `_LINE_START` AND `_OPT_INDENT` ARE RETIRED — round 1 H1/M1 + Codex H1/M1.
+# They were a lexical import test over a concatenated blob, and round 1 measured it wrong in BOTH
+# directions at once: a column-0 `import lib` inside a triple-quoted fixture satisfied it (false
+# GREEN), and `import os, lib` did not (false RED). A rule wrong in both directions cannot be
+# repaired by a wider pattern — this repo's recorded verdict for that shape is that the fix changes
+# KIND. `import_names` is that change: an `ast` graph, which needs no line anchor, no optional
+# indent and no identifier guard, because a hyphenated name cannot appear in an import statement at
+# all. The two constants existed only so each half of the anchor could carry its own mutation;
+# with the anchor gone they have nothing to guard.
+#
+# ⚠ THREE MANIFEST ENTRIES RETIRED WITH THEIR SUBJECT, and that is the one sanctioned kind of
+# ratchet FALL: `EXPECTED_MUTATIONS["scripts/check-ratchet-contract.py"]` drops because the code
+# each entry named no longer exists, not because coverage was traded away. Recorded at both sites
+# with the count and the reason, in this commit.
 
 
 def discover_guards(script_paths: list[str]) -> list[str]:
@@ -216,6 +300,51 @@ def discover_guards(script_paths: list[str]) -> list[str]:
     return sorted(p for p in script_paths if GUARD_PATH_RE.fullmatch(p))
 
 
+def caller_text(suffix: str, raw: str) -> str:
+    """One caller source's text, as R3 should READ it. PURE — the fetch stays with the caller.
+
+    ⛔ `.py` GOES THROUGH `code_only`; EVERYTHING ELSE DOES NOT, and the asymmetry is the fix for
+    round 1 H1/H2 rather than an inconsistency. A `print()` in a generator telling a human how to
+    start a server is a CLAIM about a caller, exactly like the `docs/` table row R3 already
+    excludes — seven such claims held `explainer-serve.py` green while nothing executed it. But a
+    shell line or a YAML `run:` scalar IS the invocation: `ci.yml` runs `begin-plan.py` inside
+    what YAML calls a string, so blanking those would delete every real caller in the repo.
+
+    ⛔ AND A `.py` SOURCE THAT WILL NOT TOKENIZE CONTRIBUTES NOTHING, deliberately. Returning its
+    raw text would restore the false green this function exists to close. The import pass reports
+    the same file as a cannot-run, so the condition is never silent — it is refused there rather
+    than half-answered here.
+
+    ⭐ WHY THAT IS SAFE, AND THE ARGUMENT IS NOT VISIBLE AT EITHER SITE ALONE — which is why it is
+    written here rather than left to be re-derived. Returning `""` is a SILENT contribution: on its
+    own it would be a false-green input to R3. It is safe only because `main`'s import pass reports
+    the same file loudly and returns 1, and that holds only if
+
+        code_only(t) is None   =>   import_names(t) is None
+
+    i.e. every file this cannot tokenize is also one `ast` cannot parse. MEASURED 2026-09-30, both
+    directions: over all 64 `scripts/*.py` there is no counterexample, and over eight constructed
+    shapes (unterminated string, unclosed paren, broken f-string, unterminated triple quote, mixed
+    tabs, bad indent, `x = = 1`, valid) there is none either. The MECHANISM is that `ast.parse`
+    runs the same tokenizer, so a tokenize failure cannot reach the parser — and the converse is
+    FALSE and harmless: `x = = 1` tokenizes fine and fails to parse, so it lands on the LOUD side.
+    The silent branch is therefore strictly dominated by the loud one.
+    ⚠ Stated as MEASURED plus a mechanism, not as proved. If `code_only` ever grows a failure mode
+    `ast.parse` does not share, this reasoning is void and `""` becomes a real false green.
+    ⚠ Raised by the round-1 reviewer as the thing it would have attacked, after the fold.
+
+    ⛔ IT TOOK A `Path` UNTIL THE SWEEP REFUSED TO COVER IT. With the read inside, no case could
+    drive it without a temp file, so its mutation — "sends .py through raw, restoring prose as a
+    caller" — SURVIVED over a green suite: 1046 declared, 1 survivor. That is the same shape round
+    1's M2 named one function over, and the repair is the one this file already states elsewhere:
+    THE FETCH IS KEPT OUT OF THE RULE. `suffix` and `raw` in, text out, and three cases drive it.
+    """
+    if suffix != ".py":
+        return raw
+    stripped = code_only(raw)
+    return stripped if stripped is not None else ""
+
+
 def caller_blob_targets(texts: dict[str, str]) -> list[str]:
     """Every file R3 will be asked about — so the blob is built for all of them.
 
@@ -228,8 +357,18 @@ def caller_blob_targets(texts: dict[str, str]) -> list[str]:
     against the real repository found it.
 
     ⚠ THAT IS THE SHAPE THE ARCHITECTURE REVIEW THAT ORDERED THIS CHANGE HAD JUST DIAGNOSED SIX
-    TIMES — a decision consulted at one site and not at another. Keeping it a pure function with
-    a case is the difference between having fixed the instance and having covered the class.
+    TIMES — a decision consulted at one site and not at another.
+
+    ⛔ ROUND 1 M2 CORRECTED WHAT THIS DOCSTRING USED TO CLAIM, and the correction matters more than
+    the extraction. It said keeping this a pure function with a case was "the difference between
+    having fixed the instance and having covered the class". IT IS NOT. Reverting `main`'s loop to
+    `for rel in ratchets:` leaves `--self-test` at FULL GREEN — the cases drive this FUNCTION, and
+    nothing here covers `main`'s USE of it. What actually catches that revert is the LIVE run in
+    CI, which reports violations and exits 1. ⚠ And a mutation entry cannot close the gap either:
+    `check-plan-code`'s oracle for this file is `--self-test` alone, so a mutation at `main`'s call
+    site is UNKILLABLE and would be refused as coverage rather than counted.
+    ⚠ Also corrected: the comment at that call site said the broken run yielded 19 violations. 19
+    is only reproducible BEFORE the three `NO-CALLER:` declarations existed; with them it is 16.
 
     ⚠ ONE EXPRESSION, ASKED BY BOTH SITES. `evaluate` iterates these same two populations; a
     third added later must appear here too, or its members silently get an empty blob again.
@@ -238,14 +377,15 @@ def caller_blob_targets(texts: dict[str, str]) -> list[str]:
                   | set(discover_self_tested_nonguards(list(texts), texts)))
 
 
-def check_caller(path: str, text: str, caller_blob: str) -> list[Violation]:
+def check_caller(path: str, text: str, caller_blob: str,
+                 imported: set[str] | None = None) -> list[Violation]:
     """R3 — something USES this file, or it says in writing why not.
 
     ⟳ 2026-09-30: "executes" became "uses". The rule's question was right for its original
     population (`scripts/check-*.py`, all invoked) and wrong for the self-tested non-guards it now
-    also covers, four of which are imported libraries. `invocation_re` OR `import_re` — see
-    `import_re`'s docstring for why the discriminator is the Python identifier rule and not a
-    filename convention.
+    also covers, four of which are imported libraries. `invocation_re` over CODE-ONLY text, OR
+    membership of the `imported` set that `import_names` builds by `ast` — see those two for why a
+    lexical test was wrong in both directions, and why no filename convention is consulted.
     """
     try:
         doc = ast.get_docstring(ast.parse(text)) or ""
@@ -265,7 +405,11 @@ def check_caller(path: str, text: str, caller_blob: str) -> list[Violation]:
     # mutation can move independently. Folded into one `or`, the manifest would want two entries
     # against the same anchor — which `check-plan-code` refuses, correctly, because it cannot tell
     # two mutations of one line from a duplicate that keeps the count while shrinking coverage.
-    if import_re(basename).search(caller_blob):
+    # ⟳ ROUND 1: AN AST IMPORT SET, NOT A REGEX OVER THE BLOB. `import_re` was wrong in BOTH
+    # directions at once — a column-0 import inside a triple-quoted fixture satisfied it, and
+    # `import os, lib` did not. See `import_names` for both measurements. The set is computed by
+    # the caller because it needs the sources INDIVIDUALLY, and a concatenated blob cannot parse.
+    if imported is not None and basename.removesuffix(".py") in imported:
         return []
     return [Violation(path, "R3_no_caller",
                       "nothing uses it — no invocation and no import. Wire it into CI, a gate "
@@ -276,7 +420,8 @@ def check_caller(path: str, text: str, caller_blob: str) -> list[Violation]:
 
 
 def evaluate(texts: dict[str, str], caller_blob_for: dict[str, str],
-             manifest_stems: set[str]) -> list[Violation]:
+             manifest_stems: set[str],
+             imported: set[str] | None = None) -> list[Violation]:
     """The whole verdict, in one place both `main()` and the suite drive.
 
     ⚠ EXTRACTED FOR THE WIRING, not for tidiness. With R1/R2/R3 applied inline in
@@ -289,7 +434,7 @@ def evaluate(texts: dict[str, str], caller_blob_for: dict[str, str],
     out: list[Violation] = []
     for rel in discover_guards(list(texts)):
         out.extend(check_contract(rel, texts[rel]))
-        out.extend(check_caller(rel, texts[rel], caller_blob_for.get(rel, "")))
+        out.extend(check_caller(rel, texts[rel], caller_blob_for.get(rel, ""), imported))
         # ⚠ R3 IS WIRED HERE, for the reason this function's docstring already gives: applied in
         # main() instead, deleting this line would leave every check_manifest case green — coverage
         # of the function, none of its use. `manifest_stems` is REQUIRED, not defaulted, so a caller
@@ -305,30 +450,50 @@ def evaluate(texts: dict[str, str], caller_blob_for: dict[str, str],
     # caution was right and is why this is not a four-rule widening:
     #
     #   R1 (has a `--self-test`) is VACUOUS here — being self-tested is this population's
-    #      defining predicate, so asking it would be a rule that cannot fail. Left off.
-    #   R2 (no fail-open handler) is a pure AST property with no population assumption.
-    #      Measured 2026-09-30 across all 20 files: 0 violations. Free, so it is taken.
-    #   R3 (something uses it) is the rule the 2026-09-30 architecture review actually needed:
-    #      `scripts/recall-llm.py`'s only caller is `.claude/hooks/surface-recall.sh`, and that
-    #      hook's own comment records that deleting it "would leave that gate green". It does not
-    #      any more — MEASURED both ways before this line was written: R3 passes on recall-llm.py
-    #      today, and reports R3_no_caller with the hook removed from the caller sources.
-    #      It required `import_re` first; see that function for why.
+    #      defining predicate (the same `SELF_TEST_RE` decides both), so asking it would be a rule
+    #      that cannot fail. Left off, and the case asserting its absence was DELETED for the same
+    #      reason rather than kept as reassurance.
+    #   R2 (no fail-open handler) is an AST property with no population assumption.
+    #      Measured 2026-09-30 over this population on master (19 files): 0 violations. Free.
+    #   R3 (something uses it) is the rule the 2026-09-30 architecture review needed.
+    #      ⚠ ROUND 1 H2 — THE CLAIM THAT USED TO SIT HERE WAS TRUE OF ONE FILE AND WRITTEN AS IF
+    #      IT WERE A PROPERTY OF THE RULE. It read: R3 passes on `recall-llm.py` today and reports
+    #      `R3_no_caller` with `surface-recall.sh` removed. Both halves were really measured — and
+    #      the reviewer then deleted the REAL callers of `begin-plan.py` (`ci.yml`) and
+    #      `gen-m4-manifest.py` (`check-schema-gates.sh`) and both STAYED GREEN, on prose in other
+    #      `.py` files. A demonstration on one member is not a property of the population.
+    #      ⭐ SO THE PROPERTY IS NOW MEASURED OVER THE POPULATION, not over a favourite member.
+    #      Method: for every file R3 reports green, remove every reason it is green — substitute
+    #      out each `invocation_re` match in the code-only caller text AND drop its stem from the
+    #      import graph — then ask again. Measured 2026-09-30 after `code_only` landed:
+    #      population 59, green 59, and **53 of 53 UNDECLARED files go RED**. The 6 that stay
+    #      green are exactly the 6 carrying a written `NO-CALLER:`, which short-circuits before
+    #      either arm — so they are insensitive BY DESIGN and the count is 53 of 53, not 53 of 59.
+    #      ⚠ Re-run that sweep after touching either arm. A rule that cannot go red is not a rule,
+    #      and one file's red says nothing about the other fifty-eight.
     _widened = discover_self_tested_nonguards(list(texts), texts)
     for rel in _widened:
         # ⚠ R2 ONLY, not `check_contract`, which also carries R1. Calling `check_contract` here
         # would silently import R1's vacuity into this population.
-        for line in fail_open_handlers(texts[rel]):
-            out.append(Violation(rel, "R2_fail_open",
-                                 f"line {line}: an `except` handler returns 0 — "
-                                 "'could not run' reported as success"))
+        _lines = fail_open_handlers(texts[rel])
+        if _lines is None:
+            # ⛔ SAME FAIL-CLOSED TREATMENT AS THE GUARD PATH. This population is discovered by a
+            # REGEX over raw text, so an unparseable file genuinely reaches here — round 1 H3.
+            out.append(Violation(rel, "R2_unparseable",
+                                 "R2 could not be evaluated: the file does not parse, so no "
+                                 "statement about its exception handlers is possible. NOT RUN"))
+        else:
+            for line in _lines:
+                out.append(Violation(rel, "R2_fail_open",
+                                     f"line {line}: an `except` handler returns 0 — "
+                                     "'could not run' reported as success"))
         # ⚠ THE BLOB IS BOUND TO A NAMED LOCAL rather than inlined, and the reason is mechanical:
         # inlined, this line is BYTE-IDENTICAL to the guards loop's R3 call above, and a mutation
         # manifest cannot bind an anchor that matches twice — `check-plan-code` refuses it, because
         # `replace(…, 1)` takes the first and that need not be the line the mutation names. So
         # without this local, the widened R3 could not have a falsifier at all.
         widened_blob = caller_blob_for.get(rel, "")
-        out.extend(check_caller(rel, texts[rel], widened_blob))
+        out.extend(check_caller(rel, texts[rel], widened_blob, imported))
     _violating = {rel for rel in _widened
                   if check_manifest(rel, texts[rel], manifest_stems)}
     # `set(texts)` is the EXAMINED set, not `_widened`: a pinned script that stopped being
@@ -342,9 +507,17 @@ def check_contract(path: str, text: str) -> list[Violation]:
     if not SELF_TEST_RE.search(text):
         v.append(Violation(path, "R1_no_self_test",
                            "no `--self-test` — nothing proves its discriminators are load-bearing"))
-    for line in fail_open_handlers(text):
-        v.append(Violation(path, "R2_fail_open",
-                           f"line {line}: an `except` handler returns 0 — 'could not run' reported as success"))
+    lines = fail_open_handlers(text)
+    if lines is None:
+        # ⛔ CANNOT RUN IS A VIOLATION, NEVER A SKIP. R2 could not be evaluated at all, and this
+        # file's own doctrine is that silence there is indistinguishable from success.
+        v.append(Violation(path, "R2_unparseable",
+                           "R2 could not be evaluated: the file does not parse, so no statement "
+                           "about its exception handlers is possible. Treat as NOT RUN"))
+    else:
+        for line in lines:
+            v.append(Violation(path, "R2_fail_open",
+                               f"line {line}: an `except` handler returns 0 — 'could not run' reported as success"))
     return v
 
 
@@ -667,39 +840,101 @@ CALLER_CASES: list[tuple[str, str, str, str, list[str]]] = [
      "| `scripts/check-f.py` | listed in a table under 'mechanically enforced' |\n",
      ["R3_no_caller"]),
     # ── R3 IS "SOMETHING USES THIS", NOT "SOMETHING INVOKES THIS" ────────────────────────────
-    # Added 2026-09-30 by the architecture review on the recall matcher. The rule was applied
-    # only to `scripts/check-*.py`, all of which are invoked; extending it to the self-tested
-    # NON-guard population brings in LIBRARIES, which are imported and never invoked. Measured
-    # before the rule changed: `m4_catalog` has 5 AST-verified importers and 0 invocations, so
-    # asking "does anything invoke it?" would have put four heavily-used files red. A false RED
-    # is the direction that gets a gate switched off (backlog #56), so it is the dangerous one.
+    # The import ARM has its own group below (`IMPORT_ARM_CASES`), because it no longer reads the
+    # blob: it consults an `ast` import set built from the sources individually. What stays here is
+    # the INVOCATION arm — and round 1 H1 is why the two cases below exist at all.
+    ("a guard named only inside a STRING in another .py file has NO caller — prose is a claim",
+     "scripts/lib_p.py", HAS_CALLER_STUB,
+     '     \n', ["R3_no_caller"]),
+    ("...and a real shell invocation still counts, because a shell string IS the invocation",
+     "scripts/lib_q.py", HAS_CALLER_STUB,
+     'python3 scripts/lib_q.py --once\n', []),
+]
+
+# ── THE IMPORT ARM: `check_caller` consults an ast SET, not text ─────────────────────────────
+# (name, path, text, imported set, expected)
+IMPORT_ARM_CASES: list[tuple[str, str, str, set[str] | None, list[str]]] = [
     ("an IMPORTED library is USED, even though nothing invokes it",
-     "scripts/lib_a.py", HAS_CALLER_STUB, "from lib_a import thing\n", []),
-    ("...and the import may be INDENTED — `import m4_catalog as m4c` inside a function is real",
-     "scripts/lib_b.py", HAS_CALLER_STUB, "    import lib_b as b\n", []),
-    # ⚠ THE NEGATIVES ARE ADJACENT, NOT ABSURD. A rule that only ever fires cannot fail; each of
-    # these is one character away from the positives above and must still be a violation.
-    ("a COMMENTED-OUT import is not a use", "scripts/lib_c.py", HAS_CALLER_STUB,
-     "# import lib_c\n", ["R3_no_caller"]),
-    # ⚠ THIS SHAPE IS REAL, NOT INVENTED: `check-storage-independence.py:398` holds
-    # `"from m4_catalog import CATALOG_SQL\n…"` as a test FIXTURE. A naive pattern counts it,
-    # which is how `invocation_re`'s sibling weakness was found — hence the line-start anchor.
-    ("an import inside a STRING LITERAL is not a use — the measured fixture shape",
-     "scripts/lib_d.py", HAS_CALLER_STUB, '    x = "from lib_d import CONST"\n',
-     ["R3_no_caller"]),
-    # ⚠ WHY NO NAMING RULE IS NEEDED, pinned as a case rather than left as a remark: a hyphenated
-    # basename is not a legal identifier, so the import arm CANNOT be satisfied for an executable.
-    # The rule discriminates library from executable without consulting the filename convention —
-    # which matters, because a filename convention deciding a gate's behaviour is the exact
-    # mechanism this review found at fault.
-    ("the import arm cannot satisfy a HYPHENATED executable — it is not a legal identifier",
-     "scripts/exec-tool.py", HAS_CALLER_STUB, "import exec-tool\n", ["R3_no_caller"]),
+     "scripts/lib_a.py", HAS_CALLER_STUB, {"lib_a"}, []),
+    # ⚠ ADJACENT NEGATIVE: the same call with the same shape and a set that does not hold the stem.
+    ("...and a library absent from the import graph is NOT used",
+     "scripts/lib_a.py", HAS_CALLER_STUB, {"something_else"}, ["R3_no_caller"]),
+    # ⛔ THE ARM MUST BE INERT WHEN NO GRAPH WAS SUPPLIED, never permissive. `None` means "the
+    # caller did not compute one", and treating that as "nothing is imported" is right while
+    # treating it as "everything is" would be a fail-open.
+    ("no import graph supplied is not a licence — the arm stays inert",
+     "scripts/lib_a.py", HAS_CALLER_STUB, None, ["R3_no_caller"]),
+    # ⚠ A HYPHENATED EXECUTABLE CANNOT BE IN THE GRAPH AT ALL — not because a guard refuses it,
+    # but because `ast` cannot produce it. The old identifier guard existed to fake this and was
+    # measured INERT (53 non-identifier stems, 0 whose answer it changed); it is gone.
+    ("a hyphenated executable is unreachable by this arm — ast cannot name it",
+     "scripts/exec-tool.py", HAS_CALLER_STUB, {"exec-tool"}, []),
+]
+
+# ── `code_only`: prose must not be able to satisfy the invocation arm ────────────────────────
+# (name, source, must NOT appear in the result, must still appear)
+# ⚠ THE FOURTH ELEMENT IS `want_none`, because "returns None" and "returns empty" are DIFFERENT
+# claims and a case that cannot tell them apart cannot guard the fail-closed path.
+CODE_ONLY_CASES: list[tuple[str, str, list[str], list[str], bool]] = [
+    ("a print() naming a script is blanked — round 1 H1's actual shape",
+     'print("    start: python3 scripts/explainer-serve.py")\nrun_it()\n',
+     ["explainer-serve.py"], ["run_it()"], False),
+    ("a TRIPLE-QUOTED fixture is blanked, which the retired anchor could not do",
+     'FIX = """\npython3 scripts/tool.py\n"""\nreal()\n', ["scripts/tool.py"], ["real()"], False),
+    ("a comment naming a script is blanked",
+     '# python3 scripts/tool.py\nreal()\n', ["scripts/tool.py"], ["real()"], False),
+    ("real code survives untouched",
+     'subprocess.run(["python3", "scripts/tool.py"])\n', [], ["subprocess.run"], False),
+    # ⛔ THE FAIL-CLOSED PATH. Returning the raw text here restores round 1 H1's false green
+    # exactly; returning "" would invent a false red. Neither is None, so both are caught.
+    ("a source that will not TOKENIZE yields None, never its raw text",
+     'x = "unterminated\n', [], [], True),
+]
+
+# ── `caller_text`: the .py/everything-else asymmetry ─────────────────────────────────────────
+# ⛔ THESE CASES EXIST BECAUSE THEIR ABSENCE LET A MUTATION SURVIVE. The function took a `Path`,
+# so nothing could drive it without a temp file and its entry survived over a green suite.
+# (name, suffix, raw, must NOT appear, must still appear)
+CALLER_TEXT_CASES: list[tuple[str, str, str, list[str], list[str]]] = [
+    ("a .py source is read as CODE — a print() naming a script is not a caller",
+     ".py", 'print("python3 scripts/tool.py")\nrun()\n', ["scripts/tool.py"], ["run()"]),
+    # ⚠ THE OTHER HALF OF THE ASYMMETRY, and it must not be lost: in YAML and shell the string
+    # IS the command. `ci.yml` runs `begin-plan.py` inside what YAML calls a scalar.
+    ("a .yml source is read RAW — there a quoted line IS the invocation",
+     ".yml", '      - run: python3 scripts/tool.py\n', [], ["python3 scripts/tool.py"]),
+    ("a .sh source is read RAW too", ".sh", 'python3 scripts/tool.py --once\n', [],
+     ["python3 scripts/tool.py"]),
+    # ⛔ THE FAIL-CLOSED CONTRIBUTION: an untokenizable .py adds NOTHING, never its raw text.
+    ("an untokenizable .py contributes nothing, not its raw text",
+     ".py", 'x = "unterminated\npython3 scripts/tool.py\n', ["scripts/tool.py"], []),
+]
+
+# ── `import_names`: an ast graph, and the two directions the regex got wrong ──────────────────
+# ⚠ `want` is True / False / None — None asserts the CANNOT-RUN, which an empty set
+# would silently satisfy. That distinction is the whole fail-closed contract here.
+IMPORT_NAMES_CASES: list[tuple[str, str, str, bool | None]] = [
+    ("a plain import is found", "import lib\n", "lib", True),
+    ("a from-import is found", "from lib import thing\n", "lib", True),
+    # ⛔ CODEX ROUND 1 M1 — the regex said no, and this is valid Python that imports `lib`.
+    ("a SECOND module on one import line is found", "import os, lib\n", "lib", True),
+    ("a relative from-import is found", "from . import lib\n", "lib", True),
+    ("a package from-import is found", "from scripts import lib\n", "lib", True),
+    ("an in-function import is found", "def f():\n    import lib\n", "lib", True),
+    # ⛔ CODEX ROUND 1 H1 / CLAUDE M1 — the false GREEN. A column-0 import inside a
+    # triple-quoted string satisfied the retired anchor; ast does not see it at all.
+    ("an import inside a TRIPLE-QUOTED string is not an import", 'F = """\nimport lib\n"""\n',
+     "lib", False),
+    ("an import inside a single-line string is not an import", 'x = "import lib"\n', "lib", False),
+    ("a commented-out import is not an import", "# import lib\n", "lib", False),
+    ("a source that will not PARSE is a cannot-run, not an empty graph",
+     "def broken(\n", "lib", None),
 ]
 
 # ── WHO GETS A CALLER BLOB BUILT FOR THEM ────────────────────────────────────────────────────
 # ⚠ THESE CASES EXIST BECAUSE THEIR ABSENCE WAS A LIVE DEFECT (see `caller_blob_targets`). The
-# decision lived inline in `main()` and no case could reach it; R3 then fired for all 19 widened
-# files because each got an empty blob. (name, texts, expected)
+# decision lived inline in `main()` and no case could reach it; R3 then fired for EVERY widened
+# file because each got an empty blob. (No count: round 1 L1 measured the population at 19 on
+# master where this comment said 20, and the figure moves with the tree.) (name, texts, expected)
 BLOB_TARGET_CASES: list[tuple[str, dict[str, str], list[str]]] = [
     ("a GUARD gets a caller blob built for it",
      {"scripts/check-a.py": SELF_TEST_OK}, ["scripts/check-a.py"]),
@@ -857,9 +1092,20 @@ WIDENED_DRIFT_CASES: list[tuple[str, set[str], set[str], list[str]]] = [
      set(), set(), []),
 ]
 
+UNPARSEABLE = '''"""A ratchet with --self-test."""
+def broken(
+'''
+
 CASES: list[tuple[str, str, list[str]]] = [
     ("a conforming ratchet has no violations", SELF_TEST_OK, []),
     ("a missing --self-test is flagged", NO_SELF_TEST, ["R1_no_self_test"]),
+    # ── ROUND 1 H3 ───────────────────────────────────────────────────────────────────────────
+    # ⛔ THIS CRASHED THE GUARD. `fail_open_handlers` called `ast.parse` bare, so an unparseable
+    # file raised out of `evaluate` before one violation printed. R1 still fires here because
+    # SELF_TEST_RE is a text match and needs no parse — which is exactly how such a file enters
+    # the widened population in the first place.
+    ("an unparseable file is a LOUD cannot-run, never a crash and never a pass",
+     UNPARSEABLE, ["R2_unparseable"]),
     ("an except handler returning 0 is flagged", FAIL_OPEN, ["R2_fail_open"]),
     ("returning None from except is NOT flagged — that is fail-closed delegation",
      RETURNS_NONE, []),
@@ -911,6 +1157,34 @@ def self_test() -> int:
         got = sorted({v.rule for v in check_caller(path, text, blob)})
         if got != sorted(expected):
             print(f"[FAIL] {name}\n       expected {sorted(expected)}\n       got      {got}")
+            failures += 1
+    for name, path_, text_, imported_, expected in IMPORT_ARM_CASES:
+        got = sorted({v.rule for v in check_caller(path_, text_, "", imported_)})
+        if got != sorted(expected):
+            print(f"[FAIL] {name}\n       expected {sorted(expected)}\n       got      {got}")
+            failures += 1
+    for name, src_, absent_, present_, want_none in CODE_ONLY_CASES:
+        res = code_only(src_)
+        if want_none:
+            bad = [] if res is None else ["expected None, got text"]
+        elif res is None:
+            bad = ["expected text, got None"]
+        else:
+            bad = [t for t in absent_ if t in res] + [t for t in present_ if t not in res]
+        if bad:
+            print(f"[FAIL] {name}\n       wrong about {bad}\n       got      {res!r}")
+            failures += 1
+    for name, suffix_, raw_, absent_, present_ in CALLER_TEXT_CASES:
+        res = caller_text(suffix_, raw_)
+        bad = [t for t in absent_ if t in res] + [t for t in present_ if t not in res]
+        if bad:
+            print(f"[FAIL] {name}\n       wrong about {bad}\n       got      {res!r}")
+            failures += 1
+    for name, src_, stem_, want in IMPORT_NAMES_CASES:
+        names = import_names(src_)
+        got = None if names is None else (stem_ in names)
+        if got != want:
+            print(f"[FAIL] {name}\n       expected {want}\n       got      {got}")
             failures += 1
     for name, texts_, expected in BLOB_TARGET_CASES:
         got = caller_blob_targets(texts_)
@@ -1003,9 +1277,8 @@ def self_test() -> int:
         # satisfiable by a rule that simply always fires.
         ("...and a NON-guard that is IMPORTED reports no R3 — the import arm reaches the wiring",
          {"scripts/check-w.py": SELF_TEST_OK, "scripts/tool.py": SELF_TEST_OK},
-         {"scripts/check-w.py": "python3 scripts/check-w.py",
-          "scripts/tool.py": "from tool import helper"},
-         ["R4W_no_mutation_manifest", "R4_no_mutation_manifest"]),
+         {"scripts/check-w.py": "python3 scripts/check-w.py"},
+         ["R4W_no_mutation_manifest", "R4_no_mutation_manifest"], {"tool"}),
         # ⚠ FAIL_OPEN IS REUSED, not re-stubbed: its docstring already carries `--self-test`, so
         # it qualifies for the widened population. A near-copy stub is a second implementation of
         # one fixture, and those drift.
@@ -1014,6 +1287,14 @@ def self_test() -> int:
          {"scripts/check-w.py": "python3 scripts/check-w.py",
           "scripts/tool.py": "python3 scripts/tool.py"},
          ["R2_fail_open", "R4W_no_mutation_manifest", "R4_no_mutation_manifest"]),
+        # ⛔ ROUND 1 H3, AT THE WIRING. The crash was raised from inside `evaluate`, so a case over
+        # `check_contract` alone would not have covered this population's route to it. This one
+        # reaches the widened loop's own call.
+        ("evaluate survives an unparseable NON-guard and reports it loudly",
+         {"scripts/check-w.py": SELF_TEST_OK, "scripts/tool.py": UNPARSEABLE},
+         {"scripts/check-w.py": "python3 scripts/check-w.py",
+          "scripts/tool.py": "python3 scripts/tool.py"},
+         ["R2_unparseable", "R4W_no_mutation_manifest", "R4_no_mutation_manifest"]),
         # ⛔ NO CASE FOR "R1 IS NOT ASKED HERE", DELIBERATELY. One was written and DELETED: a
         # widened file always has a self-test, because that is the population's defining
         # predicate, so a case asserting the absence of R1_no_self_test cannot fail whatever the
@@ -1023,8 +1304,11 @@ def self_test() -> int:
     ]
     # Empty on purpose: the stub guards have no manifest, so R4 fires unless a case opts out.
     manifests: set[str] = set()
-    for name, texts, blobs, expected in wiring:
-        got = sorted({v.rule for v in evaluate(texts, blobs, manifests)})
+    # ⚠ FIVE-TUPLE: the import graph is the fifth element, because the import ARM is consulted
+    # inside `evaluate` and a wiring case that could not supply one could never reach it.
+    for name, texts, blobs, expected, *rest in wiring:
+        got = sorted({v.rule for v in evaluate(texts, blobs, manifests,
+                                               rest[0] if rest else None)})
         if got != sorted(expected):
             print(f"[FAIL] {name}\n       expected {sorted(expected)}\n       got      {got}")
             failures += 1
@@ -1038,7 +1322,13 @@ def self_test() -> int:
              # new cases RAN and the tally still printed 49/49, because a group absent from this
              # sum is invisible here whether it exists or not. Caught only by expecting 52 and
              # reading 49 — the same blind spot the `wiring` note above describes, one group later.
-             + len(BLOB_TARGET_CASES))
+             # ⟳ Round 1 L6 CORRECTED A CLAIM I MADE ABOUT THIS: a comment here implied nothing
+             # catches a dropped group. `check-selftest-counts.py` lists this file and compares the
+             # DOCSTRING's declared count against the printed tally, so dropping a group does
+             # redden a gate — the docstring is the falsifier, and it is machine-checked.
+             + len(BLOB_TARGET_CASES)
+             + len(IMPORT_ARM_CASES) + len(CODE_ONLY_CASES) + len(IMPORT_NAMES_CASES)
+             + len(CALLER_TEXT_CASES))
     print(f"self-test: {total - failures}/{total} passed")
     return 1 if failures else 0
 
@@ -1092,8 +1382,12 @@ def main(argv: list[str]) -> int:
     # ⛔ THE POPULATION HERE MUST MATCH THE POPULATION `evaluate` ASKS R3 OF, AND FOR ONE RUN IT
     # DID NOT. 2026-09-30: R3 was extended to the self-tested non-guards while this loop still
     # ran over `ratchets` alone, so every widened file received `blob_for.get(rel, "")` — the
-    # empty string — and R3 fired for all 19 of them. Measured: 19 violations where 3 were
-    # expected. That is the defect the architecture review that ordered this change had just
+    # empty string — and R3 fired for every one of them. ⟳ Round 1 L1/M2: this said "all 19"
+    # and "19 violations where 3 were expected"; 19 is only reproducible BEFORE the three
+    # NO-CALLER: declarations existed, and with them the broken run yields 16. No count is quoted
+    # now — the population moves, and a figure written into the file it describes is stale at the
+    # commit that writes it.
+    # That is the defect the architecture review that ordered this change had just
     # finished diagnosing — a check applied at a new site while the data it consumes was not
     # extended to reach it — reproduced inside its own repair, and caught by RUNNING the guard
     # against the real repo rather than by the 49-case suite, every case of which passes its own
@@ -1112,12 +1406,35 @@ def main(argv: list[str]) -> int:
         # body does not import itself, but its `--self-test` frequently builds a fixture STRING
         # containing an import of itself. Excluding its own text removes that whole class.
         blob_for[rel] = "\n".join(
-            p.read_text(errors="ignore") for p in caller_sources
+            caller_text(p.suffix, p.read_text(errors="ignore")) for p in caller_sources
             if p.is_file() and str(p.relative_to(ROOT)) != rel)
+
+    # ── THE IMPORT GRAPH, BUILT ONCE FROM THE SOURCES INDIVIDUALLY ───────────────────────────
+    # ⚠ NOT FROM THE BLOB, and that is the whole reason it lives here rather than in the rule: a
+    # concatenation of every caller source is not a Python program and `ast` cannot parse it.
+    # Round 1 retired the regex that pretended otherwise.
+    imported: set[str] = set()
+    unparsed: list[str] = []
+    for p in caller_sources:
+        if not p.is_file() or p.suffix != ".py":
+            continue
+        names = import_names(p.read_text(errors="ignore"))
+        if names is None:
+            unparsed.append(str(p.relative_to(ROOT)))
+        else:
+            imported |= names
+    # ⛔ A SOURCE WE COULD NOT READ IS A CANNOT-RUN FOR EVERY R3 ANSWER THAT DEPENDS ON IT, and it
+    # is said out loud rather than folded into a green. An unparseable caller source could hold the
+    # only import of some library in the population, so silence here would be a false red waiting
+    # to happen — and a false red is what gets a gate switched off.
+    if unparsed:
+        print("FAILED: could not parse caller source(s), so the import graph is incomplete "
+              f"and R3 cannot be answered: {', '.join(unparsed)}. Treat this as NOT RUN.")
+        return 1
 
     # THE FETCH, kept out of the rule: check_manifest is pure and takes this set.
     manifest_stems = {q.stem for q in (ROOT / 'scripts/mutations').glob('*.json')}
-    violations = evaluate(texts, blob_for, manifest_stems)
+    violations = evaluate(texts, blob_for, manifest_stems, imported)
 
     print(f"guards discovered ({len(ratchets)}): " + ", ".join(ratchets))
     if not violations:

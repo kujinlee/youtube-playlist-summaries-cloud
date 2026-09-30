@@ -84,8 +84,13 @@ POPULATION: frozenset[str] = frozenset({
     "check-python-pin.py",
 "check-backlog-closure.py",   # backlog #98 — the inverted row-vs-git check
     "begin-plan.py",                 # ⟳ 2026-09-04, task #224. Not a `check-*` guard, so the
-                                     # ratchet contract's population never sees it — this is the
-                                     # only outside observer of its declared count.
+                                     # ratchet contract's GUARD population does not see it.
+                                     # ⟳⟳ 2026-09-30, backlog #196: its WIDENED population now
+                                     # asks R2/R3/R4 of this file — but none of the four reads a
+                                     # DECLARED COUNT, so this is still the only outside observer
+                                     # of that. ⚠ Found while fixing the five the round-1 review
+                                     # listed; it was a sixth instance of the same stale sentence,
+                                     # which is why the sweep was done by phrase and not by list.
     "check-anchors.py",
     # ⟳ 2026-09-20, the closing-table guard. Pinned in the SAME commit that creates it —
     # a script that declares a count nothing verifies is exactly the drift this file refuses.
@@ -104,8 +109,11 @@ POPULATION: frozenset[str] = frozenset({
     "check-banner-armed.py",
     # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record, pinned in the
     # same commit that creates it — for the reason this file keeps restating, and because it is a
-    # LIBRARY: `check-ratchet-contract`'s population is `check-*` guards, so nothing else observes
-    # its declared count at all. Its own first run printed 37 against a docstring saying 34.
+    # LIBRARY: `check-ratchet-contract`'s GUARD population is `check-*`, and while its WIDENED
+    # population now asks R2/R3/R4 of this file (backlog #196, 2026-09-30), none of those four
+    # rules looks at a DECLARED COUNT — so this literal is still the only observer of that.
+    # ⚠ Corrected rather than deleted: the old sentence said the population does not see the file
+    # at all, which stopped being true, while the conclusion it supports did not. Its own first run printed 37 against a docstring saying 34.
     "observer_log.py",
     "check-ci-watched.py",           # ⟳ 2026-09-04: CI ran unwatched on 2 of 3 pushes
     "check-group-claims.py",         # ⟳ 2026-09-11. Pinned in the commit that creates it:

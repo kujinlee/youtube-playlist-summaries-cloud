@@ -12936,3 +12936,65 @@ reproduction of the High it was written for. #126 and #127 travel with it.
 
 Testimony preserved: 32 files restored from `origin/explainer-src-root-self-configures` by explicit path
 (`docs/reviews/{claude,codex,coordinator,verdicts}/`), verified to carry no code.
+
+## 2026-09-30
+A safety rule that only looked at files whose names began with "check-", and the four it should have been watching all along.
+
+There is a rule in this project that says: every safety script must have tests, must not fail
+quietly, and must actually be **called by something**. That last part is the one that matters — a
+check nothing runs is decoration. But the rule only ever looked at files named `check-…`, so a
+whole set of other scripts, including the one that surfaces these notes to me, was never asked.
+
+**It now asks them.** Two of the three missing rules were applied; the third was deliberately left
+off because it could not possibly fail there, and I deleted the test I had written for it rather
+than keep something reassuring that proves nothing.
+
+⚠ **The review then found the rule was lying, and that is the useful part.** It reported one script
+as properly called when nothing calls it — because six other scripts contain a `print()` telling a
+human how to start it, and the rule was reading those sentences as if they were the act itself.
+Worse: it would **not** have noticed two scripts losing their real caller, for the same reason.
+Prose about running something is not running it, which this project already knew and wrote down;
+the rule just could not tell the difference inside a Python file.
+
+The fix reads only the **code** of Python files now, ignoring their text and comments, while leaving
+shell and workflow files alone — because there, a line that looks like a string genuinely *is* the
+command. And the "is it imported?" half was thrown away and rebuilt on the language's own parser,
+after it turned out to be wrong in **both** directions at once: it counted an import written inside
+an example, and missed a real one written as `import os, lib`.
+
+⚠ **Two things I claimed too confidently.** I proved the rule could go red for one script and wrote
+that up as though it were true of all of them; a reviewer deleted the callers of two others and both
+stayed green. It is now measured properly: **53 of 53** scripts go red when you take their caller
+away, and the six that do not are the six that say in writing why they have none. And I had pushed a
+commit describing finished work that was missing every piece of its own test coverage — it looked
+internally consistent and green, which is exactly what made it dangerous.
+
+<!--tech-->
+**Backlog #196**, the primary verdict of the 2026-09-30 architecture review. `r3-something-uses-it`,
+off `master` at `446025ab`. ⛔ **NOT CONVERGED — round 1 found 1 Blocking, 4 High, 5 Medium, 7 Low
+across both halves; this is the fold, and round 2 is owed.**
+
+`check-ratchet-contract.py`: R2 and R3 now apply to `discover_self_tested_nonguards`; R1 does not
+(it shares `SELF_TEST_RE` with the population predicate, so it cannot fire). R3's question changed
+from *executes* to *uses*.
+
+| round-1 finding | fold |
+|---|---|
+| **B1** the change was split — `778fd822` shipped 7 discriminators with 0 mutations | `41cfb37d` |
+| **H1** R3 green for `explainer-serve.py` on 7 string-literal matches | `code_only()` + a written `NO-CALLER:` |
+| **H2** R3 would not notice `begin-plan.py`/`gen-m4-manifest.py` losing their caller | same fix; property re-measured **53 of 53** |
+| **H3** unparseable `.py` in the population **crashed** the guard | `fail_open_handlers` → `None` = cannot-run, fixed in the shared function, not at one call site |
+| **M1 / Codex H1** the anchor excluded only strings that do not *begin* a line | `import_re` **retired**; `import_names` is an `ast` graph |
+| **Codex M1** `import os, lib` was a false red | same |
+| **M2** the blob-population fix had no falsifier at the site that broke | docstring claim corrected — the live CI run covers it, a mutation there is unkillable |
+| **M3** `check-dashboard-entry` was red and absent from my gate list | this entry |
+| **M4** five comments in three files asserted the population excludes these files | corrected — **and a sixth was found by sweeping the phrase rather than the list** |
+| **L1, L6** two stale counts and a wrong claim about what catches a dropped case-group | corrected |
+
+Mutation manifest **17 → 22**: six entries **retired with their subject** (the sanctioned ratchet
+fall — the code they named is gone), eleven added. `EXPECTED_MUTATIONS` 17 → 22, declared sum
+1041 → 1046, both figures taken from the guard rather than counted by hand after my own regex
+said 2582.
+
+**Gates:** `--self-test` 70/70 · live run rc=0 · `check-plan-code --self-test` 131/131 ·
+`check-selftest-counts` rc=0 · full sweep re-running on the folded tree.

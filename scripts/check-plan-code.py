@@ -827,7 +827,13 @@ EXPECTED_MUTATIONS = {
     # identifier guard that keeps the arm inert for hyphenated executables, R2 and R3's
     # application to the widened population, and the caller-blob population itself, whose absence
     # was the live defect this slice produced and then covered.
-    "scripts/check-ratchet-contract.py": 17,
+    # ⟳⟳ 2026-09-30, round 1 of the review: 17 -> 22. SIX entries were RETIRED WITH THEIR
+    # SUBJECT — `import_re`, `_LINE_START`, `_OPT_INDENT` and the identifier guard are gone, and
+    # two more named lines that changed shape — and ELEVEN added for `code_only`, `import_names`,
+    # the import arm, the fail-closed `None` paths and the widened R2/R3 applications. The fall of
+    # six is the one sanctioned kind: the code each entry named no longer exists, so they are
+    # retired rather than orphaned. Reason recorded at the retirement site in that file too.
+    "scripts/check-ratchet-contract.py": 22,
     # ⟳ 2026-09-23, folding review-identity-176 round 1: 12 -> 17, AND ONE EXISTING ENTRY WAS
     # RETARGETED — its anchor `if rec.get("gate_ran"):` was unbound by the restructure that added
     # the reverse clause, the exact *an anchor is unbound by ANY nearby edit* shape this repo has
@@ -3017,8 +3023,11 @@ def _self_test() -> int:
                                       "scripts/gen-goals-page.py",
                                       # ⟳ 2026-09-23, backlog #166 + #170 — the ONE owner of
                                       # the observer-log record. A LIBRARY, not a guard, so
-                                      # `check-ratchet-contract`'s population never sees it;
-                                      # this literal is the outside observer of its manifest.
+                                      # ⟳ #196: `check-ratchet-contract`'s WIDENED population
+                                      # does see it now, for R2/R3/R4 — but R4 asks only that a
+                                      # manifest EXISTS, so this literal is still the outside
+                                      # observer of what is IN it. The old comment said the
+                                      # population never sees it, which is no longer true.
                                       "scripts/observer_log.py",
                                       "scripts/page_chrome.py",
                                       "scripts/page_markup.py",
@@ -3756,7 +3765,7 @@ def _self_test() -> int:
     # EXPECTED_MUTATIONS written while making this change said 2582 — it matched digits in the
     # surrounding comments. The recorded shape is *a second implementation of one rule drifts*, so
     # the number is whatever `--self-test` reports and nothing else.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1041)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1046)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

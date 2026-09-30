@@ -153,8 +153,11 @@ jobs:
       - name: check-backlog-closure self-test
         run: python3 scripts/check-backlog-closure.py --self-test
 
-      # ⛔ brief-compose is a COMPOSER, not a `check-*`, so `check-ratchet-contract`'s population
-      # (30 guards, all check-*) does not see it — yet it carries the half-live-toggle guard from
+      # ⛔ brief-compose is a COMPOSER, not a `check-*`, so `check-ratchet-contract`'s GUARD
+      # population does not see it — but its WIDENED population does, for R2/R3/R4 since
+      # backlog #196 (2026-09-30); only R1 is still not asked, so this step is what makes the
+      # suite run. ⚠ The "30 guards" figure was stale before that change too — the live run
+      # prints the count, and no figure is quoted here. It carries the half-live-toggle guard from
       # backlog #102. Measured 2026-09-10 during the r1 review (finding F9): 62 cases, no CI step,
       # no mutation manifest. A guard nothing runs is the class that froze the backlog page for
       # five days.
@@ -383,8 +386,10 @@ jobs:
         run: python3 scripts/check-function-revokes.py --self-test
 
       # The ONE inline-markdown renderer, shared by all four page generators. It is a
-      # library, not a guard, so `check-ratchet-contract.py` neither sees it nor should:
-      # its population is glob("check-*.py"). THIS STEP is what stops its --self-test
+      # library, not a guard, so `check-ratchet-contract.py`'s GUARD population does not see
+      # it — its R1-R4 set is glob("check-*.py"). ⟳ 2026-09-30, backlog #196: the WIDENED
+      # population now asks R2/R3/R4 of it, so "nor should" is no longer this repo's position;
+      # only R1 is withheld. THIS STEP is what stops its --self-test
       # going unrun, and scripts/mutations/page_markup.json is what stops it going
       # vacuous. Backlog #71.
       - name: page_markup self-test
@@ -392,7 +397,9 @@ jobs:
 
       # The shared page chrome — theme control, provenance stamp, refresh — used by all
       # five page producers. Same shape as page_markup above and for the same reason: a
-      # library, not a guard, so `check-ratchet-contract.py` neither sees it nor should.
+      # library, not a guard, so `check-ratchet-contract.py`'s GUARD population does not see
+      # it. ⟳ 2026-09-30, backlog #196: its WIDENED population now asks R2/R3/R4 of it; only R1
+      # is withheld, so "nor should" no longer holds.
       # THIS STEP stops its --self-test going unrun; scripts/mutations/page_chrome.json
       # stops it going vacuous, and writing that manifest immediately found two of its
       # cases already were. Backlog #76 and #77.
