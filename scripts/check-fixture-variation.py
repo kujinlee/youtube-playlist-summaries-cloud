@@ -300,6 +300,48 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # ⟳ 2026-09-29, backlog #191: the LLM recall matcher, pinned in the commit that creates it
+    # — this guard REFUSED the file until it was, the fifth time it has caught a new script
+    # arriving unmeasured. DERIVED by running `analyse()` on the delivered source AFTER the module
+    # was frozen, not transcribed: 33 keys, `findings = []`. Nine were findings on the first run
+    # (all six parameters of `cache_document`, plus `load_triggers.d` and `memory_files.d`) and
+    # every one was fixed by VARYING the value, never by an EXEMPT row — a second cache document
+    # differing in all six arguments, a second corpus directory and an empty one.
+    'recall-llm.py': (
+        'build_prompt.steps',
+        'build_prompt.triggers',
+        'cache_document.corpus_size',
+        'cache_document.picks',
+        'cache_document.plan',
+        'cache_document.plan_text',
+        'cache_document.triggers',
+        'cache_document.when',
+        'cache_path.slug',
+        'cache_verdict.cache',
+        'cache_verdict.plan_text',
+        'corpus_verdict.n_files',
+        'corpus_verdict.n_triggers',
+        'fire_output.entry',
+        'fire_output.trigger',
+        'first_unticked.plan_text',
+        'frontmatter_description.text',
+        'load_triggers.d',
+        'lookup.cache',
+        'lookup.step',
+        'memory_files.d',
+        'parse_cache.text',
+        'parse_response.step_numbers',
+        'parse_response.text',
+        'parse_response.valid_names',
+        'parse_trigger.description',
+        'paused.sentinel_text',
+        'plan_fingerprint.plan_text',
+        'plan_steps.plan_text',
+        'plan_verdict.steps',
+        'render.entry',
+        'render.trigger',
+        'sentinel_plan.sentinel_text',
+    ),
     # ⟳ 2026-09-23, backlog #166 + #170: the ONE owner of the observer-log record, pinned in the
     # commit that adds it — this guard refused the file until it was, which is now the fourth time
     # it has caught a new script arriving unmeasured. DERIVED by running `analyse()` on the final

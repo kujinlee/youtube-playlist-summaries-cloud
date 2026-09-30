@@ -95,6 +95,13 @@ playwright/.auth/
 # list is neither — it is per-machine execution state, like the two sentinels above.
 .claude/plans/
 
+# Recall answers cached by scripts/recall-llm.py --arm, one file per plan. DERIVED from two things
+# neither of which is committed: a `.claude/plans/` file (ignored just above) and the memory corpus
+# under ~/.claude/projects/<slug>/memory, which lives outside this repository entirely. So a cache
+# here can be neither reproduced nor checked by anyone else, and `--arm` rewrites it whenever the
+# plan's situations change. Ignored for the same reason as the plan it is keyed to.
+.claude/recall-cache/
+
 # Warn-only firings of scripts/check-banner-armed.py — one tab-separated line per turn that
 # announced `## ▶ STEP i of N` with nothing armed. Per-machine evidence, not a shared record: it
 # exists so the decision to promote that check from warning to blocking rests on a COUNT rather

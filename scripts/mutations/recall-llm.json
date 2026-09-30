@@ -1,0 +1,508 @@
+[
+ {
+  "name": "plan_steps skips ticked steps, so arming matches only the outstanding one and every later step falls out of the cache",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "        end = boxes[i + 1].start() if i + 1 < len(boxes) else len(plan_text)\n",
+    "        end = boxes[i + 1].start() if i + 1 < len(boxes) else len(plan_text)\n        if m.group(1) == \"x\":\n            continue\n"
+   ]
+  ],
+  "expect": "plan_steps reads every step, ticked and unticked alike"
+ },
+ {
+  "name": "plan_steps numbers situations by position in the file instead of by step number, so inserting a step silently rebinds every cached answer",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "        out.append((int(m.group(2)), situation))\n",
+    "        out.append((i + 1, situation))\n"
+   ]
+  ],
+  "expect": "plan_steps numbers by the STEP, not by position in the file"
+ },
+ {
+  "name": "plan_steps drops the title fallback, so a step with no Doing line gets an empty situation and the whole plan is refused",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "        situation = doing.group(1).strip() if doing else (m.group(3) or \"\").strip()\n",
+    "        situation = doing.group(1).strip() if doing else \"\"\n"
+   ]
+  ],
+  "expect": "plan_steps falls back to the step TITLE when there is no Doing line"
+ },
+ {
+  "name": "plan_steps searches the whole document for a Doing line instead of the step's own block, so every step is matched on the first step's situation",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "        doing = _DOING_RE.search(plan_text[m.end():end])\n",
+    "        doing = _DOING_RE.search(plan_text)\n"
+   ]
+  ],
+  "expect": "plan_steps takes the Doing line as the situation"
+ },
+ {
+  "name": "plan_verdict passes a plan with no recognisable step, so a hand-written file reports nothing-fires instead of CANNOT RUN",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    if not steps:\n        return CANNOT_RUN, (\"CANNOT RUN: the plan file carries no recognisable \"\n",
+    "    if False:\n        return CANNOT_RUN, (\"CANNOT RUN: the plan file carries no recognisable \"\n"
+   ]
+  ],
+  "expect": "plan_verdict refuses a plan with no recognisable step"
+ },
+ {
+  "name": "plan_verdict stops noticing a step with no situation, so a blank line is sent to the model and matched against nothing",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    blank = [n for n, s in steps if not s]\n",
+    "    blank = []\n"
+   ]
+  ],
+  "expect": "plan_verdict refuses a step whose situation is empty"
+ },
+ {
+  "name": "first_unticked returns the first step whether or not it is ticked, so a finished step's lesson fires forever",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "        if m.group(1) == \" \":\n            return int(m.group(2))\n",
+    "        return int(m.group(2))\n"
+   ]
+  ],
+  "expect": "first_unticked is the first UNTICKED step, not the first step"
+ },
+ {
+  "name": "paused becomes a substring test, so a pause REASON or a plan path containing the word silences a live thread",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    return _PAUSED_RE.search(sentinel_text) is not None\n",
+    "    return \"paused:\" in sentinel_text\n"
+   ]
+  ],
+  "expect": "paused ignores the word inside a REASON, because it is anchored to the line start"
+ },
+ {
+  "name": "parse_trigger stops requiring the FIRES-WHEN prefix, so an entry that was never given a trigger is scored on a slice of its summary",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    if not d.startswith(TRIGGER_PREFIX):\n        return None\n",
+    "    if False:\n        return None\n"
+   ]
+  ],
+  "expect": "parse_trigger requires the FIRES-WHEN prefix"
+ },
+ {
+  "name": "parse_trigger keeps the em-dash commentary, so every trigger carries a paragraph of stars, dates and outcomes for the model to match on",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    return d[len(TRIGGER_PREFIX):].split(\"\u2014\", 1)[0].strip() or None\n",
+    "    return d[len(TRIGGER_PREFIX):].strip() or None\n"
+   ]
+  ],
+  "expect": "parse_trigger strips the trailing em-dash commentary"
+ },
+ {
+  "name": "frontmatter_description reads a --- rule anywhere in the body as frontmatter, so a quoted description in prose becomes the entry's trigger",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    m = re.match(r\"^---\\n(.*?\\n)---\\n\", text, re.S)\n",
+    "    m = re.search(r\"---\\n(.*?\\n)---\\n\", text, re.S)\n"
+   ]
+  ],
+  "expect": "frontmatter_description reads only the LEADING block, never a --- rule further down"
+ },
+ {
+  "name": "frontmatter_description strips the first and last character of every value, not only matched quotes, so an unquoted description loses a letter at each end",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "            if len(val) >= 2 and val[0] == val[-1] and val[0] in \"\\\"'\":\n",
+    "            if len(val) >= 2:\n"
+   ]
+  ],
+  "expect": "frontmatter_description reads an UNQUOTED value too"
+ },
+ {
+  "name": "memory_files stops excluding MEMORY.md, so the 133-row index is offered to the model as a single trigger",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    return [p for p in sorted(d.glob(\"*.md\")) if p.name != \"MEMORY.md\"]\n",
+    "    return sorted(d.glob(\"*.md\"))\n"
+   ]
+  ],
+  "expect": "memory_files EXCLUDES MEMORY.md, which is the index and not an entry"
+ },
+ {
+  "name": "load_triggers admits entries that carry no trigger, so the corpus is padded with empty strings the model must still choose between",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "        if trig:\n            out.append((p.stem, trig))\n",
+    "        out.append((p.stem, trig or \"\"))\n"
+   ]
+  ],
+  "expect": "load_triggers names entries by their filename stem"
+ },
+ {
+  "name": "corpus_verdict passes an empty memory directory, which is the H3 fail-open the whole rc contract exists to refuse",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    if n_files == 0:\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "the empty-directory refusal says the directory held no entry files"
+ },
+ {
+  "name": "corpus_verdict passes a corpus whose files carry zero triggers, so a corpus the FIRES-WHEN rewrite never reached reports nothing-fires",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    if n_triggers == 0:\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "corpus_verdict refuses files that carry no trigger"
+ },
+ {
+  "name": "build_prompt sends a shortlist of the corpus instead of all of it, which is the lexical prefilter measured to cap recall at 60%",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    trig_block = \"\\n\".join(f\"* {t}\\n  -> {name}\" for name, t in triggers)\n",
+    "    trig_block = \"\\n\".join(f\"* {t}\\n  -> {name}\" for name, t in triggers[:2])\n"
+   ]
+  ],
+  "expect": "build_prompt sends EVERY trigger, never a shortlist"
+ },
+ {
+  "name": "build_prompt numbers the situations from 1 instead of by step number, so every answer key is off by the number of ticked steps",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    sit_block = \"\\n\".join(f\"{n}. {s}\" for n, s in steps)\n",
+    "    sit_block = \"\\n\".join(f\"{i}. {s}\" for i, (n, s) in enumerate(steps, 1))\n"
+   ]
+  ],
+  "expect": "build_prompt numbers a situation by its STEP NUMBER, not from 1"
+ },
+ {
+  "name": "the prompt asks for the most words in common instead of meaning \u2014 the lexical rule measured at 3/20 against this mechanism's 20/20",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "* Match on MEANING, not on shared words. The same moment written in completely different\n",
+    "* Pick whichever trigger has the most words in common with the situation. Completely different\n"
+   ]
+  ],
+  "expect": "the prompt says to match on MEANING rather than shared words"
+ },
+ {
+  "name": "the prompt stops making NONE a first-class answer and asks for the best available entry, which is the forced choice that cannot fail",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "* NONE is a first-class answer and is very often the right one. The proportion of these\n",
+    "* Choose the best available entry for every situation. The proportion of these\n"
+   ]
+  ],
+  "expect": "the prompt makes NONE a first-class answer"
+ },
+ {
+  "name": "the prompt discloses the proportion that match, so the model distributes its answers to hit a quota instead of judging each one",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "  situations that match something is NOT disclosed to you \u2014 do not infer it, and do not try to\n",
+    "  situations that match something is about one in three \u2014 aim for that, and do not try to\n"
+   ]
+  ],
+  "expect": "the prompt withholds the proportion that match"
+ },
+ {
+  "name": "the prompt makes a thematically adjacent match acceptable, which is exactly the 11.7% false-fire behaviour that refuted the lexical matcher",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "* A loose match, or one that is merely thematically adjacent, is an ERROR \u2014 strictly worse than\n",
+    "* A loose match, or one that is merely thematically adjacent, is acceptable and better than\n"
+   ]
+  ],
+  "expect": "the prompt calls a thematically adjacent match an ERROR, worse than NONE"
+ },
+ {
+  "name": "the prompt's test becomes topical relatedness instead of whether the entry would change what the person does next",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "* The test is: WOULD THIS CHANGE WHAT THE PERSON DOES NEXT? If the entry is merely interesting,\n",
+    "* The test is: is the entry related to this area of work? If the entry is merely interesting,\n"
+   ]
+  ],
+  "expect": "the prompt carries the would-this-change-what-they-do-next test"
+ },
+ {
+  "name": "the prompt tells the model that routine engineering work usually matches something, inverting the clause that keeps ordinary moments silent",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "* Routine engineering work usually matches nothing. Most ordinary moments carry no lesson from\n",
+    "* Routine engineering work usually matches something. Most ordinary moments carry a lesson from\n"
+   ]
+  ],
+  "expect": "the prompt says routine engineering work usually matches nothing"
+ },
+ {
+  "name": "parse_response accepts an entry name that is not in the corpus, so a hallucinated name reaches the reader as a file that does not exist",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "        if value != NONE and value not in allowed:\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": "parse_response REJECTS an entry name that is not in the corpus"
+ },
+ {
+  "name": "parse_response compares the reply's keys against themselves, so a reply that answered different steps is accepted whole",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    want = {str(n) for n in step_numbers}\n    got = set(obj)\n",
+    "    want = set(obj)\n    got = set(obj)\n"
+   ]
+  ],
+  "expect": "parse_response REJECTS a reply that is missing a step"
+ },
+ {
+  "name": "parse_response accepts extra keys as long as every asked-about step is answered, so an invented step number is cached beside the real ones",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    if got != want:\n        missing, extra = sorted(want - got), sorted(got - want)\n",
+    "    if not want <= got:\n        missing, extra = sorted(want - got), sorted(got - want)\n"
+   ]
+  ],
+  "expect": "parse_response REJECTS a reply carrying a step nobody asked about"
+ },
+ {
+  "name": "parse_response stops preferring a fenced object, so braces in the prose around the answer are spliced into it",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    fence = re.search(r\"```(?:json)?\\s*(.*?)```\", body, re.S)\n",
+    "    fence = None\n"
+   ]
+  ],
+  "expect": "parse_response prefers a FENCED object over stray braces in the prose around it"
+ },
+ {
+  "name": "parse_response stringifies a non-string answer instead of refusing it, so a number becomes an entry name",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "        if not isinstance(value, str):\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": "parse_response REJECTS a non-string answer"
+ },
+ {
+  "name": "plan_fingerprint hashes the plan's bytes rather than its situations, so every --tick invalidates the cache and buys a 6.41s call per step",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    payload = \"\\n\".join(f\"{n}\\t{s}\" for n, s in plan_steps(plan_text))\n    return \"sha256:\"",
+    "    payload = plan_text\n    return \"sha256:\""
+   ]
+  ],
+  "expect": "plan_fingerprint is UNCHANGED by ticking a box, so a tick does not buy a new call"
+ },
+ {
+  "name": "plan_fingerprint ignores the step numbers, so renumbering the steps serves every cached answer against the wrong step",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "f\"{n}\\t{s}\" for n, s in plan_steps(plan_text)",
+    "f\"{s}\" for n, s in plan_steps(plan_text)"
+   ]
+  ],
+  "expect": "plan_fingerprint changes when the step NUMBERS change but the text does not"
+ },
+ {
+  "name": "cache_path collapses every plan onto one file, so arming one plan serves its answers to the next",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    return CACHE_DIR / f\"{slug}.json\"\n",
+    "    return CACHE_DIR / \"cache.json\"\n"
+   ]
+  ],
+  "expect": "cache_path is one file per plan stem"
+ },
+ {
+  "name": "cache_document writes a constant fingerprint, so no edit to the plan can ever be detected as stale",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "        \"fingerprint\": plan_fingerprint(plan_text),\n",
+    "        \"fingerprint\": \"sha256:0000000000000000\",\n"
+   ]
+  ],
+  "expect": "cache_document stores the plan's fingerprint alongside the answers"
+ },
+ {
+  "name": "cache_document stops caching the picked entries' triggers, so fire time prints a bare name with no sentence saying whether it applies",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "        \"triggers\": triggers,\n",
+    "        \"triggers\": {},\n"
+   ]
+  ],
+  "expect": "cache_document caches the picked entry's trigger, so --fire needs no corpus"
+ },
+ {
+  "name": "cache_verdict serves a cache armed against different situations, which is a wrong answer rather than an old one",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    if got != want:\n        return STALE_CACHE, (f\"STALE CACHE: armed against {got}, the plan on disk is {want}. Its \"\n",
+    "    if False:\n        return STALE_CACHE, (f\"STALE CACHE: armed against {got}, the plan on disk is {want}. Its \"\n"
+   ]
+  ],
+  "expect": "cache_verdict REFUSES a cache armed against an edited situation"
+ },
+ {
+  "name": "lookup returns None for a step that was never matched, conflating 'nothing fires' with 'this step is not in the cache'",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    if key not in picks:\n        raise StaleCache(f\"STALE CACHE: step {step} is not in this cache. Re-run --arm.\")\n",
+    "    if key not in picks:\n        return None\n"
+   ]
+  ],
+  "expect": "lookup RAISES for a step that is absent, which is not the same as NONE"
+ },
+ {
+  "name": "lookup passes the literal NONE through as an entry name, so the reader is pointed at a file called NONE",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    return None if value == NONE else value\n",
+    "    return value\n"
+   ]
+  ],
+  "expect": "lookup returns None for a step the model answered NONE for"
+ },
+ {
+  "name": "fire_output prints a line for a NONE answer, which is the fire-on-every-step behaviour the refuted hook measured at 52.7%",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    if entry is None:\n        return \"\"\n",
+    "    if entry is None:\n        return render(\"(nothing)\", trigger or \"\")\n"
+   ]
+  ],
+  "expect": "fire_output is EMPTY for a NONE answer"
+ },
+ {
+  "name": "render drops the trigger and prints the bare entry name, asking the reader to remember what the file is about",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "            f\"   FIRES-WHEN: {trigger}\\n\"\n",
+    "            f\"\\n\"\n"
+   ]
+  ],
+  "expect": "render prints the TRIGGER, not only the name"
+ },
+ {
+  "name": "parse_cache lets a half-written cache file escape as a traceback, exiting on a code the rc contract does not define",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    try:\n        doc = json.loads(text)\n    except json.JSONDecodeError as exc:\n",
+    "    if True:\n        doc = json.loads(text)\n    elif False:\n"
+   ]
+  ],
+  "expect": "parse_cache REFUSES a half-written cache file rather than exiting on a traceback"
+ },
+ {
+  "name": "parse_cache accepts a cache file holding a list, so every later `.get` silently answers nothing-fires",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    if not isinstance(doc, dict):\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "parse_cache REFUSES a cache file that holds a list"
+ },
+ {
+  "name": "a NONE answer is put through the corpus check, so a step that matched nothing refuses instead of staying silent",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    if entry is None:\n        return OK, \"\"          # the model said NONE. There is nothing to resolve.\n",
+    "    if False:\n        return OK, \"\"          # the model said NONE. There is nothing to resolve.\n"
+   ]
+  ],
+  "expect": "a NONE answer needs no corpus, so it is served even when the corpus is gone"
+ },
+ {
+  "name": "a missing corpus DIRECTORY falls through to the entry check, collapsing CANNOT RUN into STALE CACHE \u2014 two different repairs reported as one",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    if not corpus_present:\n        return CANNOT_RUN, (\"CANNOT RUN: the memory corpus directory is unreachable",
+    "    if False:\n        return CANNOT_RUN, (\"CANNOT RUN: the memory corpus directory is unreachable"
+   ]
+  ],
+  "expect": "a missing corpus DIRECTORY is CANNOT RUN, not STALE \u2014 the world is wrong, not the cache"
+ },
+ {
+  "name": "the renamed-away entry check is removed, so --fire surfaces a name the corpus no longer holds \u2014 the defect this function was added for",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    if not entry_present:\n        return STALE_CACHE, (f\"STALE CACHE: the cache names {entry!r}",
+    "    if False:\n        return STALE_CACHE, (f\"STALE CACHE: the cache names {entry!r}"
+   ]
+  ],
+  "expect": "cached_entry_verdict REFUSES an entry the corpus no longer holds"
+ },
+ {
+  "name": "the STALE message stops naming the vanished entry, so the reader cannot tell WHICH one went",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "        return STALE_CACHE, (f\"STALE CACHE: the cache names {entry!r}, which the corpus no longer \"",
+    "        return STALE_CACHE, (\"STALE CACHE: the cache names an entry which the corpus no longer \""
+   ]
+  ],
+  "expect": "...and it NAMES the entry, so the reader knows which one vanished"
+ },
+ {
+  "name": "do_fire stops consulting cached_entry_verdict at all \u2014 the WIRING reverted while the pure function stays fully covered, which is the shape a callee test cannot see",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    rc, msg = cached_entry_verdict(entry, d is not None,\n                                   d is not None and (d / f\"{entry}.md\").is_file())\n    if rc == CANNOT_RUN:\n        raise Refusal(msg)\n    if rc != OK:\n        raise StaleCache(msg)\n",
+    ""
+   ]
+  ],
+  "expect": "do_fire itself refuses a cached entry the live corpus no longer holds"
+ }
+]
