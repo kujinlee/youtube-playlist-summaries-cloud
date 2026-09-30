@@ -82,6 +82,13 @@ Exit codes:  0 = a real review was written and promoted
 `<review-id>.refused.verdict.json` and NEVER to `<review-id>.verdict.json` — see
 `refusal_verdict_path`; the refusal that protects an artifact must not destroy the record beside
 it, which is what it did before r1 B1.
+
+NO-CALLER: this is DISPATCHED BY HAND at a review gate, never by CI — a review costs money and
+takes tens of minutes, so nothing should be able to start one without a person deciding to. Its
+invocation lives in `docs/plugins.md`, and `docs/` is deliberately excluded from R3's caller
+sources, because a row in a table headed "what is mechanically enforced" is a CLAIM about a caller
+rather than one. Wiring it into CI to satisfy this rule would be the rule making the repo worse.
+Declared 2026-09-30 when R3 was extended to self-tested non-guards.
 """
 from __future__ import annotations
 

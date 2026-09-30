@@ -27,7 +27,7 @@ work exists to remove.
 
 Usage:
     python3 scripts/check-ratchet-contract.py
-    python3 scripts/check-ratchet-contract.py --self-test  # 41 cases
+    python3 scripts/check-ratchet-contract.py --self-test  # 49 cases
 """
 from __future__ import annotations
 
@@ -150,6 +150,58 @@ def invocation_re(basename: str) -> re.Pattern[str]:
     return re.compile(r"(?:python3?\s+|\./|\bbash\s+|\bsh\s+)(?:\S*/)?" + re.escape(basename))
 
 
+# ── THE TWO HALVES OF `import_re`'s ANCHOR, NAMED SEPARATELY ────────────────────────────────────
+# ⚠ TWO CONSTANTS, NOT ONE `r"^[ \t]*"`, AND THE REASON IS MECHANICAL RATHER THAN STYLISTIC. They
+# guard two different failures, so a mutation must be able to move one without the other — and a
+# manifest cannot hold two entries against the same anchor text, which `check-plan-code` refuses
+# because it cannot tell two mutations of one line from a duplicate that keeps the count while
+# shrinking coverage. Written as one literal, only ONE of these could ever have a falsifier.
+_LINE_START = r"^"        # excludes `# import x` and an import inside a string literal
+_OPT_INDENT = r"[ \t]*"   # admits `import m4_catalog as m4c` inside a function body
+
+
+def import_re(basename: str) -> re.Pattern[str]:
+    """A mention that IMPORTS, not a mention that describes.
+
+    ⚠ SIBLING OF `invocation_re`, AND IT EXISTS BECAUSE R3's QUESTION WAS WRONG FOR HALF ITS NEW
+    POPULATION. R3 was only ever asked of `scripts/check-*.py`, every one of which is invoked.
+    Extending it to the self-tested NON-guard population brings in LIBRARIES — `coverage_verdict`,
+    `m4_catalog`, `observer_log`, `subject_status` — which are imported by name and never invoked.
+    Measured 2026-09-30 before this function existed: asking "does anything invoke it?" reported
+    `R3_no_caller` for all four, while `m4_catalog` alone had 5 AST-verified importers. A false RED
+    is the direction that gets a gate switched off (backlog #56), so it is the expensive one.
+
+    ⛔ ANCHORED AT LINE START, WITH OPTIONAL INDENT, AND BOTH HALVES OF THAT ARE MEASURED.
+    The indent is required: `verify-exclusion-reasons.py:388` imports inside a function
+    (`import m4_catalog as m4c`). The anchor is required: `check-storage-independence.py:398`
+    carries `"from m4_catalog import CATALOG_SQL\\n…"` as a test FIXTURE inside a string literal,
+    and a pattern without the anchor counts it — the same way a prose table row would satisfy
+    `invocation_re` if it did not demand an interpreter before the name. A commented-out
+    `# import x` is excluded by the same anchor, since the `#` takes the line-start position.
+
+    ⚠ NO NAMING CONVENTION IS CONSULTED, DELIBERATELY. A hyphenated basename is not a legal Python
+    identifier, so this arm CANNOT be satisfied for an executable — the rule discriminates library
+    from executable by what the language permits, not by `CONTEXT.md`'s underscore-vs-hyphen
+    convention. That was the alternative design and it was rejected: a filename convention
+    deciding a gate's behaviour is the exact mechanism the 2026-09-30 architecture review found at
+    fault, and building the repair on it would rest the fix on the thing being criticised.
+
+    ⚠ THE BOUND, stated rather than implied: this is a regex over a concatenated blob, so it is
+    sound only to the extent the anchor holds — it is NOT an AST import graph. Measured against
+    one on all four libraries in the widened population: identical answers, 0 regex-only matches
+    and 0 real importers missed. That is a MEASUREMENT over today's corpus, not a proof.
+    """
+    stem = basename[:-3] if basename.endswith(".py") else basename
+    if not stem.isidentifier():
+        # An executable's name cannot appear in an import statement at all. Refuse to build a
+        # pattern that could only ever match prose about it.
+        return re.compile(r"(?!)")
+    return re.compile(
+        _LINE_START + _OPT_INDENT
+        + rf"(?:import[ \t]+{re.escape(stem)}|from[ \t]+{re.escape(stem)}[ \t]+import)\b",
+        re.M)
+
+
 def discover_guards(script_paths: list[str]) -> list[str]:
     """EVERY guard on disk. The population is the FILESYSTEM.
 
@@ -165,7 +217,14 @@ def discover_guards(script_paths: list[str]) -> list[str]:
 
 
 def check_caller(path: str, text: str, caller_blob: str) -> list[Violation]:
-    """R3 — something executes this guard, or it says in writing why not."""
+    """R3 — something USES this file, or it says in writing why not.
+
+    ⟳ 2026-09-30: "executes" became "uses". The rule's question was right for its original
+    population (`scripts/check-*.py`, all invoked) and wrong for the self-tested non-guards it now
+    also covers, four of which are imported libraries. `invocation_re` OR `import_re` — see
+    `import_re`'s docstring for why the discriminator is the Python identifier rule and not a
+    filename convention.
+    """
     try:
         doc = ast.get_docstring(ast.parse(text)) or ""
     except SyntaxError:
@@ -180,11 +239,18 @@ def check_caller(path: str, text: str, caller_blob: str) -> list[Violation]:
     basename = path.rsplit("/", 1)[-1]
     if invocation_re(basename).search(caller_blob):
         return []
+    # ⚠ A SECOND ARM, ON ITS OWN LINE, so "is it invoked" and "is it imported" are two statements a
+    # mutation can move independently. Folded into one `or`, the manifest would want two entries
+    # against the same anchor — which `check-plan-code` refuses, correctly, because it cannot tell
+    # two mutations of one line from a duplicate that keeps the count while shrinking coverage.
+    if import_re(basename).search(caller_blob):
+        return []
     return [Violation(path, "R3_no_caller",
-                      "nothing executes it — wire it into CI, a gate script or a hook, "
-                      "or declare the NO-CALLER escape in its DOCSTRING, as a sentence: the "
-                      "marker, a space, then your reason. A placeholder in angle brackets is "
-                      "refused — write the actual reason")]
+                      "nothing uses it — no invocation and no import. Wire it into CI, a gate "
+                      "script or a hook, import it from something that runs, or declare the "
+                      "NO-CALLER escape in its DOCSTRING, as a sentence: the marker, a space, "
+                      "then your reason. A placeholder in angle brackets is refused — write the "
+                      "actual reason")]
 
 
 def evaluate(texts: dict[str, str], caller_blob_for: dict[str, str],
@@ -209,9 +275,32 @@ def evaluate(texts: dict[str, str], caller_blob_for: dict[str, str],
         out.extend(check_manifest(rel, texts[rel], manifest_stems))
     # ⚠ WIRED HERE FOR THE REASON THIS FUNCTION'S DOCSTRING ALREADY GIVES. Applied in main(),
     # deleting this block would leave every widened-population case green — coverage of the
-    # functions, none of their use. Only R4 is applied: R1-R3 were never asked of these files and
-    # widening four rules at once would be a different change wearing this one's name.
+    # functions, none of their use.
+    #
+    # ⟳ 2026-09-30 — R2 AND R3 NOW APPLY HERE TOO, AND R1 DELIBERATELY DOES NOT.
+    # This block used to say "Only R4 is applied: R1-R3 were never asked of these files and
+    # widening four rules at once would be a different change wearing this one's name." That
+    # caution was right and is why this is not a four-rule widening:
+    #
+    #   R1 (has a `--self-test`) is VACUOUS here — being self-tested is this population's
+    #      defining predicate, so asking it would be a rule that cannot fail. Left off.
+    #   R2 (no fail-open handler) is a pure AST property with no population assumption.
+    #      Measured 2026-09-30 across all 20 files: 0 violations. Free, so it is taken.
+    #   R3 (something uses it) is the rule the 2026-09-30 architecture review actually needed:
+    #      `scripts/recall-llm.py`'s only caller is `.claude/hooks/surface-recall.sh`, and that
+    #      hook's own comment records that deleting it "would leave that gate green". It does not
+    #      any more — MEASURED both ways before this line was written: R3 passes on recall-llm.py
+    #      today, and reports R3_no_caller with the hook removed from the caller sources.
+    #      It required `import_re` first; see that function for why.
     _widened = discover_self_tested_nonguards(list(texts), texts)
+    for rel in _widened:
+        # ⚠ R2 ONLY, not `check_contract`, which also carries R1. Calling `check_contract` here
+        # would silently import R1's vacuity into this population.
+        for line in fail_open_handlers(texts[rel]):
+            out.append(Violation(rel, "R2_fail_open",
+                                 f"line {line}: an `except` handler returns 0 — "
+                                 "'could not run' reported as success"))
+        out.extend(check_caller(rel, texts[rel], caller_blob_for.get(rel, "")))
     _violating = {rel for rel in _widened
                   if check_manifest(rel, texts[rel], manifest_stems)}
     # `set(texts)` is the EXAMINED set, not `_widened`: a pinned script that stopped being
@@ -549,6 +638,34 @@ CALLER_CASES: list[tuple[str, str, str, str, list[str]]] = [
      "scripts/check-f.py", HAS_CALLER_STUB,
      "| `scripts/check-f.py` | listed in a table under 'mechanically enforced' |\n",
      ["R3_no_caller"]),
+    # ── R3 IS "SOMETHING USES THIS", NOT "SOMETHING INVOKES THIS" ────────────────────────────
+    # Added 2026-09-30 by the architecture review on the recall matcher. The rule was applied
+    # only to `scripts/check-*.py`, all of which are invoked; extending it to the self-tested
+    # NON-guard population brings in LIBRARIES, which are imported and never invoked. Measured
+    # before the rule changed: `m4_catalog` has 5 AST-verified importers and 0 invocations, so
+    # asking "does anything invoke it?" would have put four heavily-used files red. A false RED
+    # is the direction that gets a gate switched off (backlog #56), so it is the dangerous one.
+    ("an IMPORTED library is USED, even though nothing invokes it",
+     "scripts/lib_a.py", HAS_CALLER_STUB, "from lib_a import thing\n", []),
+    ("...and the import may be INDENTED — `import m4_catalog as m4c` inside a function is real",
+     "scripts/lib_b.py", HAS_CALLER_STUB, "    import lib_b as b\n", []),
+    # ⚠ THE NEGATIVES ARE ADJACENT, NOT ABSURD. A rule that only ever fires cannot fail; each of
+    # these is one character away from the positives above and must still be a violation.
+    ("a COMMENTED-OUT import is not a use", "scripts/lib_c.py", HAS_CALLER_STUB,
+     "# import lib_c\n", ["R3_no_caller"]),
+    # ⚠ THIS SHAPE IS REAL, NOT INVENTED: `check-storage-independence.py:398` holds
+    # `"from m4_catalog import CATALOG_SQL\n…"` as a test FIXTURE. A naive pattern counts it,
+    # which is how `invocation_re`'s sibling weakness was found — hence the line-start anchor.
+    ("an import inside a STRING LITERAL is not a use — the measured fixture shape",
+     "scripts/lib_d.py", HAS_CALLER_STUB, '    x = "from lib_d import CONST"\n',
+     ["R3_no_caller"]),
+    # ⚠ WHY NO NAMING RULE IS NEEDED, pinned as a case rather than left as a remark: a hyphenated
+    # basename is not a legal identifier, so the import arm CANNOT be satisfied for an executable.
+    # The rule discriminates library from executable without consulting the filename convention —
+    # which matters, because a filename convention deciding a gate's behaviour is the exact
+    # mechanism this review found at fault.
+    ("the import arm cannot satisfy a HYPHENATED executable — it is not a legal identifier",
+     "scripts/exec-tool.py", HAS_CALLER_STUB, "import exec-tool\n", ["R3_no_caller"]),
 ]
 
 # The POPULATION is the filesystem. (name, paths on disk, expected)
@@ -803,13 +920,53 @@ def self_test() -> int:
         # discover_self_tested_nonguards/widened_debt_drift block from evaluate() leaves every
         # case above green — coverage of the functions, none of their use. This is the same
         # blind spot this list's own header describes, one rule later.
+        # ⟳ 2026-09-30: `tool.py` GAINED A CALLER BLOB HERE. R3 now applies to this population, so
+        # the old fixture (a non-guard nothing uses) would report R3_no_caller as well and this
+        # case's subject would stop being R4W alone. Giving it a caller keeps the case testing one
+        # rule — rather than relaxing its expectation, which is how a real regression gets
+        # laundered into an updated assertion.
         ("evaluate APPLIES the widened manifest rule to a NON-guard",
          {"scripts/check-w.py": SELF_TEST_OK, "scripts/tool.py": SELF_TEST_OK},
-         {"scripts/check-w.py": "python3 scripts/check-w.py"},
+         {"scripts/check-w.py": "python3 scripts/check-w.py",
+          "scripts/tool.py": "python3 scripts/tool.py"},
          ["R4W_no_mutation_manifest", "R4_no_mutation_manifest"]),
         ("evaluate APPLIES the self-test rule too",
          {"scripts/check-w.py": NO_SELF_TEST}, {"scripts/check-w.py": "python3 scripts/check-w.py"},
          ["R1_no_self_test", "R4_no_mutation_manifest"]),
+        # ── THE WIRING CASES FOR THE WIDENED R3 AND R2, added 2026-09-30 ─────────────────────
+        # ⚠ WITHOUT THESE, DELETING EITHER NEW LINE FROM THE WIDENED LOOP LEAVES EVERY CASE
+        # ABOVE GREEN. That is this list's whole reason for existing, and the widened block is
+        # where it now bites: `check_caller` and `fail_open_handlers` both already have direct
+        # cases, so only a wiring case can notice they stopped being ASKED of this population.
+        ("evaluate APPLIES R3 to a NON-guard — the rule the recall matcher's hook needed",
+         {"scripts/check-w.py": SELF_TEST_OK, "scripts/tool.py": SELF_TEST_OK},
+         {"scripts/check-w.py": "python3 scripts/check-w.py"},
+         ["R3_no_caller", "R4W_no_mutation_manifest", "R4_no_mutation_manifest"]),
+        # ⚠ AND THE OTHER DIRECTION, so the case above cannot be satisfied by a rule that simply
+        # always fires: the SAME non-guard with a real caller must NOT report R3.
+        # ⚠ THE OTHER DIRECTION, AND IT REACHES THE IMPORT ARM THROUGH THE WIRING — which no
+        # other case does. `check_caller`'s own cases drive the arm directly; only this one
+        # proves `evaluate` asks it of a non-guard. It also keeps the case above from being
+        # satisfiable by a rule that simply always fires.
+        ("...and a NON-guard that is IMPORTED reports no R3 — the import arm reaches the wiring",
+         {"scripts/check-w.py": SELF_TEST_OK, "scripts/tool.py": SELF_TEST_OK},
+         {"scripts/check-w.py": "python3 scripts/check-w.py",
+          "scripts/tool.py": "from tool import helper"},
+         ["R4W_no_mutation_manifest", "R4_no_mutation_manifest"]),
+        # ⚠ FAIL_OPEN IS REUSED, not re-stubbed: its docstring already carries `--self-test`, so
+        # it qualifies for the widened population. A near-copy stub is a second implementation of
+        # one fixture, and those drift.
+        ("evaluate APPLIES R2 to a NON-guard",
+         {"scripts/check-w.py": SELF_TEST_OK, "scripts/tool.py": FAIL_OPEN},
+         {"scripts/check-w.py": "python3 scripts/check-w.py",
+          "scripts/tool.py": "python3 scripts/tool.py"},
+         ["R2_fail_open", "R4W_no_mutation_manifest", "R4_no_mutation_manifest"]),
+        # ⛔ NO CASE FOR "R1 IS NOT ASKED HERE", DELIBERATELY. One was written and DELETED: a
+        # widened file always has a self-test, because that is the population's defining
+        # predicate, so a case asserting the absence of R1_no_self_test cannot fail whatever the
+        # code does. An unfalsifiable case is worse than none — it creates a belief that the
+        # decision is covered. The decision is recorded in `evaluate`'s comment instead, where a
+        # reader will actually meet it.
     ]
     # Empty on purpose: the stub guards have no manifest, so R4 fires unless a case opts out.
     manifests: set[str] = set()
@@ -874,12 +1031,29 @@ def main(argv: list[str]) -> int:
         return 1
 
     blob_for: dict[str, str] = {}
-    for rel in ratchets:
+    # ⛔ THE POPULATION HERE MUST MATCH THE POPULATION `evaluate` ASKS R3 OF, AND FOR ONE RUN IT
+    # DID NOT. 2026-09-30: R3 was extended to the self-tested non-guards while this loop still
+    # ran over `ratchets` alone, so every widened file received `blob_for.get(rel, "")` — the
+    # empty string — and R3 fired for all 19 of them. Measured: 19 violations where 3 were
+    # expected. That is the defect the architecture review that ordered this change had just
+    # finished diagnosing — a check applied at a new site while the data it consumes was not
+    # extended to reach it — reproduced inside its own repair, and caught by RUNNING the guard
+    # against the real repo rather than by the 49-case suite, every case of which passes its own
+    # blob in directly and so cannot see a missing one.
+    #
+    # ⚠ DERIVED FROM ONE EXPRESSION, not two lists kept in step. `blob_targets` is the union, and
+    # `evaluate` iterates the same two sets; a third population added later must be added here,
+    # which is why the union is written where a reader of either site will meet it.
+    blob_targets = sorted(set(ratchets) | set(discover_self_tested_nonguards(list(texts), texts)))
+    for rel in blob_targets:
         # ⚠ A guard's OWN text is excluded. Every one of these scripts names
         # itself in its usage docstring, so including it would let each guard
         # satisfy R3 by describing how to run it — measured on
         # check-producer-enumeration.py, whose only three mentions anywhere in
         # the repo are its own docstring and its own print().
+        # ⚠ AND THE EXCLUSION MATTERS MORE FOR THE IMPORT ARM, not less: a library's own module
+        # body does not import itself, but its `--self-test` frequently builds a fixture STRING
+        # containing an import of itself. Excluding its own text removes that whole class.
         blob_for[rel] = "\n".join(
             p.read_text(errors="ignore") for p in caller_sources
             if p.is_file() and str(p.relative_to(ROOT)) != rel)

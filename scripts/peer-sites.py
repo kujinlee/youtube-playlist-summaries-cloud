@@ -99,6 +99,13 @@ cannot diff a changed file, that file is named on stderr and the run ends non-ze
 It used to print CANNOT RUN and then `return 0`, which is the one thing this project refuses
 everywhere — *"cannot run" is a FAILURE, never a pass*. `--self-test` and a mutation manifest are
 what keep it honest (backlog #122's lesson, applied at birth rather than as debt).
+
+NO-CALLER: it ships with no caller BY DESIGN, and that was the decision recorded when it landed
+(backlog #134, PR #313). It answers a question a person asks while editing — "I changed one member
+of a set, what are its peers?" — so there is no moment in CI at which running it would mean
+anything: it has no verdict to contribute and nothing to fail. An advisory tool wired into a gate
+either blocks on advice or is ignored, and both are worse than a tool you run when you want it.
+Declared 2026-09-30 when R3 was extended to self-tested non-guards.
 """
 from __future__ import annotations
 

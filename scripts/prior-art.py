@@ -26,6 +26,12 @@ decision-vocabulary lines only, and `prior-art.py MODEL_KEY` then printed "No hi
 `--all` surfaced Phase-6 finding #2, the stage-1c design and the m3.1 review. A research tool whose
 default answer is a FALSE NEGATIVE is worse than no tool, because "I searched and found nothing"
 is the exact belief it exists to prevent. Narrowing is opt-in.
+
+NO-CALLER: it is a RESEARCH tool, run by hand BEFORE designing against an identifier, and this
+file's own second line already says it is not a ratchet. There is no commit at which its output is
+a verdict — it answers "has this been decided already, somewhere nothing points at?", which is a
+question with a reader and no pass/fail. Nothing in CI could act on the answer. Declared 2026-09-30
+when R3 was extended to self-tested non-guards.
 """
 from __future__ import annotations
 
