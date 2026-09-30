@@ -561,11 +561,11 @@
   "expect": "do_fire is SILENT on the second call for the SAME step"
  },
  {
-  "name": "do_fire never records the marker, so every call looks like the first one",
+  "name": "do_fire never records the marker, so every call looks like the first one \u2014 \u27f3 retargeted 2026-09-30: H1(e)'s fix re-indented this line into a try block, and the old 4-space anchor still matched as a SUBSTRING, deleting it into an IndentationError instead of a mutation",
   "file": "scripts/recall-llm.py",
   "edits": [
    [
-    "    marker_file.write_text(current, encoding=\"utf-8\")\n",
+    "        marker_file.write_text(current, encoding=\"utf-8\")\n",
     ""
    ]
   ],
@@ -647,5 +647,82 @@
    ]
   ],
   "expect": "an UnreadablePlan carries its OWN code, not CANNOT RUN \u2014 the hook must route on it"
+ },
+ {
+  "name": "H1(e) RESTORED: the dedupe marker is written BEFORE the print again, so an unwritable cache directory destroys a correct match",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    print(text)\n    # \u26a0 AND THE RECORD IS BEST-EFFORT",
+    "    # \u26a0 AND THE RECORD IS BEST-EFFORT"
+   ]
+  ],
+  "expect": "do_fire prints on the FIRST call for a step"
+ },
+ {
+  "name": "decode_verdict treats an undecodable file as no error at all, so a UTF-8 failure reads as a clean pass",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    if err is None:\n        return OK, \"\"\n",
+    "    if True:\n        return OK, \"\"\n"
+   ]
+  ],
+  "expect": "an undecodable file is CANNOT RUN, never an exit 1 traceback"
+ },
+ {
+  "name": "an OSError is mislabelled as an encoding problem, sending the reader to fix the wrong thing",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    kind = (\"is not valid UTF-8\" if isinstance(err, UnicodeDecodeError)",
+    "    kind = (\"is not valid UTF-8\" if isinstance(err, (UnicodeDecodeError, OSError))"
+   ]
+  ],
+  "expect": "an OSError is named by its CLASS, not mislabelled as an encoding problem"
+ },
+ {
+  "name": "the refusal stops naming which file it was, leaving four possible sources indistinguishable",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    return CANNOT_RUN, (f\"CANNOT RUN: the {what} at {path} {kind}, so NOTHING was matched. \"",
+    "    return CANNOT_RUN, (f\"CANNOT RUN: a file {kind}, so NOTHING was matched. \""
+   ]
+  ],
+  "expect": "...and it names WHICH file and WHERE, since four different ones reach it"
+ },
+ {
+  "name": "the refusal stops insisting it is not 'nothing applies', which is the confusion the whole rc contract exists to prevent",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "                        f\"This is not 'nothing applies' \u2014 the file could not be read at all.\")",
+    "                        f\"The file could not be read at all.\")"
+   ]
+  ],
+  "expect": "...and it insists this is not 'nothing applies' \u2014 the whole point of naming it"
+ },
+ {
+  "name": "H1(c)(d) RESTORED: the cache is validated only at the top level, so `picks: 5` escapes as a traceback at rc 1",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    for key in (\"picks\", \"triggers\"):\n",
+    "    for key in ():\n"
+   ]
+  ],
+  "expect": "a cache whose `picks` is not an object is STALE, not an exit-1 traceback"
+ },
+ {
+  "name": "the stale-cache message stops naming which key is wrong, so the reader cannot tell picks from triggers",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "            raise StaleCache(f\"STALE CACHE: the cache's {key!r} is a \"",
+    "            raise StaleCache(f\"STALE CACHE: a cache key is a \""
+   ]
+  ],
+  "expect": "...and it names WHICH key is wrong, not merely that something is"
  }
 ]

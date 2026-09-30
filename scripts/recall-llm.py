@@ -93,7 +93,7 @@ Usage:
     scripts/recall-llm.py --arm            # ONE model call, matches every step of the armed plan
     scripts/recall-llm.py --fire           # no model call; the entry for the current step
     scripts/recall-llm.py --print-prompt    # exactly what --arm would send. No call, no cost
-    scripts/recall-llm.py --self-test  # 139 cases
+    scripts/recall-llm.py --self-test  # 148 cases
 """
 from __future__ import annotations
 
@@ -270,6 +270,37 @@ def parse_trigger(description: str) -> str | None:
     return d[len(TRIGGER_PREFIX):].split("—", 1)[0].strip() or None
 
 
+def decode_verdict(err: UnicodeDecodeError | OSError | None, what: str, path: str
+                   ) -> tuple[int, str]:
+    """PURE. -> (rc, message) for a file that could not be READ. Never a traceback, never rc 1.
+
+    ⛔ H1. FOUR CALL SITES READ A FILE AS UTF-8 AND NONE OF THEM NAMED THE FAILURE: the corpus
+    entries, the cache, the plan and the sentinel. A file that is not valid UTF-8 escaped as a
+    `UnicodeDecodeError` traceback and the process exited **1** — a code this contract does not
+    define, from the one script whose whole thesis is that every outcome is named — and the hook's
+    catch-all then swallowed it into silence. `parse_cache` had already closed exactly this hole for
+    malformed JSON; it was open for encoding and for the filesystem.
+
+    ⚠ ONE RULE, ONE PLACE. Four call sites each growing their own `try` is four chances to drift,
+    which is what `check-vocabulary-collisions.py` exists to refuse. This returns the verdict and
+    the callers raise it.
+    """
+    if err is None:
+        return OK, ""
+    kind = ("is not valid UTF-8" if isinstance(err, UnicodeDecodeError)
+            else f"could not be read ({err.__class__.__name__})")
+    return CANNOT_RUN, (f"CANNOT RUN: the {what} at {path} {kind}, so NOTHING was matched. "
+                        f"This is not 'nothing applies' — the file could not be read at all.")
+
+
+def read_or_refuse(path: Path, what: str) -> str:
+    """-> the file's text, or a raised Refusal carrying `decode_verdict`'s sentence."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError) as exc:
+        raise Refusal(decode_verdict(exc, what, str(path))[1]) from exc
+
+
 def memory_dir(cwd: Path | None = None) -> Path | None:
     """-> the memory directory for this project, or None when it does not exist.
 
@@ -297,7 +328,7 @@ def load_triggers(d: Path) -> list[tuple[str, str]]:
     """
     out: list[tuple[str, str]] = []
     for p in memory_files(d):
-        desc = frontmatter_description(p.read_text(encoding="utf-8"))
+        desc = frontmatter_description(read_or_refuse(p, "memory entry"))
         trig = parse_trigger(desc) if desc else None
         if trig:
             out.append((p.stem, trig))
@@ -524,6 +555,15 @@ def parse_cache(text: str) -> dict:
     if not isinstance(doc, dict):
         raise StaleCache(f"STALE CACHE: the cache file holds a {type(doc).__name__}, not an "
                          f"object. Re-run --arm.")
+    # ⛔ H1(c)(d). VALIDATING ONLY THE TOP LEVEL WAS THE HOLE. `"picks": 5` reached `lookup`'s
+    # `key not in picks` and `"triggers": ["x"]` reached `.get(...)`, each escaping as a traceback
+    # at rc 1 — a code this contract does not define, which the hook's catch-all then swallowed.
+    # A shape check one level down closes both, and says which key is wrong rather than that
+    # something is.
+    for key in ("picks", "triggers"):
+        if key in doc and not isinstance(doc[key], dict):
+            raise StaleCache(f"STALE CACHE: the cache's {key!r} is a "
+                             f"{type(doc[key]).__name__}, not an object. Re-run --arm.")
     return doc
 
 
@@ -702,14 +742,14 @@ def read_armed_plan() -> tuple[str, Path, str]:
     if not SENTINEL.is_file():
         raise Refusal(f"CANNOT RUN: no plan is armed ({SENTINEL} absent), so there is no "
                       f"situation to match.")
-    sentinel_text = SENTINEL.read_text(encoding="utf-8")
+    sentinel_text = read_or_refuse(SENTINEL, "sentinel")
     named = sentinel_plan(sentinel_text)
     if not named:
         raise Refusal("CANNOT RUN: the sentinel names no plan file.")
     plan = ROOT / named if not Path(named).is_absolute() else Path(named)
     if not plan.is_file():
         raise Refusal(f"CANNOT RUN: the sentinel names {named}, which is not a readable file.")
-    return sentinel_text, plan, plan.read_text(encoding="utf-8")
+    return sentinel_text, plan, read_or_refuse(plan, "plan file")
 
 
 def read_corpus() -> list[tuple[str, str]]:
@@ -784,7 +824,7 @@ def do_fire(again: bool = False) -> int:
     if not cache_file.is_file():
         raise StaleCache(f"STALE CACHE: {cache_file.name} does not exist — this plan was never "
                          f"armed for recall. Run `scripts/recall-llm.py --arm`.")
-    cache = parse_cache(cache_file.read_text(encoding="utf-8"))
+    cache = parse_cache(read_or_refuse(cache_file, "recall cache"))
     rc, msg = cache_verdict(cache, plan_text)
     if rc != OK:
         raise StaleCache(msg)
@@ -801,18 +841,52 @@ def do_fire(again: bool = False) -> int:
         return OK
     marker_file = CACHE_DIR / ".last-surfaced"
     current = surface_marker(plan.stem, step)
-    last = marker_file.read_text(encoding="utf-8").strip() if marker_file.is_file() else None
+    # ⚠ NOT `read_or_refuse`, and the asymmetry is deliberate. The marker is BOOKKEEPING: an
+    # unreadable one means only that the dedupe cannot be trusted, and refusing over it would let a
+    # corrupt byte suppress a correct lesson — the same mistake as writing it before the print.
+    # Treated as absent, which reprints at worst.
+    try:
+        last = marker_file.read_text(encoding="utf-8").strip() if marker_file.is_file() else None
+    except (UnicodeDecodeError, OSError):
+        last = None
     if not (again or should_surface(last, current)):
         return OK          # this exact step was already surfaced. Silence is the design.
-    marker_file.parent.mkdir(parents=True, exist_ok=True)
-    marker_file.write_text(current, encoding="utf-8")
+    # ⛔ H1(e). PRINT BEFORE RECORDING, AND THIS ORDER IS THE FIX. The marker was written first, so
+    # an unwritable `.claude/recall-cache/` raised PermissionError with everything upstream already
+    # correct — cache valid, fingerprint matched, entry resolved — and the matched lesson was never
+    # printed at all. Measured: writable -> the entry reaches the model; `chmod 500` -> no output,
+    # hook rc 0. **The bookkeeping for a message was allowed to destroy the message.**
     print(text)
+    # ⚠ AND THE RECORD IS BEST-EFFORT, DELIBERATELY. If the marker cannot be written the dedupe is
+    # lost and this step may be surfaced twice. A duplicate lesson is a far cheaper failure than a
+    # lost one, so this must never raise — but it must not be SILENT either, or a permanently
+    # unwritable directory degrades to "reprints forever" with nothing saying why.
+    try:
+        marker_file.parent.mkdir(parents=True, exist_ok=True)
+        marker_file.write_text(current, encoding="utf-8")
+    except OSError as exc:
+        print(f"(recall-llm: the entry above was surfaced, but the dedupe marker could not be "
+              f"written — {exc}. This step may be surfaced again.)")
     return OK
 
 
 # ────────────────────────────────────────────────────────────────── self-test
 def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable shape
     ok = fail = 0
+
+    def _raises_rc(thunk):
+        try:
+            thunk()
+        except Refusal as exc:
+            return exc.rc
+        return OK
+
+    def _raises_msg(thunk):
+        try:
+            thunk()
+        except Refusal as exc:
+            return str(exc)
+        return ""
 
     def check(label, thunk, want):
         """⛔ TAKES A CALLABLE, NOT A VALUE. With an eager argument, a mutation that makes the code
@@ -1174,6 +1248,33 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
           CANNOT_RUN)
     check("a NONE answer needs no corpus, so it is served even when the corpus is gone",
           lambda: cached_entry_verdict(None, False, False)[0], OK)
+
+    # ── decode_verdict / H1 (6) ─────────────────────────────────────────────────────────
+    # ⛔ Seven paths exited 1 — a code this contract does not define — and the hook's catch-all
+    # swallowed all of them into silence. Four were files read as UTF-8 with no named failure.
+    _ude = UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+    check("no error is not a refusal", lambda: decode_verdict(None, "plan file", "/p")[0], OK)
+    check("an undecodable file is CANNOT RUN, never an exit 1 traceback",
+          lambda: decode_verdict(_ude, "plan file", "/p")[0], CANNOT_RUN)
+    check("...and it says the file is not valid UTF-8, so the reader knows what to fix",
+          lambda: "not valid UTF-8" in decode_verdict(_ude, "plan file", "/p")[1], True)
+    check("...and it names WHICH file and WHERE, since four different ones reach it",
+          lambda: ("recall cache" in decode_verdict(_ude, "recall cache", "/c/x.json")[1]
+                   and "/c/x.json" in decode_verdict(_ude, "recall cache", "/c/x.json")[1]), True)
+    check("an OSError is named by its CLASS, not mislabelled as an encoding problem",
+          lambda: ("PermissionError" in decode_verdict(PermissionError(13, "denied"), "plan file", "/p")[1]
+                   and "not valid UTF-8" not in decode_verdict(PermissionError(13, "denied"), "plan file", "/p")[1]),
+          True)
+    check("...and it insists this is not 'nothing applies' — the whole point of naming it",
+          lambda: "not 'nothing applies'" in decode_verdict(_ude, "sentinel", "/s")[1], True)
+
+    # ── parse_cache below the top level / H1(c)(d) (3) ──────────────────────────────────
+    check("a cache whose `picks` is not an object is STALE, not an exit-1 traceback",
+          lambda: _raises_rc(lambda: parse_cache('{"picks": 5}')), STALE_CACHE)
+    check("a cache whose `triggers` is a list is STALE too",
+          lambda: _raises_rc(lambda: parse_cache('{"triggers": ["x"]}')), STALE_CACHE)
+    check("...and it names WHICH key is wrong, not merely that something is",
+          lambda: "'picks'" in _raises_msg(lambda: parse_cache('{"picks": 5}')), True)
 
     # ── outside_repo (4). Added 2026-09-30 after `call_model`'s SECOND real call was contaminated
     # by this repo's own hooks: launched with the repo as cwd, `claude -p` loaded
