@@ -93,7 +93,7 @@ Usage:
     scripts/recall-llm.py --arm            # ONE model call, matches every step of the armed plan
     scripts/recall-llm.py --fire           # no model call; the entry for the current step
     scripts/recall-llm.py --print-prompt    # exactly what --arm would send. No call, no cost
-    scripts/recall-llm.py --self-test  # 164 cases
+    scripts/recall-llm.py --self-test  # 171 cases
 """
 from __future__ import annotations
 
@@ -281,8 +281,8 @@ def parse_trigger(description: str) -> str | None:
     return d[len(TRIGGER_PREFIX):].split("—", 1)[0].strip() or None
 
 
-def decode_verdict(err: UnicodeDecodeError | OSError | None, what: str, path: str
-                   ) -> tuple[int, str]:
+def decode_verdict(err: UnicodeDecodeError | OSError | None, what: str, path: str,
+                   label: str = "CANNOT RUN") -> tuple[int, str]:
     """PURE. -> (rc, message) for a file that could not be READ. Never a traceback, never rc 1.
 
     ⛔ H1. FOUR CALL SITES READ A FILE AS UTF-8 AND NONE OF THEM NAMED THE FAILURE: the corpus
@@ -300,16 +300,28 @@ def decode_verdict(err: UnicodeDecodeError | OSError | None, what: str, path: st
         return OK, ""
     kind = ("is not valid UTF-8" if isinstance(err, UnicodeDecodeError)
             else f"could not be read ({err.__class__.__name__})")
-    return CANNOT_RUN, (f"CANNOT RUN: the {what} at {path} {kind}, so NOTHING was matched. "
+    # ⚠ THE LABEL IS A PARAMETER BECAUSE THE CLASS IS. A cache read raises `StaleCache` (rc 3) and
+    # a plan read raises `Refusal` (rc 2); a sentence reading "CANNOT RUN" over an rc of 3 makes the
+    # message contradict the code, which is the same defect as a code contradicting a docstring.
+    return CANNOT_RUN, (f"{label}: the {what} at {path} {kind}, so NOTHING was matched. "
                         f"This is not 'nothing applies' — the file could not be read at all.")
 
 
-def read_or_refuse(path: Path, what: str) -> str:
-    """-> the file's text, or a raised Refusal carrying `decode_verdict`'s sentence."""
+def read_or_refuse(path: Path, what: str, refusal: type = Refusal) -> str:
+    """-> the file's text, or a raised `refusal` carrying `decode_verdict`'s sentence.
+
+    ⛔ ROUND 2 #2 — THE CLASS IS A PARAMETER BECAUSE NAMING A FAILURE IS NOT ENOUGH IF THE CALLER
+    IGNORES THE CODE. H1 stopped an undecodable cache from being a traceback, but it became a bare
+    `Refusal` at rc 2 — and the hook's catch-all correctly ignores rc 2, because "no plan armed" is
+    the routine state. So the reader still heard nothing: exactly B1's shape, reproduced inside
+    B1's own fix. A bad cache is a STALE cache (rc 3, which the hook forwards, and whose repair is
+    specific: re-arm), while an unreadable plan or sentinel really is CANNOT RUN.
+    """
+    label = "STALE CACHE" if refusal is StaleCache else "CANNOT RUN"
     try:
         return path.read_text(encoding="utf-8")
     except (UnicodeDecodeError, OSError) as exc:
-        raise Refusal(decode_verdict(exc, what, str(path))[1]) from exc
+        raise refusal(decode_verdict(exc, what, str(path), label)[1]) from exc
 
 
 def memory_dir(cwd: Path | None = None) -> Path | None:
@@ -346,21 +358,34 @@ def load_triggers(d: Path) -> list[tuple[str, str]]:
     return out
 
 
-def live_trigger_for(entry: str, d: Path | None) -> str | None:
-    """-> the trigger the corpus holds for `entry` RIGHT NOW, or None if it cannot be read.
+LIVE_OK, LIVE_UNREADABLE, LIVE_NO_TRIGGER = "ok", "unreadable", "no-trigger"
+
+
+def live_trigger_for(entry: str, d: Path | None) -> tuple[str, str | None]:
+    """-> (status, trigger). Status is LIVE_OK, LIVE_UNREADABLE or LIVE_NO_TRIGGER.
 
     ⛔ H2. One file, not the corpus: `--fire` is a cache lookup measured at 0.12s and re-reading 145
-    entries to display one sentence would spend the whole design. ⚠ It returns None rather than
-    raising — an unreadable single entry must not suppress a match whose NAME still resolves, which
-    is `cached_entry_verdict`'s job and already covered. The caller falls back to the cached text.
+    entries to display one sentence would spend the whole design.
+
+    ⛔ ROUND 2 #1 — THIS RETURNED A BARE `None` AND THAT None MEANT TWO DIFFERENT THINGS: "I could
+    not read the file" and "the file is fine and carries no FIRES-WHEN". The caller fell back to the
+    cached text for both, so an entry REWRITTEN WITHOUT FRONTMATTER still surfaced the old cached
+    sentence — the very defect H2 was raised about, surviving its own fix. Reproduced by the
+    reviewer. `check-sentinel-meanings.py` exists to refuse exactly this (one nullable, one
+    meaning), and `lookup`'s docstring in this same file already says so about its own None.
+
+    The two now separate because they need OPPOSITE responses: unreadable is bookkeeping (fall back,
+    the name still resolves), while no-trigger is MATERIAL — an entry that carries no trigger cannot
+    fire at all, so a cache naming it is stale.
     """
     if d is None:
-        return None
+        return LIVE_UNREADABLE, None
     try:
         desc = frontmatter_description((d / f"{entry}.md").read_text(encoding="utf-8"))
     except (UnicodeDecodeError, OSError):
-        return None
-    return parse_trigger(desc) if desc else None
+        return LIVE_UNREADABLE, None
+    trig = parse_trigger(desc) if desc else None
+    return (LIVE_OK, trig) if trig else (LIVE_NO_TRIGGER, None)
 
 
 def corpus_verdict(n_triggers: int, n_files: int) -> tuple[int, str]:
@@ -848,7 +873,11 @@ def prepared_prompt() -> tuple[str, Path, str, list[tuple[int, str]], list[tuple
     steps = plan_steps(plan_text)
     rc, msg = plan_verdict(steps)
     if rc != OK:
-        raise Refusal(msg)
+        # ⛔ ROUND 2 #3. This raised a bare `Refusal` (rc 2) for the SAME verdict `do_fire` reports
+        # as rc 5, so `--print-prompt` and `--arm` disagreed with `--fire` about what an unreadable
+        # plan is. One meaning, one code, in every mode — otherwise the contract is per-entry-point
+        # and a caller cannot rely on it.
+        raise UnreadablePlan(msg)
     triggers = read_corpus()
     return build_prompt(triggers, steps), plan, plan_text, steps, triggers
 
@@ -906,7 +935,7 @@ def do_fire(again: bool = False) -> int:
         raise StaleCache(
             (f"STALE CACHE: {cache_file.name} does not exist — this plan was never armed for "
              f"recall. Run `scripts/recall-llm.py --arm`.") if first else "")
-    cache = parse_cache(read_or_refuse(cache_file, "recall cache"))
+    cache = parse_cache(read_or_refuse(cache_file, "recall cache", StaleCache))
     rc, msg = cache_verdict(cache, plan_text)
     if rc != OK:
         raise StaleCache(msg)
@@ -927,7 +956,11 @@ def do_fire(again: bool = False) -> int:
     # The LIVE text wins, and a divergence is SAID rather than hidden: it is the reader's signal
     # that the entry may no longer be the right match at all.
     cached_trigger = (cache.get("triggers") or {}).get(entry or "")
-    live_trigger = live_trigger_for(entry, d) if entry else None
+    status, live_trigger = live_trigger_for(entry, d) if entry else (LIVE_UNREADABLE, None)
+    if status == LIVE_NO_TRIGGER:
+        raise StaleCache(f"STALE CACHE: {entry!r} no longer carries a FIRES-WHEN trigger, so it "
+                         f"cannot fire at all — the cache names a match that has stopped being "
+                         f"one. Re-run --arm.")
     text = fire_output(entry, live_trigger or cached_trigger)
     if entry and live_trigger and cached_trigger and live_trigger != cached_trigger:
         text += ("\n   ⚠ this entry's trigger has been REWRITTEN since the plan was armed; the line "
@@ -1408,15 +1441,21 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
                                                     [1, 2, 3], [])), BAD_RESPONSE)
 
     # ── H2 · the trigger text shown is the LIVE one (4) ─────────────────────────────────
-    check("live_trigger_for returns None when there is no corpus, so the cached text is used",
-          lambda: live_trigger_for("x", None), None)
+    check("no corpus is UNREADABLE, so the cached text is used",
+          lambda: live_trigger_for("x", None), (LIVE_UNREADABLE, None))
     check("live_trigger_for reads the trigger the corpus holds NOW",
           lambda: _live_trigger_probe('---\ndescription: "FIRES-WHEN: reading it live"\n---\n'),
-          "reading it live")
-    check("an entry whose file cannot be read yields None rather than suppressing the match",
-          lambda: _live_trigger_probe(b"\xff\xfe not utf-8"), None)
-    check("an entry with no FIRES-WHEN yields None, not an empty trigger",
-          lambda: _live_trigger_probe('---\ndescription: "no trigger here"\n---\n'), None)
+          (LIVE_OK, "reading it live"))
+    check("an entry whose file cannot be read is UNREADABLE — bookkeeping, so the match survives",
+          lambda: _live_trigger_probe(b"\xff\xfe not utf-8"), (LIVE_UNREADABLE, None))
+    # ⛔ ROUND 2 #1: these two statuses were ONE bare None, so the caller fell back to the cached
+    # sentence for both and an entry rewritten without frontmatter still printed the old wording —
+    # H2's defect surviving H2's fix. They need OPPOSITE responses, so they are distinct values.
+    check("an entry with no FIRES-WHEN is NO-TRIGGER, which is material, not bookkeeping",
+          lambda: _live_trigger_probe('---\ndescription: "no trigger here"\n---\n'),
+          (LIVE_NO_TRIGGER, None))
+    check("the three statuses are all distinct, so no two conditions share a meaning",
+          lambda: len({LIVE_OK, LIVE_UNREADABLE, LIVE_NO_TRIGGER}), 3)
 
     # ── decode_verdict / H1 (6) ─────────────────────────────────────────────────────────
     # ⛔ Seven paths exited 1 — a code this contract does not define — and the hook's catch-all
@@ -1436,6 +1475,13 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
           True)
     check("...and it insists this is not 'nothing applies' — the whole point of naming it",
           lambda: "not 'nothing applies'" in decode_verdict(_ude, "sentinel", "/s")[1], True)
+    # ⛔ ROUND 2: an rc-3 refusal carrying a "CANNOT RUN" sentence makes the message contradict the
+    # code, which is the same defect as code contradicting a docstring.
+    check("the sentence's label can match the rc the caller will raise",
+          lambda: decode_verdict(_ude, "recall cache", "/c", "STALE CACHE")[1].startswith("STALE CACHE:"),
+          True)
+    check("...and it still defaults to CANNOT RUN for the readers that are one",
+          lambda: decode_verdict(_ude, "plan file", "/p")[1].startswith("CANNOT RUN:"), True)
 
     # ── parse_cache below the top level / H1(c)(d) (3) ──────────────────────────────────
     check("a cache whose `picks` is not an object is STALE, not an exit-1 traceback",
@@ -1672,6 +1718,117 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
                    and "THE CACHED WORDING" not in _fire_with_a_rewritten_trigger()), True)
     check("...and it SAYS the trigger was rewritten, so the reader knows the match used old wording",
           lambda: "REWRITTEN since the plan was armed" in _fire_with_a_rewritten_trigger(), True)
+
+    # ── H1(e)'s ORDERING, driven end to end (1) ─────────────────────────────────────────
+    # ⛔ ROUND 2 #4. The mutation named for this regression DELETED `print(text)` instead of moving
+    # the marker write before it, so its case failed because nothing printed — not because the
+    # ordering broke. An unfaithful guard for the named defect. This drives a world whose cache
+    # directory is READ-ONLY and asserts the matched lesson is printed ANYWAY, which is the property
+    # H1(e) is about: the bookkeeping for a message must not destroy the message.
+    def _fire_with_an_unwritable_marker():
+        import io, os, contextlib
+        with tempfile.TemporaryDirectory() as td8:
+            root, home = Path(td8) / "repo", Path(td8) / "home"
+            pl = root / ".claude" / "plans" / "w.md"
+            pl.parent.mkdir(parents=True)
+            pl.write_text("### T\n\n- [ ] **Step 1 of 1** — Go\n  - **Doing:** a situation\n",
+                          encoding="utf-8")
+            (root / ".claude" / "executing-plan").write_text("plan: .claude/plans/w.md\n",
+                                                             encoding="utf-8")
+            cd = root / ".claude" / "recall-cache"
+            cd.mkdir()
+            (cd / "w.json").write_text(json.dumps(cache_document(
+                ".claude/plans/w.md", pl.read_text(encoding="utf-8"), {1: "the-entry"},
+                {"the-entry": "a trigger"}, 1, "2026-09-30T00:00:00+00:00")), encoding="utf-8")
+            slug = re.sub(r"[^A-Za-z0-9]", "-", str(root.resolve()))
+            corpus = home / ".claude" / "projects" / slug / "memory"
+            corpus.mkdir(parents=True)
+            (corpus / "the-entry.md").write_text(
+                '---\ndescription: "FIRES-WHEN: a trigger"\n---\nbody\n', encoding="utf-8")
+            saved = (globals()["ROOT"], globals()["SENTINEL"], globals()["CACHE_DIR"],
+                     os.environ.get("HOME"))
+            os.chmod(cd, 0o500)
+            try:
+                globals()["ROOT"] = root.resolve()
+                globals()["SENTINEL"] = root / ".claude" / "executing-plan"
+                globals()["CACHE_DIR"] = cd
+                os.environ["HOME"] = str(home)
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    do_fire()
+                return buf.getvalue()
+            finally:
+                os.chmod(cd, 0o700)
+                (globals()["ROOT"], globals()["SENTINEL"], globals()["CACHE_DIR"]) = saved[:3]
+                if saved[3] is None:
+                    os.environ.pop("HOME", None)
+                else:
+                    os.environ["HOME"] = saved[3]
+
+    check("a READ-ONLY cache directory does not destroy the matched lesson",
+          lambda: "the-entry" in _fire_with_an_unwritable_marker(), True)
+
+    # ── r2 #1's WIRING and r2 #2's WIRING, both driven where the defect lives (2) ───────
+    # ⛔ SIXTH TIME TONIGHT: the case tested the callee while the mutation sat at the CALL SITE, so
+    # both of these survived a green 168-case suite. `live_trigger_for`'s statuses are covered four
+    # ways and `do_fire` could still ignore LIVE_NO_TRIGGER; `decode_verdict`'s label is covered two
+    # ways and `read_or_refuse` could still hard-code it.
+    def _fire_on_a_trigger_less_entry():
+        import io, os, contextlib
+        with tempfile.TemporaryDirectory() as td9:
+            root, home = Path(td9) / "repo", Path(td9) / "home"
+            pl = root / ".claude" / "plans" / "w.md"
+            pl.parent.mkdir(parents=True)
+            pl.write_text("### T\n\n- [ ] **Step 1 of 1** — Go\n  - **Doing:** a situation\n",
+                          encoding="utf-8")
+            (root / ".claude" / "executing-plan").write_text("plan: .claude/plans/w.md\n",
+                                                             encoding="utf-8")
+            cd = root / ".claude" / "recall-cache"
+            cd.mkdir()
+            (cd / "w.json").write_text(json.dumps(cache_document(
+                ".claude/plans/w.md", pl.read_text(encoding="utf-8"), {1: "the-entry"},
+                {"the-entry": "THE CACHED OLD TRIGGER"}, 1, "2026-09-30T00:00:00+00:00")),
+                encoding="utf-8")
+            slug = re.sub(r"[^A-Za-z0-9]", "-", str(root.resolve()))
+            corpus = home / ".claude" / "projects" / slug / "memory"
+            corpus.mkdir(parents=True)
+            # the entry EXISTS — so `cached_entry_verdict` passes — but carries no frontmatter
+            (corpus / "the-entry.md").write_text("just body text, no frontmatter\n", encoding="utf-8")
+            saved = (globals()["ROOT"], globals()["SENTINEL"], globals()["CACHE_DIR"],
+                     os.environ.get("HOME"))
+            try:
+                globals()["ROOT"] = root.resolve()
+                globals()["SENTINEL"] = root / ".claude" / "executing-plan"
+                globals()["CACHE_DIR"] = cd
+                os.environ["HOME"] = str(home)
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    do_fire()
+                return buf.getvalue()
+            finally:
+                (globals()["ROOT"], globals()["SENTINEL"], globals()["CACHE_DIR"]) = saved[:3]
+                if saved[3] is None:
+                    os.environ.pop("HOME", None)
+                else:
+                    os.environ["HOME"] = saved[3]
+
+    raises("do_fire REFUSES an entry that has lost its trigger, instead of serving the cached wording",
+           _fire_on_a_trigger_less_entry, StaleCache, "no longer carries a FIRES-WHEN")
+
+    def _read_or_refuse_label(refusal):
+        with tempfile.TemporaryDirectory() as _td:
+            f = Path(_td) / "bad.bin"
+            f.write_bytes(b"\xff\xfe not utf-8")
+            try:
+                read_or_refuse(f, "recall cache", refusal)
+            except Refusal as exc:
+                return (type(exc).__name__, str(exc).split(":")[0])
+            return ("none", "")
+
+    check("read_or_refuse raises the CLASS it was given, with a sentence that matches it",
+          lambda: _read_or_refuse_label(StaleCache), ("StaleCache", "STALE CACHE"))
+    check("...and the default reader is still CANNOT RUN, both class and sentence",
+          lambda: _read_or_refuse_label(Refusal), ("Refusal", "CANNOT RUN"))
 
     # ── do_fire's DEDUPE wiring, driven end to end (2) ───────────────────────────────────
     # ⛔ The case above raises before it ever reaches the marker, so it cannot see this wiring at

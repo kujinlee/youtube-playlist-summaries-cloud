@@ -649,15 +649,15 @@
   "expect": "an UnreadablePlan carries its OWN code, not CANNOT RUN \u2014 the hook must route on it"
  },
  {
-  "name": "H1(e) RESTORED: the dedupe marker is written BEFORE the print again, so an unwritable cache directory destroys a correct match",
+  "name": "H1(e) RESTORED FAITHFULLY: the marker write is MOVED back above the print, so an unwritable cache directory destroys a correct match \u2014 \u27f3 round 2 #4 rewrote this entry, which had DELETED the print instead of reordering it and so failed its case for the wrong reason",
   "file": "scripts/recall-llm.py",
   "edits": [
    [
-    "    print(text)\n    # \u26a0 AND THE RECORD IS BEST-EFFORT",
-    "    # \u26a0 AND THE RECORD IS BEST-EFFORT"
+    "    print(text)\n",
+    "    marker_file.parent.mkdir(parents=True, exist_ok=True)\n    marker_file.write_text(current, encoding=\"utf-8\")\n    print(text)\n"
    ]
   ],
-  "expect": "do_fire prints on the FIRST call for a step"
+  "expect": "a READ-ONLY cache directory does not destroy the matched lesson"
  },
  {
   "name": "decode_verdict treats an undecodable file as no error at all, so a UTF-8 failure reads as a clean pass",
@@ -682,12 +682,12 @@
   "expect": "an OSError is named by its CLASS, not mislabelled as an encoding problem"
  },
  {
-  "name": "the refusal stops naming which file it was, leaving four possible sources indistinguishable",
+  "name": "the refusal stops naming which file it was, leaving four possible sources indistinguishable \u2014 \u27f3 retargeted round 2: the signature this anchored to changed",
   "file": "scripts/recall-llm.py",
   "edits": [
    [
-    "    return CANNOT_RUN, (f\"CANNOT RUN: the {what} at {path} {kind}, so NOTHING was matched. \"",
-    "    return CANNOT_RUN, (f\"CANNOT RUN: a file {kind}, so NOTHING was matched. \""
+    "    return CANNOT_RUN, (f\"{label}: the {what} at {path} {kind}, so NOTHING was matched. \"",
+    "    return CANNOT_RUN, (f\"{label}: a file {kind}, so NOTHING was matched. \""
    ]
   ],
   "expect": "...and it names WHICH file and WHERE, since four different ones reach it"
@@ -781,26 +781,26 @@
   "expect": "do_fire prints the LIVE trigger, not the cached one, when they have diverged"
  },
  {
-  "name": "live_trigger_for raises on an unreadable entry instead of returning None, so one corrupt byte suppresses a match whose name still resolves",
+  "name": "live_trigger_for raises on an unreadable entry instead of returning None, so one corrupt byte suppresses a match whose name still resolves \u2014 \u27f3 retargeted round 2: the signature this anchored to changed",
   "file": "scripts/recall-llm.py",
   "edits": [
    [
-    "    except (UnicodeDecodeError, OSError):\n        return None\n    return parse_trigger(desc) if desc else None",
-    "    except (UnicodeDecodeError, OSError):\n        raise\n    return parse_trigger(desc) if desc else None"
+    "    except (UnicodeDecodeError, OSError):\n        return LIVE_UNREADABLE, None\n",
+    "    except (UnicodeDecodeError, OSError):\n        raise\n"
    ]
   ],
-  "expect": "an entry whose file cannot be read yields None rather than suppressing the match"
+  "expect": "an entry whose file cannot be read is UNREADABLE \u2014 bookkeeping, so the match survives"
  },
  {
-  "name": "live_trigger_for reads the corpus even when there is none, so a missing directory becomes a traceback",
+  "name": "live_trigger_for reads the corpus even when there is none, so a missing directory becomes a traceback \u2014 \u27f3 retargeted round 2: the signature this anchored to changed",
   "file": "scripts/recall-llm.py",
   "edits": [
    [
-    "    if d is None:\n        return None\n",
-    "    if False:\n        return None\n"
+    "    if d is None:\n        return LIVE_UNREADABLE, None\n",
+    "    if False:\n        return LIVE_UNREADABLE, None\n"
    ]
   ],
-  "expect": "live_trigger_for returns None when there is no corpus, so the cached text is used"
+  "expect": "no corpus is UNREADABLE, so the cached text is used"
  },
  {
   "name": "the duplicate-key hook accepts a repeat, so one of the model's two answers is discarded in silence",
@@ -845,5 +845,38 @@
    ]
   ],
   "expect": "an unwritable marker directory lets the nag REPEAT rather than vanish"
+ },
+ {
+  "name": "r2 #1 RESTORED: live_trigger_for collapses 'no trigger' back into 'unreadable', so an entry rewritten without frontmatter shows the stale cached sentence again",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    return (LIVE_OK, trig) if trig else (LIVE_NO_TRIGGER, None)",
+    "    return (LIVE_OK, trig) if trig else (LIVE_UNREADABLE, None)"
+   ]
+  ],
+  "expect": "an entry with no FIRES-WHEN is NO-TRIGGER, which is material, not bookkeeping"
+ },
+ {
+  "name": "r2 #1 RESTORED at the caller: do_fire stops refusing a trigger-less entry and serves the cached wording",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    if status == LIVE_NO_TRIGGER:\n        raise StaleCache(",
+    "    if False:\n        raise StaleCache("
+   ]
+  ],
+  "expect": "do_fire REFUSES an entry that has lost its trigger, instead of serving the cached wording"
+ },
+ {
+  "name": "the refusal sentence stops matching its exit code, so an rc-3 outcome reads as CANNOT RUN",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    label = \"STALE CACHE\" if refusal is StaleCache else \"CANNOT RUN\"",
+    "    label = \"CANNOT RUN\""
+   ]
+  ],
+  "expect": "read_or_refuse raises the CLASS it was given, with a sentence that matches it"
  }
 ]
