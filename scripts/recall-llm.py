@@ -75,7 +75,7 @@ Usage:
     scripts/recall-llm.py --arm            # ONE model call, matches every step of the armed plan
     scripts/recall-llm.py --fire           # no model call; the entry for the current step
     scripts/recall-llm.py --print-prompt    # exactly what --arm would send. No call, no cost
-    scripts/recall-llm.py --self-test  # 119 cases
+    scripts/recall-llm.py --self-test  # 126 cases
 """
 from __future__ import annotations
 
@@ -529,6 +529,29 @@ def cached_entry_verdict(entry: str | None, corpus_present: bool, entry_present:
     return OK, ""
 
 
+def surface_marker(plan_stem: str, step: int) -> str:
+    """PURE. -> the token identifying WHICH (plan, step) was last surfaced."""
+    return f"{plan_stem}:{step}"
+
+
+def should_surface(last: str | None, current: str) -> bool:
+    """PURE. -> may this entry be printed? False when this exact step was already surfaced.
+
+    ⛔ WHY THIS EXISTS. The caller is `PostToolUse(Bash, begin-plan.py)`, and `begin-plan.py` is run
+    for `--status` and `--banner` as well as `--tick`, so the same step can be re-surfaced several
+    times without the situation having changed at all. The refuted lexical matcher's own hook says
+    the consequence out loud: *a hook that printed on every call would be trained away within an
+    hour* — which was measured at 275 firings a session. Firing per INVOCATION instead of per STEP
+    TRANSITION rebuilds that in miniature.
+
+    ⚠ NOT a timestamp and NOT a count. The question is only ever *is this the same step as last
+    time*, and a marker of (plan, step) answers exactly that: a tick changes it, re-running
+    `--status` does not, and switching plans does. A clock would make the answer depend on when it
+    was asked, which is a different question nobody needs.
+    """
+    return last != current
+
+
 # ─────────────────────────────────────────────────────────────────── the output
 def render(entry: str, trigger: str) -> str:
     """PURE. -> the line the reader sees when something fires.
@@ -659,7 +682,7 @@ def do_arm() -> int:
     return OK
 
 
-def do_fire() -> int:
+def do_fire(again: bool = False) -> int:
     sentinel_text, plan, plan_text = read_armed_plan()
     if paused(sentinel_text):
         return OK  # a paused thread has no current step. Silence here is an answer, not a failure.
@@ -683,8 +706,16 @@ def do_fire() -> int:
     if rc != OK:
         raise StaleCache(msg)
     text = fire_output(entry, (cache.get("triggers") or {}).get(entry or ""))
-    if text:
-        print(text)
+    if not text:
+        return OK
+    marker_file = CACHE_DIR / ".last-surfaced"
+    current = surface_marker(plan.stem, step)
+    last = marker_file.read_text(encoding="utf-8").strip() if marker_file.is_file() else None
+    if not (again or should_surface(last, current)):
+        return OK          # this exact step was already surfaced. Silence is the design.
+    marker_file.parent.mkdir(parents=True, exist_ok=True)
+    marker_file.write_text(current, encoding="utf-8")
+    print(text)
     return OK
 
 
@@ -1053,6 +1084,16 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
     check("a NONE answer needs no corpus, so it is served even when the corpus is gone",
           lambda: cached_entry_verdict(None, False, False)[0], OK)
 
+    # ── should_surface / surface_marker (4) ─────────────────────────────────────────────
+    check("should_surface prints a step not yet surfaced",
+          lambda: should_surface(None, surface_marker("plan-a", 2)), True)
+    check("should_surface STAYS SILENT on the step it already surfaced",
+          lambda: should_surface(surface_marker("plan-a", 2), surface_marker("plan-a", 2)), False)
+    check("a tick — the same plan, the NEXT step — surfaces again",
+          lambda: should_surface(surface_marker("plan-b", 3), surface_marker("plan-b", 4)), True)
+    check("the same step NUMBER under a DIFFERENT plan is a different situation",
+          lambda: should_surface(surface_marker("plan-c", 1), surface_marker("plan-d", 1)), True)
+
     check("parse_cache reads a real cache document",
           lambda: parse_cache(json.dumps(DOC))["fingerprint"], DOC["fingerprint"])
     raises("parse_cache REFUSES a half-written cache file rather than exiting on a traceback",
@@ -1144,6 +1185,59 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
     raises("do_fire itself refuses a cached entry the live corpus no longer holds",
            _fire_on_a_corpus_missing_its_entry, StaleCache, "no longer holds")
 
+    # ── do_fire's DEDUPE wiring, driven end to end (2) ───────────────────────────────────
+    # ⛔ The case above raises before it ever reaches the marker, so it cannot see this wiring at
+    # all — the same compose failure one layer along. This world has the entry PRESENT, calls
+    # do_fire TWICE, and captures what each call printed.
+    def _fire_twice(again_on_second=False):
+        import io, os, contextlib
+        with tempfile.TemporaryDirectory() as td5:
+            root, home = Path(td5) / "repo", Path(td5) / "home"
+            plan = root / ".claude" / "plans" / "w.md"
+            plan.parent.mkdir(parents=True)
+            plan.write_text("### Task 1: Go\n\n- [ ] **Step 1 of 1** — Go\n"
+                            "  - **Doing:** a situation\n", encoding="utf-8")
+            (root / ".claude" / "executing-plan").write_text(
+                "plan: .claude/plans/w.md\n", encoding="utf-8")
+            cache_dir = root / ".claude" / "recall-cache"
+            cache_dir.mkdir()
+            (cache_dir / "w.json").write_text(json.dumps(cache_document(
+                ".claude/plans/w.md", plan.read_text(encoding="utf-8"),
+                {1: "the-entry"}, {"the-entry": "a trigger"},
+                1, "2026-09-29T00:00:00+00:00")), encoding="utf-8")
+            slug = re.sub(r"[^A-Za-z0-9]", "-", str(root.resolve()))
+            corpus = home / ".claude" / "projects" / slug / "memory"
+            corpus.mkdir(parents=True)
+            (corpus / "the-entry.md").write_text(
+                "---\ndescription: \"FIRES-WHEN: a situation\"\n---\nbody\n", encoding="utf-8")
+            saved = (globals()["ROOT"], globals()["SENTINEL"], globals()["CACHE_DIR"],
+                     os.environ.get("HOME"))
+            try:
+                globals()["ROOT"] = root.resolve()
+                globals()["SENTINEL"] = root / ".claude" / "executing-plan"
+                globals()["CACHE_DIR"] = cache_dir
+                os.environ["HOME"] = str(home)
+                outs = []
+                for i in range(2):
+                    buf = io.StringIO()
+                    with contextlib.redirect_stdout(buf):
+                        do_fire(again=(again_on_second and i == 1))
+                    outs.append(buf.getvalue())
+                return outs
+            finally:
+                (globals()["ROOT"], globals()["SENTINEL"], globals()["CACHE_DIR"]) = saved[:3]
+                if saved[3] is None:
+                    os.environ.pop("HOME", None)
+                else:
+                    os.environ["HOME"] = saved[3]
+
+    check("do_fire prints on the FIRST call for a step",
+          lambda: "the-entry" in _fire_twice()[0], True)
+    check("do_fire is SILENT on the second call for the SAME step",
+          lambda: _fire_twice()[1], "")
+    check("...unless --again is passed, which is the deliberate escape",
+          lambda: "the-entry" in _fire_twice(again_on_second=True)[1], True)
+
     if fail:
         print(f"\n{ok} passed, {fail} FAILED")
         return 1
@@ -1158,6 +1252,9 @@ def main(argv: list[str]) -> int:
                     help="ONE model call: match every step of the armed plan and cache it")
     ap.add_argument("--fire", action="store_true",
                     help="no model call: print the entry for the current unticked step")
+    ap.add_argument("--again", action="store_true",
+                    help="re-surface a step already surfaced once "
+                         "(the dedupe is per (plan, step), not per day)")
     ap.add_argument("--print-prompt", action="store_true",
                     help="print exactly what --arm would send. No call, no cost")
     ap.add_argument("--self-test", action="store_true")
@@ -1175,7 +1272,7 @@ def main(argv: list[str]) -> int:
         if a.print_prompt:
             print(prepared_prompt()[0])
             return OK
-        return do_arm() if a.arm else do_fire()
+        return do_arm() if a.arm else do_fire(again=a.again)
     except Refusal as exc:
         # NOT a fail-open handler: every Refusal subclass carries a NON-ZERO rc, and this is the
         # only place they are caught. The alternative — letting them escape as a traceback — is

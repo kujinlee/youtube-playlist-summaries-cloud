@@ -504,5 +504,82 @@
    ]
   ],
   "expect": "do_fire itself refuses a cached entry the live corpus no longer holds"
+ },
+ {
+  "name": "should_surface is INVERTED, so a step is silent the first time and printed ever after",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    return last != current\n",
+    "    return last == current\n"
+   ]
+  ],
+  "expect": "should_surface prints a step not yet surfaced"
+ },
+ {
+  "name": "should_surface always says yes, so the entry is reprinted on every begin-plan.py call \u2014 the 275-firings-a-session failure, one layer down",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "return last != current",
+    "return True"
+   ]
+  ],
+  "expect": "should_surface STAYS SILENT on the step it already surfaced"
+ },
+ {
+  "name": "surface_marker drops the STEP, so a tick looks like the same situation and the next step is never surfaced",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    return f\"{plan_stem}:{step}\"\n",
+    "    return f\"{plan_stem}\"\n"
+   ]
+  ],
+  "expect": "a tick \u2014 the same plan, the NEXT step \u2014 surfaces again"
+ },
+ {
+  "name": "surface_marker drops the PLAN, so switching plans at the same step number stays silent",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "f\"{plan_stem}:{step}\"",
+    "f\"{step}\""
+   ]
+  ],
+  "expect": "the same step NUMBER under a DIFFERENT plan is a different situation"
+ },
+ {
+  "name": "do_fire stops consulting should_surface \u2014 the DEDUPE wiring reverted while both pure functions stay covered",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    if not (again or should_surface(last, current)):\n        return OK          # this exact step was already surfaced. Silence is the design.\n",
+    ""
+   ]
+  ],
+  "expect": "do_fire is SILENT on the second call for the SAME step"
+ },
+ {
+  "name": "do_fire never records the marker, so every call looks like the first one",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    marker_file.write_text(current, encoding=\"utf-8\")\n",
+    ""
+   ]
+  ],
+  "expect": "do_fire is SILENT on the second call for the SAME step"
+ },
+ {
+  "name": "the --again escape is ignored, so a deliberate re-surface is swallowed",
+  "file": "scripts/recall-llm.py",
+  "edits": [
+   [
+    "    if not (again or should_surface(last, current)):\n",
+    "    if not (False or should_surface(last, current)):\n"
+   ]
+  ],
+  "expect": "...unless --again is passed, which is the deliberate escape"
  }
 ]
