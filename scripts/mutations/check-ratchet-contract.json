@@ -108,5 +108,82 @@
       ]
     ],
     "expect": "an UNPARSEABLE file does not exempt — a docstring we cannot read is not a declaration"
+  },
+  {
+    "name": "the import arm is neutered, so an imported library looks unused",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "if import_re(basename).search(caller_blob):",
+        "if re.compile(r\"(?!)\").search(caller_blob):"
+      ]
+    ],
+    "expect": "an IMPORTED library is USED, even though nothing invokes it"
+  },
+  {
+    "name": "the line-start anchor is dropped, so an import inside a string literal counts",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "_LINE_START = r\"^\"",
+        "_LINE_START = r\"\""
+      ]
+    ],
+    "expect": "an import inside a STRING LITERAL is not a use — the measured fixture shape"
+  },
+  {
+    "name": "the optional indent is dropped, so an in-function import stops counting",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "_OPT_INDENT = r\"[ \\t]*\"",
+        "_OPT_INDENT = r\"\""
+      ]
+    ],
+    "expect": "...and the import may be INDENTED — `import m4_catalog as m4c` inside a function is real"
+  },
+  {
+    "name": "the identifier guard is bypassed, so a hyphenated executable can match the import arm",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "if not stem.isidentifier():",
+        "if False:"
+      ]
+    ],
+    "expect": "the import arm cannot satisfy a HYPHENATED executable — it is not a legal identifier"
+  },
+  {
+    "name": "R2 stops being applied to the widened population",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "for line in fail_open_handlers(texts[rel]):",
+        "for line in []:"
+      ]
+    ],
+    "expect": "evaluate APPLIES R2 to a NON-guard"
+  },
+  {
+    "name": "R3 stops being applied to the widened population",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "out.extend(check_caller(rel, texts[rel], widened_blob))",
+        "_ = widened_blob"
+      ]
+    ],
+    "expect": "evaluate APPLIES R3 to a NON-guard — the rule the recall matcher's hook needed"
+  },
+  {
+    "name": "the blob is built for guards only, so every widened file gets an empty one — the live defect",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "| set(discover_self_tested_nonguards(list(texts), texts)))",
+        ")"
+      ]
+    ],
+    "expect": "a SELF-TESTED NON-GUARD gets one too — R3 is asked of it, so it needs a blob"
   }
 ]

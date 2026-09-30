@@ -1,0 +1,35 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 4507 chars"
+  ],
+  "dirty": {
+    ".claude/recall-cache/.last-said": "100644 54d5c9d8eece2ecfc9ea79f8ea1ba68563edd883",
+    ".claude/recall-cache/.last-surfaced": "100644 9c8522288b4262f018d4abd9f3cb448337d54f3d",
+    ".claude/recall-cache/arch-review-recall-llm.json": "100644 372967e0b8b0a927486c8aa3c7717d3132882aa5",
+    ".claude/recall-cache/fold-recall-llm-r1.json": "100644 09f16f03aba5e802604ae31f9dc520b93b56fbd4",
+    ".claude/recall-cache/llm-recall-matcher.json": "100644 530ea5f13962b33a0fc63f6c43444f14a9fe6ba8",
+    ".claude/recall-cache/wrap-for-arch-review.json": "100644 2a4583aa4dea15e1a171dcfd10276a0c1c8df5a9",
+    "docs/explainers/backlog-table.fragment.html": "100644 9564ddf9560a665a028f3135cbff08d4df215c5f",
+    "docs/explainers/backlog-table.html": "100644 be4a51bc150e2155c4e96dab1203b5f670854de6",
+    "docs/explainers/dashboard.fragment.html": "100644 e02166ba1f79a40f4eb0fc6d8d38228d2a2b99f4",
+    "docs/explainers/dashboard.html": "100644 22cf4728d92fe2360da25059d8110e19e7be9a9c",
+    "docs/explainers/features.fragment.html": "100644 eb4f89622645cedb4880dc6a04b23a4edcb52b64",
+    "docs/explainers/features.html": "100644 42277d68358ed9bb7eddcc145d2e944d0690b2f2",
+    "docs/explainers/goals.fragment.html": "100644 e2699bb7061802f4c8cfa337f7d3750f24189005",
+    "docs/explainers/goals.html": "100644 321a4b8883c0f07fbc74bbe80aa07c8781d8b72b",
+    "scripts/check-plan-code.py": "100644 3bd2e6ba6353dc022d3a111b4ac913a0c24368b1",
+    "scripts/check-ratchet-contract.py": "100755 28e4fea345fad37cec9f6a4c6611ed4cf5ad4f22",
+    "scripts/mutations/check-ratchet-contract.json": "100644 c8232096d5356d76a4e56b79008fa9db7e773e27"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "778fd822d4d970c3c36be0b1a400619a866e96c4",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/9421c78a-b57b-4086-91b7-206b76245ccd/scratchpad/review-brief.md",
+  "reason": "4507 chars",
+  "refused": false,
+  "review": "r3-uses-r1-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

@@ -27,7 +27,7 @@ work exists to remove.
 
 Usage:
     python3 scripts/check-ratchet-contract.py
-    python3 scripts/check-ratchet-contract.py --self-test  # 49 cases
+    python3 scripts/check-ratchet-contract.py --self-test  # 52 cases
 """
 from __future__ import annotations
 
@@ -216,6 +216,28 @@ def discover_guards(script_paths: list[str]) -> list[str]:
     return sorted(p for p in script_paths if GUARD_PATH_RE.fullmatch(p))
 
 
+def caller_blob_targets(texts: dict[str, str]) -> list[str]:
+    """Every file R3 will be asked about — so the blob is built for all of them.
+
+    ⛔ EXTRACTED BECAUSE ITS ABSENCE WAS A LIVE DEFECT, and the defect could not be caught by a
+    case while the decision lived inline in `main()`. 2026-09-30: R3 was extended to the
+    self-tested non-guards while `main()`'s blob loop still ran over the guards alone, so every
+    widened file was handed `caller_blob_for.get(rel, "")` — the empty string — and R3 fired for
+    ALL 19 of them where 3 were expected. Every one of the suite's caller cases passes its own
+    blob in directly, so not one of them could notice a missing blob; only running the guard
+    against the real repository found it.
+
+    ⚠ THAT IS THE SHAPE THE ARCHITECTURE REVIEW THAT ORDERED THIS CHANGE HAD JUST DIAGNOSED SIX
+    TIMES — a decision consulted at one site and not at another. Keeping it a pure function with
+    a case is the difference between having fixed the instance and having covered the class.
+
+    ⚠ ONE EXPRESSION, ASKED BY BOTH SITES. `evaluate` iterates these same two populations; a
+    third added later must appear here too, or its members silently get an empty blob again.
+    """
+    return sorted(set(discover_guards(list(texts)))
+                  | set(discover_self_tested_nonguards(list(texts), texts)))
+
+
 def check_caller(path: str, text: str, caller_blob: str) -> list[Violation]:
     """R3 — something USES this file, or it says in writing why not.
 
@@ -300,7 +322,13 @@ def evaluate(texts: dict[str, str], caller_blob_for: dict[str, str],
             out.append(Violation(rel, "R2_fail_open",
                                  f"line {line}: an `except` handler returns 0 — "
                                  "'could not run' reported as success"))
-        out.extend(check_caller(rel, texts[rel], caller_blob_for.get(rel, "")))
+        # ⚠ THE BLOB IS BOUND TO A NAMED LOCAL rather than inlined, and the reason is mechanical:
+        # inlined, this line is BYTE-IDENTICAL to the guards loop's R3 call above, and a mutation
+        # manifest cannot bind an anchor that matches twice — `check-plan-code` refuses it, because
+        # `replace(…, 1)` takes the first and that need not be the line the mutation names. So
+        # without this local, the widened R3 could not have a falsifier at all.
+        widened_blob = caller_blob_for.get(rel, "")
+        out.extend(check_caller(rel, texts[rel], widened_blob))
     _violating = {rel for rel in _widened
                   if check_manifest(rel, texts[rel], manifest_stems)}
     # `set(texts)` is the EXAMINED set, not `_widened`: a pinned script that stopped being
@@ -668,6 +696,26 @@ CALLER_CASES: list[tuple[str, str, str, str, list[str]]] = [
      "scripts/exec-tool.py", HAS_CALLER_STUB, "import exec-tool\n", ["R3_no_caller"]),
 ]
 
+# ── WHO GETS A CALLER BLOB BUILT FOR THEM ────────────────────────────────────────────────────
+# ⚠ THESE CASES EXIST BECAUSE THEIR ABSENCE WAS A LIVE DEFECT (see `caller_blob_targets`). The
+# decision lived inline in `main()` and no case could reach it; R3 then fired for all 19 widened
+# files because each got an empty blob. (name, texts, expected)
+BLOB_TARGET_CASES: list[tuple[str, dict[str, str], list[str]]] = [
+    ("a GUARD gets a caller blob built for it",
+     {"scripts/check-a.py": SELF_TEST_OK}, ["scripts/check-a.py"]),
+    # ⛔ THE ONE THAT WOULD HAVE CAUGHT THE DEFECT. Drop the widened half of the union and this
+    # case goes red; every caller case stays green, because each supplies its own blob.
+    ("a SELF-TESTED NON-GUARD gets one too — R3 is asked of it, so it needs a blob",
+     {"scripts/check-a.py": SELF_TEST_OK, "scripts/tool.py": SELF_TEST_OK},
+     ["scripts/check-a.py", "scripts/tool.py"]),
+    # ⚠ THE OTHER DIRECTION, so the case above cannot be satisfied by returning everything: a
+    # non-guard with NO self-test is outside both populations and must not appear.
+    ("a non-guard with NO self-test gets none — it is in neither population",
+     {"scripts/check-a.py": SELF_TEST_OK, "scripts/tool.py": NO_SELF_TEST},
+     ["scripts/check-a.py"]),
+]
+
+
 # The POPULATION is the filesystem. (name, paths on disk, expected)
 POPULATION_CASES: list[tuple[str, list[str], list[str]]] = [
     ("every check-*.py on disk is in the population",
@@ -864,6 +912,11 @@ def self_test() -> int:
         if got != sorted(expected):
             print(f"[FAIL] {name}\n       expected {sorted(expected)}\n       got      {got}")
             failures += 1
+    for name, texts_, expected in BLOB_TARGET_CASES:
+        got = caller_blob_targets(texts_)
+        if got != expected:
+            print(f"[FAIL] {name}\n       expected {expected}\n       got      {got}")
+            failures += 1
     for name, paths, expected in POPULATION_CASES:
         got = discover_guards(paths)
         if got != expected:
@@ -980,7 +1033,12 @@ def self_test() -> int:
              + len(POPULATION_CASES) + len(WIDENED_POP_CASES)
              + len(ESCAPE_CASES) + len(WIDENED_DRIFT_CASES) + len(wiring)
              + len(SELF_EXEMPTION_CASES) + len(SCOPE_CASES)
-             + len(MANIFEST_BRANCH_CASES))
+             + len(MANIFEST_BRANCH_CASES)
+             # ⟳ 2026-09-30. Added with BLOB_TARGET_CASES, and MISSED on the first pass: the three
+             # new cases RAN and the tally still printed 49/49, because a group absent from this
+             # sum is invisible here whether it exists or not. Caught only by expecting 52 and
+             # reading 49 — the same blind spot the `wiring` note above describes, one group later.
+             + len(BLOB_TARGET_CASES))
     print(f"self-test: {total - failures}/{total} passed")
     return 1 if failures else 0
 
@@ -1041,11 +1099,10 @@ def main(argv: list[str]) -> int:
     # against the real repo rather than by the 49-case suite, every case of which passes its own
     # blob in directly and so cannot see a missing one.
     #
-    # ⚠ DERIVED FROM ONE EXPRESSION, not two lists kept in step. `blob_targets` is the union, and
-    # `evaluate` iterates the same two sets; a third population added later must be added here,
-    # which is why the union is written where a reader of either site will meet it.
-    blob_targets = sorted(set(ratchets) | set(discover_self_tested_nonguards(list(texts), texts)))
-    for rel in blob_targets:
+    # ⚠ DERIVED BY `caller_blob_targets`, which is a PURE FUNCTION WITH A CASE — see its docstring
+    # for the defect that made it one. Computed here rather than inlined so the population
+    # decision has a falsifier instead of living where no case can reach it.
+    for rel in caller_blob_targets(texts):
         # ⚠ A guard's OWN text is excluded. Every one of these scripts names
         # itself in its usage docstring, so including it would let each guard
         # satisfy R3 by describing how to run it — measured on

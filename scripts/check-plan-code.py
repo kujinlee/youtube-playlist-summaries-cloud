@@ -821,7 +821,13 @@ EXPECTED_MUTATIONS = {
     # first draft of THIS comment resurrected it as "the TENTH file" — the retired number walking
     # straight back in at the next opportunity. Derive it:
     #     git log -S'[FAIL] ' --reverse --format='%h %as %s' -- scripts/<file>
-    "scripts/check-ratchet-contract.py": 10,
+    # ⟳ 2026-09-30, backlog #196: 10 -> 17. Seven discriminators arrived with R3's widening from
+    # "something invokes it" to "something uses it" — the import arm, its line-start anchor and
+    # its optional indent (two constants, because one literal can carry only one falsifier), the
+    # identifier guard that keeps the arm inert for hyphenated executables, R2 and R3's
+    # application to the widened population, and the caller-blob population itself, whose absence
+    # was the live defect this slice produced and then covered.
+    "scripts/check-ratchet-contract.py": 17,
     # ⟳ 2026-09-23, folding review-identity-176 round 1: 12 -> 17, AND ONE EXISTING ENTRY WAS
     # RETARGETED — its anchor `if rec.get("gate_ran"):` was unbound by the restructure that added
     # the reverse clause, the exact *an anchor is unbound by ANY nearby edit* shape this repo has
@@ -3745,7 +3751,12 @@ def _self_test() -> int:
     # Blocking and High — and the sum stayed at 1015 throughout, because an orphan keeps the count
     # while removing the coverage. CI caught it; `--self-test` cannot, because it loads the
     # manifests without resolving them. The split is on each file's own entry above.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1034)
+    # ⟳ 2026-09-30, backlog #196: 1034 -> 1041, the +7 from check-ratchet-contract's R3 widening.
+    # ⚠ THE FIGURE CAME FROM THIS GUARD, NOT FROM A HAND COUNT. A throwaway regex over
+    # EXPECTED_MUTATIONS written while making this change said 2582 — it matched digits in the
+    # surrounding comments. The recorded shape is *a second implementation of one rule drifts*, so
+    # the number is whatever `--self-test` reports and nothing else.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1041)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
