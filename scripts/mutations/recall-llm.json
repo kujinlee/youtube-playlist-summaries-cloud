@@ -825,23 +825,23 @@
     "expect": "...and STAYS SILENT the second time for the same step"
   },
   {
-    "name": "the nag marker is never recorded, so the first call is the only state and every call looks like the first",
+    "name": "the nag marker is never recorded, so the first call is the only state and every call looks like the first [anchor retargeted round 4: H2 made the handler loud]",
     "file": "scripts/recall-llm.py",
     "edits": [
       [
-        "        marker.write_text(current, encoding=\"utf-8\")\n    except OSError:\n        pass\n",
-        "    except OSError:\n        pass\n"
+        "        marker.write_text(current, encoding=\"utf-8\")\n    except OSError as exc:\n",
+        "    except OSError as exc:\n"
       ]
     ],
     "expect": "...and STAYS SILENT the second time for the same step"
   },
   {
-    "name": "an unwritable marker directory SUPPRESSES the nag instead of repeating it, so the reader is never told to arm",
+    "name": "an unwritable marker directory SUPPRESSES the nag instead of repeating it, so the reader is never told to arm [anchor retargeted round 4: H2 made the handler loud]",
     "file": "scripts/recall-llm.py",
     "edits": [
       [
-        "    except OSError:\n        pass\n    return True",
-        "    except OSError:\n        return False\n    return True"
+        "    except OSError as exc:\n        print(f\"(recall-llm: this notice could not be de-duplicated — the marker at {marker} \"\n              f\"could not be written ({exc}), so it may repeat on every invocation.)\")\n    return True",
+        "    except OSError as exc:\n        _ = exc\n        return False\n    return True"
       ]
     ],
     "expect": "an unwritable marker directory lets the nag REPEAT rather than vanish"

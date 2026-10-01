@@ -62,13 +62,16 @@ FAILS IF
 
 Usage:
     python3 scripts/check-rc-contract.py
-    python3 scripts/check-rc-contract.py --self-test  # 50 cases
+    python3 scripts/check-rc-contract.py --self-test  # 40 cases
 """
 from __future__ import annotations
 
 import ast
+import json
 import re
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -84,8 +87,14 @@ _RC_NAMES = {"OK", "CANNOT_RUN", "STALE_CACHE", "BAD_RESPONSE", "UNREADABLE_PLAN
 # for the same argument: a boolean opt-out is a rubber stamp, a sentence has an author. Every entry
 # here is a code the hook deliberately does not act on.
 DELIBERATELY_UNHANDLED: dict[int, str] = {
-    0: "rc 0 IS handled — the `0)` arm forwards a match and stays silent on an empty answer. "
-       "Listed only so the table below is total; `handled_codes` finds its arm.",
+    # ⛔ ROUND 4 B2 — THERE IS NO ROW FOR rc 0, AND THERE MUST NOT BE. One existed, excusing the
+    # absence of the `0)` arm with the reason "rc 0 IS handled … listed only so the table below is
+    # total". That cosmetic motive DEFEATED R1 on the most important code in the contract:
+    # measured, deleting the arm that forwards every match left the guard printing
+    # `handled [3,5,6]` and then `rc contract OK`, while bash forwarded nothing at all. A row
+    # whose premise is "this is already handled" is a row that stops checking whether it is.
+    # ⚠ AND ITS PREMISE WAS TESTED BY NOTHING: every other row is falsifiable by removal, and the
+    # suite popped row 4 and never row 0.
     2: "CANNOT RUN means NOTHING WAS ATTEMPTED, and round 3 H2 established that it carries three "
        "shapes rather than one: no plan armed; no mode flag at all (`main`); and argparse's own "
        "usage exit, which is also 2 — measured, `--fier` and `--fire --extra` both exit 2, and "
@@ -125,18 +134,6 @@ DELIBERATELY_UNHANDLED: dict[int, str] = {
 # indentation is now free AND `arm_soundness` below enumerates every arm-shaped line in the `case`
 # block and refuses anything it cannot classify. A shape this does not understand becomes a
 # CANNOT-RUN instead of a quietly missing arm.
-_ARM_RE = re.compile(r"^[ \t]*(\d+)\)", re.M)
-# Any arm head at all — a number, the catch-all, or a pattern this guard does not model.
-_ARM_SHAPE_RE = re.compile(r"^[ \t]*([^\s#][^)\n]*)\)", re.M)
-# ⛔ ROUND 3 M4 — THIS REQUIRED THE LABEL AND `$OUT` TO BE ADJACENT, so splitting the hook's own
-# append idiom across two statements made a #201 defect invisible (measured). The two halves are
-# separate now and an arm is judged on whether it mentions BOTH anywhere within itself, which is
-# the property that matters: an arm promising a detail while able to have none.
-_OUT_LABEL = re.compile(r"(?:Detail|detail):")
-_OUT_REF = re.compile(r"\$OUT|\$\{OUT\}")
-_NONEMPTY_GUARD = re.compile(r'\[\s*-n\s*"\$OUT"\s*\]')
-
-
 class CannotRun(Exception):
     """The guard could not reach what it measures. Never rendered as a pass."""
 
@@ -174,163 +171,140 @@ def defined_codes(matcher_src: str) -> dict[str, int]:
     return found[0]
 
 
-def case_block(hook_src: str) -> str | None:
-    """-> the text between `case ... in` and its `esac`, or None if that cannot be located.
+# ⛔ THE BASH LEXER IS GONE. WHAT REPLACED IT IS AN OBSERVATION.
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# ⭐ THIS IS THE REDESIGN THE ARMING CONDITION CALLED FOR, and `dev-process.md:108` fired for the
+# first time in this fold to produce it. Round 3's B2, round 4's Codex H1 and round 4's B1/M1/M2
+# were all findings in ONE component — `structural_lines` + `unmodelled_quoting`, 58 non-comment
+# lines — across two consecutive rounds, every one of them caused by the previous round's fix.
+# `review-method.md`'s test, *can a redesign remove it?*, answered YES: each was an instance of one
+# sentence, **"my hand-rolled bash lexer differs from bash's"**:
+#
+#   round 3 B2        a bare integer inside a SINGLE-quoted string classified as an arm
+#   round 3 (live)    an apostrophe in a COMMENT opened a phantom single-quote state
+#   round 4 Codex H1  `<<\EOF`, an escaped heredoc delimiter, slipped the refusal
+#   round 4 B1        `$( … )` and backticks open a nested context; nothing refused them
+#   round 4 M1        the pessimistic `<<` refusal then fired on a COMMENT — 5 of 5 legitimate
+#                     probes refused, including the comment documenting the constraint itself
+#
+# Six more quoting forms would have followed, because the set of ways bash can quote a line is not
+# finite in any useful sense and I was enumerating REJECTIONS.
+#
+# ⭐ SO THE QUESTION IS ADJUDICATED BY THE ONLY AUTHORITY THAT CAN ANSWER IT: bash. The hook is
+# RUN against a stub matcher that exits with a chosen code and prints chosen output, and what it
+# forwards is OBSERVED. Every quoting form — single, double, ANSI-C, heredoc, command
+# substitution, backtick, comment — is handled correctly because bash handles it, and this module
+# no longer has an opinion about any of them.
+#
+# ⚠ THE MEASURED CASE FOR IT, from the round-4 reviewer: 209 production lines guarding a 14-line
+# executable `case` block, of which 49 are the rules R1/R2/R3 (zero Blockings in any round) and 91
+# re-implement bash's lexer (EVERY Blocking and High in this component). "The guard earns its
+# existence; its reader does not earn 91 lines."
+#
+# ⚠ WHAT THIS COSTS, stated rather than discovered: the guard now EXECUTES the hook, so it needs a
+# `bash` on PATH and it is slower — one process per probe. It also cannot see an arm for a code
+# outside the probe range; that bound is named in `dead_arms`.
 
-    ⚠ BOUNDED ON PURPOSE. Scanning the whole file for arm shapes would read a heredoc, a comment
-    block or any parenthesised prose as an arm; scanning only inside the `case` keeps membership
-    decidable by syntax, which is the same argument `peer-sites.py` records for asking about peers
-    within a CONTAINER rather than similar lines anywhere.
+
+def _stub_tree(hook_src: str, rc: int, out: str, td: str) -> Path:
+    """Stage a tree the hook will accept, with a matcher stub that exits `rc` and prints `out`.
+
+    ⚠ The hook resolves its own repo root from `BASH_SOURCE`, so the layout matters and nothing
+    else does: it needs `.claude/hooks/<itself>` and `scripts/recall-llm.py`.
     """
-    start = re.search(r"^\s*case\s+.*\s+in\s*$", hook_src, re.M)
-    if not start:
-        return None
-    end = re.search(r"^\s*esac\s*$", hook_src[start.end():], re.M)
-    if not end:
-        return None
-    return hook_src[start.end():start.end() + end.start()]
+    root = Path(td)
+    (root / ".claude" / "hooks").mkdir(parents=True, exist_ok=True)
+    (root / "scripts").mkdir(parents=True, exist_ok=True)
+    hook = root / ".claude" / "hooks" / "surface-recall.sh"
+    hook.write_text(hook_src, encoding="utf-8")
+    stub = root / "scripts" / "recall-llm.py"
+    # ⚠ `repr(out)` rather than an f-string interpolation: the payloads under test contain quotes,
+    # backslashes and newlines, and building the stub by concatenation is how this module's
+    # predecessor got into trouble in the first place.
+    stub.write_text(
+        "import sys\n"
+        f"sys.stdout.write({out!r})\n"
+        f"sys.exit({rc})\n",
+        encoding="utf-8")
+    return hook
 
 
-def structural_lines(block: str) -> list[str]:
-    """-> the lines of the block that BEGIN outside any quoted string.
+def observe(hook_src: str, rc: int, out: str) -> str:
+    """-> exactly what the hook FORWARDS when the matcher exits `rc` having printed `out`.
 
-    ⛔ ROUND 3 B2 — THIS TRACKED DOUBLE QUOTES ONLY AND THE DOCSTRING CLAIMED AN UNMODELLED FORM
-    BECAME A CANNOT-RUN. It did not: `arm_soundness` refuses a head it cannot CLASSIFY, and a bare
-    integer inside a SINGLE-quoted string classifies perfectly well. The reviewer adjudicated it
-    against real bash — one single-quoted multi-line payload and the guard reported
-    `handled {0,3,5,6}`, sound, `verdict` empty, exit 0, while bash dropped rc 5 entirely. A guard
-    giving a WRONG ANSWER where its own docstring promised a refusal is #202's shape inside the
-    instrument built to catch #202.
-
-    ⚠ BASH QUOTING, MODELLED AS A THREE-STATE MACHINE rather than a parity count: inside double
-    quotes a backslash escapes, inside SINGLE quotes nothing escapes and only `'` ends the string,
-    and a `"` inside single quotes is literal (and vice versa). A parity count over both characters
-    gets every one of those wrong.
-
-    ⚠ WHAT IS STILL NOT MODELLED IS NOW REFUSED RATHER THAN DESCRIBED — see `unmodelled_quoting`.
+    The empty string means the hook stayed silent. ⛔ A non-zero bash exit or unparseable output is
+    a CANNOT-RUN and never an empty answer: silence and "I could not look" must not be the same
+    observation, which is the contract this guard exists to police.
     """
-    out: list[str] = []
-    state = None  # None | '"' | "'"
-    for line in block.split("\n"):
-        if state is None:
-            out.append(line)
-        i = 0
-        while i < len(line):
-            c = line[i]
-            if state == "'":
-                if c == "'":
-                    state = None
-            elif state == '"':
-                if c == "\\":
-                    i += 2
-                    continue
-                if c == '"':
-                    state = None
-            else:
-                if c == "\\":
-                    i += 2
-                    continue
-                # ⛔ A COMMENT IS NOT CODE, AND SCANNING ONE OPENED A PHANTOM STRING. Measured on
-                # the live hook: an apostrophe in a comment ("the NAG's message") put the machine
-                # into single-quote state, so the next arm head began "inside a string" and every
-                # reader downstream saw the wrong lines. In bash a `#` at a word boundary starts a
-                # comment and runs to end of line; quotes inside it are literal text.
-                if c == "#" and (i == 0 or line[i - 1] in " \t"):
-                    break
-                if c in ('"', "'"):
-                    state = c
-            i += 1
-    return out
+    with tempfile.TemporaryDirectory() as td:
+        hook = _stub_tree(hook_src, rc, out, td)
+        try:
+            proc = subprocess.run(["bash", str(hook)], capture_output=True, text=True, timeout=30)
+        except FileNotFoundError as exc:
+            raise CannotRun(f"no `bash` on PATH, so the hook cannot be adjudicated ({exc})") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise CannotRun(f"the hook did not finish within 30s at rc={rc}") from exc
+        if proc.returncode != 0:
+            raise CannotRun(f"the hook exited {proc.returncode} at rc={rc}, which it documents it "
+                            f"never does ('NEVER BLOCKS, NEVER FAILS THE CALL')")
+        text = proc.stdout.strip()
+        if not text:
+            return ""
+        try:
+            return json.loads(text)["hookSpecificOutput"]["additionalContext"]
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            raise CannotRun(f"the hook printed something that is not its documented envelope at "
+                            f"rc={rc}: {text[:120]!r} ({exc})") from exc
 
 
-def unmodelled_quoting(block: str) -> list[str]:
-    """A SOUNDNESS CHECK over quoting forms — what this module cannot read must REFUSE.
+# A payload the hook cannot mistake for empty, used as the "there IS detail" probe.
+_PROBE = "PROBE-DETAIL-TEXT"
 
-    ⛔ ROUND 3 B2's OTHER HALF, and the reason the docstring's promise is now true instead of
-    merely written. `structural_lines` models double and single quotes. It does NOT model
-    `$'...'` (ANSI-C quoting, where backslash escapes differ) or heredocs (`<<`, `<<-`), and a
-    line inside either could be read as structure. So their PRESENCE is refused outright: the
-    guard says "I cannot read this" instead of answering over text it has misparsed.
+
+def handled_codes(hook_src: str, codes: set[int]) -> set[int]:
+    """-> the codes the hook actually ACTS on, observed by running it.
+
+    A code is handled when the hook forwards something for it with detail available. ⚠ A code whose
+    only behaviour is silence is NOT handled, which is the whole point: #202 was a code the hook
+    received and dropped.
     """
-    problems: list[str] = []
-    if re.search(r"\$'", block):
-        problems.append("the `case` block uses ANSI-C quoting (`$'…'`), whose escaping this guard "
-                        "does not model. No statement about which codes are handled is possible.")
-    # ⛔ ROUND 4 H1 — THIS WAS `<<-?\s*[\w'\"]` AND MISSED AN ESCAPED DELIMITER. Bash accepts
-    # `<<\EOF`, whose first character is a backslash and therefore outside that class, so the
-    # guard answered over heredoc BODY text and reported rc 5 as handled where bash has no `5)`
-    # arm at all — adjudicated against real bash by the reviewer. That is the exact failure shape
-    # B2's fix was written to close, one character narrower.
-    # ⭐ SO THE DETECTOR IS PESSIMISTIC NOW, NOT PRECISE: any `<<` that is not a herestring is
-    # refused, whatever follows it. A soundness check is only as sound as its detector, and the
-    # asymmetry is deliberate — a spurious cannot-run is LOUD and costs a person one look, while a
-    # missed one is silent and costs a wrong answer. `(?!<)` excludes `<<<`, bash's herestring,
-    # which the live hook does use (outside the `case` block) and which has no unmodelled body.
-    # ⚠ THE LOOK-BEHIND IS REQUIRED, and my own adjacent negative caught its absence: `<<(?!<)`
-    # still matches `<<<` at OFFSET 1, where the lookahead sees the quote rather than a third `<`.
-    # So a herestring would have been refused and this guard would be red on the real repo.
-    if re.search(r"(?<!<)<<(?!<)", block):
-        problems.append("the `case` block contains a heredoc (`<<`), whose body this guard does "
-                        "not model. No statement about which codes are handled is possible.")
-    return problems
+    return {rc for rc in sorted(codes) if observe(hook_src, rc, _PROBE)}
 
 
-def arm_soundness(block: str) -> list[str]:
-    """A SOUNDNESS CHECK — every arm-shaped line is accounted for, or the guard cannot run.
+def dangling_detail(hook_src: str, codes: set[int]) -> list[int]:
+    """-> codes whose payload promises a detail the hook does not have. Backlog #201's shape.
 
-    ⛔ ROUND 3 M1's OTHER HALF. `handled_codes` answers "which codes are handled"; this answers
-    "did I understand every arm I was looking at". Without it, an arm shape this module does not
-    model — `4|5)`, `[45])`, a quoted pattern — is simply absent from the answer, and an absent
-    arm reads as an unhandled code or as no finding at all. Distinct from a falsifier: a falsifier
-    protects the CLAIM, this protects the READING the claim is derived from.
+    Observed, not parsed: run each code with NO output from the matcher and look for a label with
+    nothing after it. That is exactly what a reader saw from the second firing onward, so it is
+    what this asks about.
     """
-    problems: list[str] = []
-    for m in _ARM_SHAPE_RE.finditer("\n".join(structural_lines(block))):
-        head = m.group(1).strip()
-        if head == "*" or head.isdigit():
-            continue
-        problems.append(
-            f"the `case` block holds an arm head this guard does not model: {head!r}. It is "
-            f"neither a bare integer nor the `*` catch-all, so no statement about which codes are "
-            f"handled is possible. Treat this as NOT RUN and teach the guard the shape."
-        )
-    return problems
-
-
-def handled_codes(hook_src: str) -> set[int]:
-    """-> every integer a `case` arm names, at ANY indentation, on STRUCTURAL lines only."""
-    return {int(m.group(1))
-            for m in _ARM_RE.finditer("\n".join(structural_lines(hook_src)))}
-
-
-def unguarded_detail_arms(hook_src: str) -> list[int]:
-    """-> arms that interpolate $OUT into a labelled clause with no `-n "$OUT"` guard. #201's shape.
-
-    An arm runs from its `N)` to the next `N)` or to `*)`. Within that span, a `Detail: $OUT` is
-    only honest if some `[ -n "$OUT" ]` appears in the same span — either guarding the whole
-    assignment, as `0)` and `3)` do, or guarding the clause's append, as `5)` and `6)` now do.
-    """
-    spans = []
-    marks = [(m.start(), int(m.group(1))) for m in _ARM_RE.finditer(hook_src)]
-    # ⛔ ROUND 3 H1 — M1 FREED `_ARM_RE`'s INDENTATION AND LEFT THIS LINE AT TWO SPACES, so M1
-    # was fixed as an INSTANCE. Measured by the reviewer: two hooks identical but for the
-    # indentation of `*)`, and at four spaces a genuine #201 defect in the `6)` arm went
-    # unreported while `arm_soundness` stayed clean. The mutation added for M1 targets `_ARM_RE`
-    # and cannot see this line, which is why it survived the fix.
-    m_catchall = re.search(r"^[ \t]*\*\)", hook_src, re.M)
-    end_of_case = m_catchall.start() if m_catchall else len(hook_src)
-    for i, (pos, code) in enumerate(marks):
-        stop = marks[i + 1][0] if i + 1 < len(marks) else end_of_case
-        spans.append((code, hook_src[pos:stop]))
     bad = []
-    for code, body in spans:
-        if (_OUT_LABEL.search(body) and _OUT_REF.search(body)
-                and not _NONEMPTY_GUARD.search(body)):
-            bad.append(code)
-    return sorted(bad)
+    for rc in sorted(codes):
+        payload = observe(hook_src, rc, "")
+        if not payload:
+            continue
+        for label in ("Detail:", "detail:"):
+            head, sep, tail = payload.partition(label)
+            if sep and not tail.strip():
+                bad.append(rc)
+                break
+    return bad
 
 
-def verdict(defined: dict[str, int], handled: set[int], unguarded: list[int]) -> list[str]:
+def dead_arms(hook_src: str, defined: set[int], probe_max: int = 15) -> list[int]:
+    """-> codes the hook acts on that the matcher cannot emit. A dead arm reads as coverage.
+
+    ⚠ BOUNDED, AND THE BOUND IS THE HONEST PART: codes 0..`probe_max` are probed. An arm for a
+    code above that is invisible here. The contract's codes are single digits and adding a
+    two-digit one would be a deliberate act, so the bound is stated rather than defended as
+    complete.
+    """
+    return [rc for rc in range(probe_max + 1)
+            if rc not in defined and observe(hook_src, rc, _PROBE)]
+
+
+def verdict(defined: dict[str, int], handled: set[int], dangling: list[int],
+            dead: list[int] | None = None) -> list[str]:
     """PURE. -> the list of problems, empty when the two languages agree."""
     problems: list[str] = []
     for name, code in sorted(defined.items(), key=lambda kv: kv[1]):
@@ -343,17 +317,16 @@ def verdict(defined: dict[str, int], handled: set[int], unguarded: list[int]) ->
             f"it is not listed in DELIBERATELY_UNHANDLED with a reason. The hook's catch-all will "
             f"swallow it — which is backlog #202 exactly."
         )
-    for code in sorted(handled):
-        if code not in set(defined.values()):
-            problems.append(
-                f"the hook has a `{code})` arm and no matcher constant has that value — a dead arm, "
-                f"which reads as coverage and is not."
-            )
-    for code in unguarded:
+    for code in sorted(dead or []):
         problems.append(
-            f"the `{code})` arm interpolates $OUT into a `Detail:` clause with no `[ -n \"$OUT\" ]` "
-            f"guard in the same arm. When the matcher's dedupe empties the message the reader gets "
-            f"a sentence ending `Detail:` with nothing after it — backlog #201."
+            f"the hook ACTS on rc {code} and no matcher constant has that value — a dead arm, "
+            f"which reads as coverage and is not. Observed by running the hook at that code."
+        )
+    for code in dangling:
+        problems.append(
+            f"at rc {code} the hook forwards a payload whose `Detail:` label has nothing after "
+            f"it when the matcher printed no detail — OBSERVED by running it. That is what a "
+            f"reader saw from the second firing onward, forever — backlog #201."
         )
     return problems
 
@@ -371,25 +344,21 @@ def main(argv: list[str]) -> int:
         print(f"FAILED: {exc}. Treat this as NOT RUN.")
         return 2
     hook_src = HOOK.read_text(encoding="utf-8", errors="replace")
-    # ⛔ THE READING IS CHECKED BEFORE THE CLAIM IS MADE — round 3 M1. An arm shape this module
-    # does not model would otherwise be simply absent from `handled`, and an absent arm reads as
-    # "no finding" rather than as "I could not look".
-    block = case_block(hook_src)
-    if block is None:
-        print("FAILED: could not locate the hook's `case ... in` / `esac` block, so no statement "
-              "about which codes it handles is possible. Treat this as NOT RUN.")
+    # ⛔ ADJUDICATED BY RUNNING, NOT BY READING — see the observer section for why, and for the
+    # arming condition that produced it. Every `CannotRun` here is a refusal, never a pass.
+    try:
+        codes = set(defined.values())
+        handled = handled_codes(hook_src, codes)
+        dangling = dangling_detail(hook_src, codes)
+        dead = dead_arms(hook_src, codes)
+    except CannotRun as exc:
+        print(f"FAILED: {exc}. Treat this as NOT RUN.")
         return 2
-    unsound = unmodelled_quoting(block) + arm_soundness(block)
-    if unsound:
-        print(f"FAILED: {len(unsound)} arm shape(s) this guard cannot classify — treat as NOT RUN:")
-        for u in unsound:
-            print(f"  ✗ {u}")
-        return 2
-    handled = handled_codes(block)
     if not handled:
-        print("FAILED: found no `case` arms in the hook at all, which cannot be right. NOT RUN.")
+        print("FAILED: the hook acted on NONE of the matcher's codes, which cannot be right — "
+              "either the stub tree is wrong or the hook is inert. Treat this as NOT RUN.")
         return 2
-    problems = verdict(defined, handled, unguarded_detail_arms(block))
+    problems = verdict(defined, handled, dangling, dead)
     print(f"rc contract: {len(defined)} code(s) defined, {len(handled)} handled by an arm, "
           f"{len(DELIBERATELY_UNHANDLED)} declared unhandled")
     if problems:
@@ -430,16 +399,16 @@ def _self_test() -> int:
 
     RC = ("OK, CANNOT_RUN, STALE_CACHE, BAD_RESPONSE, UNREADABLE_PLAN, UNANSWERABLE"
           " = 0, 2, 3, 4, 5, 6\n")
+    CODES = {0, 2, 3, 4, 5, 6}
 
-    # ── defined_codes ──────────────────────────────────────────────────────────────────────
+    # ── defined_codes — AST over the matcher. Unchanged by the redesign, and it has never had
+    # a finding in four rounds, which is why it survived while the bash reader did not. ────────
     case("the rc tuple is read from the AST, names paired with values",
          defined_codes(RC), {"OK": 0, "CANNOT_RUN": 2, "STALE_CACHE": 3, "BAD_RESPONSE": 4,
                              "UNREADABLE_PLAN": 5, "UNANSWERABLE": 6})
     case("a new code is picked up without touching this guard",
          defined_codes(RC.replace(", UNANSWERABLE =", ", UNANSWERABLE, SEVENTH =")
                          .replace("5, 6\n", "5, 6, 7\n")).get("SEVENTH"), 7)
-    # ⛔ CANNOT-RUN, NOT A SILENT EMPTY ANSWER. An empty dict would make every downstream rule
-    # vacuously green, which is the strongest available false claim.
     raises("a matcher with NO rc tuple is a cannot-run", lambda: defined_codes("x = 1\n"), CannotRun)
     raises("a matcher that does not parse is a cannot-run",
            lambda: defined_codes("def broken(\n"), CannotRun)
@@ -448,181 +417,145 @@ def _self_test() -> int:
     case("an assignment missing one rc name is not the rc tuple",
          defined_codes(RC + "A, B = 1, 2\n"), defined_codes(RC))
 
-    # ── handled_codes ──────────────────────────────────────────────────────────────────────
-    HOOK_OK = (
-        'case "$RC" in\n'
-        '  0) [ -n "$OUT" ] && PAYLOAD="$OUT" ;;\n'
-        '  3) [ -n "$OUT" ] && PAYLOAD="stale. Detail: $OUT" ;;\n'
-        '  5) PAYLOAD="unreadable."\n'
-        '     [ -n "$OUT" ] && PAYLOAD="$PAYLOAD Detail: $OUT" ;;\n'
-        '  6) PAYLOAD="no corpus."\n'
-        '     [ -n "$OUT" ] && PAYLOAD="$PAYLOAD Detail: $OUT" ;;\n'
-        '  *) : ;;\n'
-        'esac\n')
-    case("every arm is found", handled_codes(HOOK_OK), {0, 3, 5, 6})
-    case("the catch-all is not a code", 42 in handled_codes(HOOK_OK), False)
-    case("a hook with no arms yields the empty set", handled_codes("echo hi\n"), set())
+    # ── the OBSERVER. Every case below runs real bash against a real hook. ───────────────────
+    # ⚠ A SHARED SKELETON, so each fixture differs from the live hook only in its `case` block.
+    def _hook(case_body: str) -> str:
+        return ('#!/usr/bin/env bash\n'
+                'set -uo pipefail\n'
+                'REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"\n'
+                'OUT="$(python3 "$REPO_ROOT/scripts/recall-llm.py" --fire 2>&1)"; RC=$?\n'
+                'PAYLOAD=""\n'
+                'case "$RC" in\n' + case_body +
+                '  *) : ;;\n'
+                'esac\n'
+                '[ -n "$PAYLOAD" ] || exit 0\n'
+                "python3 -c 'import json,sys; "
+                'print(json.dumps({"hookSpecificOutput":{"hookEventName":"PostToolUse",'
+                '"additionalContext":sys.stdin.read()}}))\' <<<"$PAYLOAD"\n'
+                'exit 0\n')
 
-    # ── unguarded_detail_arms — #201's shape ───────────────────────────────────────────────
-    case("a guarded Detail: clause is fine", unguarded_detail_arms(HOOK_OK), [])
-    BAD = HOOK_OK.replace('  5) PAYLOAD="unreadable."\n     [ -n "$OUT" ] && PAYLOAD="$PAYLOAD Detail: $OUT" ;;\n',
-                          '  5) PAYLOAD="unreadable. Detail: $OUT" ;;\n')
-    case("an UNGUARDED Detail: clause is caught — the exact #201 regression",
-         unguarded_detail_arms(BAD), [5])
-    case("...and it names only the offending arm", unguarded_detail_arms(BAD) == [5, 6], False)
-    case("an arm that forwards $OUT with no label is not a problem",
-         unguarded_detail_arms('case "$RC" in\n  0) PAYLOAD="$OUT" ;;\n  *) : ;;\nesac\n'), [])
-    case("the LAST arm before the catch-all is still bounded, not run to the end of file",
-         unguarded_detail_arms(
-             'case "$RC" in\n  5) PAYLOAD="x. Detail: $OUT" ;;\n  *) : ;;\nesac\n'
-             'echo [ -n "$OUT" ]\n'), [5])
+    CANON = _hook('  0) [ -n "$OUT" ] && PAYLOAD="$OUT" ;;\n'
+                  '  3) [ -n "$OUT" ] && PAYLOAD="stale. Detail: $OUT" ;;\n'
+                  '  5) PAYLOAD="unreadable."\n'
+                  '     [ -n "$OUT" ] && PAYLOAD="$PAYLOAD Detail: $OUT" ;;\n'
+                  '  6) PAYLOAD="no corpus."\n'
+                  '     [ -n "$OUT" ] && PAYLOAD="$PAYLOAD Detail: $OUT" ;;\n')
 
-    # ── round 3 M1: indentation must not hide an arm, and an unmodelled shape must REFUSE ──
-    # ⛔ THE REVIEWER'S EXACT REPRO. A `4)` arm indented four spaces was invisible, so `verdict`
-    # returned [] while bash would handle rc 4 and build an unguarded `Detail:` payload.
-    FOUR_SPACE = ('case "$RC" in\n'
-                  '    4) PAYLOAD="rejected. Detail: $OUT" ;;\n'
-                  '  0) : ;;\n  3) : ;;\n  5) : ;;\n  6) : ;;\n  *) : ;;\nesac\n')
-    case("an arm indented FOUR spaces is still an arm — round 3 M1",
-         4 in handled_codes(case_block(FOUR_SPACE) or ""), True)
-    case("...and its unguarded Detail: is caught, which it was not before",
-         unguarded_detail_arms(case_block(FOUR_SPACE) or ""), [4])
-    case("a tab-indented arm is an arm",
-         handled_codes(case_block('case "$RC" in\n\t7) : ;;\n  *) : ;;\nesac\n') or ""), {7})
-    # ⛔ THE SOUNDNESS CHECK: a shape this guard does not model must REFUSE, not vanish.
-    case("an OR-pattern arm is a cannot-run, not a silently missing arm",
-         len(arm_soundness(case_block('case "$RC" in\n  4|5) : ;;\n  *) : ;;\nesac\n') or "")), 1)
-    case("a bracket-class arm is a cannot-run too",
-         len(arm_soundness(case_block('case "$RC" in\n  [45]) : ;;\n  *) : ;;\nesac\n') or "")), 1)
-    case("...and the canonical block is sound", arm_soundness(case_block(HOOK_OK) or ""), [])
-    # ⚠ THE BLOCK BOUND ITSELF: prose outside `case` must not be read as an arm.
-    case("text after esac is not part of the block",
-         "9)" in (case_block('case "$RC" in\n  0) : ;;\n  *) : ;;\nesac\nfoo 9) bar\n') or ""),
-         False)
-    case("no case block at all is a cannot-run", case_block("echo hi\n"), None)
-    case("a case block with no esac is a cannot-run",
-         case_block('case "$RC" in\n  0) : ;;\n'), None)
+    case("the canonical hook's handled codes are observed, not parsed",
+         handled_codes(CANON, CODES), {0, 3, 5, 6})
+    case("a silent code is NOT handled — #202 was a code the hook received and dropped",
+         2 in handled_codes(CANON, CODES), False)
+    case("the canonical hook promises no detail it lacks", dangling_detail(CANON, CODES), [])
+    case("and it has no dead arm", dead_arms(CANON, CODES), [])
 
-    # ── round 3 M1, third move: a multi-line payload's continuation is CONTENT, not an arm ──
-    # ⛔ THE SHAPE THAT ACTUALLY FIRED ON THE LIVE HOOK. The rc=3 arm's payload spans lines and its
-    # continuation begins at column 0 with `(one model call, …). Detail: $OUT" ;;`. A line-local
-    # reader calls that an arm head; it is inside an open double quote.
-    MULTILINE = ('case "$RC" in\n'
-                 '  3) [ -n "$OUT" ] && PAYLOAD="stale, so no entry was\n'
-                 'surfaced for this step. Run `--arm` to match this plan\n'
-                 '(one model call, ~16s, covers every step). Detail: $OUT" ;;\n'
-                 '  *) : ;;\nesac\n')
-    case("a multi-line payload's continuation is not an arm head",
-         arm_soundness(case_block(MULTILINE) or ""), [])
-    case("...and the arm it belongs to is still found", handled_codes(case_block(MULTILINE) or ""),
-         {3})
-    case("an escaped quote does not flip the string state",
-         arm_soundness(case_block('case "$RC" in\n  3) X="a \\" b\n(not an arm). y" ;;\n  *) : ;;\nesac\n')
-                       or ""), [])
-    # ⚠ AND THE OTHER DIRECTION: a genuine arm on a structural line must still be seen, so the
-    # quote tracking cannot be satisfied by simply ignoring everything.
-    case("a real arm AFTER a multi-line payload is still found",
-         handled_codes(case_block(MULTILINE.replace('  *) : ;;', '  6) : ;;\n  *) : ;;')) or ""),
-         {3, 6})
+    # ⛔ #201's SHAPE, OBSERVED: a label with nothing after it when the matcher printed nothing.
+    DANGLE = _hook('  0) [ -n "$OUT" ] && PAYLOAD="$OUT" ;;\n'
+                   '  5) PAYLOAD="unreadable. Detail: $OUT" ;;\n')
+    case("an unconditional Detail: label is caught by running the hook — backlog #201",
+         dangling_detail(DANGLE, CODES), [5])
+    # ⚠ THE ADJACENT NEGATIVE: the same arm, guarded, is fine.
+    case("...and the guarded form is not flagged",
+         dangling_detail(_hook('  5) PAYLOAD="unreadable."\n'
+                               '     [ -n "$OUT" ] && PAYLOAD="$PAYLOAD Detail: $OUT" ;;\n'),
+                         CODES), [])
 
-    # ── round 3 B2 — SINGLE QUOTES, THE FORM THAT GAVE A WRONG ANSWER ───────────────────────
-    # ⛔ The docstring promised an unmodelled quoting form became a cannot-run. It did not: a bare
-    # integer inside a SINGLE-quoted string classifies fine, so the reviewer's hook reported
-    # handled {0,3,5,6} / sound / verdict empty / exit 0 while real bash dropped rc 5.
-    SINGLE = ("case \"$RC\" in\n"
-              "  3) PAYLOAD='stale, and this is a long message\n"
-              "  5) not an arm — inside the single-quoted payload\n"
-              "  it ends here' ;;\n"
-              "  *) : ;;\nesac\n")
-    case("a SINGLE-quoted payload's continuation is not an arm — round 3 B2",
-         handled_codes(case_block(SINGLE) or ""), {3})
-    case("...and the guard does not invent rc 5 from inside that string",
-         5 in handled_codes(case_block(SINGLE) or ""), False)
-    # ⛔ A COMMENT IS NOT CODE. An apostrophe in a comment put the machine into single-quote state
-    # on the LIVE hook, so the next arm head read as string content — measured, and the reason the
-    # soundness check refused twice before this was modelled.
-    COMMENTED = ('case "$RC" in\n  # the NAG\'s message is deduped\n  5) : ;;\n  *) : ;;\nesac\n')
-    case("an apostrophe in a COMMENT does not open a string",
-         handled_codes(case_block(COMMENTED) or ""), {5})
-    # ⛔ AND WHAT IS STILL NOT MODELLED MUST REFUSE, which is what makes the docstring true now.
-    case("ANSI-C quoting is refused, not guessed at",
-         len(unmodelled_quoting("  3) PAYLOAD=$'a\\nb' ;;\n")), 1)
-    case("a heredoc is refused, not guessed at",
-         len(unmodelled_quoting("  3) cat <<EOF\nstuff\nEOF\n")), 1)
-    # ⛔ ROUND 4 H1's EXACT REPRO. `<<\EOF` is a legal escaped delimiter and the old class-based
-    # detector missed it, so the guard counted a heredoc BODY line as an arm.
-    case("an ESCAPED heredoc delimiter is refused too — round 4 H1",
-         len(unmodelled_quoting("  3) cat <<\\EOF\n  5) heredoc body, not an arm\nEOF\n")), 1)
-    case("...and a quoted delimiter is refused",
-         len(unmodelled_quoting("  3) cat <<'EOF'\nbody\nEOF\n")), 1)
-    case("...and a tab-stripping delimiter is refused",
-         len(unmodelled_quoting("  3) cat <<-EOF\nbody\nEOF\n")), 1)
-    # ⚠ THE ADJACENT NEGATIVE, and it is load-bearing: `<<<` is a HERESTRING, which the live hook
-    # uses. Refusing it would make this guard red on the real repo forever.
-    case("a herestring is NOT a heredoc and must not be refused",
-         unmodelled_quoting('  0) python3 -c x <<<"$PAYLOAD" ;;\n'), [])
-    case("the live shape uses neither, so it is not refused",
-         unmodelled_quoting(case_block(HOOK_OK) or ""), [])
+    # ⛔ ROUND 4 B2 — THE ARM THAT FORWARDS EVERY MATCH. There is no escape row for rc 0 any more,
+    # so deleting its arm must be refused rather than excused.
+    NO_ZERO = _hook('  3) [ -n "$OUT" ] && PAYLOAD="stale. Detail: $OUT" ;;\n')
+    case("deleting the 0) arm is observed as unhandled — round 4 B2",
+         0 in handled_codes(NO_ZERO, CODES), False)
+    case("...and the verdict refuses it, because rc 0 has no escape row",
+         len(verdict(defined_codes(RC), handled_codes(NO_ZERO, CODES),
+                     dangling_detail(NO_ZERO, CODES), [])) >= 1, True)
 
-    # ── round 3 H1 — the CATCH-ALL bound was left at two spaces when M1 freed the arm reader ──
-    # ⚠ THE CATCH-ALL'S BODY CARRIES THE GUARD, and that is what makes this fixture SENSITIVE.
-    # Two earlier versions were INERT and each passed for an ambient reason: with nothing after
-    # `esac` the bound cannot matter (`case_block` already strips it), and with an empty catch-all
-    # body the last arm absorbing `*) : ;;` changes no answer. MEASURED both ways — only when the
-    # catch-all body holds `[ -n "$OUT" ]` does a broken bound swallow it and silence a true
-    # finding: fixed `[6]`, broken `[]`.
-    FOUR_STAR = ('case "$RC" in\n  6) PAYLOAD="x"\n     PAYLOAD="$PAYLOAD Detail: $OUT" ;;\n'
-                 '    *) [ -n "$OUT" ] && : ;;\nesac\n')
-    case("a four-space catch-all still bounds the last arm — round 3 H1",
-         unguarded_detail_arms(case_block(FOUR_STAR) or ""), [6])
-    case("...and a tab-indented catch-all does too",
-         unguarded_detail_arms(case_block(FOUR_STAR.replace("    *)", "\t*)")) or ""), [6])
+    # ⛔ THE FIVE QUOTING FORMS THAT DEFEATED THE LEXER ACROSS TWO ROUNDS. Each hook below claims a
+    # `5)` arm in TEXT and has none in CODE; bash sends rc 5 to the catch-all, and so must this.
+    for label, body in (
+        ("command substitution — round 4 B1",
+         '  3) PAYLOAD="stale $(echo \'5) not an arm\')" ;;\n'),
+        ("backticks — round 4 B1, same shape",
+         '  3) PAYLOAD="stale `echo \'5) not an arm\'`" ;;\n'),
+        ("a single-quoted payload — round 3 B2",
+         "  3) PAYLOAD='stale\n  5) not an arm\n  ends here' ;;\n"),
+        ("an apostrophe in a comment — the live-hook shape",
+         '  # the NAG\'s message is deduped\n  3) PAYLOAD="stale" ;;\n'),
+        ("ANSI-C quoting",
+         "  3) PAYLOAD=$'stale\\n  5) not an arm' ;;\n"),
+    ):
+        case(f"a 5) arm claimed only in text is NOT handled — {label}",
+             5 in handled_codes(_hook(body), CODES), False)
 
-    # ── round 3 M4 — the label and $OUT need not be ADJACENT ─────────────────────────────────
-    SPLIT = ('case "$RC" in\n  5) PAYLOAD="x. Detail:"\n     PAYLOAD="$PAYLOAD $OUT" ;;\n'
-             '  *) : ;;\nesac\n')
-    case("a Detail: promise split across two statements is still caught — round 3 M4",
-         unguarded_detail_arms(case_block(SPLIT) or ""), [5])
-    case("...and ${OUT} counts as a reference too",
-         unguarded_detail_arms(case_block(SPLIT.replace("$OUT", "${OUT}")) or ""), [5])
-    # ⚠ THE ADJACENT NEGATIVE: an arm mentioning a label but never $OUT promises nothing.
-    case("an arm with a label and no $OUT is not a problem",
-         unguarded_detail_arms(case_block('case "$RC" in\n  5) PAYLOAD="no Detail: here" ;;\n  *) : ;;\nesac\n') or ""), []),
+    # ⛔ A HEREDOC PRINTS RAW TEXT, WHICH IS NOT THE HOOK'S ENVELOPE — so it is a CANNOT-RUN
+    # rather than an answer. Round 4 Codex H1's `<<\EOF` is included, the form the old
+    # class-based detector missed.
+    raises("a heredoc arm that prints raw text is a cannot-run",
+           lambda: handled_codes(_hook('  3) cat <<\\EOF\n  5) body\nEOF\n     ;;\n'), CODES),
+           CannotRun)
 
-    # ── verdict ────────────────────────────────────────────────────────────────────────────
-    D = {"OK": 0, "CANNOT_RUN": 2, "STALE_CACHE": 3, "BAD_RESPONSE": 4,
-         "UNREADABLE_PLAN": 5, "UNANSWERABLE": 6}
-    case("the live shape agrees", verdict(D, {0, 3, 5, 6}, []), [])
-    case("a defined code with no arm and no written reason is refused — #202's shape",
-         len(verdict({**D, "SEVENTH": 7}, {0, 3, 5, 6}, [])), 1)
-    # ⛔ NO UNGUARDED `[0]`, AND ITS ABSENCE TRUNCATED THIS SUITE. Written as `verdict(...)[0]`,
-    # any mutation that empties the list raised IndexError here and the run DIED — so every case
-    # BELOW this line never executed, and a mutation whose named case sits lower looked
-    # unattributable. Measured 2026-09-30: the harness reported `expect` matched 0 red cases and
-    # named a different one, over a sweep that then refused to issue a coverage verdict at all.
-    # ⚠ Same rule as "a mutation must produce a wrong ANSWER, not a crash", pointing the other way:
-    # a CASE that can raise hides every case after it.
+    # ⛔ A DEAD ARM, OBSERVED. `7)` is acted on and no constant has that value.
+    case("an arm for a code the matcher cannot emit is a dead arm",
+         dead_arms(_hook('  0) [ -n "$OUT" ] && PAYLOAD="$OUT" ;;\n  7) PAYLOAD="dead" ;;\n'),
+                   CODES), [7])
+    case("...and the probe range is stated rather than assumed",
+         dead_arms(_hook('  0) [ -n "$OUT" ] && PAYLOAD="$OUT" ;;\n  7) PAYLOAD="dead" ;;\n'),
+                   CODES, probe_max=6), [])
+
+    # ⛔ A HOOK THAT FAILS OR TALKS NONSENSE IS A CANNOT-RUN, NEVER A SILENT PASS.
+    raises("a hook that exits non-zero is a cannot-run",
+           lambda: observe('#!/usr/bin/env bash\nexit 3\n', 0, "x"), CannotRun)
+    raises("a hook that prints something other than its envelope is a cannot-run",
+           lambda: observe('#!/usr/bin/env bash\necho not-json\n', 0, "x"), CannotRun)
+    case("a hook that prints nothing is silence, which is a real answer",
+         observe('#!/usr/bin/env bash\nexit 0\n', 0, "x"), "")
+
+    # ── EVERY OBSERVER PARAMETER IS EXERCISED AT TWO DISTINCT VALUES ────────────────────────
+    # ⛔ `check-fixture-variation` refused this suite until it was, naming five parameters passed
+    # the SAME value at every call site — `handled_codes.codes`, `dangling_detail.codes`,
+    # `dead_arms.defined`, `observe.rc` and `observe.out`. A parameter no case can tell apart from
+    # a constant leaves every clause that reads it unguarded, and this repo's record is that the
+    # fix is to VARY the value, never to take an EXEMPT row.
+    case("handled_codes honours a NARROWER code set — the parameter is read, not assumed",
+         handled_codes(CANON, {0, 3}), {0, 3})
+    case("...and an empty code set observes nothing at all",
+         handled_codes(CANON, set()), set())
+    case("dangling_detail honours a narrower set too",
+         dangling_detail(DANGLE, {0, 3}), [])
+    case("dead_arms with a DIFFERENT defined set reclassifies the same hook",
+         dead_arms(_hook('  0) [ -n "$OUT" ] && PAYLOAD="$OUT" ;;\n  7) PAYLOAD="x" ;;\n'),
+                   {0, 7}), [])
+    # ⚠ `observe` at two distinct codes and two distinct payloads, so neither argument is a
+    # constant this suite could not notice being ignored.
+    case("observe reports the payload for rc 3 and its own text",
+         "alpha" in observe(CANON, 3, "alpha"), True)
+    case("...and at rc 6 with a different payload",
+         "beta" in observe(CANON, 6, "beta"), True)
+    case("...and the code it is given decides which arm answers",
+         observe(CANON, 2, "gamma"), "")
+
+    # ── verdict — pure, and unchanged in shape by the redesign ──────────────────────────────
+    D = defined_codes(RC)
+    case("the live shape agrees", verdict(D, {0, 3, 5, 6}, [], []), [])
+    case("a defined code with no arm and no row is refused — #202's shape",
+         len(verdict({**D, "SEVENTH": 7}, {0, 3, 5, 6}, [], [])), 1)
     case("...and the message names the code and the row it needs",
-         any("rc 7 (SEVENTH)" in x for x in verdict({**D, "SEVENTH": 7}, {0, 3, 5, 6}, [])), True)
-    # ⛔ THE ESCAPE'S OWN FALSIFIER, and my first attempt at this case was WRONG: it passed
-    # handled={0,3,5}, which leaves rc 6 genuinely undeclared, so the refusal was correct and the
-    # case was asserting the opposite of what it meant. The escape is only testable by REMOVING a
-    # row and watching the same input flip.
-    _saved = DELIBERATELY_UNHANDLED.pop(4)
-    try:
-        case("a defined code with NO arm and NO row is refused (rc 4, row removed)",
-             len(verdict(D, {0, 3, 5, 6}, [])), 1)
-    finally:
-        DELIBERATELY_UNHANDLED[4] = _saved
-    case("...and restoring its written reason makes the SAME input pass",
-         verdict(D, {0, 3, 5, 6}, []), [])
-    case("a DEAD arm is refused", len(verdict(D, {0, 3, 5, 6, 9}, [])), 1)
-    case("an unguarded arm is refused even when every code is handled",
-         len(verdict(D, {0, 3, 5, 6}, [5])), 1)
-    # ⚠ AND THE TABLE MUST BE TOTAL OVER WHAT IT CLAIMS: every row names a code the matcher
-    # actually defines, or the row is a reason for something that does not exist.
+         any("rc 7 (SEVENTH)" in x for x in verdict({**D, "SEVENTH": 7}, {0, 3, 5, 6}, [], [])),
+         True)
+    # ⛔ EVERY ESCAPE ROW IS FALSIFIABLE BY REMOVAL — round 4 B2. The suite used to pop one row,
+    # and the row it never popped was the one whose premise was false.
+    for _code in sorted(DELIBERATELY_UNHANDLED):
+        _saved = None
+        try:
+            _saved = DELIBERATELY_UNHANDLED.pop(_code)
+            case(f"a defined code with NO arm and NO row is refused (rc {_code}, row removed)",
+                 len(verdict(D, {0, 3, 5, 6} - {_code}, [], [])) >= 1, True)
+        finally:
+            if _saved is not None:
+                DELIBERATELY_UNHANDLED[_code] = _saved
+    case("a dead arm is refused", len(verdict(D, {0, 3, 5, 6}, [], [9])), 1)
+    case("a dangling detail is refused even when every code is handled",
+         len(verdict(D, {0, 3, 5, 6}, [5], [])), 1)
     case("every DELIBERATELY_UNHANDLED row names a defined code",
-         sorted(set(DELIBERATELY_UNHANDLED) - set(defined_codes(RC).values())), [])
+         sorted(set(DELIBERATELY_UNHANDLED) - set(D.values())), [])
 
     print(f"\n{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0

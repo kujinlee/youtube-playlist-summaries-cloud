@@ -99,7 +99,7 @@ Usage:
     scripts/recall-llm.py --arm            # ONE model call, matches every step of the armed plan
     scripts/recall-llm.py --fire           # no model call; the entry for the current step
     scripts/recall-llm.py --print-prompt    # exactly what --arm would send. No call, no cost
-    scripts/recall-llm.py --self-test  # 199 cases
+    scripts/recall-llm.py --self-test  # 201 cases
 """
 from __future__ import annotations
 
@@ -802,11 +802,24 @@ def nag_once(marker: Path, current: str) -> bool:
         last = None
     if not should_surface(last, current):
         return False
+    # ⚠ BEST-EFFORT, BUT NOT SILENT — round 4 H2. This was `except OSError: pass`, so a
+    # permanently unwritable marker directory degraded to "repeats forever, with nothing saying
+    # why". Measured under `chmod 500`: the nag printed 113 chars on all three invocations with no
+    # notice, against a control of 113/0/0.
+    # ⛔ AND ITS SIBLING THIRTY LINES DOWN ALREADY DID THIS CORRECTLY, whose comment states the
+    # exact rule this handler broke: "it must never raise — but it must not be SILENT either, or a
+    # permanently unwritable directory degrades to 'reprints forever' with nothing saying why."
+    # Two handlers, one rule, and only one of them followed it — instance-not-class, in the same
+    # file, thirty lines apart.
+    # ⚠ WHY IT MATTERS MORE HERE THAN THERE: rc 3 is the DEFAULT state of every plan that was
+    # never armed, so a silent failure reinstates the per-invocation firing that round 1's M4 and
+    # round 2's H5 were both filed about.
     try:
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(current, encoding="utf-8")
-    except OSError:
-        pass
+    except OSError as exc:
+        print(f"(recall-llm: this notice could not be de-duplicated — the marker at {marker} "
+              f"could not be written ({exc}), so it may repeat on every invocation.)")
     return True
 
 
@@ -2080,6 +2093,35 @@ def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable sh
           lambda: unanswerable_if_armed(ResponseRejected("m")).rc, BAD_RESPONSE)
     check("...and an Unanswerable is not re-wrapped",
           lambda: type(unanswerable_if_armed(Unanswerable("m"))).__name__, "Unanswerable")
+
+    # ── round 4 H2 — A SWALLOWED MARKER WRITE MUST NOT BE SILENT ────────────────────────────
+    def _nag_output(mode):
+        """-> chars printed by three successive nags, with the marker dir at `mode`."""
+        import contextlib, io, os
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td) / "cache"
+            d.mkdir()
+            os.chmod(d, mode)
+            try:
+                sizes = []
+                for _ in range(3):
+                    buf = io.StringIO()
+                    with contextlib.redirect_stdout(buf):
+                        if nag_once(d / ".last-said", "abc123"):
+                            print("the notice text")
+                    sizes.append(len(buf.getvalue()) > 0)
+                return sizes
+            finally:
+                os.chmod(d, 0o700)
+
+    check("the dedupe works when the marker is writable — said once, then silent",
+          lambda: _nag_output(0o700), [True, False, False])
+    # ⛔ AND WHEN IT IS NOT WRITABLE THE REPETITION IS EXPLAINED, NOT SILENT. `except OSError:
+    # pass` degraded to "repeats forever with nothing saying why" — and the sibling handler thirty
+    # lines down already stated that exact rule. rc 3 is the default state of every unarmed plan,
+    # so a silent failure reinstates the per-invocation firing rounds 1 and 2 both filed about.
+    check("...and an unwritable marker still says something every time, rather than nothing",
+          lambda: _nag_output(0o500), [True, True, True])
 
     # ── round 3 B1 + M3 — A `return` IS AN EXIT FROM THE ARMED SCOPE, AND `_fire` IS ITS THIRD
     # ENTRANCE ────────────────────────────────────────────────────────────────────────────────

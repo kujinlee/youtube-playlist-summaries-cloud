@@ -1349,7 +1349,17 @@ EXPECTED_MUTATIONS = {
     # guard added minutes earlier.
     # ⟳ 2026-09-30, round 3 M1: 5 -> 9. The arm reader's indentation, the soundness check over
     # unmodelled arm shapes, the structural-line string tracking, and the `case` block bound.
-    "scripts/check-rc-contract.py": 16,
+    # ⟳⟳ 2026-09-30, THE ARMING CONDITION FIRED AND THIS IS THE ONE SANCTIONED RATCHET FALL:
+    # 16 -> 9. FOURTEEN entries were RETIRED WITH THEIR SUBJECT — the 114-line hand-rolled bash
+    # lexer (`case_block`, `structural_lines`, `unmodelled_quoting`, `arm_soundness`, and the
+    # lexical `handled_codes` / `unguarded_detail_arms`) is GONE, replaced by adjudicating the
+    # hook with bash itself. Every entry named code that no longer exists, so they are retired
+    # rather than orphaned. SEVEN were added against the observer. Reason at the retirement site
+    # in that file; the self-test count falls 51 -> 40 in the same commit for the same reason.
+    # ⚠ Round 3 B2, round 4 Codex H1 and round 4 B1/M1/M2 were all findings in that one component
+    # across two consecutive rounds, every one caused by the previous round's fix — which is
+    # `dev-process.md:108`'s condition, met for the first time in this fold.
+    "scripts/check-rc-contract.py": 9,
     # ⟳⟳ 2026-09-30, round 3 H1: 91 -> 94. `unanswerable_if_armed` and its two boundaries —
     # `prepared_prompt` and `do_arm` — because #202 fixed the conjunction on `--fire` and left it
     # alive on `--arm`, which is B1's error a third time.
@@ -3781,7 +3791,7 @@ def _self_test() -> int:
     # manifests without resolving them. The split is on each file's own entry above.
     # ⟳ 2026-09-30, backlog #201/#202: 1133 -> 1138, the +5 from `check-rc-contract`'s manifest.
     # The figure is the guard's own — taken from its failure message, not counted by hand.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1154)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1147)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

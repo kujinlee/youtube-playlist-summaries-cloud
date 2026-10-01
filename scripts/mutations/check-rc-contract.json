@@ -11,28 +11,6 @@
     "expect": "a defined code with NO arm and NO row is refused (rc 4, row removed)"
   },
   {
-    "name": "the unguarded-Detail rule stops firing, so #201's regression reads as clean [anchor retargeted round 3: the condition it bound to was rewritten for M4]",
-    "file": "scripts/check-rc-contract.py",
-    "edits": [
-      [
-        "            bad.append(code)",
-        "            pass"
-      ]
-    ],
-    "expect": "an UNGUARDED Detail: clause is caught — the exact #201 regression"
-  },
-  {
-    "name": "an arm's span runs to the end of file, so a later -n guard silences the finding",
-    "file": "scripts/check-rc-contract.py",
-    "edits": [
-      [
-        "        stop = marks[i + 1][0] if i + 1 < len(marks) else end_of_case",
-        "        stop = len(hook_src)"
-      ]
-    ],
-    "expect": "the LAST arm before the catch-all is still bounded, not run to the end of file"
-  },
-  {
     "name": "two rc tuples stop being a cannot-run, so the guard picks one and guesses",
     "file": "scripts/check-rc-contract.py",
     "edits": [
@@ -44,135 +22,80 @@
     "expect": "TWO rc tuples is a cannot-run — the guard must not pick one and guess"
   },
   {
-    "name": "a dead arm stops being refused, so an arm for a retired code reads as coverage",
+    "name": "handled_codes ignores the code set it is given, so a narrowed probe answers over everything",
     "file": "scripts/check-rc-contract.py",
     "edits": [
       [
-        "        if code not in set(defined.values()):",
+        "    return {rc for rc in sorted(codes) if observe(hook_src, rc, _PROBE)}",
+        "    return {rc for rc in sorted({0, 2, 3, 4, 5, 6}) if observe(hook_src, rc, _PROBE)}"
+      ]
+    ],
+    "expect": "handled_codes honours a NARROWER code set — the parameter is read, not assumed"
+  },
+  {
+    "name": "silence is reported as output, so a code the hook DROPS counts as handled — #202's whole shape",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "        if not text:\n            return \"\"",
+        "        if not text:\n            return \"NOT-SILENT\""
+      ]
+    ],
+    "expect": "a silent code is NOT handled — #202 was a code the hook received and dropped"
+  },
+  {
+    "name": "dangling_detail stops probing with an EMPTY payload, so #201's shape is invisible",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "        payload = observe(hook_src, rc, \"\")",
+        "        payload = observe(hook_src, rc, _PROBE)"
+      ]
+    ],
+    "expect": "an unconditional Detail: label is caught by running the hook — backlog #201"
+  },
+  {
+    "name": "a dangling label with whitespace after it reads as satisfied",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "            if sep and not tail.strip():",
+        "            if sep and not tail:"
+      ]
+    ],
+    "expect": "an unconditional Detail: label is caught by running the hook — backlog #201"
+  },
+  {
+    "name": "the hook's non-zero exit is accepted instead of refused — a fail-open at the seam",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "        if proc.returncode != 0:",
         "        if False:"
       ]
     ],
-    "expect": "a DEAD arm is refused"
+    "expect": "a hook that exits non-zero is a cannot-run"
   },
   {
-    "name": "the arm reader goes back to two-space indentation only (round 3 M1)",
+    "name": "output that is not the documented envelope is treated as silence rather than a cannot-run",
     "file": "scripts/check-rc-contract.py",
     "edits": [
       [
-        "_ARM_RE = re.compile(r\"^[ \\t]*(\\d+)\\)\", re.M)",
-        "_ARM_RE = re.compile(r\"^\\s{2}(\\d+)\\)\", re.M)"
+        "        except (json.JSONDecodeError, KeyError, TypeError) as exc:\n            raise CannotRun(f\"the hook printed something that is not its documented envelope at \"\n                            f\"rc={rc}: {text[:120]!r} ({exc})\") from exc",
+        "        except (json.JSONDecodeError, KeyError, TypeError):\n            return \"\""
       ]
     ],
-    "expect": "an arm indented FOUR spaces is still an arm — round 3 M1"
+    "expect": "a hook that prints something other than its envelope is a cannot-run"
   },
   {
-    "name": "the soundness check reports nothing, so an unmodelled arm shape vanishes instead of refusing",
+    "name": "the dead-arm probe range collapses, so an arm for an unemittable code is invisible",
     "file": "scripts/check-rc-contract.py",
     "edits": [
       [
-        "        if head == \"*\" or head.isdigit():\n            continue",
-        "        if True:\n            continue"
+        "    return [rc for rc in range(probe_max + 1)",
+        "    return [rc for rc in range(0)"
       ]
     ],
-    "expect": "an OR-pattern arm is a cannot-run, not a silently missing arm"
-  },
-  {
-    "name": "the double-quote branch is dead, so a payload string never closes and every later arm disappears [anchor retargeted round 3 for B2's state machine]",
-    "file": "scripts/check-rc-contract.py",
-    "edits": [
-      [
-        "            elif state == '\"':",
-        "            elif False:"
-      ]
-    ],
-    "expect": "a real arm AFTER a multi-line payload is still found"
-  },
-  {
-    "name": "case_block returns the whole file, so text after esac is read as part of the case",
-    "file": "scripts/check-rc-contract.py",
-    "edits": [
-      [
-        "    return hook_src[start.end():start.end() + end.start()]",
-        "    return hook_src"
-      ]
-    ],
-    "expect": "text after esac is not part of the block"
-  },
-  {
-    "name": "the quoting machine stops tracking single quotes — round 3 B2's wrong answer restored",
-    "file": "scripts/check-rc-contract.py",
-    "edits": [
-      [
-        "                if c in ('\"', \"'\"):\n                    state = c",
-        "                if c == '\"':\n                    state = c"
-      ]
-    ],
-    "expect": "a SINGLE-quoted payload's continuation is not an arm — round 3 B2"
-  },
-  {
-    "name": "comments are scanned for quotes again, so an apostrophe opens a phantom string",
-    "file": "scripts/check-rc-contract.py",
-    "edits": [
-      [
-        "                if c == \"#\" and (i == 0 or line[i - 1] in \" \\t\"):\n                    break",
-        "                if False:\n                    break"
-      ]
-    ],
-    "expect": "an apostrophe in a COMMENT does not open a string"
-  },
-  {
-    "name": "the ANSI-C quoting refusal is dropped, so $'…' is answered over [anchor retargeted round 4: the heredoc line is now its own entry]",
-    "file": "scripts/check-rc-contract.py",
-    "edits": [
-      [
-        "    if re.search(r\"\\$'\", block):",
-        "    if False:"
-      ]
-    ],
-    "expect": "ANSI-C quoting is refused, not guessed at"
-  },
-  {
-    "name": "the catch-all bound goes back to two-space indentation — round 3 H1",
-    "file": "scripts/check-rc-contract.py",
-    "edits": [
-      [
-        "    m_catchall = re.search(r\"^[ \\t]*\\*\\)\", hook_src, re.M)",
-        "    m_catchall = re.search(r\"^  \\*\\)\", hook_src, re.M)"
-      ]
-    ],
-    "expect": "a four-space catch-all still bounds the last arm — round 3 H1"
-  },
-  {
-    "name": "the Detail promise must be adjacent again — round 3 M4",
-    "file": "scripts/check-rc-contract.py",
-    "edits": [
-      [
-        "        if (_OUT_LABEL.search(body) and _OUT_REF.search(body)\n                and not _NONEMPTY_GUARD.search(body)):",
-        "        if (re.search(r'(?:Detail|detail):\\s*\\$OUT', body)\n                and not _NONEMPTY_GUARD.search(body)):"
-      ]
-    ],
-    "expect": "a Detail: promise split across two statements is still caught — round 3 M4"
-  },
-  {
-    "name": "the heredoc detector narrows to a word-char delimiter again — round 4 H1",
-    "file": "scripts/check-rc-contract.py",
-    "edits": [
-      [
-        "    if re.search(r\"(?<!<)<<(?!<)\", block):",
-        "    if re.search(r\"<<-?\\s*[\\w'\\\"]\", block):"
-      ]
-    ],
-    "expect": "an ESCAPED heredoc delimiter is refused too — round 4 H1"
-  },
-  {
-    "name": "the herestring look-behind is dropped, so `<<<` is refused and the guard reddens on the real repo",
-    "file": "scripts/check-rc-contract.py",
-    "edits": [
-      [
-        "    if re.search(r\"(?<!<)<<(?!<)\", block):\n        problems.append(\"the `case` block contains a heredoc",
-        "    if re.search(r\"<<(?!<)\", block):\n        problems.append(\"the `case` block contains a heredoc"
-      ]
-    ],
-    "expect": "a herestring is NOT a heredoc and must not be refused"
+    "expect": "an arm for a code the matcher cannot emit is a dead arm"
   }
 ]

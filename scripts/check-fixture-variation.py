@@ -304,9 +304,12 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # hook's `case` arms. Pinned in the same commit that creates it — this guard REFUSED the file
     # until it was. DERIVED by running this module's own `analyse()` on the delivered source, not
     # transcribed: six keys over four pure functions, `findings = []` on the first run.
-    "check-rc-contract.py": ('defined_codes.matcher_src', 'handled_codes.hook_src',
-                             'unguarded_detail_arms.hook_src', 'verdict.defined',
-                             'verdict.handled', 'verdict.unguarded'),
+    "check-rc-contract.py": (
+        'dangling_detail.codes', 'dangling_detail.hook_src', 'dead_arms.defined',
+        'dead_arms.hook_src', 'dead_arms.probe_max', 'defined_codes.matcher_src',
+        'handled_codes.codes', 'handled_codes.hook_src', 'observe.hook_src', 'observe.out',
+        'observe.rc', 'verdict.dangling', 'verdict.dead', 'verdict.defined', 'verdict.handled'),
+
     # ⟳ 2026-09-30, backlog #194: the memory-link guard, pinned in the commit that creates
     # it. Its `tracked` parameter was flagged here as never-varied and two cases were added
     # rather than an exemption taken — the comparison that reads it is now guarded.
