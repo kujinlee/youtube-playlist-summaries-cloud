@@ -63,7 +63,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 206 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 208 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -1124,6 +1124,11 @@ def decorate_html(body: bytes) -> bytes:
     reading "NO PORT IS BOUND, and none is needed". `do_GET` is now driven by a real case below,
     so the call site is covered and not merely confessed.
     """
+    # ⚠ APPENDED, not inserted before `</body>` — so a page that LACKS a closing body tag still
+    # gets the client. Master carried this rationale inline at the call site; the fold that
+    # extracted this function deleted it and did not re-home it, which round 2 caught. Browsers
+    # recover from a trailing `<script>` outside `</body>`; a page with no `</body>` to find is
+    # the case an insertion would silently skip.
     return body + RELOAD_JS.encode()
 
 
@@ -1680,17 +1685,38 @@ def _self_test() -> int:
 
         # ⛔⛔ THE CALL SITE, WHICH IS THE ONE THAT ACTUALLY SHIPS — and the case that should have
         # been here from the start. Both halves of the 2026-10-02 review severed
-        # `body = decorate_html(body)` to `body = body` and watched the suite report a full green while
-        # EVERY served page lost the live-reload client. A unit case on `decorate_html` proves the
-        # function composes; only this proves the SERVER sends it. ADR-0014.
+        # `body = decorate_html(body)` to `body = body` and watched the suite report a full green
+        # while every STATIC `.html` page lost the live-reload client. A unit case on
+        # `decorate_html` proves the function composes; only this proves the SERVER sends it.
+        # ADR-0014.
+        # ⚠ "STATIC `.html`", NOT "EVERY SERVED PAGE" — BOTH halves of round 2 caught that
+        # overstatement in the first draft of this very comment. `do_GET` has THREE `text/html`
+        # exits and only one is decorated: `/` returns `index_html(ROOT).encode()` (`:1151`) and
+        # `/src/` returns `source_shell(...).encode()` (`:1231`), neither carrying the reload
+        # client. Measured. That is round 1's Medium 5, and it is NOT fixed here — the CSS half
+        # went away with the withdrawal, the live-reload half is still outside the contract, and
+        # saying so is the difference between a known gap and a false claim.
         # ⚠ NO PORT IS BOUND and none is needed — the same technique `_drive_src` already uses
         # further down this file, which is where the refutation of "driving it needs a bound
         # server" was sitting the whole time. `object.__new__` skips the socket-wanting
         # `__init__`; `do_GET` reaches the network only through `self._send`, so stubbing that
         # instance attribute captures the entire reply.
-        def _drive_page() -> dict:
-            """GET a real page through the REAL do_GET, over a world the case builds."""
-            got: dict = {}
+        def _drive_page() -> bytes:
+            """GET a real page through the REAL do_GET and return THE BYTES ON THE WIRE.
+
+            ⛔⛔ `BytesIO` ON `wfile`, NOT A STUBBED `_send`, AND ROUND 2 IS WHY. The first
+            version of this case stubbed `self._send` — the ONE method in this file that touches
+            the wire — so everything below it was invisible. Measured on the shipped tree with
+            the stub in place: `self.wfile.write(body)` -> `pass` left the suite 206/206 GREEN
+            while the server wrote an EMPTY BODY to every response. Round 1's Claude half had
+            handed over exactly this stronger driver and said in terms that the stub version
+            "structurally cannot" make that check; the fold took the weaker one anyway and the
+            docstring called it closure. The untested layer had moved one frame out, into the
+            verb the case is named for.
+            ⚠ Nothing in `_send` (`:1178`) touches a socket directly — `send_response`,
+            `send_header`, `end_headers` and the write all route through `wfile`. So a BytesIO
+            observes the complete reply and still binds no port.
+            """
             saved_root = globals()["ROOT"]
             with tempfile.TemporaryDirectory() as td:
                 sandbox = pathlib.Path(td)
@@ -1699,17 +1725,44 @@ def _self_test() -> int:
                     globals()["ROOT"] = sandbox
                     h = object.__new__(Handler)
                     h.path = "/probe.html"
-                    h._send = lambda c, b, t: got.update(code=c, body=b, ctype=t)  # type: ignore[method-assign]
+                    h.wfile = io.BytesIO()
+                    h.rfile = io.BytesIO(b"")
+                    h.requestline = "GET /probe.html HTTP/1.1"
+                    h.request_version = "HTTP/1.1"
+                    h.command = "GET"
+                    h.client_address = ("127.0.0.1", 0)
+                    h.server = None
+                    h.close_connection = True
+                    h.log_message = lambda *a, **k: None  # type: ignore[method-assign]
                     Handler.do_GET(h)
+                    return h.wfile.getvalue()
                 finally:
+                    # ⚠ RESTORED IN `finally`, so an exception above cannot leave the module
+                    # pointing at a deleted temp dir for every case after this one.
                     globals()["ROOT"] = saved_root
-            return got
 
-        _served = _drive_page()
-        case("do_GET SENDS the decorated body — the shipped call, not just decorate_html",
-             lambda: _served.get("code") == 200 and b"/_rev?p=" in _served.get("body", b""))
-        case("...and the page's own bytes survive the decoration on that same path",
-             lambda: b"<p>SENTINEL</p>" in _served.get("body", b""))
+        _wire = _drive_page()
+        case("do_GET puts the decorated body ON THE WIRE — the shipped call, through the real _send",
+             lambda: b"/_rev?p=" in _wire)
+        case("...and the page's own bytes reach the wire with it",
+             lambda: b"<p>SENTINEL</p>" in _wire)
+        case("...under a 200, so the case cannot pass on an error response",
+             lambda: _wire.startswith(b"HTTP/1.0 200") or b" 200 " in _wire.split(b"\r\n")[0])
+        # ⛔ CONTENT-LENGTH IS ITS OWN CASE, AND MEASURING SHOWED WHY. Severing the header to
+        # "0" leaves the body on the wire — 8510 bytes against the control's 8513 — so every
+        # assertion above still passes. Round 2's claim that the stronger driver "catches all
+        # three" severances was two-thirds right: the body write and the call site come free,
+        # this one does not. It needs the header compared to the actual length.
+        def _declared_vs_actual() -> tuple[int, int]:
+            head, _, body = _wire.partition(b"\r\n\r\n")
+            declared = -1
+            for line in head.split(b"\r\n"):
+                if line.lower().startswith(b"content-length:"):
+                    declared = int(line.split(b":", 1)[1].strip())
+            return declared, len(body)
+
+        case("...and Content-Length states the body's REAL length, not a stale or zero one",
+             lambda: _declared_vs_actual()[0] == _declared_vs_actual()[1])
         case("reload client guards the half-typed question (#qbox)",
              lambda: "qbox" in RELOAD_JS and "busyTyping" in RELOAD_JS)
         case("reload client preserves scroll across the reload",

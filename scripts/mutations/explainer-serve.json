@@ -506,7 +506,7 @@
   "expect": "index_html escapes the filename in the LINK TEXT, not only the href"
  },
  {
-  "name": "the server stops decorating what it sends, so every served page loses the live-reload client",
+  "name": "the server stops decorating what it sends, so every static .html page loses the live-reload client",
   "file": "scripts/explainer-serve.py",
   "edits": [
    [
@@ -514,6 +514,28 @@
     "            body = body"
    ]
   ],
-  "expect": "do_GET SENDS the decorated body — the shipped call, not just decorate_html"
+  "expect": "do_GET puts the decorated body ON THE WIRE — the shipped call, through the real _send"
+ },
+ {
+  "name": "the reply body is never written to the wire, so every response is headers only",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "        self.wfile.write(body)",
+    "        pass"
+   ]
+  ],
+  "expect": "do_GET puts the decorated body ON THE WIRE — the shipped call, through the real _send"
+ },
+ {
+  "name": "Content-Length is hardcoded to 0 while the body is still sent, so the reply self-contradicts",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "self.send_header(\"Content-Length\", str(len(body)))",
+    "self.send_header(\"Content-Length\", \"0\")"
+   ]
+  ],
+  "expect": "...and Content-Length states the body's REAL length, not a stale or zero one"
  }
 ]
