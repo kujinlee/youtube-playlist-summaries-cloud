@@ -25,7 +25,7 @@ FAILS IF
 
 Usage:
     python3 scripts/check-surface-recall.py
-    python3 scripts/check-surface-recall.py --self-test  # 64 cases
+    python3 scripts/check-surface-recall.py --self-test  # 67 cases
 """
 from __future__ import annotations
 
@@ -339,8 +339,12 @@ def gitignore_covers(text: str, prefix: str) -> bool:
 
     ⛔ TAKES THE TEXT, NOT A PATH, and that is the whole design. Backlog #212 added a third copy
     of the fixture-naming convention in a file that cannot import the constant, so it needs
-    reconciling — but a reconciler that READS the file is only runnable where the file exists,
-    and `check-plan-code`'s harness stages a tree without it. Rule here, fetch in `main`.
+    reconciling, and a reconciler that READS a path can only be cased where that path exists.
+    Rule here, fetch in `main`, and `main` takes its root so a case can build one.
+    ⚠ AN EARLIER DRAFT JUSTIFIED THIS BY SAYING THE HARNESS "stages a tree without it" — and the
+    SAME COMMIT added `.gitignore` to `HARNESS_TREE`, so the sentence was false on arrival. The
+    split is right for a better reason: it is what lets the rule be cased at two distinct inputs
+    and the wiring be driven over a built world, neither of which depends on what is staged.
 
     The line must be the DIRECTORY-qualified glob. A bare `_selftest-*` would also ignore matching
     names anywhere else in the repo, which is wider than the debris and not what was decided.
@@ -370,7 +374,15 @@ def coverage(defined: dict[str, int], declared: dict[int, str]) -> list[str]:
     return problems
 
 
-def main(argv: list[str]) -> int:
+def main(argv: list[str], root: Path = ROOT) -> int:
+    """⛔ `root` IS DEFAULTED SO A CASE CAN DRIVE THIS OVER A WORLD IT BUILT — ADR-0014.
+
+    Round 1 of `recent-backlog-fixes` deleted this function's ENTIRE `.gitignore`
+    reconciler — 1,123 characters — and the suite reported 64/64 with the live run
+    rc=0. The pure rule had three cases; its CONSUMPTION had none. That is the class
+    this very file carries three manifest entries for, committed in the act of closing
+    the row about it. `__main__` binds the real repo; a case binds a constructed one.
+    """
     if "--self-test" in argv:
         return _self_test()
     try:
@@ -387,7 +399,7 @@ def main(argv: list[str]) -> int:
         # suite must run inside a staged tree that has no `.gitignore`; this runs in the real
         # repo and is its own CI step. A MISSING file is CANNOT RUN, never a pass — the check
         # cannot reach what it measures, and silence there is indistinguishable from success.
-        _gi = ROOT / ".gitignore"
+        _gi = root / ".gitignore"
         try:
             _gi_text = _gi.read_text(encoding="utf-8")
         except OSError as exc:
@@ -458,20 +470,36 @@ def _fixture_hook(text: str):
     # concurrent peer's fixture is never removed; a bare glob sweep would undo that and delete a
     # LIVE run's world out from under it. `_os.kill(pid, 0)` asks whether the owner still exists
     # and sends no signal.
-    # ⚠ A REUSED pid reads as alive, so this UNDER-cleans. That is the correct direction: a stale
-    # file costs one line of `git status`, a wrongly-removed live one costs a peer a red nobody
-    # can explain.
+    # ⚠ A REUSED pid reads as alive, so this UNDER-cleans. That is the correct direction, though
+    # NOT for the reason an earlier draft gave. It said a stale file "costs one line of
+    # `git status`" — false since the same commit added the `.gitignore` line, which makes the
+    # cost ZERO lines (`git check-ignore` confirms). The real asymmetry is that a stale file
+    # costs nothing at all, while a wrongly-removed LIVE fixture costs a concurrent peer a red
+    # nobody can explain. Under-cleaning is free; over-cleaning is not.
     # ⚠ No regex — this file imports none, and the name shape is fixed by the f-string above.
     for _stale in HOOK.parent.glob(f"{FIXTURE_PREFIX}*"):
         _tail = _stale.name[len(FIXTURE_PREFIX):].split(".", 1)[0]
-        if not _tail.isdigit():
+        # ⛔ `int()`, NOT `isdigit()`, AND THE DIFFERENCE IS A CRASH. `"²".isdigit()` is True
+        # while `int("²")` raises ValueError, so `_selftest-².sh` took the guard's happy path
+        # and died with an uncaught traceback — found by this branch's own review. Ask the
+        # converter, never a predicate that merely resembles it.
+        try:
+            _pid = int(_tail)
+        except ValueError:
             continue
         try:
-            _os.kill(int(_tail), 0)
+            _os.kill(_pid, 0)
         except ProcessLookupError:
-            _stale.unlink(missing_ok=True)       # the owner is gone: this is debris
-        except PermissionError:
-            pass                                  # alive and not ours — leave it alone
+            # ⚠ THE UNLINK IS ITS OWN TRY. Nested inside the handler above, an IsADirectoryError
+            # or PermissionError here could not be caught by the sibling `except` clauses, so a
+            # directory named like a fixture crashed the sweep. Housekeeping must never be able
+            # to fail the guard it is housekeeping for.
+            try:
+                _stale.unlink(missing_ok=True)   # the owner is gone: this is debris
+            except OSError:
+                pass                              # not removable; a stale file is not a failure
+        except (PermissionError, OverflowError, OSError):
+            pass                                  # alive and not ours, or not a pid at all
     path = HOOK.parent / f"{FIXTURE_PREFIX}{_os.getpid()}.sh"
     # ⛔ THE FIXTURE OWNS THE REPO FILE ITS ARM MAY BRANCH ON, AND THE FIRST VERSION DID NOT.
     # The round-7 B2 corpus arm below branched on `.claude/settings.json` — a file that happens to
@@ -644,6 +672,41 @@ def _self_test() -> int:
     case("...and that same text does NOT satisfy the real prefix, so the two cannot be confused",
          gitignore_covers(".claude/hooks/_other-*\n", FIXTURE_PREFIX), False)
 
+    # ⛔⛔ THE WIRING CASE FOR THE RECONCILER, AND ITS ABSENCE WAS A HIGH IN THIS BRANCH'S OWN
+    # REVIEW. The three cases above defend the RULE. Nothing defended its CONSUMPTION: the
+    # reviewer deleted `main`'s entire `.gitignore` block — 1,123 characters — and this suite
+    # reported 64/64 with the live run rc=0. Reproduced by hand before this case was written.
+    # ⚠ THE SHAPE IS #213/ADR-0014's, AND IT WAS COMMITTED WHILE CLOSING #216 — the row about a
+    # comment asserting a defence the code does not implement. The fix for a class is not
+    # immune to the class; writing the claim is what feels like discharging it.
+    # ⚠ IT ASSERTS THE PRINTED TEXT, NOT ONLY THE RC. `main` returns 1 for any problem, so an
+    # rc-only case could not tell this reconciler from the six other rules that reach the same
+    # verdict — the discrimination this repo keeps paying for when a case checks an exit code.
+    def _drive_over_gitignore(body: str) -> tuple[int, str]:
+        """Run `main` over a tree whose ONLY relevant content is the .gitignore we hand it."""
+        # ⚠ Imported here: this suite's `_ctx`/`_io` aliases are bound 120 lines BELOW, next to
+        # the cases that first needed them, and this case runs before that point.
+        import contextlib as _c
+        import io as _i
+        with tempfile.TemporaryDirectory() as td:
+            built = Path(td)
+            (built / ".gitignore").write_text(body, encoding="utf-8")
+            buf = _i.StringIO()
+            with _c.redirect_stdout(buf):
+                rc = main([], root=built)
+            return rc, buf.getvalue()
+
+    _rc_gi, _out_gi = _drive_over_gitignore("node_modules\n.env\n")
+    case("the reconciler is WIRED — a .gitignore missing the line reaches main's EXIT CODE",
+         _rc_gi, 1)
+    case("...and main PRINTS it, naming the pattern rather than only failing",
+         f".claude/hooks/{FIXTURE_PREFIX}*" in _out_gi, True)
+    # ⚠ THE OTHER POLARITY, over a SECOND built world — without it the case above is satisfied by
+    # any failure at all, and this file's own history has a case that passed for an ambient reason.
+    _rc_ok, _out_ok = _drive_over_gitignore(f".claude/hooks/{FIXTURE_PREFIX}*\n")
+    case("...and a tree whose .gitignore DOES carry the line raises no such problem",
+         f".claude/hooks/{FIXTURE_PREFIX}*" in _out_ok, False)
+
     # ⛔ AND THE SWEEP ITSELF IS DRIVEN, not merely present — backlog #212. Writing recovery code
     # and asserting only the `.gitignore` line beside it would be this fold's own wiring class:
     # the rule exists, nothing proves it runs. These stage real debris and let `_fixture_hook`
@@ -658,15 +721,31 @@ def _self_test() -> int:
         dead_pid = _proc.pid
         debris = HOOK.parent / f"{FIXTURE_PREFIX}{dead_pid}.sh"
         peer = HOOK.parent / f"{FIXTURE_PREFIX}1.sh"
+        # ⛔ HOSTILE NAMES, because the sweep's job is housekeeping and housekeeping must never
+        # be able to FAIL the guard it tidies for. All three crashed the first version, found by
+        # this branch's review: `"²".isdigit()` is True while `int("²")` raises, and an unlink
+        # inside the ProcessLookupError handler cannot be caught by its sibling clauses, so a
+        # DIRECTORY named like a dead-pid fixture took down the suite.
+        superscript = HOOK.parent / f"{FIXTURE_PREFIX}\u00b2.sh"
+        huge = HOOK.parent / f"{FIXTURE_PREFIX}99999999999999999999.sh"
+        asdir = HOOK.parent / f"{FIXTURE_PREFIX}{dead_pid}.marker"
         debris.write_text("# debris from a killed run\n", encoding="utf-8")
         peer.write_text("# a LIVE peer's fixture\n", encoding="utf-8")
+        superscript.write_text("# not an int, though isdigit() says so\n", encoding="utf-8")
+        huge.write_text("# a pid no OS will issue\n", encoding="utf-8")
+        asdir.mkdir(exist_ok=True)
         try:
             with _fixture_hook("#!/usr/bin/env bash\nexit 0\n"):
                 pass
+            # debris gone; live peer kept; neither exotic name crashed the sweep reaching here
             return (not debris.exists(), peer.exists())
         finally:
-            debris.unlink(missing_ok=True)
-            peer.unlink(missing_ok=True)
+            for leftover in (debris, peer, superscript, huge):
+                leftover.unlink(missing_ok=True)
+            try:
+                asdir.rmdir()
+            except OSError:
+                pass
 
     case("the startup sweep REMOVES debris whose owning pid is gone, and KEEPS a live peer's",
          _sweep_probe(), (True, True))

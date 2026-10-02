@@ -171,6 +171,11 @@ docs/explainers/.serve.pid
 # (backlog #212). This line is what stops the debris being committed by a `git add -A` when that
 # happens. The suite also sweeps dead-pid leftovers on startup; this is the second layer.
 # ⚠ THE PREFIX IS NOW HELD IN THREE PLACES (here, check-surface-recall.FIXTURE_PREFIX,
-# check-ratchet-contract) and a self-test case reconciles this file against the constant, because
-# a consistent rename would otherwise orphan this line in silence. Backlog #215.
+# check-ratchet-contract), because a consistent rename would otherwise orphan this line in
+# silence. Backlog #215. ⛔ THE RECONCILER IS IN `check-surface-recall.main`, NOT IN ITS SUITE,
+# and an earlier version of this very comment said "a self-test case reconciles this file" —
+# WHICH WAS FALSE: every case passes text the case builds, and only `main` reads this file.
+# That is backlog #216's defect — a comment asserting a defence the code does not implement —
+# written in the commit that CLOSED #216. The claim is now what is true: `main` reads it, three
+# cases drive `main` over a constructed .gitignore, and a mutation entry kills the wiring.
 .claude/hooks/_selftest-*

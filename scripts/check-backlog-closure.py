@@ -108,17 +108,24 @@ BACKLOG = ROOT / "docs" / "backlog.md"
 # direct commit has none. Chosen by measurement, not by taste — see the docstring's table.
 #
 # ⟳ 2026-10-02, backlog #219: a COMMA LIST is now accepted inside the one paren group, because a
+# ⚠ ROW #219 IS NOT ON master YET — it is filed in PR #362, which is merge-ready and waiting
+# on the human. Until that merges, THIS GUARD ITSELF will print `? #219: no row with that id
+# exists` for any subject citing it, which is the guard working, not a defect. Every #219
+# reference in this file resolves there. Measured rather than assumed: the row's highest
+# neighbour on master is #218.
 # PR that closes two rows previously could not say so. Every two-id form was measured against the
 # old pattern and ALL of them lost information: `(backlog #201, #202)` matched NOTHING,
 # `(backlog #201 #202)` NOTHING, and `(backlog #201) (backlog #202)` matched only #202 because the
 # anchor takes the tail — so an author who knew the convention and wanted to honour it got no
 # warning that half their statement was dropped.
 #
-# ⭐ AND THIS IS NOT HYPOTHETICAL — AN AUTHOR HAD ALREADY WRITTEN IT. Over the last 300 merged
-# subjects the widened pattern finds exactly one subject the old one dropped:
+# ⭐ AND THIS IS NOT HYPOTHETICAL — AN AUTHOR HAD ALREADY WRITTEN IT. Over the ENTIRE history of
+# this repository (1,580 merged subjects, not a window — a window's number rots upward), the
+# widened pattern finds exactly ONE subject the old one dropped:
 #     Settled items look settled, and say who settled them (backlog #83, #87) (#223)
 # Both rows happened to be ticked by hand, so nothing went stale; the guard was simply blind to a
-# correct statement. Zero other subjects change verdict across those 300 — measured.
+# correct statement. ids found: 12 -> 14. GAINED {83, 87}; LOST nothing. No other subject in
+# 1,580 changes verdict — measured, and the empty LOST set is the half that matters.
 #
 # ⛔ THE TAIL ANCHOR IS NOT TOUCHED, AND MUST NOT BE. It is what took this rule from 56% false
 # (ANY occurrence: 18 ids matched, 10 would have fired wrongly) to one true positive in seven.

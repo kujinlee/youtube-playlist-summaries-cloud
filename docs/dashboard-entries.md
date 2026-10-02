@@ -13399,3 +13399,22 @@ marker this session's own hook had written. Proven with the marker present and r
 
 ⛔ **STILL NOT CONVERGED.** Round 3 is owed and goes to **Codex first**, alternating, per the
 convergence document's own recommendation.
+
+## 2026-10-02
+Housekeeping on the tools that check our own work: a self-test can no longer leave stray files
+in the repository when it is killed part-way, and a pull request that finishes two backlog items
+can finally say so in its title — until now it could only name one, and the second was dropped
+silently.
+<!--tech-->
+Backlog #212, #216, #219. `.gitignore` now covers `.claude/hooks/_selftest-*`, and
+`_fixture_hook` sweeps dead-owner debris before writing, pid-scoped so a concurrent peer's
+fixture is never removed. `CLOSING` in `check-backlog-closure.py` accepts a comma list inside
+the one paren group with the tail anchor untouched; measured over the entire 1,580-subject
+history, exactly one subject changes verdict (`(backlog #83, #87) (#223)`, gaining both ids) and
+none is lost. #216's dead `_saved_m` store is gone and its false comment corrected; the row's
+proposed `ast` guard is rejected on a measurement — 221 firings across 43 guards, 100% false
+positive, and blind to the instance that motivated it.
+Round 1 of this branch found the fix had reintroduced the class it was closing: the `.gitignore`
+reconciler's result was computed and never consumed (deleting all 1,123 characters left the
+suite 64/64 green), and a comment claimed a self-test case that did not exist — backlog #216's
+own defect, in the commit closing #216. Both are now wired, driven, and falsified.
