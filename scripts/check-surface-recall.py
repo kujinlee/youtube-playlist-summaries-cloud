@@ -25,7 +25,7 @@ FAILS IF
 
 Usage:
     python3 scripts/check-surface-recall.py
-    python3 scripts/check-surface-recall.py --self-test  # 62 cases
+    python3 scripts/check-surface-recall.py --self-test  # 64 cases
 """
 from __future__ import annotations
 
@@ -634,6 +634,15 @@ def _self_test() -> int:
          gitignore_covers(".claude/hooks/_SELFTEST-*\n", FIXTURE_PREFIX), False)
     case("...and refuses a bare prefix with no directory, which would not match the debris",
          gitignore_covers(f"{FIXTURE_PREFIX}*\n", FIXTURE_PREFIX), False)
+    # ⛔ A SECOND, DISTINCT PREFIX — `check-fixture-variation` refused the first version of these
+    # cases because all three passed `FIXTURE_PREFIX`, so nothing could tell the parameter apart
+    # from a constant: a `gitignore_covers` that ignored its argument and hardcoded the string
+    # would have passed every one of them. That is this repo's recorded
+    # `exercise-the-producer-at-two-distinct-inputs`, and the guard found it before CI did.
+    case("the prefix is READ, not hardcoded — a different one matches its own line",
+         gitignore_covers(".claude/hooks/_other-*\n", "_other-"), True)
+    case("...and that same text does NOT satisfy the real prefix, so the two cannot be confused",
+         gitignore_covers(".claude/hooks/_other-*\n", FIXTURE_PREFIX), False)
 
     # ⛔ AND THE SWEEP ITSELF IS DRIVEN, not merely present — backlog #212. Writing recovery code
     # and asserting only the `.gitignore` line beside it would be this fold's own wiring class:
