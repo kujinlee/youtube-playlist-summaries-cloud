@@ -92,7 +92,7 @@ EXIT SEMANTICS, in all three directions
 
 Usage:
     python3 scripts/check-backlog-closure.py
-    python3 scripts/check-backlog-closure.py --self-test  # 20 cases
+    python3 scripts/check-backlog-closure.py --self-test  # 28 cases
 """
 from __future__ import annotations
 
@@ -106,7 +106,29 @@ BACKLOG = ROOT / "docs" / "backlog.md"
 
 # ⚠ ANCHORED AT THE SUBJECT TAIL. `\(#\d+\)` is GitHub's squash suffix and is OPTIONAL because a
 # direct commit has none. Chosen by measurement, not by taste — see the docstring's table.
-CLOSING = re.compile(r"\(backlog #(\d+)\)(?:\s*\(#\d+\))?\s*$")
+#
+# ⟳ 2026-10-02, backlog #219: a COMMA LIST is now accepted inside the one paren group, because a
+# PR that closes two rows previously could not say so. Every two-id form was measured against the
+# old pattern and ALL of them lost information: `(backlog #201, #202)` matched NOTHING,
+# `(backlog #201 #202)` NOTHING, and `(backlog #201) (backlog #202)` matched only #202 because the
+# anchor takes the tail — so an author who knew the convention and wanted to honour it got no
+# warning that half their statement was dropped.
+#
+# ⭐ AND THIS IS NOT HYPOTHETICAL — AN AUTHOR HAD ALREADY WRITTEN IT. Over the last 300 merged
+# subjects the widened pattern finds exactly one subject the old one dropped:
+#     Settled items look settled, and say who settled them (backlog #83, #87) (#223)
+# Both rows happened to be ticked by hand, so nothing went stale; the guard was simply blind to a
+# correct statement. Zero other subjects change verdict across those 300 — measured.
+#
+# ⛔ THE TAIL ANCHOR IS NOT TOUCHED, AND MUST NOT BE. It is what took this rule from 56% false
+# (ANY occurrence: 18 ids matched, 10 would have fired wrongly) to one true positive in seven.
+# Widening the ID GRAMMAR inside the group is a different axis from widening WHERE the token may
+# sit, and only the first is safe.
+#
+# ⚠ `(backlog #201) (backlog #202)` STILL records only #202, deliberately. #219 carries a live
+# prediction about PR #362's title, which uses exactly that form; admitting it here would destroy
+# the only running test of that row's own claim. Authors get the comma form instead.
+CLOSING = re.compile(r"\(backlog #(\d+(?:\s*,\s*#\d+)*)\)(?:\s*\(#\d+\))?\s*$")
 
 # ⚠ A ROW IS `| id | description | … | tag | status |`, and the DESCRIPTION carries the marker.
 # Rows are NOT a fixed width: one holds a literal `|` inside backticks (a shell pipe) and parses
@@ -128,7 +150,12 @@ def closing_ids(subjects: list[str]) -> dict[str, str]:
     for s in subjects:
         m = CLOSING.search(s.strip())
         if m:
-            found.setdefault(m.group(1), s.strip())
+            # ⚠ EVERY id in the group, not `m.group(1)` as a single value — backlog #219. The
+            # group is now a comma list, so a `setdefault(m.group(1), …)` would file a two-row
+            # closure under the literal key "201, #202" and match no row at all: a silent miss
+            # wearing the shape of a match, which is worse than the gap it replaced.
+            for one in re.findall(r"\d+", m.group(1)):
+                found.setdefault(one, s.strip())
     return found
 
 
@@ -251,6 +278,36 @@ def _self_test() -> int:
     case("first subject wins for a repeated id",
          closing_ids(["newer (backlog #5)", "older (backlog #5)"])["5"], "newer (backlog #5)")
     case("two ids both collected", sorted(closing_ids(["a (backlog #1)", "b (backlog #2)"])), ["1", "2"])
+
+    # ── backlog #219: ONE pull request may close MORE THAN ONE row and say so ──────────────
+    # Each form below was measured against the pre-#219 pattern; every one of them silently
+    # dropped information, which is why the grammar and not the adoption was the first fix.
+    case("a COMMA LIST records every id, not just the first",
+         sorted(closing_ids(["Close both (backlog #201, #202) (#362)"])), ["201", "202"])
+    case("...with no space after the comma either",
+         sorted(closing_ids(["Close both (backlog #201,#202)"])), ["201", "202"])
+    case("...and three ids, so the list is not secretly a pair",
+         sorted(closing_ids(["Three (backlog #1, #2, #3) (#9)"])), ["1", "2", "3"])
+    # ⭐ THE REAL SUBJECT FROM THIS REPO'S HISTORY, which the old pattern dropped entirely.
+    case("the form an author ALREADY used in PR #223 is now read",
+         sorted(closing_ids(
+             ["Settled items look settled, and say who settled them (backlog #83, #87) (#223)"])),
+         ["83", "87"])
+    # ⛔ THE ANCHOR IS UNCHANGED, AND THESE ARE WHAT PROVE IT. A comma list is still only a
+    # closure at the TAIL; the 56%-false any-occurrence rule must not creep back in via the
+    # id grammar.
+    case("a mid-subject comma list does NOT match",
+         closing_ids(["fix (backlog #17, #18) then more words"]), {})
+    case("a FILING prefix with a comma list does NOT match",
+         closing_ids(["docs(backlog #53, #54): filed"]), {})
+    # ⚠ DELIBERATELY STILL ONE ID: #219 carries a live prediction about PR #362's title, which
+    # uses this exact form. Admitting it would destroy the only running test of that claim.
+    case("adjacent groups still record only the TAIL one — deliberate, see #219",
+         sorted(closing_ids(["Two rows (backlog #201) (backlog #202) (#362)"])), ["202"])
+    # ⚠ A HALF closure is not a closure. `(backlog #29, half one)` appears in real history and
+    # must keep NOT matching — the second element is not an id.
+    case("a partial-closure note does NOT become a closure",
+         closing_ids(["The guard ratchet built a table (backlog #29, half one) (#298)"]), {})
 
     # ── reading the row marker, across the shapes this file actually has ───────────────────
     NORMAL = "| 71 | ✅ (was 🟠) **Done thing** | files | M | (tag) | ✅ CLOSED |"
