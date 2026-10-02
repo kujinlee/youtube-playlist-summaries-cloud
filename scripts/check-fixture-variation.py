@@ -300,6 +300,25 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # ⟳ 2026-10-02, backlog #221: the contrast harness, pinned in the commit that creates it —
+    # this guard REFUSED the file until it was, and separately caught `summarise(samples=…)`
+    # being passed one value at its only call site, which a `summarise` ignoring its argument
+    # would have survived. DERIVED by running this module's own `analyse()` on the delivered
+    # source, never transcribed. Twelve keys over seven pure functions; `findings = []`.
+    "check-page-contrast.py": (
+        "composite.bg",
+        "composite.fg",
+        "contrast.bg",
+        "contrast.fg",
+        "luminance.rgb",
+        "parse_color.css",
+        "sample_key.s",
+        "summarise.samples",
+        "threshold_for.px",
+        "threshold_for.weight",
+        "verdict.baseline",
+        "verdict.samples",
+    ),
     # ⟳ 2026-09-30, backlog #201/#202: the guard that reconciles the matcher's exit codes with its
     # hook's `case` arms. Pinned in the same commit that creates it — this guard REFUSED the file
     # until it was. DERIVED by running this module's own `analyse()` on the delivered source, not

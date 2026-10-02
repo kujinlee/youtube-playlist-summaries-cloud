@@ -1,0 +1,90 @@
+[
+ {
+  "name": "the srgb branch stops scaling, so a normalised colour reads as near-black and every ratio is fiction",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "        return (vals[0] * 255.0, vals[1] * 255.0, vals[2] * 255.0, alpha)",
+    "        return (vals[0], vals[1], vals[2], alpha)"
+   ]
+  ],
+  "expect": "color(srgb ...) is NORMALISED and scales UP, not down"
+ },
+ {
+  "name": "an unparseable colour is GUESSED as black instead of refusing",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "    raise CannotRun(f\"unparseable computed colour {css!r} — the measurement cannot proceed on a \"\n                    f\"colour it does not understand, and guessing one would be a fabricated number\")",
+    "    return (0.0, 0.0, 0.0, 1.0)"
+   ]
+  ],
+  "expect": "an unparseable colour REFUSES rather than guessing — returned instead of refusing"
+ },
+ {
+  "name": "compositing ignores alpha, so translucent text is scored on its declared colour",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "    a = fg[3]",
+    "    a = 1.0"
+   ]
+  ],
+  "expect": "a fully transparent foreground becomes the background"
+ },
+ {
+  "name": "the large-text carve-out applies to everything, so small text is held to 3.0",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "    large = px >= 24.0 or (px >= 18.66 and weight >= 700)",
+    "    large = True"
+   ]
+  ],
+  "expect": "16px normal weight needs 4.5"
+ },
+ {
+  "name": "the CROSSED branch is severed, so an element that fell below AA is reported as merely WORSENED and the reader cannot tell the two apart",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "        crossed = was >= s[\"threshold\"] > s[\"ratio\"]",
+    "        crossed = False"
+   ]
+  ],
+  "expect": "...and the message says CROSSED"
+ },
+ {
+  "name": "a NEW element below AA is admitted silently instead of reported",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "            if s[\"ratio\"] < s[\"threshold\"]:",
+    "            if False:"
+   ]
+  ],
+  "expect": "a NEW failing combination is reported rather than admitted silently"
+ },
+ {
+  "name": "the corpus rule accepts fragments, so chromeless files with no palette are measured",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "    return 'name=\"viewport\"' in text[:4000]",
+    "    return True"
+   ]
+  ],
+  "expect": "a chromeless fragment is NOT"
+ },
+ {
+  "name": "collapse stops counting instances, so a regression message cannot say how many elements share the combination it names",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "            hit[\"instances\"] += 1",
+    "            pass"
+   ]
+  ],
+  "expect": "...and the survivor counts how many it stands for"
+ }
+]

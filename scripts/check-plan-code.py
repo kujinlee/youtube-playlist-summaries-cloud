@@ -1372,6 +1372,13 @@ EXPECTED_MUTATIONS = {
     # the rule, retargeted onto the code that now owns it. Its 20 -> 14 and this 0 -> 11 are ONE
     # move, and the declared sum rises 1158 -> 1163 net of two retirements whose subject is gone.
     "scripts/check-surface-recall.py": 19,
+    # ⟳ 2026-10-02, backlog #221: the contrast harness, manifested in the commit that creates it.
+    # ⭐ THREE OF THESE EIGHT WERE MISLABELLED ON FIRST WRITE and the sweep said so: "collapse
+    # stops deduplicating" still deduplicated (the dict key does that work; what broke was the
+    # COUNT), and "the verdict stops reporting CROSSED" still reported — `worsened` catches the
+    # same element, so the severance changes the MESSAGE and not the detection. Both are renamed
+    # to what they sever. An entry whose NAME is wrong is a false claim with a green tick.
+    "scripts/check-page-contrast.py": 8,
     # ⟳⟳ 2026-09-30, round 3 H1: 91 -> 94. `unanswerable_if_armed` and its two boundaries —
     # `prepared_prompt` and `do_arm` — because #202 fixed the conjunction on `--fire` and left it
     # alive on `--arm`, which is B1's error a third time.
@@ -3025,6 +3032,7 @@ def _self_test() -> int:
                                       "scripts/check-live-schema.py",
                                       "scripts/check-memory-link.py",
                                       "scripts/check-merge-ready.py",
+                                      "scripts/check-page-contrast.py",
                                       "scripts/check-paid-caller-arrival.py",
                                       "scripts/check-plan-code.py",
                                       # ⟳ 2026-09-08: the plan-mode retirement's replacement
@@ -3877,7 +3885,7 @@ def _self_test() -> int:
     # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
     # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
     # found already in this repo at `check-ci-watched.py:860`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1178)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1186)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

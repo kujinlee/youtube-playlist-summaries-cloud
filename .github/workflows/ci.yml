@@ -382,6 +382,14 @@ jobs:
       - name: check-fixture-variation self-test
         run: python3 scripts/check-fixture-variation.py --self-test
 
+      # ⛔ THE PURE RULES ONLY — the live measurement needs Chromium and this runner has none
+      # (see the note at the top of this file: Playwright browsers stay local). Contrast against
+      # the committed baseline is a LOCAL pre-merge gate, listed with the other two in
+      # docs/dev-process.md. Saying so is the point: a contrast gate that silently does not run
+      # in CI, while a CI step bearing its name goes green, is worse than no gate at all.
+      - name: Contrast harness self-test (pure rules; the live run is local)
+        run: python3 scripts/check-page-contrast.py --self-test
+
       # The CI storage fixture (`scripts/ci/storage-service-fixture.sql`) is a MINIMAL stand-in for
       # tables the storage-api service creates and CI does not run. It is safe only while no gate
       # reads `storage.*`. Run HERE rather than only in `schema-gates.yml`, because this job has no
