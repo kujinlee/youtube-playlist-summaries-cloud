@@ -622,3 +622,19 @@ Is there some holes (found issue not followed up)?
    > (nothing highlighted)
    Q: this seems to be similar to Family 1 Contextual and my idea of Idea-breadcrumb (along with inflight reasoning)
 Are these actually share common idea?
+
+---
+
+## 2026-10-02 05:26:55 — 2026-10-02-topic-recent-prs-found-solved.html
+
+**Why #360 shows 158,595 insertions and still no product code**
+   > (nothing highlighted)
+   Q: PROBE heading-path: does the event carry the section heading without the ask label glued on?
+
+---
+
+## 2026-10-02 05:27:53 — 2026-10-02-topic-recent-prs-found-solved.html
+
+**The number that reframes everything**
+   > The product is a YouTube playlist summariser. None of this work was about summarising YouTube playlists. Every one of these PRs was about the machinery that checks the work — guards, review rounds, mutation testing, the rules governing how claims get made.
+   Q: PROBE selection-path: does this event carry the quoted passage as well as the section?

@@ -2177,7 +2177,7 @@ roadmap** while #167 and #184 were on it. That is what this section exists to st
 rounds were rework; GitHub runs the sweep ~2× faster than this machine (8m08s for the whole `verify`
 job vs ~14 min for the local sweep alone). **The sweep is the most VISIBLE cost and not the largest.**
 
-## LLM recall matcher — backlog #191 — anchor `review-decides-itself` — 🟠 BUILT, REVIEWED **NINE TIMES**, **NOT CONVERGED**; Phase 6 review DONE 2026-09-30
+## LLM recall matcher — backlog #191 — anchor `review-decides-itself` — ✅ **MERGED 2026-10-02 (PR #360, squash `5128b99b`)**, REVIEWED NINE TIMES, **merged NOT CONVERGED and deliberately so**; TWO Phase 6 reviews (2026-09-30, 2026-10-01)
 
 > ### ⟳ 2026-10-01 — NINE ROUNDS, AND THE REVIEW LOOP WAS STOPPED BY A SECOND Phase 6
 >
@@ -2195,7 +2195,15 @@ job vs ~14 min for the local sweep alone). **The sweep is the most VISIBLE cost 
 > the review's own prediction is that folding them per-instance yields a twelfth instance within
 > two rounds.
 
-- [ ] **D1 — give `main` its world as a defaulted parameter**, in the three guards. ⭐ NOT a new
+- [x] **D1 on `check-ratchet-contract.py` — DONE, shipped in #360.** `main(argv, root=ROOT)`;
+      5 edits + 3 cases. ⭐ **Round 9's Blocking is CLOSED structurally:** the sever that left
+      `52/52` green now gives `54/56` with two NAMED `[FAIL]`s, and the same case also catches
+      `if len(other_v) > BASELINE:` — not a call at all, so the rejected per-call-site detector
+      would never have demanded an entry for it. ⚠ `check-fixture-variation` REFUSED the first
+      version of those cases (one call site = no case can tell `root` from a constant); the honest
+      repair added a clean-tree polarity and an `argv` dispatch case, both better tests than the
+      versions that would merely have satisfied the counter.
+- [ ] **The other two guards still need it — its own slice.** ⭐ NOT a new
       design: `scripts/check-ci-watched.py:860` already does it, for this exact reason, with the
       mechanism in its docstring written BEFORE round 1 of this fold — and it is the only one of
       36 `main`s the class has never touched. Measured for `check-ratchet-contract.py`: 4 edits +
@@ -2207,11 +2215,19 @@ job vs ~14 min for the local sweep alone). **The sweep is the most VISIBLE cost 
       `check-fixture-variation.py`, which drives `main()` 14 times from `_self_test()` over
       constructed paths passed through `argv`. It must admit argv-as-world. Exposure is **29 of
       36**, not the 31 the review stated (coordinator re-derivation; drivers are 7, not 5).
-- [ ] **#213's `ast` guard is SUPERSEDED as the remedy** — implemented and run; its reach shrinks
+- [x] **#213's `ast` guard SUPERSEDED as the remedy (done in #360)** — implemented and run; its reach shrinks
       at exactly the rate the repair proceeds. Row amended with the measurements.
-- [ ] **#216 filed** — a comment asserting a defence the code does not implement
+- [x] **#216 filed (in #360)** — a comment asserting a defence the code does not implement
       (`check-surface-recall.py:686`, `_saved_m` assigned and never read). Verified by hand.
-- [ ] **The propagation half, which is the harder one.** Three structural lessons, three files, no
+- [x] **ADR-0014 WRITTEN (in #360)** — `docs/adr/0014-a-guards-main-is-drivable.md`, the FIRST
+      ADR in this repo governing the verification stack rather than the product. That absence
+      was the review's sharpest finding: with no venue, *"a guard's `main` must be drivable"*
+      could be discovered but never **decided**, which is why `check-ci-watched.py` solved it
+      alone and told nobody.
+- [ ] **#217 — the sweep's subprocess cost.** `verify` was CANCELLED at 15m15s on #360 and the
+      budget went 15 → 30 with the measurement at the line (two subprocess-heavy guards add
+      ~13 min). ⛔ The trigger for splitting the sweep into its own job is a SECOND raise.
+- [ ] **The rest of the propagation half, which is the harder one.** Three structural lessons, three files, no
       file has all three; and no ADR governs the verification stack at all, so there is no venue
       where a decision about it can be made or protected. The review ranks a CONTEXT.md glossary
       entry for *wiring* and an ADR for the verification stack **alongside** the code change.

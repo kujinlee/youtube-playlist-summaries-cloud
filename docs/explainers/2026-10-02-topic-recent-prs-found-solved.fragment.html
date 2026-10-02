@@ -1,0 +1,370 @@
+<title>What recent PRs found and solved</title>
+<style>
+:root{
+  --bg:#fbfaf8; --fg:#1b1a18; --fg2:#45423d; --fg3:#6d6862; --rule:#e2ddd5;
+  --card:#fff; --accent:#8a4b1f; --accent2:#2f5d50;
+  --verified:#2f5d50; --verified-br:#bcd4cb; --verified-bg:#eef5f2;
+  --warn:#8a2f2f; --warn-br:#e3c3c3; --warn-bg:#fbf0f0;
+  --code:#f3f0ea; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#15161a; --fg:#e8e6e2; --fg2:#bdb9b2; --fg3:#8e8a84; --rule:#2e3036;
+    --card:#1c1e23; --accent:#e2a06a; --accent2:#7fc0ab;
+    --verified:#7fc0ab; --verified-br:#2f5d50; --verified-bg:#1a2a26;
+    --warn:#e39a9a; --warn-br:#5d2f2f; --warn-bg:#2a1a1a;
+    --code:#22242a;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:16px/1.65 ui-serif,Georgia,"Times New Roman",serif;
+  -webkit-text-size-adjust:100%}
+.wrap{max-width:52rem;margin:0 auto;padding:2.2rem 1.15rem 6rem}
+h1{font-size:1.95rem;line-height:1.2;margin:0 0 .4rem;letter-spacing:-.015em}
+h2{font-size:1.3rem;margin:2.6rem 0 .7rem;padding-top:1.1rem;border-top:1px solid var(--rule);
+  letter-spacing:-.01em;position:relative}
+h3{font-size:1.05rem;margin:1.7rem 0 .5rem;color:var(--fg);position:relative}
+p{margin:.75rem 0}
+a{color:var(--accent)}
+code{font-family:var(--mono);font-size:.855em;background:var(--code);
+  padding:.12em .36em;border-radius:3px;word-break:break-word}
+pre{background:var(--code);border:1px solid var(--rule);border-radius:7px;
+  padding:.85rem 1rem;overflow-x:auto;white-space:pre;margin:.9rem 0}
+pre code{background:none;padding:0;font-size:.82rem;line-height:1.55;white-space:pre}
+.sub{color:var(--fg3);font-size:.95rem;margin:.1rem 0 .3rem}
+.reading{background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);
+  border-radius:0 7px 7px 0;padding:.8rem 1rem;margin:1.3rem 0;font-size:.95rem}
+.howto{background:var(--card);border:1px solid var(--rule);border-radius:7px;
+  padding:.85rem 1rem;margin:1.4rem 0;font-size:.89rem;color:var(--fg2)}
+.howto b{color:var(--fg)}
+.howto ol{margin:.4rem 0 .2rem;padding-left:1.2rem}
+.howto li{margin:.22rem 0}
+.tbl{width:100%;overflow-x:auto;margin:1rem 0}
+table{border-collapse:collapse;width:100%;font-size:.88rem;
+  font-family:ui-sans-serif,system-ui,-apple-system,sans-serif}
+th,td{text-align:left;padding:.44rem .6rem;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-weight:650;color:var(--fg2);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+tbody tr:hover{background:var(--card)}
+.ok{color:var(--verified);font-weight:650}
+.no{color:var(--warn);font-weight:650}
+blockquote{margin:1rem 0;padding:.6rem 0 .6rem 1rem;border-left:3px solid var(--rule);
+  color:var(--fg2);font-style:italic}
+blockquote p{margin:.3rem 0}
+.big{background:var(--verified-bg);border:1px solid var(--verified-br);border-radius:8px;
+  padding:1.1rem 1.2rem;margin:1.5rem 0}
+.big .n{font:650 2.5rem/1 ui-sans-serif,system-ui,sans-serif;color:var(--verified);
+  display:block;letter-spacing:-.02em}
+.warnbox{background:var(--warn-bg);border:1px solid var(--warn-br);border-radius:8px;
+  padding:.9rem 1.1rem;margin:1.3rem 0}
+.toc{font-size:.92rem;font-family:ui-sans-serif,system-ui,sans-serif}
+.toc ol{padding-left:1.3rem;margin:.4rem 0}
+.toc li{margin:.25rem 0}
+.tag{display:inline-block;font:600 .68rem/1.5 ui-sans-serif,system-ui,sans-serif;
+  text-transform:uppercase;letter-spacing:.05em;padding:.05rem .4rem;border-radius:3px;
+  border:1px solid var(--rule);color:var(--fg3);vertical-align:.1em}
+.tag.m{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.tag.i{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+figure{margin:1.4rem 0}
+figcaption{font-size:.82rem;color:var(--fg3);margin-top:.4rem;
+  font-family:ui-sans-serif,system-ui,sans-serif}
+svg{max-width:100%;height:auto;display:block}
+@media (max-width:560px){ .wrap{padding:1.5rem .85rem 5rem} h1{font-size:1.55rem} }
+</style>
+
+<div class="wrap">
+
+<h1>What recent PRs found and solved</h1>
+<p class="sub">17 pull requests · #345–#361 · 2026-09-24 → 2026-10-02 · as of <code>5128b99b</code> on <code>master</code></p>
+
+<div class="reading">
+<b>The reading I chose.</b> &ldquo;Recent PRs&rdquo; is taken as the <b>16 merged between 2026-09-24 and 2026-10-02 (#345–#360), plus the one still open (#361)</b> — nine days of work. For each I asked two questions: what did it <b>find</b>, and what did it <b>solve</b>. They are grouped by theme rather than listed one per PR, because seventeen summaries teach nothing.
+</div>
+
+<div class="howto">
+<b>This page can answer you.</b> <span id="modechip">● served</span><br>It is served at <b><code>http://127.0.0.1:7391/latest</code></b>, which always points at the newest page.
+<ol>
+<li><b>To ask:</b> select any text, or hover a heading, → click <b>ask</b> → type → <b>Send</b>.</li>
+<li>Then say <b>&ldquo;read my questions&rdquo;</b> in chat. Answers get written <i>into this page</i>, under the section you asked from.</li>
+<li><b>If that URL does not load:</b> run <code>python3 scripts/explainer-serve.py</code> — safe to run twice. <b>A reboot stops the server</b>, which is the one moment you will need this.</li>
+<li>Opened as a local <code>file://</code> copy the page still reads fine; only <b>Send</b> is unavailable.</li>
+</ol>
+</div>
+
+<nav class="toc">
+<b>Contents</b>
+<ol>
+<li><a href="#s1">The number that reframes everything</a></li>
+<li><a href="#s2">The thesis, counted honestly</a></li>
+<li><a href="#s3">Theme 1 — documents that broke their own rules</a></li>
+<li><a href="#s4">Theme 2 — green checks that meant nothing</a></li>
+<li><a href="#s5">Theme 3 — fixes refuted before they were built</a></li>
+<li><a href="#s6">Theme 4 — the repair that generated the defect</a></li>
+<li><a href="#s7">What was actually solved</a></li>
+<li><a href="#s8">Traps a reader should not step in</a></li>
+<li><a href="#s9">Measured vs inferred</a></li>
+</ol>
+</nav>
+
+<h2 id="s1">The number that reframes everything</h2>
+
+<div class="big">
+<span class="n">0</span>
+<b>lines of product code</b>, across all 17 pull requests and <b>438 changed files</b>.
+</div>
+
+<p>Nothing under <code>app/</code>, <code>lib/</code>, <code>components/</code>, <code>worker/</code> or <code>supabase/</code> was touched. Not once in nine days. Measured by listing every file in every PR:</p>
+
+<pre><code>PR   product  scripts  docs
+#345       0        0    23
+#346       0        0    14
+#347       0        0    13
+#348       0        0    16
+#360       0       17   261     &lt;- 283 files; the API caps at 100, git does not
+...        0      ...   ...
+</code></pre>
+
+<p>The product is a YouTube playlist summariser. <b>None of this work was about summarising YouTube playlists.</b> Every one of these PRs was about the machinery that checks the work — guards, review rounds, mutation testing, the rules governing how claims get made.</p>
+
+<p>That is the frame. Read these PRs as product progress and they look like nine days of nothing. Read them as the verification system being tested against itself and they are something else entirely.</p>
+
+<h3>Why #360 shows 158,595 insertions and still no product code</h3>
+
+<div class="tbl"><table>
+<thead><tr><th>Where the 158,595 insertions went</th><th>Lines</th></tr></thead>
+<tbody>
+<tr><td><code>docs/explainers/</code> — <b>generated</b> HTML pages</td><td>132,551</td></tr>
+<tr><td><code>docs/</code> — other documents</td><td>11,024</td></tr>
+<tr><td><code>docs/reviews/</code> — review testimony</td><td>7,424</td></tr>
+<tr><td><code>scripts/</code> — guards and their mutation manifests</td><td>7,367</td></tr>
+<tr><td>everything else</td><td>229</td></tr>
+</tbody>
+</table></div>
+
+<p><b>84% of that diff is machine-generated HTML.</b> The hand-written share is roughly 18,000 lines of documents and 7,400 lines of guard code. A reader who sees &ldquo;158k insertions&rdquo; and infers a huge change is being misled by a number that is technically correct.</p>
+
+<h2 id="s2">The thesis, counted honestly</h2>
+
+<p>Reading the titles, these look like the verification machinery <b>refuting something the project believed</b>. I was asked to attack that rather than assume it, so I classified all 17 and counted.</p>
+
+<div class="big">
+<span class="n">14 of 17</span>
+<b>fit.</b> Two do not, and one is borderline. Named below, not hidden.
+</div>
+
+<div class="tbl"><table>
+<thead><tr><th>PR</th><th>What was believed</th><th>What the machinery found</th></tr></thead>
+<tbody>
+<tr><td>#345</td><td>These rules against unverified claims are ready to adopt</td><td>The change contained <b>three</b> unverified claims. Both Highs were the author's</td></tr>
+<tr><td>#346</td><td>The rules document is consistent</td><td>Its intro said &ldquo;four rules&rdquo; and, four lines later, &ldquo;five rules, not four&rdquo;</td></tr>
+<tr><td>#347</td><td>A soundness check can be built now</td><td>Blocked by an <b>armed verdict the component already carried</b> since 2026-09-15</td></tr>
+<tr><td>#348</td><td>Previous sweeps retired the document</td><td>Three consecutive rounds each found a reader routed to a retired section</td></tr>
+<tr><td>#350</td><td>The review was properly recorded — a green tick said so</td><td>The tick was <b>accurate and meaningless</b>; the review had been destroyed</td></tr>
+<tr><td>#351</td><td><code>git worktree</code> is the way to parallelise</td><td>Refuted — it materialises only tracked files; <code>node_modules/typescript</code> has none</td></tr>
+<tr><td>#352</td><td>The designed arm &ldquo;converged by round 3&rdquo;</td><td>It reached <b>round 5, not converged</b>. Claim withdrawn, no replacement offered</td></tr>
+<tr><td>#353</td><td>Two plausible fixes for a blind spot</td><td><b>Both refuted</b> against the case that motivated them. A third survived</td></tr>
+<tr><td>#354</td><td>Two <code>NO-REVIEW:</code> declarations were in force</td><td>Both were <b>backticked</b>, so no gate ever saw them. Inert, and nothing said so</td></tr>
+<tr><td>#355</td><td>&ldquo;Write it down&rdquo; prevents repeat failures</td><td><b>5 of 6</b> failure classes were already written down and not applied</td></tr>
+<tr><td>#358</td><td>A path-keyed matcher would have to be built</td><td>It <b>already exists and already fires</b> — proven with a sentinel</td></tr>
+<tr><td>#359</td><td>A parked PR would signal when unblocked</td><td>The unblock fired and <b>12 days passed in silence</b></td></tr>
+<tr><td>#360</td><td>Each round's fix closed its defect</td><td>Each correct fix <b>created the next instance</b>. Nine rounds</td></tr>
+<tr><td>#361</td><td>The roadmap reflects reality</td><td>Merging #360 made <b>three checkboxes false</b></td></tr>
+</tbody>
+</table></div>
+
+<h3>The three that do not fit, named</h3>
+
+<div class="tbl"><table>
+<thead><tr><th>PR</th><th>Why it is not the machinery refuting a belief</th></tr></thead>
+<tbody>
+<tr><td><b>#349</b></td><td><span class="no">Does not fit.</span> It <b>records two decisions the human made</b> — don't hold an architecture review; merge #348. Bookkeeping, not discovery. Notably it records a judgement to <i>skip</i> a review the arming condition genuinely called for</td></tr>
+<tr><td><b>#357</b></td><td><span class="no">Does not fit.</span> The <b>human overturned a rule in writing</b> — filing no longer waits for approval. A person changed their mind; nothing was measured or refuted</td></tr>
+<tr><td><b>#356</b></td><td><span class="tag i">borderline</span> Primarily a <b>measurement</b> (27% of 344 PRs are document-only). It does correct a naive reading — only <b>17.2%</b> are actually fast-path eligible — but its main act is counting, not refuting</td></tr>
+</tbody>
+</table></div>
+
+<p>So the thesis holds at <b>14 of 17</b>, and the two clear exceptions share a shape worth noticing: <b>both are the human deciding, not the machinery finding.</b> When a person is in the loop the PR records a decision; when the machinery is, the PR records a refutation.</p>
+
+<h2 id="s3">Theme 1 — documents that broke their own rules</h2>
+
+<p>Four PRs (#345, #346, #347, #348) concern one document, <code>docs/development-velocity.md</code>, and its migration. The pattern is almost comic and entirely serious.</p>
+
+<p><b>#345</b> adopted a set of rules whose whole subject is <i>do not state a number you did not measure</i>. Review found three unmeasured numbers inside it. The clearest:</p>
+
+<blockquote><p>the <i>only</i> evidence offered for adopting the draft-PR practice was &ldquo;it caught backlog #176 r2's Blocking on its first use.&rdquo; <b>False, and the document it names says so</b> — <code>review-identity-176-r2-claude.md:156-158</code> records <code>verify pending</code>.</p></blockquote>
+
+<p>The round did not just repair them. It <b>improved the rule</b>: rule 1 gained clause 1b, <i>say what you counted, not just that you counted</i>. A number carries its population or it is not a measurement.</p>
+
+<p><b>#346</b> is the sharpest of the four. The paragraph introducing those rules opened with &ldquo;<b>Four</b> rules came out of this&rdquo; and closed four lines later with &ldquo;<b>five rules, not four</b>&rdquo;. The cause is the interesting part: an earlier round found the count stale and <b>appended</b> a correction rather than editing the wrong sentence — which is precisely what rule 2 forbids.</p>
+
+<blockquote><p>So the fix for rule 1b's count violated rule 2, inside the paragraph that introduces both.</p></blockquote>
+
+<p>The resolution is worth stealing: <b>the counts were removed, not corrected.</b> The outline now lists the rules — 1, 1b, 2, 3, 4 — with no total. A list cannot disagree with its own contents.</p>
+
+<h2 id="s4">Theme 2 — green checks that meant nothing</h2>
+
+<p>Three PRs found a passing check that was <b>accurate and worthless</b>. This is the most transferable finding on the page.</p>
+
+<h3>#350 — a check that cannot see absence</h3>
+
+<p>A review document of 32,331 bytes was destroyed by a <code>git reset --hard</code> and merged away. The gate that exists to catch missing reviews returned <b>rc=0, &ldquo;0 silent gaps&rdquo;</b>, on both the branch and master.</p>
+
+<p>Why: <code>check-review-rounds.py</code> asks whether a round has <b>both halves</b>. When <i>every</i> document of a round is gone, there is nothing to check — so it reports clean. The author then quoted that green tick as evidence the review was recorded.</p>
+
+<div class="warnbox">
+<p><b>The deeper error, and it generalises:</b> after restoring, the check run was <i>&ldquo;are those 8 files back?&rdquo;</i> — a question that can only confirm what you just did, and can never report what your action removed.</p>
+</div>
+
+<h3>#354 — a declaration nobody could see</h3>
+
+<p>Two gates each accept an escape token in the PR body: <code>NO-ENTRY:</code> and <code>NO-REVIEW:</code>. Replaying the <i>real</i> bodies of #351 and #352 found both declarations present and <b>not granted</b> — they had been wrapped in backticks, so they were never line-initial and <b>no gate ever saw them</b>. The review gate passed for an unrelated reason, so the declarations were inert and silent.</p>
+
+<p>That state is now reported by name: <code>INERT-OTHER</code>. It exists because a falsifier was run against real data rather than imagined data.</p>
+
+<h3>#359 — a condition that fired into nothing</h3>
+
+<p>A PR was parked with an explicit unblock condition. <b>The condition was met on 2026-09-15. Twelve days passed</b> with no signal. It surfaced only because a human asked what was still open.</p>
+
+<p>The condition had been recorded correctly — in a memory file, <b>filed where nothing points at it</b>.</p>
+
+<h2 id="s5">Theme 3 — fixes refuted before they were built</h2>
+
+<p>Three PRs are backlog filings whose value is <b>not</b> the problem they record but the solutions they kill. This is unusual and worth naming.</p>
+
+<div class="tbl"><table>
+<thead><tr><th>PR</th><th>Proposed fix</th><th>Verdict</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>#351</td><td>Scope the sweep to changed files</td><td><span class="no">refused</span></td><td>Coverage <b>shrinks</b>; a skipped-but-needed sweep is indistinguishable from one not needed</td></tr>
+<tr><td>#351</td><td><code>git worktree</code> per worker</td><td><span class="no">rejected</span></td><td>Materialises only <b>tracked</b> files; <code>node_modules/typescript</code> has zero tracked files inside</td></tr>
+<tr><td>#353</td><td>Join on the Codex verdict JSONs</td><td><span class="no">refuted</span></td><td>Verdicts are written only by the Codex wrapper; the lost half was <b>Claude</b></td></tr>
+<tr><td>#353</td><td>Round-sequence contiguity</td><td><span class="no">refuted</span></td><td>The lost round was the <b>highest</b>; r1, r2 is contiguous — no gap to find</td></tr>
+<tr><td>#353</td><td><code>rN</code> citation resolution</td><td><span class="ok">survives</span></td><td><b>19 references</b> to the destroyed round would have pointed at nothing</td></tr>
+</tbody>
+</table></div>
+
+<p>Each was tested <b>against the case that motivated it</b>, rather than filed as plausible. The project has measured a proposed fix that would have false-fired on 10 of 18 cases, which is why.</p>
+
+<p>And #353 states the surviving candidate's limit rather than hiding it: it catches only a vanished round that something <b>cites</b>. A round nobody cites stays invisible.</p>
+
+<h2 id="s6">Theme 4 — the repair that generated the defect</h2>
+
+<p>#360 is the largest of the seventeen and the only one whose finding is structural. Nine adversarial review rounds kept finding the same class of defect: <b>a rule's result computed, then discarded at the point it is used</b>, with every named test still passing and the guard printing OK over a real violation.</p>
+
+<p>Rounds 5 through 9 each fixed their instance correctly. <b>Each fix created the next one.</b></p>
+
+<figure>
+<svg viewBox="0 0 640 220" role="img" aria-label="Diagram: main() holds the untestable residue; extracting a rule moves code out of the tested region into it">
+  <rect x="8" y="8" width="624" height="204" rx="9" fill="none" stroke="currentColor" stroke-opacity=".18"/>
+  <text x="24" y="34" font-size="13" font-family="ui-sans-serif,system-ui,sans-serif" fill="currentColor" font-weight="600">Why each correct fix created the next defect</text>
+
+  <rect x="28" y="54" width="250" height="132" rx="7" fill="currentColor" fill-opacity=".05" stroke="currentColor" stroke-opacity=".3"/>
+  <text x="40" y="76" font-size="12" font-family="ui-sans-serif,system-ui,sans-serif" fill="currentColor" font-weight="600">A test CAN reach these</text>
+  <rect x="44" y="88" width="98" height="26" rx="4" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-opacity=".35"/>
+  <text x="56" y="105" font-size="11" font-family="ui-monospace,monospace" fill="currentColor">rule_a()</text>
+  <rect x="44" y="120" width="98" height="26" rx="4" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-opacity=".35"/>
+  <text x="56" y="137" font-size="11" font-family="ui-monospace,monospace" fill="currentColor">rule_b()</text>
+  <rect x="44" y="152" width="98" height="26" rx="4" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-opacity=".35"/>
+  <text x="56" y="169" font-size="11" font-family="ui-monospace,monospace" fill="currentColor">assess()</text>
+
+  <path d="M152 101 L250 101" stroke="currentColor" stroke-opacity=".5" stroke-width="1.5" marker-end="url(#ar)"/>
+  <text x="162" y="95" font-size="10" font-family="ui-sans-serif,system-ui,sans-serif" fill="currentColor" fill-opacity=".7">extract</text>
+
+  <rect x="362" y="54" width="250" height="132" rx="7" fill="currentColor" fill-opacity=".03" stroke="currentColor" stroke-opacity=".3" stroke-dasharray="4 3"/>
+  <text x="374" y="76" font-size="12" font-family="ui-sans-serif,system-ui,sans-serif" fill="currentColor" font-weight="600">main() — the residue</text>
+  <text x="374" y="94" font-size="10.5" font-family="ui-sans-serif,system-ui,sans-serif" fill="currentColor" fill-opacity=".72">builds its own world from</text>
+  <text x="374" y="108" font-size="10.5" font-family="ui-sans-serif,system-ui,sans-serif" fill="currentColor" fill-opacity=".72">module globals, so no test</text>
+  <text x="374" y="122" font-size="10.5" font-family="ui-sans-serif,system-ui,sans-serif" fill="currentColor" fill-opacity=".72">can point it elsewhere</text>
+  <rect x="374" y="134" width="224" height="30" rx="4" fill="currentColor" fill-opacity=".07" stroke="currentColor" stroke-opacity=".3"/>
+  <text x="386" y="153" font-size="10.5" font-family="ui-monospace,monospace" fill="currentColor">violations = assess(...)  &lt;- severable</text>
+
+  <path d="M278 120 C 310 120, 330 150, 362 150" stroke="currentColor" stroke-opacity=".5" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+  <text x="286" y="180" font-size="10" font-family="ui-sans-serif,system-ui,sans-serif" fill="currentColor" fill-opacity=".7">the new call site</text>
+  <text x="286" y="193" font-size="10" font-family="ui-sans-serif,system-ui,sans-serif" fill="currentColor" fill-opacity=".7">lands here, untested</text>
+  <defs><marker id="ar" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+    <path d="M0 0 L7 3.5 L0 7 z" fill="currentColor" fill-opacity=".55"/></marker></defs>
+</svg>
+<figcaption>Extracting a rule to make its internals testable moves one statement <i>out</i> of the reachable region and into <code>main()</code>, which no test can drive. The repair's direction is downward; the defect's home is upward.</figcaption>
+</figure>
+
+<h3>The part that makes it more than a bug</h3>
+
+<p>The fix was <b>already in this repository</b>, in one file, written before round 1 of the nine:</p>
+
+<pre><code>scripts/check-ci-watched.py:860
+
+def main(argv: "list[str] | None" = None, stream=None) -&gt; int:
+    """...Extracting `payload_from` was only half the repair; the line that
+    CALLS it was still unreachable, which is the same "unit coverage does not
+    compose — mutate the CALL SITE" lesson this file already records, at the
+    next layer out again."""
+</code></pre>
+
+<p>It is the only one of 36 guards built that way, and the only one this defect class has never touched. <b>It reached zero siblings.</b> Nine rounds re-derived fragments of a complete sentence sitting 900 lines away.</p>
+
+<blockquote><p>So the class regenerates at the rate at which a solved problem fails to travel between files.</p></blockquote>
+
+<p>That is why the PR's main artifact is <b>ADR-0014</b> — an architecture decision record — rather than only a code change. A docstring is read by whoever opens that file; nothing carries it to a neighbour. The ADR creates a venue where such a decision can be <i>decided</i> rather than privately discovered.</p>
+
+<h2 id="s7">What was actually solved</h2>
+
+<p>&ldquo;Found&rdquo; dominates these PRs, but not everything was left open.</p>
+
+<div class="tbl"><table>
+<thead><tr><th>Solved</th><th>PR</th><th>Evidence it is closed</th></tr></thead>
+<tbody>
+<tr><td>Escape-token confusion that put two PRs red</td><td>#354</td><td>Four named states incl. <code>INERT-OTHER</code>; uses the gate's own matcher, no 41st guard</td></tr>
+<tr><td>One document holding measurements, design, rules and decisions at once</td><td>#348</td><td>Split into four documents with one owner each; a tombstone lists 7 live citing sites</td></tr>
+<tr><td>A false claim standing in the evidence document</td><td>#352</td><td>Withdrawn. <b>No replacement figure offered</b> — the hypothesis is unmeasured, not refuted</td></tr>
+<tr><td>Eight rounds of review testimony about to be lost with a closed PR</td><td>#359</td><td>32 documents restored by explicit path, verified to carry no code</td></tr>
+<tr><td>The wiring defect class, structurally, in one guard</td><td>#360</td><td>The sever that left <code>52/52</code> green now gives <code>54/56</code> with two <b>named</b> failures</td></tr>
+<tr><td>A rule that made the human a bottleneck on filing</td><td>#357</td><td>Alignment, not permission — both copies of the rule changed, not just one</td></tr>
+</tbody>
+</table></div>
+
+<h3>And what is deliberately still open</h3>
+
+<p>#360 merged <b>not converged</b>, with three High findings open by explicit decision. They are <i>latent</i> — the guards work; they are unprotected against one specific future regression. The argument for merging anyway: <b>master had none of these guards at all</b>, so shipping beat waiting.</p>
+
+<p>Round 9's four findings were deliberately <b>not</b> fixed one at a time, because that would destroy the only clean test of the review's own prediction: fix them that way and a twelfth instance appears within two rounds.</p>
+
+<h2 id="s8">Traps a reader should not step in</h2>
+
+<div class="tbl"><table>
+<thead><tr><th>Trap</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td><b>Reading &ldquo;158,595 insertions&rdquo; as a big change</b></td><td>84% is generated HTML. Hand-written: ~18k document lines, ~7.4k guard lines</td></tr>
+<tr><td><b>Trusting <code>gh pr view --json files</code></b></td><td>It caps at <b>100 files</b>. #360 reports 100; git reports <b>283</b>. I hit this while writing this page</td></tr>
+<tr><td><b>Reading these titles as summaries</b></td><td>They are essayistic. &ldquo;The paragraph introducing the rules broke one of them&rdquo; does not tell you the PR is about a stale count in a banner</td></tr>
+<tr><td><b>Taking a green gate as evidence</b></td><td>#350's whole lesson. A check that cannot see absence reports clean when everything is gone</td></tr>
+<tr><td><b>Assuming ADR-0014 is &ldquo;first about process&rdquo;</b></td><td>It is the first about the <b>verification stack</b>. <b>ADR-0010</b> already governs document anchoring — see the correction below</td></tr>
+</tbody>
+</table></div>
+
+<div class="warnbox">
+<p><b>A correction this page makes to its own source.</b> #360's architecture review states that <i>&ldquo;all thirteen prior ADRs govern the product&rdquo;</i>. Checked one by one, that is <b>slightly overstated</b>: ADR-0010 — <i>&ldquo;A document declares the goal it belongs to; the index over documents is derived&rdquo;</i> — governs documentation structure, not the product. The defensible claim is narrower: <b>ADR-0014 is the first about the verification stack</b> (guards, ratchets, mutation testing). The review's conclusion is unaffected; its count is not exact.</p>
+</div>
+
+<h2 id="s9">Measured vs inferred</h2>
+
+<p>Everything above is one of three things. Here is which.</p>
+
+<div class="tbl"><table>
+<thead><tr><th>Claim</th><th>Status</th><th>How</th></tr></thead>
+<tbody>
+<tr><td>Zero product code across 17 PRs</td><td><span class="tag m">measured</span></td><td>Listed every file in every PR; grepped <code>app|lib|components|worker|supabase</code>. #360 re-derived from <code>git show --name-only 5128b99b</code> because the API caps at 100</td></tr>
+<tr><td>#360 = 283 files, 158,595 insertions, 132,551 of them generated HTML</td><td><span class="tag m">measured</span></td><td><code>git show --numstat --format="" 5128b99b</code>, summed by path prefix</td></tr>
+<tr><td><code>check-ci-watched.py:860</code> signature and docstring</td><td><span class="tag m">measured</span></td><td><code>sed -n '860p'</code>, read back verbatim</td></tr>
+<tr><td>Sweep cost: 28.36s×15, 18.45s×19, 0.12s×16</td><td><span class="tag m">measured</span></td><td><code>/usr/bin/time -p</code> this session + manifest lengths from JSON. ⚠ Varies with machine load; the parent session measured 29.1s / 18.9s for the same two</td></tr>
+<tr><td>#352: the designed arm reached r5 not converged</td><td><span class="tag m">measured</span></td><td>Both <code>observer-log-owner-r5-*.md</code> verdicts read directly: NOT CONVERGED</td></tr>
+<tr><td>ADR subjects 0001–0013; 0014 anchored to <code>review-decides-itself</code></td><td><span class="tag m">measured</span></td><td>Read every <code>docs/adr/0*.md</code> title and anchor line</td></tr>
+<tr><td>All per-PR &ldquo;what was found&rdquo; rows</td><td><span class="tag m">measured</span></td><td>Quoted from the PR bodies via <code>gh pr view --json body</code>, not from titles</td></tr>
+<tr><td><b>14 of 17 fit the thesis</b></td><td><span class="tag i">inferred</span></td><td>A <b>judgement</b> applying one definition to 17 cases. The definition — <i>the machinery refuting a belief the project held</i> — is mine. The three exceptions are named with reasons so you can re-score them</td></tr>
+<tr><td><b>&ldquo;Both exceptions are the human deciding, not the machinery finding&rdquo;</b></td><td><span class="tag i">inferred</span></td><td>A pattern over n=2. Suggestive, not established</td></tr>
+<tr><td>Per-PR claims for #345–#359</td><td><span class="tag i">partly inferred</span></td><td>Taken from each PR's own body. The bodies are <b>self-reports</b> — I verified #352, #360 and the file-scope counts independently, <b>not</b> the others' internal measurements</td></tr>
+<tr><td>Anything about why the author made a choice</td><td><span class="tag i">inferred</span></td><td>Motive is not in a diff</td></tr>
+</tbody>
+</table></div>
+
+<p class="sub" style="margin-top:2rem">Built 2026-10-02 from <code>master</code> at <code>5128b99b</code>. Horizon: PRs #345–#361 only. Nothing before 2026-09-24 was examined, so &ldquo;this is what the project has been doing&rdquo; is a claim about <b>nine days</b>, not about the project.</p>
+
+</div>
