@@ -63,7 +63,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 210 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 206 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -963,61 +963,6 @@ def revision(p: pathlib.Path) -> str:
 #
 # It is also why `file://` still behaves exactly as before — nothing injects there. The file stays
 # a self-contained artifact that works in five years; live reload is a property of being SERVED.
-# The shared emphasis baseline. INJECTED AT SEND TIME, for the same reason as RELOAD_JS below
-# and by the same route — the user's request 2026-10-02, after comparing the backlog page with the
-# explainer pages: *"the monotonous style of bright bold emphasis of pages are harder to read"*.
-#
-# ⛔ WHAT WAS MEASURED, because the complaint is precise and the fix must be too. On the backlog
-# page a prose `<b>` computes to `rgb(57,66,79)` against body `rgb(18,22,28)` — emphasis is SOFTER
-# than its surroundings, so bold reads as a change of WEIGHT. On an explainer page it computes to
-# `rgb(236,234,240)`, byte-identical to the body colour, so on a dark ground every bold word sits
-# at maximum brightness and a paragraph with six of them has no emphasis at all, only glare.
-#
-# ⭐ WHY `--fg2` AND NOT A LITERAL. 56 of the 62 explainer pages already define `--fg2`, and it
-# moves the right way in BOTH themes — light `#45423d` against body `#1b1a18`, dark `#bdb9b2`
-# against body `#e8e6e2`. So it is dimmer on dark and lighter on light: softer either way, which
-# is the property the backlog page has and these lack.
-#
-# ⚠ THE CASCADE IS THE SAFETY, NOT A CONVENIENCE. `b,strong` is specificity (0,0,1), the lowest a
-# rule can carry, so ANY page rule — `.card b{}` at (0,1,1) — still wins and deliberate per-page
-# design is untouched. `--emph` is the override hook and 0 of 62 pages define it today, so the name
-# is free. The final `inherit` is exactly today's behaviour, which is what the 6 pages without a
-# root `--fg2` keep: this can soften a page, and it cannot break one.
-#
-# ⛔ `color-mix(in srgb, currentColor 78%, transparent)` WAS TRIED AS THAT LAST ARM, TO REACH THOSE
-# 6, AND IS REJECTED — MEASURED, NOT ARGUED. It reaches them, and on
-# `2026-08-12-explanation-absence-protection-enforced` it drove one bold to **4.37:1** against the
-# page background, under WCAG AA's 4.5. ⭐ THE REASON IS THE WHOLE POINT OF PREFERRING A TOKEN:
-# `color-mix` dims relative to `currentColor`, so inside an already-muted container it dims an
-# already-dim colour and COMPOUNDS; `--fg2` is a ROOT token, so it dims relative to the page and
-# cannot compound. The 6 pages are better left unchanged than made unreadable.
-# ⚠ And the first contrast figure said **1.16**, which was a MEASUREMENT BUG — the probe divided
-# already-normalised `color(srgb …)` floats by 255. The real number came from compositing the
-# alpha on a canvas. A wrong contrast reading is the one that looks most like a reason to panic.
-#
-# ⚠ `file://` gets nothing, deliberately — same contract as RELOAD_JS. A saved copy stays the
-# self-contained artifact it was; the baseline is a property of being SERVED.
-BASELINE_CSS = """
-<style>b,strong{color:var(--emph, var(--fg2, inherit))}</style>
-"""
-
-def decorate_html(body: bytes) -> bytes:
-    """Everything the server appends to an HTML page at send time.
-
-    ⛔ A FUNCTION BECAUSE THE COMPOSITION COULD NOT OTHERWISE BE TESTED. Inline in `do_GET`, this
-    was `body += BASELINE_CSS.encode() + RELOAD_JS.encode()` — and dropping either term left every
-    named case green, because all of them assert the CONSTANTS and none the fact that the server
-    sends them. That is ADR-0014's class exactly, written an hour after the ADR landed.
-
-    ⚠ AND THE EXTRACTION DOES NOT CLOSE IT, IT MOVES IT ONE LEVEL OUT — which is the ADR's whole
-    finding, so it is named here rather than implied. `do_GET`'s CALL to this function is still
-    unreachable by any case: driving it needs a bound server, and this suite deliberately binds no
-    port. What is covered is that `decorate_html` appends both; what is not is that `do_GET` calls
-    it. Backlog #219's family; the honest state is one layer tested, one layer owed.
-    """
-    return body + BASELINE_CSS.encode() + RELOAD_JS.encode()
-
-
 RELOAD_JS = """
 <script>
 (function () {
@@ -1165,6 +1110,22 @@ RELOAD_JS = """
 })();
 </script>
 """
+
+
+def decorate_html(body: bytes) -> bytes:
+    """Everything the server appends to an HTML page at send time.
+
+    ⛔ A FUNCTION BECAUSE THE COMPOSITION IS A THING THAT CAN BE SEVERED. Inline in `do_GET` this
+    was `body += RELOAD_JS.encode()`, and the suite asserted the CONSTANT while nothing asserted
+    that the server sends it — ADR-0014's class. ⚠ AND THE EXTRACTION ALONE DOES NOT CLOSE IT:
+    an earlier draft of this docstring claimed `do_GET`'s CALL was undrivable because "driving it
+    needs a bound server". THAT WAS FALSE, and both halves of the 2026-10-02 review refuted it in
+    fifteen lines — the technique was already in THIS FILE at `_drive_src`, under a comment
+    reading "NO PORT IS BOUND, and none is needed". `do_GET` is now driven by a real case below,
+    so the call site is covered and not merely confessed.
+    """
+    return body + RELOAD_JS.encode()
+
 
 
 # ── the server ───────────────────────────────────────────────────────────────────────────────────
@@ -1711,25 +1672,44 @@ def _self_test() -> int:
 
         # The client is a STRING constant, so its guards can be asserted without a browser. These
         # are shape checks, not behaviour — the behaviour was driven in a real browser on 2026-08-18.
-        # ⛔ THE COMPOSITION, not just the constants — see decorate_html's docstring.
-        case("decorate_html appends the emphasis baseline to an HTML body",
-             lambda: b"--emph" in decorate_html(b"<p>x</p>"))
-        case("...and the live-reload client, so neither term can be dropped silently",
+        # ⛔ THE COMPOSITION, not just the constant — see decorate_html's docstring.
+        case("decorate_html appends the live-reload client to an HTML body",
              lambda: b"/_rev?p=" in decorate_html(b"<p>x</p>"))
         case("...and it keeps the page's own bytes, rather than replacing them",
              lambda: decorate_html(b"<p>SENTINEL</p>").startswith(b"<p>SENTINEL</p>"))
 
-        # The emphasis baseline is a STRING constant too, so its contract is assertable here.
-        case("emphasis baseline reads --emph first, so a page can override it",
-             lambda: "var(--emph," in BASELINE_CSS)
-        case("...then --fg2, the softer token 56 of 62 pages already define",
-             lambda: "var(--fg2," in BASELINE_CSS)
-        case("...and falls back to inherit, which is today's behaviour unchanged",
-             lambda: "inherit" in BASELINE_CSS)
-        case("the fallback does NOT use color-mix — measured 4.37:1, under WCAG AA, by compounding",
-             lambda: "color-mix" not in BASELINE_CSS)
-        case("the baseline selector is BARE b,strong — specificity (0,0,1), so page rules win",
-             lambda: "b,strong{" in BASELINE_CSS and "." not in BASELINE_CSS.split("{")[0])
+        # ⛔⛔ THE CALL SITE, WHICH IS THE ONE THAT ACTUALLY SHIPS — and the case that should have
+        # been here from the start. Both halves of the 2026-10-02 review severed
+        # `body = decorate_html(body)` to `body = body` and watched the suite report a full green while
+        # EVERY served page lost the live-reload client. A unit case on `decorate_html` proves the
+        # function composes; only this proves the SERVER sends it. ADR-0014.
+        # ⚠ NO PORT IS BOUND and none is needed — the same technique `_drive_src` already uses
+        # further down this file, which is where the refutation of "driving it needs a bound
+        # server" was sitting the whole time. `object.__new__` skips the socket-wanting
+        # `__init__`; `do_GET` reaches the network only through `self._send`, so stubbing that
+        # instance attribute captures the entire reply.
+        def _drive_page() -> dict:
+            """GET a real page through the REAL do_GET, over a world the case builds."""
+            got: dict = {}
+            saved_root = globals()["ROOT"]
+            with tempfile.TemporaryDirectory() as td:
+                sandbox = pathlib.Path(td)
+                (sandbox / "probe.html").write_bytes(b"<p>SENTINEL</p>")
+                try:
+                    globals()["ROOT"] = sandbox
+                    h = object.__new__(Handler)
+                    h.path = "/probe.html"
+                    h._send = lambda c, b, t: got.update(code=c, body=b, ctype=t)  # type: ignore[method-assign]
+                    Handler.do_GET(h)
+                finally:
+                    globals()["ROOT"] = saved_root
+            return got
+
+        _served = _drive_page()
+        case("do_GET SENDS the decorated body — the shipped call, not just decorate_html",
+             lambda: _served.get("code") == 200 and b"/_rev?p=" in _served.get("body", b""))
+        case("...and the page's own bytes survive the decoration on that same path",
+             lambda: b"<p>SENTINEL</p>" in _served.get("body", b""))
         case("reload client guards the half-typed question (#qbox)",
              lambda: "qbox" in RELOAD_JS and "busyTyping" in RELOAD_JS)
         case("reload client preserves scroll across the reload",
