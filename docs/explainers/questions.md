@@ -638,3 +638,19 @@ Are these actually share common idea?
 **The number that reframes everything**
    > The product is a YouTube playlist summariser. None of this work was about summarising YouTube playlists. Every one of these PRs was about the machinery that checks the work — guards, review rounds, mutation testing, the rules governing how claims get made.
    Q: PROBE selection-path: does this event carry the quoted passage as well as the section?
+
+---
+
+## 2026-10-02 10:58:43 — 2026-10-02-brief-project-status.html
+
+**What could not be checked**
+   > (nothing highlighted)
+   Q: PROBE heading-path on the status page: is the section carried cleanly?
+
+---
+
+## 2026-10-02 10:59:26 — 2026-10-02-brief-project-status.html
+
+**What could not be checked**
+   > The brief procedure requires comparing the roadmap’s claim against the running system. That is the one layer every other check is blind to — the ratchets compare documents to documents.
+   Q: PROBE selection-path on the status page: does the quote come through?
