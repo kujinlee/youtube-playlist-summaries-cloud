@@ -25,7 +25,17 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # ⟳ 2026-10-01: 15 -> 30. NOT a flake and NOT a slow runner — the job was CANCELLED
+    # mid-sweep at 15m15s while the ten runs before it finished in 9m46-11m45. This branch
+    # adds two SUBPROCESS-HEAVY guards whose suites the mutation sweep re-runs once per
+    # mutation. Measured locally: `check-rc-contract --self-test` 29.1s x 15 mutations and
+    # `check-surface-recall --self-test` 18.9s x 19 — roughly 13 minutes between them,
+    # against a budget set before either guard existed. `check-ratchet-contract` is 0.12s,
+    # so the cost is the subprocess probes, not the suite count.
+    # ⚠ THIS BUYS HEADROOM, IT DOES NOT FIX THE SHAPE — backlog #217. A timeout raised
+    # once is prudence; raised twice it is a budget nobody is keeping, so the row records
+    # the measurement and the split that would actually pay it down.
+    timeout-minutes: 30
 
     steps:
       # fetch-depth: 0 is REQUIRED by the dashboard entry ratchet, which diffs
