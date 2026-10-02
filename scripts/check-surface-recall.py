@@ -25,7 +25,7 @@ FAILS IF
 
 Usage:
     python3 scripts/check-surface-recall.py
-    python3 scripts/check-surface-recall.py --self-test  # 58 cases
+    python3 scripts/check-surface-recall.py --self-test  # 62 cases
 """
 from __future__ import annotations
 
@@ -334,6 +334,21 @@ def _defined_codes() -> dict[str, int]:
         raise CannotRun(str(exc)) from exc
 
 
+def gitignore_covers(text: str, prefix: str) -> bool:
+    """PURE. -> does this .gitignore text ignore the self-test's fixture debris?
+
+    ⛔ TAKES THE TEXT, NOT A PATH, and that is the whole design. Backlog #212 added a third copy
+    of the fixture-naming convention in a file that cannot import the constant, so it needs
+    reconciling — but a reconciler that READS the file is only runnable where the file exists,
+    and `check-plan-code`'s harness stages a tree without it. Rule here, fetch in `main`.
+
+    The line must be the DIRECTORY-qualified glob. A bare `_selftest-*` would also ignore matching
+    names anywhere else in the repo, which is wider than the debris and not what was decided.
+    """
+    want = f".claude/hooks/{prefix}*"
+    return any(line.strip() == want for line in text.splitlines())
+
+
 def coverage(defined: dict[str, int], declared: dict[int, str]) -> list[str]:
     """PURE. -> problems when the declared set and the matcher's set are not the SAME set.
 
@@ -367,6 +382,25 @@ def main(argv: list[str]) -> int:
                 f"{label!r} and nothing after it. Approving that text approves backlog #201. The "
                 f"equality below cannot see this, because it only asks whether the hook renders "
                 f"what was approved — round 7 H1."
+            )
+        # ⛔ THE FETCH HALF OF THE #212 RECONCILER. Here rather than in the suite because the
+        # suite must run inside a staged tree that has no `.gitignore`; this runs in the real
+        # repo and is its own CI step. A MISSING file is CANNOT RUN, never a pass — the check
+        # cannot reach what it measures, and silence there is indistinguishable from success.
+        _gi = ROOT / ".gitignore"
+        try:
+            _gi_text = _gi.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise CannotRun(
+                f".gitignore cannot be read ({exc.__class__.__name__}), so it cannot be "
+                f"reconciled against FIXTURE_PREFIX"
+            ) from exc
+        if not gitignore_covers(_gi_text, FIXTURE_PREFIX):
+            problems.append(
+                f"`.gitignore` no longer ignores `.claude/hooks/{FIXTURE_PREFIX}*`, so a "
+                f"self-test killed by SIGKILL can leave fixtures a `git add -A` will commit "
+                f"(backlog #212). The prefix is held in THREE places and this is the one a "
+                f"rename cannot carry."
             )
         bad = undeclared_render(DECLARED_RENDER)
         bad += undeclared_detail(DECLARED_WITH_DETAIL)
@@ -416,6 +450,28 @@ def _fixture_hook(text: str):
     # "caller evidence must be git-TRACKED" — was MEASURED AND REJECTED: the mutation harness
     # stages a COPY with no `.git`, so `git ls-files` returns nothing there and the rule would
     # exclude every hook, making R3 vacuous for all 43 guards. See backlog #215.
+    # ⛔ RECOVER FROM AN ABNORMAL EXIT BEFORE WRITING A NEW ONE — backlog #212. The `finally`
+    # below removes this run's fixtures; a SIGKILL skips it (reproduced at 3 of 13 kill offsets),
+    # and `.claude/hooks/` is TRACKED, so the debris shows in `git status` and a `git add -A`
+    # can commit it into the repo this suite exists to measure.
+    # ⚠ PID-SCOPED, AND THE SCOPE IS THE WHOLE POINT. Rounds 7 B1/M4 made cleanup pid-scoped so a
+    # concurrent peer's fixture is never removed; a bare glob sweep would undo that and delete a
+    # LIVE run's world out from under it. `_os.kill(pid, 0)` asks whether the owner still exists
+    # and sends no signal.
+    # ⚠ A REUSED pid reads as alive, so this UNDER-cleans. That is the correct direction: a stale
+    # file costs one line of `git status`, a wrongly-removed live one costs a peer a red nobody
+    # can explain.
+    # ⚠ No regex — this file imports none, and the name shape is fixed by the f-string above.
+    for _stale in HOOK.parent.glob(f"{FIXTURE_PREFIX}*"):
+        _tail = _stale.name[len(FIXTURE_PREFIX):].split(".", 1)[0]
+        if not _tail.isdigit():
+            continue
+        try:
+            _os.kill(int(_tail), 0)
+        except ProcessLookupError:
+            _stale.unlink(missing_ok=True)       # the owner is gone: this is debris
+        except PermissionError:
+            pass                                  # alive and not ours — leave it alone
     path = HOOK.parent / f"{FIXTURE_PREFIX}{_os.getpid()}.sh"
     # ⛔ THE FIXTURE OWNS THE REPO FILE ITS ARM MAY BRANCH ON, AND THE FIRST VERSION DID NOT.
     # The round-7 B2 corpus arm below branched on `.claude/settings.json` — a file that happens to
@@ -562,6 +618,49 @@ def _self_test() -> int:
     _rat.loader.exec_module(_ratmod)
     case("the fixture prefix this file WRITES is the one the ratchet guard EXCLUDES — round 8 M2",
          FIXTURE_PREFIX, _ratmod.FIXTURE_PREFIX)
+    # ⛔ THE THIRD COPY OF THE CONVENTION, RECONCILED — BUT THE RULE ONLY, NOT THE FETCH.
+    # #212 put the prefix in `.gitignore` too, and a shell glob cannot import a Python constant.
+    # ⚠ THE FIRST VERSION OF THIS READ THE REAL `.gitignore` HERE AND BROKE THE MUTATION
+    # HARNESS — `HARNESS_TREE` does not stage `.gitignore`, so the staged copy had no such file
+    # and the CONTROL went red. That is the defect `_fixture_hook` warns about 200 lines above,
+    # committed 200 lines below the warning: a case whose outcome is a property of the
+    # ENVIRONMENT. The repair is this repo's recorded one — SEPARATE THE RULE FROM THE FETCH.
+    # The pure rule is cased here over text the case builds; the real file is read by `main`,
+    # which runs in the real repo and is a CI step in its own right.
+    case("the gitignore rule accepts the line that is actually in the file",
+         gitignore_covers(f"node_modules\n.claude/hooks/{FIXTURE_PREFIX}*\n.env\n",
+                          FIXTURE_PREFIX), True)
+    case("...and REFUSES a renamed prefix, which is the drift it exists to catch",
+         gitignore_covers(".claude/hooks/_SELFTEST-*\n", FIXTURE_PREFIX), False)
+    case("...and refuses a bare prefix with no directory, which would not match the debris",
+         gitignore_covers(f"{FIXTURE_PREFIX}*\n", FIXTURE_PREFIX), False)
+
+    # ⛔ AND THE SWEEP ITSELF IS DRIVEN, not merely present — backlog #212. Writing recovery code
+    # and asserting only the `.gitignore` line beside it would be this fold's own wiring class:
+    # the rule exists, nothing proves it runs. These stage real debris and let `_fixture_hook`
+    # meet it.
+    # ⚠ THE LIVE SIDE IS THE HALF THAT MATTERS. Over-cleaning deletes a concurrent peer's world
+    # (rounds 7 B1/M4); pid 1 always exists and is not ours, so it exercises the keep path on
+    # every machine this runs on.
+    def _sweep_probe() -> tuple[bool, bool]:
+        # ⚠ Popen, not run() — `CompletedProcess` carries no pid, and the pid is the point.
+        _proc = subprocess.Popen([sys.executable, "-c", ""])
+        _proc.wait()                             # exited AND reaped, so the pid is truly gone
+        dead_pid = _proc.pid
+        debris = HOOK.parent / f"{FIXTURE_PREFIX}{dead_pid}.sh"
+        peer = HOOK.parent / f"{FIXTURE_PREFIX}1.sh"
+        debris.write_text("# debris from a killed run\n", encoding="utf-8")
+        peer.write_text("# a LIVE peer's fixture\n", encoding="utf-8")
+        try:
+            with _fixture_hook("#!/usr/bin/env bash\nexit 0\n"):
+                pass
+            return (not debris.exists(), peer.exists())
+        finally:
+            debris.unlink(missing_ok=True)
+            peer.unlink(missing_ok=True)
+
+    case("the startup sweep REMOVES debris whose owning pid is gone, and KEEPS a live peer's",
+         _sweep_probe(), (True, True))
 
     # ── M3 — the terminator test, which refuted the label list's "closed set" argument ─────
     case("a declaration ending in a CONNECTOR dangles whatever word precedes it",
@@ -681,9 +780,19 @@ def _self_test() -> int:
         with _ctx.redirect_stdout(_buf2):
             _rc_cov = main([])
         _out_cov = _buf2.getvalue()
-        # ⚠ H4 — THE MATCHER IS STAGED, NOT THE REAL ONE, so `defined = _defined_codes()` cannot
-        # be severed to a literal dict and still pass: a staged SEVENTH code must reach `coverage`.
-        _saved_m = globals()["MATCHER"]
+        # ⛔ THE COMMENT THAT USED TO BE HERE ASSERTED A DEFENCE THIS CODE DOES NOT IMPLEMENT,
+        # and it is backlog #216. It read: "H4 — THE MATCHER IS STAGED, NOT THE REAL ONE, so
+        # `defined = _defined_codes()` cannot be severed to a literal dict and still pass: a
+        # staged SEVENTH code must reach `coverage`." Below it sat the save half of a
+        # stage-and-restore that was never written — one assignment of `globals()["MATCHER"]`,
+        # read by nothing, staging nothing, restored nowhere. The fossil of a fix begun and
+        # abandoned, and the comment above it was the only thing that still claimed it worked.
+        # ⚠ AND THE CONSEQUENCE WAS MEASURED INDEPENDENTLY by round 9's H1a: that exact call site
+        # WAS severed to the value the function returns today, and the suite stayed 58/58 green
+        # with the live run rc=0. The comment named the sever it could not stop — so a reader who
+        # trusted it would conclude the probe was pointless and never run it.
+        # ⤳ THE SEVER IS STILL LIVE. It is round 9's H1a and backlog #213's class; closing it
+        # needs the staging this comment only described. Tracked there, not pretended here.
         case("coverage is WIRED — its result reaches the verdict through main",
              (_rc_cov, _out_cov.count("✗")), (1, 1))
         case("...and the message names the code nobody approved a sentence for",

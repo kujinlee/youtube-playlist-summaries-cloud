@@ -162,3 +162,15 @@ docs/explainers/features.fragment.html
 # The server's own runtime droppings — it writes these into whatever it serves.
 docs/explainers/.serve.log
 docs/explainers/.serve.pid
+
+# Fixtures the scripts/check-surface-recall.py self-test writes into the REAL hooks directory.
+# ⚠ THEY LIVE IN THE REPO ON PURPOSE AND THAT IS A TRADE, NOT AN OVERSIGHT — the hook derives
+# REPO_ROOT from ${BASH_SOURCE[0]}, so a fixture under /tmp observes a repo that does not exist
+# and an arm branching on a real repo file takes the wrong branch. Fidelity requires the real path.
+# ⛔ THE FINALLY THAT REMOVES THEM DOES NOT RUN ON SIGKILL — reproduced at 3 of 13 kill offsets
+# (backlog #212). This line is what stops the debris being committed by a `git add -A` when that
+# happens. The suite also sweeps dead-pid leftovers on startup; this is the second layer.
+# ⚠ THE PREFIX IS NOW HELD IN THREE PLACES (here, check-surface-recall.FIXTURE_PREFIX,
+# check-ratchet-contract) and a self-test case reconciles this file against the constant, because
+# a consistent rename would otherwise orphan this line in silence. Backlog #215.
+.claude/hooks/_selftest-*

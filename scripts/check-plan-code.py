@@ -191,6 +191,16 @@ HARNESS_TREE = (
     # `.gitignore` is a bare `*` (backlog #86), and copying a nested repo into the harness tree is
     # a surprise nobody needs.
     ".claude/hooks",
+    # ⟳ 2026-10-02, backlog #212. `check-surface-recall.main` reconciles `.gitignore` against
+    # `FIXTURE_PREFIX` — the third copy of a naming convention, in the one file that cannot
+    # import the constant. Its suite DRIVES `main` (ADR-0014's whole point), so without this
+    # entry main raises CannotRun on a missing file and six cases fall over: the tuple's own
+    # recorded failure — "a scripts-only tree gave each a red control" — for a new subject, and
+    # measured again here before this line was added. 3 KB.
+    # ⚠ Staging it does NOT make the harness honour it: `copytree` is a plain copy and nothing
+    # in the staged tree is a git repo, so this file is DATA to the guard that reads it, never
+    # an instruction to the harness. That distinction is what backlog #215 turns on.
+    ".gitignore",
     # ⟳ 2026-09-14, r16: staged because `check-review-recorded`'s anti-drift rule READ
     # `.github/workflows/schema-gates.yml` — without the file the case saw nothing, that script's
     # CONTROL went red at 138/139, and the harness correctly refused the whole run
@@ -226,7 +236,15 @@ def stage_tree(root: pathlib.Path, dest: pathlib.Path) -> list[str]:
             continue
         dst = dest / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(src, dst)
+        # ⚠ A HARNESS_TREE ENTRY MAY BE A FILE — `.gitignore` since backlog #212. `copytree`
+        # raises NotADirectoryError on one, which is a crash rather than a named CANNOT RUN and
+        # therefore the wrong failure shape for this function: it exists to say WHICH path was
+        # absent instead of letting a red control name the guard. Measured when the first
+        # version of that entry was added.
+        if src.is_dir():
+            shutil.copytree(src, dst)
+        else:
+            shutil.copy2(src, dst)
     return problems
 
 
@@ -1371,7 +1389,7 @@ EXPECTED_MUTATIONS = {
     # ⚠ FOUR OF THE 11 ARE RELOCATED, NOT NEW — they came from `check-rc-contract`'s manifest with
     # the rule, retargeted onto the code that now owns it. Its 20 -> 14 and this 0 -> 11 are ONE
     # move, and the declared sum rises 1158 -> 1163 net of two retirements whose subject is gone.
-    "scripts/check-surface-recall.py": 19,
+    "scripts/check-surface-recall.py": 20,
     # ⟳⟳ 2026-09-30, round 3 H1: 91 -> 94. `unanswerable_if_armed` and its two boundaries —
     # `prepared_prompt` and `do_arm` — because #202 fixed the conjunction on `--fire` and left it
     # alive on `--arm`, which is B1's error a third time.
@@ -3877,7 +3895,10 @@ def _self_test() -> int:
     # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
     # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
     # found already in this repo at `check-ci-watched.py:860`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1178)
+    # ⟳ 2026-10-02: 1178 -> 1179. +1 on `check-surface-recall` for backlog #212's startup sweep —
+    # recovery code that nothing drove would be this repo's wiring class in the fix for a
+    # housekeeping bug, so the sweep gets a case AND an entry that kills it.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1179)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
