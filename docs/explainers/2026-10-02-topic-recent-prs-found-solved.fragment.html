@@ -305,6 +305,58 @@ def main(argv: "list[str] | None" = None, stream=None) -&gt; int:
 
 <p>That is why the PR's main artifact is <b>ADR-0014</b> — an architecture decision record — rather than only a code change. A docstring is read by whoever opens that file; nothing carries it to a neighbour. The ADR creates a venue where such a decision can be <i>decided</i> rather than privately discovered.</p>
 
+
+<h3 id="q-rootcause">↩ Asked from this page: &ldquo;have we found a solution (and implemented it) for the root cause?&rdquo;</h3>
+
+<p><b>Found and recorded: yes. Implemented: one guard of three in this fold, two of thirty-six in
+the repository, and the rule that would enforce it is not written.</b> The honest answer is
+<i>partially</i>, and the gap is larger than the part that is done.</p>
+
+<div class="tablewrap"><table>
+<thead><tr><th>Step</th><th>State</th><th>Evidence</th></tr></thead>
+<tbody>
+<tr><td><b>Name the root cause</b></td><td class="good">done</td>
+    <td><code>main()</code> resolves its world from module globals, so no case can drive it over a
+        world it built; the standard repair acts on the callee and keeps relocating statements into
+        the unreachable region</td></tr>
+<tr><td><b>Record it where it cannot be re-litigated</b></td><td class="good">done</td>
+    <td><b>ADR-0014</b>, the first ADR here governing the verification stack rather than the
+        product — the absence of such a venue is <i>why</i> the fix never propagated</td></tr>
+<tr><td><b>Apply D1 to <code>check-ratchet-contract.py</code></b></td><td class="good">done</td>
+    <td>merged in #360. The sever that left <code>52/52</code> green now gives <code>54/56</code>
+        with two named failures</td></tr>
+<tr><td><b>Apply D1 to the other two guards</b></td><td class="bad">not started</td>
+    <td>three <b>High</b> findings stay open — <code>check-surface-recall.py</code> needs three
+        defaulted rule parameters removed first, which was never costed</td></tr>
+<tr><td><b>D2 — the rule that keeps it applied</b></td><td class="bad">not written</td>
+    <td>and it cannot be written as drafted: it would false-positive on
+        <code>check-fixture-variation.py</code>, which drives <code>main()</code> 14 times through
+        <code>argv</code></td></tr>
+</tbody>
+</table></div>
+
+<p><b>The repository-wide number, re-derived on master after the merge:</b></p>
+
+<pre><code>guards with a main():                  36 of 43
+main takes its world as a parameter:    2   (check-ci-watched.py, check-ratchet-contract.py)
+suite drives main() at all:             8
+main UNREACHABLE by any case:          28</code></pre>
+
+<p>Before #360 those read <b>1</b> parameterised and <b>29</b> unreachable. So the whole of this
+fold's structural work moved the repository-wide figure by <b>one guard</b>. That is not a
+complaint about the work — it is the measure of how much is left.</p>
+
+<p><b>What would make this &ldquo;implemented&rdquo;.</b> D1 across the remaining two guards closes
+the three open Highs in this fold. D2 — once it admits <code>argv</code>-as-world — turns the other
+28 from invisible into pinned debt that can be paid down one guard at a time. Until D2 exists,
+nothing stops guard 37 from being written the old way, and the review that found all this would have
+bought a fix for three files and no rule.</p>
+
+<p><b>The honest risk.</b> The architecture review staked a falsifiable prediction on exactly this:
+apply D1 and D2 to the three files, and the next instance of the class appears in one of the other
+28 — <i>because that is where the exposure is and nobody has looked there</i>. That prediction is
+currently untested, because only one of the three files is done.</p>
+
 <h2 id="s7">What was actually solved</h2>
 
 <p>&ldquo;Found&rdquo; dominates these PRs, but not everything was left open.</p>
@@ -339,6 +391,46 @@ def main(argv: "list[str] | None" = None, stream=None) -&gt; int:
 <tr><td><b>Assuming ADR-0014 is &ldquo;first about process&rdquo;</b></td><td>It is the first about the <b>verification stack</b>. <b>ADR-0010</b> already governs document anchoring — see the correction below</td></tr>
 </tbody>
 </table></div>
+
+<h3 id="q-titles">↩ Asked from this page: &ldquo;I want more informative titles so I can grasp what is in there&rdquo;</h3>
+
+<p><b>Agreed, and this is a fair hit on me rather than on the repo.</b> The essayistic title states
+the <i>finding</i> and omits the <i>scope</i> — so it tells you what was learned and not what was
+touched. A reader scanning <code>git log</code> to answer &ldquo;what changed?&rdquo; gets nothing,
+which is the commonest reason to read a log at all.</p>
+
+<p><b>The change, from the next title onward:</b> put the concrete subject first, then the finding,
+separated by an em dash. The insight is kept — the complaint was never that it is there — but it
+stops being the only thing present.</p>
+
+<div class="tablewrap"><table>
+<thead><tr><th>What I wrote</th><th>What it should have been</th></tr></thead>
+<tbody>
+<tr><td>Nine rounds found the same defect, so the tenth asked why instead</td>
+    <td><b>ADR-0014 + D1 on <code>check-ratchet-contract.py</code></b> — nine rounds, and each fix
+        was generating the next instance</td></tr>
+<tr><td>The CI budget was set before the guards that blow it existed</td>
+    <td><b><code>verify</code> timeout 15→30, backlog #217</b> — two subprocess-heavy guards add
+        ~13 min to the sweep</td></tr>
+<tr><td>The checkboxes were a claim; #360 merging made three of them false</td>
+    <td><b>Reconcile roadmap + memory after #360</b> — three checkboxes went stale at merge</td></tr>
+<tr><td>Two rows said LIVE about a branch that no longer exists</td>
+    <td><b>Close backlog #201/#202, file #219</b> — the closure guard's token grammar is
+        single-id only</td></tr>
+</tbody>
+</table></div>
+
+<p><b>Why it drifted this way, stated rather than excused.</b> The house style across this
+repository's backlog rows, commit subjects and review documents is deliberately essayistic — a row
+is supposed to argue, because a row that merely labels gets skimmed and re-litigated. I carried that
+into titles, where it does not belong: a backlog row is <i>read</i>, a title is <i>scanned</i>. The
+same sentence cannot serve both, and when they conflict the scanner wins, because nobody reads a
+title on purpose.</p>
+
+<p><b>What this does not change.</b> The body still argues. Dropping the finding from the title
+would trade one failure for another — a log of <code>fix guard</code> and <code>update docs</code>
+tells you the scope and hides every reason, which is the shape this project's own commit messages
+exist to avoid.</p>
 
 <div class="warnbox">
 <p><b>A correction this page makes to its own source.</b> #360's architecture review states that <i>&ldquo;all thirteen prior ADRs govern the product&rdquo;</i>. Checked one by one, that is <b>slightly overstated</b>: ADR-0010 — <i>&ldquo;A document declares the goal it belongs to; the index over documents is derived&rdquo;</i> — governs documentation structure, not the product. The defensible claim is narrower: <b>ADR-0014 is the first about the verification stack</b> (guards, ratchets, mutation testing). The review's conclusion is unaffected; its count is not exact.</p>
